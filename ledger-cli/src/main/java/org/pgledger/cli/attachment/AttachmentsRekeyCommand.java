@@ -64,6 +64,10 @@ public class AttachmentsRekeyCommand implements Command {
         CliLedger target = DatabaseBeans.require(ledger);
         AttachmentRekey attachments = AttachmentBeans.require(rekey);
         String active = AttachmentBeans.require(properties).activeKeyId();
+        if (active == null) {
+            // no key is active yet (setup has not made the first one): there is no key to write the files under
+            throw new UsageException(ErrorCode.ATTACHMENTS_NOT_CONFIGURED);
+        }
         if (Objects.equals(from, active)) {
             throw new UsageException(ErrorCode.ATTACHMENTS_REKEY_FROM_ACTIVE, from);
         }

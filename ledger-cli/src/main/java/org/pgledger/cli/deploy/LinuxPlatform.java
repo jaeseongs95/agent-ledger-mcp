@@ -16,8 +16,9 @@ import org.springframework.stereotype.Component;
  * A Linux server: the services are systemd units ({@link SystemdUnits}), the jars are below {@code /opt/<name>} and the
  * settings below {@code /etc/<name>}, owned by the system user of the instance. Run as root, {@code prepare-host} makes the
  * directories {@code <lib>} (root, 0755), {@code <etc>} (the service user, 0750), {@code <etc>/drivers} (root, 0755) and
- * {@code <etc>/secrets} (the service user, 0700) and copies the three jars and the JDBC driver jar with mode 0644 ({@code
- * install -d} and {@code install -m} did this). The secrets are the service user's from the start, so there is nothing to seal
+ * {@code <etc>/secrets} (the service user, 0700), the folders of the attachments ({@code <etc>/secrets/attachment-keys}, the data
+ * folder {@code /var/lib/<name>} and {@code <data>/attachments}: the service user, 0700) and copies the three jars and the JDBC
+ * driver jar with mode 0644 ({@code install -d} and {@code install -m} did this). The secrets are the service user's from the start, so there is nothing to seal
  * (no {@link HostSealing}) and systemd needs no service wrapper (no {@link ServiceWrappers}); the nginx site and the automatic
  * certificate are Linux's ({@link TlsHosting}). The paths of its files, and of the Java runtime and the nginx site that the
  * operator names, are the plain paths of a Linux file system.
@@ -91,7 +92,7 @@ final class LinuxPlatform implements ServicePlatform, TlsHosting {
         Service admin = Service.admin(layout);
         List<RenderedFile> files = new ArrayList<>(List.of(
                 new RenderedFile(DeployLayout.UNIT_DIRECTORY + "/" + mcp.name() + ".service",
-                        SystemdUnits.unit(p, mcp, "network-online.target", null)),
+                        SystemdUnits.unit(p, mcp, "network-online.target", layout.attachmentDirectory())),
                 new RenderedFile(DeployLayout.UNIT_DIRECTORY + "/" + admin.name() + ".service",
                         SystemdUnits.unit(p, admin, "network-online.target " + mcp.name() + ".service", layout.etc()))));
         if (p.nginx() != null && p.nginx().acme() != null) {
@@ -117,6 +118,12 @@ final class LinuxPlatform implements ServicePlatform, TlsHosting {
         host.directory(etc, "rwxr-x---", user, group);
         host.directory(etc.resolve("drivers"), "rwxr-xr-x", null, null);
         host.directory(etc.resolve("secrets"), "rwx------", user, group);
+        // the attachments: the key folder inside the secrets, the data folder and the attachment folder below it, all the service user's
+        // alone (a folder that exists gets the same owner and mode as a new one); the data of the installation is not the 1.x
+        // installation's, so nothing of it exists before
+        host.directory(hostPath(root, layout.attachmentKeyDirectory()), "rwx------", user, group);
+        host.directory(hostPath(root, layout.data()), "rwx------", user, group);
+        host.directory(hostPath(root, layout.attachmentDirectory()), "rwx------", user, group);
         host.copyProduct(jars, driver, lib, etc.resolve("drivers"));
     }
 

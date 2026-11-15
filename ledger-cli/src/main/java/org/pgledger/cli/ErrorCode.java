@@ -76,7 +76,8 @@ public enum ErrorCode {
     TLS_FILES_FAILED,
     ATTACHMENTS_NOT_CONFIGURED,
     ATTACHMENTS_NOT_CLEAN,
-    ATTACHMENTS_REKEY_FROM_ACTIVE;
+    ATTACHMENTS_REKEY_FROM_ACTIVE,
+    ATTACHMENT_SETTING_FAILED;
 
     public String messageKey() {
         return "error." + name();

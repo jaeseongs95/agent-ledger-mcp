@@ -1,17 +1,19 @@
 package org.pgledger.cli.deploy;
 
 import java.io.IOException;
-import java.nio.file.DirectoryIteratorException;
-import java.nio.file.DirectoryStream;
 import java.nio.file.FileSystem;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.AclEntry;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.UserPrincipal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import org.pgledger.cli.CliOptions;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.UsageException;
@@ -129,9 +131,13 @@ final class WindowsPlatform implements ServicePlatform, ServiceWrappers, HostSea
         Path home = lib.getParent();
         Path drivers = etc.resolve("drivers");
         Path secrets = etc.resolve("secrets");
-        // What a run changes is read first, so a failed run can put it back (nothing is changed by reading).
+        Path data = hostPath(root, layout.data());
+        Path attachments = hostPath(root, layout.attachmentDirectory());
+        Path keys = hostPath(root, layout.attachmentKeyDirectory());
+        // What a run changes is read first, so a failed run can put it back (nothing is changed by reading). The folder of the keys
+        // is inside the secrets: it is read, like the files there, once the secrets are the installer's.
         List<WindowsAccess.Saved> saved = new ArrayList<>();
-        for (Path path : List.of(home, lib, etc, drivers, secrets, logs)) {
+        for (Path path : List.of(home, lib, etc, drivers, secrets, logs, data, attachments)) {
             if (Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
                 saved.add(access.save(path));
             }
@@ -143,7 +149,12 @@ final class WindowsPlatform implements ServicePlatform, ServiceWrappers, HostSea
             // opened through it), then its files; seal-host hands them over again at the end.
             if (Files.isDirectory(secrets, LinkOption.NOFOLLOW_LINKS)) {
                 access.reassign(secrets, installer, installer, WindowsAccess.takenBack(installer, true));
-                for (Path file : secretFiles(secrets)) {
+                SecretTree tree = secretTree(secrets);
+                for (Path folder : tree.folders()) {
+                    saved.add(access.save(folder));
+                    access.reassign(folder, installer, installer, WindowsAccess.takenBack(installer, true));
+                }
+                for (Path file : tree.files()) {
                     saved.add(access.save(file));
                     access.reassign(file, installer, installer, WindowsAccess.takenBack(installer, false));
                 }
@@ -151,13 +162,18 @@ final class WindowsPlatform implements ServicePlatform, ServiceWrappers, HostSea
             // the home first: a folder made below it takes what the home gives, and the file system propagates nothing by itself
             Files.createDirectories(home);
             access.set(home, null, closed);
-            for (Path folder : List.of(lib, etc, drivers, logs)) {
+            for (Path folder : List.of(lib, etc, drivers, logs, data, attachments)) {
                 Files.createDirectories(folder);
                 access.set(folder, null, closed);
             }
             if (!Files.isDirectory(secrets, LinkOption.NOFOLLOW_LINKS)) {
                 Files.createDirectories(secrets);
                 access.reassign(secrets, installer, installer, WindowsAccess.takenBack(installer, true));
+            }
+            // the folder of the keys of the attachments: the installer's alone, like the secrets, until seal-host hands it over
+            if (!Files.isDirectory(keys, LinkOption.NOFOLLOW_LINKS)) {
+                Files.createDirectories(keys);
+                access.reassign(keys, installer, installer, WindowsAccess.takenBack(installer, true));
             }
             host.copyProduct(jars, driver, lib, drivers);
             files.copy(winsw, lib.resolve(layout.mcpName() + ".exe"));
@@ -182,16 +198,37 @@ final class WindowsPlatform implements ServicePlatform, ServiceWrappers, HostSea
         }
     }
 
-    /** The files in the secrets folder, by name. */
-    private static List<Path> secretFiles(Path secrets) throws IOException {
-        List<Path> found = new ArrayList<>();
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(secrets, Files::isRegularFile)) {
-            stream.forEach(found::add);
-        } catch (DirectoryIteratorException e) {
-            throw e.getCause();
-        }
-        found.sort(Comparator.naturalOrder());
-        return found;
+    /**
+     * What is below the secrets folder: the folders (the folder of the keys of the attachments), the shallower first, and the
+     * regular files at every depth, by name. A link is neither.
+     */
+    private record SecretTree(List<Path> folders, List<Path> files) {
+    }
+
+    private static SecretTree secretTree(Path secrets) throws IOException {
+        List<Path> folders = new ArrayList<>();
+        List<Path> files = new ArrayList<>();
+        Files.walkFileTree(secrets, new SimpleFileVisitor<>() {
+
+            @Override
+            public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attributes) {
+                if (!Objects.equals(directory, secrets)) {
+                    folders.add(directory);
+                }
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) {
+                if (attributes.isRegularFile()) {
+                    files.add(file);
+                }
+                return FileVisitResult.CONTINUE;
+            }
+        });
+        folders.sort(Comparator.comparingInt(Path::getNameCount).thenComparing(Comparator.naturalOrder()));
+        files.sort(Comparator.naturalOrder());
+        return new SecretTree(List.copyOf(folders), List.copyOf(files));
     }
 
     @Override
@@ -200,6 +237,8 @@ final class WindowsPlatform implements ServicePlatform, ServiceWrappers, HostSea
         Path etc = hostPath(root, layout.etc());
         Path logs = hostPath(root, layout.logs());
         Path secrets = etc.resolve("secrets");
+        Path data = hostPath(root, layout.data());
+        Path attachments = hostPath(root, layout.attachmentDirectory());
         FileSystem fileSystem = lib.getFileSystem();
         host.requireView(fileSystem, "acl");
         UserPrincipal service = accounts.user(fileSystem, DeployLayout.WINDOWS_SERVICE_ACCOUNT);
@@ -208,11 +247,25 @@ final class WindowsPlatform implements ServicePlatform, ServiceWrappers, HostSea
         access.grantTree(lib, service, WindowsAccess.READ_EXECUTE, secrets);
         access.grantTree(etc, service, WindowsAccess.MODIFY, secrets);
         access.grantTree(logs, service, WindowsAccess.MODIFY, secrets);
+        // The data folder and the attachment folder get the entry of the service account on the folder itself and not on what is in
+        // it: what the service made there is its own, with an ACL for it alone, and the installer cannot change that ACL (a re-run
+        // must not fail on it); a file or a folder it makes later is private to it from its first moment (PrivateFiles).
+        access.grant(data, service, WindowsAccess.MODIFY);
+        access.grant(attachments, service, WindowsAccess.MODIFY);
         // The folder is the installer's first (a run that did not take the secrets back, or one that failed half way, finds
         // it the service account's, and Administrators could not even list it); the files are handed over, then the folder.
+        // The folder of the keys of the attachments is below it: its folders are taken first, its files are handed over, and its
+        // folders are handed over before the secrets folder itself.
         access.reassign(secrets, installer, installer, WindowsAccess.takenBack(installer, true));
-        for (Path file : secretFiles(secrets)) {
+        SecretTree tree = secretTree(secrets);
+        for (Path folder : tree.folders()) {
+            access.reassign(folder, installer, installer, WindowsAccess.takenBack(installer, true));
+        }
+        for (Path file : tree.files()) {
             access.reassign(file, installer, service, WindowsAccess.handedOver(service, administrators, false));
+        }
+        for (Path folder : tree.folders().reversed()) {
+            access.reassign(folder, installer, service, WindowsAccess.handedOver(service, administrators, true));
         }
         access.reassign(secrets, installer, service, WindowsAccess.handedOver(service, administrators, true));
     }

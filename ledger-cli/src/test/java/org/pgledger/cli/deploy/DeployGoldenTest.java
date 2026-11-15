@@ -79,12 +79,23 @@ class DeployGoldenTest {
         return targets;
     }
 
+    /**
+     * ATA-036: the settings of the attachments ({@code ledger.attachments.directory} and {@code key-directory}, the last block of
+     * the shared settings file) and the one folder the MCP unit may write ({@code ReadWritePaths=/var/lib/<name>/attachments})
+     * joined the rendered files after these digests were taken. They are cut off here, so that the digests keep saying that
+     * everything else is as it was; what they hold is the test AttachmentDeployTest.
+     */
+    private static String withoutAttachments(String content) {
+        return content.replaceAll("(?m)^  attachments:\\n(?:    .*\\n)*", "")
+                .replaceAll("(?m)^ReadWritePaths=/var/lib/[^\\n]*/attachments\\n", "");
+    }
+
     /** The SHA-256 of path and content of every rendered file, in the order the renderer gives them. */
     private static String digest(List<RenderedFile> files) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             for (RenderedFile file : files) {
-                digest.update((file.path() + "\u0000" + file.content() + "\u0000").getBytes(StandardCharsets.UTF_8));
+                digest.update((file.path() + "\u0000" + withoutAttachments(file.content()) + "\u0000").getBytes(StandardCharsets.UTF_8));
             }
             return HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException e) {

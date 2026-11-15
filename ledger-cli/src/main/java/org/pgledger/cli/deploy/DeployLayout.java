@@ -22,10 +22,12 @@ import java.util.Locale;
  * @param name     the name of the instance (already validated)
  * @param lib      the jars (on Windows also the WinSW executable and configuration of each service)
  * @param etc      the settings, the driver registration, the driver jars and the secret directory
+ * @param data     what the installation keeps as data of its own, private to the service account: below it the attachment
+ *                 directory ({@link #attachmentDirectory()}); Linux {@code /var/lib/<name>}, Windows {@code <home>/data}
  * @param logs     where the service wrapper writes its logs (Windows; null on Linux, where systemd keeps the journal)
  */
 public record DeployLayout(Platform platform,
-        @Pattern(regexp = DeployForms.NAME, message = DeployOptions.NAME) String name, String lib, String etc,
+        @Pattern(regexp = DeployForms.NAME, message = DeployOptions.NAME) String name, String lib, String etc, String data,
         String logs) {
 
     /**
@@ -59,14 +61,31 @@ public record DeployLayout(Platform platform,
     /** Where systemd reads the units of the administrator (Spring Boot, "Installing Spring Boot Applications"). */
     public static final String UNIT_DIRECTORY = "/etc/systemd/system";
 
-    /** The layout of a Linux instance: jars below {@code /opt/<name>}, everything else below {@code /etc/<name>}. */
+    /**
+     * The layout of a Linux instance: jars below {@code /opt/<name>}, the settings and the secrets below {@code /etc/<name>}, the
+     * data below {@code /var/lib/<name>} (the place the Filesystem Hierarchy Standard gives to the variable data of a program).
+     */
     public static DeployLayout linux(String name) {
-        return new DeployLayout(Platform.LINUX, name, "/opt/" + name, "/etc/" + name, null);
+        return new DeployLayout(Platform.LINUX, name, "/opt/" + name, "/etc/" + name, "/var/lib/" + name, null);
     }
 
     /** The layout of a Windows instance below one directory (for example {@code C:/ProgramData/<name>}). */
     public static DeployLayout windows(String name, String home) {
-        return new DeployLayout(Platform.WINDOWS, name, home + "/lib", home + "/etc", home + "/logs");
+        return new DeployLayout(Platform.WINDOWS, name, home + "/lib", home + "/etc", home + "/data", home + "/logs");
+    }
+
+    /** Where the files of the attachments are kept: {@code <data>/attachments}, the setting {@code ledger.attachments.directory}. */
+    public String attachmentDirectory() {
+        return data + "/attachments";
+    }
+
+    /**
+     * Where the key files of the attachments are kept: {@code <etc>/secrets/attachment-keys}, inside the secret directory that is
+     * private to the service account (the setting {@code ledger.attachments.key-directory}); outside the attachment directory, so
+     * a backup of the files never carries the keys by itself.
+     */
+    public String attachmentKeyDirectory() {
+        return etc + "/secrets/attachment-keys";
     }
 
     /** The name of the MCP server service (systemd unit, WinSW service id). */

@@ -32,6 +32,12 @@ final class ServiceSettings {
                 Text.line(yaml, "    long-text-type: " + Text.quoted(p.longTextType()));
             }
         }
+        // The attachments: where the files are and where the keys are (every key of the ten keeps its default). The key that new
+        // uploads are written with, ledger.attachments.active-key-id, is not rendered: the installer cannot know it (setup makes
+        // the first key and writes the id into local.yaml, which no run of the installer replaces; a rotation changes it there).
+        Text.line(yaml, "  attachments:");
+        Text.line(yaml, "    directory: " + Text.quoted(p.layout().attachmentDirectory()));
+        Text.line(yaml, "    key-directory: " + Text.quoted(p.layout().attachmentKeyDirectory()));
         return yaml.toString();
     }
 

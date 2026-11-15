@@ -118,7 +118,7 @@ final class SystemdUnits {
         Text.line(unit, "NoNewPrivileges=true");
         Text.line(unit, "ProtectSystem=strict");
         if (readWritePath != null) {
-            // the driver page of the admin web writes the registration file next to its settings
+            // the admin web writes the driver registration next to its settings; the MCP server writes the attachment files
             Text.line(unit, "ReadWritePaths=" + readWritePath);
         }
         Text.line(unit, "ProtectHome=true");

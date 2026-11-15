@@ -1,6 +1,5 @@
 package org.pgledger.application.attachment;
 
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import java.nio.file.Path;
@@ -20,7 +19,10 @@ import org.springframework.validation.annotation.Validated;
  *
  * @param directory             where the files of the bodies are kept (below the installation's data directory)
  * @param keyDirectory          where the key files are kept (the installation's {@code secrets/attachment-keys}); outside {@code directory}
- * @param activeKeyId           the key that new uploads are written with; older keys stay while rows use them
+ * @param activeKeyId           the key that new uploads are written with; older keys stay while rows use them. It is null on a new
+ *                              installation until {@code setup} has made the first key and written its id (the installer cannot know it
+ *                              when it renders the settings, and {@code setup} itself has to start with it missing); a server that has
+ *                              no active key does not start (the start check names the missing key)
  * @param maxFileBytes          the largest file
  * @param stagingBudgetBytes    what all uploads that are open may declare together
  * @param attachmentBudgetBytes what all kept attachments (and the open uploads) may hold together; a begin over it is refused and nothing is deleted
@@ -32,7 +34,7 @@ import org.springframework.validation.annotation.Validated;
 @Validated
 @ConfigurationProperties(prefix = "ledger.attachments")
 public record AttachmentProperties(@NotNull Path directory, @NotNull Path keyDirectory,
-        @NotBlank @Pattern(regexp = "[A-Za-z0-9._-]{1,64}") String activeKeyId,
+        @Pattern(regexp = "[A-Za-z0-9._-]{1,64}") String activeKeyId,
         @DefaultValue("64MB") DataSize maxFileBytes, @DefaultValue("512MB") DataSize stagingBudgetBytes,
         @DefaultValue("10GB") DataSize attachmentBudgetBytes, @DefaultValue("4") int maxOpenPerOwner,
         @DefaultValue("10m") Duration uploadTtl, @DefaultValue("24h") Duration orphanGrace,

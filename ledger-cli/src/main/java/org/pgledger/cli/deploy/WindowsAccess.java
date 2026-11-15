@@ -184,6 +184,15 @@ final class WindowsAccess {
         return enabled.allHeld() ? refusal : new PrivilegeNotHeldException(path, refusal);
     }
 
+    /**
+     * Adds the entry of {@code who} to the ACL of this folder only (a folder it makes and a file it makes in the folder inherit
+     * it), and leaves what is already in it alone.
+     */
+    void grant(Path folder, UserPrincipal who, Set<AclEntryPermission> permissions) throws IOException {
+        AclFileAttributeView view = view(folder);
+        view.setAcl(with(view.getAcl(), allow(who, permissions, true)));
+    }
+
     /** Adds the entry of {@code who} to the ACL of the folder and of everything in it, but for the subtree {@code skipped}. */
     void grantTree(Path folder, UserPrincipal who, Set<AclEntryPermission> permissions, Path skipped)
             throws IOException {
