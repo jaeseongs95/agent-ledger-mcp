@@ -138,7 +138,7 @@ class SecretStoreTest {
         Path file = store.store(NAME, "old-value".toCharArray());
         Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-r--r--"));
 
-        assertThat(new String(store.load(NAME))).isEqualTo("old-value");
+        assertThat(String.valueOf(store.load(NAME))).isEqualTo("old-value");
         store.store(NAME, "new".toCharArray());
 
         assertThat(Files.readString(file)).isEqualTo("new");
@@ -155,7 +155,7 @@ class SecretStoreTest {
         store.store(new SecretName("other"), "x".toCharArray());
         Files.createSymbolicLink(directory.resolve("cloudflare-api-token"), directory.resolve("other"));
 
-        assertThat(new String(store.load(NAME))).isEqualTo("x");
+        assertThat(String.valueOf(store.load(NAME))).isEqualTo("x");
         assertThat(store.exists(NAME)).isTrue();
         store.store(NAME, "v".toCharArray());
 
@@ -201,7 +201,7 @@ class SecretStoreTest {
         assumeThat(root).isNotEqualTo(Files.getOwner(directory));
 
         assertThatCode(() -> store(directory, users(root)).check(NAME)).doesNotThrowAnyException();
-        assertThat(new String(store(directory, users(root)).load(NAME))).isEqualTo("old");
+        assertThat(String.valueOf(store(directory, users(root)).load(NAME))).isEqualTo("old");
         store(directory, users(root)).store(NAME, "new".toCharArray());
 
         assertThat(Files.readString(file)).isEqualTo("new");
@@ -344,7 +344,7 @@ class SecretStoreTest {
         UserPrincipal owner = Files.getOwner(file);
         Files.getFileAttributeView(file, AclFileAttributeView.class).setAcl(List.of(allowAll(owner), allowAll(system())));
 
-        assertThat(new String(store(directory).load(NAME))).isEqualTo("old");
+        assertThat(String.valueOf(store(directory).load(NAME))).isEqualTo("old");
         store(directory).store(NAME, "new".toCharArray());
 
         assertThat(Files.readString(file)).isEqualTo("new");

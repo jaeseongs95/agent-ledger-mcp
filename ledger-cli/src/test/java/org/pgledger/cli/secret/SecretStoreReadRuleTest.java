@@ -50,7 +50,7 @@ class SecretStoreReadRuleTest {
 
         assertThatCode(() -> store(directory).check(NAME)).doesNotThrowAnyException();
         assertThat(store(directory).exists(NAME)).isTrue();
-        assertThat(new String(store(directory).load(NAME))).isEqualTo("old-value");
+        assertThat(String.valueOf(store(directory).load(NAME))).isEqualTo("old-value");
         store(directory).store(NAME, "new-value".toCharArray());
 
         assertThat(Files.readString(file)).isEqualTo("new-value");
@@ -70,8 +70,8 @@ class SecretStoreReadRuleTest {
         assumeTrue(BroadAccess.link(other.resolve(NAME.value()), file), "this process may not make symbolic links");
 
         assertThat(store(directoryLink).exists(NAME)).isTrue();
-        assertThat(new String(store(directoryLink).load(NAME))).isEqualTo("through-a-link");
-        assertThat(new String(store(other).load(NAME))).isEqualTo("through-a-link");
+        assertThat(String.valueOf(store(directoryLink).load(NAME))).isEqualTo("through-a-link");
+        assertThat(String.valueOf(store(other).load(NAME))).isEqualTo("through-a-link");
         assertThatCode(() -> store(other).check(NAME)).doesNotThrowAnyException();
     }
 
