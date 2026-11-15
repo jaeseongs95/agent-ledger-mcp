@@ -178,7 +178,7 @@ public class AttachmentPanels {
     /**
      * The attachment to download.
      *
-     * @throws LookupException NOT_FOUND when the id is no attachment, when it has no file, or when the attachments are not configured
+     * @throws LookupException ARTIFACT_NOT_FOUND when the id is no attachment, when it has no file, or when the attachments are not configured
      */
     public Download download(String attachmentId) {
         if (stores.getIfAvailable() == null) {
@@ -219,6 +219,6 @@ public class AttachmentPanels {
     }
 
     private static LookupException notFound(String attachmentId) {
-        return new LookupException(LookupCode.NOT_FOUND, List.of("attachment", attachmentId));
+        return new LookupException(LookupCode.ARTIFACT_NOT_FOUND, List.of(attachmentId));
     }
 }

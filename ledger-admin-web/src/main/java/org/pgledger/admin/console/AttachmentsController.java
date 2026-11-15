@@ -7,6 +7,7 @@ import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 
@@ -20,9 +21,18 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class AttachmentsController {
 
     private final AttachmentPanels panels;
+    private final AttachmentHealth health;
 
-    public AttachmentsController(AttachmentPanels panels) {
+    public AttachmentsController(AttachmentPanels panels, AttachmentHealth health) {
         this.panels = panels;
+        this.health = health;
+    }
+
+    /** The health of the attachments: the read-only result of the attachment check (nothing is moved). */
+    @GetMapping("/attachments")
+    String health(Model model) {
+        model.addAttribute("health", health.health());
+        return "attachments";
     }
 
     @GetMapping("/attachments/{id}/download")

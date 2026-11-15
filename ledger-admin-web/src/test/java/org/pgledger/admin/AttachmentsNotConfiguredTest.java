@@ -40,6 +40,18 @@ class AttachmentsNotConfiguredTest {
     private ApplicationContext context;
 
     @Test
+    @DisplayName("ata023_healthPageNotConfigured: the attachment check page says that nothing is configured and shows no counts")
+    void ata023_healthPageNotConfigured() throws Exception {
+        Browser browser = Browser.signedIn(mvc);
+
+        String page = browser.perform(browser.get("/attachments")).andExpect(status().isOk()).andReturn().getResponse()
+                .getContentAsString();
+
+        assertThat(page).contains("id=\"attachments-not-configured\"").doesNotContain("id=\"attachments-counts\"")
+                .contains("attachments-check --purge-orphans empties the quarantine");
+    }
+
+    @Test
     @DisplayName("ata023_notConfigured: without the attachment settings the history page shows the metadata and a message instead of the content, and the download is 404")
     void ata023_notConfigured() throws Exception {
         assertThat(context.getBeanNamesForType(org.pgledger.application.attachment.AttachmentStore.class)).isEmpty();
