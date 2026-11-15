@@ -196,7 +196,7 @@ class TlsDeployTest {
     }
 
     @Test
-    @DisplayName("FUP-NGX-03 the 443 blocks of the automatic site hide the version; the pending site has the port 80 blocks only; the operator's certificate site has no zone, no limit and no server_tokens")
+    @DisplayName("FUP-NGX-03 the 443 blocks of the automatic site hide the version; the pending site has the port 80 blocks only; the operator's certificate site hides the version in its 443 blocks too, and has no zone and no limit")
     void fupNgx03_theOtherBlocks() {
         String issued = site(issued(automatic(), true));
         String pending = site(issued(automatic(), false));
@@ -207,7 +207,12 @@ class TlsDeployTest {
             assertThat(issued).contains("    server_name " + host + ";\n\n    server_tokens off;\n    ssl_certificate ");
         }
         assertThat(count(pending, "server_tokens off;")).isEqualTo(2);
-        assertThat(operator).doesNotContain("server_tokens", "limit_req", "limit_conn", "client_max_body_size", "keepalive_timeout",
+        // the operator's own certificate: both 443 blocks hide the version (the Server header must not show the nginx version); it has no port 80 block
+        assertThat(count(operator, "server_tokens off;")).as("two 443 blocks").isEqualTo(2);
+        for (String host : List.of(MCP, ADMIN)) {
+            assertThat(operator).contains("    server_name " + host + ";\n\n    server_tokens off;\n    ssl_certificate ");
+        }
+        assertThat(operator).doesNotContain("listen 80", "limit_req", "limit_conn", "client_max_body_size", "keepalive_timeout",
                 "_zone ");
     }
 

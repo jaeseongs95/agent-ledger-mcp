@@ -25,7 +25,7 @@ import java.util.stream.Stream;
  * root only for {@code /.well-known/acme-challenge/<token>} with a base64url token (RFC 8555 section 8.3) and the methods GET
  * and HEAD, answers 404 to everything else below that path, and redirects the rest to the fixed name of the block (never to
  * {@code $host}). It limits the size and the time of a request, the rate of the requests and the number of connections of an
- * address (answer 429), and hides the version ({@code server_tokens off}, in the 443 blocks too). The only lines outside a
+ * address (answer 429), and hides the version ({@code server_tokens off}; the 443 blocks hide it as well, with the operator's own certificate too). The only lines outside a
  * {@code server} block are the two shared memory zones of those limits, {@code limit_req_zone} and {@code limit_conn_zone}, which
  * nginx allows in the {@code http} context only: the file is included there ({@code conf.d} or {@code sites-enabled}). Their names
  * carry the name of the instance, so a zone is used by this site only; declaring a zone changes the behaviour of no other site
@@ -146,10 +146,8 @@ final class NginxSite {
         Text.line(site, "    listen [::]:443 ssl;");
         Text.line(site, "    server_name " + String.join(" ", hosts) + ";");
         Text.line(site, "");
-        if (p.nginx().acme() != null) {
-            // the version is hidden in the blocks of the automatic site; the operator's own certificate site stays as it was
-            Text.line(site, "    server_tokens off;");
-        }
+        // the version is hidden in every 443 block, with the operator's own certificate and with the automatic one
+        Text.line(site, "    server_tokens off;");
         Text.line(site, "    ssl_certificate " + p.nginx().certificate() + ";");
         Text.line(site, "    ssl_certificate_key " + p.nginx().key() + ";");
         Text.line(site, "    ssl_protocols TLSv1.2 TLSv1.3;");
