@@ -158,6 +158,14 @@ class ArchitectureTest {
     }
 
     @Test
+    @DisplayName("TXD-005 (principle 4.4) the CLI opens no transaction: no TransactionTemplate, no @Transactional; a transaction is a method of an application service")
+    void txd005_noTransactionBoundaryInTheCli() {
+        ArchitectureRules.noTransactionTemplate().check(MAIN);
+        ArchitectureRules.transactionalOnlyOnServiceClasses().check(MAIN);
+        ArchitectureRules.transactionalOnlyOnServiceMethods().check(MAIN);
+    }
+
+    @Test
     @DisplayName("Configuration comes from ConfigurationProperties records, never @Value")
     void noValueAnnotation() {
         noFields().should().beAnnotatedWith(Value.class).check(MAIN);

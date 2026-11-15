@@ -116,6 +116,11 @@ class ArchitectureTest {
                                 "org.springframework.jdbc.core.JdbcTemplate")
                         .orShould().dependOnClassesThat().haveFullyQualifiedName(
                                 "org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate")),
+                new Rule("TXD-005 no TransactionTemplate in the admin", ArchitectureRules.noTransactionTemplate()),
+                new Rule("TXD-005 @Transactional on no class of the admin but a @Service",
+                        ArchitectureRules.transactionalOnlyOnServiceClasses()),
+                new Rule("TXD-005 @Transactional on no method of the admin but a method of a @Service",
+                        ArchitectureRules.transactionalOnlyOnServiceMethods()),
                 new Rule("ARC-033 the admin does not depend on the ledger write workflow services",
                         noClasses().that().resideInAPackage("org.pgledger.admin..").should().dependOnClassesThat()
                                 .resideInAPackage("org.pgledger.application.write..")),

@@ -3,6 +3,7 @@ package org.pgledger.testing;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.fields;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noFields;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 
 import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.JavaClass;
@@ -109,6 +110,32 @@ public final class ArchitectureRules {
     /** ARC-018, second half. */
     public static ArchRule staticFieldsAreFinal() {
         return fields().that().areStatic().should().beFinal();
+    }
+
+    private static final String TRANSACTIONAL = "org.springframework.transaction.annotation.Transactional";
+    private static final String SERVICE = "org.springframework.stereotype.Service";
+
+    /**
+     * ARC-013 / TXD-005 (principle 4.4): nothing opens a transaction by hand. A transaction is declared with
+     * {@code @Transactional} on a service method; {@code TransactionTemplate} (made with {@code new}, or injected) is not used.
+     */
+    public static ArchRule noTransactionTemplate() {
+        return noClasses().should().dependOnClassesThat()
+                .haveFullyQualifiedName("org.springframework.transaction.support.TransactionTemplate");
+    }
+
+    /**
+     * ARC-013 / TXD-005: the transaction boundary is the service layer. A class that is no {@code @Service} (a repository, a
+     * controller, a command, a tool, a configuration) is not annotated with {@code @Transactional}.
+     */
+    public static ArchRule transactionalOnlyOnServiceClasses() {
+        return noClasses().that().areNotAnnotatedWith(SERVICE).should().beAnnotatedWith(TRANSACTIONAL);
+    }
+
+    /** ARC-013 / TXD-005: the same for a method: only a method of a {@code @Service} is {@code @Transactional}. */
+    public static ArchRule transactionalOnlyOnServiceMethods() {
+        return noMethods().that().areDeclaredInClassesThat().areNotAnnotatedWith(SERVICE).should()
+                .beAnnotatedWith(TRANSACTIONAL);
     }
 
     /** ARC-019 / ARC-024: no time without the injected Clock, no default zone, no legacy date classes. */

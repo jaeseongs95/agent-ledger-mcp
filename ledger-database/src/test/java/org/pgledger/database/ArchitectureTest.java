@@ -107,6 +107,17 @@ class ArchitectureTest {
                                 .orShould().dependOnClassesThat().resideInAPackage("com.zaxxer.hikari..")
                                 .orShould().dependOnClassesThat().haveFullyQualifiedName(
                                         "org.springframework.jdbc.datasource.SimpleDriverDataSource")),
+                // principle 4.4: nothing opens a transaction by hand. Two classes still do, and wait for the service layer: the
+                // migrator opens one per version on the data source that is scoped to the schema setting of the run (a
+                // transaction manager bean of the application belongs to the other, unscoped data source, and the twenty
+                // tests that make a migrator by hand would need a Spring context), and the legacy source opens the read-only
+                // snapshot on the second data source for LegacyImportService (a service of the application module, which has to
+                // declare it). Each is named here with its reason; a third class is a finding.
+                new Rule("TXD-005 no TransactionTemplate here, but the migrator and the legacy source (see the comment)",
+                        noClasses().that().doNotHaveFullyQualifiedName("org.pgledger.database.schema.SchemaMigrator")
+                                .and().doNotHaveFullyQualifiedName("org.pgledger.database.repository.LegacySourceRepository")
+                                .should().dependOnClassesThat().haveFullyQualifiedName(
+                                        "org.springframework.transaction.support.TransactionTemplate")),
                 // principle 3.9: a pool is the return value of a @Bean method, which the container closes; no class keeps one
                 new Rule("TXD-004 no class holds a connection pool in a field", noFields().should().haveRawType(
                         com.zaxxer.hikari.HikariDataSource.class)),

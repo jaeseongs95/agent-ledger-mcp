@@ -112,6 +112,11 @@ class ArchitectureTest {
                                 "org.springframework.jdbc.core.JdbcTemplate")
                         .orShould().dependOnClassesThat().haveFullyQualifiedName(
                                 "org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate")),
+                new Rule("TXD-005 no TransactionTemplate in the MCP server", ArchitectureRules.noTransactionTemplate()),
+                new Rule("TXD-005 @Transactional on no class of the MCP server but a @Service",
+                        ArchitectureRules.transactionalOnlyOnServiceClasses()),
+                new Rule("TXD-005 @Transactional on no method of the MCP server but a method of a @Service",
+                        ArchitectureRules.transactionalOnlyOnServiceMethods()),
                 new Rule("the tools call services only: no class of the tool package depends on a repository",
                         noClasses().that().resideInAPackage("org.pgledger.mcp.tool..").should().dependOnClassesThat()
                                 .haveSimpleNameEndingWith("Repository")),
