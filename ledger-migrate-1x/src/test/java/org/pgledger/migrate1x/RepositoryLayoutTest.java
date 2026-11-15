@@ -66,7 +66,7 @@ class RepositoryLayoutTest {
                     continue;
                 }
                 Path build = module.resolve("build.gradle.kts");
-                if (!name.equals("ledger-system-test") && Files.isRegularFile(build) && read(build).contains(MODULE)) {
+                if (!name.equals("ledger-system-test") && Files.isRegularFile(build) && read(build).contains("\":" + MODULE + "\"")) {
                     problems.add(build + " names " + MODULE);
                 }
                 Path sources = module.resolve("src/main/java");

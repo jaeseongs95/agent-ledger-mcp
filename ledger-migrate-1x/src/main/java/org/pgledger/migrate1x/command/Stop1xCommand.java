@@ -145,8 +145,8 @@ public class Stop1xCommand implements Command {
     /** The host names of the 1.x environment file against the options the installer of 2.0 will get; before anything is stopped. */
     private void checkHostNames(ApplicationArguments arguments) {
         Optional<String> env = CliOptions.value(arguments, ENV);
-        List<String> mcpHosts = names(CliOptions.value(arguments, MCP_HOST));
-        List<String> adminHosts = names(CliOptions.value(arguments, ADMIN_HOST));
+        List<String> mcpHosts = names(CliOptions.value(arguments, MCP_HOST).orElse(""));
+        List<String> adminHosts = names(CliOptions.value(arguments, ADMIN_HOST).orElse(""));
         if (env.isEmpty()) {
             // the names have nothing to be compared with: an option that would pass silently is refused
             if (!mcpHosts.isEmpty() || !adminHosts.isEmpty()) {
@@ -154,12 +154,13 @@ public class Stop1xCommand implements Command {
             }
             return;
         }
-        Hosts1x.require(Path.of(env.get()), mcpHosts, adminHosts);
+        Hosts1x.require(Path.of(env.orElseThrow()), mcpHosts, adminHosts);
     }
 
-    private static List<String> names(Optional<String> option) {
+    /** The names of a comma list as given ({@code ""} when the option was not given). */
+    private static List<String> names(String option) {
         List<String> names = new ArrayList<>();
-        for (String entry : option.orElse("").split(",")) {
+        for (String entry : option.split(",")) {
             if (!entry.isBlank()) {
                 names.add(entry.strip());
             }
