@@ -29,7 +29,9 @@ class MessagesTest {
                 "key-register.registered", "key-register.replaced", "key-register.server", "key-revoke.revoked",
                 "migrate.applied", "migrate.current", "import-legacy.table", "import-legacy.imported", "import-legacy.verified",
                 "import-legacy.violation", "import-legacy.direction", "import-legacy.direction.relation", "import-legacy.mismatch", "retire-legacy.object", "retire-legacy.listed", "retire-legacy.removed", "driver-register.registered", "project-add.added", "code-set.set",
-                "codes.line", "codes.line.relation", "grant.issued", "grant.never", "revoke.revoked", "grants.none", "grants.line", "mcp-check.ok"));
+                "codes.line", "codes.line.relation", "grant.issued", "grant.never", "revoke.revoked", "grants.none", "grants.line", "mcp-check.ok",
+                "attachments-check.summary", "attachments-check.files", "attachments-check.missing", "attachments-check.damaged",
+                "attachments-check.unreferenced", "attachments-check.purged", "attachments-rekey.done", "attachments-key-create.created"));
         for (ErrorCode code : ErrorCode.values()) {
             required.add(code.messageKey());
         }

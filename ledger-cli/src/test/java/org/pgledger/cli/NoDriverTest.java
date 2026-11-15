@@ -45,7 +45,12 @@ class NoDriverTest {
                 Arguments.of((Object) new String[] { "grant", "claude:e2e-author", "e2e", "defect" }),
                 Arguments.of((Object) new String[] { "revoke", "claude:e2e-author" }),
                 Arguments.of((Object) new String[] { "key-revoke", "claude:e2e-author", "--fingerprint=abc" }),
-                Arguments.of((Object) new String[] { "grants" }));
+                Arguments.of((Object) new String[] { "grants" }),
+                // ATA-008, ATA-022, ATA-031: the commands of the attachments need the ledger database as well
+                Arguments.of((Object) new String[] { "attachments-check" }),
+                Arguments.of((Object) new String[] { "attachments-check", "--purge-orphans" }),
+                Arguments.of((Object) new String[] { "attachments-rekey", "--from=key-a" }),
+                Arguments.of((Object) new String[] { "attachments-key-create" }));
     }
 
     @ParameterizedTest(name = "{0}")

@@ -73,7 +73,10 @@ public enum ErrorCode {
     TLS_ISSUE_FAILED,
     TLS_NO_CERTIFICATE,
     TLS_NO_ACCOUNT,
-    TLS_FILES_FAILED;
+    TLS_FILES_FAILED,
+    ATTACHMENTS_NOT_CONFIGURED,
+    ATTACHMENTS_NOT_CLEAN,
+    ATTACHMENTS_REKEY_FROM_ACTIVE;
 
     public String messageKey() {
         return "error." + name();
