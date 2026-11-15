@@ -6,7 +6,6 @@ import jakarta.servlet.http.HttpSession;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.pgledger.domain.error.AdminCode;
@@ -42,7 +41,7 @@ public class ApprovalInterceptor implements HandlerInterceptor {
         if (SAFE_METHODS.contains(method) || EXEMPT_PATHS.contains(path)) {
             return false;
         }
-        return !(Objects.equals("DELETE", method) && Objects.equals(CODES, path));
+        return !("DELETE".equals(method) && CODES.equals(path));
     }
 
     @Override
