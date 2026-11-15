@@ -186,7 +186,7 @@ class JarProcessTest {
     }
 
     @Test
-    @DisplayName("HK-021 on a JDK older than 25 the JVM refuses the jar with UnsupportedClassVersionError (needs LEDGER_HOOK_LEGACY_JAVA)")
+    @DisplayName("HK-021 on a JDK older than 25 the JVM refuses the jar with UnsupportedClassVersionError: 69.0 for the hook classes, 61.0 for the launcher of Spring Boot on a JDK older than 17 (needs LEDGER_HOOK_LEGACY_JAVA)")
     void olderJdkFailsClearly(HookJar jar) throws IOException {
         // The path of a JDK older than 25 is a property of the build machine, not of the product: the test reads it
         // from the environment of the machine and is skipped (NOT_RUN) where there is none.
@@ -197,6 +197,7 @@ class JarProcessTest {
         Run run = jar.start(Path.of(legacy), List.of(), Map.of(), codex.event(codex.toolName("save"), Json.of("{}")), "codex").run();
         assertThat(run.exit()).isNotZero();
         assertThat(run.stdout()).isEmpty();
-        assertThat(run.err()).contains("UnsupportedClassVersionError").contains("69.0");
+        // the launcher is a Java 17 class file: a JDK of 17 to 24 refuses the hook class (69.0), an older one the launcher (61.0)
+        assertThat(run.err()).contains("UnsupportedClassVersionError").containsPattern("class file version (69|61)\\.0");
     }
 }

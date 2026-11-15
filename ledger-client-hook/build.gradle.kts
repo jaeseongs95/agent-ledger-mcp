@@ -1,16 +1,21 @@
 // One executable jar for the three client hooks: `java -jar ledger-client-hook.jar <claude|codex|antigravity>`, and for
-// the key command `java -jar ledger-client-hook.jar session-key <author>`.
-// Spring is not used here; the Spring Boot plugin (bootJar and its loader) is deliberately absent (HK-018).
+// the key command `java -jar ledger-client-hook.jar session-key <server> <author>`.
+// The hook is a Spring Boot application without a web server (user decision 2026-11-15: 「Spring으로 전환」): the Spring
+// Boot plugin builds the executable jar (bootJar). The start time of the JVM is no reason to avoid Spring (principle 5.3);
+// it is measured and handled with the AOT cache, which this build does not set up yet.
+plugins {
+    // Spring Boot Gradle plugin: bootJar builds the one executable jar (java -jar ledger-client-hook.jar); the version is the catalog Boot version.
+    id("org.springframework.boot") version libs.versions.springBoot.get()
+}
 
 val hookJarName = "ledger-client-hook.jar"
-val hookMainClass = "org.pgledger.hook.Main"
 
 dependencies {
-    // Jackson 3 (tools.jackson), version from the Boot BOM; the only third-party runtime dependency (the JDK has no JSON parser).
+    // Jackson 3 (tools.jackson), version from the Boot BOM (the JDK has no JSON parser).
     implementation("tools.jackson.core:jackson-databind")
 
     // The attestation token and the Ed25519 key text forms (pure JDK): the hook signs with them, the server verifies
-    // with the same classes. The jar task below merges this module's classes into ledger-client-hook.jar.
+    // with the same classes. bootJar packs the project jar of this module into BOOT-INF/lib.
     implementation(project(":ledger-attestation"))
 
     // ArchUnit 1.5.1: not in the Boot BOM, see gradle/libs.versions.toml; checks the no-network/no-file rules of HK-018.
@@ -23,29 +28,23 @@ dependencies {
     testImplementation(testFixtures(project(":ledger-attestation")))
 }
 
-tasks.jar {
+// The executable jar keeps its name: the plugin manifests of the three hosts call lib/ledger-client-hook.jar. The plain jar
+// of the module (classifier "plain", not executable) is not used by anything.
+tasks.bootJar {
     archiveFileName = hookJarName
-    manifest {
-        attributes("Main-Class" to hookMainClass)
-        // jackson-core ships Java 17 specific classes under META-INF/versions
-        attributes("Multi-Release" to "true")
-    }
-    // Standard `jar` task with the dependencies merged in: classes of the runtime classpath without signature files,
-    // module descriptors and Maven metadata. Own classes come first, so they win a name clash. The licence and
-    // notice texts of each dependency are kept under META-INF/third-party/<jar> (they would clash at META-INF/).
-    // the dependency jars (Jackson and the project jar of ledger-attestation) are built before they are merged
+    // The licence and notice texts of each dependency stay in the jar under META-INF/third-party/<jar>/, as they did in the
+    // hand-merged jar of the earlier versions (the dependency jars themselves are nested unchanged in BOOT-INF/lib, each with
+    // its own META-INF; this copy keeps them in one place that a reader of the jar finds without opening the nested jars).
+    // The dependency jars (Jackson, the Spring libraries and the project jar of ledger-attestation) are built before they are read.
     dependsOn(configurations.runtimeClasspath)
     val licenseFiles = listOf("META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/*-LICENSE")
     configurations.runtimeClasspath.get().filter { it.name.endsWith(".jar") }.forEach { dependency ->
-        from(zipTree(dependency)) { exclude(licenseFiles) }
         from(zipTree(dependency)) {
             include(licenseFiles)
             eachFile { path = "META-INF/third-party/${dependency.nameWithoutExtension}/$name" }
             includeEmptyDirs = false
         }
     }
-    exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA", "META-INF/maven/**", "**/module-info.class")
-    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 // Plugin directories for the three hosts: manifests and README of clients/<client> plus lib/<jar>.
@@ -56,7 +55,7 @@ val stageTasks = stagedClients.map { client ->
         group = "distribution"
         description = "Stages the $client plugin directory with lib/$hookJarName."
         from(rootProject.layout.projectDirectory.dir("clients/$client"))
-        from(tasks.jar) { into("lib") }
+        from(tasks.bootJar) { into("lib") }
         into(layout.buildDirectory.dir("client-plugins/$client"))
         includeEmptyDirs = false
     }
@@ -69,10 +68,10 @@ val stageClientPlugins = tasks.register("stageClientPlugins") {
 tasks.assemble { dependsOn(stageClientPlugins) }
 
 tasks.test {
-    dependsOn(tasks.jar, stageClientPlugins)
+    dependsOn(tasks.bootJar, stageClientPlugins)
     // What the tests read besides their class path, so that a change of it runs them again: the jar, the staged plugin
     // directories, the manifests of the clients, and the JDK older than 25 of the machine (HK-021, optional).
-    inputs.files(tasks.jar).withPropertyName("hookJar").withPathSensitivity(PathSensitivity.NONE)
+    inputs.files(tasks.bootJar).withPropertyName("hookJar").withPathSensitivity(PathSensitivity.NONE)
     inputs.dir(layout.buildDirectory.dir("client-plugins")).withPropertyName("stagedPlugins").withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.dir(rootProject.layout.projectDirectory.dir("clients")).withPropertyName("clients").withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.property("legacyJava", providers.environmentVariable("LEDGER_HOOK_LEGACY_JAVA").orElse(""))
@@ -82,7 +81,7 @@ tasks.test {
     // the machine is an input that Gradle cannot see. An unchanged run may still be up to date.
     outputs.doNotCacheIf("the tests measure the wall time of real java processes (HK-017)") { true }
     // The tests start the real jar and read the manifests; the paths are passed in, never guessed.
-    systemProperty("ledger.hook.jar", tasks.jar.flatMap { it.archiveFile }.get().asFile.absolutePath)
+    systemProperty("ledger.hook.jar", tasks.bootJar.flatMap { it.archiveFile }.get().asFile.absolutePath)
     systemProperty("ledger.hook.staging", layout.buildDirectory.dir("client-plugins").get().asFile.absolutePath)
     systemProperty("ledger.hook.metrics", layout.buildDirectory.dir("hook-metrics").get().asFile.absolutePath)
     systemProperty("ledger.hook.clients", rootProject.layout.projectDirectory.dir("clients").asFile.absolutePath)

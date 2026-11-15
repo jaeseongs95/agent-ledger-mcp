@@ -8,7 +8,7 @@ evaluationDependsOn(":ledger-mcp-server")
 // the admin web is not started here; its built jar is looked into for a JDBC driver (DRV-013, SET-041)
 evaluationDependsOn(":ledger-admin-web")
 
-// The built client hook jar (ledger-client-hook.jar); the same arrangement as in ledger-mcp-server, the jar is one fat jar.
+// The built client hook jar (ledger-client-hook.jar); the same arrangement as in ledger-mcp-server (its bootJar).
 evaluationDependsOn(":ledger-client-hook")
 
 dependencies {
@@ -20,7 +20,7 @@ dependencies {
     testImplementation("tools.jackson.core:jackson-databind")
 }
 
-val hookJar = project(":ledger-client-hook").tasks.named<Jar>("jar")
+val hookJar = project(":ledger-client-hook").tasks.named<Jar>("bootJar")
 val cliJar = project(":ledger-cli").tasks.named<Jar>("bootJar")
 val mcpJar = project(":ledger-mcp-server").tasks.named<Jar>("bootJar")
 val adminJar = project(":ledger-admin-web").tasks.named<Jar>("bootJar")
