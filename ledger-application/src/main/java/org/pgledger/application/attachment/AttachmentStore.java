@@ -134,6 +134,13 @@ public class AttachmentStore {
         Path file = pathOf(key);
         try {
             prepareFolder(key);
+            // A file that is closed is closed by its data (the valid end segment right after the recorded bytes), never by its
+            // permission bit: the finish made it read only, so opening it for writing would fail with an I/O error where the design
+            // says "conflict" (4.4 step 3: no overwrite). The end segment is checked, so a file that is merely read only is not taken
+            // for a closed one.
+            if (Files.exists(file, LinkOption.NOFOLLOW_LINKS) && endSegmentFollows(file, key, aes, storedBytes, sequence)) {
+                throw conflict();
+            }
             try (FileChannel channel = files.openReadWrite(file); FileLock lock = channel.tryLock(LOCK_POSITION, 1, false)) {
                 if (lock == null) {
                     throw busy(null);
@@ -156,6 +163,14 @@ public class AttachmentStore {
             throw busy(failure);
         } catch (IOException failure) {
             throw failed(failure);
+        }
+    }
+
+    /** True when exactly the end segment of number {@code sequence} follows {@code storedBytes}: the file is closed. Reads only. */
+    private boolean endSegmentFollows(Path file, StorageKey key, AttachmentKeys.Key aes, long storedBytes, long sequence)
+            throws IOException {
+        try (FileChannel probe = files.openRead(file)) {
+            return probe.size() - storedBytes == SegmentCipher.OVERHEAD && isEndMark(probe, storedBytes, aes, key, sequence);
         }
     }
 
