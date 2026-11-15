@@ -1,5 +1,6 @@
 package org.pgledger.database.repository;
 
+import java.util.List;
 import java.util.Optional;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -51,14 +52,13 @@ public class DatabaseEncodingRepository {
     }
 
     /**
-     * The answer of the schema character set probe, or empty when the product of the database has none (nothing is asked then).
-     *
-     * @throws org.springframework.dao.IncorrectResultSizeDataAccessException when the product has the probe and the connection has no
-     *         current schema, so that the database names none
+     * The rows of the schema character set probe, or empty when the product of the database has none (nothing is asked then). A product
+     * that has the probe gives a list: it is empty when the connection has no current schema or the database has no such schema, which
+     * the caller refuses ({@code DatabaseEncoding.requireUtf8Schema}).
      */
-    public Optional<SchemaCharsets> schemaCharsets() {
+    public Optional<List<SchemaCharsets>> schemaCharsets() {
         return sqlBuilder.generateSchemaCharsetProbe().map(sql -> jdbc.sql(sql)
                 .query((rs, row) -> new SchemaCharsets(rs.getString(1), rs.getString(2), rs.getInt(3)))
-                .single());
+                .list());
     }
 }

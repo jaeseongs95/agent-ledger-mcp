@@ -3,6 +3,7 @@ package org.pgledger.database;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
+import java.sql.SQLException;
 import java.text.MessageFormat;
 import java.util.List;
 import java.util.Locale;
@@ -13,13 +14,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.pgledger.database.repository.DatabaseEncodingRepository.SchemaCharsets;
 import org.pgledger.database.repository.SqlBuilder;
 import org.pgledger.database.schema.DatabaseEncoding;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
+import org.springframework.jdbc.UncategorizedSQLException;
 
 /**
- * RUN-026, RUN-027, RUN-028: the judgement of what a database answered to the encoding probe (defect D-0047). The judgements are
+ * RUN-026, RUN-027, RUN-028, RUN-032: the judgement of what a database answered to the encoding probe (defect D-0047). The judgements are
  * functions of the answer, so the refusals are given the answers of a database that is not UTF-8 as values; no database here and
  * nothing replaced on the real path (the probe itself, on the test PostgreSQL, is RUN-029 in {@code SchemaMigratorTest}).
  */
@@ -122,5 +126,80 @@ class DatabaseEncodingTest {
         assertThat(unnamed.args().getFirst()).contains("null");
         refusal(() -> DatabaseEncoding.requireUtf8Schema("utf8mb4", "utf8mb4", 2));
         refusal(() -> DatabaseEncoding.requireUtf8Schema("utf8mb4", "utf8mb4", -1));
+    }
+
+    @Test
+    @DisplayName("RUN-028 the rows of the schema probe: no row is refused (schema character set=none), a row that is not 1 is refused, every row must be accepted")
+    void run028_noRowIsRefusedAndEveryRowIsJudged() {
+        InfrastructureException none = refusal(() -> DatabaseEncoding.requireUtf8Schema(List.of()));
+        assertThat(none.args()).containsExactly("schema character set=none");
+        assertTextsNameWhatTheDatabaseAnswered(none);
+
+        DatabaseEncoding.requireUtf8Schema(List.of(new SchemaCharsets("utf8mb4", "utf8mb4", 1)));
+        InfrastructureException refused = refusal(() -> DatabaseEncoding.requireUtf8Schema(List.of(
+                new SchemaCharsets("utf8mb4", "utf8mb4", 1), new SchemaCharsets("latin1", "utf8mb4", 0))));
+        assertThat(refused.args().getFirst()).contains("latin1");
+    }
+
+    /** A failure of a probe query: the SQLException wrapped the way Spring wraps it. */
+    private static RuntimeException failedWith(SQLException cause) {
+        return new UncategorizedSQLException("StatementCallback", "SELECT 1", cause);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"22P05", "22021", "22000", "22"})
+    @DisplayName("RUN-032 a probe that fails with a SQLSTATE of the class 22 is SCHEMA_ENCODING_NOT_UTF8 naming the SQLSTATE, with the failure as cause")
+    void run032_aDataExceptionIsAnEncodingRefusal(String state) {
+        RuntimeException failure = failedWith(new SQLException("character with byte sequence 0xf0 0x9f 0x98 0x80 has no equivalent", state));
+
+        RuntimeException result = DatabaseEncoding.probeFailure(failure);
+
+        assertThat(DatabaseEncoding.dataExceptionState(failure)).contains(state);
+        assertThat(result).isInstanceOfSatisfying(InfrastructureException.class, refused -> {
+            assertThat(refused.code()).isEqualTo(InfrastructureCode.SCHEMA_ENCODING_NOT_UTF8);
+            assertThat(refused.args()).containsExactly("SQLSTATE=" + state);
+            assertThat(refused.getCause()).isSameAs(failure);
+            assertTextsNameWhatTheDatabaseAnswered(refused);
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"08006", "08001", "42601", "23505", "57014", "2", "HY000", ""})
+    @DisplayName("RUN-032 any other SQLSTATE (a lost connection, a syntax error) is returned unchanged, to be propagated")
+    void run032_anotherFailureIsPropagated(String state) {
+        RuntimeException failure = failedWith(new SQLException("some failure", state));
+
+        assertThat(DatabaseEncoding.dataExceptionState(failure)).isEmpty();
+        assertThat(DatabaseEncoding.probeFailure(failure)).isSameAs(failure);
+    }
+
+    @Test
+    @DisplayName("RUN-032 a null SQLSTATE and a failure with no SQLException are propagated; a class 22 state is found deep in the causes and in the next exceptions")
+    void run032_theChainIsWalked() {
+        RuntimeException noState = failedWith(new SQLException("no state"));
+        RuntimeException noSql = new IllegalStateException("not a database failure");
+        assertThat(DatabaseEncoding.probeFailure(noState)).isSameAs(noState);
+        assertThat(DatabaseEncoding.probeFailure(noSql)).isSameAs(noSql);
+
+        RuntimeException deep = new IllegalStateException("outer", new RuntimeException("middle", new SQLException("inner", "22021")));
+        assertThat(DatabaseEncoding.dataExceptionState(deep)).contains("22021");
+
+        SQLException first = new SQLException("first", "08006");
+        first.setNextException(new SQLException("second", "22P05"));
+        assertThat(DatabaseEncoding.dataExceptionState(failedWith(first))).contains("22P05");
+
+        SQLException wrapper = new SQLException("batch", "HY000", new SQLException("cause", "22021"));
+        assertThat(DatabaseEncoding.dataExceptionState(new IllegalStateException(wrapper))).contains("22021");
+    }
+
+    @Test
+    @DisplayName("RUN-032 the walk ends on a loop of causes or next exceptions")
+    void run032_aLoopEndsTheWalk() {
+        SQLException a = new SQLException("a", "08006");
+        SQLException b = new SQLException("b", "08001");
+        a.setNextException(b);
+        b.setNextException(a);
+        assertThat(DatabaseEncoding.dataExceptionState(failedWith(a))).isEmpty();
+        assertThat(DatabaseEncoding.probeFailure(failedWith(a))).isInstanceOf(UncategorizedSQLException.class);
     }
 }

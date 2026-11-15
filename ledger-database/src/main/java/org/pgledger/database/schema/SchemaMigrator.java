@@ -120,13 +120,19 @@ public class SchemaMigrator {
      * Proves that the database stores UTF-8 before anything is changed: the probe text goes through the probe query of the dialect and
      * has to come back whole ({@link DatabaseEncoding#requireUtf8}); a product that also keeps a default character set for its schemas
      * has that one proved too ({@link DatabaseEncoding#requireUtf8Schema}). The queries are the dialect's ({@link SqlBuilder}); no
-     * name of a character set is compared here.
+     * name of a character set is compared here. A probe query that fails with a data exception is refused as well
+     * ({@link DatabaseEncoding#probeFailure}).
      */
     private void requireUtf8Database() {
-        EncodingProbe probe = encodings.encodingProbe();
-        DatabaseEncoding.requireUtf8(sqlBuilder.countsCodePoints(), probe.length(), probe.value());
-        encodings.schemaCharsets().ifPresent(
-                charsets -> DatabaseEncoding.requireUtf8Schema(charsets.schemaCharset(), charsets.serverCharset(), charsets.verdict()));
+        try {
+            EncodingProbe probe = encodings.encodingProbe();
+            DatabaseEncoding.requireUtf8(sqlBuilder.countsCodePoints(), probe.length(), probe.value());
+            encodings.schemaCharsets().ifPresent(DatabaseEncoding::requireUtf8Schema);
+        } catch (DataAccessException e) {
+            // a data exception (SQLSTATE class 22) of a probe query is the database saying that it cannot store the text: refused as
+            // an encoding problem; any other failure is thrown as it is
+            throw DatabaseEncoding.probeFailure(e);
+        }
     }
 
     /**
