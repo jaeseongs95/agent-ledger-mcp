@@ -20,7 +20,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -260,7 +259,7 @@ class LegacyImportTest {
     }
 
     @Test
-    @DisplayName("MIG-003 / M1X-050 every field of every history row is equal (the JSON text of changes, source_ref from legacy_ref, login, request id, corrects_id), the 1.x operations and assurances arrive under the imported vocabulary (LEGACY_ becomes IMPORTED_), the entity is the upper-case name, and before_data is NULL on every row")
+    @DisplayName("MIG-003 / M1X-050 every field of every history row is equal (the JSON text of changes, source_ref from legacy_ref, login, the 1.x request_id as operation_key, corrects_id), the 1.x operations and assurances arrive under the imported vocabulary (LEGACY_ becomes IMPORTED_), the entity is the upper-case name, and before_data is NULL on every row")
     void mig003_historyFields() {
         withRich(rig -> {
             rig.importAll();
@@ -270,16 +269,19 @@ class LegacyImportTest {
                     + "request_id, legacy_ref FROM " + rig.legacy().schema() + ".history ORDER BY id");
             List<Map<String, Object>> rows = rig.rows("SELECT id, author_id, login, actor_assurance, entity, entity_id, op, "
                     + "from_state, to_state, changes, before_data, reason, evidence_uri, evidence_sha256, corrects_id, "
-                    + "request_id, source_ref FROM history ORDER BY id");
+                    + "operation_key, source_ref FROM history ORDER BY id");
 
             assertThat(rows).hasSameSizeAs(legacyRows).hasSize(10);
             for (int i = 0; i < rows.size(); i++) {
                 Map<String, Object> legacy = legacyRows.get(i);
                 Map<String, Object> row = rows.get(i);
                 for (String column : List.of("id", "login", "entity_id", "from_state", "to_state", "changes",
-                        "reason", "evidence_uri", "evidence_sha256", "corrects_id", "request_id")) {
+                        "reason", "evidence_uri", "evidence_sha256", "corrects_id")) {
                     assertThat(text(row, column)).as("history %s of row %d", column, i).isEqualTo(text(legacy, column));
                 }
+                // the 1.x column request_id is the column operation_key of 2.0 (OPK-018 checks it on its own)
+                assertThat(text(row, "operation_key")).as("history operation_key of row %d", i)
+                        .isEqualTo(text(legacy, "request_id"));
                 // the actor id loses the prefix agent: that 1.x put before a session id (M1X-050, A2); nothing else of it changes
                 assertThat(text(row, "author_id")).as("history author_id of row %d", i)
                         .isEqualTo(withoutAgentPrefix(text(legacy, "author_id")));
@@ -294,6 +296,25 @@ class LegacyImportTest {
                     "CORRECT").noneMatch(op -> op.startsWith("LEGACY_"));
             assertThat(rows.stream().map(row -> text(row, "actor_assurance")).distinct().toList()).contains("IMPORTED_LOGIN",
                     "IMPORTED_UNKNOWN", "IMPORTED_SHARED").noneMatch(assurance -> assurance.startsWith("LEGACY_"));
+        });
+    }
+
+    @Test
+    @DisplayName("OPK-018 the 1.x history.request_id of every row is copied into history.operation_key with an equal value (the 2.0 table has no column request_id), and no 1.x receipt is imported")
+    void opk018_requestIdBecomesOperationKey() {
+        withRich(rig -> {
+            rig.importAll();
+
+            List<String> legacyKeys = rig.legacy().rows("SELECT id, request_id FROM " + rig.legacy().schema()
+                    + ".history ORDER BY id").stream().map(row -> text(row, "request_id")).toList();
+            List<String> keys = rig.rows("SELECT id, operation_key FROM history ORDER BY id").stream()
+                    .map(row -> text(row, "operation_key")).toList();
+
+            assertThat(legacyKeys).hasSize(10).doesNotContainNull();
+            assertThat(keys).containsExactlyElementsOf(legacyKeys);
+            assertThat(rig.ctx().jdbc().sql("SELECT * FROM history").query().rowSet().getMetaData().getColumnNames())
+                    .contains("operation_key").doesNotContain("request_id");
+            assertThat(rig.count("SELECT COUNT(*) FROM request_receipt")).isZero();
         });
     }
 
@@ -327,7 +348,7 @@ class LegacyImportTest {
             ctx.enroll(SEED);
             ctx.bean(GrantService.class).grant(new GrantCommand(SEED, "e2e", List.of("verify"), null, null), TestOwners.OWNER);
             // E2E-D-0007 is SOURCE_FIXED and its only fix is the one of this session
-            Expect.failure(() -> ctx.bean(ReviewService.class).review(SEED, new TransitionCommand(null, "defect", "E2E-D-0007",
+            Expect.failure(() -> ctx.bean(ReviewService.class).review(SEED, new TransitionCommand(Scenario.uuid(), "defect", "E2E-D-0007",
                     2L, "VERIFIED", Scenario.REASON, Scenario.EVIDENCE, null, null)), TransitionCode.SAME_SESSION);
         });
     }
@@ -338,7 +359,7 @@ class LegacyImportTest {
     }
 
     @Test
-    @DisplayName("M1X-003 (replaces MIG-004) the request receipts of 1.x are not imported: the new request_receipt is empty after the import, the report names twelve tables and none of them is request_receipt, the table has no column origin, and the comparison of the other twelve is equal")
+    @DisplayName("M1X-003 (replaces MIG-004; reworded for operationKey) the request receipts of 1.x are not imported, so no 1.x answer can be replayed: the old key is refused as an unknown argument by 2.0, a lost 1.x answer cannot cause a second write; the new request_receipt (keyed by operation_key) is empty after the import, the report names twelve tables and none of them is request_receipt, the table has no column origin, and the comparison of the other twelve is equal")
     void m1x003_receiptsAreNotImported() {
         withRich(rig -> {
             assertThat(rig.legacy().count("request_receipt")).as("the 1.x fixture holds receipts").isEqualTo(3);
@@ -354,9 +375,9 @@ class LegacyImportTest {
             assertThat(report.detail()).doesNotContain("request_receipt");
             // the column list of the table, from the metadata of a query on it: no column origin (it held LEGACY or NATIVE)
             assertThat(rig.ctx().jdbc().sql("SELECT * FROM request_receipt").query().rowSet().getMetaData().getColumnNames())
-                    .containsExactlyInAnyOrder("request_id", "operation", "payload_sha256", "author_id", "login", "response",
+                    .containsExactlyInAnyOrder("operation_key", "operation", "payload_sha256", "author_id", "login", "response",
                             "created_at")
-                    .doesNotContain("origin");
+                    .doesNotContain("origin", "request_id");
             // the verification does not look at the receipts either, and the 1.x receipts are still there (nothing is changed)
             assertThat(rig.service().verify().tables()).hasSize(12).allMatch(TableCheck::matches);
             assertThat(rig.legacy().count("request_receipt")).isEqualTo(3);
@@ -398,10 +419,10 @@ class LegacyImportTest {
         withRich(rig -> {
             rig.importAll();
             SaveService save = rig.ctx().bean(SaveService.class);
-            String requestId = UUID.randomUUID().toString();
-            SaveCommand command = new SaveCommand(requestId, "defect", null, 0L, Fields.of(defectFields("old", "after the import")),
+            String operationKey = Scenario.uuid();
+            SaveCommand command = new SaveCommand(operationKey, "defect", null, 0L, Fields.of(defectFields("old", "after the import")),
                     Scenario.REASON);
-            String token = TestKeyRing.token(TestKeyRing.newPair(), SEED, "ledger_save", requestId,
+            String token = TestKeyRing.token(TestKeyRing.newPair(), SEED, "ledger_save", operationKey,
                     rig.ctx().clock().instant());
 
             LedgerException refused = Expect.failure(() -> asTool("ledger_save", () -> save.save(token, command)),
@@ -409,10 +430,10 @@ class LegacyImportTest {
 
             assertThat(refused.args()).isEmpty();
             assertThat(rig.count("SELECT COUNT(*) FROM defect WHERE title = ?", "after the import")).isZero();
-            assertThat(rig.count("SELECT COUNT(*) FROM request_receipt WHERE request_id = ?", requestId)).isZero();
+            assertThat(rig.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ?", operationKey)).isZero();
 
             rig.ctx().enroll(SEED);
-            SaveResult saved = save.save(SEED, new SaveCommand(null, "defect", null, 0L, Fields.of(defectFields("old", "after the key")),
+            SaveResult saved = save.save(SEED, new SaveCommand(Scenario.uuid(), "defect", null, 0L, Fields.of(defectFields("old", "after the key")),
                     Scenario.REASON));
             assertThat(saved.author()).isEqualTo(SEED);
             assertThat(saved.id()).isEqualTo("OLD-D-0004");
@@ -688,12 +709,12 @@ class LegacyImportTest {
 
             assertThat(rig.ctx().jdbc().sql("SELECT severity FROM defect WHERE id = 'OLD-D-0003'").query(String.class).single())
                     .isEqualTo("UNRATED");
-            ValidationException refused = (ValidationException) Expect.failure(() -> save.save(SEED, new SaveCommand(null,
+            ValidationException refused = (ValidationException) Expect.failure(() -> save.save(SEED, new SaveCommand(Scenario.uuid(),
                     "defect", "OLD-D-0003", 1L, Fields.of("title", "unrated, edited"), Scenario.REASON)),
                     ValidationCode.CODE_INVALID);
             assertThat(refused.args()).startsWith("defect.severity", "UNRATED");
 
-            SaveResult edited = save.save(SEED, new SaveCommand(null, "defect", "OLD-D-0003", 1L,
+            SaveResult edited = save.save(SEED, new SaveCommand(Scenario.uuid(), "defect", "OLD-D-0003", 1L,
                     Fields.of(Map.of("title", "unrated, edited", "severity", "P3")), Scenario.REASON));
             assertThat(edited.version()).isEqualTo(2);
             assertThat(rig.ctx().jdbc().sql("SELECT severity FROM defect WHERE id = 'OLD-D-0003'").query(String.class).single())
@@ -859,36 +880,36 @@ class LegacyImportTest {
                     TestOwners.OWNER);
             ctx.bean(GrantService.class).grant(new GrantCommand(SEED, "old", List.of("fix"), null, null), TestOwners.OWNER);
 
-            SaveResult created = ctx.bean(SaveService.class).save(SEED, new SaveCommand(null, "defect", null, 0L,
+            SaveResult created = ctx.bean(SaveService.class).save(SEED, new SaveCommand(Scenario.uuid(), "defect", null, 0L,
                     Fields.of(defectFields("old", "after the import")), Scenario.REASON));
             assertThat(created.id()).isEqualTo("OLD-D-0004");
             assertThat(created.historyId()).isGreaterThan(57);
-            SaveResult task = ctx.bean(SaveService.class).save(SEED, new SaveCommand(null, "task", null, 0L,
+            SaveResult task = ctx.bean(SaveService.class).save(SEED, new SaveCommand(Scenario.uuid(), "task", null, 0L,
                     Fields.of(Map.of("project_id", "old", "title", "new task", "purpose", "p", "success_condition", "s")),
                     Scenario.REASON));
             assertThat(task.id()).isEqualTo("OLD-T-0001");
 
-            SaveResult edited = ctx.bean(SaveService.class).save(SEED, new SaveCommand(null, "defect", "OLD-D-0001", 1L,
+            SaveResult edited = ctx.bean(SaveService.class).save(SEED, new SaveCommand(Scenario.uuid(), "defect", "OLD-D-0001", 1L,
                     Fields.of("title", "edited after the import"), Scenario.REASON));
             assertThat(edited.version()).isEqualTo(2);
             assertThat(edited.historyId()).isGreaterThan(created.historyId());
 
-            RecordCaseResult observed = ctx.bean(RecordCaseService.class).recordCase(SEED, new RecordCaseCommand(null,
+            RecordCaseResult observed = ctx.bean(RecordCaseService.class).recordCase(SEED, new RecordCaseCommand(Scenario.uuid(),
                     "OLD-D-0001", "seen again after the import", Scenario.REASON, null, null, null));
             assertThat(observed.caseId()).isEqualTo(6);
 
-            RecordFixResult fixed = ctx.bean(RecordFixService.class).recordFix(SEED, new RecordFixCommand(null, "OLD-D-0001",
+            RecordFixResult fixed = ctx.bean(RecordFixService.class).recordFix(SEED, new RecordFixCommand(Scenario.uuid(), "OLD-D-0001",
                     "repo/old", "d".repeat(40), Scenario.REASON, null, null, null, null, null));
             assertThat(fixed.fixId()).isEqualTo(10);
             assertThat(fixed.version()).isEqualTo(3);
             assertThat(fixed.defectStatus()).isEqualTo("SOURCE_FIXED");
 
-            TransitionResult verified = ctx.bean(ReviewService.class).review(reviewer, new TransitionCommand(null, "defect",
+            TransitionResult verified = ctx.bean(ReviewService.class).review(reviewer, new TransitionCommand(Scenario.uuid(), "defect",
                     "OLD-D-0001", fixed.version(), "VERIFIED", Scenario.REASON, Scenario.EVIDENCE, null, null));
             assertThat(verified.version()).isEqualTo(4);
             assertThat(verified.historyId()).isGreaterThan(fixed.historyId());
 
-            TransitionResult moved = ctx.bean(TransitionService.class).transition(SEED, new TransitionCommand(null, "task",
+            TransitionResult moved = ctx.bean(TransitionService.class).transition(SEED, new TransitionCommand(Scenario.uuid(), "task",
                     "OLD-T-1", 1L, "ACTIVE", Scenario.REASON, null, null, null));
             assertThat(moved.version()).isEqualTo(2);
             // every history row written after the import has an id above the imported ones, the ids continue without a gap

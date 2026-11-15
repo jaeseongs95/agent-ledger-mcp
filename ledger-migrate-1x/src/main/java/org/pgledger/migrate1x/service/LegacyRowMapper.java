@@ -76,7 +76,8 @@ import org.springframework.stereotype.Component;
  * {@code granted_by}) loses the prefix {@code agent:} that 1.x put before a session id: {@code agent:claude:s1} is the session
  * {@code claude:s1} of 2.0, so the checks of one session (VERIFIED, owner and reporter) hold across the import (M1X-050). Nothing
  * else of the id changes; the text of the JSON columns {@code changes} is copied as it is.</li>
- * <li>The request receipts of 1.x are not mapped: they are not copied (M1X-003).</li>
+ * <li>The request receipts of 1.x are not mapped: they are not copied (M1X-003). The column {@code history.request_id} of 1.x
+ * is copied into {@code history.operation_key}.</li>
  * </ul>
  */
 @Component
@@ -364,9 +365,11 @@ final class LegacyRowMapper {
 
     private static void history(LegacyRow s, Map<String, Object> t, Violations v) {
         copy(s, t, "id", "author_id", "login", "entity_id", "from_state", "to_state", "changes", "reason", "evidence_uri",
-                "evidence_sha256", "corrects_id", "request_id");
+                "evidence_sha256", "corrects_id");
         // the new schema names the column occurred_at (AT is a reserved word of SQL:2003); the legacy one is at
         t.put("occurred_at", s.get("at"));
+        // and operation_key where 1.x had request_id: the request id of the 1.x write that made the row (a UUID text)
+        t.put("operation_key", s.get("request_id"));
         // and source_ref where 1.x had legacy_ref: the reference of the row in the ledger it was imported from
         t.put("source_ref", s.get("legacy_ref"));
         t.put("entity", nameOf(v, "entity", s.text("entity"), HistoryEntity.values()));
