@@ -46,7 +46,7 @@ public record AttachmentProperties(@NotNull Path directory, @NotNull Path keyDir
             directory = directory.toAbsolutePath().normalize();
             keyDirectory = keyDirectory.toAbsolutePath().normalize();
             if (keyDirectory.startsWith(directory)) {
-                throw new InfrastructureException(InfrastructureCode.ATTACHMENT_KEY_DIRECTORY_INSIDE_STORAGE, List.of());
+                throw new InfrastructureException(InfrastructureCode.ARTIFACT_KEY_DIRECTORY_INSIDE_STORAGE, List.of());
             }
         }
         require(maxFileBytes.toBytes() >= 1, "max-file-bytes");

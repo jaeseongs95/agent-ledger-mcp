@@ -69,7 +69,7 @@ public class SegmentCipher {
      * The plain bytes of a segment.
      *
      * @param body the bytes after the length: IV, ciphertext and tag
-     * @throws InfrastructureException ATTACHMENT_CORRUPTED when the tag does not match (a changed byte, another file, another
+     * @throws InfrastructureException ARTIFACT_CORRUPTED when the tag does not match (a changed byte, another file, another
      *         position, a cut-off tail) or the body is too short to be a segment
      */
     public byte[] open(AttachmentKeys.Key key, StorageKey storage, long segment, boolean last, byte[] body) {
@@ -82,7 +82,7 @@ public class SegmentCipher {
             cipher.updateAAD(aad(storage, segment, last));
             return cipher.doFinal(body, IV_BYTES, body.length - IV_BYTES);
         } catch (GeneralSecurityException failure) {
-            throw new InfrastructureException(InfrastructureCode.ATTACHMENT_CORRUPTED, List.of(), failure);
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of(), failure);
         }
     }
 
@@ -92,6 +92,6 @@ public class SegmentCipher {
     }
 
     private static InfrastructureException corrupted() {
-        return new InfrastructureException(InfrastructureCode.ATTACHMENT_CORRUPTED, List.of());
+        return new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
     }
 }

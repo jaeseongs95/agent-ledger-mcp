@@ -114,7 +114,7 @@ public class UploadService {
     public Begun begin(String actor, Begin command) {
         GateSession session = gate.openWithAnyGrant(actor, Channel.AUTHOR);
         if (command.purpose() != null && !EVIDENCE.equals(command.purpose())) {
-            throw new ValidationException(ValidationCode.UNSUPPORTED_PURPOSE, List.of(command.purpose()), List.of(),
+            throw new ValidationException(ValidationCode.ARTIFACT_UNSUPPORTED_PURPOSE, List.of(command.purpose()), List.of(),
                     java.util.Map.of());
         }
         requireText("operationKey", command.operationKey(), 1, 128);
@@ -140,17 +140,17 @@ public class UploadService {
 
     private Begun create(AuthorId owner, Begin command, Sha256 declared) {
         if (command.size() > properties.maxFileBytes().toBytes()) {
-            throw new ConflictException(ConflictCode.ARTIFACT_QUOTA, List.of("the file is larger than the limit"));
+            throw new ConflictException(ConflictCode.ARTIFACT_LIMIT, List.of("the file is larger than the limit"));
         }
         if (uploads.openCount(owner) >= properties.maxOpenPerOwner()) {
-            throw new ConflictException(ConflictCode.ARTIFACT_QUOTA, List.of("too many open uploads"));
+            throw new ConflictException(ConflictCode.ARTIFACT_LIMIT, List.of("too many open uploads"));
         }
         long open = uploads.openDeclaredBytes();
         if (open + command.size() > properties.stagingBudgetBytes().toBytes()) {
-            throw new ConflictException(ConflictCode.ARTIFACT_QUOTA, List.of("the budget of the open uploads is used"));
+            throw new ConflictException(ConflictCode.ARTIFACT_LIMIT, List.of("the budget of the open uploads is used"));
         }
         if (attachments.keptBytes() + open + command.size() > properties.attachmentBudgetBytes().toBytes()) {
-            throw new ConflictException(ConflictCode.ARTIFACT_QUOTA, List.of("the budget of the kept attachments is used"));
+            throw new ConflictException(ConflictCode.ARTIFACT_LIMIT, List.of("the budget of the kept attachments is used"));
         }
         Instant now = clock.instant();
         UploadStaging row = new UploadStaging(ids.generateId().toString(), owner, command.operationKey(), command.fileName(),
@@ -172,6 +172,7 @@ public class UploadService {
         if (row.state() != UploadState.STAGING) {
             throw new ConflictException(ConflictCode.ARTIFACT_CHUNK_CONFLICT, List.of());
         }
+        requireNotExpired(row);
         if (isRecordedLast(row, sequence, chunkSha256)) {
             return new ChunkPlan.AlreadyHeld(new Received(sequence, row.receivedBytes()));
         }
@@ -183,8 +184,8 @@ public class UploadService {
                     Integer.toString(AttachmentProperties.CHUNK_BYTES));
         }
         if (row.receivedBytes() + plainBytes > row.declaredSize()) {
-            throw new ConflictException(ConflictCode.ARTIFACT_SIZE_MISMATCH,
-                    List.of(Long.toString(row.receivedBytes() + plainBytes), Long.toString(row.declaredSize())));
+            throw new ConflictException(ConflictCode.ARTIFACT_HASH_MISMATCH,
+                    List.of("the chunk passes the declared size " + row.declaredSize()));
         }
         return new ChunkPlan.Append(row);
     }
@@ -224,7 +225,7 @@ public class UploadService {
         AuthorId author = gate.openWithAnyGrant(actor, Channel.AUTHOR).author();
         return attachments.findById(uploadId).filter(found -> Objects.equals(found.createdBy(), author))
                 .<FinishPlan>map(found -> new FinishPlan.Done(finished(found)))
-                .orElseGet(() -> new FinishPlan.Close(ownedUpload(author, uploadId)));
+                .orElseGet(() -> new FinishPlan.Close(openUpload(author, uploadId)));
     }
 
     /**
@@ -237,8 +238,8 @@ public class UploadService {
         Instant now = clock.instant();
         if (!uploads.complete(row.id(), row.nextSequence(), finishedFileBytes, now)) {
             return attachments.findById(row.id()).filter(found -> Objects.equals(found.createdBy(), author))
-                    .map(UploadService::finished).orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND,
-                            List.of("upload", row.id())));
+                    .map(UploadService::finished).orElseThrow(() -> new LookupException(LookupCode.ARTIFACT_NOT_FOUND,
+                            List.of(row.id())));
         }
         Attachment attachment = new Attachment(row.id(), row.fileName(), row.mediaType(), row.declaredSize(),
                 row.declaredSha256(), author, now);
@@ -264,7 +265,7 @@ public class UploadService {
                         .map(found -> new Status(found.id(), UploadState.COMPLETED.name(), found.fileName(),
                                 found.mediaType(), found.sizeBytes(), found.contentSha256().hex(), null, found.sizeBytes(),
                                 null))
-                        .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND, List.of("attachment", id))));
+                        .orElseThrow(() -> new LookupException(LookupCode.ARTIFACT_NOT_FOUND, List.of(id))));
     }
 
     /**
@@ -275,9 +276,9 @@ public class UploadService {
         gate.openWithAnyGrant(actor, Channel.AUTHOR);
         requireUuid("attachmentId", attachmentId);
         Attachment attachment = attachments.findById(attachmentId)
-                .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND, List.of("attachment", attachmentId)));
+                .orElseThrow(() -> new LookupException(LookupCode.ARTIFACT_NOT_FOUND, List.of(attachmentId)));
         AttachmentFile file = files.currentOf(attachmentId).orElseThrow(() -> new InfrastructureException(
-                InfrastructureCode.ATTACHMENT_CORRUPTED, List.of()));
+                InfrastructureCode.ARTIFACT_CORRUPTED, List.of()));
         if (offsetBytes < 0 || offsetBytes > attachment.sizeBytes()) {
             throw ValidationException.invalid("offsetBytes", ValidationReason.OUT_OF_RANGE, "0",
                     Long.toString(attachment.sizeBytes()));
@@ -291,10 +292,26 @@ public class UploadService {
 
     // ------------------------------------------------------------------------------------------------ details
 
+    /** The upload of the author that still receives bytes: not finished and not expired (an expired one waits only for the reaper). */
+    private UploadStaging openUpload(AuthorId author, String uploadId) {
+        UploadStaging row = ownedUpload(author, uploadId);
+        if (row.state() != UploadState.STAGING) {
+            throw new ConflictException(ConflictCode.ARTIFACT_CHUNK_CONFLICT, List.of());
+        }
+        requireNotExpired(row);
+        return row;
+    }
+
+    private void requireNotExpired(UploadStaging row) {
+        if (!row.expiresAt().isAfter(clock.instant())) {
+            throw new ConflictException(ConflictCode.ARTIFACT_EXPIRED, List.of(row.id()));
+        }
+    }
+
     private UploadStaging ownedUpload(AuthorId author, String uploadId) {
         requireUuid("uploadId", uploadId);
         return uploads.findById(uploadId).filter(row -> Objects.equals(row.owner(), author))
-                .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND, List.of("upload", uploadId)));
+                .orElseThrow(() -> new LookupException(LookupCode.ARTIFACT_NOT_FOUND, List.of(uploadId)));
     }
 
     private static Sha256 declaredSha(String text) {

@@ -96,7 +96,7 @@ public class AttachmentStore {
      * @return the length of the file after the chunk: what the database is to record
      * @throws ConflictException ARTIFACT_BUSY when the lock is held (nothing waits); ARTIFACT_CHUNK_CONFLICT when the tail holds
      *         another chunk
-     * @throws InfrastructureException ATTACHMENT_CORRUPTED when the file is shorter than the database says
+     * @throws InfrastructureException ARTIFACT_CORRUPTED when the file is shorter than the database says
      */
     public long append(StorageKey key, String keyId, long storedBytes, long sequence, byte[] plain, Sha256 chunkSha256) {
         AttachmentKeys.Key aes = keys.byId(keyId);
@@ -118,7 +118,7 @@ public class AttachmentStore {
                     requireSameTail(channel, storedBytes, size, aes, key, sequence, chunkSha256);
                     return size;
                 }
-                throw new InfrastructureException(InfrastructureCode.ATTACHMENT_CORRUPTED, List.of());
+                throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
             }
         } catch (OverlappingFileLockException failure) {
             throw busy(failure);
@@ -164,8 +164,8 @@ public class AttachmentStore {
      * end mark and the read-only file, checks again and changes nothing.
      *
      * @return the length of the finished file
-     * @throws ConflictException FINISH_PENDING_CHUNK when a chunk was appended and is not recorded; ARTIFACT_SIZE_MISMATCH,
-     *         ATTACHMENT_HASH_MISMATCH when the bytes are not the declared ones; ARTIFACT_BUSY when the lock is held
+     * @throws ConflictException ARTIFACT_INCOMPLETE when a chunk was appended and is not recorded or bytes are missing;
+     *         ARTIFACT_HASH_MISMATCH when the size or the SHA-256 is not the declared one; ARTIFACT_BUSY when the lock is held
      */
     public long finish(StorageKey key, String keyId, long storedBytes, long nextSequence, long declaredSize,
             Sha256 declaredSha256) {
@@ -181,26 +181,30 @@ public class AttachmentStore {
                 }
                 long size = channel.size();
                 if (size < storedBytes) {
-                    throw new InfrastructureException(InfrastructureCode.ATTACHMENT_CORRUPTED, List.of());
+                    throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
                 }
                 boolean marked = false;
                 if (size > storedBytes) {
                     marked = size - storedBytes == SegmentCipher.OVERHEAD
                             && isEndMark(channel, storedBytes, aes, key, nextSequence);
                     if (!marked) {
-                        throw new ConflictException(ConflictCode.FINISH_PENDING_CHUNK, List.of());
+                        throw new ConflictException(ConflictCode.ARTIFACT_INCOMPLETE, List.of("a chunk is not recorded"));
                     }
                 } else if (finished) {
-                    throw new InfrastructureException(InfrastructureCode.ATTACHMENT_CORRUPTED, List.of());
+                    throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
                 }
                 Sha256Hex.Running digest = Sha256Hex.running();
                 long plainBytes = walk(channel, storedBytes, nextSequence, aes, key, digest);
+                if (plainBytes < declaredSize) {
+                    throw new ConflictException(ConflictCode.ARTIFACT_INCOMPLETE,
+                            List.of("received " + plainBytes + " of " + declaredSize + " bytes"));
+                }
                 if (plainBytes != declaredSize) {
-                    throw new ConflictException(ConflictCode.ARTIFACT_SIZE_MISMATCH,
-                            List.of(Long.toString(plainBytes), Long.toString(declaredSize)));
+                    throw new ConflictException(ConflictCode.ARTIFACT_HASH_MISMATCH,
+                            List.of("size " + plainBytes + ", declared " + declaredSize));
                 }
                 if (!Objects.equals(digest.finish(), declaredSha256.hex())) {
-                    throw new ConflictException(ConflictCode.ATTACHMENT_HASH_MISMATCH, List.of());
+                    throw new ConflictException(ConflictCode.ARTIFACT_HASH_MISMATCH, List.of("SHA-256"));
                 }
                 if (marked) {
                     return size;
@@ -253,7 +257,7 @@ public class AttachmentStore {
             position += SegmentCipher.LENGTH_BYTES + body.length;
         }
         if (position != limit) {
-            throw new InfrastructureException(InfrastructureCode.ATTACHMENT_CORRUPTED, List.of());
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
         }
         return plainBytes;
     }
@@ -265,13 +269,13 @@ public class AttachmentStore {
      * lengths are followed to the end of the file, where the end mark has to be the last segment, so a cut-off tail, an end mark that
      * was removed and a swapped segment are found.
      *
-     * @throws InfrastructureException ATTACHMENT_CORRUPTED when the file is missing, its structure or a tag does not hold
+     * @throws InfrastructureException ARTIFACT_CORRUPTED when the file is missing, its structure or a tag does not hold
      */
     public Page read(StorageKey key, String keyId, long offset, int maxBytes) {
         AttachmentKeys.Key aes = keys.byId(keyId);
         Path file = pathOf(key);
         if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
-            throw new InfrastructureException(InfrastructureCode.ATTACHMENT_CORRUPTED, List.of());
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
         }
         try (FileChannel channel = files.openRead(file)) {
             long size = channel.size();
@@ -290,7 +294,7 @@ public class AttachmentStore {
                     byte[] plain = cipher.open(aes, key, index, last, body);
                     if (last) {
                         if (plain.length != 0) {
-                            throw new InfrastructureException(InfrastructureCode.ATTACHMENT_CORRUPTED, List.of());
+                            throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
                         }
                     } else {
                         int from = (int) Math.max(0, offset - plainStart);
@@ -303,7 +307,7 @@ public class AttachmentStore {
                 index++;
             }
             if (size == 0) {
-                throw new InfrastructureException(InfrastructureCode.ATTACHMENT_CORRUPTED, List.of());
+                throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
             }
             byte[] data = new byte[collected.position()];
             collected.flip();
@@ -314,12 +318,12 @@ public class AttachmentStore {
         }
     }
 
-    /** Opens every segment of the file and returns the size and SHA-256 of the plain bytes; any damage is ATTACHMENT_CORRUPTED. */
+    /** Opens every segment of the file and returns the size and SHA-256 of the plain bytes; any damage is ARTIFACT_CORRUPTED. */
     public Content verify(StorageKey key, String keyId) {
         AttachmentKeys.Key aes = keys.byId(keyId);
         Path file = pathOf(key);
         if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
-            throw new InfrastructureException(InfrastructureCode.ATTACHMENT_CORRUPTED, List.of());
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
         }
         try (FileChannel channel = files.openRead(file)) {
             long size = channel.size();
@@ -334,7 +338,7 @@ public class AttachmentStore {
                 byte[] plain = cipher.open(aes, key, index, last, body);
                 if (last) {
                     if (plain.length != 0) {
-                        throw new InfrastructureException(InfrastructureCode.ATTACHMENT_CORRUPTED, List.of());
+                        throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
                     }
                 } else {
                     digest.update(plain, 0, plain.length);
@@ -344,7 +348,7 @@ public class AttachmentStore {
                 index++;
             }
             if (size == 0) {
-                throw new InfrastructureException(InfrastructureCode.ATTACHMENT_CORRUPTED, List.of());
+                throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
             }
             return new Content(plainBytes, Sha256.of(digest.finish()));
         } catch (IOException failure) {
@@ -361,7 +365,7 @@ public class AttachmentStore {
      * afterwards; a failure before that leaves the old row valid and the new file as a file without a row (the partial file is removed
      * when it can be).
      *
-     * @throws InfrastructureException ATTACHMENT_CORRUPTED when the old file does not pass; ATTACHMENT_STORAGE_FAILED when the new
+     * @throws InfrastructureException ARTIFACT_CORRUPTED when the old file does not pass; ARTIFACT_STORAGE_FAILED when the new
      *         file cannot be written (it is never overwritten)
      */
     public void rekey(StorageKey from, String fromKeyId, StorageKey to, String toKeyId) {
@@ -370,7 +374,7 @@ public class AttachmentStore {
         Path source = pathOf(from);
         Path target = pathOf(to);
         if (!Files.exists(source, LinkOption.NOFOLLOW_LINKS)) {
-            throw new InfrastructureException(InfrastructureCode.ATTACHMENT_CORRUPTED, List.of());
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
         }
         try {
             prepareFolder(to);
@@ -389,7 +393,7 @@ public class AttachmentStore {
                 boolean last = next == size;
                 byte[] plain = cipher.open(oldKey, from, index, last, body);
                 if (last && plain.length != 0) {
-                    throw new InfrastructureException(InfrastructureCode.ATTACHMENT_CORRUPTED, List.of());
+                    throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
                 }
                 byte[] sealed = cipher.seal(newKey, to, index, last, plain);
                 writeFully(out, ByteBuffer.wrap(sealed), written);
@@ -398,7 +402,7 @@ public class AttachmentStore {
                 index++;
             }
             if (size == 0) {
-                throw new InfrastructureException(InfrastructureCode.ATTACHMENT_CORRUPTED, List.of());
+                throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
             }
             out.force(true);
             makeReadOnly(target);
@@ -537,7 +541,7 @@ public class AttachmentStore {
     /** The bytes after the length of the segment that starts at {@code position}; the segment has to end inside {@code limit}. */
     private static byte[] readBody(FileChannel channel, long position, long limit) throws IOException {
         if (limit - position < SegmentCipher.LENGTH_BYTES) {
-            throw new InfrastructureException(InfrastructureCode.ATTACHMENT_CORRUPTED, List.of());
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
         }
         ByteBuffer prefix = ByteBuffer.allocate(SegmentCipher.LENGTH_BYTES);
         readFully(channel, prefix, position);
@@ -545,7 +549,7 @@ public class AttachmentStore {
         int length = prefix.getInt();
         if (length < SegmentCipher.IV_BYTES + SegmentCipher.TAG_BYTES || length > MAX_SEGMENT - SegmentCipher.LENGTH_BYTES
                 || position + SegmentCipher.LENGTH_BYTES + length > limit) {
-            throw new InfrastructureException(InfrastructureCode.ATTACHMENT_CORRUPTED, List.of());
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
         }
         ByteBuffer body = ByteBuffer.allocate(length);
         readFully(channel, body, position + SegmentCipher.LENGTH_BYTES);
@@ -557,7 +561,7 @@ public class AttachmentStore {
         while (buffer.hasRemaining()) {
             int read = channel.read(buffer, at);
             if (read < 0) {
-                throw new InfrastructureException(InfrastructureCode.ATTACHMENT_CORRUPTED, List.of());
+                throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
             }
             at += read;
         }
@@ -597,7 +601,7 @@ public class AttachmentStore {
     }
 
     private static InfrastructureException failed(IOException failure) {
-        return new InfrastructureException(InfrastructureCode.ATTACHMENT_STORAGE_FAILED,
+        return new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_FAILED,
                 List.of(failure.getClass().getSimpleName()), failure);
     }
 }

@@ -13,18 +13,18 @@ public enum ConflictCode implements ErrorCode {
     ARTIFACT_CHUNK_CONFLICT,
     /** Another request holds the file lock of the upload; nothing waits and nothing is retried. */
     ARTIFACT_BUSY,
-    /** The stored file is longer than the row says: a chunk was appended and not recorded; send it again. */
-    FINISH_PENDING_CHUNK,
+    /** A chunk was appended and not recorded (an unapplied tail), or bytes are missing at the finish; send the missing chunk again. */
+    ARTIFACT_INCOMPLETE,
     /** The operation key of the author belongs to an upload with another file name, size or SHA-256. Argument: the key. */
     ARTIFACT_OPERATION_CONFLICT,
     /** A size limit, the budget or the number of open uploads is exceeded. Argument: which one. */
-    ARTIFACT_QUOTA,
-    /** The received size is not the declared one (or a chunk would pass it). Arguments: received, declared. */
-    ARTIFACT_SIZE_MISMATCH,
-    /** The SHA-256 of the received bytes is not the declared one; the bytes are kept. */
-    ATTACHMENT_HASH_MISMATCH,
+    ARTIFACT_LIMIT,
+    /** The received size or the SHA-256 of the received bytes is not the declared one; the bytes are kept. */
+    ARTIFACT_HASH_MISMATCH,
     /** The SHA-256 of a chunk is not the one sent with it. */
-    CHUNK_HASH_MISMATCH;
+    CHUNK_HASH_MISMATCH,
+    /** The upload expired (it had no chunk for the whole upload-ttl). */
+    ARTIFACT_EXPIRED;
 
     @Override
     public ErrorCategory category() {

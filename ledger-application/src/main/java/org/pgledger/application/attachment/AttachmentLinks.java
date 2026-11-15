@@ -46,7 +46,7 @@ public class AttachmentLinks {
         }
         boolean mine = attachments.findById(attachmentId).filter(found -> Objects.equals(found.createdBy(), author)).isPresent();
         if (!mine) {
-            throw new LookupException(LookupCode.NOT_FOUND, List.of("attachment", attachmentId));
+            throw new LookupException(LookupCode.ARTIFACT_NOT_FOUND, List.of(attachmentId));
         }
     }
 }

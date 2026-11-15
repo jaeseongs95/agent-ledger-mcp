@@ -33,7 +33,7 @@ import org.springframework.stereotype.Component;
  * operating system: POSIX permissions {@code rwx------} (directory) and {@code rw-------} (file), or on a file system with ACLs
  * an ACL with one entry for the account of this process (an entry for SYSTEM and Administrators is accepted: an administrator can
  * take ownership of any file whatever its ACL). A link, a path of another type, another owner (POSIX) and any access of another
- * account are refused with ATTACHMENT_STORAGE_UNSAFE, never repaired. A file system with neither view is refused.
+ * account are refused with ARTIFACT_STORAGE_UNSAFE, never repaired. A file system with neither view is refused.
  *
  * <p>The module of the command line has a store of secrets with the same rule ({@code SecretStore}); the server cannot depend on
  * that module, so the attachment storage has its own copy of the rule, here only.
@@ -116,7 +116,7 @@ public class PrivateFiles {
                 settle(directory);
             }
         } catch (IOException failure) {
-            throw new InfrastructureException(InfrastructureCode.ATTACHMENT_STORAGE_FAILED,
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_FAILED,
                     List.of(failure.getClass().getSimpleName()), failure);
         }
         requireDirectory(directory);
@@ -157,7 +157,7 @@ public class PrivateFiles {
                 throw unsafe("the file system has neither POSIX permissions nor ACLs");
             }
         } catch (IOException failure) {
-            throw new InfrastructureException(InfrastructureCode.ATTACHMENT_STORAGE_FAILED,
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_FAILED,
                     List.of(failure.getClass().getSimpleName()), failure);
         }
     }
@@ -209,12 +209,12 @@ public class PrivateFiles {
                     .orElseThrow(() -> unsafe("the account of this process is not known"));
             return fileSystem.getUserPrincipalLookupService().lookupPrincipalByName(name);
         } catch (IOException failure) {
-            throw new InfrastructureException(InfrastructureCode.ATTACHMENT_STORAGE_FAILED,
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_FAILED,
                     List.of(failure.getClass().getSimpleName()), failure);
         }
     }
 
     private static InfrastructureException unsafe(String what) {
-        return new InfrastructureException(InfrastructureCode.ATTACHMENT_STORAGE_UNSAFE, List.of(what));
+        return new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_UNSAFE, List.of(what));
     }
 }

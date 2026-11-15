@@ -52,7 +52,15 @@ class BatchAndErrorsTest {
                 "reason");
         assertThat(BatchOpKind.LINK.allowedKeys()).contains("remove");
         assertThat(BatchOpKind.CORRECT.allowedKeys()).containsExactlyInAnyOrder("history_id", "reason", "op",
-                "request_id");
+                "request_id", "attachment_id");
+        // ATA-012: the four operations that write a history row of their own entity take an optional attachment_id
+        assertThat(List.of(BatchOpKind.TRANSITION, BatchOpKind.RECORD_FIX, BatchOpKind.RECORD_CASE,
+                BatchOpKind.CORRECT)).allSatisfy(kind -> {
+                    assertThat(kind.allowedKeys()).contains("attachment_id");
+                    assertThat(kind.requiredKeys()).doesNotContain("attachment_id");
+                });
+        assertThat(BatchOpKind.SAVE.allowedKeys()).doesNotContain("attachment_id");
+        assertThat(BatchOpKind.LINK.allowedKeys()).doesNotContain("attachment_id");
         // review is not a batch operation; nothing and null are not either
         Expect.invalid(() -> Tokens.parse("op", "review", BatchOpKind.values()));
         Expect.invalid(() -> Tokens.parse("op", null, BatchOpKind.values()));
@@ -100,18 +108,19 @@ class BatchAndErrorsTest {
     @Test
     void dom026_everyCodeMapsToOneExceptionSubtypeOfItsCategory() {
         List<ErrorCode> codes = allCodes();
-        // 63 and the 14 codes of the attachments (ATA-001 ..): UNSUPPORTED_PURPOSE, eight conflicts, five infrastructure codes
-        assertThat(codes).hasSize(77);
+        // 63 and the 15 codes of the attachments (ATA-001 ..; common table 3.2): ARTIFACT_UNSUPPORTED_PURPOSE (validation),
+        // ARTIFACT_NOT_FOUND (lookup), eight conflicts, five infrastructure codes
+        assertThat(codes).hasSize(78);
         assertThat(codes.stream().map(ErrorCode::token)).doesNotHaveDuplicates();
         assertThat(codes.stream().map(ErrorCode::token)).contains("AUTHOR_ID_FORMAT", "SESSION_NOT_GRANTED",
                 "HOST_ATTESTATION_REQUIRED", "VERSION_CONFLICT", "SAME_SESSION", "MERGED_DEFECT", "CODE_REQUIRED",
                 "CODE_INVALID", "REQUEST_ID_LEGACY", "ATTESTATION_UNSIGNED", "ATTESTATION_MALFORMED",
                 "ATTESTATION_VERSION_UNSUPPORTED", "ATTESTATION_SIGNATURE_INVALID", "ATTESTATION_BINDING_MISMATCH",
-                "ATTESTATION_TIME_WINDOW", "KEY_REPLACEMENT_NOT_CONFIRMED", "SESSION_KEY_REQUIRED", "UNSUPPORTED_PURPOSE", "ARTIFACT_CHUNK_CONFLICT",
-                "ARTIFACT_BUSY", "FINISH_PENDING_CHUNK", "ARTIFACT_OPERATION_CONFLICT", "ARTIFACT_QUOTA",
-                "ARTIFACT_SIZE_MISMATCH", "ATTACHMENT_HASH_MISMATCH", "CHUNK_HASH_MISMATCH", "ATTACHMENT_CORRUPTED",
-                "ATTACHMENT_STORAGE_UNSAFE", "ATTACHMENT_KEY_MISSING", "ATTACHMENT_STORAGE_FAILED",
-                "ATTACHMENT_KEY_DIRECTORY_INSIDE_STORAGE");
+                "ATTESTATION_TIME_WINDOW", "KEY_REPLACEMENT_NOT_CONFIRMED", "SESSION_KEY_REQUIRED", "ARTIFACT_UNSUPPORTED_PURPOSE", "ARTIFACT_CHUNK_CONFLICT",
+                "ARTIFACT_BUSY", "ARTIFACT_INCOMPLETE", "ARTIFACT_OPERATION_CONFLICT", "ARTIFACT_LIMIT",
+                "ARTIFACT_HASH_MISMATCH", "CHUNK_HASH_MISMATCH", "ARTIFACT_EXPIRED", "ARTIFACT_NOT_FOUND",
+                "ARTIFACT_CORRUPTED", "ARTIFACT_STORAGE_UNSAFE", "ARTIFACT_KEY_MISSING", "ARTIFACT_STORAGE_FAILED",
+                "ARTIFACT_KEY_DIRECTORY_INSIDE_STORAGE");
         for (ErrorCode code : codes) {
             LedgerException e = exceptionFor(code);
             assertThat(e.code()).isEqualTo(code);

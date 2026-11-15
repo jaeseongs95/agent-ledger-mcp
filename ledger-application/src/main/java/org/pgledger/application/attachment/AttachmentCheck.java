@@ -153,7 +153,7 @@ public class AttachmentCheck {
                 damaged.add(attachment.id());
             }
         } catch (InfrastructureException failure) {
-            if (failure.code() == InfrastructureCode.ATTACHMENT_CORRUPTED) {
+            if (failure.code() == InfrastructureCode.ARTIFACT_CORRUPTED) {
                 damaged.add(attachment.id());
             } else {
                 throw failure;

@@ -63,31 +63,31 @@ public class AttachmentKeys {
     /**
      * The key of a key id (the name of its file).
      *
-     * @throws InfrastructureException ATTACHMENT_KEY_MISSING when the file is not there; ATTACHMENT_STORAGE_UNSAFE when the file
+     * @throws InfrastructureException ARTIFACT_KEY_MISSING when the file is not there; ARTIFACT_STORAGE_UNSAFE when the file
      *         is not private or has not the length of a key
      */
     public Key byId(String keyId) {
         Path file = fileOf(keyId);
         if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
-            throw new InfrastructureException(InfrastructureCode.ATTACHMENT_KEY_MISSING, List.of(keyId));
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_KEY_MISSING, List.of(keyId));
         }
         files.requireDirectory(properties.keyDirectory());
         byte[] bytes = new byte[KEY_BYTES];
         try (FileChannel channel = files.openRead(file)) {
             if (channel.size() != KEY_BYTES) {
-                throw new InfrastructureException(InfrastructureCode.ATTACHMENT_STORAGE_UNSAFE,
+                throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_UNSAFE,
                         List.of("the key file " + keyId + " has not the length of a key"));
             }
             ByteBuffer buffer = ByteBuffer.wrap(bytes);
             while (buffer.hasRemaining()) {
                 if (channel.read(buffer) < 0) {
-                    throw new InfrastructureException(InfrastructureCode.ATTACHMENT_STORAGE_UNSAFE,
+                    throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_UNSAFE,
                             List.of("the key file " + keyId + " is shorter than a key"));
                 }
             }
             return new Key(keyId, new SecretKeySpec(bytes, "AES"));
         } catch (IOException failure) {
-            throw new InfrastructureException(InfrastructureCode.ATTACHMENT_STORAGE_FAILED,
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_FAILED,
                     List.of(failure.getClass().getSimpleName()), failure);
         } finally {
             Arrays.fill(bytes, (byte) 0);
@@ -115,7 +115,7 @@ public class AttachmentKeys {
             }
             return keyId;
         } catch (IOException failure) {
-            throw new InfrastructureException(InfrastructureCode.ATTACHMENT_STORAGE_FAILED,
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_FAILED,
                     List.of(failure.getClass().getSimpleName()), failure);
         } finally {
             Arrays.fill(bytes, (byte) 0);
@@ -142,7 +142,7 @@ public class AttachmentKeys {
 
     private Path fileOf(String keyId) {
         if (keyId == null || !KEY_ID.matcher(keyId).matches()) {
-            throw new InfrastructureException(InfrastructureCode.ATTACHMENT_KEY_MISSING, List.of("(not a key id)"));
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_KEY_MISSING, List.of("(not a key id)"));
         }
         return properties.keyDirectory().resolve(keyId);
     }

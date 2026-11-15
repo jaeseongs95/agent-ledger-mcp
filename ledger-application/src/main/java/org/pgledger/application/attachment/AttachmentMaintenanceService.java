@@ -121,8 +121,8 @@ public class AttachmentMaintenanceService {
      */
     public boolean addRekeyedFile(OwnerIdentity actor, String attachmentId, StorageKey expectedCurrent, StorageKey newKey,
             String keyId) {
-        attachments.findById(attachmentId).orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND,
-                List.of("attachment", attachmentId)));
+        attachments.findById(attachmentId).orElseThrow(() -> new LookupException(LookupCode.ARTIFACT_NOT_FOUND,
+                List.of(attachmentId)));
         return files.currentOf(attachmentId).filter(file -> Objects.equals(file.storageKey(), expectedCurrent))
                 .map(current -> {
                     // the number after the current one: of two rekeys that read the same current file one inserts it and the
