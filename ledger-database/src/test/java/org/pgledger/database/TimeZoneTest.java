@@ -72,12 +72,6 @@ class TimeZoneTest {
 
     private static final Instant I = Instant.parse("2026-11-05T10:00:00.123456Z");
 
-    /** The settings of the check: the default schema of the account (no schema name), the way the tests run. */
-    private static final org.pgledger.database.schema.SchemaProperties DEFAULT_SCHEMA =
-            new org.pgledger.database.schema.SchemaProperties(
-                    org.pgledger.database.schema.SchemaProperties.DEFAULT_LOCATION, Databases.LONG_TEXT, true, null,
-                    java.time.Duration.parse(org.pgledger.database.schema.SchemaProperties.DEFAULT_PEER_WAIT));
-
     private static <T> T inJvmZone(String zone, java.util.function.Supplier<T> work) {
         TimeZone saved = TimeZone.getDefault();
         TimeZone.setDefault(TimeZone.getTimeZone(zone));
@@ -126,7 +120,8 @@ class TimeZoneTest {
     @Test
     void svcTz01_aSessionThatIsNotUtcStopsTheApplicationAndUtcStartsIt(Databases databases) {
         try (LedgerTestContext seoul = LedgerTestContext.create(databases, "Asia/Seoul")) {
-            UtcSessionCheck check = new UtcSessionCheck(seoul.pool(), Clock.systemUTC(), DEFAULT_SCHEMA);
+            UtcSessionCheck check = org.pgledger.testing.database.TestSchemaServices.utcCheck(seoul.pool(),
+                    Clock.systemUTC());
             // the code is the contract; the failure carries the skew and no connection detail
             assertThatThrownBy(check::verify).isInstanceOfSatisfying(InfrastructureException.class, e -> {
                 assertThat(e.code()).isEqualTo(InfrastructureCode.SESSION_ZONE_NOT_UTC);
@@ -137,7 +132,7 @@ class TimeZoneTest {
                     .hasStackTraceContaining("SESSION_ZONE_NOT_UTC");
         }
         try (LedgerTestContext utc = LedgerTestContext.create(databases, "UTC")) {
-            new UtcSessionCheck(utc.pool(), Clock.systemUTC(), DEFAULT_SCHEMA).verify();
+            org.pgledger.testing.database.TestSchemaServices.utcCheck(utc.pool(), Clock.systemUTC()).verify();
             startWithGuard(utc).close();
         }
         // the JVM zone is checked as well
@@ -150,6 +145,9 @@ class TimeZoneTest {
     private AnnotationConfigApplicationContext startWithGuard(LedgerTestContext ctx) {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
         context.getBeanFactory().registerSingleton("dataSource", ctx.pool());
+        // the JdbcClient of Spring Boot, which a context without auto-configuration does not have
+        context.getBeanFactory().registerSingleton("jdbcClient",
+                org.springframework.jdbc.core.simple.JdbcClient.create(ctx.pool()));
         context.getBeanFactory().registerSingleton("clock", Clock.systemUTC());
         context.register(LedgerSchemaGuardConfiguration.class);
         context.refresh();

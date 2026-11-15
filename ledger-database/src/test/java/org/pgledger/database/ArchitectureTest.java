@@ -44,7 +44,11 @@ class ArchitectureTest {
                     "LedgerDataSourceConfiguration.registeredDriver",
                     "the driver is made at run time from the jar the user registered, inside a class loader of its own "
                             + "(DriverLoader.load, a factory call): there is no class of ours with a constructor that Spring could "
-                            + "call, and the auto-configuration of Spring Boot cannot load a driver from a path"),
+                            + "call, and the auto-configuration of Spring Boot cannot load a driver from a path",
+                    "ApplicationAccountConfiguration.applicationAccountAccess",
+                    "the check asks over the connections of the application account, a second data source that is genuinely "
+                            + "needed (the run is connected as the owner account); it is made from the settings that the tool "
+                            + "binds, over a data source and a JdbcClient that exist for this one object (principle 3.9)"),
             PrincipleRules.OPTIONAL_STORED, Map.of(
                     "LedgerJdbcConfiguration.jdbcMappingContext",
                     "it overrides AbstractJdbcConfiguration.jdbcMappingContext of Spring Data JDBC, whose signature takes an "
@@ -84,8 +88,15 @@ class ArchitectureTest {
                 new Rule("ARC-009 no web in the database module", noClasses().should().dependOnClassesThat()
                         .resideInAnyPackage("org.springframework.web..", "org.springframework.http..",
                                 "jakarta.servlet..")),
-                new Rule("ARC-012 JDBC clients only in the repository package", noClasses().that()
-                        .resideOutsideOfPackage("org.pgledger.database.repository..").should().dependOnClassesThat()
+                // The two configurations of a second data source make the JdbcClient of that data source (principle 3.9): the
+                // legacy ledger (LegacySourceWiring) and the application account of the check of setup
+                // (ApplicationAccountConfiguration). A third class is a finding.
+                new Rule("ARC-012 JDBC clients only in the repository package, but the two second-data-source configurations",
+                        noClasses().that()
+                        .resideOutsideOfPackage("org.pgledger.database.repository..")
+                        .and().doNotHaveFullyQualifiedName("org.pgledger.database.driver.LegacySourceWiring")
+                        .and().doNotHaveFullyQualifiedName("org.pgledger.database.driver.ApplicationAccountConfiguration")
+                        .should().dependOnClassesThat()
                         .haveFullyQualifiedName("org.springframework.jdbc.core.simple.JdbcClient")
                         .orShould().dependOnClassesThat().haveFullyQualifiedName(
                                 "org.springframework.jdbc.core.JdbcTemplate")
@@ -93,13 +104,13 @@ class ArchitectureTest {
                                 "org.springframework.jdbc.core.JdbcOperations")
                         .orShould().dependOnClassesThat().haveFullyQualifiedName(
                                 "org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate")),
-                // the database module never declares a transaction (principle 4.4): the caller, a service method, owns it and
-                // the repositories join it. Not even the id allocator carries @Transactional (it refuses a call without a
-                // transaction itself).
-                new Rule("ARC-013 no @Transactional on a class here", noClasses().should().beAnnotatedWith(
-                        Transactional.class)),
-                new Rule("ARC-013 no @Transactional on a method here", noMethods().should().beAnnotatedWith(
-                        Transactional.class)),
+                // the transaction boundary is a service (principle 4.4): the only service of this module is the one that applies a
+                // schema file (SchemaFileApplier); the repositories join the transaction of their caller. Not even the id
+                // allocator carries @Transactional (it refuses a call without a transaction itself).
+                new Rule("ARC-013 @Transactional on no class here but a @Service",
+                        ArchitectureRules.transactionalOnlyOnServiceClasses()),
+                new Rule("ARC-013 @Transactional on no method here but a method of a @Service",
+                        ArchitectureRules.transactionalOnlyOnServiceMethods()),
                 new Rule("ARC-027 DriverManager, class loaders and the pool only in the driver package",
                         noClasses().that().resideOutsideOfPackage("org.pgledger.database.driver..").should()
                                 .dependOnClassesThat().haveFullyQualifiedName("java.sql.DriverManager")
@@ -107,17 +118,18 @@ class ArchitectureTest {
                                 .orShould().dependOnClassesThat().resideInAPackage("com.zaxxer.hikari..")
                                 .orShould().dependOnClassesThat().haveFullyQualifiedName(
                                         "org.springframework.jdbc.datasource.SimpleDriverDataSource")),
-                // principle 4.4: nothing opens a transaction by hand. Two classes still do, and wait for the service layer: the
-                // migrator opens one per version on the data source that is scoped to the schema setting of the run (a
-                // transaction manager bean of the application belongs to the other, unscoped data source, and the twenty
-                // tests that make a migrator by hand would need a Spring context), and the legacy source opens the read-only
-                // snapshot on the second data source for LegacyImportService (a service of the application module, which has to
-                // declare it). Each is named here with its reason; a third class is a finding.
-                new Rule("TXD-005 no TransactionTemplate here, but the migrator and the legacy source (see the comment)",
-                        noClasses().that().doNotHaveFullyQualifiedName("org.pgledger.database.schema.SchemaMigrator")
-                                .and().doNotHaveFullyQualifiedName("org.pgledger.database.repository.LegacySourceRepository")
+                // principle 4.4: nothing opens a transaction by hand. One class still does and waits for the service layer: the
+                // legacy source opens the read-only snapshot on the second data source for LegacyImportService (the next commit
+                // moves it and removes this name). The migrator is no exception any more: its file is a @Transactional method.
+                new Rule("TXD-005 no TransactionTemplate here, but the legacy source (see the comment)",
+                        noClasses().that().doNotHaveFullyQualifiedName("org.pgledger.database.repository.LegacySourceRepository")
                                 .should().dependOnClassesThat().haveFullyQualifiedName(
                                         "org.springframework.transaction.support.TransactionTemplate")),
+                // principles 3.9 and 4.4: no JdbcClient.create, no new TransactionTemplate, no new DataSourceTransactionManager
+                // outside a @Configuration class (TXD-010). The legacy source repository still has its own JdbcClient until its
+                // data source is declared in the configuration (the next commit removes this name).
+                new Rule("TXD-010 no own JDBC plumbing outside a @Configuration class",
+                        ArchitectureRules.noOwnJdbcPlumbing("org.pgledger.database.repository.LegacySourceRepository")),
                 // principle 3.9: a pool is the return value of a @Bean method, which the container closes; no class keeps one
                 new Rule("TXD-004 no class holds a connection pool in a field", noFields().should().haveRawType(
                         com.zaxxer.hikari.HikariDataSource.class)),

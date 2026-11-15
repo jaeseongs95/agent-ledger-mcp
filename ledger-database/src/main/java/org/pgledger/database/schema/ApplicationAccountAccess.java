@@ -1,10 +1,8 @@
 package org.pgledger.database.schema;
 
-import javax.sql.DataSource;
 import org.pgledger.domain.error.InfrastructureException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.io.support.ResourcePatternResolver;
 import org.springframework.dao.DataAccessException;
 
 /**
@@ -26,18 +24,18 @@ public final class ApplicationAccountAccess {
     private final SchemaVerifier verifier;
 
     /**
-     * @param account     the name of the application account, or null when none is configured (the answer is then no)
-     * @param application connections of the application account, not those of the run
+     * @param account  the name of the application account, or null when none is configured (the answer is then no)
+     * @param verifier the verifier over the connections of the application account, not those of the run (its repository
+     *                 is made over that account's data source by the configuration that makes this object)
      */
-    public ApplicationAccountAccess(String account, DataSource application, ResourcePatternResolver resolver,
-            SchemaProperties properties) {
+    public ApplicationAccountAccess(String account, SchemaVerifier verifier) {
         this.account = account == null || account.isBlank() ? null : account;
-        this.verifier = new SchemaVerifier(application, resolver, properties);
+        this.verifier = verifier;
     }
 
     /** The answer for a run in which no application account is configured: always no. */
-    public static ApplicationAccountAccess notConfigured(ResourcePatternResolver resolver, SchemaProperties properties) {
-        return new ApplicationAccountAccess(null, null, resolver, properties);
+    public static ApplicationAccountAccess notConfigured() {
+        return new ApplicationAccountAccess(null, null);
     }
 
     /** The name of the application account, for a message. */

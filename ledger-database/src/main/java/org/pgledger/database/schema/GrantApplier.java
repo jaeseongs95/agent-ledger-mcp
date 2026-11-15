@@ -25,8 +25,8 @@ import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
  *
  * <p>The account name is the only value that enters the SQL text, so it must be a plain identifier ({@link #isAccountName}):
  * no quoting is needed and no text of the operator can become SQL. The statements run through Spring's
- * {@link ResourceDatabasePopulator}, as the schema files do (see {@link SchemaMigrator}), on a connection that uses the
- * schema of {@link SchemaProperties#name()} when one is configured. Reference:
+ * {@link ResourceDatabasePopulator}, as the schema files do (see {@link SchemaFileApplier}), on the ledger data source, whose
+ * connections already use the schema of {@link SchemaProperties#name()} when one is configured. Reference:
  * https://docs.spring.io/spring-framework/reference/data-access/jdbc/embedded-database-support.html (script execution).
  */
 @Component
@@ -40,11 +40,9 @@ public class GrantApplier {
     private static final String PLACEHOLDER = "${dml_account}";
 
     private final DataSource dataSource;
-    private final SchemaProperties properties;
 
-    public GrantApplier(DataSource dataSource, SchemaProperties properties) {
+    public GrantApplier(DataSource dataSource) {
         this.dataSource = dataSource;
-        this.properties = properties;
     }
 
     /** Whether the text can be an account name in the template; no other text is ever put into the SQL. */
@@ -74,7 +72,7 @@ public class GrantApplier {
         ResourceDatabasePopulator populator = new ResourceDatabasePopulator(false, false, "UTF-8",
                 new ByteArrayResource(sql.getBytes(StandardCharsets.UTF_8)));
         try {
-            DatabasePopulatorUtils.execute(populator, SchemaDataSource.of(dataSource, properties.name()));
+            DatabasePopulatorUtils.execute(populator, dataSource);
         } catch (DataAccessException e) {
             // the account must exist and the connection must be allowed to grant
             throw new InfrastructureException(InfrastructureCode.SCHEMA_GRANT_FAILED, List.of(), e);

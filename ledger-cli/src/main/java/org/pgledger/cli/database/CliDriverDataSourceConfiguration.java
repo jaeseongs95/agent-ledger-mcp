@@ -1,13 +1,11 @@
 package org.pgledger.cli.database;
 
 import org.pgledger.cli.owner.OwnerAccountPropertySource;
-import org.pgledger.database.driver.DriverDataSources;
+import org.pgledger.database.driver.ApplicationAccountConfiguration;
+import org.pgledger.database.driver.ApplicationAccountSettings;
 import org.pgledger.database.driver.LedgerDataSourceConfiguration;
 import org.pgledger.database.driver.LedgerJdbcProperties;
 import org.pgledger.database.driver.LegacySourceConfiguration;
-import org.pgledger.database.driver.RegisteredDriver;
-import org.pgledger.database.schema.ApplicationAccountAccess;
-import org.pgledger.database.schema.SchemaProperties;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.bind.PropertySourcesPlaceholdersResolver;
 import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
@@ -17,7 +15,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.MutablePropertySources;
-import org.springframework.core.io.support.ResourcePatternResolver;
 
 /**
  * The database of a deployment: the DataSource of the registered JDBC driver (settings {@code ledger.jdbc.*}; the password
@@ -33,23 +30,24 @@ import org.springframework.core.io.support.ResourcePatternResolver;
  */
 @Configuration(proxyBeanMethods = false)
 @Conditional(CliDatabaseCondition.class)
-@Import({LedgerDataSourceConfiguration.class, LegacySourceConfiguration.class})
+@Import({LedgerDataSourceConfiguration.class, LegacySourceConfiguration.class, ApplicationAccountConfiguration.class})
 public class CliDriverDataSourceConfiguration {
 
     private static final String ATTACHED_VIEW = "configurationProperties";
 
-    /** A {@code @Bean} method because the settings are bound from a filtered view of the environment, which no annotation can say. */
+    /**
+     * A {@code @Bean} method because the settings are bound from a filtered view of the environment, which no annotation can say.
+     * The check itself is made by {@link ApplicationAccountConfiguration} of the database module from these settings.
+     */
     @Bean
-    ApplicationAccountAccess applicationAccountAccess(RegisteredDriver driver, ConfigurableEnvironment environment,
-            ResourcePatternResolver resolver, SchemaProperties schema) {
+    ApplicationAccountSettings applicationAccountSettings(ConfigurableEnvironment environment) {
         MutablePropertySources sources = new MutablePropertySources(environment.getPropertySources());
         sources.remove(OwnerAccountPropertySource.NAME);
         // the attached view of the environment would show the owner account again (Boot names it "configurationProperties",
         // ConfigurationPropertySources.attach, the name itself is not public)
         sources.remove(ATTACHED_VIEW);
         Binder binder = new Binder(ConfigurationPropertySources.from(sources), new PropertySourcesPlaceholdersResolver(sources));
-        return binder.bind("ledger.jdbc", LedgerJdbcProperties.class)
-                .map(application -> DriverDataSources.applicationAccess(driver, application, resolver, schema))
-                .orElseGet(() -> ApplicationAccountAccess.notConfigured(resolver, schema));
+        return binder.bind("ledger.jdbc", LedgerJdbcProperties.class).map(ApplicationAccountSettings::new)
+                .orElse(ApplicationAccountSettings.NOT_CONFIGURED);
     }
 }

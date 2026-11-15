@@ -118,6 +118,8 @@ class ArchitectureTest {
                                 "org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate")),
                 new Rule("TXD-007 no JsonMapper of its own in the admin", ArchitectureRules.noOwnJsonMapper()),
                 new Rule("TXD-005 no TransactionTemplate in the admin", ArchitectureRules.noTransactionTemplate()),
+                new Rule("TXD-010 no JdbcClient.create, no new TransactionTemplate, no new DataSourceTransactionManager in the admin",
+                        ArchitectureRules.noOwnJdbcPlumbing()),
                 new Rule("TXD-005 @Transactional on no class of the admin but a @Service",
                         ArchitectureRules.transactionalOnlyOnServiceClasses()),
                 new Rule("TXD-005 @Transactional on no method of the admin but a method of a @Service",

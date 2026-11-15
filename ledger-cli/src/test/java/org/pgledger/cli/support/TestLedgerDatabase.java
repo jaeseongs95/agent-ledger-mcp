@@ -5,7 +5,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
-import org.pgledger.database.schema.SchemaMigrator;
+import org.pgledger.testing.database.TestSchemaServices;
 import org.pgledger.database.schema.SchemaProperties;
 import org.pgledger.testing.database.TestDatabase;
 import org.pgledger.testing.database.TestSchema;
@@ -37,7 +37,7 @@ public final class TestLedgerDatabase implements AutoCloseable {
         // No catch: a schema that could not be migrated is dropped again, and the failure goes on to the test.
         boolean ready = false;
         try {
-            new SchemaMigrator(database.dataSource, new PathMatchingResourcePatternResolver(),
+            TestSchemaServices.migrator(database.dataSource,
                     new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, longTextType(), true, database.schemaName(),
                             Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT)), Clock.systemUTC()).migrate();
             ready = true;

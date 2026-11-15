@@ -2,12 +2,10 @@ package org.pgledger.database.driver;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import javax.sql.DataSource;
 import org.pgledger.database.repository.SchemaHistoryRepository;
-import org.pgledger.database.schema.ApplicationAccountAccess;
-import org.pgledger.database.schema.SchemaProperties;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
-import org.springframework.core.io.support.ResourcePatternResolver;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.datasource.SimpleDriverDataSource;
 import java.util.List;
@@ -29,8 +27,13 @@ public final class DriverDataSources {
     }
 
     /**
-     * @param schema the schema every connection uses, or {@code null} for the default schema of the account; it must
-     *               exist (the migrator creates it)
+     * @param schema the schema every connection uses, or {@code null} for the default schema of the account. It need not
+     *               exist yet (the migrator creates it through this pool): the pool names it with
+     *               {@code Connection.setSchema} ({@code HikariConfig.setSchema}), which on PostgreSQL is
+     *               {@code SET SESSION search_path} and takes a schema that is not there yet; PostgreSQL's documentation says
+     *               "The first schema in the search path that exists is the default location for creating new objects"
+     *               (https://www.postgresql.org/docs/current/ddl-schemas.html). A DBMS that refuses a schema that does not
+     *               exist needs the schema made before the first run (not verified here: the tests run on PostgreSQL only).
      */
     public static HikariDataSource create(RegisteredDriver registered, LedgerJdbcProperties properties,
             String schema) {
@@ -50,23 +53,22 @@ public final class DriverDataSources {
     }
 
     /**
-     * The check of the application account: a separate connection of that account (no pool, one connection per use) through the
-     * registered driver, used by {@code setup} while the run itself is connected as another account (the owner account).
-     * A second data source is genuinely needed here (principle 3.9): the point of the check is to connect as the application
-     * account, which the ledger data source of the run, connected as the owner account, cannot do. It is called from the
-     * {@code @Bean} method of the one holder ({@code ApplicationAccountAccess}), holds no pool and no open connection
-     * ({@link SimpleDriverDataSource} connects at each call), so there is nothing for the container to close.
+     * The connections of the application account for the check of {@code setup}: a separate data source of that account (no
+     * pool, one connection per use) through the registered driver, used while the run itself is connected as another account
+     * (the owner account). A second data source is genuinely needed here (principle 3.9): the point of the check is to connect as
+     * the application account, which the ledger data source of the run, connected as the owner account, cannot do. It is called
+     * from the {@code @Bean} method of the one holder ({@code ApplicationAccountAccess}), holds no pool and no open connection
+     * ({@link ApplicationAccountDataSource} connects at each call), so there is nothing for the container to close.
      *
      * @param application the settings of the application account ({@code ledger.jdbc.*} without the owner account of the run)
+     * @param schema      the schema every connection uses, or {@code null} for the default schema of the account
      */
-    public static ApplicationAccountAccess applicationAccess(RegisteredDriver registered, LedgerJdbcProperties application,
-            ResourcePatternResolver resolver, SchemaProperties schema) {
+    public static DataSource applicationAccountDataSource(RegisteredDriver registered, LedgerJdbcProperties application,
+            String schema) {
         EmbeddedDatabaseRefusal.require(application.url(), registered.driver().getClass().getName());
         registered.requireAccepts(application.url());
-        return new ApplicationAccountAccess(application.username(),
-                new SimpleDriverDataSource(registered.driver(), application.url(), application.username(),
-                        application.password()),
-                resolver, schema);
+        return new ApplicationAccountDataSource(registered.driver(), application.url(), application.username(),
+                application.password(), schema);
     }
 
     private static String foldedSchema(SimpleDriverDataSource simple, String schema) {

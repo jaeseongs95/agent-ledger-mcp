@@ -1,13 +1,11 @@
 package org.pgledger.database.schema;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import javax.sql.DataSource;
 import org.pgledger.database.repository.SchemaHistoryRepository;
 import org.pgledger.database.repository.SchemaHistoryRepository.Outcome;
 import org.pgledger.database.repository.SchemaHistoryRepository.Row;
@@ -15,21 +13,18 @@ import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.support.ResourcePatternResolver;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
-import org.springframework.jdbc.datasource.DataSourceTransactionManager;
-import org.springframework.jdbc.datasource.init.DatabasePopulatorUtils;
-import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.TransactionException;
-import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Applies the ANSI schema files {@code V{n}__*.sql} in order with Spring's {@link ResourceDatabasePopulator} and
- * records every attempt as a row of {@code schema_history} (rows are only appended). It is a service for the
- * operator's {@code migrate} command; the applications only verify (see {@link SchemaVerifier}).
+ * Applies the ANSI schema files {@code V{n}__*.sql} in order and records every attempt as a row of {@code schema_history}
+ * (rows are only appended). It is the run of the operator's {@code migrate} command; the applications only verify (see
+ * {@link SchemaVerifier}). The run itself opens no transaction: it loops over the files and calls the service
+ * {@link SchemaFileApplier} once per file, whose method is one transaction (principle 4.4); the history rows that are written
+ * outside such a transaction (a FAILED attempt, the table itself) are single statements of the repository.
  *
  * <ul>
  * <li>A version is applied once. Its file's SHA-256 is recorded; if the file changes afterwards, the digest
@@ -49,13 +44,6 @@ public class SchemaMigrator {
 
     private static final Logger LOG = LoggerFactory.getLogger(SchemaMigrator.class);
     /**
-     * The one place where the DDL differs between DBMSs: the type of a long text ({@code TEXT}, {@code CLOB}, ...) is not
-     * the same in ANSI SQL on every DBMS, so the schema files write this placeholder and the migrator replaces it with
-     * {@code ledger.schema.long-text-type} before the file runs. It is a plain text replacement of the file, made before
-     * the digest of the applied text is judged (the digest is of the file, so it does not depend on the setting).
-     */
-    private static final String PLACEHOLDER = "${longtext}";
-    /**
      * How often the history is looked at while waiting for another migration process (see
      * {@link #appliedByAnotherProcess}). There is no event to wait for: the other process is a separate program, and the
      * only thing it leaves behind that this one can see is its row in {@code schema_history}. So the row is polled, at
@@ -63,14 +51,16 @@ public class SchemaMigrator {
      */
     private static final long PEER_POLL_MILLIS = 50;
 
-    private final DataSource dataSource;
+    private final SchemaHistoryRepository repository;
+    private final SchemaFileApplier applier;
     private final ResourcePatternResolver resolver;
     private final SchemaProperties properties;
     private final Clock clock;
 
-    public SchemaMigrator(DataSource dataSource, ResourcePatternResolver resolver, SchemaProperties properties,
-            Clock clock) {
-        this.dataSource = dataSource;
+    public SchemaMigrator(SchemaHistoryRepository repository, SchemaFileApplier applier,
+            ResourcePatternResolver resolver, SchemaProperties properties, Clock clock) {
+        this.repository = repository;
+        this.applier = applier;
         this.resolver = resolver;
         this.properties = properties;
         this.clock = clock;
@@ -87,21 +77,15 @@ public class SchemaMigrator {
         MigrationFile.requireContiguous(files);
         try {
             if (properties.name() != null) {
-                SchemaHistoryRepository.createSchemaIfMissing(dataSource, properties.name());
+                // the data source of the application already names this schema for every connection (DriverDataSources)
+                repository.createSchemaIfMissing(properties.name());
             }
-            DataSource scoped = SchemaDataSource.of(dataSource, properties.name());
-            // Not beans: the repository and the transaction manager belong to the data source scoped to the schema of
-            // this run (ledger.schema.name), which is a setting and not a bean, so they are made here for that one
-            // data source. Spring shares a connection per DataSource object, and the populator and the history row
-            // must run on the same one.
-            SchemaHistoryRepository repository = new SchemaHistoryRepository(scoped);
-            TransactionTemplate transaction = new TransactionTemplate(new DataSourceTransactionManager(scoped));
-            ensureTable(repository);
+            ensureTable();
             List<Integer> applied = new ArrayList<>();
             for (MigrationFile file : files) {
                 SchemaHistory history = new SchemaHistory(repository.rows());
                 history.requireFileForEveryVersion(files);
-                if (!settle(repository, history, file) && apply(scoped, transaction, repository, file)) {
+                if (!settle(history, file) && apply(file)) {
                     applied.add(file.version());
                 }
             }
@@ -112,7 +96,7 @@ public class SchemaMigrator {
         }
     }
 
-    private static void ensureTable(SchemaHistoryRepository repository) {
+    private void ensureTable() {
         if (repository.tableExists()) {
             return;
         }
@@ -130,7 +114,7 @@ public class SchemaMigrator {
      * Looks at the history of one version. Returns true when it is applied and intact; false when it must be
      * applied (never succeeded, or only failed attempts so far); throws when it must stop.
      */
-    private boolean settle(SchemaHistoryRepository repository, SchemaHistory history, MigrationFile file) {
+    private boolean settle(SchemaHistory history, MigrationFile file) {
         return switch (history.verdictOf(file)) {
             case PENDING, FAILED_ONLY -> {
                 history.requireNothingLaterApplied(file);
@@ -149,34 +133,25 @@ public class SchemaMigrator {
     }
 
     /**
-     * Runs one file and its SUCCESS row in one transaction; true when applied by this call. A failure rolls the
+     * Has the service run one file and its SUCCESS row (one transaction); true when applied by this call. A failure rolls the
      * transaction back; the FAILED row is written afterwards, outside it.
      */
-    private boolean apply(DataSource scoped, TransactionTemplate transaction, SchemaHistoryRepository repository,
-            MigrationFile file) {
-        String sql = file.text().replace(PLACEHOLDER, properties.longTextType());
-        ResourceDatabasePopulator populator = new ResourceDatabasePopulator(false, false, "UTF-8",
-                new ByteArrayResource(sql.getBytes(StandardCharsets.UTF_8)));
+    private boolean apply(MigrationFile file) {
         List<Row> before = new SchemaHistory(repository.rows()).attemptsOf(file.version());
         try {
-            transaction.executeWithoutResult(status -> {
-                DatabasePopulatorUtils.execute(populator, scoped);
-                repository.append(new Row(file.version(), file.fileName(), file.digest(), nextTime(before),
-                        Outcome.SUCCESS));
-            });
+            applier.apply(file, nextTime(before));
             LOG.info("applied V{} {}", file.version(), file.fileName());
             return true;
         } catch (DataAccessException | TransactionException e) {
-            return failed(repository, file, before, e);
+            return failed(file, before, e);
         }
     }
 
-    private boolean failed(SchemaHistoryRepository repository, MigrationFile file, List<Row> before,
-            RuntimeException cause) {
+    private boolean failed(MigrationFile file, List<Row> before, RuntimeException cause) {
         InfrastructureException failure = new InfrastructureException(InfrastructureCode.SCHEMA_MIGRATION_FAILED,
                 List.of(String.valueOf(file.version()), file.fileName()), cause);
         try {
-            if (appliedByAnotherProcess(repository, file, before)) {
+            if (appliedByAnotherProcess(file, before)) {
                 LOG.info("V{} was applied by another migration process", file.version(), cause);
                 return false;
             }
@@ -196,8 +171,7 @@ public class SchemaMigrator {
      * waits up to {@code peerWait} for a SUCCESS row of the same digest that was not there before. The wait is a
      * poll of the history ({@link #PEER_POLL_MILLIS}) because the other process is another program and gives no event.
      */
-    private boolean appliedByAnotherProcess(SchemaHistoryRepository repository, MigrationFile file,
-            List<Row> before) {
+    private boolean appliedByAnotherProcess(MigrationFile file, List<Row> before) {
         long deadline = System.nanoTime() + properties.peerWait().toNanos();
         while (true) {
             List<Row> now = new SchemaHistory(repository.rows()).attemptsOf(file.version());

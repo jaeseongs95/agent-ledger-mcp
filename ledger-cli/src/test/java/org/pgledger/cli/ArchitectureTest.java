@@ -49,9 +49,9 @@ class ArchitectureTest {
                     "the registrar is a class of the database module that serves two programs (this tool and the admin web) and "
                             + "takes what differs between them as arguments: the JDBC URL and the one directory a jar may be in, "
                             + "a setting of this tool; the module cannot make it a component",
-                    "CliDriverDataSourceConfiguration.applicationAccountAccess",
+                    "CliDriverDataSourceConfiguration.applicationAccountSettings",
                     "the settings of the application account are bound from a filtered view of the environment, without the "
-                            + "source of the owner account, which no annotation can say; the class belongs to the database module"));
+                            + "source of the owner account, which no annotation can say; the record belongs to the database module"));
 
     static Stream<PrincipleRules.Rule> principleRules() {
         return PrincipleRules.all(MAIN, Path.of("src", "main", "java"), PRINCIPLE_ALLOWED).stream();
@@ -157,6 +157,12 @@ class ArchitectureTest {
         ArchitectureRules.noTransactionTemplate().check(MAIN);
         ArchitectureRules.transactionalOnlyOnServiceClasses().check(MAIN);
         ArchitectureRules.transactionalOnlyOnServiceMethods().check(MAIN);
+    }
+
+    @Test
+    @DisplayName("TXD-010 (principles 3.9, 4.4) the CLI makes no JdbcClient, no TransactionTemplate and no transaction manager of its own")
+    void txd010_noOwnJdbcPlumbingInTheCli() {
+        ArchitectureRules.noOwnJdbcPlumbing().check(MAIN);
     }
 
     @Test

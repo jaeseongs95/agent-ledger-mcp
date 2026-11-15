@@ -27,6 +27,7 @@ import org.pgledger.database.schema.ApplicationAccountAccess;
 import org.pgledger.database.schema.SchemaProperties;
 import org.pgledger.testing.database.TestDatabaseScanFilter;
 import org.pgledger.testing.database.TestDriverRegistration;
+import org.pgledger.testing.database.TestSchemaServices;
 import org.springframework.boot.ExitCodeEvent;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.builder.SpringApplicationBuilder;
@@ -165,8 +166,9 @@ public final class CliExtension implements ParameterResolver {
                         }
                         if (applicationAccount != null) {
                             generic.registerBean("testApplicationAccountAccess", ApplicationAccountAccess.class,
-                                    () -> new ApplicationAccountAccess(APPLICATION_ACCOUNT_NAME, applicationAccount, generic,
-                                            generic.getBean(SchemaProperties.class)));
+                                    () -> new ApplicationAccountAccess(APPLICATION_ACCOUNT_NAME,
+                                            TestSchemaServices.verifier(applicationAccount,
+                                                    generic.getBean(SchemaProperties.class))));
                         }
                         if (legacySource != null) {
                             generic.registerBean("testLegacySource", LegacySourceRepository.class, () -> legacySource);

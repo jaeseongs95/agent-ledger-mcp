@@ -43,7 +43,9 @@ import org.pgledger.database.support.LedgerDatabaseExtension;
 import org.pgledger.database.support.Parallel;
 import org.pgledger.database.support.TestClock;
 import org.pgledger.domain.value.Sha256;
+import org.pgledger.testing.database.TestDatabase;
 import org.pgledger.testing.database.TestSchema;
+import org.pgledger.testing.database.TestSchemaServices;
 import org.springframework.beans.factory.BeanCreationException;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
@@ -105,15 +107,15 @@ class SchemaMigratorTest {
     }
 
     private SchemaMigrator migrator(Path dir) {
-        return new SchemaMigrator(pool, new PathMatchingResourcePatternResolver(), props(dir, null), clock);
+        return TestSchemaServices.migrator(pool, props(dir, null), clock);
     }
 
     private SchemaVerifier verifier(Path dir) {
-        return new SchemaVerifier(pool, new PathMatchingResourcePatternResolver(), props(dir, null));
+        return TestSchemaServices.verifier(pool, props(dir, null));
     }
 
     private List<Row> history() {
-        return new SchemaHistoryRepository(pool).rows();
+        return TestSchemaServices.history(pool).rows();
     }
 
     private boolean tableExists(String name) {
@@ -154,7 +156,7 @@ class SchemaMigratorTest {
 
     @Test
     void sch001_aFreshDatabaseGetsEveryRealFileInOrderWithItsDigest() {
-        SchemaMigrator real = new SchemaMigrator(pool, new PathMatchingResourcePatternResolver(),
+        SchemaMigrator real = TestSchemaServices.migrator(pool,
                 new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, Databases.LONG_TEXT, true, null,
                         Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT)), clock);
         assertThat(real.migrate()).containsExactly(1, 2, 3);
@@ -259,7 +261,7 @@ class SchemaMigratorTest {
     void sch006_aLateFileBelowAnAppliedVersionIsRefused() {
         Path all = files(Map.of("V1__one.sql", ONE, "V2__two.sql", TWO, "V3__three.sql", THREE));
         migrator(files(Map.of("V1__one.sql", ONE))).migrate();
-        new SchemaHistoryRepository(pool).append(success(3, "V3__three.sql", THREE, T0));
+        TestSchemaServices.history(pool).append(success(3, "V3__three.sql", THREE, T0));
         assertThat(refusedWith(() -> migrator(all).migrate(), InfrastructureCode.SCHEMA_OUT_OF_ORDER).args())
                 .containsExactly("2", "V2__two.sql", "3");
     }
@@ -288,7 +290,7 @@ class SchemaMigratorTest {
                 null, Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT));
         Callable<String> migrate = () -> {
             Throwable refused = catchThrowable(
-                    () -> new SchemaMigrator(pool, new PathMatchingResourcePatternResolver(), real, clock).migrate());
+                    () -> TestSchemaServices.migrator(pool, real, clock).migrate());
             if (refused == null) {
                 return "done";
             }
@@ -352,6 +354,7 @@ class SchemaMigratorTest {
                         "ledger.schema.require-utc=false")
                 .initializers(context -> {
                     context.getBeanFactory().registerSingleton("dataSource", pool);
+                    context.getBeanFactory().registerSingleton("jdbcClient", JdbcClient.create(pool));
                     context.getBeanFactory().registerSingleton("clock", clock);
                 }).run();
     }
@@ -376,7 +379,7 @@ class SchemaMigratorTest {
     void sch010_aDatabaseThatWasNeverMigratedIsRefused() {
         Path two = files(Map.of("V1__one.sql", ONE, "V2__two.sql", TWO));
         DataSource empty = databases.newDataSource();
-        refusedWith(() -> new SchemaVerifier(empty, new PathMatchingResourcePatternResolver(), props(two, null))
+        refusedWith(() -> TestSchemaServices.verifier(empty, props(two, null))
                 .verify(), InfrastructureCode.SCHEMA_HISTORY_MISSING);
     }
 
@@ -401,8 +404,10 @@ class SchemaMigratorTest {
         jdbc.sql("INSERT INTO " + legacy + ".defect (id, title) VALUES ('OLD-D-1', 'old')").update();
         SchemaProperties properties = new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, Databases.LONG_TEXT, true,
                 named, Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT));
-        new SchemaMigrator(database, new PathMatchingResourcePatternResolver(), properties, clock).migrate();
-        new SchemaVerifier(database, new PathMatchingResourcePatternResolver(), properties).verify();
+        // the data source of the product names its schema itself: here the schema that the migrator creates
+        DataSource product = TestDatabase.scoped(database, named);
+        TestSchemaServices.migrator(product, properties, clock).migrate();
+        TestSchemaServices.verifier(product, properties).verify();
         assertThat(jdbc.sql("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = :schema")
                 .param("schema", legacy).query(Integer.class).single()).isEqualTo(1);
         assertThat(jdbc.sql("SELECT title FROM " + legacy + ".defect WHERE id = 'OLD-D-1'").query(String.class).single())

@@ -140,6 +140,34 @@ public final class ArchitectureRules {
                 .haveFullyQualifiedName("org.springframework.transaction.support.TransactionTemplate");
     }
 
+    private static final String CONFIGURATION = "org.springframework.context.annotation.Configuration";
+
+    /**
+     * TXD-010 (principles 3.9 and 4.4): no class makes its own database plumbing: no {@code JdbcClient.create(..)}, no
+     * {@code new TransactionTemplate(..)} and no {@code new DataSourceTransactionManager(..)} in production code outside a
+     * {@code @Configuration} class. The {@code JdbcClient} and the transaction manager are beans of the container (Spring Boot's,
+     * or a {@code @Bean} method of a configuration for a second data source), and a transaction is {@code @Transactional}.
+     *
+     * @param allowedClassNames classes that still do, each to be named in the test with its reason (a finding if there are
+     *                          more than the test says)
+     */
+    public static ArchRule noOwnJdbcPlumbing(String... allowedClassNames) {
+        java.util.Set<String> allowed = java.util.Set.of(allowedClassNames);
+        DescribedPredicate<JavaClass> notAConfiguration = DescribedPredicate.describe(
+                "are no @Configuration class and not one of the named exceptions",
+                type -> !type.isAnnotatedWith(CONFIGURATION) && !allowed.contains(type.getName()));
+        DescribedPredicate<JavaMethodCall> createsJdbcClient = DescribedPredicate.describe("call JdbcClient.create(..)",
+                call -> "org.springframework.jdbc.core.simple.JdbcClient".equals(call.getTargetOwner().getName())
+                        && "create".equals(call.getTarget().getName()));
+        DescribedPredicate<JavaConstructorCall> createsTransactionPlumbing = DescribedPredicate.describe(
+                "call a constructor of TransactionTemplate or DataSourceTransactionManager",
+                call -> "org.springframework.transaction.support.TransactionTemplate".equals(call.getTargetOwner().getName())
+                        || "org.springframework.jdbc.datasource.DataSourceTransactionManager"
+                                .equals(call.getTargetOwner().getName()));
+        return noClasses().that(notAConfiguration).should().callMethodWhere(createsJdbcClient)
+                .orShould().callConstructorWhere(createsTransactionPlumbing);
+    }
+
     /**
      * ARC-013 / TXD-005: the transaction boundary is the service layer. A class that is no {@code @Service} (a repository, a
      * controller, a command, a tool, a configuration) is not annotated with {@code @Transactional}.

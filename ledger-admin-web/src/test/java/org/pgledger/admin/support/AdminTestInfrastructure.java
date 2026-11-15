@@ -6,7 +6,7 @@ import java.util.List;
 import javax.sql.DataSource;
 import org.pgledger.application.admin.CommonCodeService;
 import org.pgledger.application.admin.CommonCodeService.CodeCommand;
-import org.pgledger.database.schema.SchemaMigrator;
+import org.pgledger.testing.database.TestSchemaServices;
 import org.pgledger.database.schema.SchemaProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -54,7 +54,7 @@ public class AdminTestInfrastructure {
 
     @Bean
     SchemaMigrated schemaMigrated(DataSource dataSource, Clock clock, Environment environment) {
-        return new SchemaMigrated(new SchemaMigrator(dataSource, new PathMatchingResourcePatternResolver(),
+        return new SchemaMigrated(TestSchemaServices.migrator(dataSource,
                 new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, SchemaProperties.DEFAULT_LONG_TEXT_TYPE, true,
                         environment.getRequiredProperty(TestSchemaInitializer.SCHEMA_PROPERTY),
                         Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT)), clock).migrate());

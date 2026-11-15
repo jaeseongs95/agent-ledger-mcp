@@ -18,14 +18,21 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.support.DatabaseMetaDataCallback;
 import org.springframework.jdbc.support.JdbcUtils;
 import org.springframework.jdbc.support.MetaDataAccessException;
+import org.springframework.stereotype.Repository;
 
 /**
- * The migration bookkeeping on a {@link DataSource}: the table {@code schema_history} (one row per attempt, never
- * updated or deleted) and its rows. Not a Spring bean: the migrator and the startup guard hand it the data source
- * they work on, which already applies the schema chosen for the run (see {@code SchemaDataSource}). Statements run
- * through {@link JdbcClient}, so inside a Spring transaction they share its connection.
+ * The migration bookkeeping on the ledger {@link DataSource}: the table {@code schema_history} (one row per attempt, never
+ * updated or deleted) and its rows. A repository like the others: it takes the {@link JdbcClient} and the data source of the
+ * container (principle 3.9), and joins the transaction of its caller (principle 4.4; the migrator's service method). The
+ * schema of the tables ({@code ledger.schema.name}) is a property of that one data source: its connections are made with
+ * that schema ({@code DriverDataSources}), so nothing here chooses a schema per call.
+ *
+ * <p>The one exception to "one data source" is the check of the application account ({@code ApplicationAccountAccess}),
+ * which asks the same questions over a connection of the application account; its configuration makes a second instance
+ * over that account's data source.
  */
-public final class SchemaHistoryRepository {
+@Repository
+public class SchemaHistoryRepository {
 
     /** Result of one attempt to apply a version. */
     public enum Outcome {
@@ -42,9 +49,9 @@ public final class SchemaHistoryRepository {
     private final DataSource dataSource;
     private final JdbcClient jdbc;
 
-    public SchemaHistoryRepository(DataSource dataSource) {
+    public SchemaHistoryRepository(JdbcClient jdbc, DataSource dataSource) {
+        this.jdbc = jdbc;
         this.dataSource = dataSource;
-        this.jdbc = JdbcClient.create(dataSource);
     }
 
     /** The name as the DBMS stores an unquoted identifier (JDBC metadata tells the folding). */
@@ -71,8 +78,13 @@ public final class SchemaHistoryRepository {
         }
     }
 
-    /** Creates the schema when it is missing (the schema name is an identifier, so it cannot be a bind value). */
-    public static void createSchemaIfMissing(DataSource dataSource, String schema) {
+    /**
+     * Creates the schema when it is missing (the schema name is an identifier, so it cannot be a bind value). It runs on the
+     * data source whose connections already name this schema, before the schema exists: selecting a schema that is not there
+     * yet is no error on PostgreSQL ({@code Connection.setSchema} is {@code SET SESSION search_path}, and a name in the search
+     * path that matches no schema is skipped), and the schema is found by the connection as soon as it is created.
+     */
+    public void createSchemaIfMissing(String schema) {
         if (!SIMPLE_NAME.matcher(schema).matches()) {
             throw new IllegalArgumentException("schema name must be lower case letters, digits and _ (max 30): "
                     + schema);
@@ -89,7 +101,7 @@ public final class SchemaHistoryRepository {
             return false;
         });
         if (!exists) {
-            JdbcClient.create(dataSource).sql("CREATE SCHEMA " + schema).update();
+            jdbc.sql("CREATE SCHEMA " + schema).update();
         }
     }
 

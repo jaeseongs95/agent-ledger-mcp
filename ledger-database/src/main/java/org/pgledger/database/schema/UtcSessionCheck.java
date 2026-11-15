@@ -6,7 +6,6 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
-import javax.sql.DataSource;
 import org.pgledger.database.repository.SessionClockRepository;
 import org.pgledger.database.time.UtcTime;
 import org.pgledger.domain.error.InfrastructureCode;
@@ -28,14 +27,12 @@ public class UtcSessionCheck {
     /** Real zones differ by at least 15 minutes, so one minute separates "UTC" from "not UTC" safely. */
     static final Duration TOLERANCE = Duration.ofMinutes(1);
 
-    private final DataSource dataSource;
+    private final SessionClockRepository sessionClock;
     private final Clock clock;
-    private final SchemaProperties properties;
 
-    public UtcSessionCheck(DataSource dataSource, Clock clock, SchemaProperties properties) {
-        this.dataSource = dataSource;
+    public UtcSessionCheck(SessionClockRepository sessionClock, Clock clock) {
+        this.sessionClock = sessionClock;
         this.clock = clock;
-        this.properties = properties;
     }
 
     public void verify() {
@@ -77,7 +74,7 @@ public class UtcSessionCheck {
      */
     private LocalDateTime readSessionClock() {
         try {
-            return new SessionClockRepository(SchemaDataSource.of(dataSource, properties.name())).sessionTimestamp()
+            return sessionClock.sessionTimestamp()
                     .orElseThrow(() -> new InfrastructureException(InfrastructureCode.SESSION_CLOCK_UNREADABLE,
                             List.of()));
         } catch (CannotGetJdbcConnectionException e) {

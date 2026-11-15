@@ -9,7 +9,7 @@ import org.springframework.jdbc.datasource.DelegatingDataSource;
 /**
  * A {@link DataSource} whose connections all use one schema of the test database, over a pool that many schemas share
  * (the connections of a test JVM are few). The schema is chosen with JDBC {@code Connection.setSchema}, as the product
- * does ({@code SchemaDataSource}). When {@code owned} is set, {@link #close()} closes that pool as well (a pool that
+ * does for its pool ({@code HikariConfig.setSchema}, see {@code DriverDataSources}). When {@code owned} is set, {@link #close()} closes that pool as well (a pool that
  * one context opened for itself); the shared pool is never closed here.
  */
 final class ScopedDataSource extends DelegatingDataSource implements AutoCloseable {

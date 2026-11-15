@@ -59,6 +59,7 @@ import org.pgledger.database.schema.SchemaVerifier;
 import org.pgledger.database.support.Databases;
 import org.pgledger.testing.database.PostgresDriver;
 import org.pgledger.testing.database.TestDatabaseSettings;
+import org.pgledger.testing.database.TestSchemaServices;
 import org.pgledger.database.support.LedgerDatabaseExtension;
 import org.pgledger.domain.error.ErrorCode;
 import org.pgledger.domain.error.InfrastructureCode;
@@ -238,9 +239,9 @@ class DriverBoundaryTest {
             }
             SchemaProperties named = new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, Databases.LONG_TEXT, true,
                     schema, java.time.Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT));
-            new SchemaMigrator(pool, new PathMatchingResourcePatternResolver(), named, java.time.Clock.systemUTC())
-                    .migrate();
-            new SchemaVerifier(pool, new PathMatchingResourcePatternResolver(), named).verify();
+            // the pool names the schema itself (it is not there yet): the migrator creates it through the same pool
+            TestSchemaServices.migrator(pool, named, java.time.Clock.systemUTC()).migrate();
+            TestSchemaServices.verifier(pool, named).verify();
         }
         assertThat(registeredDrivers()).isEqualTo(before);
     }
