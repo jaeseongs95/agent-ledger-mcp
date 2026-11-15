@@ -95,8 +95,14 @@ public class AttachmentStore {
      * {@code disk-margin-bytes} (the comparison is {@code usable - requested < margin}). This is not a limit of the product: the owner
      * has to free the disk (ARTIFACT_STORAGE_FULL, not retryable). A disk that cannot be read is no "full" disk but a failure of the
      * storage (ARTIFACT_STORAGE_IO_ERROR).
+     *
+     * <p>The directory is made first when it is missing and required to be private, the same rule as every write ({@code prepareFolder}):
+     * a begin may come before the first write has made the folder, and the file store of a path that does not exist cannot be read. A
+     * folder that cannot be made (its parent is missing, no right) or is not private is still the failure it is
+     * (ARTIFACT_STORAGE_IO_ERROR, ARTIFACT_STORAGE_UNSAFE); nothing is measured on another folder instead.
      */
     public void requireDiskSpace(long requestedBytes) {
+        files.ensureDirectory(properties.directory());
         long usable;
         try {
             usable = Files.getFileStore(properties.directory()).getUsableSpace();
