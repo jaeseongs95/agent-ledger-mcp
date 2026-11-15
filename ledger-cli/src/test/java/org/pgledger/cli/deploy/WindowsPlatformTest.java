@@ -113,7 +113,8 @@ class WindowsPlatformTest {
         order.verify(access).set(home, WindowsAccess.closed(SYSTEM, ADMINISTRATORS));
         order.verify(access).set(home.resolve("lib"), closedWith(WindowsAccess.READ_EXECUTE));
         order.verify(access).set(home.resolve("etc"), closedWith(WindowsAccess.MODIFY));
-        order.verify(access).set(home.resolve("etc/drivers"), closedWith(WindowsAccess.MODIFY));
+        // the services write nothing in the driver folder (the registration file is in etc): read and run, like the jars (item 8 of the review)
+        order.verify(access).set(home.resolve("etc/drivers"), closedWith(WindowsAccess.READ_EXECUTE));
         order.verify(access).set(home.resolve("logs"), closedWith(WindowsAccess.MODIFY));
         order.verify(access).set(home.resolve("data"), closedWith(WindowsAccess.MODIFY));
         order.verify(access).set(home.resolve("data/attachments"), closedWith(WindowsAccess.MODIFY));

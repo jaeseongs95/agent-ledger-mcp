@@ -118,7 +118,8 @@ class BatchAndErrorsTest {
         // of the schema files (the dialect of SqlBuilder decides, RUN-003 retired) and none for an interrupted wait for another
         // runner (the database waits, RUN-012)
         // PCS-041: ATTESTATION_VERSION_UNSUPPORTED is gone (no release had the version 1 token), so 84
-        assertThat(codes).hasSize(84);
+        // PCS-014: MANAGEMENT_PORT_SEPARATE (the start is refused with a port of the actuator of its own) is one more: 85
+        assertThat(codes).hasSize(85);
         assertThat(codes.stream().map(ErrorCode::token)).doesNotHaveDuplicates();
         assertThat(codes.stream().map(ErrorCode::token)).contains("AUTHOR_ID_FORMAT", "SESSION_NOT_GRANTED",
                 "HOST_ATTESTATION_REQUIRED", "VERSION_CONFLICT", "SAME_SESSION", "MERGED_DEFECT", "CODE_REQUIRED",

@@ -55,4 +55,14 @@ class MessagesTest {
         assertThat(ErrorCode.values()).extracting(Enum::name).doesNotContain("FOREIGN_OWNER");
         assertThat(load("messages.properties").stringPropertyNames()).doesNotContain("error.FOREIGN_OWNER");
     }
+
+    @Test
+    @DisplayName("PCS-001 the removed commands leave no error code and no key in either bundle: no seal-host, tls-issue, tls-renew and no TLS error")
+    void pcs001_noKeyOfTheRemovedCommands() throws IOException {
+        assertThat(ErrorCode.values()).extracting(Enum::name).noneMatch(name -> name.startsWith("TLS_"));
+        for (String bundle : List.of("messages.properties", "messages_ko.properties")) {
+            assertThat(load(bundle).stringPropertyNames()).as(bundle).noneMatch(key -> key.startsWith("usage.seal-host")
+                    || key.startsWith("usage.tls-") || key.startsWith("seal-host.") || key.startsWith("tls.") || key.startsWith("error.TLS_"));
+        }
+    }
 }

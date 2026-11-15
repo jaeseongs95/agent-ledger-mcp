@@ -140,7 +140,10 @@ public final class BroadAccess {
             if (acl == null) {
                 throw new IllegalStateException("the file system of " + path + " has neither POSIX permissions nor ACLs");
             }
-            UserPrincipal owner = Files.getOwner(path);
+            // the expected owner is the account of the process, looked up the way the product does it (ProcessHandle and the lookup
+            // service of the file system), never Files.getOwner: the group Administrators owns what an elevated process creates
+            UserPrincipal owner = path.getFileSystem().getUserPrincipalLookupService()
+                    .lookupPrincipalByName(ProcessHandle.current().info().user().orElseThrow());
             UserPrincipal service = path.getFileSystem().getUserPrincipalLookupService()
                     .lookupPrincipalByName("NT AUTHORITY\\LocalService");
             Set<AclEntryPermission> read = EnumSet.of(AclEntryPermission.READ_DATA, AclEntryPermission.READ_NAMED_ATTRS,

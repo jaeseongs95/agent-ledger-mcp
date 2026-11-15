@@ -16,10 +16,12 @@ import java.util.Set;
 
 /**
  * The ACL that a secret folder or file of a Windows installation is <b>created</b> with: the installing user (the owner) with
- * everything, the service account with read, nothing else and nothing inherited. The services run as the account LocalService
- * ({@link #WINDOWS_SERVICE_ACCOUNT}: no person's account, no password) and must read the secrets and the attachment keys that
- * the installing user created; the installation has no step that hands the secrets over to the service account (there is no
- * change of owner and no privilege to take ownership), so the service account is given the read right when the path is made.
+ * everything, the service account with read, and nothing else. No inherited entry is put in when the path is made (the entries
+ * that a parent hands down are replaced right after the creation; the DACL is not marked protected). The services run as the
+ * account LocalService ({@link #WINDOWS_SERVICE_ACCOUNT}: no person's account, no password) and must read the secrets and the
+ * attachment keys that the installing user created; the installation has no step that hands the secrets over to the service
+ * account (the installing user stays the owner, nothing is handed over, no privilege to take ownership is used), so the service
+ * account is given the read right when the path is made.
  * The personal edition has one user, who owns what the installer made and trusts the whole installation target.
  *
  * <p>This is the one place of the rule, used by the store of secrets of the command line tool, by the installer of the folders

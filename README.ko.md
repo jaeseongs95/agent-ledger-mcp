@@ -229,7 +229,7 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 
 - **서비스 계정 하나.** MCP 서버와 관리 웹은 어떤 사람에게도 속하지 않는 운영체제 계정 하나로 실행합니다. Linux는 시스템 사용자 `pg-ledger-mcp`(로그인 없음,
   root 아님), Windows는 내장 계정 LocalService(비밀번호 없음)입니다. 목적은 장부의 비밀인 관리 토큰과 데이터베이스 비밀번호를 그 컴퓨터에서 일하는 사람의
-  계정과 그 아래에서 도는 에이전트로부터 떼어 놓는 것이며, 비밀 디렉터리는 서비스 계정만 읽을 수 있습니다. 한 설치를 인스턴스라고 부르며 서비스 이름은 그것을
+  계정과 그 아래에서 도는 에이전트로부터 떼어 놓는 것이며, 비밀 디렉터리는 서비스 계정만 읽을 수 있습니다(Windows에서는 설치한 사용자와, 읽기만 하는 LocalService가 읽고 다른 누구도 읽지 못합니다). 한 설치를 인스턴스라고 부르며 서비스 이름은 그것을
   따릅니다. 인스턴스는 `--name=<name>`이 다른 이름을 주지 않으면 `pg-ledger-mcp`이고, 서비스는 `<name>`과 `<name>-admin`입니다(기본값은 `pg-ledger-mcp`와
   `pg-ledger-mcp-admin`). Linux 사용자, 디렉터리(`/opt/<name>`, `/etc/<name>`, Windows는 `C:\ProgramData\<name>`), WinSW id가 이름을 따르므로, 두 번째
   인스턴스나 기본 이름으로 아직 1.x가 도는 호스트 옆의 설치에는 자기 `--name=<name>`과 자기 포트만 있으면 됩니다.
@@ -301,7 +301,9 @@ sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<dri
 `127.0.0.1:8865`(관리 웹)로 연결하고 클라이언트의 `Host` 헤더를 그대로 넘깁니다. 각 서비스에는 프록시가 그 서비스를 위해 넘기는 호스트 이름 하나를
 `--mcp-host=<host>`와 `--admin-host=<host>`로 줍니다. 그 이름은 해당 서비스의 `Host` 검사에서 `127.0.0.1`과 `localhost`(항상 허용)에 더해 허용됩니다.
 관리 웹의 이름이 있으면 설치기가 그에 맞는 passkey 설정도 씁니다(위의 옵션 참조). 관리 웹은 루프백 주소에서 온 `X-Forwarded-For`와 `X-Forwarded-Proto`만
-신뢰하므로, 프록시는 이 두 헤더를 자신이 받은 연결의 주소와 스킴으로 덮어써야 합니다. 오래 유지되는 MCP 연결(Streamable HTTP)에는 충분히 긴 프록시 타임아웃이
+신뢰하므로, 프록시는 이 두 헤더를 자신이 받은 연결의 주소와 스킴으로 덮어써야 합니다. 이는 로그인 실패 뒤의 잠금과 이어져 있습니다. 관리 웹은 시도를
+클라이언트 주소별로 세므로, `X-Forwarded-For`를 넘기지 않는 프록시는 모든 클라이언트를 프록시의 루프백 주소 하나로 보이게 하고, 그러면 누군가의 실패한
+시도가 소유자까지 함께 잠급니다. 오래 유지되는 MCP 연결(Streamable HTTP)에는 충분히 긴 프록시 타임아웃이
 필요합니다. 인증서, 그 갱신, 방화벽도 운영자의 몫입니다.
 
 ### Windows: 개인 PC 또는 서버
@@ -336,7 +338,7 @@ deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <a
 `prepare-host`는 폴더를 SYSTEM과 Administrators 외 모든 계정에게 닫고 같은 단계에서 LocalService에 필요한 접근을 줍니다(Java가 ACL로 하며 `icacls`는 쓰지 않습니다).
 jar는 읽고 실행하고, 설정, 로그, 데이터는 바꿀 수 있습니다. 비밀은 설치한 사용자의 것입니다. 비밀 폴더와 그 안에 만드는 비밀은 설치한 사용자(전체)와
 LocalService(읽기만)의 ACL로 만들어지고 다른 누구에게도 접근이 없으므로, 서비스는 읽을 수 있고 에이전트가 실행되는 계정은 읽을 수 없습니다.
-LocalService에 넘기는 것은 없으므로(소유자 변경도, 소유권을 가져오는 권한도 없습니다) `ledger-cli`의 소유자 명령은 설치한 사용자에게 계속 동작하고, 설치기를 다시
+LocalService에 넘기는 것은 없으므로(설치한 사용자가 소유자로 남고, 소유권을 가져오는 권한도 쓰지 않습니다) `ledger-cli`의 소유자 명령은 설치한 사용자에게 계속 동작하고, 설치기를 다시
 실행해도 모든 것이 그대로입니다. 같은 사용자로 다시 실행합니다(개인판은 사용자가 한 사람입니다). 소유자 작업은 관리 웹에서도 합니다(관리 웹 절 참고: 패스키 또는
 OpenID Connect로 로그인하고, 첫 패스키는 `passkey-code`로 등록합니다). 개인 PC에서는 관리 웹을 `http://localhost:8865`로 엽니다(포트는 `--admin-port=<n>`입니다). 관리 웹은
 `Secure` 세션 쿠키를 설정하는데, 주요 브라우저는 `localhost`를 보안 컨텍스트로 취급하므로 이를 받아들이고, 패스키도 `localhost`에서는 HTTPS 없이 동작합니다.
@@ -409,7 +411,7 @@ JDBC 드라이버의 타입 정보는 드라이버가 판단할 수 없는 형�
 | `grants` | `grants [<author>]` | 유효한 부여를 나열합니다 |
 | `attachments-check` | `attachments-check [--purge-orphans]` | 첨부를 그 파일 및 키와 맞춰 봅니다. 어느 행도 가리키지 않는 파일과 `attachments-rekey`가 대체한 파일은 지우지 않고 `orphans/`로 옮기며, `orphans/`에 있던 파일의 행이 다시 생겼으면 되돌립니다. 보고서는 건수와, 없어졌거나 손상되었거나 어느 이력 행도 가리키지 않는 첨부의 ID(저장 키나 경로는 출력하지 않습니다)를 보여 주고, 없어졌거나 손상된 첨부가 있으면 종료 코드는 `1`입니다. `--purge-orphans`는 먼저 `orphans/`를 비우고 그 수를 감사 기록에 남깁니다 |
 | `attachments-rekey` | `attachments-rekey --from=<keyId>` | 키 `<keyId>`로 쓴 첨부 파일을 활성 키 `ledger.attachments.active-key-id`(다른 키여야 합니다)로 다시 씁니다. 옛 파일은 `ledger.attachments.orphan-grace`가 지난 뒤 `attachments-check`가 `orphans/`로 옮깁니다 |
-| `attachments-key-create` | `attachments-key-create` | 키 디렉터리에 새 256비트 키 파일을 만들고(서비스 계정만 읽을 수 있습니다) 키 ID를 출력합니다. 키 자체는 출력하지 않으며, 새 업로드를 그 키로 쓰려면 `ledger.attachments.active-key-id`를 그 값으로 설정합니다 |
+| `attachments-key-create` | `attachments-key-create` | 키 디렉터리에 새 256비트 키 파일을 만들고(서비스 계정만 읽을 수 있습니다. Windows에서는 설치한 사용자와, 읽기만 하는 LocalService) 키 ID를 출력합니다. 키 자체는 출력하지 않으며, 새 업로드를 그 키로 쓰려면 `ledger.attachments.active-key-id`를 그 값으로 설정합니다 |
 | `mcp-check` | `mcp-check [--url=<url>] [--ledger.mcp.token=<token>]` | 실행 중인 MCP 서버에 연결해 도구를 확인합니다 |
 | `render-deploy` | `render-deploy --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>] [--admin-host=<host>] [--root=<directory>] [--check]` | 서비스 정의(systemd 유닛, Windows에서는 WinSW 설정)와 설정을 씁니다. 설치기가 호출합니다 |
 | `prepare-host` | `prepare-host --jars=<dir> --driver-jar=<file> [--winsw=<file>] --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>] [--admin-host=<host>] [--root=<directory>]` | 호스트의 파일을 준비합니다(root로, Windows에서는 관리자 권한으로 실행). 폴더를 소유자·모드 또는 ACL(Windows에서는 LocalService의 접근과 설치한 사용자의 비밀 폴더)과 함께 만들고, jar와 드라이버(Windows에서는 WinSW도)를 복사하고, `render-deploy`가 쓰는 것을 씁니다. 설치기가 호출합니다 |

@@ -30,12 +30,12 @@ import org.pgledger.cli.FailureException;
  * <ul>
  * <li>{@link Posix}: the permissions {@code rwx------} (directory) and {@code rw-------} (file), given at creation; a path
  *     that was just created with any group or other permission is refused ({@link #settle}).
- * <li>{@link Acl} ({@link AclFileAttributeView}, the Windows file systems): an ACL with two ALLOW entries and nothing inherited,
- *     given at creation (the {@code acl:acl} attribute of the Windows provider): the owner (the installing user) with
+ * <li>{@link Acl} ({@link AclFileAttributeView}, the Windows file systems): an ACL with two ALLOW entries, given at creation
+ *     (the {@code acl:acl} attribute of the Windows provider; no inherited entry is put in, the DACL is not marked protected): the owner (the installing user) with
  *     everything and the service account LocalService with read ({@link ServiceAccountAccess}); what the parent hands down is
  *     replaced by that ACL right after creation ({@link #settle}). Why the service account reads: the services run as
  *     LocalService and must read the secrets that the installing user stores, and the installation has no step that hands the
- *     secrets over (no change of owner, no privilege to take ownership). SYSTEM and Administrators are not exempt: an
+ *     secrets over (the installing user stays the owner, no privilege to take ownership is used). SYSTEM and Administrators are not exempt: an
  *     administrator can take ownership of any file whatever its ACL, and an entry for them would add exposure only. The key
  *     store of the hook ({@code ledger-client-hook}, {@code SessionKeyStore}) keeps the owner alone: its keys are read by the
  *     owner's own processes. Reference:

@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * {@code attachments-key-create} (common design 4.3, key rotation): creates a new 256-bit key file in the key directory (readable
- * by the service account only) through {@link AttachmentKeys#create()} and prints its key id. The key itself is never printed, and the
+ * by the service account only; on Windows the installing user with everything and LocalService with read) through {@link AttachmentKeys#create()} and prints its key id. The key itself is never printed, and the
  * setting {@code ledger.attachments.active-key-id} is not changed by the command: the owner sets it to the new key id (the servers
  * read it at start) and, to move the existing attachments to the new key, runs {@code attachments-rekey}. An old key stays while
  * rows still use it.

@@ -25,15 +25,16 @@ import org.springframework.stereotype.Component;
  * directory ({@code --home}, for example {@code C:/ProgramData/<name>}), run by the one account LocalService.
  * {@code prepare-host} (run in an elevated prompt) closes the home and its folders to every account but SYSTEM and
  * Administrators and gives the service account in the same step what it needs ({@link WindowsAccess}): read and run the jars
- * (the folder {@code lib}), change the settings folder (where the driver page of the admin web writes its registration), write
- * the logs, the data folder and the attachment folder. It copies the jars, the two WinSW executables and the driver; what it
+ * (the folders {@code lib} and {@code etc\drivers}: nothing of the services writes there), change the settings folder (where the driver
+ * page of the admin web writes its registration), write the logs, the data folder and the attachment folder. It copies the jars, the two WinSW executables and the driver; what it
  * makes inside these folders inherits those entries. {@code mkdir}, {@code icacls} and {@code copy} did this.
  *
  * <p>The secrets are the installing user's: the folder of the secrets and the folder of the attachment keys are made with the ACL
- * of {@link ServiceAccountAccess} (the installing user with everything, the service account with read, nothing inherited from
- * the settings folder), and what the store of secrets and the key setup make in them has the same two entries. Why the service
- * account reads: it runs the services, which read the secrets, and the installation does not hand the secrets over to it (there
- * is no change of owner and no privilege to take ownership). An existing folder of the secrets is never changed (a re-run by the
+ * of {@link ServiceAccountAccess} (the installing user with everything, the service account with read; the entry of the settings
+ * folder for the service account to modify is not carried over, because the ACL is written at once), and what the store of
+ * secrets and the key setup make in them has the same two entries. Why the service account reads: it runs the services, which
+ * read the secrets, and the installation does not hand the secrets over to it (the installing user stays the owner and no
+ * privilege to take ownership is used). An existing folder of the secrets is never changed (a re-run by the
  * same user finds everything as it left it; the personal edition has one user). A run that fails at any step puts the ACL of the
  * folders it changed back as it found them: the services of the installation, stopped for the run, can start again.
  */
@@ -125,9 +126,12 @@ final class WindowsPlatform implements ServicePlatform, ServiceWrappers {
         Path data = hostPath(root, layout.data());
         Path attachments = hostPath(root, layout.attachmentDirectory());
         Path keys = hostPath(root, layout.attachmentKeyDirectory());
-        // The folders and what the service account may do in each; the secrets are not among them (see below).
+        // The folders and what the service account may do in each; the secrets are not among them (see below). The settings folder is
+        // changed by the admin web (its driver page replaces the registration file jdbc-driver.yaml there through a temporary file and a
+        // move), which is the one reason of "modify" there; nothing of the services writes in the folder of the driver jars (the admin web
+        // only checks a jar in it, the operator puts it there), so it is read and run only, like the jars (Linux: root, 0755).
         List<Folder> folders = List.of(new Folder(lib, WindowsAccess.READ_EXECUTE), new Folder(etc, WindowsAccess.MODIFY),
-                new Folder(drivers, WindowsAccess.MODIFY), new Folder(logs, WindowsAccess.MODIFY),
+                new Folder(drivers, WindowsAccess.READ_EXECUTE), new Folder(logs, WindowsAccess.MODIFY),
                 new Folder(data, WindowsAccess.MODIFY), new Folder(attachments, WindowsAccess.MODIFY));
         // What a run changes is read first, so a failed run can put it back (nothing is changed by reading).
         List<WindowsAccess.Saved> saved = new ArrayList<>();

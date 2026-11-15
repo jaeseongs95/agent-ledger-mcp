@@ -794,6 +794,18 @@ class DocsTest {
 
     @ParameterizedTest
     @EnumSource(Language.class)
+    @DisplayName("PCS-051 the READMEs and the header of install.cmd say that the secrets of Windows are the installing user's with read for LocalService, that nothing is handed over, and that the installer is run again as the same user; none says that another administrator is kept out")
+    void pcs051_theWindowsSecretsAreTheInstallingUsersWithReadForLocalService(Language language) {
+        String readme = language.readme().text();
+
+        assertThat(readme).contains("LocalService").contains(language == Language.EN ? "same user" : "같은 사용자");
+        assertThat(readme).contains(language == Language.EN ? "Nothing is handed over to LocalService" : "LocalService에 넘기는 것은 없으므로");
+        assertThat(readme.toLowerCase(java.util.Locale.ROOT)).doesNotContain("another administrator");
+        assertThat(Repository.read("deploy/install.cmd")).contains("Run it again as the same user").contains("nothing is handed over");
+    }
+
+    @ParameterizedTest
+    @EnumSource(Language.class)
     @DisplayName("PCS-050 the README defines the personal edition (one person, their own computer or server, the whole installation target trusted, loopback only, the network exposure the operator's) and names no reverse proxy, certificate authority, nginx, ACME, tls-issue, tls-renew or seal-host")
     void theReadmeDefinesThePersonalEditionAndNamesNoProxyProduct(Language language) {
         String readme = language.readme().text();

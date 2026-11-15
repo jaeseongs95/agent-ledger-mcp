@@ -8,7 +8,8 @@ import org.springframework.boot.diagnostics.FailureAnalysis;
 import org.springframework.context.support.ResourceBundleMessageSource;
 
 /**
- * Explains why the server does not start when no JDBC driver is registered (or the registered one is not usable):
+ * Explains why the server does not start when no JDBC driver is registered (or the registered one is not usable), or when
+ * the actuator is given a port of its own (MANAGEMENT_PORT_SEPARATE, PCS-014):
  * the reason and what to do, in English, instead of a stack trace. The text comes from the message bundle of the
  * error codes.
  */
@@ -16,8 +17,9 @@ public class DriverFailureAnalyzer extends AbstractFailureAnalyzer<Infrastructur
 
     @Override
     protected FailureAnalysis analyze(Throwable rootFailure, InfrastructureException cause) {
-        if (cause.code() != InfrastructureCode.DRIVER_NOT_CONFIGURED
-                && cause.code() != InfrastructureCode.DRIVER_INVALID) {
+        boolean managementPort = cause.code() == InfrastructureCode.MANAGEMENT_PORT_SEPARATE;
+        if (cause.code() != InfrastructureCode.DRIVER_NOT_CONFIGURED && cause.code() != InfrastructureCode.DRIVER_INVALID
+                && !managementPort) {
             return null;
         }
         // made with new: Spring Boot creates a failure analyzer from spring.factories (reflection, no-argument constructor)
@@ -28,7 +30,8 @@ public class DriverFailureAnalyzer extends AbstractFailureAnalyzer<Infrastructur
         String reason = bundles.getMessage(cause.code().messageKey(), cause.args().toArray(), cause.code().token(),
                 Locale.ENGLISH);
         return new FailureAnalysis(cause.code().token() + ": " + reason,
-                "Register a JDBC driver (the driver-register command of ledger-cli) and start the server again.",
+                managementPort ? "Remove management.server.port and start the server again."
+                        : "Register a JDBC driver (the driver-register command of ledger-cli) and start the server again.",
                 cause);
     }
 }

@@ -222,7 +222,9 @@ class PrivateFilesReadTest {
         for (Path path : List.of(properties.keyDirectory(), properties.keyDirectory().resolve(keyId), properties.directory(), file)) {
             var entries = Files.getFileAttributeView(path, java.nio.file.attribute.AclFileAttributeView.class,
                     java.nio.file.LinkOption.NOFOLLOW_LINKS).getAcl();
-            var owner = Files.getOwner(path, java.nio.file.LinkOption.NOFOLLOW_LINKS);
+            // the account of the process as the product looks it up, not Files.getOwner (an elevated process creates what Administrators own)
+            var owner = root.getFileSystem().getUserPrincipalLookupService()
+                    .lookupPrincipalByName(ProcessHandle.current().info().user().orElseThrow());
             assertThat(entries).as(path.toString()).hasSize(2)
                     .allSatisfy(entry -> assertThat(entry.type()).isEqualTo(java.nio.file.attribute.AclEntryType.ALLOW));
             assertThat(entries.stream().map(java.nio.file.attribute.AclEntry::principal)).as(path.toString())

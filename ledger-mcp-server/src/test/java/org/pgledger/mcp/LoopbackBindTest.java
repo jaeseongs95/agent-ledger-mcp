@@ -15,10 +15,13 @@ import java.net.NetworkInterface;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
+import org.pgledger.domain.error.InfrastructureCode;
+import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.mcp.config.LoopbackOnly;
 import org.pgledger.mcp.support.McpServerTest;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +30,7 @@ import org.springframework.boot.web.server.ConfigurableWebServerFactory;
 import org.springframework.boot.web.server.WebServerFactoryCustomizer;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.AnnotationAwareOrderComparator;
+import org.springframework.mock.env.MockEnvironment;
 import org.springframework.test.context.TestPropertySource;
 
 /**
@@ -81,6 +85,30 @@ class LoopbackBindTest {
         }
         assertThat(loopbackOnly.getOrder()).isEqualTo(Ordered.LOWEST_PRECEDENCE);
         assertThat(LoopbackOnly.address().getAddress()).containsExactly((byte) 127, 0, 0, 1);
+    }
+
+    @Test
+    @DisplayName("PCS-014: no management.server.port, one equal to server.port, or -1 (the endpoints are off) is accepted; a management port other than the server port stops the start with MANAGEMENT_PORT_SEPARATE naming both ports; the messages exist in English and Korean")
+    void pcs014_aSeparateManagementPortIsRefused() {
+        ConfigurableWebServerFactory factory = mock(ConfigurableWebServerFactory.class);
+        for (MockEnvironment accepted : List.of(new MockEnvironment().withProperty("server.port", "8765"),
+                new MockEnvironment().withProperty("server.port", "8765").withProperty("management.server.port", "8765"),
+                new MockEnvironment().withProperty("server.port", "8765").withProperty("management.server.port", "-1"),
+                new MockEnvironment())) {
+            new LoopbackOnly(accepted).customize(factory);
+        }
+
+        MockEnvironment separate = new MockEnvironment().withProperty("server.port", "8765")
+                .withProperty("management.server.port", "9000");
+        assertThatThrownBy(() -> new LoopbackOnly(separate).customize(factory)).isInstanceOfSatisfying(InfrastructureException.class,
+                refused -> {
+                    assertThat(refused.code()).isEqualTo(InfrastructureCode.MANAGEMENT_PORT_SEPARATE);
+                    assertThat(refused.args()).containsExactly("9000", "8765");
+                });
+        for (Locale locale : List.of(Locale.ENGLISH, Locale.KOREAN)) {
+            assertThat(java.util.ResourceBundle.getBundle("messages/ledger-errors", locale).getString("error.MANAGEMENT_PORT_SEPARATE"))
+                    .contains("{0}").contains("{1}").contains("/healthz");
+        }
     }
 
     @Test

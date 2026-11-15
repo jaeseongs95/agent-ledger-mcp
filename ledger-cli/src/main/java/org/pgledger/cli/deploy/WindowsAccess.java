@@ -25,7 +25,7 @@ import org.springframework.stereotype.Component;
  * Administrators; the one service account (LocalService) reads and runs the jars, changes the settings and writes its logs and
  * the attachments. The secrets are the installing user's (a folder made by {@code prepare-host} has the ACL of
  * {@link org.pgledger.application.attachment.ServiceAccountAccess}: the installing user with everything, LocalService with
- * read), and nothing is handed over: no change of owner, no privilege. An ACL is written whole ({@code setAcl}) and is not
+ * read), and nothing is handed over to the service account (the installing user stays the owner), and no privilege is used. An ACL is written whole ({@code setAcl}) and is not
  * propagated to the children by the file system: this class sets it on each path itself, and a folder's entries are inherited
  * by what is made in it afterwards.
  *

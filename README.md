@@ -281,7 +281,7 @@ What every target has in common:
 - **One service account.** The MCP server and the admin web run as one operating system account that belongs to no person: on
   Linux the system user `pg-ledger-mcp` (no login, not root), on Windows the predefined account LocalService (no password). Its purpose
   is to keep the secrets of the ledger, the admin token and the database password, away from the account of the person who works on
-  the machine and from the agents that run under it: the secret directory is readable by the service account only. The two
+  the machine and from the agents that run under it: the secret directory is readable by the service account only (on Windows: by the installing user and, read only, by LocalService, and by nobody else). The two
   services of an installation, called an instance, are named after it: the instance is `pg-ledger-mcp` unless `--name=<name>` gives
   another name, and its services are `<name>` and `<name>-admin` (`pg-ledger-mcp` and `pg-ledger-mcp-admin` by default). The Linux user, the
   directories (`/opt/<name>`, `/etc/<name>`, on Windows `C:\ProgramData\<name>`) and the WinSW ids follow the name, so a second instance, or an
@@ -365,7 +365,9 @@ configuration, order no certificate and install no renewal. The proxy connects t
 passes for it, `--mcp-host=<host>` and `--admin-host=<host>`: the name is allowed in the `Host` check of that service, besides
 `127.0.0.1` and `localhost`, which are always allowed. With a name for the admin web, the installer also writes the passkey settings
 for it (see the options above). The admin web trusts `X-Forwarded-For` and `X-Forwarded-Proto` from the loopback address only, so the
-proxy has to overwrite them with the address and the scheme of the connection it received. Long-lived MCP connections (Streamable
+proxy has to overwrite them with the address and the scheme of the connection it received. This is tied to the lock after failed sign-in
+attempts: the admin web counts the attempts per client address, so a proxy that does not pass `X-Forwarded-For` makes every client look like the
+proxy's loopback address, and the failed attempts of anyone then lock the owner out together with them. Long-lived MCP connections (Streamable
 HTTP) need a timeout of the proxy that is long enough. The certificate, its renewal and the firewall are the operator's too.
 
 ### Windows: a personal PC or a server
@@ -403,8 +405,8 @@ configuration), and write their logs to the `logs` folder. `prepare-host` closes
 Administrators and gives LocalService its access in the same step (Java, with ACLs, no `icacls`): it reads and runs the jars and
 changes the settings, the logs and the data. The secrets are the installing user's: the folder of the secrets and each secret made in
 it are created with an ACL for the installing user (everything) and for LocalService (read only), and for nobody else, so the
-services read them and the accounts the agents run as cannot. Nothing is handed over to LocalService (there is no change of owner and
-no privilege to take ownership), so the owner commands of `ledger-cli` keep working for the installing user, and a re-run of the
+services read them and the accounts the agents run as cannot. Nothing is handed over to LocalService (the installing user stays the owner and
+no privilege to take ownership is used), so the owner commands of `ledger-cli` keep working for the installing user, and a re-run of the
 installer finds everything as it was; run it again as the same user (the personal edition has one user). The admin web is where the
 owner works too (see Admin web: sign in with a passkey or OpenID Connect, and register the first passkey with `passkey-code`). On a
 personal PC open the admin web at `http://localhost:8865` (the port is `--admin-port=<n>`): the admin web sets a `Secure` session
@@ -489,7 +491,7 @@ service user), and every owner operation is recorded with that user.
 | `grants` | `grants [<author>]` | list live grants |
 | `attachments-check` | `attachments-check [--purge-orphans]` | check the attachments against their files and keys: a file that no row names, and a file that `attachments-rekey` replaced, is moved to `orphans/` and never deleted; a file in `orphans/` whose row exists again is moved back; the report gives the counts and the ids (never a storage key or a path) of the attachments that are missing, damaged or pointed to by no history row, and the exit code is `1` when one is missing or damaged; `--purge-orphans` first empties `orphans/` and records the number in the audit trail |
 | `attachments-rekey` | `attachments-rekey --from=<keyId>` | write the attachment files of the key `<keyId>` again under the active key `ledger.attachments.active-key-id` (a different key); the old files are moved to `orphans/` by `attachments-check` after `ledger.attachments.orphan-grace` |
-| `attachments-key-create` | `attachments-key-create` | create a new 256-bit key file in the key directory (readable by the service account only) and print its key id, never the key; set `ledger.attachments.active-key-id` to it to write new uploads with it |
+| `attachments-key-create` | `attachments-key-create` | create a new 256-bit key file in the key directory (readable by the service account only; on Windows by the installing user and, read only, by LocalService) and print its key id, never the key; set `ledger.attachments.active-key-id` to it to write new uploads with it |
 | `mcp-check` | `mcp-check [--url=<url>] [--ledger.mcp.token=<token>]` | connect to a running MCP server and check its tools |
 | `render-deploy` | `render-deploy --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>] [--admin-host=<host>] [--root=<directory>] [--check]` | write the service definitions (systemd units, or WinSW configurations on Windows) and the settings; the installers call it |
 | `prepare-host` | `prepare-host --jars=<dir> --driver-jar=<file> [--winsw=<file>] --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>] [--admin-host=<host>] [--root=<directory>]` | prepare the files of the host (run as root, or elevated on Windows): the folders with owner and mode, or their ACLs (on Windows the access of LocalService and the secret folders of the installing user), the copies of the jars and the driver (on Windows also of WinSW), and what `render-deploy` writes; the installers call it |

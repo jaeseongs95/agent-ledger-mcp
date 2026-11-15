@@ -274,7 +274,8 @@ class SecretStoreTest {
      * and the service account LocalService with nothing but the read rights (no write, no delete, no change of the ACL or the owner).
      */
     private static void assertOwnerAndServiceAcl(Path path) throws IOException {
-        UserPrincipal owner = Files.getOwner(path, LinkOption.NOFOLLOW_LINKS);
+        // the account of the process as the product looks it up (the store makes it the owner, SecretProtection.settle), not an assumption
+        UserPrincipal owner = new SystemProcessUser().current(FileSystems.getDefault());
         UserPrincipal service = serviceAccount();
         List<AclEntry> entries = acl(path);
         assertThat(entries).as("the ACL of %s", path).hasSize(2).allSatisfy(entry -> assertThat(entry.type()).isEqualTo(AclEntryType.ALLOW));

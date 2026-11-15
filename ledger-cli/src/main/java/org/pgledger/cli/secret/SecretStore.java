@@ -23,7 +23,8 @@ import org.springframework.stereotype.Component;
 /**
  * Stores one secret per file in a directory that is created owner-only. The protection is given at creation and chosen by
  * the file system, never by the name of the operating system ({@link SecretProtection}): POSIX permissions 0700 (directory)
- * and 0600 (file), or on a file system with ACLs an ACL with one entry for the owner and nothing inherited. A file system
+ * and 0600 (file), or on a file system with ACLs an ACL with an entry for the owner (everything) and one for the service account LocalService (read; the
+ * services read what the installing user stores). A file system
  * with neither is refused for a creation (NON_POSIX_FILESYSTEM): nothing is stored with the default protection.
  *
  * <p>Reading and replacing what exists does not look at who may reach it. The personal edition trusts the whole PC: an

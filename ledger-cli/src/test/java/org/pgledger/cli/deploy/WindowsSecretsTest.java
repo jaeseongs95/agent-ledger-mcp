@@ -24,6 +24,7 @@ import org.pgledger.cli.support.CliExtension.Outcome;
 import org.pgledger.cli.support.EnglishMessages;
 import org.pgledger.cli.support.RecordingOutput;
 import org.pgledger.cli.support.RequiresNonPosixFileSystem;
+import org.pgledger.cli.support.ScriptedSecretInput;
 import org.pgledger.cli.support.WindowsEffectiveRights;
 
 /**
@@ -75,6 +76,13 @@ class WindowsSecretsTest {
                 HOME_OPTION, "--winsw=" + jars().resolve("WinSW.exe"), JAVA);
     }
 
+    /** Stores a secret through the command, the real {@code SecretStore} path (the ACL it creates, the temporary file and the move). */
+    private void storeSecret(Cli cli, String name, String value) {
+        Outcome stored = cli.run(home().resolve("etc/secrets"), new ScriptedSecretInput(value.toCharArray()), new RecordingOutput(),
+                "secret-set", name);
+        assertThat(stored.code()).as("secret-set of %s", name).isEmpty();
+    }
+
     private static List<AclEntry> acl(Path path) throws IOException {
         return Files.getFileAttributeView(path, AclFileAttributeView.class).getAcl();
     }
@@ -96,7 +104,7 @@ class WindowsSecretsTest {
         Path secrets = home().resolve("etc/secrets");
         Path keys = secrets.resolve("attachment-keys");
         Path secret = secrets.resolve("ledger.admin.token");
-        Files.writeString(secret, "never-printed-0123456789");
+        storeSecret(cli, "ledger.admin.token", "never-printed-0123456789");
         List<Path> paths = List.of(home(), home().resolve("lib"), home().resolve("etc"), secrets, keys, secret);
         List<List<AclEntry>> before = acls(paths);
 
@@ -130,7 +138,7 @@ class WindowsSecretsTest {
         assertThat(prepareHost(cli).code()).isEmpty();
         Path secrets = home().resolve("etc/secrets");
         Path secret = secrets.resolve("ledger.admin.token");
-        Files.writeString(secret, "never-printed-0123456789");
+        storeSecret(cli, "ledger.admin.token", "never-printed-0123456789");
         Path lib = home().resolve("lib");
         Path jar = lib.resolve(DeployLayout.CLI_JAR);
         Files.delete(jar);

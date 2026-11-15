@@ -10,7 +10,8 @@ import org.pgledger.application.attachment.ServiceAccountAccess;
  * is an install default, see {@code InstallDefaults}): the product runs as two services, the MCP server (named {@code <name>}) and the admin web (named
  * {@code <name>-admin}), under <b>one</b> operating system service account that belongs to no person (on Linux the system user
  * {@code <name>}). Its purpose is to keep the secrets of the ledger (the admin token, the database password) away from the
- * accounts the agents run as, so the secret directory is readable by the service account only. Everything an instance owns
+ * accounts the agents run as, so the secret directory is readable by the service account only (on Linux: it is the service user's; on Windows the
+ * installing user owns it and the service account LocalService reads it, and nobody else has access). Everything an instance owns
  * (the service names, the user, the jar directory, the settings and secret directory, the WinSW ids) follows the name, so two
  * instances can live on one host. The jar names are constants, and so is the rule that makes the name; a name is only accepted
  * through {@link DeployParameters}. {@code deploy/install.sh} and {@code deploy/install.cmd}, which create the directories,
@@ -82,7 +83,8 @@ public record DeployLayout(Platform platform,
 
     /**
      * Where the key files of the attachments are kept: {@code <etc>/secrets/attachment-keys}, inside the secret directory that is
-     * private to the service account (the setting {@code ledger.attachments.key-directory}); outside the attachment directory, so
+     * private to the service account (on Windows: the installing user with everything and LocalService with read; the setting
+     * {@code ledger.attachments.key-directory}); outside the attachment directory, so
      * a backup of the files never carries the keys by itself.
      */
     public String attachmentKeyDirectory() {
