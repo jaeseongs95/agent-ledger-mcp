@@ -24,11 +24,16 @@ final class SeedDatabase {
      * @param options H2 settings after the name, {@code ;}-separated, or empty
      */
     static Connection open(Path file, String options) throws SQLException {
-        String name = file.toAbsolutePath().toString().replace('\\', '/');
-        if (!name.endsWith(SUFFIX)) {
+        // The path is cut with the Path API, not by string edits of its text. H2 reads the platform separator of the file
+        // system path itself (its file layer accepts the separators of the platform), so no separator is rewritten here.
+        Path absolute = file.toAbsolutePath();
+        Path last = absolute.getFileName();
+        if (last == null || !last.toString().endsWith(SUFFIX)) {
             throw new SQLException("the seed bundle file must end with " + SUFFIX + ": " + file);
         }
-        String url = SCHEME + name.substring(0, name.length() - SUFFIX.length()) + (options.isEmpty() ? "" : ";" + options);
+        String leaf = last.toString();
+        Path stem = absolute.resolveSibling(leaf.substring(0, leaf.length() - SUFFIX.length()));
+        String url = SCHEME + stem + (options.isEmpty() ? "" : ";" + options);
         Connection connection = new org.h2.Driver().connect(url, new Properties());
         if (connection == null) {
             throw new SQLException("the H2 driver does not accept the seed bundle URL");
