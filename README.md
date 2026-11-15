@@ -60,10 +60,14 @@ of the write tools, the keys of the results, the `_hostAttestation` key) and cha
 - **Creation provenance is immutable.** New rows receive `created_by` automatically; edits and reviewer transitions keep it.
 - **Time is UTC.** Timestamps are stored and transmitted in UTC (ISO-8601 with `Z`); the server converts no time zone. The JVM and
   the database session must run in UTC, and a server that finds otherwise does not start (`ledger.schema.require-utc`).
-- **Database neutral.** The product does not bundle a JDBC driver: the user obtains the JDBC driver of the database of their choice
-  and registers it with `driver-register`. Only ANSI SQL is used and no DBMS-specific feature is used: the schema files have no
-  triggers, procedures, views, sequences, identity columns or boolean columns, and the rules that the database used to enforce are
-  enforced by the application services. No list of databases is published.
+- **ANSI SQL.** The product does not bundle a JDBC driver: the user obtains the JDBC driver of the database of their choice
+  and registers it with `driver-register`. The SQL is ANSI and uses the JDBC standard, and no DBMS-specific feature is used: the
+  schema files have no triggers, procedures, views, sequences, identity columns or boolean columns, and the rules that the database
+  used to enforce are enforced by the application services. The row limit of a list is the one statement that differs by
+  product, and `SqlBuilder` chooses it from the product of the connection. PostgreSQL is the database that is tested and
+  guaranteed in this edition. Other products may work but are not tested, and this edition contains no tailoring for a
+  particular product (column types, collations, session settings). The database must use UTF-8 and compare text case-sensitively.
+  `import-legacy` reads the 1.x ledger, which is a PostgreSQL database.
 
 A direct MCP caller is not authenticated as a host: the bearer token admits the caller, and the signed attestation proves the author.
 

@@ -663,6 +663,23 @@ class ReadQueryTest {
         Expect.failure(() -> catalog.codes(new CodesQuery("X", null, null, null)), ValidationCode.VALIDATION_FAILED);
     }
 
+    @Test
+    @DisplayName("DBN-003: get takes 200 ids and refuses 201 before any SQL runs (the ids become three IN lists, far under the "
+            + "32767 bind parameters of one statement that the PostgreSQL driver allows)")
+    void dbn003_getIdCount(Scenario s) {
+        List<String> accepted = IntStream.rangeClosed(1, GetService.MAX_IDS).mapToObj(i -> "NONE:D" + i).toList();
+        assertThat(s.bean(GetService.class).get(accepted).notFound()).hasSize(GetService.MAX_IDS);
+
+        s.ctx().spy().clear();
+        List<String> tooMany = IntStream.rangeClosed(1, GetService.MAX_IDS + 1).mapToObj(i -> "NONE:D" + i).toList();
+        LedgerException e = Expect.failure(() -> s.bean(GetService.class).get(tooMany), ValidationCode.VALIDATION_FAILED);
+
+        assertThat(e.args()).containsExactly("ids");
+        assertThat(Expect.firstIssue(e).reason()).isEqualTo(ValidationReason.MUST_HOLD_ITEMS);
+        assertThat(Expect.firstIssue(e).reasonArgs()).containsExactly("1", "200");
+        assertThat(s.ctx().spy().statements()).isEmpty();
+    }
+
     // ======================================================= read behaviour
 
     @Test

@@ -51,6 +51,10 @@ public final class DriverDataSources {
         config.setPoolName("ledger");
         config.setDataSource(simple);
         config.setMaximumPoolSize(properties.poolSize());
+        // The row-lock and conditional-update logic of the services is written for READ_COMMITTED, so it is asked for by the
+        // JDBC standard name instead of left to the default of the DBMS, which a server or a driver setting can change.
+        // A service that needs another level (the legacy snapshot) declares it on its @Transactional method.
+        config.setTransactionIsolation("TRANSACTION_READ_COMMITTED");
         if (schema != null) {
             config.setSchema(foldedSchema(simple, schema));
         }

@@ -247,6 +247,26 @@ class DriverBoundaryTest {
     }
 
     @Test
+    @org.junit.jupiter.api.DisplayName("DBN-004 the pool asks for READ_COMMITTED with the JDBC standard name, whatever default the DBMS has; "
+            + "its connections report it")
+    void dbn004_thePoolIsReadCommitted(Databases databases) throws SQLException {
+        TestDatabaseSettings settings = databases.database().settings();
+        String url = settings.url();
+        Path jar = driverJar();
+        DriverRegistration registration = LOADER.describe(jar, PostgresDriver.CLASS_NAME, url, NOW);
+        LedgerJdbcProperties properties = new LedgerJdbcProperties(url, settings.user(),
+                settings.ownerPassword().orElse(null), 2, registration);
+        try (RegisteredDriver registered = LOADER.load(registration);
+                HikariDataSource pool = DriverDataSources.create(registered, properties, null)) {
+            // red before the fix: the pool left the isolation to the default of the DBMS (null here)
+            assertThat(pool.getTransactionIsolation()).isEqualTo("TRANSACTION_READ_COMMITTED");
+            try (Connection c = pool.getConnection()) {
+                assertThat(c.getTransactionIsolation()).isEqualTo(Connection.TRANSACTION_READ_COMMITTED);
+            }
+        }
+    }
+
+    @Test
     void drv008_aJarThatChangedSinceRegistrationIsRefusedBeforeAnyConnection() {
         DriverRegistration registration = new DriverRegistration(driverJar(), PostgresDriver.CLASS_NAME,
                 "0".repeat(64), NOW);

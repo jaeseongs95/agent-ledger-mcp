@@ -98,8 +98,10 @@ public final class LegacySourceRepository {
      */
     public List<String> missingSteps() {
         if (!SchemaHistoryRepository.inspect(dataSource, metaData -> {
-            try (ResultSet tables = metaData.getTables(null, SchemaHistoryRepository.fold(metaData, schema),
-                    SchemaHistoryRepository.fold(metaData, MIGRATION_TABLE), new String[] {"TABLE"})) {
+            try (ResultSet tables = metaData.getTables(null,
+                    SchemaHistoryRepository.exactPattern(metaData, SchemaHistoryRepository.fold(metaData, schema)),
+                    SchemaHistoryRepository.exactPattern(metaData, SchemaHistoryRepository.fold(metaData, MIGRATION_TABLE)),
+                    new String[] {"TABLE"})) {
                 return tables.next();
             }
         })) {
