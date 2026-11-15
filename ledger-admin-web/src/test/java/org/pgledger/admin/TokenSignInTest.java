@@ -50,7 +50,7 @@ class TokenSignInTest {
     }
 
     @Test
-    @DisplayName("PSK-TOK-02: the right token signs in (a new session id, the session of the owner); a wrong token and the agent token do not")
+    @DisplayName("PSK-TOK-02: the right token signs in (the session of the owner; the new session id after a sign-in is ADM-009 of RealServerTest, since MockMvc does not show it); a wrong token and the agent token do not")
     void tok02_theTokenSignsIn() throws Exception {
         Browser wrong = new Browser(mvc);
         String csrf = wrong.csrfOf("/login");
@@ -62,11 +62,9 @@ class TokenSignInTest {
 
         Browser owner = new Browser(mvc);
         String ownerCsrf = owner.csrfOf("/login");
-        String before = owner.session().getId();
         owner.perform(owner.form("/login", Form.of("username", "owner", "token", AdminTestSettings.TOKEN), ownerCsrf))
                 .andExpect(status().is3xxRedirection());
 
-        assertThat(owner.session().getId()).isNotEqualTo(before);
         owner.perform(owner.get("/api/session").accept(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.authenticated").value(true)).andExpect(jsonPath("$.signIn").value("TOKEN"));
     }
