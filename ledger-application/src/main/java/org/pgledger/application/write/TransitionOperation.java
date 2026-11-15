@@ -61,7 +61,6 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
 
     private final WriteGate gate;
     private final Rows rows;
-    private final CodeRules codeRules;
     private final DefectFixRepository fixes;
     private final DefectCaseRepository cases;
     private final MergeChainRepository mergeChain;
@@ -70,13 +69,12 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
     private final AttachmentLinks attachments;
     private final Clock clock;
 
-    public TransitionOperation(WriteGate gate, ReceiptService receipts, Rows rows, CodeRules codeRules,
+    public TransitionOperation(WriteGate gate, ReceiptService receipts, Rows rows,
             DefectFixRepository fixes, DefectCaseRepository cases, MergeChainRepository mergeChain,
             HistoryRepository historyRows, HistoryWriter history, AttachmentLinks attachments, Clock clock) {
         super(gate, receipts, ReceiptOperation.TRANSITION, TransitionResult.class);
         this.gate = gate;
         this.rows = rows;
-        this.codeRules = codeRules;
         this.fixes = fixes;
         this.cases = cases;
         this.mergeChain = mergeChain;
@@ -195,7 +193,8 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
         }
         row.status().requireTransitionTo(to, evidence, fixHistory, ctx.author().sessionKey(), id, target);
         Defect after = row.transitioned(to, to == DefectStatus.MERGED ? mergedInto : null, now);
-        codeRules.checkDefect(row, after.category(), after.severity());
+        // a state change writes no code column, so no code is checked: a defect that holds the retired severity UNRATED is moved,
+        // verified or merged all the same (the rating is forced where it is written, in the edit of ledger_save)
         Defect saved = rows.saveDefect(after);
         ChangeSet changes = to == DefectStatus.MERGED
                 ? ChangeSet.empty().with("merged_into", null, mergedInto.value()) : ChangeSet.empty();

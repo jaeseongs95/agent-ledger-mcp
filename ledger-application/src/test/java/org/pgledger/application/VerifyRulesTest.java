@@ -308,6 +308,45 @@ class VerifyRulesTest {
                 org.pgledger.domain.error.ValidationCode.CODE_INVALID);
     }
 
+    @Test
+    @DisplayName("VRF-050: a state change runs no code check: a defect with the retired severity UNRATED is moved, verified and merged; only the edit of a save forces the rating")
+    void vrf050_unratedDefectChangesState(Scenario s) {
+        SaveResult toFixed = s.newDefect("to fixed");
+        SaveResult toVerified = s.newDefect("to verified");
+        SaveResult notDefect = s.newDefect("not a defect");
+        SaveResult disputed = s.newDefect("disputed");
+        SaveResult merged = s.newDefect("merged");
+        SaveResult target = s.newDefect("target");
+        // SQL, because no service makes this state: UNRATED is the severity of an imported defect
+        for (SaveResult d : List.of(toFixed, toVerified, notDefect, disputed, merged)) {
+            s.ctx().jdbc().sql("UPDATE defect SET severity = 'UNRATED' WHERE id = ?").param(d.id()).update();
+        }
+        TransitionService transitions = s.bean(TransitionService.class);
+        // a fix that leaves the defect OPEN, then the move to SOURCE_FIXED
+        s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR, fix(toFixed.id(), Scenario.commit('a'), null, null, false));
+        assertThat(transitions.transition(Scenario.AUTHOR,
+                s.move("defect", toFixed.id(), s.defect(toFixed.id()).version(), "SOURCE_FIXED", null)).to())
+                .isEqualTo("SOURCE_FIXED");
+        assertThat(transitions.transition(Scenario.AUTHOR,
+                s.move("defect", notDefect.id(), 1, "NOT_DEFECT", Scenario.EVIDENCE)).to()).isEqualTo("NOT_DEFECT");
+        assertThat(transitions.transition(Scenario.AUTHOR,
+                s.move("defect", disputed.id(), 1, "DISPUTED", Scenario.EVIDENCE)).to()).isEqualTo("DISPUTED");
+        MergeFixture.merge(s, merged.id(), 1, target.id());
+        // verification by an independent session
+        s.fix(Scenario.AUTHOR, toVerified.id(), Scenario.commit('b'));
+        String independent = s.actorWith("verify");
+        assertThat(review(s, independent, "defect", toVerified.id(), s.defect(toVerified.id()).version(), "VERIFIED").to())
+                .isEqualTo("VERIFIED");
+        for (SaveResult d : List.of(toFixed, toVerified, notDefect, disputed, merged)) {
+            assertThat(s.defect(d.id()).severity().value()).as(d.id()).isEqualTo("UNRATED");
+        }
+        assertThat(s.defect(merged.id()).status()).isEqualTo(DefectStatus.MERGED);
+        // the edit of a save still has to give the rating
+        Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR,
+                s.edit("defect", notDefect.id(), s.defect(notDefect.id()).version(), Map.of("title", "changed"))),
+                org.pgledger.domain.error.ValidationCode.CODE_INVALID);
+    }
+
     @org.junit.jupiter.api.RepeatedTest(20)
     @DisplayName("VRF-028: a record_fix of the owner and a verification of the same defect at the same time never both succeed, and no fix row lands on the verified defect")
     void vrf028_fixAgainstVerification(Scenario s) {

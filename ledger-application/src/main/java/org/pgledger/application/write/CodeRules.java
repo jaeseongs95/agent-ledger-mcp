@@ -17,8 +17,10 @@ public class CodeRules {
     }
 
     /**
-     * Checks category and severity of a defect about to be written. Every write of the row passes through here:
-     * severity is always-active, so a row that still holds a retired severity needs an active one in the same write.
+     * Checks category and severity of a defect about to be written. Only a write that stores the code columns passes
+     * through here (the create and the edit of a save): severity is always-active, so a row that still holds a retired
+     * severity needs an active one in the same write. A write that changes no code column (a fix, a state change) does not
+     * check them.
      *
      * @param current the row as it is now, or {@code null} for an insert
      */
