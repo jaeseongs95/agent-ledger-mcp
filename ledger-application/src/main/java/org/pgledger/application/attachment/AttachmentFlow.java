@@ -43,6 +43,11 @@ public class AttachmentFlow {
 
     /** {@code artifact-begin}. */
     public Begun begin(String actor, Begin command) {
+        // the gate first, then the free space of the disk for the declared size (file I/O, so outside the transaction of begin)
+        service.admit(actor);
+        if (command.size() > 0) {
+            store.requireDiskSpace(command.size());
+        }
         return service.begin(actor, command);
     }
 

@@ -14,7 +14,7 @@ public final class AttachmentSettings {
     /** The defaults with these folders and this active key. */
     public static AttachmentProperties properties(Path directory, Path keyDirectory, String activeKeyId) {
         return new AttachmentProperties(directory, keyDirectory, activeKeyId, DataSize.ofMegabytes(64),
-                DataSize.ofMegabytes(512), DataSize.ofGigabytes(10), 4, Duration.ofMinutes(10), Duration.ofHours(24),
+                DataSize.ofMegabytes(512), DataSize.ofGigabytes(10), 4, DataSize.ofMegabytes(64), Duration.ofMinutes(10), Duration.ofHours(24),
                 Duration.ofMinutes(1));
     }
 }

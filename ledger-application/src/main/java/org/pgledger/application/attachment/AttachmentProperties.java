@@ -27,6 +27,9 @@ import org.springframework.validation.annotation.Validated;
  * @param stagingBudgetBytes    what all uploads that are open may declare together
  * @param attachmentBudgetBytes what all kept attachments (and the open uploads) may hold together; a begin over it is refused and nothing is deleted
  * @param maxOpenPerOwner       how many uploads of one author may be open
+ * @param diskMarginBytes       the space that has to stay free on the disk of {@code directory} after a file is written (default 64MB, the
+ *                              same as {@code maxFileBytes}: one largest file is always left for the database and the logs); a begin or a
+ *                              chunk with {@code usable - size < margin} is refused with ARTIFACT_STORAGE_FULL
  * @param uploadTtl             how long an upload lives after its last chunk
  * @param orphanGrace           how long a file without a row waits before the check moves it away
  * @param reaperInterval        how often the reaper runs
@@ -37,7 +40,7 @@ public record AttachmentProperties(@NotNull Path directory, @NotNull Path keyDir
         @Pattern(regexp = "[A-Za-z0-9._-]{1,64}") String activeKeyId,
         @DefaultValue("64MB") DataSize maxFileBytes, @DefaultValue("512MB") DataSize stagingBudgetBytes,
         @DefaultValue("10GB") DataSize attachmentBudgetBytes, @DefaultValue("4") int maxOpenPerOwner,
-        @DefaultValue("10m") Duration uploadTtl, @DefaultValue("24h") Duration orphanGrace,
+        @DefaultValue("64MB") DataSize diskMarginBytes, @DefaultValue("10m") Duration uploadTtl, @DefaultValue("24h") Duration orphanGrace,
         @DefaultValue("1m") Duration reaperInterval) {
 
     /** The largest chunk of {@code artifact-chunk} and the largest page of {@code artifact-read}: 256 KiB, a contract constant. */
@@ -55,6 +58,7 @@ public record AttachmentProperties(@NotNull Path directory, @NotNull Path keyDir
         require(stagingBudgetBytes.toBytes() >= maxFileBytes.toBytes(), "staging-budget-bytes (at least max-file-bytes)");
         require(attachmentBudgetBytes.toBytes() >= maxFileBytes.toBytes(), "attachment-budget-bytes (at least max-file-bytes)");
         require(maxOpenPerOwner >= 1, "max-open-per-owner");
+        require(diskMarginBytes.toBytes() >= 0, "disk-margin-bytes");
         require(isPositive(uploadTtl), "upload-ttl");
         require(isPositive(orphanGrace), "orphan-grace");
         require(isPositive(reaperInterval), "reaper-interval");

@@ -51,6 +51,11 @@ public final class FailingUploadService extends UploadService {
     }
 
     @Override
+    public void admit(String actor) {
+        real.admit(actor);
+    }
+
+    @Override
     public Begun begin(String actor, Begin command) {
         return real.begin(actor, command);
     }

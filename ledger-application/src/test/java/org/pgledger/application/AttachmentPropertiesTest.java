@@ -47,7 +47,7 @@ class AttachmentPropertiesTest {
     }
 
     @Test
-    @DisplayName("ATA-019: the ten keys have the defaults of the design: 64 MiB, 512 MiB, 10 GiB, 4, 10 minutes, 24 hours, 1 minute")
+    @DisplayName("ATA-019: the keys have the defaults of the design: 64 MiB, 512 MiB, 10 GiB, 4, a disk margin of 64 MiB, 10 minutes, 24 hours, 1 minute")
     void ata019_theDefaults() {
         AttachmentProperties properties = bind(required());
 
@@ -58,6 +58,7 @@ class AttachmentPropertiesTest {
         assertThat(properties.stagingBudgetBytes()).isEqualTo(DataSize.ofMegabytes(512));
         assertThat(properties.attachmentBudgetBytes()).isEqualTo(DataSize.ofGigabytes(10));
         assertThat(properties.maxOpenPerOwner()).isEqualTo(4);
+        assertThat(properties.diskMarginBytes()).as("the margin is the size of the largest file").isEqualTo(DataSize.ofMegabytes(64));
         assertThat(properties.uploadTtl()).isEqualTo(Duration.ofMinutes(10));
         assertThat(properties.orphanGrace()).isEqualTo(Duration.ofHours(24));
         assertThat(properties.reaperInterval()).isEqualTo(Duration.ofMinutes(1));
@@ -125,8 +126,8 @@ class AttachmentPropertiesTest {
         Set<String> keys = Arrays.stream(AttachmentProperties.class.getRecordComponents()).map(RecordComponent::getName)
                 .collect(Collectors.toSet());
         assertThat(keys).containsExactlyInAnyOrder("directory", "keyDirectory", "activeKeyId", "maxFileBytes",
-                "stagingBudgetBytes", "attachmentBudgetBytes", "maxOpenPerOwner", "uploadTtl", "orphanGrace",
-                "reaperInterval");
+                "stagingBudgetBytes", "attachmentBudgetBytes", "maxOpenPerOwner", "diskMarginBytes", "uploadTtl",
+                "orphanGrace", "reaperInterval");
 
         Map<String, Object> values = required();
         values.put("ledger.attachments.chunk-bytes", "1024");

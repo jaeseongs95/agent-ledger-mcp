@@ -24,7 +24,13 @@ public enum ConflictCode implements ErrorCode {
     /** The SHA-256 of a chunk is not the one sent with it. */
     CHUNK_HASH_MISMATCH,
     /** The upload expired (it had no chunk for the whole upload-ttl). */
-    ARTIFACT_EXPIRED;
+    ARTIFACT_EXPIRED,
+    /**
+     * The free space of the attachment disk, less the bytes to write, is below {@code disk-margin-bytes}: the owner has to free the
+     * disk (not a product limit, see ARTIFACT_LIMIT). Arguments: the bytes to write, the usable bytes, the margin; the same three are the
+     * details {@code requestedBytes}, {@code usableBytes} and {@code marginBytes}.
+     */
+    ARTIFACT_STORAGE_FULL;
 
     @Override
     public ErrorCategory category() {

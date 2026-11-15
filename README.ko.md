@@ -129,7 +129,7 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 - **업로드.** 업로드는 위의 MCP 도구 다섯 개로만 합니다. `artifact-begin`(필수 `operationKey`), 청크마다 `artifact-chunk`(최대 262144바이트), `artifact-finish`, 확인용 `artifact-status`와 `artifact-read`입니다. PC의 파일을 모델 밖에서 보내는 클라이언트 프로그램은 아직 정하지 못한 항목이며, 도구가 유일한 길입니다.
 - **저장.** 데이터베이스에는 메타데이터와 파일 이름만 둡니다(`upload_staging`, `attachment`, `attachment_file`. 본문 열도 외래 키도 없습니다). 파일은 `ledger.attachments.directory` 아래에 128비트 무작위 이름으로, 확장자와 원본 이름 없이 두며, 청크마다 한 세그먼트로 AES-256-GCM 암호화하고(저장 키와 위치를 함께 인증합니다) 끝나면 읽기 전용으로 바꿉니다. 첨부는 바꾸거나 지우지 않습니다. 데이터베이스의 응용 계정은 첨부에 `SELECT`와 `INSERT`만 가집니다.
 - **키.** `setup`이 첫 256비트 키 파일을 `ledger.attachments.key-directory`에 만들고(서비스 계정만 읽습니다) `ledger.attachments.active-key-id`를 정합니다. 교체는 `ledger-cli attachments-key-create`, `active-key-id`를 새 id로 바꾸기, 재시작, 그다음 `ledger-cli attachments-rekey --from=<옛 id>`로 옛 키의 파일을 다시 쓰는 순서입니다. 옛 키 파일은 현재 파일이나 열린 업로드가 쓰는 동안 남깁니다. 필요한 키 파일이 없으면 시작 점검이 키가 아니라 키 id를 알립니다.
-- **오류.** `ARTIFACT_CHUNK_CONFLICT`, `CHUNK_HASH_MISMATCH`, `ARTIFACT_BUSY`(잠시 뒤 다시 보냅니다), `ARTIFACT_INCOMPLETE`, `ARTIFACT_HASH_MISMATCH`(바이트는 남습니다), `ARTIFACT_CORRUPTED`, `ARTIFACT_LIMIT`, `ARTIFACT_UNSUPPORTED_PURPOSE`, `ARTIFACT_EXPIRED`, `ARTIFACT_NOT_FOUND`, `ARTIFACT_OPERATION_CONFLICT`.
+- **오류.** `ARTIFACT_CHUNK_CONFLICT`, `CHUNK_HASH_MISMATCH`, `ARTIFACT_BUSY`(잠시 뒤 다시 보냅니다), `ARTIFACT_INCOMPLETE`, `ARTIFACT_HASH_MISMATCH`(바이트는 남습니다), `ARTIFACT_CORRUPTED`, `ARTIFACT_LIMIT`, `ARTIFACT_UNSUPPORTED_PURPOSE`, `ARTIFACT_EXPIRED`, `ARTIFACT_NOT_FOUND`, `ARTIFACT_OPERATION_CONFLICT`, `ARTIFACT_STORAGE_FULL`(디스크가 너무 찼으니 소유자가 비워야 합니다). 도구 오류의 `details.retryable`은 같은 요청을 나중에 다시 보내 성공할 수 있으면 `true`입니다(`ARTIFACT_BUSY`, `ARTIFACT_INCOMPLETE`, 그리고 `details.limit`이 `staging-budget`이나 `open-uploads`인 `ARTIFACT_LIMIT`).
 - **점검.** `ledger-cli attachments-check`는 없거나 손상된 첨부(지우지 않습니다)와 어떤 이력 행도 가리키지 않는 첨부(보존합니다)를 알리고, 행이 없는 파일이나 rekey가 대체한 파일을 `orphan-grace`가 지난 뒤 `orphans/`로 옮깁니다. `orphans/`를 비우는 길은 `--purge-orphans`뿐이며 감사 기록에 남습니다. 관리 웹은 같은 결과를 읽기 전용으로 보여 주고, 기록 화면에 텍스트 첨부는 이스케이프해서 보여 주며 그 밖의 형식은 응용을 거치는 내려받기로 제공합니다.
 - **백업.** 첨부 폴더, 키 폴더, 데이터베이스를 함께 백업하고 복원합니다. 복원 뒤 `ledger-cli attachments-check`를 실행하면 없거나 손상된 첨부가 없어야 합니다. 격리된 파일의 행이 다시 생기면 점검이 그 파일을 제자리로 돌려놓습니다.
 - **설치.** 설치 프로그램이 첨부 폴더(서비스 계정 소유, 다른 계정에는 닫힘), 비밀 폴더 아래의 키 폴더, 설정을 만듭니다. 1.x의 근거는 기록된 URI와 해시 그대로 남으며 이전은 아무것도 가져오지 않습니다.
@@ -193,6 +193,7 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | `ledger.attachments.staging-budget-bytes` | 서버, CLI | 열린 업로드 전체가 선언할 수 있는 크기, 기본 512MB |
 | `ledger.attachments.attachment-budget-bytes` | 서버, CLI | 보관 첨부 전체(와 열린 업로드)가 가질 수 있는 크기, 기본 10GB. 넘으면 새 `artifact-begin`을 거절하고 있는 첨부는 지우지 않습니다 |
 | `ledger.attachments.max-open-per-owner` | 서버, CLI | 작성자 한 명이 열어 둘 수 있는 업로드 수, 기본 4 |
+| `ledger.attachments.disk-margin-bytes` | 서버, CLI | 파일을 쓴 뒤에도 `directory`의 디스크에 남겨 두어야 하는 공간, 기본 64MB(가장 큰 파일 하나의 크기). `usable - size`가 이보다 작으면 begin이나 청크를 `ARTIFACT_STORAGE_FULL`로 거절하며, 소유자가 디스크를 비워야 합니다 |
 | `ledger.attachments.upload-ttl` | 서버, CLI | 마지막 청크 뒤 업로드가 사는 시간, 기본 10m |
 | `ledger.attachments.orphan-grace` | 서버, CLI | 행 없는 파일(또는 대체된 파일)을 `attachments-check`가 `orphans/`로 옮기기 전 유예, 기본 24h |
 | `ledger.attachments.reaper-interval` | MCP 서버 | 만료된 업로드를 지우는 주기, 기본 1m |

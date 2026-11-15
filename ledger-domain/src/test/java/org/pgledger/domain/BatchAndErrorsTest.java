@@ -110,7 +110,7 @@ class BatchAndErrorsTest {
         List<ErrorCode> codes = allCodes();
         // 63 and the 15 codes of the attachments (ATA-001 ..; common table 3.2): ARTIFACT_UNSUPPORTED_PURPOSE (validation),
         // ARTIFACT_NOT_FOUND (lookup), eight conflicts, five infrastructure codes
-        assertThat(codes).hasSize(78);
+        assertThat(codes).hasSize(79);
         assertThat(codes.stream().map(ErrorCode::token)).doesNotHaveDuplicates();
         assertThat(codes.stream().map(ErrorCode::token)).contains("AUTHOR_ID_FORMAT", "SESSION_NOT_GRANTED",
                 "HOST_ATTESTATION_REQUIRED", "VERSION_CONFLICT", "SAME_SESSION", "MERGED_DEFECT", "CODE_REQUIRED",
@@ -118,7 +118,7 @@ class BatchAndErrorsTest {
                 "ATTESTATION_VERSION_UNSUPPORTED", "ATTESTATION_SIGNATURE_INVALID", "ATTESTATION_BINDING_MISMATCH",
                 "ATTESTATION_TIME_WINDOW", "KEY_REPLACEMENT_NOT_CONFIRMED", "SESSION_KEY_REQUIRED", "ARTIFACT_UNSUPPORTED_PURPOSE", "ARTIFACT_CHUNK_CONFLICT",
                 "ARTIFACT_BUSY", "ARTIFACT_INCOMPLETE", "ARTIFACT_OPERATION_CONFLICT", "ARTIFACT_LIMIT",
-                "ARTIFACT_HASH_MISMATCH", "CHUNK_HASH_MISMATCH", "ARTIFACT_EXPIRED", "ARTIFACT_NOT_FOUND",
+                "ARTIFACT_HASH_MISMATCH", "CHUNK_HASH_MISMATCH", "ARTIFACT_EXPIRED", "ARTIFACT_STORAGE_FULL", "ARTIFACT_NOT_FOUND",
                 "ARTIFACT_CORRUPTED", "ARTIFACT_STORAGE_UNSAFE", "ARTIFACT_KEY_MISSING", "ARTIFACT_STORAGE_FAILED",
                 "ARTIFACT_KEY_DIRECTORY_INSIDE_STORAGE");
         for (ErrorCode code : codes) {

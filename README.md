@@ -158,7 +158,9 @@ can be edited without a trace. The history row of a record points to it with the
   current file or an open upload uses it. The start check names the key id (never the key) when a needed key file is missing.
 - **Errors.** `ARTIFACT_CHUNK_CONFLICT`, `CHUNK_HASH_MISMATCH`, `ARTIFACT_BUSY` (send again later), `ARTIFACT_INCOMPLETE`,
   `ARTIFACT_HASH_MISMATCH` (the bytes are kept), `ARTIFACT_CORRUPTED`, `ARTIFACT_LIMIT`, `ARTIFACT_UNSUPPORTED_PURPOSE`,
-  `ARTIFACT_EXPIRED`, `ARTIFACT_NOT_FOUND`, `ARTIFACT_OPERATION_CONFLICT`.
+  `ARTIFACT_EXPIRED`, `ARTIFACT_NOT_FOUND`, `ARTIFACT_OPERATION_CONFLICT`, `ARTIFACT_STORAGE_FULL` (the disk is too full: the owner
+  has to free it). A tool error carries `details.retryable`, `true` when the same request sent later can succeed
+  (`ARTIFACT_BUSY`, `ARTIFACT_INCOMPLETE`, and `ARTIFACT_LIMIT` with `details.limit` `staging-budget` or `open-uploads`).
 - **Check.** `ledger-cli attachments-check` reports the attachments that are missing or damaged (never deleted) and those no
   history row points to (kept), and moves a file that no row names, or that a rekey replaced, to `orphans/` once
   `orphan-grace` has passed; `--purge-orphans` is the only way `orphans/` is emptied (audited). The admin web shows the same result
@@ -231,6 +233,7 @@ There is no command that prints a stored secret.
 | `ledger.attachments.staging-budget-bytes` | servers, CLI | what all open uploads may declare together, default 512MB |
 | `ledger.attachments.attachment-budget-bytes` | servers, CLI | what all kept attachments (and the open uploads) may hold together, default 10GB; over it a new `artifact-begin` is refused and nothing is deleted |
 | `ledger.attachments.max-open-per-owner` | servers, CLI | how many uploads of one author may be open, default 4 |
+| `ledger.attachments.disk-margin-bytes` | servers, CLI | the space that has to stay free on the disk of `directory` after a file is written, default 64MB (the size of the largest file): when `usable - size` is below it a begin or a chunk is refused with `ARTIFACT_STORAGE_FULL` and the owner has to free the disk |
 | `ledger.attachments.upload-ttl` | servers, CLI | how long an upload lives after its last chunk, default 10m |
 | `ledger.attachments.orphan-grace` | servers, CLI | how long a file without a row (or a replaced file) waits before `attachments-check` moves it to `orphans/`, default 24h |
 | `ledger.attachments.reaper-interval` | MCP server | how often expired uploads are removed, default 1m |

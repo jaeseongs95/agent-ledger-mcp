@@ -41,7 +41,7 @@ public final class AttachmentTestInitializer implements ApplicationContextInitia
         Path keyDirectory = root.resolve("keys");
         // the record is only the carrier of the two folders for the key maker; the settings of the context are the property source below
         AttachmentProperties folders = new AttachmentProperties(directory, keyDirectory, "to-be-created",
-                DataSize.ofMegabytes(64), DataSize.ofMegabytes(512), DataSize.ofGigabytes(10), 4, Duration.ofMinutes(10),
+                DataSize.ofMegabytes(64), DataSize.ofMegabytes(512), DataSize.ofGigabytes(10), 4, DataSize.ofMegabytes(64), Duration.ofMinutes(10),
                 Duration.ofHours(24), Duration.ofMinutes(1));
         String keyId = new AttachmentKeys(folders, new PrivateFiles(), new SecureRandom()).create();
         context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("ledger-test-attachments",

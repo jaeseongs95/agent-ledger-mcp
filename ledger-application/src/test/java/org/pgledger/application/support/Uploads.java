@@ -125,7 +125,7 @@ public final class Uploads {
         AttachmentProperties current = ctx.bean(AttachmentProperties.class);
         AttachmentProperties switched = new AttachmentProperties(current.directory(), current.keyDirectory(), activeKeyId,
                 current.maxFileBytes(), current.stagingBudgetBytes(), current.attachmentBudgetBytes(),
-                current.maxOpenPerOwner(), current.uploadTtl(), current.orphanGrace(), current.reaperInterval());
+                current.maxOpenPerOwner(), current.diskMarginBytes(), current.uploadTtl(), current.orphanGrace(), current.reaperInterval());
         return new UploadService(ctx.bean(WriteGate.class), ctx.bean(UploadStagingRepository.class),
                 ctx.bean(AttachmentRepository.class), ctx.bean(AttachmentFileRepository.class), switched,
                 ctx.bean(IdGenerator.class), ctx.bean(StorageKeys.class), ctx.bean(Clock.class));

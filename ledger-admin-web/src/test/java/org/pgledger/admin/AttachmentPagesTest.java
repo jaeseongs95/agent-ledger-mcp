@@ -63,7 +63,7 @@ class AttachmentPagesTest {
 
     private static String newKey() {
         AttachmentProperties properties = new AttachmentProperties(DIRECTORY, KEY_DIRECTORY, "placeholder",
-                DataSize.ofMegabytes(64), DataSize.ofMegabytes(512), DataSize.ofGigabytes(10), 4, Duration.ofMinutes(10),
+                DataSize.ofMegabytes(64), DataSize.ofMegabytes(512), DataSize.ofGigabytes(10), 4, DataSize.ofMegabytes(64), Duration.ofMinutes(10),
                 Duration.ofHours(24), Duration.ofMinutes(1));
         return new AttachmentKeys(properties, new PrivateFiles(), new SecureRandom()).create();
     }

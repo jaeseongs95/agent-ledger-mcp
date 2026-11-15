@@ -107,6 +107,14 @@ public class UploadService {
     // ------------------------------------------------------------------------------------------------ begin
 
     /**
+     * Only the gate (host attestation, live key, a live grant): the entry point asks it before it reads the free space of the disk, so a
+     * caller that cannot prove its author learns nothing of the disk.
+     */
+    public void admit(String actor) {
+        gate.openWithAnyGrant(actor, Channel.AUTHOR);
+    }
+
+    /**
      * {@code artifact-begin}. The same author and operation key with the same file name, size and SHA-256 gives the upload that
      * exists; other content under the key is ARTIFACT_OPERATION_CONFLICT. A new upload is refused, never cut, when it is over the
      * file size limit, the budget of all open uploads or the number of open uploads of the author.

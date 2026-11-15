@@ -14,6 +14,7 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -87,6 +88,30 @@ public class AttachmentStore {
         files.ensureDirectory(properties.directory().resolve(QUARANTINE));
     }
 
+    // ------------------------------------------------------------------------------------------------ disk space
+
+    /**
+     * Refuses the write when the usable space of the disk of the attachment directory, less the bytes to write, is below
+     * {@code disk-margin-bytes} (the comparison is {@code usable - requested < margin}). This is not a limit of the product: the owner
+     * has to free the disk (ARTIFACT_STORAGE_FULL, not retryable). A disk that cannot be read is no "full" disk but a failure of the
+     * storage (ARTIFACT_STORAGE_IO_ERROR).
+     */
+    public void requireDiskSpace(long requestedBytes) {
+        long usable;
+        try {
+            usable = Files.getFileStore(properties.directory()).getUsableSpace();
+        } catch (IOException failure) {
+            throw failed(failure);
+        }
+        long margin = properties.diskMarginBytes().toBytes();
+        if (usable - requestedBytes < margin) {
+            throw new ConflictException(ConflictCode.ARTIFACT_STORAGE_FULL,
+                    List.of(Long.toString(requestedBytes), Long.toString(usable), Long.toString(margin)))
+                    .withDetails(Map.of("requestedBytes", List.of(Long.toString(requestedBytes)),
+                            "usableBytes", List.of(Long.toString(usable)), "marginBytes", List.of(Long.toString(margin))));
+        }
+    }
+
     // ------------------------------------------------------------------------------------------------ append
 
     /**
@@ -109,6 +134,7 @@ public class AttachmentStore {
                 }
                 long size = channel.size();
                 if (size == storedBytes) {
+                    requireDiskSpace(plain.length + (long) SegmentCipher.OVERHEAD);
                     byte[] segment = cipher.seal(aes, key, sequence, false, plain);
                     writeFully(channel, ByteBuffer.wrap(segment), size);
                     channel.force(true);
