@@ -707,6 +707,37 @@ class LegacyImportTest {
     }
 
     @Test
+    @DisplayName("MIG-035 1.x stored every relation with the smaller id first and kept nowhere which defect the caller named first: caused_by and blocks are imported as stored, never guessed, and listed (count and ids) in the report, the audit row and the verification; a kind only the legacy ledger has is imported without a direction; the codes keep their direction")
+    void mig035_relationsOfUnknownDirection() {
+        withRig(LegacyFixtures.withDirectedRelations(LegacyFixtures.rich()), rig -> {
+            ImportReport report = rig.importAll();
+
+            assertThat(report.tables()).allMatch(TableCheck::matches);
+            assertThat(rig.count("SELECT COUNT(*) FROM defect_relation")).isEqualTo(4);
+            assertThat(rig.count("SELECT COUNT(*) FROM defect_relation WHERE a = 'E2E-D-0007' AND b = 'OLD-D-0001' "
+                    + "AND kind = 'caused_by'")).as("imported in the order it was stored").isEqualTo(1);
+            // only the relations of a kind that has a direction are listed, in stored order, sorted
+            assertThat(report.relationsOfUnknownDirection())
+                    .containsExactly("E2E-D-0007|OLD-D-0001|caused_by", "OLD-D-0001|OLD-D-0002|blocks");
+            assertThat(report.detail()).endsWith("relations_of_unknown_direction=2");
+            assertThat(rig.rows("SELECT detail FROM owner_audit WHERE operation = 'IMPORT'")).singleElement()
+                    .satisfies(row -> assertThat(text(row, "detail")).endsWith("relations_of_unknown_direction=2"));
+            // the legacy code rows overwrote the seed rows, but the direction of the seed stays; a kind only the legacy
+            // ledger has is a new code and has no direction
+            Map<String, String> directions = new java.util.HashMap<>();
+            rig.rows("SELECT code, direction FROM common_code WHERE code_group = 'RELATION_KIND'")
+                    .forEach(row -> directions.put(text(row, "code"), text(row, "direction")));
+            assertThat(directions).containsEntry("caused_by", "GIVEN").containsEntry("blocks", "GIVEN")
+                    .containsEntry("same_site", "CANONICAL").containsEntry("old_custom", "CANONICAL");
+            // the verification lists the same relations and writes nothing
+            assertThat(rig.service().verify().relationsOfUnknownDirection())
+                    .isEqualTo(report.relationsOfUnknownDirection());
+        });
+        withRich(rig -> assertThat(rig.importAll().relationsOfUnknownDirection())
+                .as("the relation of the rich fixture is of a kind without a direction").isEmpty());
+    }
+
+    @Test
     @DisplayName("MIG-015 4000 characters of Korean text with both kinds of quotes, backslashes and line feeds arrive unchanged (a defect behavior and a case observation)")
     void mig015_longText() {
         withRich(rig -> {

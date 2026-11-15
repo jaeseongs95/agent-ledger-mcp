@@ -1,14 +1,18 @@
 package org.pgledger.application.legacy;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import org.pgledger.application.admin.OwnerAuditWriter;
 import org.pgledger.database.repository.CodeRevisionRepository;
 import org.pgledger.database.repository.ColumnRule;
+import org.pgledger.database.repository.CommonCodeRepository;
 import org.pgledger.database.repository.Counter;
 import org.pgledger.database.repository.IdAllocator;
 import org.pgledger.database.repository.LegacyRow;
@@ -25,6 +29,9 @@ import org.pgledger.domain.error.ValidationCode;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationIssue;
 import org.pgledger.domain.error.ValidationReason;
+import org.pgledger.domain.model.CommonCode;
+import org.pgledger.domain.rule.CodeDirection;
+import org.pgledger.domain.rule.CodeGroup;
 import org.pgledger.domain.rule.OwnerAction;
 import org.pgledger.domain.value.OwnerIdentity;
 import org.springframework.beans.factory.ObjectProvider;
@@ -88,15 +95,18 @@ public class LegacyImportService {
     private final CodeRevisionRepository revision;
     private final OwnerAuditWriter audit;
     private final LegacyRowMapper mapper;
+    private final CommonCodeRepository codes;
 
     public LegacyImportService(ObjectProvider<LegacySourceRepository> sources, LegacyTargetRepository target,
-            IdAllocator ids, CodeRevisionRepository revision, OwnerAuditWriter audit, LegacyRowMapper mapper) {
+            IdAllocator ids, CodeRevisionRepository revision, OwnerAuditWriter audit, LegacyRowMapper mapper,
+            CommonCodeRepository codes) {
         this.sources = sources;
         this.target = target;
         this.ids = ids;
         this.revision = revision;
         this.audit = audit;
         this.mapper = mapper;
+        this.codes = codes;
     }
 
     /** True when the connection to the legacy ledger is configured ({@code ledger.import.source.url}). */
@@ -134,7 +144,7 @@ public class LegacyImportService {
                 ids.raise(counter, counters.highest(counter));
             }
             revision.bump();
-            ImportReport report = compare(source.schema(), legacySide);
+            ImportReport report = withUnknownDirections(compare(source.schema(), legacySide), source);
             audit.record(actor, OwnerAction.IMPORT, "legacy schema " + source.schema(), report.detail());
             return report;
         });
@@ -154,8 +164,33 @@ public class LegacyImportService {
             Map<LegacyTable, Map<String, ColumnRule>> rules = columnRules();
             ImportCounters counters = new ImportCounters();
             refuse(validate(source, rules, counters));
-            return compare(source.schema(), pass(source, rules, counters, false));
+            return withUnknownDirections(compare(source.schema(), pass(source, rules, counters, false)), source);
         });
+    }
+
+    /**
+     * The report with the relations whose direction is unknown. 1.x stored every relation with its smaller id first (the
+     * history of a link names the same canonical order and its receipt keeps only a digest of the request), so which defect
+     * the caller named first is not in the legacy data: a relation of a kind that the new ledger keeps with a direction
+     * ({@code caused_by}, {@code blocks}) is imported as it is stored, never guessed, and listed for the owner to check.
+     */
+    private ImportReport withUnknownDirections(ImportReport report, LegacySourceRepository source) {
+        Set<String> directed = new HashSet<>();
+        for (CommonCode code : codes.catalog(CodeGroup.RELATION_KIND).entries()) {
+            if (code.direction() == CodeDirection.GIVEN) {
+                directed.add(code.code().value());
+            }
+        }
+        List<String> unknown = new ArrayList<>();
+        if (!directed.isEmpty()) {
+            source.scan(LegacyTable.DEFECT_RELATION, row -> {
+                if (directed.contains(row.text("kind"))) {
+                    unknown.add(row.text("a") + "|" + row.text("b") + "|" + row.text("kind"));
+                }
+            });
+        }
+        Collections.sort(unknown);
+        return new ImportReport(report.schema(), report.tables(), unknown);
     }
 
     private LegacySourceRepository requireSource() {
