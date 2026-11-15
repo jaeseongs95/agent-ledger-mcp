@@ -7,7 +7,6 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Clock;
-import java.time.Duration;
 import java.util.Locale;
 import java.util.Set;
 import java.util.TreeSet;
@@ -62,7 +61,7 @@ class GrantStepTest {
         TestDatabase database = databases.database();
         TestSchema schema = databases.newSchema();
         SchemaProperties named = new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, true,
-                schema.name(), Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT));
+                schema.name());
         DataSource pool = schema.dataSource();
         TestSchemaServices.migrator(pool, named, Clock.systemUTC()).migrate();
         String account = database.settings().appUser();

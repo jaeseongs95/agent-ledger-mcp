@@ -14,6 +14,7 @@ import org.pgledger.database.time.UtcTime;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.domain.value.Sha256;
+import org.springframework.dao.IncorrectResultSizeDataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.support.DatabaseMetaDataCallback;
 import org.springframework.jdbc.support.JdbcUtils;
@@ -21,8 +22,10 @@ import org.springframework.jdbc.support.MetaDataAccessException;
 import org.springframework.stereotype.Repository;
 
 /**
- * The migration bookkeeping on the ledger {@link DataSource}: the table {@code schema_history} (one row per attempt, never
- * updated or deleted) and its rows. A repository like the others: it takes the {@link JdbcClient} and the data source of the
+ * The migration bookkeeping on the ledger {@link DataSource}: the table {@code schema_history}, the history of the three products
+ * in one form (one row per attempt, key {@code (version, attempt)}; a row is inserted as FAILED when its attempt starts and the
+ * attempt turns that one row to SUCCEEDED at its end; no other row is updated, none is deleted) and its rows. A repository like
+ * the others: it takes the {@link JdbcClient} and the data source of the
  * container (principle 3.9), and joins the transaction of its caller (principle 4.4; the migrator's service method). The
  * schema of the tables ({@code ledger.schema.name}) is a property of that one data source: its connections are made with
  * that schema ({@code DriverDataSources}), so nothing here chooses a schema per call.
@@ -34,17 +37,20 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class SchemaHistoryRepository {
 
-    /** Result of one attempt to apply a version. */
+    /** Result of one attempt to apply a version; a row starts as FAILED (the claim of the attempt) and turns to SUCCEEDED at its end. */
     public enum Outcome {
-        SUCCESS, FAILED
+        SUCCEEDED, FAILED
     }
 
     /** One row of {@code getTypeInfo}: the name of a type the database offers, its JDBC type ({@code java.sql.Types}) and its precision. */
     public record TypeInfo(String name, int dataType, long precision) {
     }
 
-    /** One row of schema_history. */
-    public record Row(int version, String fileName, Sha256 sha256, Instant appliedAt, Outcome outcome) {
+    /**
+     * One row of schema_history: attempt number {@code attempt} (from 1) of {@code version}, with the file name and the SHA-256 of
+     * the file before the placeholder is replaced.
+     */
+    public record Row(int version, int attempt, String script, Sha256 digest, Instant appliedAt, Outcome outcome) {
     }
 
     private static final Pattern SIMPLE_NAME = Pattern.compile("[a-z][a-z0-9_]{0,29}");
@@ -110,11 +116,18 @@ public class SchemaHistoryRepository {
      * path that matches no schema is skipped), and the schema is found by the connection as soon as it is created.
      */
     public void createSchemaIfMissing(String schema) {
+        if (!schemaExists(schema)) {
+            jdbc.sql("CREATE SCHEMA " + schema).update();
+        }
+    }
+
+    /** Whether the schema is there (the JDBC metadata folds the name like the DBMS does). */
+    public boolean schemaExists(String schema) {
         if (!SIMPLE_NAME.matcher(schema).matches()) {
             throw new IllegalArgumentException("schema name must be lower case letters, digits and _ (max 30): "
                     + schema);
         }
-        boolean exists = inspect(dataSource, metaData -> {
+        return inspect(dataSource, metaData -> {
             String folded = fold(metaData, schema);
             try (ResultSet rs = metaData.getSchemas()) {
                 while (rs.next()) {
@@ -125,9 +138,15 @@ public class SchemaHistoryRepository {
             }
             return false;
         });
-        if (!exists) {
-            jdbc.sql("CREATE SCHEMA " + schema).update();
-        }
+    }
+
+    /**
+     * The names of the character sets the database reports in the standard view {@code INFORMATION_SCHEMA.CHARACTER_SETS} (the
+     * encoding of the database: PostgreSQL lists the one that the database has). JDBC has no call for it and the view is ANSI, so no
+     * product query is asked; {@link org.pgledger.database.schema.DatabaseEncoding} judges the names.
+     */
+    public List<String> characterSets() {
+        return jdbc.sql("SELECT character_set_name FROM information_schema.character_sets").query(String.class).list();
     }
 
     /** The types the driver reports ({@code getTypeInfo}), in its order: the facts that the long text type is chosen from. */
@@ -156,36 +175,59 @@ public class SchemaHistoryRepository {
         });
     }
 
+    /** Creates the history table in the common form of the three products (the columns, the key and the check are that form). */
     public void createTable() {
         jdbc.sql("CREATE TABLE schema_history ("
-                + "version INTEGER NOT NULL, "
-                + "file_name VARCHAR(200) NOT NULL, "
-                + "sha256 VARCHAR(64) NOT NULL, "
+                + "version BIGINT NOT NULL, "
+                + "attempt INTEGER NOT NULL, "
+                + "script VARCHAR(255) NOT NULL, "
+                + "digest CHAR(64) NOT NULL, "
                 + "applied_at TIMESTAMP NOT NULL, "
                 + "outcome VARCHAR(10) NOT NULL, "
-                + "CONSTRAINT pk_schema_history PRIMARY KEY (version, applied_at), "
-                + "CONSTRAINT ck_schema_history_outcome CHECK (outcome IN ('SUCCESS', 'FAILED')))").update();
+                + "CONSTRAINT pk_schema_history PRIMARY KEY (version, attempt), "
+                + "CONSTRAINT ck_schema_history_outcome CHECK (outcome IN ('SUCCEEDED', 'FAILED')))").update();
     }
 
-    /** All attempts, oldest first per version. */
+    /** All attempts, by version and attempt. */
     public List<Row> rows() {
         List<Row> rows = new ArrayList<>(jdbc.sql(
-                "SELECT version, file_name, sha256, applied_at, outcome FROM schema_history ORDER BY version, applied_at")
-                .query((rs, n) -> new Row(rs.getInt("version"), rs.getString("file_name"),
-                        new Sha256(rs.getString("sha256")), UtcTime.read(rs, "applied_at"),
+                "SELECT version, attempt, script, digest, applied_at, outcome FROM schema_history ORDER BY version, attempt")
+                .query((rs, n) -> new Row(rs.getInt("version"), rs.getInt("attempt"), rs.getString("script"),
+                        new Sha256(rs.getString("digest")), UtcTime.read(rs, "applied_at"),
                         Outcome.valueOf(rs.getString("outcome"))))
                 .list());
         return List.copyOf(rows);
     }
 
+    /**
+     * Inserts a row: the claim of an attempt (outcome FAILED, the first statement of the transaction of the attempt, which holds the
+     * key of the attempt in the database against a second runner) or the record of an attempt that failed (the same row, written in
+     * a transaction of its own after the attempt was rolled back). A second row with the same version and attempt is the duplicate
+     * key, which the migrator reads as "another runner has this attempt".
+     */
     public void append(Row row) {
-        jdbc.sql("INSERT INTO schema_history (version, file_name, sha256, applied_at, outcome) "
-                + "VALUES (:version, :file, :sha, :at, :outcome)")
+        jdbc.sql("INSERT INTO schema_history (version, attempt, script, digest, applied_at, outcome) "
+                + "VALUES (:version, :attempt, :script, :digest, :at, :outcome)")
                 .param("version", row.version())
-                .param("file", row.fileName())
-                .param("sha", row.sha256().hex())
+                .param("attempt", row.attempt())
+                .param("script", row.script())
+                .param("digest", row.digest().hex())
                 .param("at", UtcTime.toDb(row.appliedAt()))
                 .param("outcome", row.outcome().name())
                 .update();
+    }
+
+    /**
+     * The last statement of an attempt: turns the row that this attempt inserted to SUCCEEDED. It changes that one row (the key and
+     * the outcome FAILED that it was inserted with) and no other.
+     *
+     * @throws org.springframework.dao.IncorrectResultSizeDataAccessException when that row is not there (the attempt failed)
+     */
+    public void succeed(int version, int attempt) {
+        int changed = jdbc.sql("UPDATE schema_history SET outcome = 'SUCCEEDED' WHERE version = :version AND attempt = :attempt "
+                + "AND outcome = 'FAILED'").param("version", version).param("attempt", attempt).update();
+        if (changed != 1) {
+            throw new IncorrectResultSizeDataAccessException(1, changed);
+        }
     }
 }

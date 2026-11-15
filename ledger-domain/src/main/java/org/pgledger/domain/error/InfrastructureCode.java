@@ -44,8 +44,8 @@ public enum InfrastructureCode implements ErrorCode {
      * {1} = the least length of the other character type that is taken for one.
      */
     SCHEMA_LONG_TEXT_TYPE_MISSING,
-    /** The wait for another migration process was interrupted. */
-    SCHEMA_MIGRATION_INTERRUPTED,
+    /** The encoding of the database is not UTF-8; {0} = what the database reports. */
+    SCHEMA_ENCODING_NOT_UTF8,
     /** The grants cannot be applied to the account. */
     SCHEMA_GRANT_FAILED,
     /** The default time zone of the JVM is not UTC. */

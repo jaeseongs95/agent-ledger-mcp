@@ -1,7 +1,6 @@
 package org.pgledger.cli.support;
 
 import java.time.Clock;
-import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
@@ -38,8 +37,8 @@ public final class TestLedgerDatabase implements AutoCloseable {
         boolean ready = false;
         try {
             TestSchemaServices.migrator(database.dataSource,
-                    new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, true, database.schemaName(),
-                            Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT)), Clock.systemUTC()).migrate();
+                    new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, true, database.schemaName()),
+                    Clock.systemUTC()).migrate();
             ready = true;
         } finally {
             if (!ready) {

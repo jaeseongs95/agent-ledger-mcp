@@ -10,8 +10,10 @@ import org.springframework.stereotype.Component;
 
 /**
  * What an application does about the schema at startup: it only looks, it never changes anything. The schema is
- * up to date when every file has a history whose latest outcome is SUCCESS with the digest of the file, and the
- * history knows no version without a file ({@link SchemaHistory} judges it). Anything else stops the application.
+ * up to date when every file has a history whose latest outcome is SUCCEEDED with the digest of the file, and the
+ * history knows no version without a file ({@link SchemaHistory} judges it). Anything else stops the application, naming the
+ * command that the operator runs ({@code ledger-cli migrate}; the server never holds the password of the DDL account, see
+ * {@link SchemaMigrator}).
  */
 @Component
 public class SchemaVerifier {

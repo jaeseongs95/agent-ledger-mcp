@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Clock;
-import java.time.Duration;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,7 +28,7 @@ import org.springframework.jdbc.datasource.AbstractDataSource;
 class ApplicationAccountAccessTest {
 
     private static final SchemaProperties PROPERTIES = new SchemaProperties(SchemaProperties.DEFAULT_LOCATION,
-            true, null, Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT));
+            true, null);
 
     /** A migrated schema of its own; the application account has no right on it yet. */
     private static TestSchema migrated(Databases databases) {

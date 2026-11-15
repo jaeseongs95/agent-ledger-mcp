@@ -187,8 +187,8 @@ class SetupSystemTest {
                 + ".common_code ORDER BY code_group, code").toString());
         state.put("code_revision", owner.value("SELECT revision FROM " + schema + ".code_revision WHERE id = 1"));
         state.put("owner_audit", owner.value("SELECT COUNT(*) FROM " + schema + ".owner_audit"));
-        state.put("schema_history", owner.rows("SELECT version, sha256, outcome FROM " + schema
-                + ".schema_history ORDER BY version, applied_at").toString());
+        state.put("schema_history", owner.rows("SELECT version, attempt, digest, outcome FROM " + schema
+                + ".schema_history ORDER BY version, attempt").toString());
         return state;
     }
 

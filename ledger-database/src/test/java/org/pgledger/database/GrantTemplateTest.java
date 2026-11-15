@@ -12,7 +12,6 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Clock;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -165,7 +164,7 @@ class GrantTemplateTest {
         TestDatabase database = databases.database();
         TestSchema schema = databases.newSchema();
         SchemaProperties named = new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, true,
-                schema.name(), Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT));
+                schema.name());
         TestSchemaServices.migrator(schema.dataSource(), named, Clock.systemUTC()).migrate();
         String account = database.settings().appUser();
         schema.allowUsage(account);

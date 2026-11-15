@@ -43,8 +43,8 @@ class MigrateCommandTest {
 
     private static final String USER = "alice";
     private static final Pattern FILE_NAME = Pattern.compile("V([0-9]+)__.*\\.sql");
-    private static final String HISTORY = "SELECT version, file_name, sha256, applied_at, outcome FROM schema_history "
-            + "ORDER BY version, applied_at";
+    private static final String HISTORY = "SELECT version, attempt, script, digest, applied_at, outcome FROM schema_history "
+            + "ORDER BY version, attempt";
 
     @TempDir
     Path tmp;
@@ -95,7 +95,7 @@ class MigrateCommandTest {
     }
 
     @Test
-    @DisplayName("CLI-003 migrate on an empty database applies every V file in numeric order: one schema_history row per file, outcome SUCCESS, the file name and the SHA-256 of an independent reader, applied_at in UTC; exit 0")
+    @DisplayName("CLI-003 migrate on an empty database applies every V file in numeric order: one schema_history row per file (attempt 1), outcome SUCCEEDED, the script name and the SHA-256 of an independent reader, applied_at in UTC; exit 0")
     void migratesAnEmptyDatabase(Cli cli) throws Exception {
         RecordingOutput output = new RecordingOutput();
         Instant before = Instant.now().minus(Duration.ofMinutes(1));
@@ -112,9 +112,10 @@ class MigrateCommandTest {
         for (int i = 0; i < history.size(); i++) {
             Map<String, Object> row = history.get(i);
             assertThat(((Number) row.get("version")).intValue()).isEqualTo(i + 1);
-            assertThat(row.get("file_name")).isEqualTo(names.get(i));
-            assertThat(row.get("sha256")).isEqualTo(files.get(names.get(i)));
-            assertThat(row.get("outcome")).isEqualTo("SUCCESS");
+            assertThat(((Number) row.get("attempt")).intValue()).isEqualTo(1);
+            assertThat(row.get("script")).isEqualTo(names.get(i));
+            assertThat(row.get("digest")).isEqualTo(files.get(names.get(i)));
+            assertThat(row.get("outcome")).isEqualTo("SUCCEEDED");
             Instant appliedAt = ((Timestamp) row.get("applied_at")).toLocalDateTime().toInstant(java.time.ZoneOffset.UTC);
             assertThat(appliedAt).isBetween(before, Instant.now().plus(Duration.ofMinutes(1)));
         }
@@ -162,10 +163,11 @@ class MigrateCommandTest {
     }
 
     @Test
-    @DisplayName("CLI-042 a schema file whose digest differs from the applied one stops migrate: MIGRATION_FAILED (exit 1) naming the file, and the attempt is recorded as FAILED")
+    @DisplayName("CLI-042 a schema file whose digest differs from the applied one stops migrate: MIGRATION_FAILED (exit 1) naming the file, before anything is applied, and no row is added to schema_history")
     void aChangedFileStopsTheMigration(Cli cli, CapturedOutput captured) {
         assertThat(run(cli, new RecordingOutput(), "migrate").exitCode()).isZero();
-        assertThat(database.update("UPDATE schema_history SET sha256 = ? WHERE version = 1", "f".repeat(64))).isEqualTo(1);
+        assertThat(database.update("UPDATE schema_history SET digest = ? WHERE version = 1", "f".repeat(64))).isEqualTo(1);
+        List<Map<String, Object>> before = database.rows(HISTORY);
 
         Outcome result = run(cli, new RecordingOutput(), "migrate");
 
@@ -173,7 +175,6 @@ class MigrateCommandTest {
         assertThat(result.code()).contains(ErrorCode.MIGRATION_FAILED);
         // the failure of the database module is an InfrastructureException with a code; its summary names the code and the file
         assertThat(captured.getAll()).contains("SCHEMA_DIGEST_MISMATCH").contains("V1");
-        assertThat(database.rows("SELECT outcome FROM schema_history WHERE version = 1 ORDER BY applied_at")
-                .getLast().get("outcome")).isEqualTo("FAILED");
+        assertThat(database.rows(HISTORY)).as("a changed file is no attempt: no row is added or changed").isEqualTo(before);
     }
 }
