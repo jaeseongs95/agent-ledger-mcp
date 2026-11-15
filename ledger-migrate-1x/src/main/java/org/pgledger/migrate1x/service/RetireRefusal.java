@@ -1,4 +1,4 @@
-package org.pgledger.application.legacy;
+package org.pgledger.migrate1x.service;
 
 /** Why {@link LegacyRetireService} refuses to list or to remove the objects of the 1.x schema. */
 public enum RetireRefusal {

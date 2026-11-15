@@ -1,4 +1,4 @@
-package org.pgledger.cli.secret;
+package org.pgledger.migrate1x.secret;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -13,8 +13,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
-import org.pgledger.cli.ErrorCode;
-import org.pgledger.cli.FailureException;
+import org.pgledger.migrate1x.tool.ErrorCode;
+import org.pgledger.migrate1x.tool.FailureException;
 
 /**
  * The settings of the environment file of a 1.x installation ({@code /etc/pg-ledger-mcp/env}), as the 1.x

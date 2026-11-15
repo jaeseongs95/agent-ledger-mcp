@@ -1,4 +1,4 @@
-package org.pgledger.database.repository;
+package org.pgledger.migrate1x.database;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;

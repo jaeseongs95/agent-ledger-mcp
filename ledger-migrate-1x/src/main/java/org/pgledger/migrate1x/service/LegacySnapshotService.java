@@ -1,8 +1,7 @@
-package org.pgledger.application.legacy;
+package org.pgledger.migrate1x.service;
 
 import java.util.function.Supplier;
-import org.pgledger.database.repository.LegacySourceRepository;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.pgledger.migrate1x.database.LegacySourceRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,10 +18,10 @@ import org.springframework.transaction.annotation.Transactional;
  * is opened inside it, on its own manager; Spring has no manager that spans two data sources. The snapshot is therefore a
  * call through the proxy of this bean, made once per import, and is not a way around the self-invocation of the import service.
  *
- * <p>Like the import service it exists only where {@code ledger.cli.enabled=true}.
+ * <p>Like the import service it is imported by the database configuration of the tool ({@link ImportServices}) and exists only
+ * where the tool has its database.
  */
 @Service
-@ConditionalOnProperty(prefix = "ledger.cli", name = "enabled", havingValue = "true")
 @Transactional(transactionManager = LegacySourceRepository.TRANSACTION_MANAGER, readOnly = true,
         isolation = Isolation.REPEATABLE_READ)
 public class LegacySnapshotService {

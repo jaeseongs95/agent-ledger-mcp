@@ -1,9 +1,8 @@
-package org.pgledger.cli.secret;
+package org.pgledger.migrate1x.secret;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.List;
@@ -11,40 +10,46 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import org.pgledger.cli.CliCommand;
-import org.pgledger.cli.CliMessages;
-import org.pgledger.cli.CliOptions;
-import org.pgledger.cli.CliOutput;
-import org.pgledger.cli.Command;
-import org.pgledger.cli.ErrorCode;
-import org.pgledger.cli.FailureException;
-import org.pgledger.cli.UsageException;
+import org.pgledger.migrate1x.tool.Command;
+import org.pgledger.migrate1x.tool.ErrorCode;
+import org.pgledger.migrate1x.tool.FailureException;
+import org.pgledger.migrate1x.tool.Messages;
+import org.pgledger.migrate1x.tool.Options;
+import org.pgledger.migrate1x.tool.Output;
+import org.pgledger.migrate1x.tool.ToolCommand;
+import org.pgledger.migrate1x.tool.UsageException;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.stereotype.Component;
 
 /**
- * {@code secret-import-1x (--env=<file> | --stdin)}: moves the two secrets of a 1.x installation into the secret store, so that
- * the clients of the old server and the admin sign-in keep working after the migration. {@code DBHUB_AUTH_TOKEN} (the bearer
- * token of the agents) becomes {@code ledger.mcp.token} and {@code ledger.admin.agent-token}, {@code PGLEDGER_ADMIN_TOKEN}
- * becomes {@code ledger.admin.token}. The other settings of the 1.x environment are not read. {@code PGLEDGER_ADMIN_TOKEN} is
- * optional: a 1.0.0 installation had no admin web and its environment has no such setting; then only the two secrets of the
- * agents are stored, one line says that {@code ledger.admin.token} was not imported, and the installer's next step
- * ({@code token-generate ledger.admin.token --print}) creates it and shows it once.
+ * {@code import-secrets-1x (--env=<file> | --stdin) [--replace]}: moves the two secrets of a 1.x installation into the secret
+ * store of the 2.0 installation, so that the clients of the old server and the admin sign-in keep working after the migration.
+ * {@code DBHUB_AUTH_TOKEN} (the bearer token of the agents) becomes {@code ledger.mcp.token} and
+ * {@code ledger.admin.agent-token}, {@code PGLEDGER_ADMIN_TOKEN} becomes {@code ledger.admin.token}. The other settings of the
+ * 1.x environment are not read. {@code PGLEDGER_ADMIN_TOKEN} is optional: a 1.0.0 installation had no admin web and its
+ * environment has no such setting; then only the two secrets of the agents are stored and one line says that
+ * {@code ledger.admin.token} was not imported (the one the installer of 2.0 generated stays).
+ *
+ * <p>The installer of 2.0 has run before this command (the secret store belongs to the service account, which the installer
+ * creates), so the secrets exist already: the tokens it generated were shown once and are not in use by any client yet. Without
+ * {@code --replace} a secret that is stored already is kept and never replaced, so a run that stopped half way is completed by
+ * the next one; with {@code --replace} the three secrets are replaced by the 1.x values (the services read them at start, so
+ * they are restarted afterwards).
  *
  * <p>All values are checked before anything is written ({@code DBHUB_AUTH_TOKEN} present; what is present at least
- * {@value #MINIMUM_LENGTH} characters, the admin token different from the agent token). A secret that is stored already is kept and never replaced, so a run that stopped
- * half way is completed by the next one. Only the names of the secrets and of the 1.x settings are printed, never a value, and
- * no refusal holds a value. The command does not use the database.
+ * {@value #MINIMUM_LENGTH} characters, the admin token different from the agent token). Only the names of the secrets and of
+ * the 1.x settings are printed, never a value, and no refusal holds a value. The command does not use the database.
  *
- * <p>The 1.x file is owned by root with mode 0600 while the secret store belongs to the service account, so the installer
- * opens the file as root and gives it to this command on standard input ({@code --stdin}, at most {@value #MAXIMUM_BYTES}
- * bytes, the file read to its end); {@code --env=<file>} is for an operator who can read the file as the service account.
+ * <p>The 1.x file is owned by root with mode 0600 while the secret store belongs to the service account, so the operator opens
+ * the file as root and gives it to this command on standard input ({@code --stdin}, at most {@value #MAXIMUM_BYTES} bytes, the
+ * file read to its end); {@code --env=<file>} is for an operator who can read the file as the service account.
  */
 @Component
-public class SecretImport1xCommand implements Command {
+public class ImportSecrets1xCommand implements Command {
 
     static final String ENV = "env";
     static final String STDIN = "stdin";
+    static final String REPLACE = "replace";
 
     /** The two settings of the 1.x environment that are read: the name in the file, in the order they are checked and reported. */
     enum OneXKey {
@@ -94,10 +99,10 @@ public class SecretImport1xCommand implements Command {
 
     private final SecretStore store;
     private final StandardInput standardInput;
-    private final CliOutput output;
-    private final CliMessages messages;
+    private final Output output;
+    private final Messages messages;
 
-    SecretImport1xCommand(SecretStore store, StandardInput standardInput, CliOutput output, CliMessages messages) {
+    ImportSecrets1xCommand(SecretStore store, StandardInput standardInput, Output output, Messages messages) {
         this.store = store;
         this.standardInput = standardInput;
         this.output = output;
@@ -105,13 +110,13 @@ public class SecretImport1xCommand implements Command {
     }
 
     @Override
-    public CliCommand name() {
-        return CliCommand.SECRET_IMPORT_1X;
+    public ToolCommand name() {
+        return ToolCommand.IMPORT_SECRETS_1X;
     }
 
     @Override
     public Set<String> options() {
-        return Set.of(ENV, STDIN);
+        return Set.of(ENV, STDIN, REPLACE);
     }
 
     @Override
@@ -119,8 +124,9 @@ public class SecretImport1xCommand implements Command {
         if (!operands.isEmpty()) {
             throw new UsageException(ErrorCode.TOO_MANY_ARGUMENTS);
         }
-        Optional<String> file = CliOptions.value(arguments, ENV);
-        boolean fromStandardInput = CliOptions.flag(arguments, STDIN);
+        Optional<String> file = Options.value(arguments, ENV);
+        boolean fromStandardInput = Options.flag(arguments, STDIN);
+        boolean replace = Options.flag(arguments, REPLACE);
         if (file.isPresent() && fromStandardInput) {
             throw new UsageException(ErrorCode.INVALID_OPTION_VALUE);
         }
@@ -143,13 +149,13 @@ public class SecretImport1xCommand implements Command {
         }
         for (ImportedSecret imported : ImportedSecret.values()) {
             String name = imported.secret().value();
-            if (present.get(imported)) {
-                output.info(messages.get("secret-import-1x.kept", name));
+            if (present.get(imported) && !replace) {
+                output.info(messages.get("import-secrets-1x.kept", name));
                 continue;
             }
             if (!values.containsKey(imported.source())) {
-                // a 1.0.0 installation had no admin web, so its environment has no admin token: the installer generates one
-                output.info(messages.get("secret-import-1x.no-admin", imported.source().setting(), name));
+                // a 1.0.0 installation had no admin web, so its environment has no admin token: the one of 2.0 stays
+                output.info(messages.get("import-secrets-1x.no-admin", imported.source().setting(), name));
                 continue;
             }
             char[] value = values.get(imported.source()).toCharArray();
@@ -158,7 +164,8 @@ public class SecretImport1xCommand implements Command {
             } finally {
                 Arrays.fill(value, '\0');
             }
-            output.info(messages.get("secret-import-1x.stored", name, imported.source().setting()));
+            output.info(messages.get(present.get(imported) ? "import-secrets-1x.replaced" : "import-secrets-1x.stored",
+                    name, imported.source().setting()));
         }
     }
 

@@ -1,13 +1,13 @@
-package org.pgledger.application.legacy;
+package org.pgledger.migrate1x.service;
 
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
-import org.pgledger.database.repository.LegacyColumn;
-import org.pgledger.database.repository.LegacyRow;
 import org.pgledger.domain.value.Sha256;
+import org.pgledger.migrate1x.database.LegacyColumn;
+import org.pgledger.migrate1x.database.LegacyRow;
 
 /**
  * The canonical serialisation of a row that both sides of the comparison use, so equal rows give equal text and any

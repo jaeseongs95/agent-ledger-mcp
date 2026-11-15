@@ -1,4 +1,4 @@
-package org.pgledger.application.legacy;
+package org.pgledger.migrate1x.service;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -11,14 +11,9 @@ import java.util.Objects;
 import java.util.Set;
 import org.pgledger.application.admin.OwnerAuditWriter;
 import org.pgledger.database.repository.CodeRevisionRepository;
-import org.pgledger.database.repository.ColumnRule;
 import org.pgledger.database.repository.CommonCodeRepository;
 import org.pgledger.database.repository.Counter;
 import org.pgledger.database.repository.IdAllocator;
-import org.pgledger.database.repository.LegacyRow;
-import org.pgledger.database.repository.LegacySourceRepository;
-import org.pgledger.database.repository.LegacyTable;
-import org.pgledger.database.repository.LegacyTargetRepository;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ConflictException;
 import org.pgledger.domain.error.InfrastructureCode;
@@ -34,8 +29,12 @@ import org.pgledger.domain.rule.CodeDirection;
 import org.pgledger.domain.rule.CodeGroup;
 import org.pgledger.domain.rule.OwnerAction;
 import org.pgledger.domain.value.OwnerIdentity;
+import org.pgledger.migrate1x.database.ColumnRule;
+import org.pgledger.migrate1x.database.LegacyRow;
+import org.pgledger.migrate1x.database.LegacySourceRepository;
+import org.pgledger.migrate1x.database.LegacyTable;
+import org.pgledger.migrate1x.database.LegacyTargetRepository;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -72,13 +71,12 @@ import org.springframework.transaction.annotation.Transactional;
  * <li>One audit row {@link OwnerAction#IMPORT} names the actor.</li>
  * </ol>
  *
- * <p>The import is an operator command, so the service exists only where {@code ledger.cli.enabled=true} (the command line
- * tool sets it in its own {@code application.properties}); the MCP server and the admin web have no such bean.
+ * <p>The import is an operator command of the migration tool ({@code import-1x}); the service is imported by the database
+ * configuration of that tool ({@link ImportServices}), and no other program has it.
  *
  * <p>{@link #verify()} runs the validation and the comparison alone, against what the new schema holds now.
  */
 @Service
-@ConditionalOnProperty(prefix = "ledger.cli", name = "enabled", havingValue = "true")
 @Transactional
 public class LegacyImportService {
 

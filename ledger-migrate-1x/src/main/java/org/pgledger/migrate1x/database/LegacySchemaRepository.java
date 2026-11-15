@@ -1,4 +1,4 @@
-package org.pgledger.database.repository;
+package org.pgledger.migrate1x.database;
 
 import java.sql.DatabaseMetaData;
 import java.util.ArrayList;
@@ -11,9 +11,8 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
-import org.pgledger.database.driver.LegacySourceConfiguration;
-import org.pgledger.database.driver.LegacySourceProperties;
-import org.pgledger.database.repository.LegacyObject.Kind;
+import org.pgledger.database.repository.SchemaHistoryRepository;
+import org.pgledger.migrate1x.database.LegacyObject.Kind;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -41,7 +40,7 @@ import org.springframework.stereotype.Component;
  * ({@code ledger._author_ok}, {@code sql/10_tables.sql} of 1.x), so the function cannot go first. All tables go in one
  * statement, because they refer to each other by foreign keys. Nothing is dropped with {@code CASCADE}: an object that
  * this class did not list makes {@code DROP SCHEMA} fail, and the whole run rolls back. A component that only
- * {@link org.pgledger.database.driver.LegacySourceWiring} makes, like {@link LegacySourceRepository}.
+ * {@link LegacySourceWiring} makes, like {@link LegacySourceRepository}.
  */
 @Component
 public final class LegacySchemaRepository {

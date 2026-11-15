@@ -1,4 +1,4 @@
-package org.pgledger.database.repository;
+package org.pgledger.migrate1x.database;
 
 import java.sql.ResultSet;
 import java.util.ArrayList;
@@ -8,8 +8,7 @@ import java.util.Set;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
-import org.pgledger.database.driver.LegacySourceConfiguration;
-import org.pgledger.database.driver.LegacySourceProperties;
+import org.pgledger.database.repository.SchemaHistoryRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.RowCallbackHandler;
@@ -27,8 +26,7 @@ import org.springframework.stereotype.Component;
  * statements are plain ANSI: a select list, a table of the legacy schema and an {@code ORDER BY}; values that are JSON in the
  * legacy schema are read as text, never converted by a function.
  *
- * <p>A component that only {@link org.pgledger.database.driver.LegacySourceWiring} makes (the scan of this package leaves it
- * out), from the settings {@code ledger.import.source.*}. The legacy ledger is genuinely a second database (principle 3.9), so
+ * <p>A component that only {@link LegacySourceWiring} makes (this package is not scanned), from the settings {@code ledger.import.source.*}. The legacy ledger is genuinely a second database (principle 3.9), so
  * it has a {@link JdbcClient} and a transaction manager of its own, both beans next to its data source and qualified by name:
  * the {@code JdbcClient} and the transaction manager of the ledger database stay the {@code @Primary} ones for every other
  * injection point.

@@ -1,17 +1,16 @@
-package org.pgledger.application.legacy;
+package org.pgledger.migrate1x.service;
 
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
-import org.pgledger.database.repository.LegacyInventory;
-import org.pgledger.database.repository.LegacySchemaRepository;
-import org.pgledger.database.repository.LegacySourceRepository;
 import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.domain.error.LookupException;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.value.Sha256;
+import org.pgledger.migrate1x.database.LegacyInventory;
+import org.pgledger.migrate1x.database.LegacySchemaRepository;
+import org.pgledger.migrate1x.database.LegacySourceRepository;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,7 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
  * the {@code LedgerException} of the verification:
  * <ol>
  * <li>the legacy schema is not the schema of 2.0 ({@link RetireRefusal#OWN_SCHEMA}: it holds a {@code schema_history});</li>
- * <li>{@code import-legacy --verify-only} matches: the ledger of 2.0 holds what the legacy ledger holds, table by table (a mismatch
+ * <li>{@code import-1x --verify-only} matches: the ledger of 2.0 holds what the legacy ledger holds, table by table (a mismatch
  * is {@code INTEGRITY_VIOLATION}), so what is removed has been moved;</li>
  * <li>no other session runs as a 1.x role or uses the schema ({@link RetireRefusal#SESSIONS_CONNECTED});</li>
  * <li>the account owns the objects it is to drop ({@link RetireRefusal#NOT_OWNER}).</li>
@@ -38,7 +37,6 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Like the import it exists only where {@code ledger.cli.enabled=true}.
  */
 @Service
-@ConditionalOnProperty(prefix = "ledger.cli", name = "enabled", havingValue = "true")
 @Transactional(transactionManager = LegacySourceRepository.TRANSACTION_MANAGER)
 public class LegacyRetireService {
 

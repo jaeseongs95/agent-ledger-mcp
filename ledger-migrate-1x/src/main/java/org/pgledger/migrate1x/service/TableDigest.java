@@ -1,14 +1,14 @@
-package org.pgledger.application.legacy;
+package org.pgledger.migrate1x.service;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import org.pgledger.database.repository.LegacyColumn;
-import org.pgledger.database.repository.LegacyRow;
-import org.pgledger.database.repository.LegacyTable;
 import org.pgledger.domain.value.Sha256;
+import org.pgledger.migrate1x.database.LegacyColumn;
+import org.pgledger.migrate1x.database.LegacyRow;
+import org.pgledger.migrate1x.database.LegacyTable;
 
 /**
  * The count and the digest of the rows of one table, collected row by row. The digest is the SHA-256 over the lines

@@ -1,4 +1,4 @@
-package org.pgledger.application.legacy;
+package org.pgledger.migrate1x.service;
 
 import java.util.List;
 import org.pgledger.domain.error.ValidationIssue;

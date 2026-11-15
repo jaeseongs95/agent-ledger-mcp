@@ -1,4 +1,4 @@
-package org.pgledger.database.repository;
+package org.pgledger.migrate1x.database;
 
 /**
  * A database role of the 1.x installer that {@code retire-legacy} leaves in place, and why. The role is listed with the

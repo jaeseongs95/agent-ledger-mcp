@@ -1,9 +1,9 @@
-package org.pgledger.database.repository;
+package org.pgledger.migrate1x.database;
 
-import static org.pgledger.database.repository.LegacyColumn.flag;
-import static org.pgledger.database.repository.LegacyColumn.instant;
-import static org.pgledger.database.repository.LegacyColumn.number;
-import static org.pgledger.database.repository.LegacyColumn.text;
+import static org.pgledger.migrate1x.database.LegacyColumn.flag;
+import static org.pgledger.migrate1x.database.LegacyColumn.instant;
+import static org.pgledger.migrate1x.database.LegacyColumn.number;
+import static org.pgledger.migrate1x.database.LegacyColumn.text;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -20,14 +20,17 @@ import java.util.stream.Collectors;
  * <p>{@code task} and {@code release_condition} have a column of the new schema that the legacy tables do not: {@code id_key},
  * the id in upper case under a UNIQUE constraint (the mapping makes it from the legacy id, like the link key).
  *
- * <p>The new schema avoids the words that SQL:2003 reserves, so two columns are named differently on the two sides:
- * {@code history.at} of the legacy schema is {@code occurred_at} here, and {@code session_grant.scope} is
- * {@code grant_scope}. The legacy side keeps the names the old installer created; the application maps one to the other.
+ * <p>The new schema avoids the words that SQL:2003 reserves, and has its own names for two others, so three columns are named
+ * differently on the two sides: {@code history.at} of the legacy schema is {@code occurred_at} here, {@code history.legacy_ref}
+ * is {@code source_ref}, and {@code session_grant.scope} is {@code grant_scope}. The legacy side keeps the names the old installer
+ * created; the mapper of the import maps one to the other.
  *
  * <p>The tables that are not copied: {@code _migration} (bookkeeping of the legacy installer, read only to check its
- * steps), {@code common_code_use} (the legacy common-code bookkeeping) and the view {@code category} (the categories are
- * the rows of {@code common_code}). {@code session_key} and {@code owner_audit} are new in this schema; the keys are
- * registered by the owner after the import and the import writes its own audit row.
+ * steps), {@code common_code_use} (the legacy common-code bookkeeping), the view {@code category} (the categories are
+ * the rows of {@code common_code}) and {@code request_receipt} (the idempotency records of 1.x requests: a request id of 1.x is
+ * never replayed by 2.0, whose every write carries an operation key, so the rows would only refuse and are not carried over).
+ * {@code session_key} and {@code owner_audit} are new in this schema; the keys are registered by the owner after the import and
+ * the import writes its own audit row.
  */
 public enum LegacyTable {
 
@@ -108,13 +111,7 @@ public enum LegacyTable {
             List.of(number("id"), instant("occurred_at"), text("author_id"), text("login"), text("actor_assurance"),
                     text("entity"), text("entity_id"), text("op"), text("from_state"), text("to_state"), text("changes"),
                     text("before_data"), text("reason"), text("evidence_uri"), text("evidence_sha256"),
-                    number("corrects_id"), text("request_id"), text("legacy_ref")), false),
-
-    REQUEST_RECEIPT("request_receipt", "request_receipt", List.of("request_id"), List.of("request_id"),
-            List.of(text("request_id"), text("operation"), text("payload_sha256"), text("author_id"), text("login"),
-                    text("response"), instant("created_at")),
-            List.of(text("request_id"), text("operation"), text("payload_sha256"), text("author_id"), text("login"),
-                    text("response"), text("origin"), instant("created_at")), false);
+                    number("corrects_id"), text("request_id"), text("source_ref")), false);
 
     private final String sourceName;
     private final String targetName;

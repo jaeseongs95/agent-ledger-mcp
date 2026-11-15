@@ -1,4 +1,4 @@
-package org.pgledger.testing.legacy;
+package org.pgledger.migrate1x.fixture;
 
 import static org.pgledger.testing.legacy.LegacyLedger.at;
 

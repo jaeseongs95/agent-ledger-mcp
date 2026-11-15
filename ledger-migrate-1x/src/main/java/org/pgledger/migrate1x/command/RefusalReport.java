@@ -1,8 +1,5 @@
-package org.pgledger.cli.legacy;
+package org.pgledger.migrate1x.command;
 
-import org.pgledger.cli.CliMessages;
-import org.pgledger.cli.CliOutput;
-import org.pgledger.cli.database.LedgerRefusals.TableMismatch;
 import org.pgledger.domain.error.AdminException;
 import org.pgledger.domain.error.ConflictException;
 import org.pgledger.domain.error.InfrastructureCode;
@@ -13,20 +10,23 @@ import org.pgledger.domain.error.TransitionException;
 import org.pgledger.domain.error.TrustException;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationIssue;
+import org.pgledger.migrate1x.tool.Messages;
+import org.pgledger.migrate1x.tool.Output;
+import org.pgledger.migrate1x.wiring.Refusals.TableMismatch;
 import org.springframework.stereotype.Component;
 
 /**
- * What the owner needs to find the rows of a refused legacy comparison, printed before the refusal itself: the values that
- * cannot be imported (one per line, {@code table[key].column} and the reason) or the tables of a failed comparison. Both
- * commands that run the comparison ({@code import-legacy} and {@code retire-legacy}) print it the same way.
+ * What the owner needs to find the rows of a refused comparison, printed before the refusal itself: the values that cannot be
+ * imported (one per line, {@code table[key].column} and the reason) or the tables of a failed comparison. Both commands that run
+ * the comparison ({@code import-1x} and {@code retire-1x}) print it the same way.
  */
 @Component
-class LegacyRefusalReport {
+class RefusalReport {
 
-    private final CliOutput output;
-    private final CliMessages messages;
+    private final Output output;
+    private final Messages messages;
 
-    LegacyRefusalReport(CliOutput output, CliMessages messages) {
+    RefusalReport(Output output, Messages messages) {
         this.output = output;
         this.messages = messages;
     }
@@ -35,13 +35,13 @@ class LegacyRefusalReport {
         switch (refused) {
             case ValidationException invalid -> {
                 for (ValidationIssue issue : invalid.issues()) {
-                    output.info(messages.get("import-legacy.violation", issue.path(), reasonText(issue)));
+                    output.info(messages.get("import-1x.violation", issue.path(), reasonText(issue)));
                 }
             }
             case InfrastructureException failed -> {
                 if (failed.code() == InfrastructureCode.INTEGRITY_VIOLATION) {
                     for (TableMismatch mismatch : TableMismatch.of(failed.args())) {
-                        output.info(messages.get("import-legacy.mismatch", mismatch.texts()));
+                        output.info(messages.get("import-1x.mismatch", mismatch.texts()));
                     }
                 }
             }

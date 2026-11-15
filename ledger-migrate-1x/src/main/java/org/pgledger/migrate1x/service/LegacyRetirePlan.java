@@ -1,10 +1,10 @@
-package org.pgledger.application.legacy;
+package org.pgledger.migrate1x.service;
 
 import java.util.ArrayList;
 import java.util.List;
-import org.pgledger.database.repository.LegacyObject;
-import org.pgledger.database.repository.LegacyRoleSkip;
 import org.pgledger.domain.value.Sha256;
+import org.pgledger.migrate1x.database.LegacyObject;
+import org.pgledger.migrate1x.database.LegacyRoleSkip;
 
 /**
  * What {@code retire-legacy} would remove, as the owner reads it and later confirms: the objects in the order of the drop and

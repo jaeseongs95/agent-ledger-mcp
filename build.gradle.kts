@@ -29,7 +29,7 @@ val ledgerTestDatabase = linkedMapOf(
 // The modules whose tests use the test database. Their test tasks are never up to date and never taken from, or stored in, the
 // build cache: the state of the database is an input that Gradle cannot see (docs/testing/TEST_CASES.md section 30, BLD-DB-01).
 val databaseModules = setOf("ledger-database", "ledger-application", "ledger-mcp-server", "ledger-admin-web", "ledger-cli",
-    "ledger-system-test")
+    "ledger-migrate-1x", "ledger-system-test")
 
 // The one test database is a shared external resource: each test JVM opens up to 10 connections to its role, which has a
 // connection limit. With parallel execution on, the test tasks of the database modules must not run at the same time (docs/testing/

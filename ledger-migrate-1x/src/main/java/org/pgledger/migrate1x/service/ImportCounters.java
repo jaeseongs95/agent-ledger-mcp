@@ -1,4 +1,4 @@
-package org.pgledger.application.legacy;
+package org.pgledger.migrate1x.service;
 
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -7,9 +7,9 @@ import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.pgledger.database.repository.Counter;
-import org.pgledger.database.repository.LegacyRow;
-import org.pgledger.database.repository.LegacyTable;
 import org.pgledger.domain.value.DefectId;
+import org.pgledger.migrate1x.database.LegacyRow;
+import org.pgledger.migrate1x.database.LegacyTable;
 
 /**
  * The highest numbers the legacy ledger has used, which the new ledger continues from: per project the number of the
@@ -41,7 +41,7 @@ final class ImportCounters {
             case DEFECT_CASE -> surrogate(Counter.DEFECT_CASE, row.number("id"));
             case SESSION_GRANT -> surrogate(Counter.SESSION_GRANT, row.number("id"));
             case HISTORY -> surrogate(Counter.HISTORY, row.number("id"));
-            case COMMON_CODE, DEFECT_TASK, DEFECT_RELATION, RELEASE_CONDITION, CONDITION_LINK, REQUEST_RECEIPT -> {
+            case COMMON_CODE, DEFECT_TASK, DEFECT_RELATION, RELEASE_CONDITION, CONDITION_LINK -> {
                 // no counter depends on these tables
             }
         }

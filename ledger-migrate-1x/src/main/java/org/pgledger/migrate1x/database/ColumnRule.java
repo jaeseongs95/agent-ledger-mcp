@@ -1,4 +1,4 @@
-package org.pgledger.database.repository;
+package org.pgledger.migrate1x.database;
 
 /**
  * What the new schema says about one column, read from the JDBC metadata of the database itself (so it cannot drift from the

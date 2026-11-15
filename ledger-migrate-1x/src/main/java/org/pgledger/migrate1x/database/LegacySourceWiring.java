@@ -1,8 +1,6 @@
-package org.pgledger.database.driver;
+package org.pgledger.migrate1x.database;
 
 import javax.sql.DataSource;
-import org.pgledger.database.repository.LegacySchemaRepository;
-import org.pgledger.database.repository.LegacySourceRepository;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;

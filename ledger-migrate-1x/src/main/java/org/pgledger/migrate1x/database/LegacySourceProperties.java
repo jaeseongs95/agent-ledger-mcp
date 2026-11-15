@@ -1,8 +1,9 @@
-package org.pgledger.database.driver;
+package org.pgledger.migrate1x.database;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import java.util.List;
+import org.pgledger.database.driver.RegisteredDriver;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.validation.annotation.Validated;

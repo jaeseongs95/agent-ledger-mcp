@@ -1,6 +1,10 @@
-package org.pgledger.database.driver;
+package org.pgledger.migrate1x.database;
 
 import javax.sql.DataSource;
+import org.pgledger.database.driver.DriverDataSources;
+import org.pgledger.database.driver.LedgerDataSourceConfiguration;
+import org.pgledger.database.driver.LedgerJdbcProperties;
+import org.pgledger.database.driver.RegisteredDriver;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;

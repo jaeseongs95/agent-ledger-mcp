@@ -1,4 +1,4 @@
-package org.pgledger.application.legacy;
+package org.pgledger.migrate1x.service;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -6,20 +6,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import org.pgledger.database.repository.ColumnRule;
-import org.pgledger.database.repository.LegacyColumn;
-import org.pgledger.database.repository.LegacyRow;
-import org.pgledger.database.repository.LegacyTable;
 import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.model.ConditionLink;
-import org.pgledger.domain.model.ReceiptOperation;
 import org.pgledger.domain.model.SessionGrant;
 import org.pgledger.domain.rule.ActorAssurance;
 import org.pgledger.domain.rule.CiConclusion;
@@ -30,7 +24,6 @@ import org.pgledger.domain.rule.DefectStatus;
 import org.pgledger.domain.rule.FixOrigin;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
-import org.pgledger.domain.rule.ReceiptOrigin;
 import org.pgledger.domain.rule.Scope;
 import org.pgledger.domain.rule.TaskState;
 import org.pgledger.domain.value.AuthorId;
@@ -43,7 +36,10 @@ import org.pgledger.domain.value.ProjectId;
 import org.pgledger.domain.value.TaskId;
 import org.pgledger.domain.value.Token;
 import org.pgledger.domain.value.Tokens;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.pgledger.migrate1x.database.ColumnRule;
+import org.pgledger.migrate1x.database.LegacyColumn;
+import org.pgledger.migrate1x.database.LegacyRow;
+import org.pgledger.migrate1x.database.LegacyTable;
 import org.springframework.stereotype.Component;
 
 /**
@@ -60,8 +56,12 @@ import org.springframework.stereotype.Component;
  * invented.</li>
  * <li>A time value is cut to microseconds, the precision of the columns of the new schema; the instant is kept and is
  * stored as UTC.</li>
- * <li>The tokens that the new schema writes as constant names (the history entity, the grant scope, the CI conclusion, the
- * receipt operation) are the legacy lower-case tokens in upper case; a token that is none of them is reported.</li>
+ * <li>The tokens that the new schema writes as constant names (the history entity, the grant scope, the CI conclusion) are
+ * the legacy lower-case tokens in upper case; a token that is none of them is reported.</li>
+ * <li>The vocabulary of the imported rows of the new schema has no 1.x names: the legacy assurances {@code LEGACY_LOGIN},
+ * {@code LEGACY_SHARED}, {@code LEGACY_UNKNOWN} are {@code IMPORTED_LOGIN}, {@code IMPORTED_SHARED}, {@code IMPORTED_UNKNOWN},
+ * the history operations {@code LEGACY_NOTE} and {@code LEGACY_CHANGE} are {@code IMPORTED_NOTE} and {@code IMPORTED_CHANGE},
+ * and the column {@code legacy_ref} is {@code source_ref} (M1X-050); a value that is none of them is reported.</li>
  * <li>An id that does not have the form of its kind (the id of a task or condition: 1 to 120 characters without whitespace
  * or control character, in any case; the defect id) is reported (MIG-028) and never case-folded; every id of 1.x imports
  * unchanged. The key of a task and a condition ({@code id_key}) is the id in upper case. That two ids of one kind
@@ -70,12 +70,12 @@ import org.springframework.stereotype.Component;
  * <li>The derived columns are made by the domain's own rules: the link key of a condition link ({@link ConditionLink#linkKey},
  * the key of a new link), the id key of a task and a condition, the active key of a grant,
  * the origin of a fix ({@code imported} true is IMPORTED), the state of a common code ({@code active} true is ACTIVE),
- * every receipt is LEGACY, the counters of a project are the highest numbers the legacy ledger used, the version of a
+ * the counters of a project are the highest numbers the legacy ledger used, the version of a
  * project is 1, and {@code before_data} and {@code last_used_at} stay NULL.</li>
+ * <li>The request receipts of 1.x are not mapped: they are not copied (M1X-003).</li>
  * </ul>
  */
 @Component
-@ConditionalOnProperty(prefix = "ledger.cli", name = "enabled", havingValue = "true")
 final class LegacyRowMapper {
 
     /** The row of the new schema, and everything that is wrong with it (empty when it can be written). */
@@ -85,15 +85,26 @@ final class LegacyRowMapper {
     private static final Set<String> TASK_STATES = names(TaskState.values());
     private static final Set<String> DEFECT_STATUSES = names(DefectStatus.values());
     private static final Set<String> CONDITION_STATES = names(ConditionState.values());
-    private static final Set<String> ASSURANCES = names(ActorAssurance.values());
-    private static final Set<String> HISTORY_OPS = names(HistoryOp.values());
-    private static final Set<String> RECEIPT_OPERATIONS = names(ReceiptOperation.values());
+    /** The assurances and operations as 1.x wrote them (its {@code LEGACY_} names) and the constants of 2.0 they become. */
+    private static final Map<String, String> ASSURANCES = oneXNames(ActorAssurance.values());
+    private static final Map<String, String> HISTORY_OPS = oneXNames(HistoryOp.values());
     private static final Set<String> CODE_GROUPS = names(CodeGroup.values());
     /** How the refusal of an author names the format (the domain has the rule, not a sentence for it). */
     private static final String AUTHOR_FORMAT = "<vendor>:<session-id>";
 
     private static <E extends Enum<E>> Set<String> names(E[] values) {
         return Arrays.stream(values).map(Enum::name).collect(Collectors.toUnmodifiableSet());
+    }
+
+    private static final String IMPORTED_PREFIX = "IMPORTED_";
+    private static final String ONE_X_PREFIX = "LEGACY_";
+
+    /** The name 1.x wrote for each constant, to the name of the constant: {@code IMPORTED_X} was {@code LEGACY_X}. */
+    private static <E extends Enum<E>> Map<String, String> oneXNames(E[] values) {
+        return Arrays.stream(values).collect(Collectors.toUnmodifiableMap(
+                value -> value.name().startsWith(IMPORTED_PREFIX)
+                        ? ONE_X_PREFIX + value.name().substring(IMPORTED_PREFIX.length()) : value.name(),
+                Enum::name));
     }
 
     /** Collects what is wrong with one row. */
@@ -142,7 +153,6 @@ final class LegacyRowMapper {
             case CONDITION_LINK -> conditionLink(s, t, violations);
             case SESSION_GRANT -> sessionGrant(s, t, violations);
             case HISTORY -> history(s, t, violations);
-            case REQUEST_RECEIPT -> requestReceipt(s, t, violations);
         }
         Set<String> expected = table.targetColumns().stream().map(LegacyColumn::name).collect(Collectors.toSet());
         if (!Objects.equals(expected, t.keySet())) {
@@ -336,14 +346,16 @@ final class LegacyRowMapper {
     }
 
     private static void history(LegacyRow s, Map<String, Object> t, Violations v) {
-        copy(s, t, "id", "author_id", "login", "actor_assurance", "entity_id", "op", "from_state", "to_state",
-                "changes", "reason", "evidence_uri", "evidence_sha256", "corrects_id", "request_id", "legacy_ref");
+        copy(s, t, "id", "author_id", "login", "entity_id", "from_state", "to_state", "changes", "reason", "evidence_uri",
+                "evidence_sha256", "corrects_id", "request_id");
         // the new schema names the column occurred_at (AT is a reserved word of SQL:2003); the legacy one is at
         t.put("occurred_at", s.get("at"));
+        // and source_ref where 1.x had legacy_ref: the reference of the row in the ledger it was imported from
+        t.put("source_ref", s.get("legacy_ref"));
         t.put("entity", nameOf(v, "entity", s.text("entity"), HistoryEntity.values()));
         t.put("before_data", null);
-        oneOf(v, "actor_assurance", s.text("actor_assurance"), ASSURANCES);
-        oneOf(v, "op", s.text("op"), HISTORY_OPS);
+        t.put("actor_assurance", renamed(v, "actor_assurance", s.text("actor_assurance"), ASSURANCES));
+        t.put("op", renamed(v, "op", s.text("op"), HISTORY_OPS));
         String reason = s.text("reason");
         if (reason != null && reason.isBlank()) {
             // the history entry of the domain refuses a blank reason when it is read back
@@ -351,15 +363,23 @@ final class LegacyRowMapper {
         }
     }
 
-    private static void requestReceipt(LegacyRow s, Map<String, Object> t, Violations v) {
-        copy(s, t, "request_id", "payload_sha256", "author_id", "login", "response", "created_at");
-        String operation = s.text("operation") == null ? null : s.text("operation").toUpperCase(Locale.ROOT);
-        oneOf(v, "operation", operation, RECEIPT_OPERATIONS);
-        t.put("operation", operation);
-        t.put("origin", ReceiptOrigin.LEGACY.name());
-    }
-
     // ---------------------------------------------------------------------------------------------------- helpers
+
+    /**
+     * The name of the constant of 2.0 for the value as 1.x wrote it. A value that is none of them is reported and kept as it
+     * is (the row is refused, nothing is written).
+     */
+    private static String renamed(Violations v, String column, String raw, Map<String, String> oneXNames) {
+        if (raw == null) {
+            return null;
+        }
+        String name = oneXNames.get(raw);
+        if (name == null) {
+            v.add(column, ValidationReason.UNKNOWN_VALUE, raw);
+            return raw;
+        }
+        return name;
+    }
 
     private static void copy(LegacyRow from, Map<String, Object> to, String... columns) {
         for (String column : columns) {

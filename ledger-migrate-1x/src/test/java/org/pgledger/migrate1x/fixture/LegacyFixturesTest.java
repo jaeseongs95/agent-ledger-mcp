@@ -1,4 +1,4 @@
-package org.pgledger.testing.legacy;
+package org.pgledger.migrate1x.fixture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

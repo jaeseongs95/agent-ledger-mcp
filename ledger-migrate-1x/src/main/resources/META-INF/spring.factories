@@ -1,0 +1,2 @@
+org.springframework.boot.diagnostics.FailureAnalyzer=org.pgledger.migrate1x.tool.FailureAnalyzer
+org.springframework.boot.EnvironmentPostProcessor=org.pgledger.migrate1x.wiring.OwnerAccountEnvironmentPostProcessor

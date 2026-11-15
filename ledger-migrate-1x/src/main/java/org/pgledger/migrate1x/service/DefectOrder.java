@@ -1,4 +1,4 @@
-package org.pgledger.application.legacy;
+package org.pgledger.migrate1x.service;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -6,7 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.pgledger.database.repository.LegacyRow;
+import org.pgledger.migrate1x.database.LegacyRow;
 
 /**
  * The order in which the defects are inserted: a merged defect points at its merge target ({@code merged_into}, a foreign

@@ -1,8 +1,8 @@
-package org.pgledger.application.legacy;
+package org.pgledger.migrate1x.service;
 
 import java.util.Objects;
-import org.pgledger.database.repository.LegacyTable;
 import org.pgledger.domain.value.Sha256;
+import org.pgledger.migrate1x.database.LegacyTable;
 
 /**
  * The comparison of one table: how many rows and which digest the legacy table has (after the documented normalisation)

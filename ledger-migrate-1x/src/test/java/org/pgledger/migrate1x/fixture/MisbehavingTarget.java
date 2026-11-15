@@ -1,12 +1,12 @@
-package org.pgledger.apptest;
+package org.pgledger.migrate1x.fixture;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.sql.DataSource;
-import org.pgledger.database.repository.LegacyRow;
-import org.pgledger.database.repository.LegacyTable;
-import org.pgledger.database.repository.LegacyTargetRepository;
+import org.pgledger.migrate1x.database.LegacyRow;
+import org.pgledger.migrate1x.database.LegacyTable;
+import org.pgledger.migrate1x.database.LegacyTargetRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -14,8 +14,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 
 /**
  * The write side of the legacy import that fails when it is asked to write one table, or that changes one value (MIG-010,
- * MIG-019). It lives outside {@code org.pgledger.application} on purpose: the application scans its own package, and a
- * test configuration that it found by itself would be part of every context.
+ * MIG-019). A test configuration ({@link Replacement}) that a test adds to its context on purpose; no scan finds it.
  */
 public class MisbehavingTarget extends LegacyTargetRepository {
 

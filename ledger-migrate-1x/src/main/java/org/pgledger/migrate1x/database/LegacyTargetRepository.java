@@ -1,4 +1,4 @@
-package org.pgledger.database.repository;
+package org.pgledger.migrate1x.database;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
@@ -12,6 +12,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
 import javax.sql.DataSource;
+import org.pgledger.database.repository.SchemaHistoryRepository;
 import org.pgledger.database.time.UtcTime;
 import org.pgledger.domain.rule.OwnerAction;
 import org.springframework.jdbc.core.RowCallbackHandler;

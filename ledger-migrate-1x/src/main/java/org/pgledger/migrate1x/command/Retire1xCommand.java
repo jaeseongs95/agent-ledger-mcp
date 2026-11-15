@@ -1,4 +1,4 @@
-package org.pgledger.cli.legacy;
+package org.pgledger.migrate1x.command;
 
 import java.util.List;
 import java.util.Objects;
@@ -6,31 +6,31 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Supplier;
-import org.pgledger.application.legacy.LegacyRetirePlan;
-import org.pgledger.application.legacy.RetireRefusedException;
-import org.pgledger.cli.CliCommand;
-import org.pgledger.cli.CliMessages;
-import org.pgledger.cli.CliOptions;
-import org.pgledger.cli.CliOutput;
-import org.pgledger.cli.Command;
-import org.pgledger.cli.ErrorCode;
-import org.pgledger.cli.FailureException;
-import org.pgledger.cli.UsageException;
-import org.pgledger.cli.database.CliLedger;
-import org.pgledger.cli.database.DatabaseBeans;
-import org.pgledger.cli.database.LedgerRefusals;
-import org.pgledger.cli.database.LedgerRefusals.Context;
 import org.pgledger.database.driver.ApplicationAccountSettings;
 import org.pgledger.database.driver.LedgerJdbcProperties;
 import org.pgledger.domain.error.LedgerException;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.value.Sha256;
+import org.pgledger.migrate1x.service.LegacyRetirePlan;
+import org.pgledger.migrate1x.service.RetireRefusedException;
+import org.pgledger.migrate1x.tool.Command;
+import org.pgledger.migrate1x.tool.ErrorCode;
+import org.pgledger.migrate1x.tool.FailureException;
+import org.pgledger.migrate1x.tool.Messages;
+import org.pgledger.migrate1x.tool.Options;
+import org.pgledger.migrate1x.tool.Output;
+import org.pgledger.migrate1x.tool.ToolCommand;
+import org.pgledger.migrate1x.tool.UsageException;
+import org.pgledger.migrate1x.wiring.DatabaseBeans;
+import org.pgledger.migrate1x.wiring.Ledger;
+import org.pgledger.migrate1x.wiring.Refusals;
+import org.pgledger.migrate1x.wiring.Refusals.Context;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.stereotype.Component;
 
 /**
- * {@code retire-legacy [--confirm=<sha256> --backup-tested]}: removes what the 1.x installer made in the database (functions,
+ * {@code retire-1x [--confirm=<sha256> --backup-tested]}: removes what the 1.x installer made in the database (functions,
  * triggers, views, tables, the schema and its roles) after the move to 2.0 was accepted, through {@code LegacyRetireService}.
  * It runs only when the owner runs it; nothing in 2.0 calls it.
  *
@@ -44,23 +44,23 @@ import org.springframework.stereotype.Component;
  * so that a legacy role of the same name is never dropped.
  */
 @Component
-public class RetireLegacyCommand implements Command {
+public class Retire1xCommand implements Command {
 
     static final String CONFIRM = "confirm";
     static final String BACKUP_TESTED = "backup-tested";
     /** How many names a refusal prints; the rest is counted. */
     private static final int NAMES_SHOWN = 20;
 
-    private final ObjectProvider<CliLedger> ledger;
+    private final ObjectProvider<Ledger> ledger;
     private final ObjectProvider<LedgerJdbcProperties> ledgerSettings;
     private final ObjectProvider<ApplicationAccountSettings> applicationSettings;
-    private final CliOutput output;
-    private final CliMessages messages;
-    private final LegacyRefusalReport refusalReport;
+    private final Output output;
+    private final Messages messages;
+    private final RefusalReport refusalReport;
 
-    RetireLegacyCommand(ObjectProvider<CliLedger> ledger, ObjectProvider<LedgerJdbcProperties> ledgerSettings,
-            ObjectProvider<ApplicationAccountSettings> applicationSettings, CliOutput output, CliMessages messages,
-            LegacyRefusalReport refusalReport) {
+    Retire1xCommand(ObjectProvider<Ledger> ledger, ObjectProvider<LedgerJdbcProperties> ledgerSettings,
+            ObjectProvider<ApplicationAccountSettings> applicationSettings, Output output, Messages messages,
+            RefusalReport refusalReport) {
         this.ledger = ledger;
         this.ledgerSettings = ledgerSettings;
         this.applicationSettings = applicationSettings;
@@ -70,8 +70,8 @@ public class RetireLegacyCommand implements Command {
     }
 
     @Override
-    public CliCommand name() {
-        return CliCommand.RETIRE_LEGACY;
+    public ToolCommand name() {
+        return ToolCommand.RETIRE_1X;
     }
 
     @Override
@@ -84,8 +84,8 @@ public class RetireLegacyCommand implements Command {
         if (!operands.isEmpty()) {
             throw new UsageException(ErrorCode.TOO_MANY_ARGUMENTS);
         }
-        Optional<String> confirm = CliOptions.value(arguments, CONFIRM);
-        boolean backupTested = CliOptions.flag(arguments, BACKUP_TESTED);
+        Optional<String> confirm = Options.value(arguments, CONFIRM);
+        boolean backupTested = Options.flag(arguments, BACKUP_TESTED);
         // the acknowledgement belongs to the confirmation: alone it has no use, and the confirmation needs it
         if (backupTested && confirm.isEmpty()) {
             throw new UsageException(ErrorCode.INVALID_OPTION_VALUE);
@@ -93,8 +93,8 @@ public class RetireLegacyCommand implements Command {
         if (confirm.isPresent() && !backupTested) {
             throw new UsageException(ErrorCode.RETIRE_BACKUP_NOT_ACKNOWLEDGED);
         }
-        Optional<Sha256> confirmed = confirm.map(RetireLegacyCommand::digest);
-        CliLedger target = DatabaseBeans.require(ledger);
+        Optional<Sha256> confirmed = confirm.map(Retire1xCommand::digest);
+        Ledger target = DatabaseBeans.require(ledger);
         if (!target.importer().sourceConfigured()) {
             throw new FailureException(ErrorCode.IMPORT_SOURCE_NOT_CONFIGURED);
         }
@@ -103,27 +103,27 @@ public class RetireLegacyCommand implements Command {
                 () -> list(target, protectedAccounts));
     }
 
-    private void list(CliLedger target, Set<String> protectedAccounts) {
+    private void list(Ledger target, Set<String> protectedAccounts) {
         LegacyRetirePlan plan = target.call(() -> execute(() -> target.retirer().plan(protectedAccounts)));
         show(plan);
-        output.info(messages.get("retire-legacy.listed", plan.schema(), String.valueOf(plan.objects().size()),
+        output.info(messages.get("retire-1x.listed", plan.schema(), String.valueOf(plan.objects().size()),
                 plan.digest().hex()));
     }
 
-    private void retire(CliLedger target, Sha256 confirmed, Set<String> protectedAccounts) {
+    private void retire(Ledger target, Sha256 confirmed, Set<String> protectedAccounts) {
         LegacyRetirePlan plan = target.call(() -> execute(() -> target.retirer().retire(confirmed, protectedAccounts)));
         show(plan);
-        output.info(messages.get("retire-legacy.removed", String.valueOf(plan.objects().size()), plan.schema()));
+        output.info(messages.get("retire-1x.removed", String.valueOf(plan.objects().size()), plan.schema()));
     }
 
     private void show(LegacyRetirePlan plan) {
         for (String line : plan.lines()) {
-            output.info(messages.get("retire-legacy.object", line));
+            output.info(messages.get("retire-1x.object", line));
         }
     }
 
     /**
-     * Runs the service. A refusal of the verification it runs first becomes the refusal of this command ({@link LedgerRefusals},
+     * Runs the service. A refusal of the verification it runs first becomes the refusal of this command ({@link Refusals},
      * context RETIRE) after the rows that the owner needs are printed; a refusal of the service has its own error.
      */
     private LegacyRetirePlan execute(Supplier<LegacyRetirePlan> work) {
@@ -133,7 +133,7 @@ public class RetireLegacyCommand implements Command {
             throw refusal(refused);
         } catch (LedgerException refused) {
             refusalReport.print(refused);
-            throw LedgerRefusals.translate(refused, Context.RETIRE);
+            throw Refusals.translate(refused, Context.RETIRE);
         }
     }
 

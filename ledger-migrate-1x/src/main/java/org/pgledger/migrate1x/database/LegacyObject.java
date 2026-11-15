@@ -1,4 +1,4 @@
-package org.pgledger.database.repository;
+package org.pgledger.migrate1x.database;
 
 /**
  * One database object that the 1.x installer made and {@code retire-legacy} removes: a trigger, a view, a table, a function or
