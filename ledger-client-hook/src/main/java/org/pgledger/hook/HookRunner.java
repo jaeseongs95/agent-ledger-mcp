@@ -29,7 +29,9 @@ final class HookRunner implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments arguments) {
         int status = cli.run(arguments.getSourceArgs(), channels.in(), channels.out(), channels.err());
-        if (status == 0 && channels.outputFailed()) {
+        // stdout is flushed whatever the status is, and a write that failed (a closed pipe) turns a good answer into exit 2
+        boolean outputFailed = channels.outputFailed();
+        if (status == 0 && outputFailed) {
             channels.err().write(OUTPUT_FAILED, 0, OUTPUT_FAILED.length);
             status = EXIT_BLOCK_OR_USAGE;
         }
