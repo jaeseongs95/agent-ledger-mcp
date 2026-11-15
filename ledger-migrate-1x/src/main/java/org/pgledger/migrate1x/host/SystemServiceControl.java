@@ -11,9 +11,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * Runs a program of the host with {@link ProcessBuilder}. <b>Why a process and no Java API:</b> the JDK has no API to stop,
- * disable or query a service of the operating system (not a systemd unit, not a Windows service), and the service manager of
- * the host is not Java's to talk to; the only way to stop a 1.x service is its own tool, {@code systemctl} on Linux and
- * {@code sc.exe} on Windows. This is the one class of the tool that starts a process, the arguments are fixed words of
+ * disable or query a service of the operating system (not a systemd unit), and the service manager of the host is not Java's to
+ * talk to; the only way to stop a 1.x service (1.x had Linux installations with systemd units only) is its own tool,
+ * {@code systemctl}. This is the one class of the tool that starts a process, the arguments are fixed words of
  * {@link Stop1xCommand} and the validated name of the instance (no shell, no argument from the operator that is not
  * validated), and the tests of the tool never reach it (they record the calls through {@link ServiceControl}).
  *

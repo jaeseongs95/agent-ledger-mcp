@@ -4,7 +4,7 @@ import java.util.List;
 
 /**
  * The one boundary to the service manager of the host: a program is run with fixed arguments and its exit code and output come
- * back. {@code stop-1x} composes the calls ({@code systemctl}, {@code sc.exe}) and asks this interface to make them, so a test
+ * back. {@code stop-1x} composes the calls ({@code systemctl}) and asks this interface to make them, so a test
  * records the calls and answers them, and no real service is stopped in a unit test. The product implementation is
  * {@link SystemServiceControl}, the only class of the tool that starts a process.
  */

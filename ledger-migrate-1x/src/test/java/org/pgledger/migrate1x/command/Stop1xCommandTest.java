@@ -192,38 +192,23 @@ class Stop1xCommandTest {
     }
 
     @Test
-    @DisplayName("M1X-015 on Windows the definition is read with sc.exe qc, kept as <home>/<service>.1x-backup, the service is stopped and disabled; a service of 2.0 is NOT_1X_SERVICE")
-    void m1x015_windows(Tool tool) throws IOException {
-        Path home = Files.createDirectories(tmp.resolve("home"));
-        String definition = """
-                [SC] QueryServiceConfig SUCCESS
+    @DisplayName("M1X-015 1.x had Linux (systemd) installations only: --platform=windows is refused with NO_1X_SERVICE_WINDOWS (exit 1) for any name, even one that is a service of 2.0 or of the system; no program is run and nothing is changed")
+    void m1x015_windowsIsRefused(Tool tool) throws IOException {
+        Path dir = unitDir();
+        Path mcp = unit(dir, NAME, NAME);
+        for (String[] args : new String[][] {
+                { "stop-1x", "--platform=windows" },
+                { "stop-1x", "--platform=windows", "--name=spooler" },
+                { "stop-1x", "--platform=windows", "--unit-dir=" + dir } }) {
+            ScriptedServiceControl control = new ScriptedServiceControl();
+            Outcome refused = run(tool.withServiceControl(control), new RecordingOutput(), args);
 
-                SERVICE_NAME: %s
-                        TYPE               : 10  WIN32_OWN_PROCESS
-                        START_TYPE         : 2   AUTO_START
-                        BINARY_PATH_NAME   : C:\\pg-ledger-mcp\\node.exe server.mjs
-                """;
-        ScriptedServiceControl control = new ScriptedServiceControl(command -> new Result(0,
-                command.get(1).equals("qc") ? definition.formatted(command.get(2)) : ""));
-
-        Outcome outcome = run(tool.withServiceControl(control), new RecordingOutput(), "stop-1x", "--platform=windows",
-                "--home=" + home);
-
-        assertThat(outcome.exitCode()).isEqualTo(ExitStatus.SUCCESS.code());
-        assertThat(control.calls()).containsExactly("sc.exe qc " + NAME, "sc.exe qc " + ADMIN, "sc.exe stop " + NAME,
-                "sc.exe config " + NAME + " start= disabled", "sc.exe stop " + ADMIN,
-                "sc.exe config " + ADMIN + " start= disabled");
-        assertThat(Files.readString(home.resolve(NAME + ".1x-backup"))).contains("START_TYPE         : 2   AUTO_START");
-        assertThat(home.resolve(ADMIN + ".1x-backup")).exists();
-
-        ScriptedServiceControl current = new ScriptedServiceControl(command -> new Result(0, command.get(1).equals("qc")
-                ? "BINARY_PATH_NAME : C:\\pg-ledger-mcp\\lib\\ledger-mcp-server.jar\n" : ""));
-        Path other = Files.createDirectories(tmp.resolve("home2"));
-        Outcome refused = run(tool.withServiceControl(current), new RecordingOutput(), "stop-1x", "--platform=windows",
-                "--home=" + other);
-        assertThat(refused.code()).contains(MigrationError.NOT_1X_SERVICE);
-        assertThat(current.calls()).containsExactly("sc.exe qc " + NAME);
-        assertThat(other).isEmptyDirectory();
+            assertThat(refused.code()).as(String.join(" ", args)).contains(MigrationError.NO_1X_SERVICE_WINDOWS);
+            assertThat(refused.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
+            assertThat(control.calls()).as(String.join(" ", args)).isEmpty();
+        }
+        assertThat(mcp).exists();
+        assertThat(dir.resolve(NAME + ".service.1x-backup")).doesNotExist();
     }
 
     @Test
@@ -280,17 +265,17 @@ class Stop1xCommandTest {
     }
 
     @Test
-    @DisplayName("M1X-018 an option of the other platform and an unknown platform are INVALID_OPTION_VALUE (exit 2); no call, no file")
+    @DisplayName("M1X-018 an unknown platform is INVALID_OPTION_VALUE and the Windows option --home (the tool has no Windows path) is UNKNOWN_OPTION (exit 2); no call, no file")
     void m1x018_platformOptions(Tool tool) throws IOException {
         Path dir = unitDir();
         unit(dir, NAME, NAME);
         for (String[] args : new String[][] {
-                { "stop-1x", "--platform=windows", "--unit-dir=" + dir },
                 { "stop-1x", "--platform=linux", "--home=" + tmp },
                 { "stop-1x", "--platform=macos" } }) {
             ScriptedServiceControl none = new ScriptedServiceControl();
             Outcome outcome = run(tool.withServiceControl(none), new RecordingOutput(), args);
-            assertThat(outcome.code()).as(String.join(" ", args)).contains(ErrorCode.INVALID_OPTION_VALUE);
+            assertThat(outcome.code()).as(String.join(" ", args))
+                    .contains(args[1].equals("--platform=macos") ? ErrorCode.INVALID_OPTION_VALUE : ErrorCode.UNKNOWN_OPTION);
             assertThat(outcome.exitCode()).isEqualTo(ExitStatus.USAGE.code());
             assertThat(none.calls()).isEmpty();
         }

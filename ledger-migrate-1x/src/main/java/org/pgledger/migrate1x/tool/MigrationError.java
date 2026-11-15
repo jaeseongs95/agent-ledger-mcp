@@ -18,6 +18,7 @@ public enum MigrationError implements ErrorKey {
     // stop-1x
     NOT_1X_SERVICE,
     NO_1X_SERVICE,
+    NO_1X_SERVICE_WINDOWS,
     BACKUP_DIFFERS,
     SERVICE_COMMAND_FAILED,
     STOP_WRITE_FAILED,

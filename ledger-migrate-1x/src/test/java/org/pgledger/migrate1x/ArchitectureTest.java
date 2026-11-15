@@ -102,7 +102,7 @@ class ArchitectureTest {
     void m1x007_theProcessCallsAreJustified() throws java.io.IOException {
         String source = java.nio.file.Files.readString(Path.of("src", "main", "java", "org", "pgledger", "migrate1x", "host",
                 "SystemServiceControl.java"));
-        assertThat(source).contains("Why a process and no Java API").contains("systemctl").contains("sc.exe");
+        assertThat(source).contains("Why a process and no Java API").contains("systemctl").doesNotContain("sc.exe");
     }
 
     @Test
