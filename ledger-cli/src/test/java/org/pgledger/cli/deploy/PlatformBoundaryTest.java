@@ -149,7 +149,7 @@ class PlatformBoundaryTest {
     void dpl09_theJvmOptionsAreAPreset() throws IOException {
         try (Stream<Path> sources = Files.walk(MAIN)) {
             for (Path source : sources.filter(path -> path.toString().endsWith(".java")).toList()) {
-                if (!source.getFileName().toString().equals("JvmPreset.java")) {
+                if (!"JvmPreset.java".equals(source.getFileName().toString())) {
                     assertThat(Files.readString(source, StandardCharsets.UTF_8)).as(source.toString()).doesNotContain("-Duser.timezone");
                 }
             }
