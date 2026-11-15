@@ -216,10 +216,22 @@ class PackagedProductSystemTest {
     @Order(5)
     @DisplayName("SYS-005: the owner sets up the project, the key made by the hook jar and its grants with the commands of the product")
     void ownerSetup() throws IOException {
+        // The real install in its order (ATA-036, ATA-037): prepare-host makes the folders (it is not run here: it needs an
+        // elevated prompt for the ACLs, section 21), then setup makes the first attachment key (its folder, owner-only, if it is not
+        // there), writes ledger.attachments.active-key-id into local.yaml and adds the seed codes. The server makes neither the key
+        // folder nor a key, so without this step the packaged server stops at its start check with ARTIFACT_KEY_MISSING.
+        String ownerPassword = database.ownerPassword().orElseThrow(() -> new IllegalStateException(
+                "the system test needs the password file of the owner (ledger.test.jdbc-password-file): setup reads "
+                        + "the password of the owner account from its standard input"));
+        JavaProcess.Result setup = cli(true, ownerPassword + "\n", "setup", "--owner-account=" + database.user(), "--stdin",
+                "--app-account=" + database.appUser());
+        assertThat(setup.exit()).as(setup.streams()).isZero();
+        assertThat(Files.readString(etc.resolve("local.yaml"))).contains("ledger.attachments.active-key-id");
+
         projectId = "sysproj";
         JavaProcess.Result project = cli(true, null, "project-add", projectId, "SYSTEST", "SystemTest");
         assertThat(project.exit()).as(project.streams()).isZero();
-        // the common codes of a new installation hold no defect category: the owner sets the one the defects use
+        // setup added the seed codes; the owner sets the one the defects use (a new name of the seed code ARC)
         JavaProcess.Result code = cli(true, null, "code-set", "DEFECT_CATEGORY", "ARC", "Architecture");
         assertThat(code.exit()).as(code.streams()).isZero();
 

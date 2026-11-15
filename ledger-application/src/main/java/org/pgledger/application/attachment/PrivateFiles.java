@@ -6,6 +6,8 @@ import java.nio.file.FileSystem;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
+import java.nio.file.NotDirectoryException;
 import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.attribute.AclEntry;
@@ -156,6 +158,9 @@ public class PrivateFiles {
             if (directory ? !attributes.isDirectory() : !attributes.isRegularFile()) {
                 throw unsafe(directory ? "a directory is expected, not a file" : "a regular file is expected, not a directory");
             }
+        } catch (NoSuchFileException | NotDirectoryException missing) {
+            // nothing is there, or a file stands in the way of the path: a defined answer, not a failure of the disk
+            throw unsafe(directory ? "a directory is expected, but nothing is there" : "a regular file is expected, but nothing is there");
         } catch (IOException failure) {
             throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_IO_ERROR,
                     List.of(failure.getClass().getSimpleName()), failure);

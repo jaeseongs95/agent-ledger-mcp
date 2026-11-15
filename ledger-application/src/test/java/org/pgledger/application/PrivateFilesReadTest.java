@@ -128,6 +128,23 @@ class PrivateFilesReadTest {
                 .requirePresent(List.of())).isInstanceOfSatisfying(InfrastructureException.class,
                         failure -> assertThat(failure.code()).isEqualTo(InfrastructureCode.ARTIFACT_STORAGE_UNSAFE));
 
+        // a key folder that is not there at the start (prepare-host or setup has not made it): no usable key, never a raw IOException
+        Path missingFolder = fixture.root().resolve("no-keys-yet").resolve("attachment-keys");
+        AttachmentProperties keyFolderMissing = AttachmentSettings.properties(fixture.properties().directory(), missingFolder,
+                fixture.keyId());
+        assertThatThrownBy(() -> new AttachmentKeys(keyFolderMissing, fixture.files(), new SecureRandom())
+                .requirePresent(List.of())).isInstanceOfSatisfying(InfrastructureException.class, failure -> {
+                    assertThat(failure.code()).isEqualTo(InfrastructureCode.ARTIFACT_KEY_MISSING);
+                    assertThat(failure.args()).containsExactly(fixture.keyId());
+                });
+        assertThat(missingFolder.getParent()).as("the start check makes nothing").doesNotExist();
+        assertThatThrownBy(() -> fixture.files().requireDirectory(missingFolder)).isInstanceOfSatisfying(
+                InfrastructureException.class,
+                failure -> assertThat(failure.code()).isEqualTo(InfrastructureCode.ARTIFACT_STORAGE_UNSAFE));
+        assertThatThrownBy(() -> fixture.files().requireFile(missingFolder.resolve("a-key"))).isInstanceOfSatisfying(
+                InfrastructureException.class,
+                failure -> assertThat(failure.code()).isEqualTo(InfrastructureCode.ARTIFACT_STORAGE_UNSAFE));
+
         Path fileAsStorage = fixture.root().resolve("attachments-is-a-file");
         Files.writeString(fileAsStorage, "not a folder");
         AttachmentStore onAFile = new AttachmentStore(
