@@ -84,7 +84,7 @@ class AttachmentDiskMarginTest {
 
     @Test
     @DisplayName("ATA-043: a begin before the attachment directory exists makes it (private) and measures its disk; a missing parent is made too (SFR-006); when it cannot be made (a regular file stands where a parent belongs) the answer is ARTIFACT_STORAGE_IO_ERROR, not a margin on another folder")
-    void ata043_beginBeforeTheDirectoryExists() {
+    void ata043_beginBeforeTheDirectoryExists() throws java.io.IOException {
         StoreFixture fixture = StoreFixture.create();
         try {
             Path directory = fixture.properties().directory();
