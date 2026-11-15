@@ -11,6 +11,8 @@ plugins {
 val hookJarName = "ledger-client-hook.jar"
 
 dependencies {
+    // Spring Boot core, logging (SLF4J + Logback) and the configuration properties binding; no web server, no JDBC, no data access (HK-018).
+    implementation("org.springframework.boot:spring-boot-starter")
     // Jackson 3 (tools.jackson), version from the Boot BOM (the JDK has no JSON parser).
     implementation("tools.jackson.core:jackson-databind")
 
@@ -18,6 +20,8 @@ dependencies {
     // with the same classes. bootJar packs the project jar of this module into BOOT-INF/lib.
     implementation(project(":ledger-attestation"))
 
+    // ApplicationContextRunner and the other test support of Spring Boot (the slice tests of the beans, principle 7.2).
+    testImplementation("org.springframework.boot:spring-boot-starter-test")
     // ArchUnit 1.5.1: not in the Boot BOM, see gradle/libs.versions.toml; checks the no-network/no-file rules of HK-018.
     testImplementation(libs.archunit)
     // The shared architecture and source rules (ARC-033: no operating system detection) live in the domain test fixtures.

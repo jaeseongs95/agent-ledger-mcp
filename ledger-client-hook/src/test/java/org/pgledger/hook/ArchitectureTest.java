@@ -22,8 +22,8 @@ import java.util.Map;
 import java.util.stream.Stream;
 
 /**
- * HK-018 (code side): no network, process, reflection or framework access in any hook class; file system access only in
- * the {@code keys} package; the process (System) only in Main.
+ * HK-018 (code side): no network, process, reflection, web or data access in any hook class; file system access only in
+ * the {@code keys} package; the process (System) only in Main and ProcessChannels.
  */
 class ArchitectureTest {
 
@@ -46,11 +46,15 @@ class ArchitectureTest {
     }
 
     @Test
-    @DisplayName("HK-018 no hook class uses a network, process, reflection, foreign-memory, JDBC, Spring or Lombok API")
+    @DisplayName("HK-018 no hook class uses a network, process, reflection, foreign-memory, JDBC, web, data access or Lombok API")
     void noForbiddenApi() {
         noClasses().should().dependOnClassesThat().resideInAnyPackage(
                         "java.net..", "javax.net..", "java.sql..", "javax.sql..",
-                        "java.lang.reflect..", "java.lang.foreign..", "org.springframework..", "lombok..")
+                        "java.lang.reflect..", "java.lang.foreign..", "lombok..",
+                        // Spring Boot and the Spring Framework are the frame of the application; what the hook must not reach
+                        // through them is the web, a database and a transaction
+                        "org.springframework.web..", "org.springframework.http..", "org.springframework.jdbc..",
+                        "org.springframework.data..", "org.springframework.transaction..", "org.springframework.boot.web..")
                 .orShould().dependOnClassesThat().haveFullyQualifiedName("java.lang.ProcessBuilder")
                 .orShould().dependOnClassesThat().haveFullyQualifiedName("java.lang.Process")
                 .orShould().dependOnClassesThat().haveFullyQualifiedName("java.lang.Runtime")
@@ -86,19 +90,17 @@ class ArchitectureTest {
     }
 
     @Test
-    @DisplayName("HK-018 only Main touches java.lang.System, and only for stdin, stdout, stderr, exit, System.getenv(String) and System.getProperty(String)")
-    void systemOnlyInMain() {
+    @DisplayName("HK-018 only Main and ProcessChannels touch java.lang.System (exit, stdin, stdout, stderr); the environment and the properties are read through the Spring Environment")
+    void systemOnlyInMainAndProcessChannels() {
         noClasses().that().doNotHaveFullyQualifiedName("org.pgledger.hook.Main")
+                .and().doNotHaveFullyQualifiedName("org.pgledger.hook.ProcessChannels")
                 .should().dependOnClassesThat().haveFullyQualifiedName("java.lang.System")
                 .check(hook);
-        // Main reads one named environment variable and one named property, never the whole environment or all properties
         noClasses().should().callMethod(System.class, "getenv")
+                .orShould().callMethod(System.class, "getenv", String.class)
+                .orShould().callMethod(System.class, "getProperty", String.class)
                 .orShould().callMethod(System.class, "getProperty", String.class, String.class)
                 .orShould().callMethod(System.class, "getProperties")
-                .check(hook);
-        noClasses().that().doNotHaveFullyQualifiedName("org.pgledger.hook.Main")
-                .should().callMethod(System.class, "getenv", String.class)
-                .orShould().callMethod(System.class, "getProperty", String.class)
                 .check(hook);
     }
 

@@ -48,7 +48,8 @@ class JarContentTest {
             Pattern.compile("META-INF/services/[A-Za-z0-9._$]+"),
             // the nested jars: the attestation token and key text forms (JDK only), Jackson, and Spring Boot with its logging
             Pattern.compile("BOOT-INF/lib/(ledger-attestation|jackson-(core|databind|annotations)|spring-[a-z-]+|logback-(classic|core)"
-                    + "|log4j-(api|to-slf4j)|jul-to-slf4j|slf4j-api|jakarta\\.annotation-api|snakeyaml|micrometer-(commons|observation))"
+                    + "|log4j-(api|to-slf4j)|jul-to-slf4j|slf4j-api|commons-logging|jspecify|jakarta\\.annotation-api|snakeyaml"
+                    + "|micrometer-(commons|observation))"
                     + "-[0-9][A-Za-z0-9._-]*\\.jar"),
             // the licence and notice texts of each dependency, copied out of the nested jars by the build
             Pattern.compile("META-INF/third-party/[A-Za-z0-9._-]+/[A-Za-z0-9._-]*(LICENSE|NOTICE)[A-Za-z0-9._-]*"));
@@ -95,6 +96,8 @@ class JarContentTest {
         assertThat(names).anyMatch(n -> n.startsWith(LIB + "jackson-core-"));
         assertThat(names).anyMatch(n -> n.startsWith(LIB + "jackson-databind-"));
         assertThat(names).anyMatch(n -> n.startsWith(LIB + "jackson-annotations-"));
+        assertThat(names).anyMatch(n -> n.startsWith(LIB + "spring-boot-"));
+        assertThat(names).anyMatch(n -> n.startsWith(LIB + "logback-classic-"));
         assertThat(nestedEntries("ledger-attestation-")).contains("org/pgledger/attestation/AttestationToken.class",
                 "org/pgledger/attestation/PublicKeys.class");
         assertThat(nestedEntries("jackson-core-")).anyMatch(n -> n.startsWith("tools/jackson/core/"));
