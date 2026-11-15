@@ -5,8 +5,8 @@
 AI 에이전트가 수행한 작업을 기록하는 장부이며, 하나의 MCP 엔드포인트로 제공됩니다. 결함, 작업, 수정과 그 검증을 누가 왜 수행했는지와 함께 기록합니다.
 에이전트는 MCP 도구로 읽고 쓰며, 자신의 데이터베이스 로그인을 받지 않습니다.
 
-2.0.0 버전은 Java 25와 Spring Boot로 다시 작성한 것입니다. 클라이언트가 의존하는 계약(쓰기 도구의 이름과 입력 키, 결과의 키, `_hostAttestation` 키)은 유지하며,
-바뀐 내용은 [릴리스 노트](docs/release-notes/2.0.0.md)에 적습니다. 릴리스 노트의 형식은 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md)에 있습니다.
+2.0.0 버전은 Java 25와 Spring Boot로 다시 작성한 것이며 자체 도구 계약을 가집니다(모든 쓰기 도구는 필수 `operationKey`를 받고, 이전 버전의 인자는 새 인자와 함께 받아들이지 않습니다).
+클라이언트에 바뀐 내용은 [릴리스 노트](docs/release-notes/2.0.0.md)에 적습니다. 릴리스 노트의 형식은 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md)에 있습니다.
 
 ## 목차
 
@@ -37,8 +37,8 @@ AI 에이전트가 수행한 작업을 기록하는 장부이며, 하나의 MCP 
   데이터베이스 모듈의 부여 템플릿(`migrate`가 앱 계정에 적용합니다)은 그 계정에 이력의 `UPDATE`와 `DELETE`를 주지 않습니다. 잘못된 기록은 `CORRECT` 행으로 표시합니다.
   기존 행을 바꾸는 연산은 바꾸기 전의 전체 행도 함께 저장합니다(`before_data`, `ledger_history`에서 `include_before`를 주면 반환됩니다).
 - **재시도는 안전합니다.** 모든 쓰기 도구는 필수 인자 `operationKey`(1자 이상 128자 이하, 예를 들어 UUID)를 받습니다. 같은 키로 같은 요청을 반복하면 저장된 결과를 돌려주며 두 번 기록하지 않습니다.
-  이미 다른 작업, 내용, 작성자 또는 채널에 묶인 키는 `OPERATION_CONFLICT`로 거절됩니다. 서버는 키를 대신 만들지 않으며, 키가 없거나 비어 있으면 `VALIDATION_FAILED`(경로 `operationKey`)로 거절됩니다.
-  `ledger_batch`는 배치 전체에 키 하나를 받습니다. `artifact-chunk`와 `artifact-finish`는 `operationKey`를 받지 않습니다. 업로드는 `artifact-begin`의 `operationKey`로 시작하고,
+  키는 작성자에게 속합니다(`artifact-begin`의 키와 같습니다). 다른 작성자는 같은 키로 자기 쓰기를 할 수 있습니다. 작성자의 키가 이미 다른 작업, 내용 또는 채널에 묶여 있으면 `OPERATION_CONFLICT`로 거절됩니다. 서버는 키를 대신 만들지 않으며, 키가 없거나 비어 있으면 `VALIDATION_FAILED`(경로 `operationKey`)로 거절됩니다.
+  `ledger_batch`는 배치 전체에 키 하나를 받으며 배치는 하나의 요청입니다. 같은 키에 같은 연산이면 저장된 결과를 돌려주고, 같은 키에 다른 연산(추가, 삭제, 변경, 순서 바꿈)이거나 다른 도구이면 `OPERATION_CONFLICT`입니다. `artifact-chunk`와 `artifact-finish`는 `operationKey`를 받지 않습니다. 업로드는 `artifact-begin`의 `operationKey`로 시작하고,
   청크는 `uploadId`, `sequence`, `chunkSha256`으로, finish는 `uploadId`로 멱등입니다.
 - **낙관적 잠금.** 수정과 전이는 `expected_version`을 가지며, 오래된 판은 `VERSION_CONFLICT`입니다.
 - **프로젝트와 ID.** 결함은 프로젝트에 속하며 `<CODE>-D-0001`, `<CODE>-D-0002`와 같은 ID를 받습니다. ID 없이 만든 작업은 `<CODE>-T-0001`과 같은 ID를 받습니다.
@@ -66,7 +66,7 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 
 서버는 `/mcp`(기본 `127.0.0.1:8765`)에서 Streamable HTTP로 MCP를 제공하고 `/healthz`에 응답합니다. 호출자는 bearer 토큰 `ledger.mcp.token`을 제시합니다.
 결과는 키를 최상위에 담습니다. 모든 도구 입력은 닫혀 있어, 알 수 없는 인자는 거절됩니다. 객체나 배열 인자는 그 JSON 값으로 보내야 하며(문자열로 담은 JSON 문서는 거절됩니다),
-텍스트 `null`은 인자가 없다는 뜻이 아니라 하나의 텍스트입니다.
+텍스트 `null`은 인자가 없다는 뜻이 아니라 하나의 텍스트입니다. `fields`의 키를 JSON `null`로 쓰면 주지 않은 것으로 봅니다(필드를 건드리지 않으며, 증명이 서명하는 다이제스트에서도 빠집니다). 선택 필드는 빈 텍스트로 지웁니다.
 
 쓰기 도구(로그인, 증명, 유효한 부여가 필요합니다). `ledger_whoami`를 뺀 모든 쓰기 도구는 필수 인자 `operationKey`를 받습니다.
 

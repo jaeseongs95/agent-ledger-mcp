@@ -5,8 +5,8 @@
 A ledger for work done by AI agents, served as one MCP endpoint. It records defects, tasks, fixes and their verification,
 together with who did each one and why. Agents read and write through MCP tools; they never get a database login of their own.
 
-Version 2.0.0 is a rewrite in Java 25 and Spring Boot. It keeps the contract that clients rely on (the names and input keys
-of the write tools, the keys of the results, the `_hostAttestation` key) and changes what is stated in the
+Version 2.0.0 is a rewrite in Java 25 and Spring Boot with its own tool contract (every write tool takes a required `operationKey`,
+and no argument of an earlier version is accepted next to the new ones); what changed for a client is stated in the
 [release notes](docs/release-notes/2.0.0.md); the format of release notes is in [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md).
 
 ## Contents
@@ -41,9 +41,12 @@ of the write tools, the keys of the results, the `_hostAttestation` key) and cha
   existing row also stores the full row as it was before the change (`before_data`, returned by `ledger_history` with
   `include_before`).
 - **Retries are safe.** Every write tool takes a required `operationKey` (1 to 128 characters, for example a UUID). Repeating the same
-  request with the same key returns the stored result and writes nothing twice. A key that is already bound to another operation,
-  payload, author or channel is refused with `OPERATION_CONFLICT`. The server never makes a key up: a missing or empty key is refused
-  with `VALIDATION_FAILED` (path `operationKey`). `ledger_batch` takes one key for the whole batch. `artifact-chunk` and
+  request with the same key returns the stored result and writes nothing twice. The keys belong to the author (as the keys of
+  `artifact-begin` do): another author may use the same key for a write of its own. A key of the author that is already bound to
+  another operation, payload or channel is refused with `OPERATION_CONFLICT`. The server never makes a key up: a missing or empty
+  key is refused with `VALIDATION_FAILED` (path `operationKey`). `ledger_batch` takes one key for the whole batch and the batch is
+  one request: the same key with the same operations returns the stored results, the same key with other operations (one added,
+  removed, changed or moved) or under another tool is `OPERATION_CONFLICT`. `artifact-chunk` and
   `artifact-finish` take no `operationKey`: an upload starts with the `operationKey` of `artifact-begin`, a chunk is idempotent by its
   `uploadId`, `sequence` and `chunkSha256`, and finish by its `uploadId`.
 - **Optimistic locking.** Edits and transitions carry `expected_version`; a stale version is `VERSION_CONFLICT`.
@@ -80,7 +83,8 @@ A direct MCP caller is not authenticated as a host: the bearer token admits the 
 The server speaks MCP over Streamable HTTP at `/mcp` (default `127.0.0.1:8765`) and answers `/healthz`. Callers present
 the bearer token `ledger.mcp.token`. The results carry their keys at the top level of the result. Every tool input is closed:
 an unknown argument is refused, an object or an array argument must be sent as that JSON value (not as text), and the text
-`null` is a text, not a missing argument.
+`null` is a text, not a missing argument. A key of `fields` that is written as JSON `null` counts as not given (the field is not
+touched, and the digest that the attestation signs leaves it out); an optional field is cleared with an empty text.
 
 Write tools (a login, an attestation and a live grant are needed). Every write tool except `ledger_whoami` takes the required
 `operationKey`:
