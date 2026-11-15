@@ -105,12 +105,19 @@ class PrepareHostCommandTest {
         assertThat(mode(root.resolve("etc/pg-ledger-mcp"))).isEqualTo("rwxr-x---");
         assertThat(mode(root.resolve("etc/pg-ledger-mcp/drivers"))).isEqualTo("rwxr-xr-x");
         assertThat(mode(root.resolve("etc/pg-ledger-mcp/secrets"))).isEqualTo("rwx------");
-        // ATA-036: the key folder inside the secrets, the data folder and the attachment folder below it: the service user's alone
-        assertThat(mode(root.resolve("etc/pg-ledger-mcp/secrets/attachment-keys"))).isEqualTo("rwx------");
+        // SPL-005: one folder per use below the secrets, the service user's alone
+        for (String folder : List.of("common", "admin", "mcp", "tool")) {
+            assertThat(mode(root.resolve("etc/pg-ledger-mcp/secrets/" + folder))).as(folder).isEqualTo("rwx------");
+        }
+        // ATA-036, SPL-004: the key folder beside the secrets (in no configuration tree), the data folder and the attachment folder
+        // below it: the service user's alone
+        assertThat(mode(root.resolve("etc/pg-ledger-mcp/attachment-keys"))).isEqualTo("rwx------");
         assertThat(mode(root.resolve("var/lib/pg-ledger-mcp"))).isEqualTo("rwx------");
         assertThat(mode(root.resolve("var/lib/pg-ledger-mcp/attachments"))).isEqualTo("rwx------");
         UserPrincipal serviceUser = Files.getOwner(tmp);
-        for (String folder : List.of("etc/pg-ledger-mcp/secrets/attachment-keys", "var/lib/pg-ledger-mcp", "var/lib/pg-ledger-mcp/attachments")) {
+        for (String folder : List.of("etc/pg-ledger-mcp/secrets", "etc/pg-ledger-mcp/secrets/common", "etc/pg-ledger-mcp/secrets/admin",
+                "etc/pg-ledger-mcp/secrets/mcp", "etc/pg-ledger-mcp/secrets/tool", "etc/pg-ledger-mcp/attachment-keys",
+                "var/lib/pg-ledger-mcp", "var/lib/pg-ledger-mcp/attachments")) {
             assertThat(Files.getOwner(root.resolve(folder))).as(folder).isEqualTo(serviceUser);
         }
         for (String jar : List.of(DeployLayout.CLI_JAR, DeployLayout.MCP_JAR, DeployLayout.ADMIN_JAR)) {
@@ -291,7 +298,8 @@ class PrepareHostCommandTest {
             List<AclEntry> acl = Files.getFileAttributeView(folder, AclFileAttributeView.class).getAcl();
             assertThat(acl.stream().map(AclEntry::principal)).as(folder.toString()).containsExactlyInAnyOrder(system, administrators, service);
         }
-        for (Path folder : List.of(home.resolve("etc/secrets"), home.resolve("etc/secrets/attachment-keys"))) {
+        for (Path folder : List.of(home.resolve("etc/secrets"), home.resolve("etc/secrets/common"), home.resolve("etc/secrets/admin"),
+                home.resolve("etc/secrets/mcp"), home.resolve("etc/secrets/tool"), home.resolve("etc/attachment-keys"))) {
             List<AclEntry> acl = Files.getFileAttributeView(folder, AclFileAttributeView.class).getAcl();
             assertThat(acl).as("the installing user and the service account only: %s", folder).hasSize(2);
             assertThat(acl.stream().map(AclEntry::principal)).as(folder.toString()).contains(service).doesNotContain(system, administrators);

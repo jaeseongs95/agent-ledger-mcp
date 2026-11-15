@@ -210,8 +210,22 @@ The build is a Gradle multi-module project.
 
 Settings are Spring Boot properties: in a file, on the command line (`--name=value`) or from the secret store. Secrets are never
 put in a file or in an environment variable; `ledger-cli secret-set <name>` reads a secret with hidden input and stores it as one file
-of the secret directory, which the processes read as a Spring configuration tree. A secret is stored under the name of its property.
-There is no command that prints a stored secret.
+of the secret directory, in the folder of the use of its name, which the processes read as a Spring configuration tree. A secret is
+stored under the name of its property, and a name that is no secret of the product is refused (`UNKNOWN_SECRET_NAME`). There is no
+command that prints a stored secret.
+
+The secret directory (`<settings folder>/secrets`) has one folder per use, and a process imports only the folders it needs, so the
+MCP server never has the secrets of the admin web in its settings and the admin web never has the token of the agents under that name:
+
+| Secret (the file name is the property) | Read by | Folder in the secret directory |
+|---|---|---|
+| `ledger.jdbc.password` | MCP server, admin web, `ledger-cli`, `ledger-migrate-1x` | `common` |
+| `ledger.admin.token`, `ledger.admin.agent-token`, `spring.security.oauth2.client.registration.<id>.client-secret` (OpenID Connect) | admin web | `admin` |
+| `ledger.mcp.token` | MCP server, `ledger-cli mcp-check` | `mcp` |
+| `ledger.import.source.password` | `ledger-migrate-1x` | `tool` |
+
+The key files of the attachments are not in the secret directory: they are in `<settings folder>/attachment-keys`, below no
+configuration tree (Spring Boot makes every file below a tree a property of the process).
 
 | Key | Used by | Meaning |
 |---|---|---|
@@ -244,7 +258,7 @@ There is no command that prints a stored secret.
 | `ledger.admin.mcp.health-url` | admin web | the `/healthz` URL of the MCP server shown on the overview; absent means not configured |
 | `ledger.admin.mcp.timeout` | admin web | timeout of that check, default 2s |
 | `ledger.attachments.directory` | servers, CLI | where the files of the attachments are kept (the installer sets it to `<data folder>/attachments`); when it is not set the attachment tools are not registered |
-| `ledger.attachments.key-directory` | servers, CLI | where the key files are kept, outside `directory` (the start fails when it is inside); the installer sets it to `<settings folder>/secrets/attachment-keys` |
+| `ledger.attachments.key-directory` | servers, CLI | where the key files are kept, outside `directory` (the start fails when it is inside); the installer sets it to `<settings folder>/attachment-keys`, beside the secret directory and not inside it |
 | `ledger.attachments.active-key-id` | servers, CLI | the key that new uploads are written with; `setup` writes it into `local.yaml`; the server does not start without the key file |
 | `ledger.attachments.max-file-bytes` | servers, CLI | the largest file, default 64MB |
 | `ledger.attachments.staging-budget-bytes` | servers, CLI | what all open uploads may declare together, default 512MB |
@@ -255,7 +269,7 @@ There is no command that prints a stored secret.
 | `ledger.attachments.orphan-grace` | servers, CLI | how long a file without a row (or a replaced file) waits before `attachments-check` moves it to `orphans/`, default 24h |
 | `ledger.attachments.reaper-interval` | MCP server | how often expired uploads are removed, default 1m |
 | `ledger.secrets.home` | `ledger-cli` | the directory of the installation that holds the settings, the driver registration, the driver jars and the secret directory, default `/etc/pg-ledger-mcp` (the Windows installer gives its own) |
-| `ledger.secrets.directory` | `ledger-cli` | the secret directory, default `/etc/pg-ledger-mcp/secrets` |
+| `ledger.secrets.directory` | `ledger-cli` | the secret directory (it holds the folders `common`, `admin`, `mcp` and `tool` and is itself no configuration tree), default `/etc/pg-ledger-mcp/secrets` |
 | `ledger.secrets.instance` | `ledger-cli` | the instance name that the default paths follow, default `pg-ledger-mcp` |
 | `ledger.cli.driver.directory` | `ledger-cli` | the directory `driver-register` takes a jar from, default `/etc/pg-ledger-mcp/drivers` |
 | `ledger.cli.driver.file` | `ledger-cli` | the registration file `driver-register` writes, default `/etc/pg-ledger-mcp/jdbc-driver.yaml` |
@@ -279,7 +293,12 @@ What every target has in common:
 - **One service account.** The MCP server and the admin web run as one operating system account that belongs to no person: on
   Linux the system user `pg-ledger-mcp` (no login, not root), on Windows the predefined account LocalService (no password). Its purpose
   is to keep the secrets of the ledger, the admin token and the database password, away from the account of the person who works on
-  the machine and from the agents that run under it: the secret directory is readable by the service account only (on Windows: by the installing user and, read only, by LocalService, and by nobody else). The two
+  the machine and from the agents that run under it: the secret directory is readable by the service account only (on Windows: by the installing user and, read only, by LocalService, and by nobody else). The secrets are
+  kept in one folder per use and each service imports only its own and the common one, so the process of the MCP server no longer holds
+  the admin token or the OpenID Connect client secret in its settings (and no key file of the attachments is a property of either
+  service). What this does not do: the two services run as one operating system user, so the file permissions do not keep one service from
+  reading the folder of the other; the personal edition trusts the whole installation target, and the change is that no process
+  carries a secret of another use in its environment. The two
   services of an installation, called an instance, are named after it: the instance is `pg-ledger-mcp` unless `--name=<name>` gives
   another name, and its services are `<name>` and `<name>-admin` (`pg-ledger-mcp` and `pg-ledger-mcp-admin` by default). The Linux user, the
   directories (`/opt/<name>`, `/etc/<name>`, on Windows `C:\ProgramData\<name>`) and the WinSW ids follow the name, so a second instance, or an
@@ -345,7 +364,7 @@ before anything is read or written.
 ### Linux server
 
 Run as root; the user `pg-ledger-mcp` is created when it is missing, `prepare-host` (Java) creates `/opt/<name>` (root, 0755),
-`/etc/<name>` (the service user, 0750), its `drivers` folder (root, 0755) and its `secrets` folder (the service user, 0700), copies the
+`/etc/<name>` (the service user, 0750), its `drivers` folder (root, 0755), its `secrets` folder with the folders `common`, `admin`, `mcp` and `tool` and the folder `attachment-keys` (the service user, 0700), copies the
 jars and the driver and renders the units into `/etc/systemd/system`, which are then enabled; the secrets are stored by the service
 user. A file that the installer did not render and that a rendered file replaces is kept as `<file>.backup`; to move a 1.x installation,
 see Upgrading from 1.x.
@@ -401,8 +420,8 @@ deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <a
 Everything lives in `C:\ProgramData\<name>`. Both services run as LocalService, restart after a failure (the WinSW
 configuration), and write their logs to the `logs` folder. `prepare-host` closes the folders to every account but SYSTEM and
 Administrators and gives LocalService its access in the same step (Java, with ACLs, no `icacls`): it reads and runs the jars and
-changes the settings, the logs and the data. The secrets are the installing user's: the folder of the secrets and each secret made in
-it are created with an ACL for the installing user (everything) and for LocalService (read only), and for nobody else, so the
+changes the settings, the logs and the data. The secrets are the installing user's: the folder of the secrets, its folders of the uses, the folder `attachment-keys` and each secret made in
+them are created with an ACL for the installing user (everything) and for LocalService (read only), and for nobody else, so the
 services read them and the accounts the agents run as cannot. Nothing is handed over to LocalService (the installing user stays the owner and
 no privilege to take ownership is used), so the owner commands of `ledger-cli` keep working for the installing user, and a re-run of the
 installer finds everything as it was; run it again as the same user (the personal edition has one user). The admin web is where the

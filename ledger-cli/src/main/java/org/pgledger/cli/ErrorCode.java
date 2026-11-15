@@ -8,6 +8,7 @@ public enum ErrorCode implements ErrorKey {
     MISSING_ARGUMENT,
     TOO_MANY_ARGUMENTS,
     INVALID_SECRET_NAME,
+    UNKNOWN_SECRET_NAME,
     NO_CONSOLE,
     EMPTY_SECRET,
     EMPTY_SECRET_FILE,

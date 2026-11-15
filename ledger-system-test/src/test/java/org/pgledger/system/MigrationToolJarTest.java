@@ -97,8 +97,8 @@ class MigrationToolJarTest {
         assertThat(secrets.out()).contains("ledger.mcp.token").contains("ledger.admin.agent-token").contains("ledger.admin.token")
                 .doesNotContain(TOKEN);
         assertThat(secrets.err()).doesNotContain(TOKEN);
-        assertThat(Files.readString(home.resolve("secrets").resolve("ledger.mcp.token"))).isEqualTo(TOKEN);
-        assertThat(Files.readString(home.resolve("secrets").resolve("ledger.admin.agent-token"))).isEqualTo(TOKEN);
-        assertThat(home.resolve("secrets").resolve("ledger.admin.token")).isNotEmptyFile();
+        assertThat(Files.readString(home.resolve("secrets").resolve("mcp").resolve("ledger.mcp.token"))).isEqualTo(TOKEN);
+        assertThat(Files.readString(home.resolve("secrets").resolve("admin").resolve("ledger.admin.agent-token"))).isEqualTo(TOKEN);
+        assertThat(home.resolve("secrets").resolve("admin").resolve("ledger.admin.token")).isNotEmptyFile();
     }
 }

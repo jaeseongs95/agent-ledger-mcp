@@ -19,7 +19,8 @@ import org.springframework.stereotype.Component;
 /**
  * {@code secret-set <name> [--stdin] [--if-absent]}: the value is typed on the terminal (or, with {@code --stdin}, taken from
  * the first line of standard input) and never appears in arguments, output or logs; with {@code --if-absent} an existing
- * secret is kept and nothing is asked.
+ * secret is kept and nothing is asked. The secret goes into the folder its name belongs in ({@link SecretFolder}); a name
+ * that is no secret of the product is refused before anything is asked.
  */
 @Component
 public class SecretSetCommand implements Command {
@@ -27,13 +28,13 @@ public class SecretSetCommand implements Command {
     static final String STDIN = "stdin";
     static final String IF_ABSENT = "if-absent";
 
-    private final SecretStore store;
+    private final SecretVault store;
     private final SecretInput input;
     private final StandardInput standardInput;
     private final CliOutput output;
     private final CliMessages messages;
 
-    SecretSetCommand(SecretStore store, SecretInput input, StandardInput standardInput, CliOutput output,
+    SecretSetCommand(SecretVault store, SecretInput input, StandardInput standardInput, CliOutput output,
             CliMessages messages) {
         this.store = store;
         this.input = input;

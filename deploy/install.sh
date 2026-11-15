@@ -8,7 +8,9 @@
 # `systemctl enable`): https://docs.spring.io/spring-boot/how-to/deployment/installing.html ; systemd.exec(5) (User=, the
 # sandboxing options of the rendered units).
 # One service user (named after the instance, default pg-ledger-mcp, never root) runs the MCP server and the admin web: the
-# secrets are readable by it alone, so the accounts the agents run as cannot read them. --name=<instance> gives an instance of
+# secrets are readable by it alone, so the accounts the agents run as cannot read them. The secrets are in one folder per use below
+# /etc/<name>/secrets (common, admin, mcp, tool) and each service imports only the folders it needs, so the MCP server has none of the
+# secrets of the admin web in its settings (one user runs both, so file permissions do not separate them). --name=<instance> gives an instance of
 # its own (services <name> and <name>-admin, /opt/<name>, /etc/<name>), so two can live on one host with their own ports; the
 # name is validated by Java (render-deploy --check) before anything is created. Two database accounts: the application account
 # (both servers and the owner commands) and the DDL account (setup and the grants; its password is typed and not stored).

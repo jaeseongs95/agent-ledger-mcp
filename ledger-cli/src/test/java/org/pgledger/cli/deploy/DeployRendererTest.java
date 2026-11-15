@@ -108,7 +108,8 @@ class DeployRendererTest {
         assertThat(start).isEqualTo("ExecStart=/usr/lib/jvm/java-25/bin/java -Duser.timezone=UTC -jar /opt/pg-ledger-mcp/" + jar
                 + " --spring.config.import=file:/etc/pg-ledger-mcp/application.yaml,file:/etc/pg-ledger-mcp/" + settingsFile
                 + ",optional:file:/etc/pg-ledger-mcp/local.yaml,optional:file:/etc/pg-ledger-mcp/jdbc-driver.yaml,"
-                + "optional:configtree:/etc/pg-ledger-mcp/secrets/");
+                + "optional:configtree:/etc/pg-ledger-mcp/secrets/common/,optional:configtree:/etc/pg-ledger-mcp/secrets/"
+                + (settingsFile.equals("mcp.yaml") ? "mcp" : "admin") + "/");
     }
 
     static Stream<Arguments> units() {
@@ -326,7 +327,8 @@ class DeployRendererTest {
         String windows = helper.replacePlaceholders(properties.getProperty("spring.config.import"),
                 placeholder -> "ledger.secrets.home".equals(placeholder) ? HOME + "/etc" : null);
         assertThat(windows).contains("optional:file:" + HOME + "/etc/application.yaml",
-                "optional:configtree:" + HOME + "/etc/secrets/");
+                "optional:configtree:" + HOME + "/etc/secrets/common/", "optional:configtree:" + HOME + "/etc/secrets/mcp/")
+                .doesNotContain("secrets/admin", "secrets/tool");
     }
 
     // ---- INS-032: Windows ----
@@ -354,7 +356,8 @@ class DeployRendererTest {
         assertThat(element(configuration, "arguments")).isEqualTo("-Duser.timezone=UTC -jar " + HOME + "/lib/" + jar
                 + " --spring.config.import=file:" + HOME + "/etc/application.yaml,file:" + HOME + "/etc/" + settingsFile
                 + ",optional:file:" + HOME + "/etc/local.yaml,optional:file:" + HOME + "/etc/jdbc-driver.yaml,"
-                + "optional:configtree:" + HOME + "/etc/secrets/");
+                + "optional:configtree:" + HOME + "/etc/secrets/common/,optional:configtree:" + HOME + "/etc/secrets/"
+                + (settingsFile.equals("mcp.yaml") ? "mcp" : "admin") + "/");
         assertThat(element(configuration, "logpath")).isEqualTo("C:\\ProgramData\\pg-ledger-mcp\\logs");
         assertThat(element(configuration, "startmode")).isEqualTo("Automatic");
         assertThat(configuration.getElementsByTagName("onfailure").getLength()).isPositive();
@@ -418,7 +421,7 @@ class DeployRendererTest {
                 "ExecStart=/usr/lib/jvm/java-25/bin/java -Duser.timezone=UTC -jar /opt/acme-test/ledger-mcp-server.jar "
                         + "--spring.config.import=file:/etc/acme-test/application.yaml,file:/etc/acme-test/mcp.yaml,"
                         + "optional:file:/etc/acme-test/local.yaml,optional:file:/etc/acme-test/jdbc-driver.yaml,"
-                        + "optional:configtree:/etc/acme-test/secrets/");
+                        + "optional:configtree:/etc/acme-test/secrets/common/,optional:configtree:/etc/acme-test/secrets/mcp/");
         assertThat(admin.lines().toList()).contains("User=acme-test", "ReadWritePaths=/etc/acme-test",
                 "After=network-online.target acme-test.service");
         assertThat(yaml(file(files, "/etc/acme-test/admin.yaml")).getProperty("ledger.admin.driver-file"))
@@ -443,7 +446,8 @@ class DeployRendererTest {
         assertThat(element(admin, "name")).isEqualTo("acme-test-admin");
         assertThat(element(admin, "logpath")).isEqualTo("C:\\ProgramData\\acme-test\\logs");
         assertThat(element(admin, "arguments")).contains("-jar C:/ProgramData/acme-test/lib/ledger-admin-web.jar")
-                .contains("optional:configtree:C:/ProgramData/acme-test/etc/secrets/");
+                .contains("optional:configtree:C:/ProgramData/acme-test/etc/secrets/common/,"
+                        + "optional:configtree:C:/ProgramData/acme-test/etc/secrets/admin/");
         for (RenderedFile rendered : files) {
             assertThat(rendered.path() + rendered.content()).as(rendered.path()).doesNotContain("pg-ledger");
         }
@@ -498,7 +502,8 @@ class DeployRendererTest {
         String imported = helper.replacePlaceholders(properties.getProperty("spring.config.import"),
                 placeholder -> "ledger.secrets.instance".equals(placeholder) ? "acme-test" : null);
 
-        assertThat(imported).contains("optional:file:/etc/acme-test/application.yaml", "optional:configtree:/etc/acme-test/secrets/")
+        assertThat(imported).contains("optional:file:/etc/acme-test/application.yaml",
+                "optional:configtree:/etc/acme-test/secrets/common/", "optional:configtree:/etc/acme-test/secrets/mcp/")
                 .doesNotContain("pg-ledger");
     }
 }

@@ -15,10 +15,10 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Arrays;
+import java.util.List;
 
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.FailureException;
-import org.springframework.stereotype.Component;
 
 /**
  * Stores one secret per file in a directory that is created owner-only. The protection is given at creation and chosen by
@@ -34,7 +34,6 @@ import org.springframework.stereotype.Component;
  * secret file belongs (UNEXPECTED_FILE_TYPE), and a stored secret whose file is empty (EMPTY_SECRET_FILE). There is no setting
  * that turns a check on.
  */
-@Component
 public class SecretStore {
 
     /** Temporary files start with two dots: configtree ignores those (SEC-015), and no valid secret name starts with a dot. */
@@ -42,11 +41,23 @@ public class SecretStore {
     static final String TEMPORARY_SUFFIX = ".tmp";
 
     private final Path directory;
+    private final Path floor;
     private final ProcessUser processUser;
 
+    /** A store of the secret directory itself: only the directory is made, its parent belongs to the installation. */
     SecretStore(SecretsProperties properties, ProcessUser processUser) {
+        this(properties.directory(), properties.directory().getParent(), processUser);
+    }
+
+    /**
+     * A store of one directory below {@code floor}: {@code floor} has to exist (it belongs to the installation) and the
+     * directories between it and {@code directory} are made as the secret directory is (the folder of a use,
+     * {@link SecretVault}, below the secret directory).
+     */
+    SecretStore(Path directory, Path floor, ProcessUser processUser) {
         this.processUser = processUser;
-        this.directory = properties.directory();
+        this.directory = directory;
+        this.floor = floor;
     }
 
     /**
@@ -109,8 +120,7 @@ public class SecretStore {
         try {
             if (!Files.exists(directory)) {
                 requireParent();
-                Files.createDirectory(directory, protection.directoryAttributes());
-                protection.settle(directory);
+                createDirectories(protection);
             }
             requireKinds(name);
             Path target = directory.resolve(name.value());
@@ -123,11 +133,22 @@ public class SecretStore {
         }
     }
 
-    /** The parent (for example /etc/pg-ledger-mcp) belongs to the installation; only the secrets directory is created here. */
+    /** The floor (for example /etc/pg-ledger-mcp) belongs to the installation; only what is below it is created here. */
     private void requireParent() {
-        Path parent = directory.getParent();
-        if (parent != null && !Files.isDirectory(parent)) {
-            throw new FailureException(ErrorCode.PARENT_MISSING, parent.toString());
+        if (floor != null && !Files.isDirectory(floor)) {
+            throw new FailureException(ErrorCode.PARENT_MISSING, floor.toString());
+        }
+    }
+
+    /** Makes the missing directories from the floor down to the directory, each with the protection (and settled before use). */
+    private void createDirectories(SecretProtection protection) throws IOException {
+        Path next = floor;
+        for (Path segment : floor == null ? List.of(directory) : floor.relativize(directory)) {
+            next = next == null ? segment : next.resolve(segment);
+            if (!Files.exists(next)) {
+                Files.createDirectory(next, protection.directoryAttributes());
+                protection.settle(next);
+            }
         }
     }
 

@@ -31,6 +31,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.pgledger.application.attachment.ServiceAccountAccess;
+import org.pgledger.cli.secret.SecretFolder;
 import org.pgledger.cli.support.RecordingHostAccounts;
 
 /**
@@ -65,6 +66,9 @@ class WindowsPlatformTest {
     private WindowsPlatform platform;
     private Path home;
     private Path secrets;
+    /** The folders of the uses below the secrets (SPL-005). */
+    private List<Path> folders;
+    /** The folder of the attachment keys: beside the secrets, in no configuration tree (SPL-004). */
     private Path keys;
 
     @BeforeEach
@@ -74,19 +78,23 @@ class WindowsPlatformTest {
         platform = new WindowsPlatform(accounts, fileSystem -> INSTALLER, access, host, new DeployFiles());
         home = tmp.resolve("C/ProgramData/pg-ledger-mcp");
         secrets = home.resolve("etc/secrets");
-        keys = secrets.resolve("attachment-keys");
+        folders = SecretFolder.all().stream().map(folder -> secrets.resolve(folder.directory())).toList();
+        keys = home.resolve("etc/attachment-keys");
         Files.writeString(tmp.resolve("WinSW.exe"), "winsw");
         // what a read of a path finds: a record the test can recognise
         when(access.save(any())).thenAnswer(call -> new WindowsAccess.Saved(call.getArgument(0), List.of()));
     }
 
-    /** The host of an earlier installation: every folder, the secrets folder with two secrets, the folder of the keys. */
+    /** The host of an earlier installation: every folder, the folders of the secrets with two secrets, the folder of the keys. */
     private void installed() throws IOException {
-        for (String folder : List.of("lib", "etc", "etc/drivers", "logs", "data", "data/attachments", "etc/secrets/attachment-keys")) {
+        for (String folder : List.of("lib", "etc", "etc/drivers", "logs", "data", "data/attachments", "etc/attachment-keys")) {
             Files.createDirectories(home.resolve(folder));
         }
-        Files.writeString(secrets.resolve("ledger.admin.token"), "never-printed-1");
-        Files.writeString(secrets.resolve("ledger.jdbc.password"), "never-printed-2");
+        for (Path folder : folders) {
+            Files.createDirectories(folder);
+        }
+        Files.writeString(secrets.resolve("admin").resolve("ledger.admin.token"), "never-printed-1");
+        Files.writeString(secrets.resolve("common").resolve("ledger.jdbc.password"), "never-printed-2");
     }
 
     private void prepare() throws IOException {
@@ -105,7 +113,7 @@ class WindowsPlatformTest {
     }
 
     @Test
-    @DisplayName("PCS-034 a first installation: the home is closed to every account but SYSTEM and Administrators, each folder is closed with the entry of the service account (jars: read and run, settings, logs, data and attachments: modify), and the two secret folders are made with the installing user (everything) and the service account (read), nothing is read, nothing is changed in owner")
+    @DisplayName("PCS-034 a first installation: the home is closed to every account but SYSTEM and Administrators, each folder is closed with the entry of the service account (jars: read and run, settings, logs, data and attachments: modify), and the secret directory, its four folders of the uses (SPL-005) and the folder of the attachment keys beside it are made with the installing user (everything) and the service account (read), nothing is read, nothing is changed in owner")
     void pcs034_aFirstInstallation() throws IOException {
         prepare();
 
@@ -120,12 +128,18 @@ class WindowsPlatformTest {
         order.verify(access).set(home.resolve("data/attachments"), closedWith(WindowsAccess.MODIFY));
         List<AclEntry> forSecrets = ServiceAccountAccess.ownerAndService(INSTALLER, SERVICE, true);
         order.verify(access).set(secrets, forSecrets);
+        for (Path folder : folders) {
+            order.verify(access).set(folder, forSecrets);
+        }
         order.verify(access).set(keys, forSecrets);
         verify(access, never()).save(any());
         verify(access, never()).restore(any());
         assertThat(forSecrets).hasSize(2);
+        assertThat(folders).extracting(path -> path.getFileName().toString()).containsExactly("common", "admin", "mcp", "tool");
         assertThat(secrets).isDirectory();
+        assertThat(folders).allSatisfy(folder -> assertThat(folder).isDirectory());
         assertThat(keys).isDirectory();
+        assertThat(keys.startsWith(secrets)).as("the key folder is in no folder of the secrets (a configuration tree)").isFalse();
         assertThat(Files.readString(home.resolve("lib/pg-ledger-mcp.exe"))).isEqualTo("winsw");
         assertThat(Files.readString(home.resolve("lib/pg-ledger-mcp-admin.exe"))).isEqualTo("winsw");
     }
@@ -144,20 +158,30 @@ class WindowsPlatformTest {
         verify(access, never()).set(eq(keys), any());
         verify(access, never()).save(eq(secrets));
         verify(access, never()).save(eq(keys));
+        for (Path folder : folders) {
+            verify(access, never()).set(eq(folder), any());
+            verify(access, never()).save(eq(folder));
+        }
         verify(access, never()).restore(any());
-        assertThat(Files.readString(secrets.resolve("ledger.admin.token"))).isEqualTo("never-printed-1");
+        assertThat(Files.readString(secrets.resolve("admin").resolve("ledger.admin.token"))).isEqualTo("never-printed-1");
         assertThat(Files.readString(home.resolve("lib/pg-ledger-mcp.exe"))).isEqualTo("winsw");
     }
 
     @Test
-    @DisplayName("PCS-034 only the folder of the keys is made when the secrets folder exists without it (an installation made before the attachments)")
-    void pcs034_theKeyFolderAloneIsMadeWhenItIsMissing() throws IOException {
+    @DisplayName("PCS-034 / SPL-005 only the folders that are missing are made when the secrets folder exists without them (an installation made before the folders of the uses and before the attachments)")
+    void pcs034_theMissingFoldersAloneAreMade() throws IOException {
         Files.createDirectories(secrets);
+        Files.createDirectories(secrets.resolve("admin"));
 
         prepare();
 
+        List<AclEntry> forSecrets = ServiceAccountAccess.ownerAndService(INSTALLER, SERVICE, true);
         verify(access, never()).set(eq(secrets), any());
-        verify(access).set(keys, ServiceAccountAccess.ownerAndService(INSTALLER, SERVICE, true));
+        verify(access, never()).set(eq(secrets.resolve("admin")), any());
+        verify(access).set(secrets.resolve("common"), forSecrets);
+        verify(access).set(secrets.resolve("mcp"), forSecrets);
+        verify(access).set(secrets.resolve("tool"), forSecrets);
+        verify(access).set(keys, forSecrets);
     }
 
     @Test

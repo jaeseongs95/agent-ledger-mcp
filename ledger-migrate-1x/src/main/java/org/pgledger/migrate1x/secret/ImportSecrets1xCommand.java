@@ -19,7 +19,7 @@ import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.FailureException;
 import org.pgledger.cli.UsageException;
 import org.pgledger.cli.secret.SecretName;
-import org.pgledger.cli.secret.SecretStore;
+import org.pgledger.cli.secret.SecretVault;
 import org.pgledger.cli.secret.StandardInput;
 import org.pgledger.migrate1x.tool.MigrationError;
 import org.pgledger.migrate1x.tool.ToolCommand;
@@ -102,12 +102,12 @@ public class ImportSecrets1xCommand implements Command {
     /** The 1.x file has a few lines; this bounds what a wrong input can make the program hold. */
     static final int MAXIMUM_BYTES = OneXEnvironment.MAXIMUM_BYTES;
 
-    private final SecretStore store;
+    private final SecretVault store;
     private final StandardInput standardInput;
     private final CliOutput output;
     private final CliMessages messages;
 
-    ImportSecrets1xCommand(SecretStore store, StandardInput standardInput, CliOutput output, CliMessages messages) {
+    ImportSecrets1xCommand(SecretVault store, StandardInput standardInput, CliOutput output, CliMessages messages) {
         this.store = store;
         this.standardInput = standardInput;
         this.output = output;

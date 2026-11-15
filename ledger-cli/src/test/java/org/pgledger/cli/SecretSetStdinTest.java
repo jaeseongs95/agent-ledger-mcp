@@ -37,6 +37,11 @@ class SecretSetStdinTest {
         return tmp.resolve("secrets");
     }
 
+    /** The folder of {@link #NAME} ({@code SecretFolder}: the database password is read by both services). */
+    private Path folder() {
+        return directory().resolve("common");
+    }
+
     @Test
     @RequiresOwnerOnlyStorage
     @DisplayName("SEC-024 the first line of standard input is stored without its line end; the console input is not asked; only the name and the path are printed")
@@ -47,7 +52,7 @@ class SecretSetStdinTest {
         Outcome result = cli.withStandardInput(VALUE + "\r\nsecond line\n").run(directory(), console, output, "secret-set", NAME,
                 "--stdin");
 
-        Path file = directory().resolve(NAME);
+        Path file = folder().resolve(NAME);
         assertThat(result.exitCode()).isZero();
         assertThat(Files.readString(file)).isEqualTo(VALUE);
         assertThat(console.reads()).as("the terminal is not asked").isZero();
@@ -66,7 +71,7 @@ class SecretSetStdinTest {
 
         assertThat(result.exitCode()).isZero();
         assertThat(console.reads()).isEqualTo(1);
-        assertThat(Files.readString(directory().resolve(NAME))).isEqualTo("typed-value");
+        assertThat(Files.readString(folder().resolve(NAME))).isEqualTo("typed-value");
     }
 
     @Test
@@ -79,7 +84,7 @@ class SecretSetStdinTest {
 
             assertThat(result.exitCode()).as(input).isEqualTo(ExitStatus.FAILURE.code());
             assertThat(result.code()).as(input).contains(ErrorCode.EMPTY_SECRET);
-            assertThat(Files.exists(directory().resolve(NAME))).as(input).isFalse();
+            assertThat(Files.exists(folder().resolve(NAME))).as(input).isFalse();
         }
     }
 
@@ -94,7 +99,7 @@ class SecretSetStdinTest {
 
         assertThat(result.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
         assertThat(result.code()).contains(ErrorCode.SECRET_TOO_LONG);
-        assertThat(Files.exists(directory().resolve(NAME))).isFalse();
+        assertThat(Files.exists(folder().resolve(NAME))).isFalse();
         assertThat(captured.getAll()).doesNotContain("Lq7");
     }
 
@@ -115,7 +120,7 @@ class SecretSetStdinTest {
         assertThat(console.reads()).isEqualTo(1);
         assertThat(second.exitCode()).isZero();
         assertThat(other.reads()).as("nothing is asked for a secret that exists").isZero();
-        assertThat(Files.readString(directory().resolve(NAME))).as("the stored value is not replaced").isEqualTo("typed-first-value");
+        assertThat(Files.readString(folder().resolve(NAME))).as("the stored value is not replaced").isEqualTo("typed-first-value");
         assertThat(kept.info()).contains(NAME).contains("already exists").doesNotContain("typed-");
         assertThat(captured.getAll()).doesNotContain("typed-first-value").doesNotContain("from-the-pipe");
     }

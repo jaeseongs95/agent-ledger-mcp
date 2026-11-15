@@ -806,6 +806,24 @@ class DocsTest {
 
     @ParameterizedTest
     @EnumSource(Language.class)
+    @DisplayName("SPL-009 the READMEs and the 2.0.0 note tell the folders of the secrets (name, who reads, folder), the key folder beside the secret directory, that the file permissions do not separate the two services (one operating system user), and that the per-client lock settings are gone; the headers of both installers name the folders")
+    void spl009_theSecretFoldersAreTold(Language language) {
+        String readme = language.readme().text();
+
+        assertThat(language.readme().codeSpans()).contains("common", "admin", "mcp", "tool", "<settings folder>/secrets",
+                "<settings folder>/attachment-keys", "UNKNOWN_SECRET_NAME", "ledger.jdbc.password", "ledger.admin.token",
+                "ledger.admin.agent-token", "ledger.mcp.token", "ledger.import.source.password");
+        assertThat(readme).doesNotContain("secrets/attachment-keys").doesNotContain("lockout.max-failures")
+                .doesNotContain("lockout.lock-period");
+        assertThat(readme).contains(language == Language.EN ? "one operating system user" : "같은 운영체제 사용자");
+        String note = note().part(language.partHeading()).text();
+        assertThat(note).contains("D-0031").contains("D-0013").contains("attachment-keys");
+        assertThat(Repository.read("deploy/install.sh")).contains("(common, admin, mcp, tool)");
+        assertThat(Repository.read("deploy/install.cmd")).contains("(common, admin, mcp, tool)");
+    }
+
+    @ParameterizedTest
+    @EnumSource(Language.class)
     @DisplayName("PCS-050 the README defines the personal edition (one person, their own computer or server, the whole installation target trusted, loopback only, the network exposure the operator's) and names no reverse proxy, certificate authority, nginx, ACME, tls-issue, tls-renew or seal-host")
     void theReadmeDefinesThePersonalEditionAndNamesNoProxyProduct(Language language) {
         String readme = language.readme().text();

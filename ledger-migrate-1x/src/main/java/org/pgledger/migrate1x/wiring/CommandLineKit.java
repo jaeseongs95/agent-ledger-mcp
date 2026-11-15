@@ -8,7 +8,7 @@ import org.pgledger.cli.CliRunner;
 import org.pgledger.cli.StreamCliOutput;
 import org.pgledger.cli.database.CliActor;
 import org.pgledger.cli.secret.ConsoleSecretInput;
-import org.pgledger.cli.secret.SecretStore;
+import org.pgledger.cli.secret.SecretVault;
 import org.pgledger.cli.secret.SecretsProperties;
 import org.pgledger.cli.secret.StandardInput;
 import org.pgledger.cli.secret.SystemProcessUser;
@@ -27,6 +27,6 @@ import org.springframework.context.annotation.Import;
 @EnableConfigurationProperties(SecretsProperties.class)
 @Import({CliRunner.class, CliErrorTranslator.class, CliExitCodeMapper.class, CliMessages.class, StreamCliOutput.class,
         CliClockConfiguration.class, CliActor.class, SystemProcessUser.class, StandardInput.class, ConsoleSecretInput.class,
-        SecretStore.class})
+        SecretVault.class})
 public class CommandLineKit {
 }

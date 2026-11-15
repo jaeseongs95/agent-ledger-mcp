@@ -2,6 +2,7 @@ package org.pgledger.cli.deploy;
 
 import java.util.ArrayList;
 import java.util.List;
+import org.pgledger.cli.secret.SecretFolder;
 import org.springframework.stereotype.Component;
 
 /**
@@ -35,15 +36,19 @@ public final class DeployRenderer {
     /**
      * The sources of {@code spring.config.import} of a service, below the one directory of the installation: the settings
      * file the installer renders (required), the settings file of the service (required), the operator's own settings
-     * ({@code local.yaml}, optional, never overwritten), the registration of the JDBC driver and the secret directory (a
-     * configuration tree). Later sources win. The command line tool imports the same four of them without the file of a
-     * service (its {@code application.properties}), so it sees what the services see.
-     *
-     * @param settingsFile {@code mcp.yaml} or {@code admin.yaml}
+     * ({@code local.yaml}, optional, never overwritten), the registration of the JDBC driver and the folders of the secrets that
+     * this service needs ({@link Service#secretFolders}, each a configuration tree of its own; the secret directory itself is
+     * never a tree, so a service never has the secrets of another in its {@code Environment}). Later sources win. The command
+     * line tool imports the same sources without the file of a service and with the folders it needs itself (its
+     * {@code application.properties}), so it sees what the services see of the settings.
      */
-    public static String configImport(DeployLayout layout, String settingsFile) {
+    static String configImport(DeployLayout layout, Service service) {
         String etc = layout.etc();
-        return "file:" + etc + "/application.yaml,file:" + etc + "/" + settingsFile + ",optional:file:" + etc
-                + "/local.yaml,optional:file:" + etc + "/jdbc-driver.yaml,optional:configtree:" + etc + "/secrets/";
+        StringBuilder sources = new StringBuilder("file:" + etc + "/application.yaml,file:" + etc + "/" + service.settingsFile()
+                + ",optional:file:" + etc + "/local.yaml,optional:file:" + etc + "/jdbc-driver.yaml");
+        for (SecretFolder folder : service.secretFolders()) {
+            sources.append(",optional:configtree:").append(layout.secretFolder(folder)).append('/');
+        }
+        return sources.toString();
     }
 }

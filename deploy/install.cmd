@@ -11,7 +11,7 @@ rem https://learn.microsoft.com/en-us/windows/win32/services/localservice-accoun
 rem https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/sc-config
 rem One service account runs both services: the predefined account LocalService (no person's account, no password). The
 rem secret folder and the secrets are the installing user's (everything) and are readable by LocalService (read only), because the
-rem services read them and nothing is handed over (the installing user stays the owner, no privilege is used); no other account has access, so the accounts the agents run as cannot read the ledger's secrets. Run it again as the same user. Two database
+rem services read them and nothing is handed over (the installing user stays the owner, no privilege is used); no other account has access, so the accounts the agents run as cannot read the ledger's secrets. The secrets are in one folder per use (common, admin, mcp, tool) and each service imports only the folders it needs, so the MCP server has none of the secrets of the admin web in its settings (one account runs both, so file permissions do not separate them). Run it again as the same user. Two database
 rem accounts: the application account (both servers and the owner commands) and the DDL account (setup and the grants; its
 rem password is typed and not stored). WinSW.exe (2.x) is obtained by the operator and passed here, like the JDBC driver.
 rem Run in an elevated prompt (Java refuses to change the folders of the installation otherwise; there is no probe here):

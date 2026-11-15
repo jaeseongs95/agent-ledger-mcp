@@ -34,7 +34,7 @@ class MessagesTest {
     private static final List<ErrorCode> CLI_CODES = List.of(
             ErrorCode.MISSING_COMMAND, ErrorCode.UNKNOWN_COMMAND, ErrorCode.MISSING_ARGUMENT, ErrorCode.TOO_MANY_ARGUMENTS,
             ErrorCode.MISSING_OPTION_VALUE, ErrorCode.UNKNOWN_OPTION, ErrorCode.INVALID_OPTION_VALUE,
-            ErrorCode.INVALID_SECRET_NAME, ErrorCode.NO_CONSOLE, ErrorCode.EMPTY_SECRET, ErrorCode.EMPTY_SECRET_FILE,
+            ErrorCode.INVALID_SECRET_NAME, ErrorCode.UNKNOWN_SECRET_NAME, ErrorCode.NO_CONSOLE, ErrorCode.EMPTY_SECRET, ErrorCode.EMPTY_SECRET_FILE,
             ErrorCode.INVALID_ENCODING, ErrorCode.NON_POSIX_FILESYSTEM, ErrorCode.LOOSE_PERMISSIONS,
             ErrorCode.UNEXPECTED_FILE_TYPE, ErrorCode.UNKNOWN_PROCESS_USER, ErrorCode.PARENT_MISSING, ErrorCode.IO_FAILED,
             ErrorCode.SECRET_TOO_LONG, ErrorCode.STDIN_FAILED, ErrorCode.DRIVER_NOT_CONFIGURED, ErrorCode.LEDGER_REFUSED,

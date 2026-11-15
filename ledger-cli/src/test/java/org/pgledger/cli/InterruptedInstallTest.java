@@ -73,8 +73,8 @@ class InterruptedInstallTest {
         assertThat(password.exitCode()).isZero();
         assertThat(password.failure()).isNull();
         assertThat(token.exitCode()).isZero();
-        assertThat(Files.readString(secrets.resolve("ledger.jdbc.password"))).isEqualTo("the-database-password");
-        assertThat(Files.readString(secrets.resolve("ledger.mcp.token"))).hasSize(43);
+        assertThat(Files.readString(secrets.resolve("common").resolve("ledger.jdbc.password"))).isEqualTo("the-database-password");
+        assertThat(Files.readString(secrets.resolve("mcp").resolve("ledger.mcp.token"))).hasSize(43);
     }
 
     @Test

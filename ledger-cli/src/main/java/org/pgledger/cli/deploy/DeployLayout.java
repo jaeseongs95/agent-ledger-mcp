@@ -4,6 +4,7 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Pattern;
 import java.util.Locale;
 import org.pgledger.application.attachment.ServiceAccountAccess;
+import org.pgledger.cli.secret.SecretFolder;
 
 /**
  * Where an installation puts its files, and the names of it. An installation is an <em>instance</em> with a name (the default
@@ -82,13 +83,25 @@ public record DeployLayout(Platform platform,
     }
 
     /**
-     * Where the key files of the attachments are kept: {@code <etc>/secrets/attachment-keys}, inside the secret directory that is
-     * private to the service account (on Windows: the installing user with everything and LocalService with read; the setting
-     * {@code ledger.attachments.key-directory}); outside the attachment directory, so
-     * a backup of the files never carries the keys by itself.
+     * Where the key files of the attachments are kept: {@code <etc>/attachment-keys}, private to the service account like the
+     * secret directory (on Windows: the installing user with everything and LocalService with read; the setting
+     * {@code ledger.attachments.key-directory}); outside the attachment directory, so a backup of the files never carries the
+     * keys by itself, and beside the secret directory, not inside it: Spring Boot makes every file below a configuration tree
+     * a property, so a key file below any imported tree would be in the {@code Environment} of the process (see
+     * {@link #secretDirectory()}).
      */
     public String attachmentKeyDirectory() {
-        return etc + "/secrets/attachment-keys";
+        return etc + "/attachment-keys";
+    }
+
+    /** The secret directory, {@code <etc>/secrets}: it holds one folder per use ({@link #secretFolder}) and is itself no configuration tree. */
+    public String secretDirectory() {
+        return etc + "/secrets";
+    }
+
+    /** The folder of one use below the secret directory: the configuration tree that the processes which need it import. */
+    public String secretFolder(SecretFolder folder) {
+        return secretDirectory() + "/" + folder.directory();
     }
 
     /** The name of the MCP server service (systemd unit, WinSW service id). */

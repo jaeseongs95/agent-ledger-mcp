@@ -102,10 +102,11 @@ class WindowsSecretsTest {
         assumeTrue(elevated(), "this needs an elevated prompt: only an administrator may close the home to everybody else");
         assertThat(prepareHost(cli).code()).as("the first run").isEmpty();
         Path secrets = home().resolve("etc/secrets");
-        Path keys = secrets.resolve("attachment-keys");
-        Path secret = secrets.resolve("ledger.admin.token");
+        Path keys = home().resolve("etc/attachment-keys");
+        Path folder = secrets.resolve("admin");
+        Path secret = folder.resolve("ledger.admin.token");
         storeSecret(cli, "ledger.admin.token", "never-printed-0123456789");
-        List<Path> paths = List.of(home(), home().resolve("lib"), home().resolve("etc"), secrets, keys, secret);
+        List<Path> paths = List.of(home(), home().resolve("lib"), home().resolve("etc"), secrets, keys, secret, folder);
         List<List<AclEntry>> before = acls(paths);
 
         Outcome rerun = prepareHost(cli);
@@ -115,8 +116,9 @@ class WindowsSecretsTest {
         assertThat(acl(secrets)).as("the secrets folder is not changed by a re-run").isEqualTo(before.get(3));
         assertThat(acl(keys)).isEqualTo(before.get(4));
         assertThat(acl(secret)).isEqualTo(before.get(5));
+        assertThat(acl(folder)).as("the folder of the use is not changed by a re-run").isEqualTo(before.get(6));
         assertThat(acl(secret)).as("the service account and the installing user only").hasSize(2);
-        for (Path path : List.of(secrets, keys, secret)) {
+        for (Path path : List.of(secrets, folder, keys, secret)) {
             int service = WindowsEffectiveRights.of(path, SERVICE);
             assertThat(service & WindowsEffectiveRights.FILE_READ_DATA).as("read of %s", path).isNotZero();
             assertThat(service & (WindowsEffectiveRights.FILE_WRITE_DATA | WindowsEffectiveRights.DELETE
@@ -137,7 +139,7 @@ class WindowsSecretsTest {
         assumeTrue(elevated(), "this needs an elevated prompt: only an administrator may close the home to everybody else");
         assertThat(prepareHost(cli).code()).isEmpty();
         Path secrets = home().resolve("etc/secrets");
-        Path secret = secrets.resolve("ledger.admin.token");
+        Path secret = secrets.resolve("admin").resolve("ledger.admin.token");
         storeSecret(cli, "ledger.admin.token", "never-printed-0123456789");
         Path lib = home().resolve("lib");
         Path jar = lib.resolve(DeployLayout.CLI_JAR);

@@ -69,7 +69,8 @@ class AttachmentSetupTest {
     }
 
     private Path keyDirectory() {
-        return secrets().resolve("attachment-keys");
+        // beside the secrets, in no configuration tree (SPL-004)
+        return etc().resolve("attachment-keys");
     }
 
     private Path local() {

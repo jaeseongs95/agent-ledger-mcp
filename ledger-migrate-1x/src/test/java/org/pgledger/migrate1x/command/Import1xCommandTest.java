@@ -236,7 +236,8 @@ class Import1xCommandTest {
     void theSourcePasswordIsASecret(Tool tool, CapturedOutput captured) throws IOException {
         // the secret store of the tool has no command to set a secret (the installer of 2.0 and ledger-cli do): the file of the
         // secret is what the configtree reads
-        Path secrets = Files.createDirectories(tmp.resolve("secrets"));
+        // the folder of the secrets that only this tool reads (SecretFolder.TOOL), imported as a configuration tree of its own
+        Path secrets = Files.createDirectories(tmp.resolve("secrets").resolve("tool"));
         Files.writeString(secrets.resolve(SOURCE_PASSWORD_NAME), SOURCE_PASSWORD, StandardCharsets.UTF_8);
         RecordingOutput output = new RecordingOutput();
 

@@ -17,6 +17,7 @@ import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.UsageException;
 import org.pgledger.cli.deploy.DeployLayout.Platform;
 import org.pgledger.cli.secret.ProcessUser;
+import org.pgledger.cli.secret.SecretFolder;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.stereotype.Component;
 
@@ -29,7 +30,8 @@ import org.springframework.stereotype.Component;
  * page of the admin web writes its registration), write the logs, the data folder and the attachment folder. It copies the jars, the two WinSW executables and the driver; what it
  * makes inside these folders inherits those entries. {@code mkdir}, {@code icacls} and {@code copy} did this.
  *
- * <p>The secrets are the installing user's: the folder of the secrets and the folder of the attachment keys are made with the ACL
+ * <p>The secrets are the installing user's: the secret directory with its folders of the uses ({@link SecretFolder}) and the folder of
+ * the attachment keys ({@code etc\attachment-keys}, beside the secrets, in no configuration tree) are made with the ACL
  * of {@link ServiceAccountAccess} (the installing user with everything, the service account with read; the entry of the settings
  * folder for the service account to modify is not carried over, because the ACL is written at once), and what the store of
  * secrets and the key setup make in them has the same two entries. Why the service account reads: it runs the services, which
@@ -122,10 +124,15 @@ final class WindowsPlatform implements ServicePlatform, ServiceWrappers {
         UserPrincipal installer = processUser.current(fileSystem);
         Path home = lib.getParent();
         Path drivers = etc.resolve("drivers");
-        Path secrets = etc.resolve("secrets");
         Path data = hostPath(root, layout.data());
         Path attachments = hostPath(root, layout.attachmentDirectory());
-        Path keys = hostPath(root, layout.attachmentKeyDirectory());
+        // the secret directory and one folder per use (SecretFolder), then the key folder of the attachments, which is beside them
+        // and in no folder that a process imports as a configuration tree
+        List<Path> secretFolders = new ArrayList<>(List.of(hostPath(root, layout.secretDirectory())));
+        for (SecretFolder folder : SecretFolder.all()) {
+            secretFolders.add(hostPath(root, layout.secretFolder(folder)));
+        }
+        secretFolders.add(hostPath(root, layout.attachmentKeyDirectory()));
         // The folders and what the service account may do in each; the secrets are not among them (see below). The settings folder is
         // changed by the admin web (its driver page replaces the registration file jdbc-driver.yaml there through a temporary file and a
         // move), which is the one reason of "modify" there; nothing of the services writes in the folder of the driver jars (the admin web
@@ -148,11 +155,11 @@ final class WindowsPlatform implements ServicePlatform, ServiceWrappers {
                 Files.createDirectories(folder.path());
                 access.set(folder.path(), WindowsAccess.closedWith(system, administrators, service, folder.serviceRights()));
             }
-            // The folder of the secrets and the folder of the attachment keys inside it: the installing user with everything and the
+            // The folders of the secrets and the folder of the attachment keys: the installing user with everything and the
             // service account with read, set when the folder is made. An existing one is never changed. The settings folder holds an
             // entry of the service account to modify that a new folder inherits, so the ACL is written at once, not left to inheritance.
             List<AclEntry> forSecrets = ServiceAccountAccess.ownerAndService(installer, service, true);
-            for (Path secretFolder : List.of(secrets, keys)) {
+            for (Path secretFolder : secretFolders) {
                 if (!Files.isDirectory(secretFolder, LinkOption.NOFOLLOW_LINKS)) {
                     Files.createDirectories(secretFolder);
                     access.set(secretFolder, forSecrets);

@@ -36,7 +36,8 @@ import org.springframework.util.ClassUtils;
 class SecretSetCommandTest {
 
     private static final String VALUE = "Zq9-unique-secret-value-é한";
-    private static final String NAME = "cloudflare-api-token";
+    /** A secret of the product (SPL-002): its folder is {@code mcp} ({@code SecretFolder}). */
+    private static final String NAME = "ledger.mcp.token";
     private static final String[] COMMAND_NAMES = Arrays.stream(CliCommand.values()).map(CliCommand::cliName).toArray(String[]::new);
 
     /** One command line and what the standard path must make of it. */
@@ -70,6 +71,11 @@ class SecretSetCommandTest {
         return tmp.resolve("secrets");
     }
 
+    /** The folder of {@link #NAME}: a secret is stored in the folder its name belongs in. */
+    private Path folder() {
+        return directory().resolve("mcp");
+    }
+
     private static boolean allZero(char[] chars) {
         for (char c : chars) {
             if (c != 0) {
@@ -89,7 +95,7 @@ class SecretSetCommandTest {
 
         Outcome result = cli.run(directory(), input, output, "secret-set", NAME);
 
-        Path file = directory().resolve(NAME);
+        Path file = folder().resolve(NAME);
         assertThat(result.exitCode()).isZero();
         assertThat(result.failure()).isNull();
         assertThat(Files.readString(file)).isEqualTo(VALUE);
@@ -152,7 +158,21 @@ class SecretSetCommandTest {
         assertThat(result.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
         assertThat(result.code()).contains(ErrorCode.EMPTY_SECRET);
         assertThat(input.reads()).isEqualTo(1);
-        assertThat(Files.exists(directory().resolve(NAME))).isFalse();
+        assertThat(Files.exists(folder().resolve(NAME))).isFalse();
+    }
+
+    @Test
+    @DisplayName("SPL-002 a name that is no secret of the product is refused (exit 1, UNKNOWN_SECRET_NAME) before any prompt, nothing is made and the name is not echoed")
+    void spl002_unknownNameIsRefusedBeforePrompt(Cli cli, CapturedOutput captured) {
+        ScriptedSecretInput input = new ScriptedSecretInput(VALUE.toCharArray());
+
+        Outcome result = cli.run(directory(), input, new RecordingOutput(), "secret-set", "cloudflare-api-token");
+
+        assertThat(result.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
+        assertThat(result.code()).contains(ErrorCode.UNKNOWN_SECRET_NAME);
+        assertThat(input.reads()).isZero();
+        assertThat(captured.getAll()).doesNotContain("cloudflare-api-token");
+        assertThat(Files.exists(directory())).isFalse();
     }
 
     @Test
@@ -181,7 +201,7 @@ class SecretSetCommandTest {
         assertThat(result.exitCode()).isZero();
         assertThat(result.failure()).isNull();
         assertThat(input.reads()).isEqualTo(1);
-        assertThat(Files.readString(directory().resolve(NAME))).isEqualTo(VALUE);
+        assertThat(Files.readString(folder().resolve(NAME))).isEqualTo(VALUE);
         assertThat(captured.getAll()).doesNotContain(VALUE);
     }
 
@@ -198,7 +218,7 @@ class SecretSetCommandTest {
         assertThat(result.exitCode()).isZero();
         assertThat(result.failure()).isNull();
         assertThat(input.reads()).isEqualTo(1);
-        assertThat(Files.readString(directory().resolve(NAME))).isEqualTo(VALUE);
+        assertThat(Files.readString(folder().resolve(NAME))).isEqualTo(VALUE);
         assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(directory()))).isEqualTo("rwxr-xr-x");
         assertThat(captured.getAll()).doesNotContain(VALUE);
     }

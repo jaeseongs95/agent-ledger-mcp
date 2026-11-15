@@ -139,7 +139,7 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 - **오류.** `ARTIFACT_CHUNK_CONFLICT`, `CHUNK_HASH_MISMATCH`, `ARTIFACT_BUSY`(잠시 뒤 다시 보냅니다), `ARTIFACT_INCOMPLETE`, `ARTIFACT_HASH_MISMATCH`(바이트는 남습니다), `ARTIFACT_CORRUPTED`, `ARTIFACT_LIMIT`, `ARTIFACT_UNSUPPORTED_PURPOSE`, `ARTIFACT_EXPIRED`, `ARTIFACT_NOT_FOUND`, `ARTIFACT_OPERATION_CONFLICT`, `ARTIFACT_STORAGE_FULL`(디스크가 너무 찼으니 소유자가 비워야 합니다), `ARTIFACT_STORAGE_IO_ERROR`, `ARTIFACT_STORAGE_UNSAFE`(저장 경로를 이 용도로 쓸 수 없습니다. 폴더 자리에 파일이 있거나, 파일 자리에 폴더가 있거나, 이 파일 시스템이나 이 계정에서는 소유자 전용으로 만들 수 없는 경우입니다), `ARTIFACT_KEY_MISSING`(쓸 수 있는 키가 없습니다. 키 파일이 없거나, 비었거나, 256비트가 아닙니다. 키 파일을 되살립니다). 이 도구들의 오류에는 모두 `details.retryable`이 실립니다. 같은 요청을 나중에 다시 보내 성공할 수 있을 때만 `true`입니다(`ARTIFACT_BUSY`, 그리고 `details.limit`이 `staging-budget`이나 `open-uploads`인 `ARTIFACT_LIMIT`). `ARTIFACT_INCOMPLETE`는 `false`입니다(빠진 청크를 보낸 뒤 finish를 다시 보냅니다).
 - **점검.** `ledger-cli attachments-check`는 없거나 손상된 첨부(지우지 않습니다)와 어떤 이력 행도 가리키지 않는 첨부(보존합니다)를 알리고, 행이 없는 파일이나 rekey가 대체한 파일을 `orphan-grace`가 지난 뒤 `orphans/`로 옮깁니다. `orphans/`를 비우는 길은 `--purge-orphans`뿐이며 감사 기록에 남습니다. 관리 웹은 같은 결과를 읽기 전용으로 보여 주고, 기록 화면에 텍스트 첨부는 이스케이프해서 보여 주며 그 밖의 형식은 응용을 거치는 내려받기로 제공합니다.
 - **백업.** 첨부 폴더, 키 폴더, 데이터베이스를 함께 백업하고 복원합니다. 복원 뒤 `ledger-cli attachments-check`를 실행하면 없거나 손상된 첨부가 없어야 합니다. 격리된 파일의 행이 다시 생기면 점검이 그 파일을 제자리로 돌려놓습니다.
-- **설치.** 설치 프로그램이 첨부 폴더(서비스 계정 소유, 다른 계정에는 닫힘), 비밀 폴더 아래의 키 폴더, 설정을 만듭니다. 1.x의 근거는 기록된 URI와 해시 그대로 남으며 이전은 아무것도 가져오지 않습니다.
+- **설치.** 설치 프로그램이 첨부 폴더(서비스 계정 소유, 다른 계정에는 닫힘), 비밀 디렉터리 옆의 키 폴더(`attachment-keys`), 설정을 만듭니다. 1.x의 근거는 기록된 URI와 해시 그대로 남으며 이전은 아무것도 가져오지 않습니다.
 
 ## 모듈
 
@@ -162,8 +162,20 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 ## 설정
 
 설정은 Spring Boot 속성입니다. 파일, 명령줄(`--name=value`), 비밀 저장소로 줄 수 있습니다. 비밀은 파일이나 환경 변수에 넣지 않습니다.
-`ledger-cli secret-set <name>`은 숨김 입력으로 비밀을 받아 비밀 디렉터리의 파일 하나로 저장하며, 프로세스들은 이 디렉터리를 Spring 설정 트리로 읽습니다.
-비밀은 그 속성 이름으로 저장합니다. 저장된 비밀을 출력하는 명령은 없습니다.
+`ledger-cli secret-set <name>`은 숨김 입력으로 비밀을 받아 비밀 디렉터리 안에서 그 이름의 용도에 맞는 폴더의 파일 하나로 저장하며, 프로세스들은 이 폴더를 Spring 설정 트리로 읽습니다.
+비밀은 그 속성 이름으로 저장하며, 제품의 비밀 이름이 아닌 이름은 거절합니다(`UNKNOWN_SECRET_NAME`). 저장된 비밀을 출력하는 명령은 없습니다.
+
+비밀 디렉터리(`<settings folder>/secrets`)에는 용도마다 폴더가 하나씩 있고, 각 프로세스는 자기에게 필요한 폴더만 읽어 들입니다. 그래서 MCP 서버의 설정에는 관리 웹의 비밀이 들어오지 않고,
+관리 웹에는 에이전트의 토큰이 그 이름으로 들어오지 않습니다.
+
+| 비밀(파일 이름이 속성 이름) | 읽는 곳 | 비밀 디렉터리의 폴더 |
+|---|---|---|
+| `ledger.jdbc.password` | MCP 서버, 관리 웹, `ledger-cli`, `ledger-migrate-1x` | `common` |
+| `ledger.admin.token`, `ledger.admin.agent-token`, `spring.security.oauth2.client.registration.<id>.client-secret`(OpenID Connect) | 관리 웹 | `admin` |
+| `ledger.mcp.token` | MCP 서버, `ledger-cli mcp-check` | `mcp` |
+| `ledger.import.source.password` | `ledger-migrate-1x` | `tool` |
+
+첨부의 키 파일은 비밀 디렉터리에 두지 않고 `<settings folder>/attachment-keys`에 둡니다. 어떤 설정 트리 아래에도 없는 위치입니다(Spring Boot는 트리 아래의 모든 파일을 그 프로세스의 속성으로 만듭니다).
 
 | 키 | 사용처 | 의미 |
 |---|---|---|
@@ -196,7 +208,7 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | `ledger.admin.mcp.health-url` | 관리 웹 | 개요 화면에 보여 줄 MCP 서버의 `/healthz` URL. 없으면 설정하지 않은 것입니다 |
 | `ledger.admin.mcp.timeout` | 관리 웹 | 그 확인의 제한 시간, 기본 2s |
 | `ledger.attachments.directory` | 서버, CLI | 첨부 파일을 두는 위치입니다(설치 프로그램이 `<data folder>/attachments`로 정합니다). 정하지 않으면 첨부 도구는 등록되지 않습니다 |
-| `ledger.attachments.key-directory` | 서버, CLI | 키 파일을 두는 위치로 `directory` 밖이어야 합니다(안이면 시작이 실패합니다). 설치 프로그램이 `<settings folder>/secrets/attachment-keys`로 정합니다 |
+| `ledger.attachments.key-directory` | 서버, CLI | 키 파일을 두는 위치로 `directory` 밖이어야 합니다(안이면 시작이 실패합니다). 설치 프로그램이 비밀 디렉터리 안이 아니라 그 옆인 `<settings folder>/attachment-keys`로 정합니다 |
 | `ledger.attachments.active-key-id` | 서버, CLI | 새 업로드를 쓰는 키입니다. `setup`이 `local.yaml`에 적습니다. 키 파일이 없으면 서버가 시작하지 않습니다 |
 | `ledger.attachments.max-file-bytes` | 서버, CLI | 파일 하나의 최대 크기, 기본 64MB |
 | `ledger.attachments.staging-budget-bytes` | 서버, CLI | 열린 업로드 전체가 선언할 수 있는 크기, 기본 512MB |
@@ -207,7 +219,7 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | `ledger.attachments.orphan-grace` | 서버, CLI | 행 없는 파일(또는 대체된 파일)을 `attachments-check`가 `orphans/`로 옮기기 전 유예, 기본 24h |
 | `ledger.attachments.reaper-interval` | MCP 서버 | 만료된 업로드를 지우는 주기, 기본 1m |
 | `ledger.secrets.home` | `ledger-cli` | 설정, 드라이버 등록, 드라이버 jar, 비밀 디렉터리를 담는 설치 디렉터리, 기본 `/etc/pg-ledger-mcp`(Windows 설치기는 자기 것을 지정합니다) |
-| `ledger.secrets.directory` | `ledger-cli` | 비밀 디렉터리, 기본 `/etc/pg-ledger-mcp/secrets` |
+| `ledger.secrets.directory` | `ledger-cli` | 비밀 디렉터리(폴더 `common`, `admin`, `mcp`, `tool`을 담으며 그 자체는 설정 트리가 아닙니다), 기본 `/etc/pg-ledger-mcp/secrets` |
 | `ledger.secrets.instance` | `ledger-cli` | 기본 경로가 따르는 인스턴스 이름, 기본 `pg-ledger-mcp` |
 | `ledger.cli.driver.directory` | `ledger-cli` | `driver-register`가 jar를 가져오는 디렉터리, 기본 `/etc/pg-ledger-mcp/drivers` |
 | `ledger.cli.driver.file` | `ledger-cli` | `driver-register`가 기록하는 등록 파일, 기본 `/etc/pg-ledger-mcp/jdbc-driver.yaml` |
@@ -227,7 +239,7 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 
 - **서비스 계정 하나.** MCP 서버와 관리 웹은 어떤 사람에게도 속하지 않는 운영체제 계정 하나로 실행합니다. Linux는 시스템 사용자 `pg-ledger-mcp`(로그인 없음,
   root 아님), Windows는 내장 계정 LocalService(비밀번호 없음)입니다. 목적은 장부의 비밀인 관리 토큰과 데이터베이스 비밀번호를 그 컴퓨터에서 일하는 사람의
-  계정과 그 아래에서 도는 에이전트로부터 떼어 놓는 것이며, 비밀 디렉터리는 서비스 계정만 읽을 수 있습니다(Windows에서는 설치한 사용자와, 읽기만 하는 LocalService가 읽고 다른 누구도 읽지 못합니다). 한 설치를 인스턴스라고 부르며 서비스 이름은 그것을
+  계정과 그 아래에서 도는 에이전트로부터 떼어 놓는 것이며, 비밀 디렉터리는 서비스 계정만 읽을 수 있습니다(Windows에서는 설치한 사용자와, 읽기만 하는 LocalService가 읽고 다른 누구도 읽지 못합니다). 비밀은 용도마다 폴더 하나에 두고 각 서비스는 자기 폴더와 공통 폴더만 읽어 들이므로, MCP 서버의 프로세스는 더 이상 관리 토큰이나 OpenID Connect 클라이언트 비밀을 설정에 가지지 않습니다(첨부의 키 파일도 어느 서비스의 속성도 아닙니다). 이것이 하지 못하는 일도 있습니다. 두 서비스는 같은 운영체제 사용자로 실행되므로 파일 권한이 한 서비스가 다른 서비스의 폴더를 읽는 것을 막지는 못합니다. 개인판은 설치 대상 전체를 신뢰하며, 이번 변경은 어떤 프로세스도 다른 용도의 비밀을 자기 환경에 싣지 않게 하는 것입니다. 한 설치를 인스턴스라고 부르며 서비스 이름은 그것을
   따릅니다. 인스턴스는 `--name=<name>`이 다른 이름을 주지 않으면 `pg-ledger-mcp`이고, 서비스는 `<name>`과 `<name>-admin`입니다(기본값은 `pg-ledger-mcp`와
   `pg-ledger-mcp-admin`). Linux 사용자, 디렉터리(`/opt/<name>`, `/etc/<name>`, Windows는 `C:\ProgramData\<name>`), WinSW id가 이름을 따르므로, 두 번째
   인스턴스나 기본 이름으로 아직 1.x가 도는 호스트 옆의 설치에는 자기 `--name=<name>`과 자기 포트만 있으면 됩니다.
@@ -285,7 +297,7 @@ cp ledger-cli/build/libs/ledger-cli.jar ledger-mcp-server/build/libs/ledger-mcp-
 ### Linux 서버
 
 root로 실행합니다. 사용자 `pg-ledger-mcp`가 없으면 만들고, `prepare-host`(Java)가 `/opt/<name>`(root, 0755), `/etc/<name>`(서비스 사용자, 0750), 그 아래
-`drivers` 폴더(root, 0755)와 `secrets` 폴더(서비스 사용자, 0700)를 만들고, jar와 드라이버를 복사하고, 유닛을 `/etc/systemd/system`에 렌더하며, 유닛은 이어서 활성화합니다.
+`drivers` 폴더(root, 0755)와 `secrets` 폴더 및 그 아래의 `common`, `admin`, `mcp`, `tool` 폴더, 키 폴더 `attachment-keys`(서비스 사용자, 0700)를 만들고, jar와 드라이버를 복사하고, 유닛을 `/etc/systemd/system`에 렌더하며, 유닛은 이어서 활성화합니다.
 비밀은 서비스 사용자가 저장합니다. 설치 프로그램이 렌더하지 않은 파일을 렌더한 파일이 대체하면 그 파일은 `<file>.backup`으로 보관합니다. 1.x 설치를 옮기려면 1.x에서 업그레이드를 참조합니다.
 
 ```sh
@@ -334,7 +346,7 @@ deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <a
 
 모든 것은 `C:\ProgramData\<name>`에 놓입니다. 두 서비스는 LocalService로 실행하고, 실패하면 다시 시작하며(WinSW 설정), 로그는 `logs` 폴더에 씁니다.
 `prepare-host`는 폴더를 SYSTEM과 Administrators 외 모든 계정에게 닫고 같은 단계에서 LocalService에 필요한 접근을 줍니다(Java가 ACL로 하며 `icacls`는 쓰지 않습니다).
-jar는 읽고 실행하고, 설정, 로그, 데이터는 바꿀 수 있습니다. 비밀은 설치한 사용자의 것입니다. 비밀 폴더와 그 안에 만드는 비밀은 설치한 사용자(전체)와
+jar는 읽고 실행하고, 설정, 로그, 데이터는 바꿀 수 있습니다. 비밀은 설치한 사용자의 것입니다. 비밀 폴더, 그 아래의 용도별 폴더, 키 폴더 `attachment-keys`, 그 안에 만드는 비밀은 설치한 사용자(전체)와
 LocalService(읽기만)의 ACL로 만들어지고 다른 누구에게도 접근이 없으므로, 서비스는 읽을 수 있고 에이전트가 실행되는 계정은 읽을 수 없습니다.
 LocalService에 넘기는 것은 없으므로(설치한 사용자가 소유자로 남고, 소유권을 가져오는 권한도 쓰지 않습니다) `ledger-cli`의 소유자 명령은 설치한 사용자에게 계속 동작하고, 설치기를 다시
 실행해도 모든 것이 그대로입니다. 같은 사용자로 다시 실행합니다(개인판은 사용자가 한 사람입니다). 소유자 작업은 관리 웹에서도 합니다(관리 웹 절 참고: 패스키 또는

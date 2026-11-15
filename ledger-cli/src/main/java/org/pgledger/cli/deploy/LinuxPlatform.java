@@ -10,14 +10,16 @@ import java.util.List;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.UsageException;
 import org.pgledger.cli.deploy.DeployLayout.Platform;
+import org.pgledger.cli.secret.SecretFolder;
 import org.springframework.stereotype.Component;
 
 /**
  * A Linux server: the services are systemd units ({@link SystemdUnits}), the jars are below {@code /opt/<name>} and the
  * settings below {@code /etc/<name>}, owned by the system user of the instance. Run as root, {@code prepare-host} makes the
  * directories {@code <lib>} (root, 0755), {@code <etc>} (the service user, 0750), {@code <etc>/drivers} (root, 0755) and
- * {@code <etc>/secrets} (the service user, 0700), the folders of the attachments ({@code <etc>/secrets/attachment-keys}, the data
- * folder {@code /var/lib/<name>} and {@code <data>/attachments}: the service user, 0700) and copies the three jars and the JDBC
+ * {@code <etc>/secrets} with one folder per use ({@link SecretFolder}: {@code common}, {@code admin}, {@code mcp}, {@code tool}; the
+ * service user, 0700), the folders of the attachments ({@code <etc>/attachment-keys}, beside the secrets and not inside a
+ * configuration tree; the data folder {@code /var/lib/<name>} and {@code <data>/attachments}: the service user, 0700) and copies the three jars and the JDBC
  * driver jar with mode 0644 ({@code install -d} and {@code install -m} did this). The secrets are the service user's from the
  * start, and systemd needs no service wrapper (no {@link ServiceWrappers}). The paths of its files, and of the Java runtime that
  * the operator names, are the plain paths of a Linux file system.
@@ -91,8 +93,13 @@ final class LinuxPlatform implements ServicePlatform {
         host.directory(lib, "rwxr-xr-x", null, null);
         host.directory(etc, "rwxr-x---", user, group);
         host.directory(etc.resolve("drivers"), "rwxr-xr-x", null, null);
-        host.directory(etc.resolve("secrets"), "rwx------", user, group);
-        // the attachments: the key folder inside the secrets, the data folder and the attachment folder below it, all the service user's
+        // the secrets: the directory and one folder per use (SecretFolder), each the service user's alone; the key folder of the
+        // attachments is beside them, in no folder that a process imports as a configuration tree
+        host.directory(hostPath(root, layout.secretDirectory()), "rwx------", user, group);
+        for (SecretFolder folder : SecretFolder.all()) {
+            host.directory(hostPath(root, layout.secretFolder(folder)), "rwx------", user, group);
+        }
+        // the attachments: the key folder, the data folder and the attachment folder below it, all the service user's
         // alone (a folder that exists gets the same owner and mode as a new one); the data of the installation is new with
         // this version, so nothing of it exists before
         host.directory(hostPath(root, layout.attachmentKeyDirectory()), "rwx------", user, group);

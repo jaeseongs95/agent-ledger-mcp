@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -64,14 +65,26 @@ class ImportSecrets1xCommandTest {
         return file;
     }
 
-    private String stored(String name) throws IOException {
-        return Files.readString(directory().resolve(name));
+    /** The file of a secret: in the folder of its use (SPL-007: the token of the agents in {@code mcp}, the admin secrets in {@code admin}). */
+    private Path file(String name) {
+        return directory().resolve(name.startsWith("ledger.mcp.") ? "mcp" : "admin").resolve(name);
     }
 
-    /** A secret as the installer of 2.0 left it: the file is in the secret directory before the tool runs. */
+    private String stored(String name) throws IOException {
+        return Files.readString(file(name));
+    }
+
+    /** The names of every secret file below the secret directory, whatever its folder. */
+    private List<String> storedNames() throws IOException {
+        try (Stream<Path> files = Files.walk(directory())) {
+            return files.filter(Files::isRegularFile).map(path -> path.getFileName().toString()).toList();
+        }
+    }
+
+    /** A secret as the installer of 2.0 left it: the file is in the folder of its use before the tool runs. */
     private void preStore(String name, String value) throws IOException {
-        Files.createDirectories(directory());
-        Files.writeString(directory().resolve(name), value, StandardCharsets.UTF_8);
+        Files.createDirectories(file(name).getParent());
+        Files.writeString(file(name), value, StandardCharsets.UTF_8);
     }
 
     private void preStoreGenerated() throws IOException {
@@ -93,8 +106,11 @@ class ImportSecrets1xCommandTest {
         assertThat(stored("ledger.mcp.token")).isEqualTo(AGENT);
         assertThat(stored("ledger.admin.agent-token")).isEqualTo(AGENT);
         assertThat(stored("ledger.admin.token")).isEqualTo(ADMIN);
-        assertThat(directory().toFile().list()).containsExactlyInAnyOrder("ledger.mcp.token", "ledger.admin.agent-token",
-                "ledger.admin.token");
+        assertThat(storedNames()).containsExactlyInAnyOrder("ledger.mcp.token", "ledger.admin.agent-token", "ledger.admin.token");
+        assertThat(directory().resolve("mcp").toFile().list()).as("the MCP server's folder holds its token only")
+                .containsExactly("ledger.mcp.token");
+        assertThat(directory().resolve("admin").toFile().list()).as("the admin web's folder holds the admin secrets")
+                .containsExactlyInAnyOrder("ledger.admin.agent-token", "ledger.admin.token");
         assertThat(output.info()).contains("ledger.mcp.token", "ledger.admin.agent-token", "ledger.admin.token",
                 "DBHUB_AUTH_TOKEN", "PGLEDGER_ADMIN_TOKEN");
         assertThat(output.info() + captured.getAll()).doesNotContain(AGENT).doesNotContain(ADMIN).doesNotContain(DATABASE_PASSWORD);
@@ -154,7 +170,7 @@ class ImportSecrets1xCommandTest {
         assertThat(result.failure()).isNull();
         assertThat(stored("ledger.mcp.token")).isEqualTo(AGENT);
         assertThat(stored("ledger.admin.agent-token")).isEqualTo(AGENT);
-        assertThat(directory().toFile().list()).containsExactlyInAnyOrder("ledger.mcp.token", "ledger.admin.agent-token");
+        assertThat(storedNames()).containsExactlyInAnyOrder("ledger.mcp.token", "ledger.admin.agent-token");
         assertThat(output.info().lines().filter(line -> line.contains("PGLEDGER_ADMIN_TOKEN"))).singleElement().asString()
                 .contains("1.0.0").contains("ledger.admin.token").contains("installer of 2.0");
         assertThat(output.info() + captured.getAll()).doesNotContain(AGENT).doesNotContain(DATABASE_PASSWORD);
@@ -162,7 +178,7 @@ class ImportSecrets1xCommandTest {
         RecordingOutput again = new RecordingOutput();
         assertThat(tool.withStandardInput(environment(AGENT, null)).run(directory(), null, again, "import-secrets-1x", "--stdin")
                 .exitCode()).isZero();
-        assertThat(directory().toFile().list()).containsExactlyInAnyOrder("ledger.mcp.token", "ledger.admin.agent-token");
+        assertThat(storedNames()).containsExactlyInAnyOrder("ledger.mcp.token", "ledger.admin.agent-token");
         assertThat(again.info()).contains("already exists");
     }
 
@@ -197,8 +213,7 @@ class ImportSecrets1xCommandTest {
                 "Replaced the secret ledger.admin.agent-token with the value of the 1.x setting DBHUB_AUTH_TOKEN",
                 "Replaced the secret ledger.admin.token with the value of the 1.x setting PGLEDGER_ADMIN_TOKEN")
                 .doesNotContain("already exists");
-        assertThat(directory().toFile().list()).containsExactlyInAnyOrder("ledger.mcp.token", "ledger.admin.agent-token",
-                "ledger.admin.token");
+        assertThat(storedNames()).containsExactlyInAnyOrder("ledger.mcp.token", "ledger.admin.agent-token", "ledger.admin.token");
         assertThat(kept.info() + replaced.info() + captured.getAll()).doesNotContain(AGENT).doesNotContain(ADMIN)
                 .doesNotContain(GENERATED_MCP).doesNotContain(GENERATED_AGENT).doesNotContain(GENERATED_ADMIN)
                 .doesNotContain(DATABASE_PASSWORD);

@@ -159,7 +159,7 @@ class PackagedProductSystemTest {
     void tokenGenerate() throws IOException {
         JavaProcess.Result first = cli(false, null, "token-generate", "ledger.mcp.token");
         assertThat(first.exit()).as(first.streams()).isZero();
-        Path file = etc.resolve("secrets").resolve("ledger.mcp.token");
+        Path file = etc.resolve("secrets").resolve("mcp").resolve("ledger.mcp.token");
         assertThat(file).isRegularFile();
         token = Files.readString(file, StandardCharsets.UTF_8).strip();
         assertThat(token.length()).isGreaterThanOrEqualTo(16);

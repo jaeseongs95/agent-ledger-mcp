@@ -79,7 +79,7 @@ class DriverWiringTest {
 
         assertThat(result.exitCode()).isZero();
         assertThat(result.failure()).isNull();
-        assertThat(Files.readString(secrets().resolve(PASSWORD_NAME))).isEqualTo(PASSWORD);
+        assertThat(Files.readString(secrets().resolve("common").resolve(PASSWORD_NAME))).isEqualTo(PASSWORD);
     }
 
     @Test
