@@ -44,9 +44,7 @@ public class SealHostCommand implements Command {
 
     @Override
     public Set<String> options() {
-        Set<String> names = new java.util.HashSet<>(DeployOptions.ALL);
-        names.add(DeployOptions.TLS_ACME);
-        return Set.copyOf(names);
+        return Set.copyOf(DeployOptions.ALL);
     }
 
     @Override

@@ -25,7 +25,7 @@ import org.springframework.stereotype.Component;
 /**
  * DPL-02 .. DPL-09: what differs between the operating system families is in the platform adapters ({@link ServicePlatform})
  * and nowhere else. The syntax of a path as a platform writes it into its files (a Linux path, a drive path), the form of the
- * path of the Java runtime, whether there is an nginx site, and the steps that only some platforms have are the adapter's; the
+ * path of the Java runtime, and the steps that only some platforms have are the adapter's; the
  * code that is common to the platforms holds none of it.
  */
 class PlatformBoundaryTest {
@@ -33,7 +33,6 @@ class PlatformBoundaryTest {
     private static final Path MAIN = Path.of("src", "main", "java", "org", "pgledger", "cli");
     private static final String LINUX_JAVA = "/usr/lib/jvm/java-25/bin/java";
     private static final String WINDOWS_JAVA = "C:/Program Files/Java/jdk-25/bin/java.exe";
-    private static final List<String> MCP_HOSTS = List.of("mcp.example.org");
 
     private final ServicePlatforms platforms = DeployTestBeans.platforms();
     private final ServicePlatform onLinux = platforms.of(Platform.LINUX);
@@ -41,9 +40,9 @@ class PlatformBoundaryTest {
     private final DeployLayout linux = DeployLayout.linux("x");
     private final DeployLayout windows = DeployLayout.windows("x", "C:/ProgramData/x");
 
-    private static DeployParameters parameters(DeployLayout layout, String java, DeployParameters.Nginx site, List<String> mcpHosts) {
+    private static DeployParameters parameters(DeployLayout layout, String java) {
         return new DeployParameters(layout, java, "jdbc:postgresql://db.example.org:5432/ledger", "ledger_app", null, 8765,
-                8865, mcpHosts, List.of(), site);
+                8865, null, null);
     }
 
     @Test
@@ -67,9 +66,9 @@ class PlatformBoundaryTest {
     }
 
     @Test
-    @DisplayName("DPL-03 the code common to the platforms (the writer of files, the forms of the values, the reader of the TLS options) holds no drive letter pattern and no path form of an operating system: the paths are Path and the file system of the host")
+    @DisplayName("DPL-03 the code common to the platforms (the writer of files, the forms of the values) holds no drive letter pattern and no path form of an operating system: the paths are Path and the file system of the host")
     void dpl03_theCommonCodeHoldsNoPathForm() throws IOException {
-        for (String file : new String[] { "deploy/DeployFiles.java", "tls/TlsRequestReader.java" }) {
+        for (String file : new String[] { "deploy/DeployFiles.java" }) {
             // the class of the letters of a drive, [A-Za-z], closed right after the z
             assertThat(Files.readString(MAIN.resolve(file))).as(file).doesNotContain("WINDOWS_PATH").doesNotContain("A-Za-z]");
         }
@@ -80,35 +79,19 @@ class PlatformBoundaryTest {
     @Test
     @DisplayName("DPL-04 each platform judges the form of the path of the Java runtime: Linux refuses a drive path and a space, Windows accepts a drive path with a space (Program Files) and refuses a Linux path")
     void dpl04_theFormOfTheJavaPath() {
-        assertThat(onLinux.refusedOptions(parameters(linux, LINUX_JAVA, null, List.of()))).isEmpty();
-        assertThat(onLinux.refusedOptions(parameters(linux, WINDOWS_JAVA, null, List.of()))).containsExactly(DeployOptions.JAVA);
-        assertThat(onLinux.refusedOptions(parameters(linux, "/usr/lib/jvm/java 25/bin/java", null, List.of())))
+        assertThat(onLinux.refusedOptions(parameters(linux, LINUX_JAVA))).isEmpty();
+        assertThat(onLinux.refusedOptions(parameters(linux, WINDOWS_JAVA))).containsExactly(DeployOptions.JAVA);
+        assertThat(onLinux.refusedOptions(parameters(linux, "/usr/lib/jvm/java 25/bin/java")))
                 .containsExactly(DeployOptions.JAVA);
-        assertThat(onWindows.refusedOptions(parameters(windows, WINDOWS_JAVA, null, List.of()))).isEmpty();
-        assertThat(onWindows.refusedOptions(parameters(windows, LINUX_JAVA, null, List.of()))).containsExactly(DeployOptions.JAVA);
+        assertThat(onWindows.refusedOptions(parameters(windows, WINDOWS_JAVA))).isEmpty();
+        assertThat(onWindows.refusedOptions(parameters(windows, LINUX_JAVA))).containsExactly(DeployOptions.JAVA);
     }
 
     @Test
-    @DisplayName("DPL-04 the nginx site is the Linux platform's: Linux needs plain paths and a public host name of the MCP server for it, Windows refuses the site")
-    void dpl04_theNginxSite() {
-        DeployParameters.Nginx site = new DeployParameters.Nginx("/etc/nginx/conf.d/x.conf", "/etc/ssl/x.pem", "/etc/ssl/x.key");
-        DeployParameters.Nginx plain = new DeployParameters.Nginx("rel", "rel", "rel");
-
-        assertThat(onLinux.refusedOptions(parameters(linux, LINUX_JAVA, site, MCP_HOSTS))).isEmpty();
-        assertThat(onLinux.refusedOptions(parameters(linux, LINUX_JAVA, site, List.of()))).containsExactly(DeployOptions.MCP_HOST);
-        assertThat(onLinux.refusedOptions(parameters(linux, LINUX_JAVA, plain, MCP_HOSTS))).containsExactlyInAnyOrder(
-                DeployOptions.NGINX_CONF, DeployOptions.TLS_CERTIFICATE, DeployOptions.TLS_KEY);
-        assertThat(onWindows.refusedOptions(parameters(windows, WINDOWS_JAVA, site, MCP_HOSTS)))
-                .containsExactly(DeployOptions.NGINX_CONF);
-    }
-
-    @Test
-    @DisplayName("DPL-05 what only some platforms do is a capability that only they implement: the service wrapper and the seal are Windows's, the directories of the automatic certificate are Linux's; every platform is a ServicePlatform")
+    @DisplayName("DPL-05 what only some platforms do is a capability that only they implement: the service wrapper and the seal are Windows's; every platform is a ServicePlatform")
     void dpl05_theCapabilities() {
         assertThat(platforms.capability(Platform.WINDOWS, ServiceWrappers.class)).isPresent();
         assertThat(platforms.capability(Platform.WINDOWS, HostSealing.class)).isPresent();
-        assertThat(platforms.capability(Platform.WINDOWS, TlsHosting.class)).isEmpty();
-        assertThat(platforms.capability(Platform.LINUX, TlsHosting.class)).isPresent();
         assertThat(platforms.capability(Platform.LINUX, ServiceWrappers.class)).isEmpty();
         assertThat(platforms.capability(Platform.LINUX, HostSealing.class)).isEmpty();
         for (Platform platform : Platform.values()) {
@@ -119,10 +102,8 @@ class PlatformBoundaryTest {
     @Test
     @DisplayName("DPL-06 the value record, the layout and the platform enum hold no flag of a platform: the record does not ask which platform it is for and the enum is a name")
     void dpl06_noFlagOfAPlatformInTheCommonTypes() throws IOException {
-        assertThat(Files.readString(MAIN.resolve("deploy/DeployParameters.java"))).doesNotContain("platform()")
-                .doesNotContain("servesNginx");
-        assertThat(Files.readString(MAIN.resolve("deploy/DeployLayout.java"))).doesNotContain("servesNginx")
-                .doesNotContain("javaPathForm");
+        assertThat(Files.readString(MAIN.resolve("deploy/DeployParameters.java"))).doesNotContain("platform()");
+        assertThat(Files.readString(MAIN.resolve("deploy/DeployLayout.java"))).doesNotContain("javaPathForm");
         assertThat(Platform.values()).extracting(Platform::option).containsExactly("linux", "windows");
     }
 

@@ -2,8 +2,7 @@ package org.pgledger.cli.deploy;
 
 /**
  * The options of the Java virtual machine of everything this product starts, written in this one place (a preset): the
- * services (the WinSW configuration, the systemd unit) and the renewal service of the certificate get them from here, and no
- * other class writes a JVM option. The one option is the default time zone: the database layer refuses to run in another one
+ * services (the WinSW configuration, the systemd unit) get them from here, and no other class writes a JVM option. The one option is the default time zone: the database layer refuses to run in another one
  * ({@code UtcSessionCheck}, JVM_ZONE_NOT_UTC), and every time the product keeps is UTC.
  *
  * <p>The two installers ({@code deploy/install.sh}, {@code deploy/install.cmd}) start Java before this class can tell them

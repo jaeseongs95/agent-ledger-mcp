@@ -343,10 +343,11 @@ class DocsTest {
 
     @ParameterizedTest
     @EnumSource(Language.class)
-    @DisplayName("REH4-DOC-01 the README option table shows the comma list of --mcp-host and --admin-host")
-    void readmeShowsTheCommaListOfThePublicHostNames(Language language) {
-        assertThat(language.readme().codeSpans()).anyMatch(span -> span.startsWith("--mcp-host=<host>[,<host>...]"))
-                .anyMatch(span -> span.startsWith("--admin-host=<host>[,<host>...]"));
+    @DisplayName("PCS-023 (replaces REH4-DOC-01) the README option table shows --mcp-host and --admin-host as one host name each, no comma list")
+    void readmeShowsOneHostNameForEachService(Language language) {
+        assertThat(language.readme().codeSpans()).anyMatch(span -> span.equals("--mcp-host=<host>"))
+                .anyMatch(span -> span.equals("--admin-host=<host>"))
+                .noneMatch(span -> span.contains("[,<host>...]"));
     }
 
     static Stream<Arguments> installNoteCases() {
@@ -791,18 +792,12 @@ class DocsTest {
 
     @ParameterizedTest
     @EnumSource(Language.class)
-    @DisplayName("FUP-NGX-06 the section on the automatic certificate says what the port 80 blocks do (the limits, the proof path, 429, the version) and do not do (default_server, other sites, global directives), and recommends a default server of the operator with its example; the product does not create it")
-    void thePortEightyBlocksAreDescribed(Language language) {
+    @DisplayName("PCS-050 the README defines the personal edition (one person, their own computer or server, the whole installation target trusted, loopback only, the network exposure the operator's) and names no reverse proxy, certificate authority, nginx, ACME, tls-issue, tls-renew or seal-host")
+    void theReadmeDefinesThePersonalEditionAndNamesNoProxyProduct(Language language) {
         String readme = language.readme().text();
-        String heading = language == Language.EN ? "### Automatic certificate" : "### 자동 인증서";
-        int start = readme.indexOf(heading);
-        String section = readme.substring(start, readme.indexOf("\n### ", start + heading.length()));
 
-        assertThat(start).isNotNegative();
-        assertThat(section).contains("`/.well-known/acme-challenge/<token>`", "`A-Za-z0-9_-`", "`GET`", "`HEAD`", "`1k`", "`10s`", "`429`",
-                "`server_tokens off`", "`<name>-acme-req`", "`<name>-acme-conn`", "`Host`", "`default_server`");
-        assertThat(language.readme().fences()).anySatisfy(block -> assertThat(block).containsExactly("server {",
-                "    listen 80 default_server;", "    listen [::]:80 default_server;", "    server_name _;", "    return 444;", "}"));
-        assertThat(section).contains(language == Language.EN ? "The product does not create it." : "제품은 이 설정을 만들지 않습니다.");
+        assertThat(readme).contains(language == Language.EN ? "personal edition" : "개인판").contains("127.0.0.1");
+        assertThat(readme.toLowerCase(java.util.Locale.ROOT)).doesNotContain("nginx", "acme", "let's encrypt", "certbot", "caddy", "traefik",
+                "cloudflare", "tls-issue", "tls-renew", "seal-host", "--tls-acme", "--nginx-conf", "--tls-certificate", "--tls-key");
     }
 }

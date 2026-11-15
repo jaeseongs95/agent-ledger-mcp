@@ -3,7 +3,7 @@ package org.pgledger.cli.deploy;
 import java.nio.file.Path;
 
 /**
- * Where a path, as a platform writes it into the files it renders ({@code /etc/x} for systemd and nginx, {@code C:/ProgramData/x}
+ * Where a path, as a platform writes it into the files it renders ({@code /etc/x} for systemd,{@code C:/ProgramData/x}
  * for WinSW), is on the host that runs the command. The syntax of those paths is the platform's own and belongs to its
  * {@link ServicePlatform}; the code that writes, copies or looks at the files of an installation asks it and holds no form of
  * any operating system.

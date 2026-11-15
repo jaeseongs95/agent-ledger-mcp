@@ -15,7 +15,7 @@ import org.pgledger.cli.deploy.DeployLayout.Platform;
  * <p>The family is closed (Linux and Windows; macOS is no target), but it is the one axis along which the installer varies,
  * and every place that used to branch on it (the renderer, {@code prepare-host}, {@code seal-host}, the validation of the
  * options) is now a method here. This interface holds what every platform does. What only some platforms do is a capability of
- * its own that only those platforms implement ({@link ServiceWrappers}, {@link TlsHosting}, {@link HostSealing}), found with
+ * its own that only those platforms implement ({@link ServiceWrappers}, {@link HostSealing}), found with
  * {@link ServicePlatforms#capability}, so no platform has a method it cannot use.
  */
 interface ServicePlatform extends HostPaths {

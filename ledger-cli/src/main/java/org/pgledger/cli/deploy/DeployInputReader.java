@@ -2,7 +2,6 @@ package org.pgledger.cli.deploy;
 
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
-import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -20,7 +19,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Reads the options every deployment command shares ({@link DeployOptions#ALL}: {@code render-deploy},
- * {@code prepare-host}, {@code seal-host}) and validates them as one: the {@link DeployParameters} (a value record whose
+ * {@code prepare-host}) and validates them as one: the {@link DeployParameters} (a value record whose
  * Jakarta constraints the validator checks here, once) and the directory the files are put below instead of at their own
  * paths ({@code --root}, a test or a look at the files). Nothing is changed before all of them are valid.
  *
@@ -50,32 +49,13 @@ final class DeployInputReader {
         for (String option : DeployOptions.ALL) {
             CliOptions.value(arguments, option).ifPresent(value -> values.put(option, value));
         }
-        if (CliOptions.flag(arguments, DeployOptions.TLS_ACME)) {
-            values.put(DeployOptions.TLS_ACME, "");
-        }
         DeployParameters parameters = parameters(values);
         try {
             Path root = values.containsKey(DeployOptions.ROOT) ? Path.of(values.get(DeployOptions.ROOT)) : null;
-            return new DeployInput(certificateIssued(parameters, root), root);
+            return new DeployInput(parameters, root);
         } catch (InvalidPathException e) {
             throw new UsageException(ErrorCode.INVALID_DEPLOY_VALUE, e, DeployOptions.ROOT);
         }
-    }
-
-    /**
-     * An automatic certificate: whether the two files of it exist (below the root, as the files of the command go there).
-     * Until they do, the nginx site holds the port 80 blocks only. This is the one thing the rendering takes from the host;
-     * the renderer itself still only reads its parameters.
-     */
-    private DeployParameters certificateIssued(DeployParameters parameters, Path root) {
-        if (parameters.nginx() == null || parameters.nginx().acme() == null) {
-            return parameters;
-        }
-        // the files are looked up where the platform of the installation puts them on this host, and refused before by requireReachable
-        ServicePlatform platform = platforms.of(parameters.layout().platform());
-        Path certificate = platform.hostPath(root, parameters.nginx().certificate());
-        Path key = platform.hostPath(root, parameters.nginx().key());
-        return parameters.withCertificateIssued(Files.isRegularFile(certificate) && Files.isRegularFile(key));
     }
 
     /**
@@ -90,37 +70,12 @@ final class DeployInputReader {
                 .orElseThrow(() -> new UsageException(ErrorCode.INVALID_DEPLOY_VALUE, DeployOptions.PLATFORM));
         DeployLayout layout = platforms.of(platform).layout(
                 values.getOrDefault(DeployOptions.NAME, defaults.instanceName()), values.get(DeployOptions.HOME));
-        String conf = values.get(DeployOptions.NGINX_CONF);
-        String certificate = values.get(DeployOptions.TLS_CERTIFICATE);
-        String key = values.get(DeployOptions.TLS_KEY);
-        String acmeDirectory = values.get(DeployOptions.ACME_DIRECTORY);
-        DeployParameters.Nginx nginx = null;
-        if (values.containsKey(DeployOptions.TLS_ACME)) {
-            // the automatic certificate and the operator's own are two ways to the same files: both at once is a mistake
-            if (certificate != null) {
-                throw new UsageException(ErrorCode.INVALID_DEPLOY_VALUE, DeployOptions.TLS_CERTIFICATE);
-            }
-            if (key != null) {
-                throw new UsageException(ErrorCode.INVALID_DEPLOY_VALUE, DeployOptions.TLS_KEY);
-            }
-            nginx = new DeployParameters.Nginx(require(conf), layout.tlsDirectory() + "/" + DeployLayout.TLS_CHAIN_FILE,
-                    layout.tlsDirectory() + "/" + DeployLayout.TLS_KEY_FILE, new DeployParameters.Acme(acmeDirectory, false));
-        } else if (acmeDirectory != null) {
-            // a certificate authority without the automatic certificate is a mistake of the command line, not a setting to ignore
-            throw new UsageException(ErrorCode.INVALID_DEPLOY_VALUE, DeployOptions.ACME_DIRECTORY);
-        } else if (conf != null) {
-            nginx = new DeployParameters.Nginx(conf, require(certificate), require(key));
-        } else if (certificate != null || key != null) {
-            // a certificate without a site is a mistake of the command line, not a setting to ignore
-            throw new UsageException(ErrorCode.MISSING_ARGUMENT);
-        }
         DeployParameters parameters = new DeployParameters(layout, require(values.get(DeployOptions.JAVA)),
                 require(values.get(DeployOptions.JDBC_URL)), require(values.get(DeployOptions.APP_ACCOUNT)),
                 values.get(DeployOptions.SCHEMA),
                 number(values.get(DeployOptions.MCP_PORT), defaults.mcpPort(), DeployOptions.MCP_PORT),
                 number(values.get(DeployOptions.ADMIN_PORT), defaults.adminPort(), DeployOptions.ADMIN_PORT),
-                DeployForms.splitHosts(values.get(DeployOptions.MCP_HOST)),
-                DeployForms.splitHosts(values.get(DeployOptions.ADMIN_HOST)), nginx);
+                values.get(DeployOptions.MCP_HOST), values.get(DeployOptions.ADMIN_HOST));
         // the constraints of every platform, and what only this platform can judge: both name an option, and the first one is refused
         List<String> wrong = new ArrayList<>();
         for (ConstraintViolation<DeployParameters> violation : validator.validate(parameters)) {

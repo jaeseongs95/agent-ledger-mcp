@@ -93,11 +93,6 @@ final class WindowsPlatform implements ServicePlatform, ServiceWrappers, HostSea
         if (!DeployForms.isPath(p.java(), JAVA)) {
             refused.add(DeployOptions.JAVA);
         }
-        if (p.nginx() != null) {
-            // nginx is not part of a Windows installation (see deploy/install.cmd): a Windows server that is reached from outside
-            // is put behind a reverse proxy the operator has prepared
-            refused.add(DeployOptions.NGINX_CONF);
-        }
         return refused;
     }
 

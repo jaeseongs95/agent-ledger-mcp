@@ -48,7 +48,7 @@ class MessagesTest {
     @Test
     @DisplayName("SFR-016 the messages of the refusals of the read rule name the path or the secret ({0}) in both languages, and the owner of an existing file is no reason of a refusal any more (no FOREIGN_OWNER)")
     void readRuleMessagesNameTheirSubject() throws IOException {
-        for (ErrorCode code : List.of(ErrorCode.EMPTY_SECRET_FILE, ErrorCode.TLS_FILE_UNUSABLE, ErrorCode.UNEXPECTED_FILE_TYPE)) {
+        for (ErrorCode code : List.of(ErrorCode.EMPTY_SECRET_FILE, ErrorCode.UNEXPECTED_FILE_TYPE)) {
             assertThat(load("messages.properties").getProperty(code.messageKey())).as("en %s", code).contains("{0}");
             assertThat(load("messages_ko.properties").getProperty(code.messageKey())).as("ko %s", code).contains("{0}");
         }

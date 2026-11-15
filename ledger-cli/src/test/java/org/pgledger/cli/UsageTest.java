@@ -188,11 +188,11 @@ class UsageTest {
     }
 
     @Test
-    @DisplayName("CLI-001 the usage text names the commands of the owner tool (changed by install, INS-029: token-generate follows secret-set and render-deploy ends the list; INS-044: prepare-host and seal-host end the list; SETUP: setup follows migrate and install-default ends the list; TLS: tls-issue and tls-renew end the list; PSK: passkey-code follows key-revoke; ATA: the three attachment commands follow grants)")
+    @DisplayName("CLI-001 the usage text names the commands of the owner tool (changed by install, INS-029: token-generate follows secret-set and render-deploy ends the list; INS-044: prepare-host and seal-host end the list; SETUP: setup follows migrate and install-default ends the list; PCS: tls-issue and tls-renew are gone; PSK: passkey-code follows key-revoke; ATA: the three attachment commands follow grants)")
     void theCommandSetIsTheOneOfThePlan() {
         assertThat(Stream.of(CliCommand.values()).map(CliCommand::cliName)).containsExactly("secret-set",
                 "token-generate", "driver-register", "migrate", "setup", "key-register", "key-revoke", "passkey-code", "project-add", "code-set",
-                "codes", "grant", "revoke", "grants", "attachments-check", "attachments-rekey", "attachments-key-create", "mcp-check", "render-deploy", "prepare-host", "seal-host", "install-default", "tls-issue", "tls-renew");
+                "codes", "grant", "revoke", "grants", "attachments-check", "attachments-rekey", "attachments-key-create", "mcp-check", "render-deploy", "prepare-host", "seal-host", "install-default");
     }
 
     @Test

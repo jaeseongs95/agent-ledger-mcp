@@ -98,20 +98,18 @@ class DeployParametersTest {
         assertThat(VALIDATOR.validate(good)).isEmpty();
 
         DeployParameters wrong = new DeployParameters(
-                DeployLayout.linux("Bad_Name-admin"), "relative", "jdbc:x", "a b", "Wrong", 80, 80, java.util.List.of("-h"), java.util.List.of("-h"),
-                new DeployParameters.Nginx("rel", "rel", "rel"));
+                DeployLayout.linux("Bad_Name-admin"), "relative", "jdbc:x", "a b", "Wrong", 80, 80, "-h", "-h");
         Set<String> messages = new TreeSet<>();
         for (ConstraintViolation<DeployParameters> violation : VALIDATOR.validate(wrong)) {
             messages.add(violation.getMessage());
         }
-        // the form of a path and the nginx site are judged by the platform of the layout, which names options in the same way
+        // the form of a path is judged by the platform of the layout, which names options in the same way
         messages.addAll(DeployTestBeans.platforms().of(wrong.layout().platform()).refusedOptions(wrong));
 
         assertThat(messages).isSubsetOf(DeployOptions.ALL);
         assertThat(messages).containsExactlyInAnyOrder(DeployOptions.NAME, DeployOptions.JAVA, DeployOptions.JDBC_URL,
                 DeployOptions.APP_ACCOUNT, DeployOptions.SCHEMA, DeployOptions.MCP_PORT,
-                DeployOptions.ADMIN_PORT, DeployOptions.MCP_HOST, DeployOptions.ADMIN_HOST, DeployOptions.NGINX_CONF,
-                DeployOptions.TLS_CERTIFICATE, DeployOptions.TLS_KEY);
+                DeployOptions.ADMIN_PORT, DeployOptions.MCP_HOST, DeployOptions.ADMIN_HOST);
     }
 
     @Test
