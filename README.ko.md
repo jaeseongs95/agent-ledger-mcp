@@ -184,7 +184,6 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | `ledger.admin.sign-in` | 관리 웹 | 소유자의 로그인 방식으로 `token`, `oidc`, `passkey` 중 정확히 하나이며 로그인 페이지는 그것만 제공합니다. 없으면 새 설치는 `passkey`이고, `ledger.admin.oidc.*` 설정이 있는데 선택이 없는 설치는 시작할 때 거절합니다(추측하지 않습니다) |
 | `ledger.admin.oidc.owner-email` | 관리 웹 | `ledger.admin.sign-in=oidc`일 때 소유자의 이메일 주소 하나이며 공급자가 확인한 주소여야 합니다. 공급자 자체는 `spring.security.oauth2.client.*`입니다 |
 | `ledger.admin.oidc.issuer` | 관리 웹 | `ledger.admin.sign-in=oidc`일 때 그 주소가 유효한 발급자(`iss`): 주소는 그것을 확인한 발급자 안에서만 의미가 있습니다 |
-| `ledger.admin.oidc.owners` | 관리 웹 | 더 이상 지원하지 않는 이전의 소유자 목록입니다. 이것이 남은 설정은 시작할 때 거절하며 메시지가 `ledger.admin.oidc.owner-email`을 알려 줍니다 |
 | `ledger.admin.passkey.rp-id` | 관리 웹 | 패스키가 묶이는 호스트 이름. 기본값은 `ledger.admin.allowed-hosts`의 루프백이 아닌 호스트 하나이고, 없으면 `localhost`입니다(공개 호스트가 여럿이면 이 설정이 필요합니다) |
 | `ledger.admin.passkey.origins` | 관리 웹 | 브라우저가 보이는 origin(스킴, 호스트, 포트): `http://localhost`를 뺀 모든 origin은 `https`입니다. 기본값은 `https://<rp-id>`이고 `localhost`는 `http://localhost:<server.port>`입니다 |
 | `ledger.admin.lockout.max-failures` | 관리 웹 | 한 클라이언트가 잠기기 전의 실패 횟수(관리 토큰, 패스키 로그인, 일회용 코드), 기본 5 |
@@ -513,7 +512,7 @@ JDBC 드라이버의 타입 정보는 드라이버가 판단할 수 없는 형�
 훅은 쓰기 도구 10종에만 서명하며, 도구 이름은 `mcp__<server>__ledger_<op>` 또는 `mcp__<server>__<server>_ledger_<op>`입니다
 (Codex Apps는 `mcp__codex_apps__app_<app>_ledger_<op>`). `_hostAttestation`의 값은
 `pgla2.<author>.<tool>.<operation key>.<arguments digest>.<issued at>.<signature>`이며, 작성자, 도구, 호출의 `operationKey`(`ledger_whoami`와 첨부 도구는 빈 값), 인자의 RFC 8785 정규형(`_hostAttestation` 제외, 배치는 모든 연산과 그 내용, 순서, 배치의 키)의
-SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인자에서 `operationKey`를 읽을 뿐 키를 만들어 넣지 않으며, 키가 없는 호출은 서버가 거절합니다. 가로챈 토큰으로 다른 내용을 보낼 수 없습니다. `pgla1` 토큰은 `ATTESTATION_VERSION_UNSUPPORTED`로 거절됩니다.
+SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인자에서 `operationKey`를 읽을 뿐 키를 만들어 넣지 않으며, 키가 없는 호출은 서버가 거절합니다. 가로챈 토큰으로 다른 내용을 보낼 수 없습니다.
 
 - 훅은 MCP 서버 이름과 작성자마다 Ed25519 키 하나를 소유자 전용 폴더에 보관합니다. 기본은 `~/.pg-ledger-mcp/session-keys`이며, `LEDGER_HOOK_KEY_DIR`에 절대 경로를 주어 바꿀 수 있습니다.
   한 서버용 서명은 다른 서버에서 검증되지 않습니다. Codex Apps의 서버 이름은 `codex_apps.<app>`입니다.
@@ -681,8 +680,8 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인�
 | `ledger.import.source.roles` | `retire-1x` | `retire-1x`가 스키마 다음에 제거하는 1.x 설치기의 데이터베이스 역할, 기본 `ledger_owner`, `ledger_author`, `ledger_reviewer`, `ledger_reader` |
 
 **업그레이드 안내: 관리 웹 로그인.** 관리 웹에 OpenID Connect로 로그인했다면 그렇게 하겠다고 밝히십시오. `ledger.admin.sign-in=oidc`를 설정하고(`ledger.admin.oidc.*` 설정이 있는데
-`ledger.admin.sign-in`이 없는 설치는 그 키를 알리는 메시지와 함께 시작할 때 거절됩니다), 목록 `ledger.admin.oidc.owners`는 소유자의 이메일 주소 하나인 `ledger.admin.oidc.owner-email`과 그 주소가 유효한
-발급자 `ledger.admin.oidc.issuer`로 바꾸십시오. 목록이 남아 있는 설정은 시작할 때 거절되고 메시지가 두 키를 알려 줍니다. 여러 사람 중 하나를 조용히 고르는 일은 없습니다. 어떤 방식으로 로그인하든
+`ledger.admin.sign-in`이 없는 설치는 그 키를 알리는 메시지와 함께 시작할 때 거절됩니다), 소유자의 이메일 주소 하나인 `ledger.admin.oidc.owner-email`과 그 주소가 유효한
+발급자 `ledger.admin.oidc.issuer`를 주십시오. 어떤 방식으로 로그인하든
 `passkey-code`로 패스키를 등록하십시오. 모든 변경을 그 패스키가 승인합니다.
 
 ## 빌드와 시험

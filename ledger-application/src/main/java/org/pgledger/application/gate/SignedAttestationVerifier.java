@@ -97,15 +97,12 @@ public class SignedAttestationVerifier implements AttestationVerifier {
 
     /**
      * A value that is not a token is told apart: a bare {@code <vendor>:<session-id>} is the unsigned old format
-     * (ATTESTATION_UNSIGNED); the prefix of the retired version 1 is its own answer; nothing at all is
-     * HOST_ATTESTATION_REQUIRED. Any other value that is not a token has a malformed author, which the caller decides.
+     * (ATTESTATION_UNSIGNED); nothing at all is HOST_ATTESTATION_REQUIRED. Any other value that is not a token has a
+     * malformed author, which the caller decides.
      */
     private static void requireTokenForm(String presented) {
         if (presented == null) {
             throw new TrustException(TrustCode.HOST_ATTESTATION_REQUIRED, List.of());
-        }
-        if (presented.startsWith(AttestationToken.RETIRED_PREFIX + ".")) {
-            throw new TrustException(TrustCode.ATTESTATION_VERSION_UNSUPPORTED, List.of());
         }
         if (!presented.startsWith(AttestationToken.PREFIX + ".") && AuthorId.matches(presented)) {
             throw new TrustException(TrustCode.ATTESTATION_UNSIGNED, List.of());

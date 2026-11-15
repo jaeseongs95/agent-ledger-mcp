@@ -231,7 +231,6 @@ There is no command that prints a stored secret.
 | `ledger.admin.sign-in` | admin web | how the owner signs in, exactly one of `token`, `oidc` or `passkey`; the login page offers only that one; absent means `passkey` for a new installation, and an installation with `ledger.admin.oidc.*` settings and no choice is refused at start (nothing is guessed) |
 | `ledger.admin.oidc.owner-email` | admin web | with `ledger.admin.sign-in=oidc`: the one e-mail address of the owner, which the provider must have verified; the provider itself is `spring.security.oauth2.client.*` |
 | `ledger.admin.oidc.issuer` | admin web | with `ledger.admin.sign-in=oidc`: the issuer (`iss`) the address counts for: an address is only meaningful at the issuer that verified it |
-| `ledger.admin.oidc.owners` | admin web | no longer supported (the earlier list of owners): a configuration that still has it is refused at start, and the message names `ledger.admin.oidc.owner-email` |
 | `ledger.admin.passkey.rp-id` | admin web | the host name the passkeys are bound to; default: the one non-loopback host of `ledger.admin.allowed-hosts`, else `localhost` (several public hosts need this setting) |
 | `ledger.admin.passkey.origins` | admin web | the origins the browser shows (scheme, host and port): `https` except `http://localhost`; default `https://<rp-id>`, or `http://localhost:<server.port>` for `localhost` |
 | `ledger.admin.lockout.max-failures` | admin web | failed attempts (admin token, passkey sign-in, one-time code) of one client before it is locked, default 5 |
@@ -615,8 +614,7 @@ The hook signs only the ten write tools, named `mcp__<server>__ledger_<op>` or `
 `operationKey` of the call (empty for `ledger_whoami` and the attachment tools), the SHA-256 of the RFC 8785 canonical form of the arguments (without
 `_hostAttestation`; a batch: every operation, its content, its order and the key of the batch) and the time. The hook reads the
 `operationKey` from the arguments the model sent and never makes one up; a call without one is refused by the server. A captured token
-cannot carry other content. `pgla1` tokens are refused with
-`ATTESTATION_VERSION_UNSUPPORTED`.
+cannot carry other content.
 
 - The hook keeps one Ed25519 key per MCP server name and author in an owner-only folder: `~/.pg-ledger-mcp/session-keys`, or the
   absolute path in `LEDGER_HOOK_KEY_DIR`. A signature made for one server never verifies on another. For Codex Apps the server name
@@ -819,11 +817,9 @@ directory or give them on the command line as `--name=value`; the password is a 
 | `ledger.import.source.roles` | `retire-1x` | the database roles of the 1.x installer that `retire-1x` removes after the schema, default `ledger_owner`, `ledger_author`, `ledger_reviewer`, `ledger_reader` |
 
 **Upgrade note: the admin web sign-in.** If you signed in to the admin web with OpenID Connect, say so: set `ledger.admin.sign-in=oidc`
-(an installation with `ledger.admin.oidc.*` settings and no `ledger.admin.sign-in` is refused at start with a message that names it), and
-replace the list `ledger.admin.oidc.owners` by the one e-mail address of the owner, `ledger.admin.oidc.owner-email`, with the issuer it
-counts for, `ledger.admin.oidc.issuer`; a configuration that still has the list is refused at start and the message names both keys,
-because the product never picks one of several people silently. Whichever way you sign in, register a passkey with `passkey-code`: it
-approves every change.
+(an installation with `ledger.admin.oidc.*` settings and no `ledger.admin.sign-in` is refused at start with a message that names it),
+and give the one e-mail address of the owner, `ledger.admin.oidc.owner-email`, with the issuer it counts for,
+`ledger.admin.oidc.issuer`. Whichever way you sign in, register a passkey with `passkey-code`: it approves every change.
 
 ## Build and test
 

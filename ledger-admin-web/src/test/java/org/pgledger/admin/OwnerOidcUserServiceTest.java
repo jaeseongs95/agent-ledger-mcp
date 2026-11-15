@@ -38,7 +38,7 @@ class OwnerOidcUserServiceTest {
         return new LedgerAdminProperties("a-token-of-sixteen-chars", "an-agent-token-of-sixteen", List.of("localhost"),
                 DataSize.ofKilobytes(64), java.nio.file.Path.of("/unused"), java.nio.file.Path.of("/unused-drivers"),
                 new LedgerAdminProperties.Lockout(5, Duration.ofSeconds(60), Duration.ofSeconds(60), 50, Duration.ofSeconds(1)),
-                new LedgerAdminProperties.Oidc(issuer, email, List.of()), new LedgerAdminProperties.Mcp(null, Duration.ofSeconds(2)),
+                new LedgerAdminProperties.Oidc(issuer, email), new LedgerAdminProperties.Mcp(null, Duration.ofSeconds(2)),
                 SignInMethod.OIDC, new LedgerAdminProperties.Passkey(null, List.of(), "Ledger admin"));
     }
 

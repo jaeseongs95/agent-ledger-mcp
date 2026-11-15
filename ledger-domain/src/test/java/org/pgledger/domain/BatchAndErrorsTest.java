@@ -117,12 +117,13 @@ class BatchAndErrorsTest {
         // four infrastructure codes and the code of the encoding of the database (RUN-017), and no code for the long text type
         // of the schema files (the dialect of SqlBuilder decides, RUN-003 retired) and none for an interrupted wait for another
         // runner (the database waits, RUN-012)
-        assertThat(codes).hasSize(85);
+        // PCS-041: ATTESTATION_VERSION_UNSUPPORTED is gone (no release had the version 1 token), so 84
+        assertThat(codes).hasSize(84);
         assertThat(codes.stream().map(ErrorCode::token)).doesNotHaveDuplicates();
         assertThat(codes.stream().map(ErrorCode::token)).contains("AUTHOR_ID_FORMAT", "SESSION_NOT_GRANTED",
                 "HOST_ATTESTATION_REQUIRED", "VERSION_CONFLICT", "SAME_SESSION", "MERGED_DEFECT", "CODE_REQUIRED",
                 "CODE_INVALID", "ATTESTATION_UNSIGNED", "ATTESTATION_MALFORMED",
-                "ATTESTATION_VERSION_UNSUPPORTED", "ATTESTATION_SIGNATURE_INVALID", "ATTESTATION_BINDING_MISMATCH",
+                "ATTESTATION_SIGNATURE_INVALID", "ATTESTATION_BINDING_MISMATCH",
                 "ATTESTATION_TIME_WINDOW", "KEY_REPLACEMENT_NOT_CONFIRMED", "SESSION_KEY_REQUIRED", "ARTIFACT_UNSUPPORTED_PURPOSE", "ARTIFACT_CHUNK_CONFLICT",
                 "ARTIFACT_BUSY", "ARTIFACT_INCOMPLETE", "ARTIFACT_OPERATION_CONFLICT", "ARTIFACT_LIMIT",
                 "ARTIFACT_HASH_MISMATCH", "CHUNK_HASH_MISMATCH", "ARTIFACT_EXPIRED", "ARTIFACT_STORAGE_FULL", "ARTIFACT_NOT_FOUND",

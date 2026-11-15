@@ -10,8 +10,6 @@ public enum TrustCode implements ErrorCode {
     ATTESTATION_UNSIGNED,
     /** The attestation has the prefix of a signed token but is not a canonical token. */
     ATTESTATION_MALFORMED,
-    /** The attestation has the prefix of the retired token format (version 1, which did not cover the arguments). */
-    ATTESTATION_VERSION_UNSUPPORTED,
     /**
      * The attestation cannot be verified: the signature does not match the claims under the live key of the author,
      * or the author has no live key on this server. One code for both, with no author in it: until a signature is

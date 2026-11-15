@@ -121,30 +121,12 @@ public record LedgerAdminProperties(String token, String agentToken,
     /**
      * Who may sign in with OpenID Connect: the owner is one e-mail address, which the provider verified, at one issuer (an
      * address is only meaningful inside the issuer that verified it: another provider can hand out the same address to
-     * somebody else). The earlier list of owners ({@code owners}) is no longer supported and is refused when it is not empty:
-     * the product never picks one of several people silently.
+     * somebody else). The personal edition has one owner, so there is no list.
      *
      * @param issuer     the {@code iss} of the ID token as the provider publishes it
      * @param ownerEmail the e-mail address of the owner (case ignored; the provider must have verified it)
-     * @param owners     the earlier list (issuer with subject or e-mail): kept only so that its presence is refused with a
-     *                   message that names the setting
      */
-    public record Oidc(String issuer, String ownerEmail, @DefaultValue List<@Valid Owner> owners) {
-
-        public Oidc {
-            owners = List.copyOf(owners);
-        }
-
-        /** The one e-mail address replaces the list. */
-        @AssertTrue(message = "ledger.admin.oidc.owners is no longer supported: the owner is one e-mail address, set "
-                + "ledger.admin.oidc.owner-email (and ledger.admin.oidc.issuer) and remove the list")
-        public boolean isListGone() {
-            return owners.isEmpty();
-        }
-
-        /** One entry of the earlier list. */
-        public record Owner(String issuer, String subject, String email) {
-        }
+    public record Oidc(String issuer, String ownerEmail) {
     }
 
     /**

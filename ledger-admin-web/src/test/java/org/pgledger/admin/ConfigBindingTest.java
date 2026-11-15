@@ -139,15 +139,15 @@ class ConfigBindingTest {
     }
 
     @Test
-    @DisplayName("PSK-CFG-04: an earlier list of owners (one or several) stops the start with a message that names ledger.admin.oidc.owners and the one e-mail setting; nothing is picked")
-    void psk_theOwnersListIsRefused() {
+    @DisplayName("PCS-042: a list ledger.admin.oidc.owners is no setting of the product (no release had it): it is ignored like any unknown setting, the one owner e-mail binds")
+    void pcs_noRefusalOfAnOwnersList() {
         secrets().withPropertyValues("ledger.admin.sign-in=oidc", "ledger.admin.oidc.issuer=https://issuer.example",
                 "ledger.admin.oidc.owner-email=owner@example.test", "ledger.admin.oidc.owners[0].issuer=https://issuer.example",
                 "ledger.admin.oidc.owners[0].email=a@example.test", "ledger.admin.oidc.owners[1].issuer=https://issuer.example",
                 "ledger.admin.oidc.owners[1].email=b@example.test").run(context -> {
-                    assertThat(context).hasFailed();
-                    assertThat(FailureText.of(context.getStartupFailure())).contains("ledger.admin.oidc.owners")
-                            .contains("ledger.admin.oidc.owner-email");
+                    assertThat(context).hasNotFailed();
+                    assertThat(context.getBean(LedgerAdminProperties.class).oidc().ownerEmail())
+                            .isEqualTo("owner@example.test");
                 });
     }
 
