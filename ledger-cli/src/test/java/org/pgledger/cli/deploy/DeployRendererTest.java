@@ -138,7 +138,7 @@ class DeployRendererTest {
         assertThat(shared.getProperty("ledger.jdbc.url")).isEqualTo("jdbc:postgresql://db.example.org:5432/ledger");
         assertThat(shared.getProperty("ledger.jdbc.username")).isEqualTo("ledger_app");
         assertThat(shared.getProperty("ledger.schema.name")).isEqualTo("ledger");
-        // the long text type of the schema files is read from the driver (LongTextType): there is no setting for it
+        // the long text type of the schema files is declared by the dialect of SqlBuilder (SqlBuilder.longTextType): there is no setting for it
         assertThat(Arrays.asList(shared.getPropertyNames())).filteredOn(name -> name.startsWith("ledger.schema."))
                 .containsExactly("ledger.schema.name");
 

@@ -90,8 +90,8 @@ class DeployGoldenTest {
     }
 
     /**
-     * RUN-006: the setting of the long text type (and the option of the installer that wrote it) is gone, the long text type is read
-     * from the driver. The one target that gave the option, "linux with site" (it passed {@code TEXT}), rendered one line of the
+     * RUN-006: the setting of the long text type (and the option of the installer that wrote it) is gone, the long text type is declared
+     * by the dialect of SqlBuilder. The one target that gave the option, "linux with site" (it passed {@code TEXT}), rendered one line of the
      * setting below the schema name; the digests below are those with that line. So the line is put back here, at the place it had,
      * before the content is hashed: the digests keep their values exactly when the files differ from the old ones by that one line and
      * by nothing else (the way PSK-INS-01 proved its block by cutting it, in the other direction).

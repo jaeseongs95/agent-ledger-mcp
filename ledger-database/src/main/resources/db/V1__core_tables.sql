@@ -1,6 +1,6 @@
 -- V1: the core tables. ANSI SQL only: no trigger, procedure, view, sequence or identity column, no boolean
 -- column, no DEFAULT on a time column. Every id and counter is assigned by the application. Times are UTC
--- TIMESTAMP values written by the application clock. ${long_text} is the only per-DBMS part (see LongTextType: the type is read from the driver).
+-- TIMESTAMP values written by the application clock. ${long_text} is the only per-DBMS part (see SqlBuilder.longTextType).
 -- No column is named with a word that SQL:2003 reserves (so no quoting is needed on any DBMS): the time of a history
 -- or audit row is occurred_at (not AT) and the scope of a grant is grant_scope (not SCOPE).
 
