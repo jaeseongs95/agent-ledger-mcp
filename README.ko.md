@@ -148,13 +148,18 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | `ledger.mcp.allowed-origins` | MCP 서버 | 허용하는 브라우저 출처, 기본 없음 |
 | `ledger.mcp.max-request-size` | MCP 서버 | 요청 본문의 최대 크기, 기본 1MB |
 | `ledger.mcp.code-poll-interval` | MCP 서버 | 다른 프로세스의 코드 변경을 확인하는 주기, 기본 5s |
-| `ledger.admin.token` | 관리 웹 | 소유자의 관리 토큰, 16자 이상(비밀) |
+| `ledger.admin.token` | 관리 웹 | 관리 토큰, 16자 이상(비밀): `/api` 아래 읽기 전용 JSON 엔드포인트의 bearer입니다. 브라우저를 로그인시키지 않고 변경을 승인하지 않습니다 |
 | `ledger.admin.agent-token` | 관리 웹 | 필수: 에이전트의 bearer 토큰으로 `ledger.mcp.token`과 같은 값이어야 하고 `ledger.admin.token`과는 달라야 합니다. 관리 웹은 이 토큰을 `AGENT_TOKEN_FORBIDDEN`으로 거절합니다(비밀) |
 | `ledger.admin.allowed-hosts` | 관리 웹 | 허용하는 `Host` 값(DNS 리바인딩 방어), 기본 `127.0.0.1`과 `localhost` |
 | `ledger.admin.driver-file` | 관리 웹 | 드라이버 화면이 기록하는 드라이버 등록 파일, 기본 `/etc/pg-ledger-mcp/jdbc-driver.yaml` |
 | `ledger.admin.driver-directory` | 관리 웹 | 드라이버 jar를 가져올 수 있는 유일한 디렉터리, 기본 `/etc/pg-ledger-mcp/drivers` |
-| `ledger.admin.oidc.owners` | 관리 웹 | OpenID Connect로 로그인할 수 있는 사람: 발급자와 subject 또는 이메일의 목록이며 공급자 자체는 `spring.security.oauth2.client.*`입니다 |
-| `ledger.admin.lockout.max-failures` | 관리 웹 | 한 클라이언트가 잠기기 전의 토큰 실패 횟수, 기본 5 |
+| `ledger.admin.sign-in` | 관리 웹 | 소유자의 로그인 방식: `oidc` 또는 `passkey`. 없으면 새 설치는 `passkey`이고, `ledger.admin.oidc.*` 설정이 있는데 선택이 없는 설치는 시작할 때 거절합니다(추측하지 않습니다) |
+| `ledger.admin.oidc.owner-email` | 관리 웹 | `ledger.admin.sign-in=oidc`일 때 소유자의 이메일 주소 하나이며 공급자가 확인한 주소여야 합니다. 공급자 자체는 `spring.security.oauth2.client.*`입니다 |
+| `ledger.admin.oidc.issuer` | 관리 웹 | `ledger.admin.sign-in=oidc`일 때 그 주소가 유효한 발급자(`iss`): 주소는 그것을 확인한 발급자 안에서만 의미가 있습니다 |
+| `ledger.admin.oidc.owners` | 관리 웹 | 더 이상 지원하지 않는 이전의 소유자 목록입니다. 이것이 남은 설정은 시작할 때 거절하며 메시지가 `ledger.admin.oidc.owner-email`을 알려 줍니다 |
+| `ledger.admin.passkey.rp-id` | 관리 웹 | 패스키가 묶이는 호스트 이름. 기본값은 `ledger.admin.allowed-hosts`의 루프백이 아닌 호스트 하나이고, 없으면 `localhost`입니다(공개 호스트가 여럿이면 이 설정이 필요합니다) |
+| `ledger.admin.passkey.origins` | 관리 웹 | 브라우저가 보이는 origin(스킴, 호스트, 포트): `http://localhost`를 뺀 모든 origin은 `https`입니다. 기본값은 `https://<rp-id>`이고 `localhost`는 `http://localhost:<server.port>`입니다 |
+| `ledger.admin.lockout.max-failures` | 관리 웹 | 한 클라이언트가 잠기기 전의 실패 횟수(관리 토큰, 패스키 로그인, 일회용 코드), 기본 5 |
 | `ledger.admin.lockout.window` | 관리 웹 | 실패를 세는 기간, 기본 60s |
 | `ledger.admin.lockout.lock-period` | 관리 웹 | 클라이언트가 잠겨 있는 시간, 기본 60s |
 | `ledger.admin.lockout.global-max-failures` | 관리 웹 | 전체 클라이언트의 실패가 이 횟수를 넘으면 전역 지연이 시작되는 한도, 기본 50 |
@@ -360,9 +365,9 @@ deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <a
 모든 것은 `C:\ProgramData\<name>`에 놓입니다. 두 서비스는 LocalService로 실행하고, 실패하면 다시 시작하며(WinSW 설정), 로그는 `logs` 폴더에 씁니다.
 `prepare-host`는 폴더를 SYSTEM과 Administrators 외 모든 계정에게 닫고, `seal-host`는 설치 끝에 비밀을 LocalService에 넘깁니다(Java가 ACL로 하며 `icacls`는 쓰지 않습니다).
 설치한 사용자는 파일이 있다는 것만 볼 수 있고, `prepare-host`는 다시 실행하는 동안만 이를 되가져옵니다. 그래서 그 뒤에는
-`ledger-cli`의 소유자 명령이 비밀을 읽지 못합니다. 소유자 작업(프로젝트, 공통코드, 부여, 키)은 `ledger.admin.token`으로 로그인하는 관리 웹의 화면에서
-합니다. 개인 PC에서는 관리 웹을 `http://localhost:8865`로 엽니다(포트는 `--admin-port=<n>`입니다). 관리 웹은 `Secure` 세션 쿠키를 설정하는데, 주요 브라우저는
-`localhost`를 보안 컨텍스트로 취급하므로 이를 받아들입니다.
+`ledger-cli`의 소유자 명령이 비밀을 읽지 못합니다. 소유자 작업(프로젝트, 공통코드, 부여, 키)은 관리 웹의 화면에서 합니다(관리 웹 절 참고: 패스키 또는
+OpenID Connect로 로그인하고, 첫 패스키는 `passkey-code`로 등록합니다). 개인 PC에서는 관리 웹을 `http://localhost:8865`로 엽니다(포트는 `--admin-port=<n>`입니다). 관리 웹은
+`Secure` 세션 쿠키를 설정하는데, 주요 브라우저는 `localhost`를 보안 컨텍스트로 취급하므로 이를 받아들이고, 패스키도 `localhost`에서는 HTTPS 없이 동작합니다.
 
 ### 첫 설정
 
@@ -389,8 +394,8 @@ deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <a
 
 ### 설치 뒤
 
-1. `ledger-cli mcp-check`로 MCP 서버를 확인합니다. 등록된 드라이버가 없으면 MCP 서버는 이유를 밝히고 멈추며, 관리 웹은 로그인과 드라이버 화면만 제공하는
-   설정 모드로 시작합니다.
+1. `ledger-cli mcp-check`로 MCP 서버를 확인합니다. 등록된 드라이버가 없으면 MCP 서버는 이유를 밝히고 멈추며, 관리 웹은 로그인 화면만 제공하는 설정 모드로 시작합니다.
+   그 화면이 `ledger-cli driver-register`로 드라이버를 등록하라고 알려 줍니다(데이터베이스가 없으면 로그인에 쓸 패스키가 없으므로 관리 웹의 드라이버 화면은 콘솔 화면입니다).
 2. 소유자 쪽 설정을 합니다. `project-add`, `code-set`을 실행하고, 1.x에서 온 경우에는 `import-legacy`를 실행합니다(1.x에서 이전 참조). Linux에서는
    `ledger-cli`를 서비스 사용자로 실행합니다. 예: `sudo -u <name> java -jar /opt/<name>/ledger-cli.jar --ledger.secrets.instance=<name> project-add ...`.
 3. 클라이언트 훅을 설치하고(클라이언트 훅 참조), 세션마다 `key-register`로 키를 등록한 뒤 `grant`로 부여합니다.
@@ -433,8 +438,20 @@ deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <a
 
 관리 웹(`ledger-admin-web.jar`)은 소유자를 위한 서버 렌더링 콘솔이며 기본 주소는 `127.0.0.1:8865`입니다. 설치기가 만든 서비스 계정으로 실행하며 root로는 실행하지 않습니다.
 
-- **로그인.** 관리 토큰 `ledger.admin.token`, 또는 `ledger.admin.oidc.owners`에 적힌 사람의 OpenID Connect입니다. 에이전트의 토큰은 거절되므로 MCP 토큰을 가진 에이전트가
-  스스로 부여를 줄 수 없습니다. 실패한 시도는 해당 클라이언트를 잠그고 모든 클라이언트를 늦춥니다(`ledger.admin.lockout.*`).
+- **로그인, 둘 중 하나**(`ledger.admin.sign-in`). `passkey`(새 설치의 기본값)이면 소유자는 패스키로 로그인합니다. `oidc`이면 OpenID Connect로 로그인하며 소유자는
+  **이메일 주소 하나**입니다(`ledger.admin.oidc.owner-email`, `ledger.admin.oidc.issuer`의 공급자가 확인한 주소). 다른 주소나 공급자가 확인하지 않은 주소는 거절합니다.
+  둘 중 하나만 제공합니다. 관리 토큰 `ledger.admin.token`은 더 이상 브라우저를 로그인시키지 않고 읽기 전용 JSON 엔드포인트의 bearer로 남습니다. 에이전트의 토큰은 거절되므로
+  MCP 토큰을 가진 에이전트가 스스로 부여를 줄 수 없습니다. 실패한 시도(패스키, 일회용 코드, 토큰)는 해당 클라이언트를 잠그고 모든 클라이언트를 늦춥니다(`ledger.admin.lockout.*`).
+- **어떻게 로그인했든 모든 변경은 패스키로 승인합니다.** 콘솔에서 하는 모든 변경(부여, 세션 키, 공통코드, 프로젝트, 드라이버, 패스키 닫기)은 사용자 확인을 요구하는 패스키로
+  승인합니다. 화면이 서버에 바로 그 변경과 세션으로 만든 challenge를 요청하고, 인증기가 그것에 서명하며, 쓰기는 그 서명과 함께 갑니다. 서명은 그 변경 하나에, 한 번, 2분 동안만
+  유효하며 다른 변경이나 다른 세션의 서명은 거절합니다. 읽기에는 승인이 필요 없습니다. 서버의 `ledger-cli` 명령은 소유자의 셸이므로 승인이 필요 없습니다.
+- **첫 패스키, 추가 패스키, 초기화.** 서버에서 서비스 계정으로 `ledger-cli passkey-code`를 실행하면 일회용 코드를 출력합니다(한 번만 보여 주고, 15분간 유효하며, 해시로만 저장합니다).
+  로그인 화면의 "패스키 등록"에 그 코드를 입력하면 등록 전용 세션(15분, 패스키 등록 외에는 아무것도 할 수 없음)이 열리고, 거기서 "등록"으로 패스키를 만듭니다.
+  `passkey-code --remove-existing`은 패스키를 모두 잃은 소유자를 위해 유효한 패스키를 먼저 모두 닫으며, 플래그가 없으면 패스키를 건드리지 않습니다. 코드 발급과 초기화는 모두
+  소유자 감사 기록에 남습니다. 패스키는 관리 웹의 호스트 이름(`ledger.admin.passkey.rp-id`)에 묶이고, `localhost`를 빼면 HTTPS가 필요하며, 호스트나 origin이 다르면
+  `PASSKEY_HOST_MISMATCH`로 거절합니다.
+- **구성.** 인증 절차는 Spring Security의 WebAuthn 지원(`spring-security-webauthn`과 WebAuthn4J, 둘 다 Apache-2.0)이 하고, 패스키는 장부 데이터베이스에 저장합니다(V7: base64url 텍스트,
+  BLOB 없음, 자격 증명은 바꾸거나 삭제하지 않고 닫는 것도 별도의 행입니다).
 - **브라우저 보안.** Spring Security가 CSRF 토큰, 기본으로 `Secure`인 `SameSite=Strict` 세션 쿠키, `Host` 허용 목록, 콘텐츠 보안 정책을 제공합니다.
 - **화면.** 개요(주의 항목 건수와 MCP 서버 상태), 프로젝트, 결함, 작업, 조건, 이력(읽기 전용), 공통코드, 세션 키가 있는 부여, JDBC 드라이버 화면입니다.
   시각은 UTC로 보내며 브라우저의 지역 시각으로 표시합니다.
@@ -481,7 +498,7 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 가로챈 토큰으로 다른
    ```
 
    설치기가 1.x 파일을 root로 열고, `secret-import-1x`가 `DBHUB_AUTH_TOKEN`을 `ledger.mcp.token`과 `ledger.admin.agent-token`으로,
-   `PGLEDGER_ADMIN_TOKEN`을 `ledger.admin.token`으로 옮깁니다. 어떤 토큰이든 만들기 전에 하므로 1.x의 클라이언트와 관리 웹 로그인이 그대로 동작하며 값은 출력하지 않습니다.
+   `PGLEDGER_ADMIN_TOKEN`을 `ledger.admin.token`으로 옮깁니다. 어떤 토큰이든 만들기 전에 하므로 1.x의 클라이언트가 그대로 동작하고 관리 토큰은 읽기 전용 엔드포인트의 bearer로 남으며(브라우저를 더 이상 로그인시키지 않습니다) 값은 출력하지 않습니다.
    1.0.0 설치에는 관리 웹이 없어 `PGLEDGER_ADMIN_TOKEN`도 없습니다. 이 경우 에이전트용 토큰 두 개만 옮기고 명령이 그 사실을 알리며, 설치기가 `ledger.admin.token`을 새로 만들어 한 번 보여 줍니다.
    이미 있는 비밀은 그대로 둡니다. 새 유닛이 대체하는 1.x의 유닛 파일은 `<file>.1x-backup`으로 보관합니다. 터미널이 없으면 `--stdin`을 더하고 비밀번호를 표준 입력으로 줍니다.
 
@@ -507,7 +524,12 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 가로챈 토큰으로 다른
    `ledger_link`로 올바른 결함을 앞에 두고 다시 연결합니다.
    조건의 `code`(200자)와 `ci_ref`(2000자)는 이전 2.0 빌드보다 길어졌고, 작업의 `origin_ref`는 긴 텍스트(쓸 때 20000자까지)여서 1.x의 모든 값이 들어갑니다.
 7. 옛 부여는 세션 키 없이 복사됩니다. 모든 작성자는 `key-register`로 세션 키를 등록해야 하며, 그 뒤에 부여가 동작합니다.
-8. **확인.** `ledger-cli mcp-check --url=<its public URL>`와 `import-legacy --verify-only`를 실행하고, 관리 웹을 열어 1.x의 관리 토큰으로 로그인합니다.
+8. **확인.** `ledger-cli mcp-check --url=<its public URL>`와 `import-legacy --verify-only`를 실행하고, `ledger-cli passkey-code`를 실행해 관리 웹에서 첫 패스키를 등록합니다(1.x의 관리 토큰은 더 이상 브라우저를 로그인시키지 않습니다).
+
+**업그레이드 안내: 관리 웹 로그인.** 관리 웹에 OpenID Connect로 로그인했다면 그렇게 하겠다고 밝히십시오. `ledger.admin.sign-in=oidc`를 설정하고(`ledger.admin.oidc.*` 설정이 있는데
+`ledger.admin.sign-in`이 없는 설치는 그 키를 알리는 메시지와 함께 시작할 때 거절됩니다), 목록 `ledger.admin.oidc.owners`는 소유자의 이메일 주소 하나인 `ledger.admin.oidc.owner-email`과 그 주소가 유효한
+발급자 `ledger.admin.oidc.issuer`로 바꾸십시오. 목록이 남아 있는 설정은 시작할 때 거절되고 메시지가 두 키를 알려 줍니다. 여러 사람 중 하나를 조용히 고르는 일은 없습니다. 어떤 방식으로 로그인하든
+`passkey-code`로 패스키를 등록하십시오. 모든 변경을 그 패스키가 승인합니다.
 9. **되돌리기.** 확인이 실패하면 새 서비스를 멈추고, 새 유닛 파일 자리에 `<file>.1x-backup` 유닛 파일을 복사해 되돌리고(백업은 그대로 남습니다), `sudo systemctl daemon-reload`를 실행한 뒤 1.x 서비스를
    시작합니다. 1.x 스키마와 데이터는 읽기만 했으므로 1.x는 그대로 이어집니다. 이후 설치기를 다시 실행하면, 백업이 자리의 유닛과 같을 때 백업을 그대로 두고 새 유닛을 씁니다.
    백업의 내용이 다르면 `prepare-host`가 두 파일을 밝히며 `HOST_FAILED`로 멈추고 아무것도 바꾸지 않습니다.

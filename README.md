@@ -162,13 +162,18 @@ There is no command that prints a stored secret.
 | `ledger.mcp.allowed-origins` | MCP server | accepted browser origins, default none |
 | `ledger.mcp.max-request-size` | MCP server | largest request body, default 1MB |
 | `ledger.mcp.code-poll-interval` | MCP server | how often a code change of another process is looked up, default 5s |
-| `ledger.admin.token` | admin web | the owner's admin token, at least 16 characters (secret) |
+| `ledger.admin.token` | admin web | the admin token, at least 16 characters (secret): the bearer of the read-only JSON endpoints under `/api`; it signs no browser in and approves no change |
 | `ledger.admin.agent-token` | admin web | required: the agents' bearer token, equal to `ledger.mcp.token`, and distinct from `ledger.admin.token`; the admin web refuses it with `AGENT_TOKEN_FORBIDDEN` (secret) |
 | `ledger.admin.allowed-hosts` | admin web | accepted `Host` values (DNS rebinding guard), default `127.0.0.1` and `localhost` |
 | `ledger.admin.driver-file` | admin web | the driver registration file the driver page writes, default `/etc/pg-ledger-mcp/jdbc-driver.yaml` |
 | `ledger.admin.driver-directory` | admin web | the one directory a driver jar may be taken from, default `/etc/pg-ledger-mcp/drivers` |
-| `ledger.admin.oidc.owners` | admin web | who may sign in with OpenID Connect: a list of issuer with subject or e-mail; the provider itself is `spring.security.oauth2.client.*` |
-| `ledger.admin.lockout.max-failures` | admin web | failed token attempts of one client before it is locked, default 5 |
+| `ledger.admin.sign-in` | admin web | how the owner signs in: `oidc` or `passkey`; absent means `passkey` for a new installation, and an installation with `ledger.admin.oidc.*` settings and no choice is refused at start (nothing is guessed) |
+| `ledger.admin.oidc.owner-email` | admin web | with `ledger.admin.sign-in=oidc`: the one e-mail address of the owner, which the provider must have verified; the provider itself is `spring.security.oauth2.client.*` |
+| `ledger.admin.oidc.issuer` | admin web | with `ledger.admin.sign-in=oidc`: the issuer (`iss`) the address counts for: an address is only meaningful at the issuer that verified it |
+| `ledger.admin.oidc.owners` | admin web | no longer supported (the earlier list of owners): a configuration that still has it is refused at start, and the message names `ledger.admin.oidc.owner-email` |
+| `ledger.admin.passkey.rp-id` | admin web | the host name the passkeys are bound to; default: the one non-loopback host of `ledger.admin.allowed-hosts`, else `localhost` (several public hosts need this setting) |
+| `ledger.admin.passkey.origins` | admin web | the origins the browser shows (scheme, host and port): `https` except `http://localhost`; default `https://<rp-id>`, or `http://localhost:<server.port>` for `localhost` |
+| `ledger.admin.lockout.max-failures` | admin web | failed attempts (admin token, passkey sign-in, one-time code) of one client before it is locked, default 5 |
 | `ledger.admin.lockout.window` | admin web | the period in which failures are counted, default 60s |
 | `ledger.admin.lockout.lock-period` | admin web | how long a client stays locked, default 60s |
 | `ledger.admin.lockout.global-max-failures` | admin web | failed attempts of all clients together within the window before the global delay starts, default 50 |
@@ -400,9 +405,10 @@ configuration), and write their logs to the `logs` folder. `prepare-host` closes
 Administrators; `seal-host` hands the secrets over to LocalService at the end of the installation (Java, with ACLs, no `icacls`): the
 installing user can only see that a file exists, and `prepare-host` takes them back for the duration of a re-run. So the
 owner commands of `ledger-cli` cannot read them afterwards: do the owner work (projects, common codes, grants, keys) on the pages of
-the admin web, which sign in with `ledger.admin.token`. On a personal PC open the admin web at `http://localhost:8865` (the port is
-`--admin-port=<n>`): the admin web sets a `Secure` session cookie, which the major browsers accept from `localhost` because they treat it
-as a secure context.
+the admin web (see Admin web: sign in with a passkey or OpenID Connect, and register the first passkey with `passkey-code`). On a
+personal PC open the admin web at `http://localhost:8865` (the port is `--admin-port=<n>`): the admin web sets a `Secure` session
+cookie, which the major browsers accept from `localhost` because they treat it as a secure context, and a passkey works on `localhost`
+without HTTPS.
 
 ### First setup
 
@@ -435,7 +441,8 @@ and the ports from it when an option is not given, and the installers ask for th
 ### After the installation
 
 1. Check the MCP server with `ledger-cli mcp-check`; without a registered driver the MCP server stops and says why, and the admin web
-   starts in a setup mode that offers only the sign-in and the driver page.
+   starts in a setup mode that offers only the login page, which tells you to register the driver with `ledger-cli driver-register`
+   (without a database there is no passkey to sign in with, so the driver page of the admin web is a console page).
 2. Set up the owner side: `project-add`, `code-set` and, when you come from 1.x, `import-legacy` (see Migrating from 1.x). On Linux run
    `ledger-cli` as the service user, for example `sudo -u <name> java -jar /opt/<name>/ledger-cli.jar --ledger.secrets.instance=<name> project-add ...`.
 3. Install the client hooks (see Client hooks), register the key of each session with `key-register` and issue the grants with `grant`.
@@ -480,9 +487,27 @@ service user), and every owner operation is recorded with that user.
 The admin web (`ledger-admin-web.jar`) is a server-rendered console for the owner, on `127.0.0.1:8865` by default. It runs as
 the service account of the installation and never as root.
 
-- **Sign-in.** The admin token `ledger.admin.token`, or OpenID Connect for the people listed in `ledger.admin.oidc.owners`. The
-  agents' token is refused, so an agent that holds the MCP token cannot grant itself anything. Failed attempts lock the client and
-  slow down all clients (`ledger.admin.lockout.*`).
+- **Sign-in, one of two** (`ledger.admin.sign-in`). With `passkey` (the default of a new installation) the owner signs in with a
+  passkey. With `oidc` the owner signs in with OpenID Connect, and the owner is **one e-mail address**
+  (`ledger.admin.oidc.owner-email`, verified by the provider at `ledger.admin.oidc.issuer`); another address, or one the provider did not
+  verify, is refused. Only one of the two is offered. The admin token `ledger.admin.token` no longer signs a browser in: it stays the
+  bearer of the read-only JSON endpoints. The agents' token is refused, so an agent that holds the MCP token cannot grant itself
+  anything. Failed attempts (passkey, one-time code, token) lock the client and slow down all clients (`ledger.admin.lockout.*`).
+- **Approval of every change by a passkey, whichever way you signed in.** Every change you make in the console (grants, session
+  keys, common codes, projects, the driver, closing a passkey) is approved with a passkey, with user verification: the page asks the
+  server for a challenge made from that very change and your session, the authenticator signs it, and the write goes with the
+  signature. A signature is good for that one change, once, for two minutes; one for another change or another session is refused.
+  Reading needs no approval. The commands of `ledger-cli` on the server are the owner's shell and need none.
+- **First passkey, another one, or a reset.** Run `ledger-cli passkey-code` on the server as the service account: it prints a
+  one-time code (shown once, valid 15 minutes, stored only as its hash). On the login page type it under "Register a passkey"; that
+  signs in an enrolment session (a quarter of an hour, it may register a passkey and nothing else), where "Register" creates the
+  passkey. `passkey-code --remove-existing` closes every live passkey first, for an owner who lost them all; without the flag no
+  passkey is touched. Each code and each reset is recorded in the audit trail of the owner. The passkey is bound to the host name
+  of the admin web (`ledger.admin.passkey.rp-id`), HTTPS is required except on `localhost`, and a wrong host or origin is refused with
+  `PASSKEY_HOST_MISMATCH`.
+- **How it is built.** The ceremonies are Spring Security's WebAuthn support (`spring-security-webauthn` with WebAuthn4J, both
+  Apache-2.0); the passkeys are kept in the ledger database (V7: base64url text, no BLOB, a credential is never changed or deleted: closing it
+  is a row of its own).
 - **Browser hardening.** Spring Security provides CSRF tokens, a `SameSite=Strict` session cookie that is `Secure` by default, the
   `Host` allow list and a Content Security Policy.
 - **Pages.** Overview (attention counts and the state of the MCP server), projects, defects, tasks, conditions and history
@@ -539,8 +564,8 @@ import, check. Do the steps in this order; the installer stops nothing of 1.x by
    ```
 
    The installer opens the 1.x file as root and `secret-import-1x` moves `DBHUB_AUTH_TOKEN` to `ledger.mcp.token` and
-   `ledger.admin.agent-token` and `PGLEDGER_ADMIN_TOKEN` to `ledger.admin.token`, before any token is generated: the clients and the admin
-   sign-in of 1.x keep working, and no value is printed. A 1.0.0 installation had no admin web and so no `PGLEDGER_ADMIN_TOKEN`: then only
+   `ledger.admin.agent-token` and `PGLEDGER_ADMIN_TOKEN` to `ledger.admin.token`, before any token is generated: the clients of 1.x keep working
+   and the admin token stays the bearer of the read-only endpoints (it no longer signs a browser in), and no value is printed. A 1.0.0 installation had no admin web and so no `PGLEDGER_ADMIN_TOKEN`: then only
    the two tokens of the agents are moved, the command says so, and the installer generates `ledger.admin.token` and shows it once.
    A secret that exists is kept. The unit files of 1.x that the new units replace are
    kept as `<file>.1x-backup`. Without a terminal, add `--stdin` and give the passwords on standard input.
@@ -575,8 +600,15 @@ import, check. Do the steps in this order; the installer stops nothing of 1.x by
    The `code` of a condition (200 characters) and the `ci_ref` (2000 characters) are longer than in the earlier 2.0 builds, and the `origin_ref` of a task is a long text (up to 20000 characters
    when written), so every value of 1.x fits.
 7. The old grants are copied without a session key. Every author registers a session key with `key-register`; then its grants work.
-8. **Check.** `ledger-cli mcp-check --url=<its public URL>` and `import-legacy --verify-only`; open the admin web and sign in with the
-   admin token of 1.x.
+8. **Check.** `ledger-cli mcp-check --url=<its public URL>` and `import-legacy --verify-only`; run `ledger-cli passkey-code` and register
+   your first passkey in the admin web (the admin token of 1.x no longer signs in a browser).
+
+**Upgrade note: the admin web sign-in.** If you signed in to the admin web with OpenID Connect, say so: set `ledger.admin.sign-in=oidc`
+(an installation with `ledger.admin.oidc.*` settings and no `ledger.admin.sign-in` is refused at start with a message that names it), and
+replace the list `ledger.admin.oidc.owners` by the one e-mail address of the owner, `ledger.admin.oidc.owner-email`, with the issuer it
+counts for, `ledger.admin.oidc.issuer`; a configuration that still has the list is refused at start and the message names both keys,
+because the product never picks one of several people silently. Whichever way you sign in, register a passkey with `passkey-code`: it
+approves every change.
 9. **Roll back** if the check fails: stop the new services, copy the `<file>.1x-backup` unit files back in place of the new ones (the
    backup stays), run `sudo systemctl daemon-reload` and start the 1.x services. The 1.x schema and data were only read, so 1.x
    continues as it was. A later run of the installer keeps a backup that equals the unit in place and writes the new unit; when the
