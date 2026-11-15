@@ -22,6 +22,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.support.CliExtension;
 import org.pgledger.cli.support.CliExtension.Cli;
 import org.pgledger.cli.support.CliExtension.Outcome;
@@ -30,7 +31,7 @@ import org.pgledger.cli.support.RecordingOutput;
 import org.pgledger.cli.support.RequiresNonPosixFileSystem;
 
 /**
- * WSEC-04 .. WSEC-07: the privileges and the take-over of secrets on a real file system with ACLs (Windows), the incident of the
+ * WSEC-04 .. WSEC-07 and WSEC-12: the privileges and the take-over of secrets on a real file system with ACLs (Windows), the incident of the
  * test server: a re-run of the installer over secrets that {@code seal-host} handed to the service account. Taking a file over
  * from another owner needs the privileges of an elevated token, so the cases that need them are skipped (an assumption, not a
  * failure) in a prompt that is not elevated; the case that says what happens without them is skipped in an elevated one. The
@@ -119,6 +120,15 @@ class WindowsSecretsTest {
         WindowsAccessTest.reopen(tmp);
     }
 
+    private static List<WindowsAccess.Saved> saved(List<Path> paths) throws IOException {
+        WindowsAccess access = new WindowsAccess();
+        List<WindowsAccess.Saved> all = new ArrayList<>();
+        for (Path path : paths) {
+            all.add(access.save(path));
+        }
+        return all;
+    }
+
     @Test
     @RequiresNonPosixFileSystem
     @DisplayName("WSEC-04 in an elevated prompt the token holds SeTakeOwnershipPrivilege and SeRestorePrivilege: enabling them says so, and enabling them again after the first result is closed works (the token is put back)")
@@ -195,6 +205,30 @@ class WindowsSecretsTest {
                 assertThat(Files.getFileAttributeView(path, AclFileAttributeView.class).getAcl()).as(path.toString()).hasSize(1);
             }
             assertThat(Files.readString(secret)).isEqualTo("never-printed-0123456789");
+        } finally {
+            takeEverythingBack();
+        }
+    }
+
+    @Test
+    @RequiresNonPosixFileSystem
+    @DisplayName("WSEC-12 a re-run that fails after the folders were closed (a jar cannot be replaced: its path is a folder) leaves the home, its folders and the sealed secrets as they were: the same owner and ACL of each, so the stopped services can start again")
+    void wsec12_aFailedRerunLeavesTheHostAsItWas(Cli cli) throws IOException {
+        assumeTrue(elevated(), "this needs an elevated prompt: only an administrator may close a folder and take a secret over");
+        try {
+            Path secret = sealedInstallation(cli);
+            Path lib = home().resolve("lib");
+            Path jar = lib.resolve(DeployLayout.CLI_JAR);
+            Files.delete(jar);
+            Files.createDirectories(jar.resolve("blocker"));
+            List<Path> paths = List.of(home(), lib, home().resolve("etc"), home().resolve("etc/drivers"), home().resolve("logs"),
+                    secret.getParent(), secret);
+            List<WindowsAccess.Saved> before = saved(paths);
+
+            Outcome rerun = prepareHost(cli);
+
+            assertThat(rerun.code()).contains(ErrorCode.HOST_FAILED);
+            assertThat(saved(paths)).as("owner and ACL of every path").isEqualTo(before);
         } finally {
             takeEverythingBack();
         }

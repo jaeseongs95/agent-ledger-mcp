@@ -5,6 +5,7 @@ import java.nio.file.DirectoryIteratorException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.attribute.AclEntry;
 import java.nio.file.attribute.UserPrincipal;
@@ -22,9 +23,12 @@ import org.springframework.stereotype.Component;
 /**
  * A personal PC or a Windows server: the services are WinSW configurations ({@link WinswServices}) below one home
  * directory ({@code --home}, for example {@code C:/ProgramData/<name>}), run by the one account LocalService.
- * {@code prepare-host} (run in an elevated prompt) closes the home and its folders to every account but SYSTEM and
- * Administrators ({@link WindowsAccess}), gives the secrets of an earlier run back to the installer (the folder first, then
- * its files) so the commands of the run can read them, and copies the jars, the two WinSW executables and the driver;
+ * {@code prepare-host} (run in an elevated prompt) first gives the secrets of an earlier run back to the installer (the folder
+ * first, then its files) so the commands of the run can read them, then closes the home and its folders to every account but
+ * SYSTEM and Administrators ({@link WindowsAccess}), and copies the jars, the two WinSW executables and the driver. Taking the
+ * secrets back is the step that the file system can refuse (the service account owns them), so it comes before anything is
+ * closed, and a run that fails at any step puts the owner and the ACL of everything it changed back as it found them: the
+ * services of the installation, stopped for the run, can start again;
  * {@code seal-host} then gives the service account what it needs (read and run the jars, change the settings folder, where the
  * driver page of the admin web writes its registration, write the logs) and hands the secrets over, the files first and then
  * the folder: the service account is their owner and has full access, Administrators can only see that a file exists, and
@@ -93,26 +97,60 @@ final class WindowsPlatform implements ServicePlatform {
         UserPrincipal administrators = accounts.user(fileSystem, WindowsAccess.ADMINISTRATORS);
         UserPrincipal installer = processUser.current(fileSystem);
         List<AclEntry> closed = WindowsAccess.closed(system, administrators);
-        // the home first: a folder made below it takes what the home gives, and the file system propagates nothing by itself
         Path home = lib.getParent();
-        Files.createDirectories(home);
-        access.set(home, null, closed);
+        Path drivers = etc.resolve("drivers");
         Path secrets = etc.resolve("secrets");
-        for (Path folder : List.of(lib, etc, etc.resolve("drivers"), logs)) {
-            Files.createDirectories(folder);
-            access.set(folder, null, closed);
+        // What a run changes is read first, so a failed run can put it back (nothing is changed by reading).
+        List<WindowsAccess.Saved> saved = new ArrayList<>();
+        for (Path path : List.of(home, lib, etc, drivers, secrets, logs)) {
+            if (Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
+                saved.add(access.save(path));
+            }
         }
-        // After an earlier run the secrets belong to the service account, and the ACL of the folder gives Administrators nothing
-        // but the right to see it: closing it like the others is refused. The installer takes it over (the folder first, then its
-        // files) and gives it the ACL of this run; seal-host hands the secrets over again at the end.
-        Files.createDirectories(secrets);
-        access.reassign(secrets, installer, installer, WindowsAccess.takenBack(installer, true));
-        for (Path file : secretFiles(secrets)) {
-            access.reassign(file, installer, installer, WindowsAccess.takenBack(installer, false));
+        try {
+            // After an earlier run the secrets belong to the service account, and Administrators may only see that a file
+            // exists. They are given back to the installer for this run first, before anything is closed: that is the step
+            // that can be refused, and a refusal then leaves the home as it was. The folder first (a file is listed and
+            // opened through it), then its files; seal-host hands them over again at the end.
+            if (Files.isDirectory(secrets, LinkOption.NOFOLLOW_LINKS)) {
+                access.reassign(secrets, installer, installer, WindowsAccess.takenBack(installer, true));
+                for (Path file : secretFiles(secrets)) {
+                    saved.add(access.save(file));
+                    access.reassign(file, installer, installer, WindowsAccess.takenBack(installer, false));
+                }
+            }
+            // the home first: a folder made below it takes what the home gives, and the file system propagates nothing by itself
+            Files.createDirectories(home);
+            access.set(home, null, closed);
+            for (Path folder : List.of(lib, etc, drivers, logs)) {
+                Files.createDirectories(folder);
+                access.set(folder, null, closed);
+            }
+            if (!Files.isDirectory(secrets, LinkOption.NOFOLLOW_LINKS)) {
+                Files.createDirectories(secrets);
+                access.reassign(secrets, installer, installer, WindowsAccess.takenBack(installer, true));
+            }
+            host.copyProduct(jars, driver, lib, drivers);
+            files.copy(winsw, lib.resolve(layout.mcpName() + ".exe"));
+            files.copy(winsw, lib.resolve(layout.adminName() + ".exe"));
+        } catch (IOException failure) {
+            putBack(saved, failure);
+            throw failure;
         }
-        host.copyProduct(jars, driver, lib, etc.resolve("drivers"));
-        files.copy(winsw, lib.resolve(layout.mcpName() + ".exe"));
-        files.copy(winsw, lib.resolve(layout.adminName() + ".exe"));
+    }
+
+    /**
+     * Puts back what was saved, the last one first (a file before its folder), and goes on when one cannot be put back: the
+     * failure of the run stays the one that is reported, and what could not be put back is attached to it.
+     */
+    private void putBack(List<WindowsAccess.Saved> saved, IOException failure) {
+        for (WindowsAccess.Saved before : saved.reversed()) {
+            try {
+                access.restore(before);
+            } catch (IOException e) {
+                failure.addSuppressed(e);
+            }
+        }
     }
 
     /** The files in the secrets folder, by name. */

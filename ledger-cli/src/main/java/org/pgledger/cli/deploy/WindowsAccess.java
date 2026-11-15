@@ -109,6 +109,43 @@ final class WindowsAccess {
         view.setAcl(acl);
     }
 
+    /** What a path had before a run changed it: put back by {@link #restore} when the run fails. */
+    record Saved(Path path, UserPrincipal owner, List<AclEntry> acl) {
+    }
+
+    /** The owner and the ACL of the path, read before the first change (reading needs only the right to read the ACL). */
+    Saved save(Path path) throws IOException {
+        AclFileAttributeView view = view(path);
+        return new Saved(path, view.getOwner(), view.getAcl());
+    }
+
+    /**
+     * Puts the path back as {@link #save} found it, ACL first and owner last (the owner may not write the ACL of a path it
+     * gave away). A path that is as it was is not touched, so a path whose change never began, and which the caller could not
+     * change anyway, costs nothing.
+     */
+    void restore(Saved saved) throws IOException {
+        AclFileAttributeView view = view(saved.path());
+        boolean sameAcl = Objects.equals(saved.acl(), view.getAcl());
+        boolean sameOwner = Objects.equals(saved.owner(), view.getOwner());
+        if (sameAcl && sameOwner) {
+            return;
+        }
+        try (WindowsPrivileges.Enabled privileges = WindowsPrivileges.enable(WindowsPrivileges.TAKE_OWNERSHIP,
+                WindowsPrivileges.RESTORE)) {
+            try {
+                if (!sameAcl) {
+                    view.setAcl(saved.acl());
+                }
+                if (!sameOwner) {
+                    view.setOwner(saved.owner());
+                }
+            } catch (AccessDeniedException e) {
+                throw refused(saved.path(), privileges, e);
+            }
+        }
+    }
+
     /**
      * Makes the installer the owner of the path whoever owns it now, writes its ACL as that owner, and then gives it to
      * {@code owner} (the installer itself for the secrets of a run, the service account for the secrets that are handed over).

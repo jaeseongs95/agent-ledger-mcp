@@ -1,13 +1,18 @@
 package org.pgledger.cli.deploy;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.nio.file.AccessDeniedException;
@@ -17,10 +22,12 @@ import java.nio.file.attribute.AclEntry;
 import java.nio.file.attribute.UserPrincipal;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.FailureException;
@@ -47,6 +54,7 @@ class WindowsPlatformTest {
     private static final UserPrincipal ADMINISTRATORS = new Principal("administrators");
     private static final UserPrincipal SERVICE = new Principal("service");
     private static final UserPrincipal INSTALLER = new Principal("installer");
+    private static final UserPrincipal BEFORE = new Principal("before");
 
     @TempDir
     Path tmp;
@@ -67,6 +75,8 @@ class WindowsPlatformTest {
         home = tmp.resolve("C/ProgramData/pg-ledger-mcp");
         secrets = home.resolve("etc/secrets");
         Files.writeString(tmp.resolve("WinSW.exe"), "winsw");
+        // what a read of a path finds: a record the test can recognise
+        when(access.save(any())).thenAnswer(call -> new WindowsAccess.Saved(call.getArgument(0), BEFORE, List.of()));
     }
 
     /** The host of an earlier installation, sealed: every folder, and two secrets in the secrets folder (in name order). */
@@ -81,6 +91,13 @@ class WindowsPlatformTest {
 
     private void prepare() throws IOException {
         platform.prepare(layout, tmp, tmp.resolve("jars"), tmp.resolve("driver.jar"), List.of(tmp.resolve("WinSW.exe")));
+    }
+
+    /** The paths that were put back, in the order they were, after checking that it was this many. */
+    private List<Path> restored(int count) throws IOException {
+        ArgumentCaptor<WindowsAccess.Saved> restored = ArgumentCaptor.forClass(WindowsAccess.Saved.class);
+        verify(access, times(count)).restore(restored.capture());
+        return restored.getAllValues().stream().map(WindowsAccess.Saved::path).toList();
     }
 
     @Test
@@ -132,5 +149,71 @@ class WindowsPlatformTest {
         assertThat(failure.code()).isEqualTo(ErrorCode.HOST_FAILED);
         assertThat(failure.arguments()).containsExactly(secrets.toString(), "PrivilegeNotHeldException");
         assertThat(failure).hasRootCause(refusal);
+    }
+
+    @Test
+    @DisplayName("WSEC-08 a re-run over the secrets of an earlier run: prepare-host takes the secrets back first (the folder, then each file), and only then closes the home and its folders, in order")
+    void wsec08_aRerunTakesTheSecretsBackBeforeItClosesAnything() throws IOException {
+        List<Path> files = installed();
+
+        prepare();
+
+        InOrder order = inOrder(access);
+        order.verify(access).reassign(eq(secrets), eq(INSTALLER), eq(INSTALLER), eq(WindowsAccess.takenBack(INSTALLER, true)));
+        for (Path file : files) {
+            order.verify(access).reassign(eq(file), eq(INSTALLER), eq(INSTALLER), eq(WindowsAccess.takenBack(INSTALLER, false)));
+        }
+        for (String folder : List.of("", "lib", "etc", "etc/drivers", "logs")) {
+            order.verify(access).set(eq(home.resolve(folder)), isNull(), eq(closed));
+        }
+        verify(access, never()).restore(any());
+    }
+
+    @Test
+    @DisplayName("WSEC-09 a first installation (nothing exists): no path is read, the home and its folders are closed in order, and the secrets folder is made last and is the installer's alone")
+    void wsec09_aFirstInstallationClosesAndThenMakesTheSecrets() throws IOException {
+        prepare();
+
+        InOrder order = inOrder(access);
+        for (String folder : List.of("", "lib", "etc", "etc/drivers", "logs")) {
+            order.verify(access).set(eq(home.resolve(folder)), isNull(), eq(closed));
+        }
+        order.verify(access).reassign(eq(secrets), eq(INSTALLER), eq(INSTALLER), eq(WindowsAccess.takenBack(INSTALLER, true)));
+        verify(access, never()).save(any());
+        verify(access, never()).restore(any());
+        assertThat(secrets).isDirectory();
+    }
+
+    @Test
+    @DisplayName("WSEC-10 the file system refuses to give back a secret (the incident: AccessDenied): nothing is closed, nothing is copied, and every path that was read is put back, the last one first; the refusal is the failure that is reported")
+    void wsec10_aRefusedTakeBackChangesNothingElse() throws IOException {
+        List<Path> files = installed();
+        AccessDeniedException refusal = new AccessDeniedException(files.get(1).toString());
+        doThrow(refusal).when(access).reassign(eq(files.get(1)), any(), any(), any());
+
+        assertThatThrownBy(this::prepare).isSameAs(refusal);
+
+        verify(access, never()).set(any(), any(), any());
+        verify(host, never()).copyProduct(any(), any(), any(), any());
+        assertThat(home.resolve("lib/pg-ledger-mcp.exe")).doesNotExist();
+        assertThat(restored(8)).as("six folders and the two files that were read, in reverse").containsExactly(files.get(1),
+                files.get(0), home.resolve("logs"), secrets, home.resolve("etc/drivers"), home.resolve("etc"),
+                home.resolve("lib"), home);
+    }
+
+    @Test
+    @DisplayName("WSEC-11 a failure after the folders were closed (the copy of the jars) puts back everything that was read; a path that cannot be put back does not stop the others and is attached to the failure")
+    void wsec11_aLaterFailurePutsEverythingBack() throws IOException {
+        List<Path> files = installed();
+        IOException full = new IOException("disk full");
+        doThrow(full).when(host).copyProduct(any(), any(), any(), any());
+        IOException stuck = new IOException("cannot restore");
+        doThrow(stuck).when(access).restore(argThat(saved -> saved != null && Objects.equals(saved.path(), secrets)));
+
+        assertThatThrownBy(this::prepare).isSameAs(full).hasSuppressedException(stuck);
+
+        verify(access).set(eq(home), isNull(), eq(closed));
+        assertThat(restored(8)).as("all eight, although one failed").containsExactly(files.get(1), files.get(0),
+                home.resolve("logs"), secrets, home.resolve("etc/drivers"), home.resolve("etc"), home.resolve("lib"), home);
     }
 }
