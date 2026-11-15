@@ -76,7 +76,8 @@ class Stop1xCommandTest {
         assertThat(dir.resolve(ADMIN + ".service.1x-backup")).exists();
         assertThat(output.info()).contains("The 1.x service " + NAME + " was stopped and disabled")
                 .contains(dir.resolve(NAME + ".service.1x-backup").toString())
-                .contains("To return to the 1.x installation");
+                .contains("To return to the 1.x installation").contains("copy each backup file").contains("so that the backup stays")
+                .doesNotContain("rename");
     }
 
     @Test
