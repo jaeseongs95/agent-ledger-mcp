@@ -30,6 +30,7 @@ import org.pgledger.admin.app.LedgerAdminProperties;
 import org.pgledger.admin.setup.DriverRegistrationService;
 import org.pgledger.admin.support.TestDriverJar;
 import org.pgledger.application.admin.DriverAuditService;
+import org.pgledger.application.admin.DriverAuditWriter;
 import org.pgledger.application.admin.OwnerAuditWriter;
 import org.pgledger.database.driver.DriverLoader;
 import org.pgledger.database.driver.DriverRegistrar;
@@ -126,7 +127,8 @@ class DriverRegistrationServiceTest {
             PlatformTransactionManager transactions, Body body) {
         runner(registrationFile, driverDirectory, TestDriverJar.url())
                 .withUserConfiguration(DeclaredTransactions.class)
-                .withBean(DriverAuditService.class, () -> new DriverAuditService(writer, mock(OwnerAuditRepository.class)))
+                .withBean(DriverAuditService.class, () -> new DriverAuditService(writer, mock(OwnerAuditRepository.class),
+                        mock(DriverAuditWriter.class)))
                 .withBean(PlatformTransactionManager.class, () -> transactions)
                 .run(context -> body.accept(context.getBean(DriverRegistrationService.class)));
     }

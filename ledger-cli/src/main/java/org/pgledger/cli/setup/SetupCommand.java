@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import org.pgledger.application.admin.CommonCodeService.CodeCommand;
-import org.pgledger.application.admin.CommonCodeService.CodeResult;
 import org.pgledger.cli.CliCommand;
 import org.pgledger.cli.CliMessages;
 import org.pgledger.cli.CliOutput;
@@ -39,12 +38,13 @@ import org.springframework.stereotype.Component;
  * ({@link OperatorStepException}) before anything is added;</li>
  * <li>the codes of the seed bundle ({@link PackagedSeed}) that the ledger does not have, added through the service of
  * {@code code-set} and of the admin web, so the code revision and the owner's audit trail ({@code cli:<process user>}) are kept;
- * a code that exists is never changed (a code the owner changed or retired stays as he left it);</li>
+ * a code that exists is never changed (a code the owner changed or retired stays as he left it). All of them are one call of
+ * the service, so one transaction: a seed that fails half way adds nothing;</li>
  * <li>the comparison of the seed with the database by counts and by digest ({@link SeedReport}).</li>
  * </ol>
  *
- * Every step can be repeated: a run that stopped at the grants, at the check or in the middle of the codes is finished by the
- * next one, and a run on a complete installation changes nothing and prints the same report.
+ * Every step can be repeated: a run that stopped at the grants or at the check (or whose seed failed, which leaves no code
+ * behind) is finished by the next one, and a run on a complete installation changes nothing and prints the same report.
  */
 @Component
 public class SetupCommand implements Command {
@@ -88,15 +88,10 @@ public class SetupCommand implements Command {
         appAccount.ifPresent(migration::grant);
         requireApplicationAccount();
         CliLedger target = DatabaseBeans.require(ledger);
-        int added = 0;
-        for (SeedCode code : wanted) {
-            CodeCommand command = new CodeCommand(code.group(), code.code(), code.nameKo(), code.nameEn(),
-                    code.descriptionKo(), code.descriptionEn(), code.sortOrder(), code.state());
-            Optional<CodeResult> result = target.call(() -> target.codes().addIfAbsent(command, target.actor()));
-            if (result.isPresent()) {
-                added++;
-            }
-        }
+        List<CodeCommand> commands = wanted.stream().map(code -> new CodeCommand(code.group(), code.code(), code.nameKo(),
+                code.nameEn(), code.descriptionKo(), code.descriptionEn(), code.sortOrder(), code.state())).toList();
+        // one use case, one service method, one transaction: a seed that fails half way leaves no part of it behind
+        int added = target.call(() -> target.codes().seed(commands, target.actor()));
         output.info(messages.get("setup.seeded", String.valueOf(added)));
         SeedReport report = SeedReport.compare(wanted, current(target, wanted));
         output.info(messages.get("setup.report", String.valueOf(report.seed()), String.valueOf(report.present()),

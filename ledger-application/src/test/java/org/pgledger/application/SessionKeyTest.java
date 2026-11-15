@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.pgledger.application.admin.SessionKeyService;
 import org.pgledger.application.admin.SessionKeyService.RegisterCommand;
 import org.pgledger.application.admin.SessionKeyService.Registered;
+import org.pgledger.application.admin.SessionKeyWriter;
 import org.pgledger.application.support.Expect;
 import org.pgledger.application.support.LedgerServiceTest;
 import org.pgledger.application.support.Parallel;
@@ -30,6 +31,7 @@ import org.pgledger.domain.error.TrustCode;
 import org.pgledger.domain.error.ValidationCode;
 import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.model.SessionPublicKey;
+import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.OwnerIdentity;
 
 /** SVC-KEY-01 .. SVC-KEY-08: the owner binds public keys to authors (admin web and CLI, never a tool). */
@@ -275,9 +277,7 @@ class SessionKeyTest {
                         return seen;
                     }
                 };
-        SessionKeyService service = new SessionKeyService(racing,
-                s.bean(org.pgledger.database.repository.SessionKeyRepository.class),
-                s.bean(org.pgledger.database.repository.IdAllocator.class),
+        SessionKeyService service = new SessionKeyService(racing, s.bean(SessionKeyWriter.class),
                 s.bean(org.pgledger.application.admin.OwnerAuditWriter.class), s.bean(java.time.Clock.class));
 
         Registered registered = s.ctx().tx(() -> service.register(new RegisterCommand(author, key, "this one"),
@@ -289,6 +289,57 @@ class SessionKeyTest {
         assertThat(registered.id()).isEqualTo(s.ctx().jdbc().sql("SELECT id FROM session_key WHERE author_id = ?").param(author)
                 .query(Long.class).single());
         assertThat(s.count("SELECT COUNT(*) FROM owner_audit WHERE subject = ?", author)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("SVC-KEY-20 (TXF-001): a registration that loses the race at the insert (the unique key of the live key of the author) takes back its nested write only, with the savepoint that Spring makes (SessionKeyWriter, no TransactionAspectSupport): it answers with the row of the winner, and the transaction it runs in stays usable, so a registration for another author in the same transaction commits")
+    void key20_theLoserLeavesTheTransactionUsable(Scenario s) {
+        SessionKeyService real = s.bean(SessionKeyService.class);
+        String author = newAuthor();
+        String other = newAuthor();
+        String key = publicKey(TestKeyRing.newPair());
+        String otherKey = publicKey(TestKeyRing.newPair());
+        java.util.concurrent.atomic.AtomicBoolean raced = new java.util.concurrent.atomic.AtomicBoolean();
+        java.util.concurrent.atomic.AtomicBoolean blind = new java.util.concurrent.atomic.AtomicBoolean();
+        // The state repository of the service under test: after its lookup by fingerprint found nothing the other
+        // registration makes the key live, and the one lookup of the live key of the author that follows still sees nothing
+        // (the read that the other registration had not committed yet): the loser meets the unique key at its insert.
+        org.pgledger.database.repository.SessionKeyStateRepository racing =
+                new org.pgledger.database.repository.SessionKeyStateRepository(s.ctx().jdbc()) {
+                    @Override
+                    public java.util.Optional<SessionPublicKey> findLiveByFingerprint(String fingerprint) {
+                        java.util.Optional<SessionPublicKey> seen = super.findLiveByFingerprint(fingerprint);
+                        if (raced.compareAndSet(false, true)) {
+                            real.register(new RegisterCommand(author, key, "the other registration"), TestOwners.OWNER);
+                            blind.set(true);
+                        }
+                        return seen;
+                    }
+
+                    @Override
+                    public java.util.Optional<SessionPublicKey> findLive(AuthorId who) {
+                        if (blind.compareAndSet(true, false)) {
+                            return java.util.Optional.empty();
+                        }
+                        return super.findLive(who);
+                    }
+                };
+        SessionKeyService service = new SessionKeyService(racing, s.bean(SessionKeyWriter.class),
+                s.bean(org.pgledger.application.admin.OwnerAuditWriter.class), s.bean(java.time.Clock.class));
+
+        List<Registered> answers = s.ctx().tx(() -> List.of(
+                service.register(new RegisterCommand(author, key, "the loser"), TestOwners.OWNER),
+                service.register(new RegisterCommand(other, otherKey, null), TestOwners.OWNER)));
+
+        assertThat(raced).isTrue();
+        assertThat(blind).as("the stale read was used: the loser did reach the insert").isFalse();
+        assertThat(answers.get(0).id()).as("the loser answers with the row of the winner").isEqualTo(s.ctx().jdbc()
+                .sql("SELECT id FROM session_key WHERE author_id = ?").param(author).query(Long.class).single());
+        assertThat(s.count("SELECT COUNT(*) FROM session_key WHERE author_id = ?", author)).isEqualTo(1);
+        assertThat(s.count("SELECT COUNT(*) FROM session_key WHERE author_id = ? AND revoked_at IS NULL", other)).as(
+                "the transaction was usable after the loser").isEqualTo(1);
+        assertThat(s.count("SELECT COUNT(*) FROM owner_audit WHERE subject = ?", author)).as("the loser wrote no audit row")
+                .isEqualTo(1);
     }
 
     private static int indexContaining(List<String> names, String part) {

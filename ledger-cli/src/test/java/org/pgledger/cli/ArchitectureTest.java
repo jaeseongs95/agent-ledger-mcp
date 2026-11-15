@@ -11,12 +11,15 @@ import java.io.FileDescriptor;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Set;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.pgledger.application.admin.CommonCodeService;
+import org.pgledger.domain.value.OwnerIdentity;
 import org.pgledger.testing.PrincipleRules;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -155,6 +158,8 @@ class ArchitectureTest {
     @DisplayName("TXD-005 (principle 4.4) the CLI opens no transaction: no TransactionTemplate, no @Transactional; a transaction is a method of an application service")
     void txd005_noTransactionBoundaryInTheCli() {
         ArchitectureRules.noTransactionTemplate().check(MAIN);
+        // TXF-001: no TransactionAspectSupport and no savepoint of its own either
+        ArchitectureRules.noHandMadeTransactionControl().check(MAIN);
         ArchitectureRules.transactionalOnlyOnServiceClasses().check(MAIN);
         ArchitectureRules.transactionalOnlyOnServiceMethods().check(MAIN);
     }
@@ -163,6 +168,17 @@ class ArchitectureTest {
     @DisplayName("TXD-010 (principles 3.9, 4.4) the CLI makes no JdbcClient, no TransactionTemplate and no transaction manager of its own")
     void txd010_noOwnJdbcPlumbingInTheCli() {
         ArchitectureRules.noOwnJdbcPlumbing().check(MAIN);
+    }
+
+    @Test
+    @DisplayName("TXF-003 (principle 4.4) setup seeds its codes with one call of CommonCodeService.seed (one use case, one transaction), not with one call of addIfAbsent per code")
+    void txf003_setupSeedsInOneServiceCall() {
+        noClasses().that().haveFullyQualifiedName("org.pgledger.cli.setup.SetupCommand").should()
+                .callMethod(CommonCodeService.class, "addIfAbsent", CommonCodeService.CodeCommand.class,
+                        OwnerIdentity.class)
+                .check(MAIN);
+        classes().that().haveFullyQualifiedName("org.pgledger.cli.setup.SetupCommand").should()
+                .callMethod(CommonCodeService.class, "seed", List.class, OwnerIdentity.class).check(MAIN);
     }
 
     @Test

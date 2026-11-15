@@ -24,16 +24,19 @@ public class RowLockRepository {
 
     /** True when the defect exists (and is now locked). */
     public boolean lock(DefectId id) {
+        RequiredTransaction.check("a row is locked");
         return jdbc.sql("UPDATE defect SET version = version WHERE id = :id").param("id", id.value()).update() == 1;
     }
 
     /** True when the task exists (and is now locked). */
     public boolean lock(TaskId id) {
+        RequiredTransaction.check("a row is locked");
         return jdbc.sql("UPDATE task SET version = version WHERE id = :id").param("id", id.value()).update() == 1;
     }
 
     /** True when the condition exists (and is now locked). */
     public boolean lock(ConditionId id) {
+        RequiredTransaction.check("a row is locked");
         return jdbc.sql("UPDATE release_condition SET version = version WHERE id = :id").param("id", id.value())
                 .update() == 1;
     }

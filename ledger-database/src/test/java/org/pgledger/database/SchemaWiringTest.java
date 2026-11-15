@@ -59,6 +59,8 @@ class SchemaWiringTest {
                         .hasSingleBean(SessionClockRepository.class);
                 // the service that applies one file runs in the transaction of the container (the proxy of @Transactional)
                 assertThat(AopUtils.isAopProxy(context.getBean(SchemaFileApplier.class))).isTrue();
+                // so does the grant step (TXF-005): several GRANT statements are one transaction, a service method
+                assertThat(AopUtils.isAopProxy(context.getBean(GrantApplier.class))).isTrue();
             });
         }
     }

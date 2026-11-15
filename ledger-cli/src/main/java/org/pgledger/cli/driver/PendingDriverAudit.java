@@ -10,7 +10,8 @@ import org.pgledger.database.driver.DriverRegistrationFile;
  * installation, which has no database yet, or a registration on a database whose schema was dropped or not migrated yet):
  * {@code driver-register} writes the registration file and leaves the row to {@code migrate} and {@code setup}, which call
  * {@link #recordIfMissing()} once the schema is ready. The registration file names the driver (class, jar, digest, time), and the
- * audit trail tells whether a row for exactly that registration is there, so a repeated call writes nothing. The row names the
+ * audit trail tells whether a row for exactly that registration is there, so a repeated call writes nothing, and two calls at
+ * the same time write one row (the registration is claimed by a unique key, see {@link DriverAuditService}). The row names the
  * actor of the run that records it (the account the installer runs as, {@code cli:<user>}) and the time of the registration
  * in its detail.
  *

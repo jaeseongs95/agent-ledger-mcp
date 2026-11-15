@@ -104,8 +104,8 @@ class ArchitectureTest {
                                 "org.springframework.jdbc.core.JdbcOperations")
                         .orShould().dependOnClassesThat().haveFullyQualifiedName(
                                 "org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate")),
-                // the transaction boundary is a service (principle 4.4): the only service of this module is the one that applies a
-                // schema file (SchemaFileApplier); the repositories join the transaction of their caller. Not even the id
+                // the transaction boundary is a service (principle 4.4): the services of this module are the one that applies a
+                // schema file (SchemaFileApplier) and the one that applies the grants (GrantApplier, TXF-005); the repositories join the transaction of their caller. Not even the id
                 // allocator carries @Transactional (it refuses a call without a transaction itself).
                 new Rule("ARC-013 @Transactional on no class here but a @Service",
                         ArchitectureRules.transactionalOnlyOnServiceClasses()),
@@ -122,6 +122,8 @@ class ArchitectureTest {
                 // method of a service, and the snapshot of the legacy source is one of LegacySnapshotService of the application
                 // module, on the transaction manager bean of the legacy data source
                 new Rule("TXD-005 no TransactionTemplate here", ArchitectureRules.noTransactionTemplate()),
+                new Rule("TXF-001 no TransactionAspectSupport and no hand-made savepoint here",
+                        ArchitectureRules.noHandMadeTransactionControl()),
                 // principles 3.9 and 4.4: no JdbcClient.create, no new TransactionTemplate, no new DataSourceTransactionManager
                 // outside a @Configuration class (TXD-010), no exception
                 new Rule("TXD-010 no own JDBC plumbing outside a @Configuration class",

@@ -8,12 +8,13 @@ import java.util.regex.Pattern;
 import javax.sql.DataSource;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
-import org.springframework.stereotype.Component;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.datasource.init.DatabasePopulatorUtils;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Applies the grant template {@code db-templates/dml-grants.sql} to the application account: the account of the MCP server,
@@ -28,8 +29,24 @@ import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
  * {@link ResourceDatabasePopulator}, as the schema files do (see {@link SchemaFileApplier}), on the ledger data source, whose
  * connections already use the schema of {@link SchemaProperties#name()} when one is configured. Reference:
  * https://docs.spring.io/spring-framework/reference/data-access/jdbc/embedded-database-support.html (script execution).
+ *
+ * <p>The grant step is one use case, so it is one transaction (principle 4.4): {@link #apply} is a {@code @Transactional}
+ * method of a service, and the populator takes its connection from Spring's {@code DataSourceUtils}, so it joins that
+ * transaction like the schema file of {@link SchemaFileApplier}. On a DBMS whose {@code GRANT} is transactional a statement that
+ * fails takes the statements before it back (not checked here for any product: the DDL of the test PostgreSQL is transactional,
+ * SCH-004, and that of its {@code GRANT} is assumed from it). Not every DBMS does that: MySQL lists {@code GRANT} among the statements that implicitly commit
+ * (https://dev.mysql.com/doc/refman/8.4/en/implicit-commit.html, "Statements that implicitly use or modify tables in the
+ * mysql database") and Oracle commits the current transaction before and after every DDL statement, {@code GRANT} being one
+ * (https://docs.oracle.com/en/database/oracle/oracle-database/23/sqlrf/Types-of-SQL-Statements.html, "Data Definition
+ * Language (DDL) Statements"). There a failure in the middle leaves part of the grants applied, however this class is
+ * annotated; that is why the step is safe to run again: granting a privilege that the account has already adds it to those it
+ * has (PostgreSQL: "These privileges are added to those already granted, if any",
+ * https://www.postgresql.org/docs/current/sql-grant.html; the other products are not checked here, INS-010 runs the step twice
+ * on the test PostgreSQL), and {@code migrate} and {@code setup} run it on every call, so the next run finishes what a failed
+ * one left.
  */
-@Component
+@Service
+@Transactional
 public class GrantApplier {
 
     /** The class path location of the template. */
@@ -55,8 +72,9 @@ public class GrantApplier {
      *
      * @throws IllegalArgumentException when the text is not an account name (nothing is run)
      * @throws InfrastructureException SCHEMA_GRANT_FAILED when the database refuses a statement, for example because the
-     *         account does not exist or the connection may not grant; the statements before it stay applied (the next run
-     *         repeats them)
+     *         account does not exist or the connection may not grant; the transaction is rolled back, which takes the
+     *         statements before it back where the DBMS lets a grant be rolled back, and the next run repeats them where it
+     *         does not (see the class comment)
      */
     public void apply(String account) {
         if (!isAccountName(account)) {

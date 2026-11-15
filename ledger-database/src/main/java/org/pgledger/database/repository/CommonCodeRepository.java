@@ -31,16 +31,28 @@ public class CommonCodeRepository {
     public CodeCatalog catalog(CodeGroup group) {
         return new CodeCatalog(group, jdbc.sql("SELECT " + COLUMNS + " FROM common_code WHERE code_group = :g "
                 + "ORDER BY sort_order, code").param("g", group.name())
-                .query((rs, n) -> new CommonCode(CodeGroup.valueOf(rs.getString("code_group")),
-                        CodeValue.of(rs.getString("code")), rs.getString("name_ko"), rs.getString("name_en"),
-                        rs.getString("description_ko"), rs.getString("description_en"), rs.getInt("sort_order"),
-                        CodeState.valueOf(rs.getString("state")), CodeDirection.valueOf(rs.getString("direction")),
-                        ActorId.ofStored(rs.getString("created_by"))))
+                .query((rs, n) -> read(rs))
                 .list());
     }
 
     public Optional<CommonCode> find(CodeGroup group, CodeValue code) {
         return catalog(group).entries().stream().filter(c -> Objects.equals(c.code(), code)).findFirst();
+    }
+
+    /** The code with the version of its row, for a change that must not overwrite another one ({@link #update}). */
+    public Optional<VersionedCode> findVersioned(CodeGroup group, CodeValue code) {
+        return jdbc.sql("SELECT " + COLUMNS + ", version FROM common_code WHERE code_group = :g AND code = :c")
+                .param("g", group.name()).param("c", code.value())
+                .query((rs, n) -> new VersionedCode(read(rs), rs.getLong("version")))
+                .list().stream().findFirst();
+    }
+
+    private static CommonCode read(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new CommonCode(CodeGroup.valueOf(rs.getString("code_group")),
+                CodeValue.of(rs.getString("code")), rs.getString("name_ko"), rs.getString("name_en"),
+                rs.getString("description_ko"), rs.getString("description_en"), rs.getInt("sort_order"),
+                CodeState.valueOf(rs.getString("state")), CodeDirection.valueOf(rs.getString("direction")),
+                ActorId.ofStored(rs.getString("created_by")));
     }
 
     public void insert(CommonCode code) {
@@ -60,13 +72,16 @@ public class CommonCodeRepository {
     }
 
     /**
-     * Changes text, order, state and direction of an entry; false when it does not exist. The key and creator stay. Whether
-     * a direction may change is the service's rule (see {@code CommonCodeService}).
+     * Changes text, order, state and direction of an entry and raises its version, but only when the row still has the version
+     * that the caller read ({@code expectedVersion}, from {@link #findVersioned}). False when it does not: another change got
+     * there first (or the entry does not exist), and nothing was written. The key and creator stay. Whether a direction may
+     * change is the service's rule (see {@code CommonCodeService}).
      */
-    public boolean update(CommonCode code) {
+    public boolean update(CommonCode code, long expectedVersion) {
         return jdbc.sql("UPDATE common_code SET name_ko = :nameKo, name_en = :nameEn, description_ko = :descKo, "
-                + "description_en = :descEn, sort_order = :sortOrder, state = :state, direction = :direction "
-                + "WHERE code_group = :group AND code = :code")
+                + "description_en = :descEn, sort_order = :sortOrder, state = :state, direction = :direction, "
+                + "version = version + 1 WHERE code_group = :group AND code = :code AND version = :expected")
+                .param("expected", expectedVersion)
                 .param("nameKo", code.nameKo())
                 .param("nameEn", code.nameEn())
                 .param("descKo", code.descriptionKo())

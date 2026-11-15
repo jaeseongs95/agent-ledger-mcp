@@ -7,6 +7,8 @@ import java.nio.file.Path;
 import java.util.Optional;
 import org.springframework.context.annotation.Bean;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * ARC-PRN-07: classes that break the architecture rules of the development principles on purpose, so that a test can show that
@@ -53,6 +55,25 @@ public final class Planted {
 
     private void deleteIt(Path file) throws IOException {
         Files.delete(file);
+    }
+
+    /**
+     * A transaction that is opened by hand with a {@code TransactionTemplate}, and writes a file in its lambda: the method has
+     * no {@code @Transactional}, so only the template call tells that its lambda is a transaction (TXF-006).
+     */
+    void writeInATemplate(TransactionTemplate template, Path file) {
+        template.executeWithoutResult(status -> {
+            try {
+                Files.writeString(file, "x");
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        });
+    }
+
+    /** A savepoint that is made by hand with the handle of the current transaction (TXF-001). */
+    Object savepointByHand() {
+        return TransactionAspectSupport.currentTransactionStatus().createSavepoint();
     }
 
     /**

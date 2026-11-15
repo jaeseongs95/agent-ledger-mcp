@@ -47,6 +47,7 @@ public class SessionKeyStateRepository {
      * @return true when the key is live (and now locked), false when it is closed or does not exist
      */
     public boolean holdLive(long id) {
+        RequiredTransaction.check("a key is held");
         return jdbc.sql("UPDATE session_key SET note = note WHERE id = :id AND revoked_at IS NULL")
                 .param("id", id)
                 .update() == 1;

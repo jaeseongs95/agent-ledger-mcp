@@ -140,6 +140,29 @@ public final class ArchitectureRules {
                 .haveFullyQualifiedName("org.springframework.transaction.support.TransactionTemplate");
     }
 
+    private static final Set<String> SAVEPOINT_OWNERS = Set.of("org.springframework.transaction.TransactionStatus",
+            "org.springframework.transaction.SavepointManager");
+    private static final Set<String> SAVEPOINT_METHODS = Set.of("createSavepoint", "rollbackToSavepoint",
+            "releaseSavepoint");
+
+    /**
+     * TXF-001 (principle 4.4): no class manages a transaction or a savepoint by hand: {@code TransactionAspectSupport} (the
+     * handle of the current transaction: {@code currentTransactionStatus()}, {@code setRollbackOnly()}) is not used, and neither
+     * are the savepoint methods of {@code TransactionStatus} ({@code createSavepoint}, {@code rollbackToSavepoint},
+     * {@code releaseSavepoint}). A write that has to be taken back alone is a method of a service bean with
+     * {@code @Transactional(propagation = Propagation.NESTED)}, and Spring makes and rolls back the savepoint.
+     */
+    public static ArchRule noHandMadeTransactionControl() {
+        // Spring is no dependency of this module (it knows no framework class), so the names are texts
+        DescribedPredicate<JavaMethodCall> savepointCall = DescribedPredicate.describe(
+                "call createSavepoint, rollbackToSavepoint or releaseSavepoint of TransactionStatus or SavepointManager",
+                call -> SAVEPOINT_OWNERS.contains(call.getTargetOwner().getName())
+                        && SAVEPOINT_METHODS.contains(call.getTarget().getName()));
+        return noClasses().should().dependOnClassesThat()
+                .haveFullyQualifiedName("org.springframework.transaction.interceptor.TransactionAspectSupport")
+                .orShould().callMethodWhere(savepointCall);
+    }
+
     private static final String CONFIGURATION = "org.springframework.context.annotation.Configuration";
 
     /**

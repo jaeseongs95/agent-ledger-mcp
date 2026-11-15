@@ -42,7 +42,7 @@ class SchemaCatalogTest {
 
     static final Set<String> TABLES = Set.of("project", "task", "defect", "defect_fix", "defect_case", "defect_task",
             "defect_relation", "release_condition", "condition_link", "session_grant", "session_key", "owner_audit", "history",
-            "request_receipt", "common_code", "code_revision", "id_counter", "schema_history");
+            "request_receipt", "common_code", "code_revision", "id_counter", "schema_history", "driver_audit_key");
 
     /** The timestamp columns of the schema, exactly as the catalogue lists them (SCH-018). */
     static final Set<String> TIMESTAMP_COLUMNS = Set.of("defect.created_at", "defect.updated_at", "task.created_at",
@@ -241,6 +241,37 @@ class SchemaCatalogTest {
                 .containsExactly("same_site", "same_family", "same_fix_unit", "regression_of");
         assertThat(jdbc.sql("SELECT COUNT(*) FROM common_code WHERE code_group <> 'RELATION_KIND' AND direction <> "
                 + "'CANONICAL'").query(Integer.class).single()).isZero();
+    }
+
+    /** SCH-036 (TX-04): V5 adds the version of a common code; every code that exists starts at 0. */
+    @Test
+    void sch036_theVersionOfTheCommonCodes() {
+        assertThat(columns()).filteredOn(c -> Objects.equals(c.table(), "common_code") && "version".equals(c.name()))
+                .singleElement().satisfies(c -> {
+                    assertThat(c.type()).isEqualTo(Types.BIGINT);
+                    assertThat(c.nullable()).isFalse();
+                });
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM common_code WHERE code_group = 'DEFECT_SEVERITY' AND code = 'P1' "
+                + "AND version = 0").query(Integer.class).single())
+                .as("the seed codes start at version 0").isEqualTo(1);
+    }
+
+    /** SCH-037 (TX-03): V6 makes the key of a driver registration unique, so that a database refuses the second claim. */
+    @Test
+    void sch037_theKeyOfADriverRegistrationIsUnique() {
+        assertThat(columns()).filteredOn(c -> Objects.equals(c.table(), "driver_audit_key")).singleElement().satisfies(c -> {
+            assertThat(c.name()).isEqualTo("registration_key");
+            assertThat(c.type()).isEqualTo(Types.VARCHAR);
+            assertThat(c.nullable()).isFalse();
+        });
+        String key = java.util.UUID.randomUUID().toString().replace("-", "").repeat(2);
+        jdbc.sql("INSERT INTO driver_audit_key (registration_key) VALUES (:key)").param("key", key).update();
+
+        Throwable thrown = org.assertj.core.api.Assertions.catchThrowable(() -> jdbc
+                .sql("INSERT INTO driver_audit_key (registration_key) VALUES (:key)").param("key", key).update());
+
+        assertThat(thrown).isInstanceOf(org.springframework.dao.DuplicateKeyException.class);
+        assertThat(sqlState(thrown)).startsWith("23");
     }
 
     @Test

@@ -8,6 +8,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Callable;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,13 +19,20 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.pgledger.application.admin.CommonCodeService;
 import org.pgledger.application.admin.CommonCodeService.CodeCommand;
+import org.pgledger.application.admin.CommonCodeService.CodeResult;
+import org.pgledger.application.admin.CommonCodeWriter;
+import org.pgledger.application.admin.OwnerAuditWriter;
 import org.pgledger.application.support.Expect;
 import org.pgledger.application.support.LedgerServiceTest;
+import org.pgledger.application.support.Parallel;
 import org.pgledger.application.support.Scenario;
 import org.pgledger.apptest.LedgerTestRunners;
 import org.pgledger.application.write.SaveService;
 import org.pgledger.database.repository.CodeRevisionRepository;
 import org.pgledger.database.repository.CommonCodeRepository;
+import org.pgledger.database.repository.LinkRepository;
+import org.pgledger.database.repository.VersionedCode;
+import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ErrorCode;
 import org.pgledger.domain.error.LedgerException;
 import org.pgledger.domain.error.ValidationCode;
@@ -214,6 +224,134 @@ class CommonCodeTest {
     private static long auditRows(Scenario s, String subject) {
         return s.ctx().jdbc().sql("SELECT COUNT(*) FROM owner_audit WHERE subject = :subject").param("subject", subject)
                 .query(Long.class).single();
+    }
+
+    private static long codeRows(Scenario s, String name) {
+        return s.count("SELECT COUNT(*) FROM common_code WHERE code = ?", name);
+    }
+
+    @Test
+    @DisplayName("SVC-CC-11 (TXF-002): two sets of the same code that read the same version: the one that writes first wins and the other is a VERSION_CONFLICT that names the version it read and the one now; it overwrites nothing, bumps no revision and writes no audit row")
+    void cc11_aStaleSetIsAVersionConflict(Scenario s) {
+        CommonCodeService real = s.bean(CommonCodeService.class);
+        String name = "CC11_" + s.code();
+        String subject = "RELATION_KIND/" + name;
+        real.set(code("RELATION_KIND", name), TestOwners.OWNER);
+        CodeCommand winner = new CodeCommand("RELATION_KIND", name, "이긴 쪽", "Winner", null, null, 31, null);
+        CodeCommand loser = new CodeCommand("RELATION_KIND", name, "진 쪽", "Loser", null, null, 32, null);
+        AtomicBoolean raced = new AtomicBoolean();
+        // The repository of the service under test: after it has read the code, the other action reads the same row, writes
+        // and commits on its own connection (a second thread), the interleaving that the old read-then-write overwrote.
+        CommonCodeRepository racing = new CommonCodeRepository(s.ctx().jdbc()) {
+            @Override
+            public Optional<VersionedCode> findVersioned(CodeGroup group, CodeValue code) {
+                Optional<VersionedCode> seen = super.findVersioned(group, code);
+                if (raced.compareAndSet(false, true)) {
+                    assertThat(Parallel.all(List.<Callable<CodeResult>>of(() -> real.set(winner, TestOwners.OWNER)))
+                            .getFirst().failure()).isNull();
+                }
+                return seen;
+            }
+        };
+        CommonCodeService service = new CommonCodeService(racing, s.bean(CommonCodeWriter.class),
+                s.bean(CodeRevisionRepository.class), s.bean(OwnerAuditWriter.class), s.bean(LinkRepository.class));
+        long audit = auditRows(s, subject);
+
+        LedgerException failure = Expect.failure(() -> s.ctx().tx(() -> service.set(loser, TestOwners.OWNER)),
+                ConflictCode.VERSION_CONFLICT);
+
+        assertThat(raced).isTrue();
+        assertThat(failure.args()).containsExactly("common_code", subject, "0", "1");
+        CommonCode kept = s.bean(CommonCodeRepository.class).find(CodeGroup.RELATION_KIND, CodeValue.of(name)).orElseThrow();
+        assertThat(kept.nameEn()).as("the winner is not overwritten").isEqualTo("Winner");
+        assertThat(kept.sortOrder()).isEqualTo(31);
+        assertThat(auditRows(s, subject)).as("one audit row for the winner, none for the loser").isEqualTo(audit + 1);
+    }
+
+    @Test
+    @DisplayName("SVC-CC-14 (TXF-003): seed is one use case and one transaction: a list with one invalid code adds nothing (the codes before it are taken back with the revision and the audit rows), and the same list without it adds them all")
+    void cc14_aSeedWithAnInvalidCodeAddsNothing(Scenario s) {
+        CommonCodeService service = s.bean(CommonCodeService.class);
+        String first = "CC14A_" + s.code();
+        String second = "CC14B_" + s.code();
+        long before = revision(s);
+        List<CodeCommand> broken = List.of(named(first, "하나", "One", null), named(second, "둘", "Two", null),
+                named("CC14C_" + s.code(), "", "Three", null));
+
+        Expect.failure(() -> service.seed(broken, TestOwners.OWNER), ValidationCode.VALIDATION_FAILED);
+
+        assertThat(codeRows(s, first)).as("the code before the invalid one was taken back").isZero();
+        assertThat(codeRows(s, second)).isZero();
+        assertThat(revision(s)).as("no revision bump of the codes that were taken back").isEqualTo(before);
+        assertThat(auditRows(s, "RELATION_KIND/" + first)).isZero();
+
+        assertThat(service.seed(broken.subList(0, 2), TestOwners.OWNER)).isEqualTo(2);
+        assertThat(codeRows(s, first)).isEqualTo(1);
+        assertThat(codeRows(s, second)).isEqualTo(1);
+        assertThat(revision(s)).isEqualTo(before + 2);
+    }
+
+    @Test
+    @DisplayName("SVC-CC-15 (TXF-003): seed answers how many codes it added; a code that exists is left exactly as the owner left it, and a second seed of the same list adds none")
+    void cc15_seedAddsOnlyTheAbsentCodes(Scenario s) {
+        CommonCodeService service = s.bean(CommonCodeService.class);
+        String mine = "CC15A_" + s.code();
+        String fresh = "CC15B_" + s.code();
+        service.set(new CodeCommand("RELATION_KIND", mine, "내 이름", "My name", null, null, 77, "INACTIVE"), TestOwners.OWNER);
+        List<CodeCommand> seed = List.of(named(mine, "시드", "Seed", null), named(fresh, "새것", "New", null));
+        long before = revision(s);
+
+        assertThat(service.seed(seed, TestOwners.OWNER)).isEqualTo(1);
+
+        CommonCode kept = s.bean(CommonCodeRepository.class).find(CodeGroup.RELATION_KIND, CodeValue.of(mine)).orElseThrow();
+        assertThat(kept.nameKo()).isEqualTo("내 이름");
+        assertThat(kept.state()).isEqualTo(CodeState.INACTIVE);
+        assertThat(codeRows(s, fresh)).isEqualTo(1);
+        assertThat(revision(s)).isEqualTo(before + 1);
+        assertThat(service.seed(seed, TestOwners.OWNER)).isZero();
+        assertThat(revision(s)).isEqualTo(before + 1);
+    }
+
+    @Test
+    @DisplayName("SVC-CC-12 (TXF-002): 8 calls that add the same new code at the same time (addIfAbsent) leave one row: exactly one call adds it, the others answer empty, none fails, and the revision moves once with one audit row")
+    void cc12_concurrentAddOfTheSameCode(Scenario s) {
+        CommonCodeService service = s.bean(CommonCodeService.class);
+        String name = "CC12_" + s.code();
+        CodeCommand seed = new CodeCommand("RELATION_KIND", name, "시드", "Seed", null, null, 50, null);
+        long before = revision(s);
+
+        List<Callable<Optional<CodeResult>>> calls = IntStream.range(0, 8)
+                .<Callable<Optional<CodeResult>>>mapToObj(i -> () -> service.addIfAbsent(seed, TestOwners.OWNER)).toList();
+        List<Parallel.Outcome<Optional<CodeResult>>> outcomes = Parallel.all(calls);
+
+        assertThat(outcomes).allSatisfy(outcome -> assertThat(outcome.failure()).as("the loser answers, it does not fail")
+                .isNull());
+        assertThat(outcomes.stream().filter(outcome -> outcome.value().isPresent())).hasSize(1);
+        assertThat(codeRows(s, name)).isEqualTo(1);
+        assertThat(revision(s)).isEqualTo(before + 1);
+        assertThat(auditRows(s, "RELATION_KIND/" + name)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("SVC-CC-13 (TXF-002): 8 calls that set the same new code at the same time create it once (the one creation path): none fails with a duplicate key, the one that lost the unique key changes the row of the winner like any existing code, and the row holds one of the commands")
+    void cc13_concurrentSetOfTheSameNewCode(Scenario s) {
+        CommonCodeService service = s.bean(CommonCodeService.class);
+        String name = "CC13_" + s.code();
+        List<Callable<CodeResult>> calls = IntStream.range(0, 8).<Callable<CodeResult>>mapToObj(i -> () -> service.set(
+                new CodeCommand("RELATION_KIND", name, "이름 " + i, "Name " + i, null, null, 60 + i, null),
+                TestOwners.OWNER)).toList();
+
+        List<Parallel.Outcome<CodeResult>> outcomes = Parallel.all(calls);
+
+        assertThat(outcomes).allSatisfy(outcome -> assertThat(outcome.failure()).as("no duplicate key reaches the caller")
+                .satisfiesAnyOf(failure -> assertThat(failure).isNull(),
+                        failure -> assertThat(failure).isInstanceOfSatisfying(LedgerException.class,
+                                refused -> assertThat(refused.code()).isEqualTo(ConflictCode.VERSION_CONFLICT))));
+        assertThat(outcomes.stream().filter(Parallel.Outcome::succeeded)).as("at least the call that created it")
+                .isNotEmpty();
+        assertThat(codeRows(s, name)).isEqualTo(1);
+        assertThat(s.count("SELECT COUNT(*) FROM owner_audit WHERE subject = ? AND detail LIKE 'added%'",
+                "RELATION_KIND/" + name)).as("the code was created once").isEqualTo(1);
     }
 
     @Test

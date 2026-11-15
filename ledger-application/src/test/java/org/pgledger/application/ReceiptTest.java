@@ -69,6 +69,39 @@ class ReceiptTest {
                 .extracting(Class::getSimpleName).containsExactlyInAnyOrder("Reserved", "Replayed");
     }
 
+    /** A response that a test stores in a receipt and reads back. */
+    record Answer(String text) {
+    }
+
+    @Test
+    @DisplayName("SVC-RCP-17 (TXF-001): a reserve that loses to an earlier receipt (the duplicate key of the request id) takes back its insert only, with the savepoint that Spring makes for the nested write of ReceiptWriter: it answers Replayed with the stored response, and the transaction it runs in stays usable, so a receipt reserved and finished after it commits")
+    void rcp17_theLoserLeavesTheTransactionUsable(Scenario s) {
+        org.pgledger.application.receipt.ReceiptService service = s.bean(
+                org.pgledger.application.receipt.ReceiptService.class);
+        RequestId first = RequestId.parse(Scenario.uuid());
+        RequestId next = RequestId.parse(Scenario.uuid());
+        AuthorId author = AuthorId.of(Scenario.AUTHOR);
+        Sha256 digest = Sha256.ofText("payload " + first);
+
+        org.pgledger.application.receipt.ReceiptService.Reservation<Answer> again = s.ctx().tx(() -> {
+            service.reserve(first, ReceiptOperation.SAVE, digest, author, Channel.AUTHOR, Answer.class);
+            service.finish(first, new Answer("first"));
+            org.pgledger.application.receipt.ReceiptService.Reservation<Answer> loser = service.reserve(first,
+                    ReceiptOperation.SAVE, digest, author, Channel.AUTHOR, Answer.class);
+            service.reserve(next, ReceiptOperation.SAVE, Sha256.ofText("payload " + next), author, Channel.AUTHOR,
+                    Answer.class);
+            service.finish(next, new Answer("next"));
+            return loser;
+        });
+
+        assertThat(again).isEqualTo(new org.pgledger.application.receipt.ReceiptService.Reservation.Replayed<>(
+                new Answer("first")));
+        assertThat(receipts(s, first.toString())).isEqualTo(1);
+        assertThat(receipts(s, next.toString())).as("the transaction was usable after the loser").isEqualTo(1);
+        assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE request_id = ? AND response IS NOT NULL",
+                next.toString())).isEqualTo(1);
+    }
+
     private static SaveCommand create(Scenario s, String requestId, String title) {
         return new SaveCommand(requestId, "defect", null, 0L, Fields.of(s.defectFields(title)), Scenario.REASON);
     }

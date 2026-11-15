@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -52,6 +53,13 @@ class ArchitectureTest {
     void arc006_007_noStreamsNoEnvironmentNoValue() {
         ArchitectureRules.noStandardStreamsAndOtherLoggers().check(MAIN);
         ArchitectureRules.noEnvironmentAccessAndValueAnnotation().check(MAIN);
+    }
+
+    @Test
+    @DisplayName("TXF-001 (principle 4.4) no TransactionTemplate, no TransactionAspectSupport and no hand-made savepoint in any module")
+    void txf001_noHandMadeTransactions() {
+        ArchitectureRules.noTransactionTemplate().check(MAIN);
+        ArchitectureRules.noHandMadeTransactionControl().check(MAIN);
     }
 
     @Test

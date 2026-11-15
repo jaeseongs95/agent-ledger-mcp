@@ -7,13 +7,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
+import org.pgledger.application.admin.SessionKeyWriter.NewKey;
 import org.pgledger.attestation.AttestationException;
 import org.pgledger.attestation.KeyBlock;
 import org.pgledger.attestation.PublicKeys;
-import org.pgledger.database.repository.Counter;
-import org.pgledger.database.repository.IdAllocator;
-import org.pgledger.database.repository.SessionKeyRepository;
 import org.pgledger.database.repository.SessionKeyStateRepository;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ConflictException;
@@ -29,9 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.interceptor.TransactionAspectSupport;
 
 /**
  * The public keys that authors sign their writes with. Used by the admin web and the CLI, never by the MCP tools: only
@@ -57,16 +53,14 @@ public class SessionKeyService {
     }
 
     private final SessionKeyStateRepository state;
-    private final SessionKeyRepository keys;
-    private final IdAllocator ids;
+    private final SessionKeyWriter writer;
     private final OwnerAuditWriter audit;
     private final Clock clock;
 
-    public SessionKeyService(SessionKeyStateRepository state, SessionKeyRepository keys, IdAllocator ids,
-            OwnerAuditWriter audit, Clock clock) {
+    public SessionKeyService(SessionKeyStateRepository state, SessionKeyWriter writer, OwnerAuditWriter audit,
+            Clock clock) {
         this.state = state;
-        this.keys = keys;
-        this.ids = ids;
+        this.writer = writer;
         this.audit = audit;
         this.clock = clock;
     }
@@ -127,6 +121,7 @@ public class SessionKeyService {
     private Registered bindNew(RegisterCommand command, OwnerIdentity actor, AuthorId author, String text,
             String fingerprint, String replacedFingerprint) {
         Instant now = clock.instant();
+        NewKey key = new NewKey(author, text, fingerprint, command.note());
         Optional<SessionPublicKey> current = state.findLive(author);
         // another registration of this very key for this author became live after the lookup by fingerprint found
         // nothing: the same answer as for any repeated registration (no row, no audit, nothing closed)
@@ -135,43 +130,35 @@ public class SessionKeyService {
                 .orElseGet(() -> current
                         .map(open -> {
                             requireConfirmed(open, author, replacedFingerprint);
-                            return write(command, actor, author, text, fingerprint, now, OwnerAction.KEY_REPLACED,
-                                    " replaced=" + open.fingerprint(), () -> state.close(open.id(), now));
+                            return write(() -> writer.replace(open.id(), key, now), actor, author, fingerprint,
+                                    OwnerAction.KEY_REPLACED, " replaced=" + open.fingerprint());
                         })
-                        .orElseGet(() -> write(command, actor, author, text, fingerprint, now,
-                                OwnerAction.KEY_REGISTERED, "", () -> true)));
+                        .orElseGet(() -> write(() -> Optional.of(writer.bind(key, now)), actor, author, fingerprint,
+                                OwnerAction.KEY_REGISTERED, "")));
     }
 
     /**
-     * Closes the old key ({@code closeOld}, true when it was closed; always true when there is none) and inserts the
-     * new one, then records the audit entry.
+     * Runs the racing write ({@code racingWrite}: the close of the old key and the insert of the new one, or the insert alone)
+     * and records the audit entry of what it wrote.
      */
-    private Registered write(RegisterCommand command, OwnerIdentity actor, AuthorId author, String text,
-            String fingerprint, Instant now, OwnerAction action, String replacedDetail, BooleanSupplier closeOld) {
+    private Registered write(Supplier<Optional<SessionPublicKey>> racingWrite, OwnerIdentity actor, AuthorId author,
+            String fingerprint, OwnerAction action, String replacedDetail) {
         // The close and the insert are the writes that other registrations race for. Whoever loses is decided by the
-        // database, not by running this method again: the conditional close affects no row, or the insert breaks a
-        // unique key. The savepoint takes back what the loser wrote (the closed key, the number of the counter) and
-        // keeps the transaction usable on every DBMS, as in ReceiptService.
-        TransactionStatus transaction = TransactionAspectSupport.currentTransactionStatus();
-        Object savepoint = transaction.createSavepoint();
-        SessionPublicKey row;
+        // database, not by running this method again: the conditional close affects no row (the answer is empty), or the
+        // insert breaks a unique key. SessionKeyWriter runs them in a nested transaction, so what the loser wrote (the
+        // closed key, the number of the counter) is taken back by Spring's savepoint and the transaction stays usable on
+        // every DBMS.
+        Optional<SessionPublicKey> written;
         try {
-            if (!closeOld.getAsBoolean()) {
-                transaction.rollbackToSavepoint(savepoint);
-                transaction.releaseSavepoint(savepoint);
-                return lostRace(author, fingerprint);
-            }
-            row = keys.insert(SessionPublicKey.register(ids.next(Counter.SESSION_KEY), author, text, fingerprint,
-                    AuthorId.OWNER, now, command.note()));
-            transaction.releaseSavepoint(savepoint);
+            written = racingWrite.get();
         } catch (DuplicateKeyException duplicate) {
             LOG.debug("the key of {} was registered by another call first; its row decides", author.value(), duplicate);
-            transaction.rollbackToSavepoint(savepoint);
-            transaction.releaseSavepoint(savepoint);
             return lostRace(author, fingerprint);
         }
-        audit.record(actor, action, author.value(), "key=" + fingerprint + replacedDetail);
-        return registered(row);
+        return written.map(row -> {
+            audit.record(actor, action, author.value(), "key=" + fingerprint + replacedDetail);
+            return registered(row);
+        }).orElseGet(() -> lostRace(author, fingerprint));
     }
 
     /** The owner confirmed the very key the author has now; otherwise the replacement is refused. */

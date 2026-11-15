@@ -9,7 +9,6 @@ import org.pgledger.domain.value.ProjectCode;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.IllegalTransactionStateException;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Counter based id allocation. The UPDATE takes the row lock and keeps it until the caller's transaction ends, so
@@ -86,10 +85,7 @@ public class IdAllocator {
     }
 
     private static void requireTransaction() {
-        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
-            throw new IllegalTransactionStateException("ids are issued inside the transaction of the calling service "
-                    + "method; there is none");
-        }
+        RequiredTransaction.check("ids are issued");
     }
 
     private void advance(String sql, ProjectCode code) {
