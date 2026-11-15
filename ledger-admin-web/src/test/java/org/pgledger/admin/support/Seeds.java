@@ -184,10 +184,14 @@ public class Seeds {
         return signed("artifact-finish", token -> flow.finish(token, id)).attachmentId();
     }
 
-    /** Moves an OPEN defect (version 1) to DISPUTED, the history row pointing to the attachment. */
+    /**
+     * Moves an OPEN defect (version 1) to DISPUTED, the history row pointing to the attachment. DISPUTED needs evidence
+     * (DefectStatus): the move carries an evidence URI and digest besides the attachment.
+     */
     public void disputeWithAttachment(String defect, String attachmentId) {
         signed("ledger_transition", attestation -> transitions.transition(attestation, new TransitionCommand(null,
-                "defect", defect, 1L, "DISPUTED", REASON, null, null, null, attachmentId)));
+                "defect", defect, 1L, "DISPUTED", REASON, "https://ci.example.org/runs/1", "a".repeat(64), null,
+                attachmentId)));
     }
 
     /** Records an observation of a defect with the given evidence text. */
