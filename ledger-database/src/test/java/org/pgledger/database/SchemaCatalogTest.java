@@ -243,6 +243,19 @@ class SchemaCatalogTest {
                 + "'CANONICAL'").query(Integer.class).single()).isZero();
     }
 
+    /** SCH-036 (TX-04): V5 adds the version of a common code; every code that exists starts at 0. */
+    @Test
+    void sch036_theVersionOfTheCommonCodes() {
+        assertThat(columns()).filteredOn(c -> Objects.equals(c.table(), "common_code") && "version".equals(c.name()))
+                .singleElement().satisfies(c -> {
+                    assertThat(c.type()).isEqualTo(Types.BIGINT);
+                    assertThat(c.nullable()).isFalse();
+                });
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM common_code WHERE code_group = 'DEFECT_SEVERITY' AND code = 'P1' "
+                + "AND version = 0").query(Integer.class).single())
+                .as("the seed codes start at version 0").isEqualTo(1);
+    }
+
     @Test
     void sch017_countersAndRevisionRow() {
         assertThat(jdbc.sql("SELECT name FROM id_counter ORDER BY name").query(String.class).list())

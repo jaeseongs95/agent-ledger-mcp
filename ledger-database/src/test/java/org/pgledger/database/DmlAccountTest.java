@@ -231,7 +231,7 @@ class DmlAccountTest {
             ctx.tx(() -> {
                 ctx.bean(CommonCodeRepository.class).insert(code);
                 ctx.bean(CommonCodeRepository.class).update(new CommonCode(code.group(), code.code(), "화면2", null,
-                        null, null, 26, CodeState.INACTIVE, null, AuthorId.OWNER));
+                        null, null, 26, CodeState.INACTIVE, null, AuthorId.OWNER), 0L);
                 ctx.bean(CodeRevisionRepository.class).bump();
                 return null;
             });
