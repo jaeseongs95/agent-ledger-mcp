@@ -54,7 +54,17 @@ public enum InfrastructureCode implements ErrorCode {
     /** The database product is none that the ledger has SQL for; {0} = the product as the connection or the URL names it. */
     DATABASE_PRODUCT_UNSUPPORTED,
     /** The configured JDBC URL names another product than the one the connection reports; {0} = configured, {1} = connected. */
-    DATABASE_PRODUCT_MISMATCH;
+    DATABASE_PRODUCT_MISMATCH,
+    /** A stored attachment fails the check of its tags, end mark, size or hash. */
+    ATTACHMENT_CORRUPTED,
+    /** The attachment folder, a file of it or a key file is not safe to use (a link, a wrong owner, open to others); {0} = what. */
+    ATTACHMENT_STORAGE_UNSAFE,
+    /** A key file that stored files need is missing; {0} = the key id (never the key). */
+    ATTACHMENT_KEY_MISSING,
+    /** The storage failed for a reason of the file system; {0} = the class of the failure. */
+    ATTACHMENT_STORAGE_FAILED,
+    /** The key directory is inside the attachment directory (the start fails). */
+    ATTACHMENT_KEY_DIRECTORY_INSIDE_STORAGE;
 
     @Override
     public ErrorCategory category() {

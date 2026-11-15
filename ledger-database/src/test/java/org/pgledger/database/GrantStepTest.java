@@ -86,7 +86,10 @@ class GrantStepTest {
 
                     assertThat(once).contains("defect:SELECT", "defect:INSERT", "defect:UPDATE",
                             "driver_audit_key:INSERT", "history:SELECT", "history:INSERT");
-                    assertThat(once).doesNotContain("history:UPDATE", "history:DELETE");
+                    assertThat(once).contains("attachment:SELECT", "attachment:INSERT", "upload_staging:UPDATE",
+                            "upload_staging:DELETE");
+                    assertThat(once).doesNotContain("history:UPDATE", "history:DELETE", "attachment:UPDATE",
+                            "attachment:DELETE");
                     assertThat(privileges(pool, account, schema.name())).as("the second run changes nothing")
                             .isEqualTo(once);
                 });
