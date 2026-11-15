@@ -129,7 +129,7 @@ class SetupSystemTest {
 
         assertThat(result.exit()).as(result.streams()).isEqualTo(3);
         assertThat(owner.schemaExists(schema)).isTrue();
-        assertThat(owner.value("SELECT COUNT(*) FROM " + schema + ".schema_history")).isEqualTo("3");
+        assertThat(owner.value("SELECT COUNT(*) FROM " + schema + ".schema_history")).isEqualTo(String.valueOf(ShippedMigrations.count()));
         assertThat(owner.value("SELECT COUNT(*) FROM " + schema + ".common_code WHERE code_group = 'DEFECT_CATEGORY'"))
                 .as("no seed code before the operator step").isEqualTo("0");
     }

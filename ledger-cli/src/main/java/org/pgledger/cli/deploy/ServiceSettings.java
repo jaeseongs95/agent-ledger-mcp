@@ -46,11 +46,35 @@ final class ServiceSettings {
         StringBuilder yaml = head(p.adminPort());
         Text.line(yaml, "  admin:");
         hosts(yaml, p.adminHosts());
+        passkey(yaml, p.adminHosts());
         Text.line(yaml, "    driver-file: " + Text.quoted(p.layout().etc() + "/jdbc-driver.yaml"));
         Text.line(yaml, "    driver-directory: " + Text.quoted(p.layout().etc() + "/drivers"));
         Text.line(yaml, "    mcp:");
         Text.line(yaml, "      health-url: " + Text.quoted("http://127.0.0.1:" + p.mcpPort() + "/healthz"));
         return yaml.toString();
+    }
+
+    /**
+     * The relying party of the owner's passkeys for the public host names of the admin web, so that a remote installation
+     * needs no hand edit: the {@code rp-id} is the first name (a passkey belongs to one host name) and the origins are
+     * {@code https://} and each name that is the {@code rp-id} or below it (the admin web refuses an origin that is not). A
+     * name that is not below the first one can still be reached (the {@code Host} check allows it) but a passkey made on
+     * the first name does not work there. Nothing is written without a public name: the admin web then derives
+     * {@code localhost} and {@code http://localhost:<port>}.
+     */
+    private static void passkey(StringBuilder yaml, List<String> adminHosts) {
+        if (adminHosts.isEmpty()) {
+            return;
+        }
+        String rpId = adminHosts.getFirst();
+        Text.line(yaml, "    passkey:");
+        Text.line(yaml, "      rp-id: " + Text.quoted(rpId));
+        Text.line(yaml, "      origins:");
+        for (String host : adminHosts) {
+            if (host.equals(rpId) || host.endsWith("." + rpId)) {
+                Text.line(yaml, "        - " + Text.quoted("https://" + host));
+            }
+        }
     }
 
     /** The port, up to the key {@code ledger:} (left open for the service). Both servers listen on loopback (their own default). */

@@ -17,7 +17,7 @@ import org.pgledger.domain.error.AdminException;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * PSK-INT-01 .. PSK-INT-05 (TEST_CASES section 37): the approvals this process asked for. The binding of a write is the digest of
+ * PSK-INT-01 .. PSK-INT-05 (TEST_CASES section 39): the approvals this process asked for. The binding of a write is the digest of
  * its fields (the CSRF token and the approval itself left out, the order of the fields and of the values of a name not mattering)
  * and of its session; an approval is spent once, expires, and is bound to the write and the session it was asked for.
  */

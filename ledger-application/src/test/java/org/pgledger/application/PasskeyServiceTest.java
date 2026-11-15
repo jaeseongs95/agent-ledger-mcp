@@ -23,7 +23,7 @@ import org.pgledger.domain.value.OwnerIdentity;
 import org.pgledger.domain.value.Sha256;
 
 /**
- * PSK-SVC-01 .. PSK-SVC-09 (TEST_CASES section 37): the one-time code, its spending, the reset from the owner's shell, the
+ * PSK-SVC-01 .. PSK-SVC-09 (TEST_CASES section 39): the one-time code, its spending, the reset from the owner's shell, the
  * storage of a passkey (append-only history), the closing of a passkey by a revocation row, the one owner entity and the audit
  * rows, on the PostgreSQL of the test PC. The passkeys are one set per database: every test starts from the reset of that set (a
  * code issued with the removal of the existing passkeys), which is itself the operation under test in PSK-SVC-04.
