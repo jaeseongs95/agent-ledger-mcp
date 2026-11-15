@@ -35,7 +35,7 @@ class ReceiptConcurrencyTest {
     }
 
     @Test
-    @DisplayName("SVC-RCP-09: 16 threads with the same request id commit exactly once and all see one response")
+    @DisplayName("SVC-RCP-09 (principle 4.4): 16 threads with the same request id commit exactly once: every call that succeeds sees the one response (a replay), every other call ends with the translated DUPLICATE_KEY (it met the unique key of the request id at the same moment), never a raw exception")
     void rcp09_sameRequestSamePayload(Scenario s) {
         String id = Scenario.uuid();
         List<Callable<SaveResult>> calls = IntStream.range(0, 16)
@@ -43,15 +43,17 @@ class ReceiptConcurrencyTest {
                         create(s, id, "same")))
                 .toList();
         List<Outcome<SaveResult>> outcomes = Parallel.all(calls);
-        assertThat(outcomes).allSatisfy(o -> assertThat(o.failure()).isNull());
-        assertThat(outcomes.stream().map(Outcome::value).distinct()).hasSize(1);
+        assertThat(outcomes).allSatisfy(o -> assertThat(code(o)).isIn(Optional.empty(),
+                Optional.of(ConflictCode.DUPLICATE_KEY)));
+        assertThat(outcomes.stream().filter(Outcome::succeeded)).as("at least the call that committed").isNotEmpty();
+        assertThat(outcomes.stream().filter(Outcome::succeeded).map(Outcome::value).distinct()).hasSize(1);
         assertThat(s.count("SELECT COUNT(*) FROM defect WHERE project_id = ?", s.projectId())).isEqualTo(1);
         assertThat(s.count("SELECT COUNT(*) FROM history WHERE request_id = ?", id)).isEqualTo(1);
         assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE request_id = ?", id)).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("SVC-RCP-10: 16 threads, 4 payloads: one payload wins, the others conflict")
+    @DisplayName("SVC-RCP-10 (principle 4.4): 16 threads, 4 payloads: one payload wins; a call with another payload ends with REQUEST_CONFLICT (it read the receipt) or DUPLICATE_KEY (it met the unique key at the same moment); a call with the winning payload answers the stored response or ends with DUPLICATE_KEY")
     void rcp10_sameRequestFourPayloads(Scenario s) {
         String id = Scenario.uuid();
         List<String> titles = IntStream.range(0, 16).mapToObj(i -> "payload " + (i % 4)).toList();
@@ -63,9 +65,15 @@ class ReceiptConcurrencyTest {
         SaveResult winner = outcomes.stream().filter(Outcome::succeeded).findFirst().orElseThrow().value();
         String winningTitle = s.defect(winner.id()).title();
         assertThat(s.count("SELECT COUNT(*) FROM defect WHERE project_id = ?", s.projectId())).isEqualTo(1);
-        assertThat(outcomes.stream().map(ReceiptConcurrencyTest::code).toList()).isEqualTo(titles.stream()
-                .map(t -> Objects.equals(t, winningTitle) ?Optional.<ErrorCode>empty()
-                        : Optional.<ErrorCode>of(ConflictCode.REQUEST_CONFLICT)).toList());
+        for (int i = 0; i < titles.size(); i++) {
+            Optional<ErrorCode> code = code(outcomes.get(i));
+            if (Objects.equals(titles.get(i), winningTitle)) {
+                assertThat(code).as("payload of the winner").isIn(Optional.empty(), Optional.of(ConflictCode.DUPLICATE_KEY));
+            } else {
+                assertThat(code).as("another payload").isIn(Optional.of(ConflictCode.REQUEST_CONFLICT),
+                        Optional.of(ConflictCode.DUPLICATE_KEY));
+            }
+        }
         assertThat(outcomes.stream().filter(Outcome::succeeded).map(Outcome::value).distinct()).hasSize(1);
     }
 
