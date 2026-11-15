@@ -12,8 +12,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.ExitStatus;
+import org.pgledger.cli.deploy.DeployForms;
 import org.pgledger.migrate1x.support.EnglishMessages;
 import org.pgledger.migrate1x.support.RecordingOutput;
 import org.pgledger.migrate1x.support.ScriptedServiceControl;
@@ -24,9 +27,10 @@ import org.pgledger.migrate1x.tool.MigrationError;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 
 /**
- * REH4-HOST-01, 02, 04 to 07: the public host names of a 1.x environment file are carried by the options or {@code stop-1x} is
- * refused before anything is stopped or moved ({@code --env}, {@code --mcp-host}, {@code --admin-host}). The service manager is
- * a recording double: a refusal is a run without a single call, and a run that goes on has its calls recorded.
+ * PCS-024 (changed from REH4-HOST-01, 02, 04 to 07): the public host names of a 1.x environment file against the one
+ * {@code --mcp-host} and the one {@code --admin-host} (the form of the installer of 2.0). The names that the option does not carry are
+ * told in the output as names that 2.0 no longer accepts, and no such name refuses the run; an option that is not one host name of
+ * the installer's form is refused before anything is stopped. The service manager is a recording double.
  */
 @ExtendWith({ OutputCaptureExtension.class, ToolExtension.class, EnglishMessages.class })
 class Hosts1xCommandTest {
@@ -80,8 +84,8 @@ class Hosts1xCommandTest {
     }
 
     @Test
-    @DisplayName("REH4-HOST-01 a public name of DBHUB_ALLOWED_HOSTS that no --mcp-host carries refuses stop-1x, naming the host and the option, before any call and with nothing moved and no other value of the file in a message")
-    void host01_aDroppedNameRefusesBeforeAnyChange(Tool tool) throws IOException {
+    @DisplayName("PCS-024 (REH4-HOST-01) a public name of DBHUB_ALLOWED_HOSTS that no --mcp-host carries is told as a name that 2.0 no longer accepts, naming the host and the option, and the run goes on: the calls of the service manager are made, no other value of the file is in the output")
+    void host01_aNameThatIsNotCarriedIsToldAndTheRunGoesOn(Tool tool) throws IOException {
         Path file = environment("DBHUB_ALLOWED_HOSTS=" + PUBLIC_NAME + ",localhost,127.0.0.1");
         Path units = units(false);
         ScriptedServiceControl control = new ScriptedServiceControl();
@@ -89,76 +93,61 @@ class Hosts1xCommandTest {
 
         Outcome result = run(tool, control, output, units, file);
 
-        assertThat(result.exitCode()).isEqualTo(ExitStatus.USAGE.code());
-        assertThat(result.code()).contains(MigrationError.HOSTS_DROPPED);
-        assertThat(result.refusal().orElseThrow().arguments()).containsExactly(PUBLIC_NAME, "mcp-host");
-        assertNoSecret(result, output);
-        assertThat(control.calls()).as("no call of the service manager").isEmpty();
-        assertThat(units.resolve("pg-ledger-mcp.service")).as("the unit stays").exists();
-        assertThat(units.resolve("pg-ledger-mcp.service.1x-backup")).as("nothing is kept").doesNotExist();
-    }
-
-    @Test
-    @DisplayName("REH4-HOST-02 the name given with --mcp-host is accepted and the run goes on: the calls of the service manager are recorded and the unit is kept as its backup")
-    void host02_theOptionCarriesTheName(Tool tool) throws IOException {
-        Path file = environment("DBHUB_ALLOWED_HOSTS=" + PUBLIC_NAME + ",localhost,127.0.0.1");
-        Path units = units(false);
-        ScriptedServiceControl control = new ScriptedServiceControl();
-
-        Outcome result = run(tool, control, new RecordingOutput(), units, file, "--mcp-host=" + PUBLIC_NAME);
-
         assertThat(result.failure()).isNull();
         assertThat(result.exitCode()).isZero();
+        assertThat(output.info()).contains(PUBLIC_NAME).contains("--mcp-host").contains("2.0 does not accept");
+        assertNoSecret(result, output);
         assertThat(control.calls()).containsExactly("systemctl stop pg-ledger-mcp", "systemctl disable pg-ledger-mcp",
                 "systemctl daemon-reload");
-        assertThat(units.resolve("pg-ledger-mcp.service")).doesNotExist();
         assertThat(units.resolve("pg-ledger-mcp.service.1x-backup")).exists();
     }
 
     @Test
-    @DisplayName("REH4-HOST-02 with both services installed the refusal comes before the first of them is stopped: both units stay and no call is made")
-    void host02_theCheckComesBeforeBothServices(Tool tool) throws IOException {
-        Path file = environment("DBHUB_ALLOWED_HOSTS=" + PUBLIC_NAME);
-        Path units = units(true);
+    @DisplayName("PCS-024 (REH4-HOST-02) the name given with --mcp-host is carried and nothing is told for it; with the other names of the file only those are told")
+    void host02_theOptionCarriesTheName(Tool tool) throws IOException {
+        Path file = environment("DBHUB_ALLOWED_HOSTS=" + PUBLIC_NAME + ",localhost,127.0.0.1");
+        RecordingOutput carried = new RecordingOutput();
         ScriptedServiceControl control = new ScriptedServiceControl();
 
-        Outcome result = run(tool, control, new RecordingOutput(), units, file);
+        Outcome result = run(tool, control, carried, units(false), file, "--mcp-host=" + PUBLIC_NAME);
 
-        assertThat(result.code()).contains(MigrationError.HOSTS_DROPPED);
-        assertThat(result.refusal().orElseThrow().arguments()).containsExactly(PUBLIC_NAME, "mcp-host");
-        assertThat(control.calls()).isEmpty();
-        assertThat(units.resolve("pg-ledger-mcp.service")).exists();
-        assertThat(units.resolve("pg-ledger-mcp-admin.service")).exists();
+        assertThat(result.failure()).isNull();
+        assertThat(carried.info()).doesNotContain("2.0 does not accept");
+        assertThat(control.calls()).isNotEmpty();
+
+        Path several = environment("DBHUB_ALLOWED_HOSTS=a.example.org,b.example.org,localhost");
+        RecordingOutput told = new RecordingOutput();
+        Outcome second = run(tool, new ScriptedServiceControl(), told, units(false), several, "--mcp-host=b.example.org");
+
+        assertThat(second.failure()).isNull();
+        assertThat(told.info()).contains("a.example.org").doesNotContain("b.example.org");
     }
 
     @Test
-    @DisplayName("REH4-HOST-04 the admin web: PGLEDGER_ADMIN_ALLOWED_HOSTS of a 1.1.0 file is compared with --admin-host (one name or a list); the MCP names are named first")
+    @DisplayName("PCS-024 (REH4-HOST-04) the admin web: PGLEDGER_ADMIN_ALLOWED_HOSTS of a 1.1.0 file is told with --admin-host as its option; the MCP names come first; a name that is not in the file is accepted")
     void host04_theAdminNames(Tool tool) throws IOException {
-        Path file = environment("DBHUB_ALLOWED_HOSTS=127.0.0.1", "PGLEDGER_ADMIN_ALLOWED_HOSTS=admin.example.org,127.0.0.1");
+        Path file = environment("DBHUB_ALLOWED_HOSTS=mcp.example.org", "PGLEDGER_ADMIN_ALLOWED_HOSTS=admin.example.org,127.0.0.1");
 
-        for (String option : List.of("--admin-host=other.example.org", "--mcp-host=mcp.example.org")) {
-            ScriptedServiceControl control = new ScriptedServiceControl();
-            Outcome refused = run(tool, control, new RecordingOutput(), units(false), file, option);
-            assertThat(refused.exitCode()).as(option).isEqualTo(ExitStatus.USAGE.code());
-            assertThat(refused.refusal().orElseThrow().code()).isEqualTo(MigrationError.HOSTS_DROPPED);
-            assertThat(refused.refusal().orElseThrow().arguments()).as(option).containsExactly("admin.example.org",
-                    "admin-host");
-            assertThat(control.calls()).as(option).isEmpty();
-        }
-        for (String option : List.of("--admin-host=admin.example.org", "--admin-host=other.example.org,admin.example.org")) {
-            ScriptedServiceControl control = new ScriptedServiceControl();
-            Outcome accepted = run(tool, control, new RecordingOutput(), units(false), file, option);
-            assertThat(accepted.failure()).as(option).isNull();
-            assertThat(control.calls()).as(option).isNotEmpty();
-        }
+        RecordingOutput none = new RecordingOutput();
+        Outcome noOption = run(tool, new ScriptedServiceControl(), none, units(false), file);
+        assertThat(noOption.failure()).isNull();
+        assertThat(none.info().indexOf("mcp.example.org")).isNotNegative().isLessThan(none.info().indexOf("admin.example.org"));
+        assertThat(none.info()).contains("--mcp-host").contains("--admin-host");
 
-        Path both = environment("DBHUB_ALLOWED_HOSTS=mcp.example.org", "PGLEDGER_ADMIN_ALLOWED_HOSTS=admin.example.org");
-        Outcome first = run(tool, new ScriptedServiceControl(), new RecordingOutput(), units(false), both);
-        assertThat(first.refusal().orElseThrow().arguments()).containsExactly("mcp.example.org", "mcp-host");
+        RecordingOutput carried = new RecordingOutput();
+        Outcome both = run(tool, new ScriptedServiceControl(), carried, units(false), file, "--mcp-host=mcp.example.org",
+                "--admin-host=admin.example.org");
+        assertThat(both.failure()).isNull();
+        assertThat(carried.info()).doesNotContain("2.0 does not accept");
+
+        // a name that the file does not allow is no reason of a refusal (the rule of before)
+        Outcome other = run(tool, new ScriptedServiceControl(), new RecordingOutput(), units(false), file,
+                "--admin-host=other.example.org");
+        assertThat(other.failure()).isNull();
     }
 
     @Test
-    @DisplayName("REH4-HOST-05 a file that is missing, a directory, not UTF-8 or larger than 64 KiB is ENV_FILE_FAILED (exit 1) with the kind of the failure only, before any call and with nothing moved")
+    @DisplayName("PCS-024 (REH4-HOST-05) a file that is missing, a directory, not UTF-8 or larger than 64 KiB is ENV_FILE_FAILED (exit 1) with the kind of the failure only, before any call and with nothing moved")
     void host05_anUnusableFile(Tool tool) throws IOException {
         Path notUtf8 = tmp.resolve("not-utf8");
         Files.write(notUtf8, new byte[] { 'A', '=', (byte) 0xC3, (byte) 0x28, '\n' });
@@ -181,12 +170,14 @@ class Hosts1xCommandTest {
     }
 
     @Test
-    @DisplayName("REH4-HOST-06 loopback names only, a file without the key, and no file: no option is needed and the run goes on")
+    @DisplayName("PCS-024 (REH4-HOST-06) loopback names only, a file without the key, and no file: nothing is told and the run goes on")
     void host06_noPublicNameNeedsNoOption(Tool tool) throws IOException {
         Path loopback = environment("DBHUB_ALLOWED_HOSTS=localhost,127.0.0.1");
         ScriptedServiceControl first = new ScriptedServiceControl();
-        assertThat(run(tool, first, new RecordingOutput(), units(false), loopback).failure()).isNull();
+        RecordingOutput told = new RecordingOutput();
+        assertThat(run(tool, first, told, units(false), loopback).failure()).isNull();
         assertThat(first.calls()).isNotEmpty();
+        assertThat(told.info()).doesNotContain("2.0 does not accept");
 
         Path without = environment();
         ScriptedServiceControl second = new ScriptedServiceControl();
@@ -199,28 +190,55 @@ class Hosts1xCommandTest {
     }
 
     @Test
-    @DisplayName("REH4-HOST-07 two public names: both names in one option are accepted, in any case; one of them is named when the other is missing; an option without a value, or without --env, is refused as the form of the command line")
+    @DisplayName("PCS-024 (REH4-HOST-07) two public names in the file: one of them as the option carries it, the other is told, in any case; an option without a value, or without --env, is refused as the form of the command line")
     void host07_severalNames(Tool tool) throws IOException {
-        Path file = environment("DBHUB_ALLOWED_HOSTS=a.example.org,b.example.org,localhost");
+        Path file = environment("DBHUB_ALLOWED_HOSTS=A.example.org,b.example.org,localhost");
 
-        Outcome both = run(tool, new ScriptedServiceControl(), new RecordingOutput(), units(false), file,
-                "--mcp-host=a.example.org,b.example.org");
-        Outcome upper = run(tool, new ScriptedServiceControl(), new RecordingOutput(), units(false), file,
-                "--mcp-host=A.example.org,b.example.org");
-        ScriptedServiceControl refusedControl = new ScriptedServiceControl();
-        Outcome one = run(tool, refusedControl, new RecordingOutput(), units(false), file, "--mcp-host=b.example.org");
+        RecordingOutput output = new RecordingOutput();
+        ScriptedServiceControl control = new ScriptedServiceControl();
+        Outcome one = run(tool, control, output, units(false), file, "--mcp-host=b.example.org");
         Outcome blank = run(tool, new ScriptedServiceControl(), new RecordingOutput(), units(false), file, "--mcp-host=");
         Outcome noEnv = run(tool, new ScriptedServiceControl(), new RecordingOutput(), units(false), null,
                 "--mcp-host=a.example.org");
 
-        assertThat(both.failure()).isNull();
-        assertThat(upper.failure()).isNull();
-        assertThat(one.code()).contains(MigrationError.HOSTS_DROPPED);
-        assertThat(one.refusal().orElseThrow().arguments()).containsExactly("a.example.org", "mcp-host");
-        assertThat(refusedControl.calls()).isEmpty();
+        assertThat(one.failure()).isNull();
+        assertThat(output.info()).contains("a.example.org");
+        assertThat(control.calls()).isNotEmpty();
         assertThat(blank.exitCode()).isEqualTo(ExitStatus.USAGE.code());
         assertThat(blank.code()).contains(ErrorCode.MISSING_OPTION_VALUE);
         assertThat(noEnv.exitCode()).isEqualTo(ExitStatus.USAGE.code());
         assertThat(noEnv.code()).contains(ErrorCode.INVALID_OPTION_VALUE);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "a.example.org,b.example.org", "a.example.org,", ",a.example.org", "A.example.org", "a b", "a.example.org:443",
+        "a$b.example.org", "a%b.example.org", "-a.example.org", "a..example.org", "x" + "xxxxxxxxxx".repeat(26) })
+    @DisplayName("PCS-024 an option that is no one host name of the form of the installer (a list, a capital letter, a port, a space, a name longer than 253 characters) is INVALID_OPTION_VALUE (exit 2) before any call, for both options")
+    void pcs024_theFormIsTheRuleOfTheInstaller(String value, Tool tool) throws IOException {
+        Path file = environment("DBHUB_ALLOWED_HOSTS=a.example.org");
+
+        for (String option : List.of("--mcp-host=", "--admin-host=")) {
+            ScriptedServiceControl control = new ScriptedServiceControl();
+            Outcome refused = run(tool, control, new RecordingOutput(), units(false), file, option + value);
+
+            assertThat(DeployForms.isHostName(value)).as("the rule of the installer for %s", value).isFalse();
+            assertThat(refused.exitCode()).as(option + value).isEqualTo(ExitStatus.USAGE.code());
+            assertThat(refused.code()).as(option + value).contains(ErrorCode.INVALID_OPTION_VALUE);
+            assertThat(control.calls()).as(option + value).isEmpty();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "a.example.org", "ledger", "a-b.example.org", "a1.b2.example.org" })
+    @DisplayName("PCS-024 contract: what the installer's rule accepts as a host name is accepted by stop-1x (the one rule, DeployForms.isHostName)")
+    void pcs024_whatTheInstallerAcceptsIsAccepted(String value, Tool tool) throws IOException {
+        Path file = environment("DBHUB_ALLOWED_HOSTS=" + value);
+        ScriptedServiceControl control = new ScriptedServiceControl();
+
+        Outcome accepted = run(tool, control, new RecordingOutput(), units(false), file, "--mcp-host=" + value);
+
+        assertThat(DeployForms.isHostName(value)).isTrue();
+        assertThat(accepted.failure()).isNull();
+        assertThat(control.calls()).isNotEmpty();
     }
 }

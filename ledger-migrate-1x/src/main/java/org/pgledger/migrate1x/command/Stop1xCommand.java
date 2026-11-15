@@ -18,6 +18,7 @@ import org.pgledger.cli.Command;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.FailureException;
 import org.pgledger.cli.UsageException;
+import org.pgledger.cli.deploy.DeployForms;
 import org.pgledger.migrate1x.host.Hosts1x;
 import org.pgledger.migrate1x.host.ServiceControl;
 import org.pgledger.migrate1x.host.ServiceControl.Result;
@@ -28,7 +29,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * {@code stop-1x [--name=<instance>] [--platform=linux] [--unit-dir=<dir>] [--env=<file>
- * --mcp-host=<host>[,<host>...] --admin-host=<host>[,<host>...]]}: the first step of the move to 2.0. It stops and disables the
+ * [--mcp-host=<host>] [--admin-host=<host>]]}: the first step of the move to 2.0. It stops and disables the
  * two services of the 1.x installation, {@code <name>} (the MCP server) and {@code <name>-admin} (the admin web, absent in
  * 1.0.0), and keeps the definition of each as a backup file next to it, so the old installation can be put back (the rollback of
  * the migration): the unit file {@code <unit-dir>/<service>.service} is moved to {@code <service>.service.1x-backup} (the
@@ -47,9 +48,10 @@ import org.springframework.stereotype.Component;
  * definition is kept already is reported as stopped before. A backup file that holds other bytes than the definition is never
  * replaced (BACKUP_DIFFERS).
  *
- * <p>With {@code --env=<file>} (the 1.x environment file) it first compares the public host names the file allows with the
- * {@code --mcp-host} and {@code --admin-host} that the operator will give to the installer of 2.0, and refuses before anything is
- * stopped when a name would be lost ({@link Hosts1x}). The platform is an option and not a detection (rule ARC-033); the one that
+ * <p>With {@code --env=<file>} (the 1.x environment file) it first compares the public host names the file allows with the one
+ * {@code --mcp-host} and the one {@code --admin-host} that the operator will give to the installer of 2.0 (the form of the
+ * installer, {@link DeployForms#isHostName}) and tells the names that 2.0 will no longer accept; it refuses nothing for them
+ * ({@link Hosts1x}). The platform is an option and not a detection (rule ARC-033); the one that
  * is accepted is the default, {@code linux}.
  */
 @Component
@@ -125,34 +127,34 @@ public class Stop1xCommand implements Command {
             throw new UsageException(ErrorCode.INVALID_OPTION_VALUE);
         }
         Optional<String> unitDir = CliOptions.value(arguments, UNIT_DIR);
-        checkHostNames(arguments);
+        tellHostNames(arguments);
         stopLinux(List.of(name, name + "-admin"), name, Path.of(unitDir.orElse(DEFAULT_UNIT_DIR)));
     }
 
-    /** The host names of the 1.x environment file against the options the installer of 2.0 will get; before anything is stopped. */
-    private void checkHostNames(ApplicationArguments arguments) {
+    /**
+     * The host names of the 1.x environment file that the one name of each option (the form of the installer of 2.0) does not carry
+     * are told, before anything is stopped; none of them refuses the run. An option that is no host name of the installer's form (a
+     * list, a capital letter, a port) is INVALID_OPTION_VALUE before anything is stopped.
+     */
+    private void tellHostNames(ApplicationArguments arguments) {
         Optional<String> env = CliOptions.value(arguments, ENV);
-        List<String> mcpHosts = names(CliOptions.value(arguments, MCP_HOST).orElse(""));
-        List<String> adminHosts = names(CliOptions.value(arguments, ADMIN_HOST).orElse(""));
+        Optional<String> mcpHost = CliOptions.value(arguments, MCP_HOST);
+        Optional<String> adminHost = CliOptions.value(arguments, ADMIN_HOST);
+        for (Optional<String> name : List.of(mcpHost, adminHost)) {
+            if (name.isPresent() && !DeployForms.isHostName(name.get())) {
+                throw new UsageException(ErrorCode.INVALID_OPTION_VALUE);
+            }
+        }
         if (env.isEmpty()) {
             // the names have nothing to be compared with: an option that would pass silently is refused
-            if (!mcpHosts.isEmpty() || !adminHosts.isEmpty()) {
+            if (mcpHost.isPresent() || adminHost.isPresent()) {
                 throw new UsageException(ErrorCode.INVALID_OPTION_VALUE);
             }
             return;
         }
-        Hosts1x.require(Path.of(env.orElseThrow()), mcpHosts, adminHosts);
-    }
-
-    /** The names of a comma list as given ({@code ""} when the option was not given). */
-    private static List<String> names(String option) {
-        List<String> names = new ArrayList<>();
-        for (String entry : option.split(",")) {
-            if (!entry.isBlank()) {
-                names.add(entry.strip());
-            }
+        for (Hosts1x.NotAccepted notAccepted : Hosts1x.notAccepted(Path.of(env.orElseThrow()), mcpHost, adminHost)) {
+            output.info(messages.get("stop-1x.hosts-not-accepted", String.join(", ", notAccepted.names()), notAccepted.option()));
         }
-        return names;
     }
 
     // ---------------------------------------------------------------------------------------------------- Linux

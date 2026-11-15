@@ -223,27 +223,31 @@ class Stop1xCommandTest {
     }
 
     @Test
-    @DisplayName("M1X-016 the host names of the 1.x environment file must be carried by --mcp-host and --admin-host: refused before any call; carried, the run goes on; an unreadable file is ENV_FILE_FAILED")
+    @DisplayName("M1X-016 (changed by PCS-024) a host name of the 1.x environment file that --mcp-host and --admin-host (one name each) do not carry is told and does not refuse: the run goes on; carried, nothing is told; an unreadable file is ENV_FILE_FAILED")
     void m1x016_hostNames(Tool tool) throws IOException {
         Path dir = unitDir();
         unit(dir, NAME, NAME);
         Path env = Files.writeString(tmp.resolve("env"),
                 "DBHUB_ALLOWED_HOSTS=ledger.example.org,localhost,127.0.0.1\nDBHUB_AUTH_TOKEN=x\n");
-        ScriptedServiceControl none = new ScriptedServiceControl();
+        ScriptedServiceControl told = new ScriptedServiceControl();
+        RecordingOutput toldOutput = new RecordingOutput();
 
-        Outcome dropped = run(tool.withServiceControl(none), new RecordingOutput(), "stop-1x", "--unit-dir=" + dir,
-                "--env=" + env);
-        assertThat(dropped.code()).contains(MigrationError.HOSTS_DROPPED);
-        assertThat(dropped.exitCode()).isEqualTo(ExitStatus.USAGE.code());
-        assertThat(dropped.refusal().orElseThrow().arguments()).containsExactly("ledger.example.org", "mcp-host");
-        assertThat(none.calls()).isEmpty();
-        assertThat(dir.resolve(NAME + ".service")).exists();
+        Outcome dropped = run(tool.withServiceControl(told), toldOutput, "stop-1x", "--unit-dir=" + dir, "--env=" + env);
+        assertThat(dropped.exitCode()).isEqualTo(ExitStatus.SUCCESS.code());
+        assertThat(toldOutput.info()).contains("ledger.example.org").contains("--mcp-host");
+        assertThat(told.calls()).startsWith("systemctl stop " + NAME);
+        assertThat(dir.resolve(NAME + ".service")).doesNotExist();
 
+        Path again = unitDir();
+        unit(again, NAME, NAME);
         ScriptedServiceControl carried = new ScriptedServiceControl();
-        Outcome ok = run(tool.withServiceControl(carried), new RecordingOutput(), "stop-1x", "--unit-dir=" + dir,
-                "--env=" + env, "--mcp-host=Ledger.Example.org");
+        RecordingOutput carriedOutput = new RecordingOutput();
+        Outcome ok = run(tool.withServiceControl(carried), carriedOutput, "stop-1x", "--unit-dir=" + again,
+                "--env=" + env, "--mcp-host=ledger.example.org");
         assertThat(ok.exitCode()).isEqualTo(ExitStatus.SUCCESS.code());
+        assertThat(carriedOutput.info()).doesNotContain("2.0 does not accept");
         assertThat(carried.calls()).startsWith("systemctl stop " + NAME);
+        dir = again;
 
         ScriptedServiceControl missing = new ScriptedServiceControl();
         Outcome unreadable = run(tool.withServiceControl(missing), new RecordingOutput(), "stop-1x", "--unit-dir=" + dir,
@@ -254,7 +258,7 @@ class Stop1xCommandTest {
     }
 
     @Test
-    @DisplayName("M1X-017 an operand, an unknown option, host names without --env and the names of a file that allows another one are refused with exit 2 and no call")
+    @DisplayName("M1X-017 an operand, an unknown option, host names without --env and a list of host names (PCS-024: one name each) are refused with exit 2 and no call")
     void m1x017_usage(Tool tool) throws IOException {
         Path dir = unitDir();
         unit(dir, NAME, NAME);
@@ -264,7 +268,8 @@ class Stop1xCommandTest {
         for (Case refused : List.of(
                 new Case(ErrorCode.TOO_MANY_ARGUMENTS, "stop-1x", "extra", "--unit-dir=" + dir),
                 new Case(ErrorCode.UNKNOWN_OPTION, "stop-1x", "--force", "--unit-dir=" + dir),
-                new Case(MigrationError.HOSTS_DROPPED, "stop-1x", "--unit-dir=" + dir, "--env=" + env),
+                new Case(ErrorCode.INVALID_OPTION_VALUE, "stop-1x", "--unit-dir=" + dir, "--env=" + env,
+                        "--mcp-host=a.example.org,b.example.org"),
                 new Case(ErrorCode.INVALID_OPTION_VALUE, "stop-1x", "--unit-dir=" + dir, "--mcp-host=a.example.org"))) {
             ScriptedServiceControl none = new ScriptedServiceControl();
             Outcome outcome = run(tool.withServiceControl(none), new RecordingOutput(), refused.args());

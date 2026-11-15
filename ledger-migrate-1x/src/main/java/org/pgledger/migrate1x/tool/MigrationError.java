@@ -14,7 +14,6 @@ public enum MigrationError implements ErrorKey {
     ENV_KEYS_MISSING,
     INVALID_1X_VALUE,
     SECRETS_PARTIAL,
-    HOSTS_DROPPED,
 
     // stop-1x
     NOT_1X_SERVICE,

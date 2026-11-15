@@ -585,7 +585,7 @@ driver; `stop-1x` and `import-secrets-1x` need none.
 
 | Migration command | Syntax | What |
 |---|---|---|
-| `stop-1x` | `stop-1x [--name=<instance>] [--platform=<platform>] [--unit-dir=<dir>] [--home=<dir>] [--env=<file> [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]]]` | first step: stop and disable the two services of 1.x, `<name>` and `<name>-admin`, and keep each definition as a backup next to it (`<file>.1x-backup`); with `--env` it first checks the public host names of 1.x |
+| `stop-1x` | `stop-1x [--name=<instance>] [--platform=<platform>] [--unit-dir=<dir>] [--home=<dir>] [--env=<file> [--mcp-host=<host>] [--admin-host=<host>]]` | first step: stop and disable the two services of 1.x, `<name>` and `<name>-admin`, and keep each definition as a backup next to it (`<file>.1x-backup`); with `--env` it first checks the public host names of 1.x |
 | `import-secrets-1x` | `import-secrets-1x --env=<file> [--replace]` or `import-secrets-1x --stdin [--replace]` | after the installer: move the secrets of 1.x into the secret store of 2.0; with `--replace` they replace the tokens that the installer generated |
 | `import-1x` | `import-1x [--verify-only] [--owner-account=<account>] [--stdin]` | copy the 1.x ledger into the new schema in one transaction and compare every table by row count and SHA-256; `--verify-only` repeats only the comparison |
 | `retire-1x` | `retire-1x [--confirm=<sha256> --backup-tested]` | after you accept 2.0, remove what the 1.x installer made in the database; without options it lists it and changes nothing |
@@ -617,13 +617,13 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
      Every service is checked before the first change; otherwise the command stops with `NOT_1X_SERVICE` and has changed nothing.
    - **The public host names of 1.x.** The clients reach the 1.x server through the host names that the 1.x setting `DBHUB_ALLOWED_HOSTS`
      allows (the admin web of 1.1.0: `PGLEDGER_ADMIN_ALLOWED_HOSTS`), for example the name of your reverse proxy. The `Host` check of 2.0 allows
-     `127.0.0.1`, `localhost` and the names of `--mcp-host` and `--admin-host` only, so a name that is missing would make every client request
-     fail with HTTP 403 right after the migration. With `--env=<file>` the command therefore refuses, before it stops anything, when the file
-     allows a public host name that `--mcp-host` (or `--admin-host`) does not carry: it stops with `HOSTS_DROPPED` and exit code 2, names the host
-     names and the option, and has changed nothing. Give the name to the option (`--mcp-host=<name>`; `--mcp-host` can be given without
-     `--admin-host`), and give the same options to the installer, which takes one host name for each service. The loopback names need no option, and
-     nothing else of the file is printed. A name that the clients no longer use is removed from a copy of the file, and the copy is given to
-     `--env`. The two host options without `--env` are refused.
+     `127.0.0.1`, `localhost` and the one name of `--mcp-host` and the one name of `--admin-host` only (the installer takes one host name for each
+     service), so a name of the file that the clients still use and that is not carried would be refused with HTTP 403 right after the migration.
+     With `--env=<file>` the command therefore tells, before it stops anything, each public host name of the file that the option does not carry
+     as a name that 2.0 no longer accepts, naming the host names and the option; it refuses nothing for them and goes on. Give the one name that
+     your proxy passes to the option (`--mcp-host=<name>`, one host name of the installer's form: lower case, no port, no list; `--mcp-host` can be given
+     without `--admin-host`), and give the same options to the installer. The loopback names need no option, and nothing else of the file
+     is printed. The two host options without `--env` are refused.
    - **Run it again** when it stopped half way: a service that was stopped before is reported as such, a backup file that holds other bytes
      than the definition is never replaced (`BACKUP_DIFFERS`), and a failed call of the service manager (`SERVICE_COMMAND_FAILED`) leaves what
      was done and the next run continues. The clients of 1.x are refused from now on, until the server of 2.0 runs. To keep 1.x running
