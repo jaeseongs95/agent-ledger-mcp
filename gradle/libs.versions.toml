@@ -8,7 +8,14 @@ archunit = "1.5.1"
 # acme4j: the ACME (RFC 8555) client of the CLI commands tls-issue and tls-renew (Apache-2.0, compatible with AGPL-3.0-or-later)
 acme4j = "5.1.0"
 
+# Spring Security WebAuthn (passkeys): the module is separate from spring-security-web and its version is that of the Spring
+# Security which Spring Boot 4.1.2 manages (7.1.2); it brings WebAuthn4J (webauthn4j-core 0.31.10.RELEASE, Apache-2.0) and, through it,
+# Jackson 3 (databind and CBOR 3.2.1) and SLF4J. All Apache-2.0 or MIT: no GPL or AGPL.
+springSecurity = "7.1.2"
+
 [libraries]
+# Spring Security 7.1.2 WebAuthn support (sign-in, registration, the approval check): see the comment of springSecurity above.
+spring-security-webauthn = { module = "org.springframework.security:spring-security-webauthn", version.ref = "springSecurity" }
 spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "springBoot" }
 # Declared at the root for the later MCP modules; no module of this slice uses it yet.
 spring-ai-bom = { module = "org.springframework.ai:spring-ai-bom", version.ref = "springAi" }

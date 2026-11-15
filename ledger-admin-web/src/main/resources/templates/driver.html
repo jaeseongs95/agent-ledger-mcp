@@ -32,7 +32,7 @@
 
   <section>
     <h2 th:text="#{driver.register}">Register a driver</h2>
-    <form method="post" th:action="@{/driver}">
+    <form method="post" th:action="@{/driver}" data-approve>
       <label for="jar" th:text="#{driver.jar.label}">Absolute path of the driver jar</label>
       <input id="jar" name="jar" type="text" required autocomplete="off">
       <label for="className" th:text="#{driver.class.label}">Driver class (java.sql.Driver)</label>

@@ -26,7 +26,7 @@
 
   <section>
     <h2 th:text="#{codes.set}">Add or change a code</h2>
-    <form method="post" th:action="@{/codes}">
+    <form method="post" th:action="@{/codes}" data-approve>
       <label for="group" th:text="#{codes.group}">Group</label>
       <select id="group" name="group" required>
         <option th:each="g : ${groups}" th:value="${g.token()}" th:text="${g.token()}">DEFECT_CATEGORY</option>

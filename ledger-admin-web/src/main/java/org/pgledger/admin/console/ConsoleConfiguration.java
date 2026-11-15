@@ -1,5 +1,6 @@
 package org.pgledger.admin.console;
 
+import org.pgledger.admin.passkey.PasskeyConfiguration;
 import org.pgledger.application.LedgerApplicationConfiguration;
 import org.pgledger.database.driver.DriverRegisteredCondition;
 import org.springframework.boot.context.TypeExcludeFilter;
@@ -19,7 +20,7 @@ import org.springframework.context.annotation.Import;
  */
 @Configuration(proxyBeanMethods = false)
 @Conditional(DriverRegisteredCondition.class)
-@Import(LedgerApplicationConfiguration.class)
+@Import({LedgerApplicationConfiguration.class, PasskeyConfiguration.class})
 @ComponentScan(basePackageClasses = ConsoleConfiguration.class, excludeFilters = @ComponentScan.Filter(
         type = FilterType.CUSTOM, classes = TypeExcludeFilter.class))
 public class ConsoleConfiguration {

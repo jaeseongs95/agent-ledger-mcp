@@ -6,6 +6,9 @@ import java.util.List;
 import javax.sql.DataSource;
 import org.pgledger.application.admin.CommonCodeService;
 import org.pgledger.application.admin.CommonCodeService.CodeCommand;
+import org.pgledger.application.admin.PasskeyService;
+import org.pgledger.application.admin.PasskeyService.NewPasskey;
+import org.pgledger.domain.model.PasskeyUser;
 import org.pgledger.testing.database.TestSchemaServices;
 import org.pgledger.database.schema.SchemaProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -58,6 +61,25 @@ public class AdminTestInfrastructure {
                 new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, SchemaProperties.DEFAULT_LONG_TEXT_TYPE, true,
                         environment.getRequiredProperty(TestSchemaInitializer.SCHEMA_PROPERTY),
                         Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT)), clock).migrate());
+    }
+
+    /** Present once the passkey of the owner is registered. */
+    public record PasskeyRegistered() {
+    }
+
+    /**
+     * The passkey of the owner ({@link TestPasskeys#OWNER}) in the database of the context, as the registration made it: the
+     * owner entity and the credential with its attestation object. The sign-in itself is not played here (a test that is about
+     * the sign-in does it through the endpoints); a test that is about something else signs in with the session of a signed-in
+     * browser and approves its writes with this passkey ({@code Browser}).
+     */
+    @Bean
+    PasskeyRegistered passkeyRegistered(PasskeyService passkeys, SchemaMigrated schema) {
+        passkeys.saveOwner(new PasskeyUser(TestPasskeys.USER_ID, "owner", "Owner"));
+        passkeys.save(new NewPasskey(TestPasskeys.OWNER.credentialId(), TestPasskeys.USER_ID,
+                TestPasskeys.OWNER.publicKey(), 0, 1, 0, 0, "", TestPasskeys.OWNER.attestationObject(TestPasskeys.RP_ID),
+                "test passkey"), TestOwners.OWNER);
+        return new PasskeyRegistered();
     }
 
     @Bean

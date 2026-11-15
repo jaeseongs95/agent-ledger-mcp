@@ -106,11 +106,14 @@ public final class RealHttp {
         return SESSION_COOKIE + "=" + sessionId;
     }
 
-    /** Signs in with the token over the form, the way a browser does; returns the session id after the sign-in. */
-    public String signIn(String token) {
+    /**
+     * Signs in with the one-time code of the owner's shell over the form of the login page, the way a browser does; returns the
+     * session id after the sign-in (the session of the enrolment account).
+     */
+    public String signIn(String code) {
         Reply page = get("/login");
         String before = page.sessionId().orElseThrow();
-        Reply login = postForm("/login", "username=owner&token=" + token + "&_csrf=" + page.csrf(), "Cookie", cookie(before));
+        Reply login = postForm("/login/ott", "token=" + code + "&_csrf=" + page.csrf(), "Cookie", cookie(before));
         if (login.status() != 302) {
             throw new AssertionError("the sign-in answered " + login.status());
         }

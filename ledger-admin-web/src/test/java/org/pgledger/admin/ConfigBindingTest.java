@@ -105,4 +105,60 @@ class ConfigBindingTest {
         runner().withPropertyValues(AdminTestSettings.TOKEN_PROPERTY, AdminTestSettings.AGENT_TOKEN_PROPERTY)
                 .run(context -> assertThat(context.getBean(LedgerAdminProperties.class).mcp().healthUrl()).isNull());
     }
+
+    private static ApplicationContextRunner secrets() {
+        return runner().withPropertyValues(AdminTestSettings.TOKEN_PROPERTY, AdminTestSettings.AGENT_TOKEN_PROPERTY);
+    }
+
+    @Test
+    @DisplayName("PSK-CFG-01: a new installation (nothing chosen, no OpenID Connect setting) signs in with a passkey")
+    void psk_defaultIsPasskey() {
+        secrets().run(context -> assertThat(context.getBean(LedgerAdminProperties.class).effectiveSignIn())
+                .isEqualTo(org.pgledger.admin.app.SignInMethod.PASSKEY));
+    }
+
+    @Test
+    @DisplayName("PSK-CFG-02: OpenID Connect settings without a sign-in choice stop the start and name ledger.admin.sign-in (nothing is guessed)")
+    void psk_oidcSettingsNeedAChoice() {
+        secrets().withPropertyValues("ledger.admin.oidc.issuer=https://issuer.example",
+                "ledger.admin.oidc.owner-email=owner@example.test").run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(FailureText.of(context.getStartupFailure())).contains("ledger.admin.sign-in");
+                });
+    }
+
+    @Test
+    @DisplayName("PSK-CFG-03: sign-in=oidc needs the owner e-mail and the issuer, and binds with both")
+    void psk_oidcNeedsTheOwner() {
+        secrets().withPropertyValues("ledger.admin.sign-in=oidc").run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(FailureText.of(context.getStartupFailure())).contains("ledger.admin.oidc.owner-email");
+        });
+        secrets().withPropertyValues("ledger.admin.sign-in=oidc", "ledger.admin.oidc.issuer=https://issuer.example",
+                "ledger.admin.oidc.owner-email=owner@example.test").run(context -> assertThat(context).hasNotFailed());
+    }
+
+    @Test
+    @DisplayName("PSK-CFG-04: an earlier list of owners (one or several) stops the start with a message that names ledger.admin.oidc.owners and the one e-mail setting; nothing is picked")
+    void psk_theOwnersListIsRefused() {
+        secrets().withPropertyValues("ledger.admin.sign-in=oidc", "ledger.admin.oidc.issuer=https://issuer.example",
+                "ledger.admin.oidc.owner-email=owner@example.test", "ledger.admin.oidc.owners[0].issuer=https://issuer.example",
+                "ledger.admin.oidc.owners[0].email=a@example.test", "ledger.admin.oidc.owners[1].issuer=https://issuer.example",
+                "ledger.admin.oidc.owners[1].email=b@example.test").run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(FailureText.of(context.getStartupFailure())).contains("ledger.admin.oidc.owners")
+                            .contains("ledger.admin.oidc.owner-email");
+                });
+    }
+
+    @Test
+    @DisplayName("PSK-CFG-05: a passkey sign-in with an explicit choice binds; the passkey settings default to nothing (the host is derived at start)")
+    void psk_explicitPasskeyBinds() {
+        secrets().withPropertyValues("ledger.admin.sign-in=passkey").run(context -> {
+            LedgerAdminProperties properties = context.getBean(LedgerAdminProperties.class);
+            assertThat(properties.effectiveSignIn()).isEqualTo(org.pgledger.admin.app.SignInMethod.PASSKEY);
+            assertThat(properties.passkey().rpId()).isNull();
+            assertThat(properties.passkey().origins()).isEmpty();
+        });
+    }
 }

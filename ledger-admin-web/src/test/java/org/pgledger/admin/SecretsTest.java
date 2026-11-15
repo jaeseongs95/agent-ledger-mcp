@@ -49,9 +49,8 @@ class SecretsTest {
             + "fails to sign in and meets errors")
     void adm037_tokensNeverAppear(CapturedOutput output) throws Exception {
         List<MvcResult> results = new ArrayList<>();
-        Browser owner = new Browser(mvc);
+        Browser owner = Browser.signedIn(mvc);
         results.add(owner.perform(owner.get("/login")).andReturn());
-        results.add(owner.signIn(AdminTestSettings.TOKEN).andReturn());
         for (String page : List.of("/", "/projects", "/defects", "/tasks", "/conditions", "/history", "/grants", "/codes",
                 "/driver", "/defects/NOP-D-0001")) {
             results.add(owner.perform(owner.get(page)).andReturn());
@@ -61,7 +60,8 @@ class SecretsTest {
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + AdminTestSettings.AGENT_TOKEN)).andReturn());
         results.add(attacker.perform(attacker.get("/api/session").accept(MediaType.APPLICATION_JSON)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + AdminTestSettings.TOKEN.substring(1))).andReturn());
-        results.add(attacker.signIn(AdminTestSettings.AGENT_TOKEN).andReturn());
+        results.add(attacker.signInWithCode(AdminTestSettings.AGENT_TOKEN).andReturn());
+        results.add(attacker.signInWithCode(AdminTestSettings.TOKEN).andReturn());
         results.add(owner.perform(owner.get("/probe/fail").accept(MediaType.APPLICATION_JSON)).andExpect(status()
                 .isInternalServerError()).andReturn());
 
