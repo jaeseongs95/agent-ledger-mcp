@@ -48,6 +48,8 @@ public final class PrincipleRules {
     private static final String BEAN = "org.springframework.context.annotation.Bean";
     private static final Set<String> TRANSACTIONAL = Set.of("org.springframework.transaction.annotation.Transactional",
             "jakarta.transaction.Transactional");
+    private static final String TRANSACTION_TEMPLATE = "org.springframework.transaction.support.TransactionTemplate";
+    private static final Set<String> TEMPLATE_RUNS = Set.of("execute", "executeWithoutResult");
     private static final Set<String> FILE_WRITES = Set.of("write", "writeString", "newOutputStream", "newBufferedWriter",
             "copy", "move", "delete", "deleteIfExists", "createFile", "createDirectory", "createDirectories",
             "createTempFile", "createTempDirectory", "createLink", "createSymbolicLink", "setAttribute",
@@ -214,8 +216,17 @@ public final class PrincipleRules {
         return found;
     }
 
+    /**
+     * A method that is a transaction: annotated {@code @Transactional} (or its class), or one that runs its work in a
+     * {@code TransactionTemplate} ({@code execute}, {@code executeWithoutResult}): the calls of the lambda are attributed to the
+     * method that holds it, so the writes in the lambda are found like those of an annotated method. A template is refused in the
+     * production code of every module anyway ({@code ArchitectureRules.noTransactionTemplate}); this keeps the rule from having a
+     * blind spot where that rule is not applied.
+     */
     private static boolean isTransactional(JavaMethod method) {
-        return TRANSACTIONAL.stream().anyMatch(name -> method.isAnnotatedWith(name) || method.getOwner().isAnnotatedWith(name));
+        return TRANSACTIONAL.stream().anyMatch(name -> method.isAnnotatedWith(name) || method.getOwner().isAnnotatedWith(name))
+                || method.getMethodCallsFromSelf().stream().anyMatch(call -> TRANSACTION_TEMPLATE
+                        .equals(call.getTargetOwner().getName()) && TEMPLATE_RUNS.contains(call.getTarget().getName()));
     }
 
     /** The first write of a file that the code unit makes or reaches through calls of our own classes. */

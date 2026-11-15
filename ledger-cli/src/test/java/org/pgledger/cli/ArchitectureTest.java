@@ -158,6 +158,8 @@ class ArchitectureTest {
     @DisplayName("TXD-005 (principle 4.4) the CLI opens no transaction: no TransactionTemplate, no @Transactional; a transaction is a method of an application service")
     void txd005_noTransactionBoundaryInTheCli() {
         ArchitectureRules.noTransactionTemplate().check(MAIN);
+        // TXF-001: no TransactionAspectSupport and no savepoint of its own either
+        ArchitectureRules.noHandMadeTransactionControl().check(MAIN);
         ArchitectureRules.transactionalOnlyOnServiceClasses().check(MAIN);
         ArchitectureRules.transactionalOnlyOnServiceMethods().check(MAIN);
     }

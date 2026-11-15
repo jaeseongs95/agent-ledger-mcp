@@ -21,6 +21,7 @@ public class DefectCaseLockRepository {
 
     /** True when the defect exists and is not merged; its row is locked until the transaction ends. */
     public boolean lockForCase(DefectId defect) {
+        RequiredTransaction.check("a row is locked");
         return jdbc.sql("UPDATE defect SET case_seq = case_seq + 1 WHERE id = :id AND status <> 'MERGED'")
                 .param("id", defect.value()).update() == 1;
     }

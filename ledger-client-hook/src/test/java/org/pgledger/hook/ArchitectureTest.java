@@ -125,6 +125,13 @@ class ArchitectureTest {
     }
 
     @Test
+    @DisplayName("TXF-001 (principle 4.4) no TransactionTemplate, no TransactionAspectSupport and no hand-made savepoint in any module")
+    void txf001_noHandMadeTransactions() {
+        ArchitectureRules.noTransactionTemplate().check(hook);
+        ArchitectureRules.noHandMadeTransactionControl().check(hook);
+    }
+
+    @Test
     @DisplayName("ARC-033 no operating system detection in main and test code")
     void noOperatingSystemDetection() {
         ArchitectureRules.noOperatingSystemDetection().check(hook);

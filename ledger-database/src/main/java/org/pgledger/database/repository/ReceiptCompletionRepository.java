@@ -17,6 +17,7 @@ public class ReceiptCompletionRepository {
 
     /** True when the receipt existed without a response and now has one. */
     public boolean finish(RequestId requestId, JsonDocument response) {
+        RequiredTransaction.check("a receipt is completed");
         return jdbc.sql("UPDATE request_receipt SET response = :response WHERE request_id = :id AND response IS NULL")
                 .param("response", response.text())
                 .param("id", requestId.toString())

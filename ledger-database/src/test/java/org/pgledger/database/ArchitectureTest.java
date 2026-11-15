@@ -122,6 +122,8 @@ class ArchitectureTest {
                 // method of a service, and the snapshot of the legacy source is one of LegacySnapshotService of the application
                 // module, on the transaction manager bean of the legacy data source
                 new Rule("TXD-005 no TransactionTemplate here", ArchitectureRules.noTransactionTemplate()),
+                new Rule("TXF-001 no TransactionAspectSupport and no hand-made savepoint here",
+                        ArchitectureRules.noHandMadeTransactionControl()),
                 // principles 3.9 and 4.4: no JdbcClient.create, no new TransactionTemplate, no new DataSourceTransactionManager
                 // outside a @Configuration class (TXD-010), no exception
                 new Rule("TXD-010 no own JDBC plumbing outside a @Configuration class",

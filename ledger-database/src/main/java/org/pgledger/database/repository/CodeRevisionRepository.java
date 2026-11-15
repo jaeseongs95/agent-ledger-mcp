@@ -19,6 +19,7 @@ public class CodeRevisionRepository {
 
     /** Adds one to the revision (inside the transaction that changed the codes). */
     public void bump() {
+        RequiredTransaction.check("the code revision is raised");
         if (jdbc.sql("UPDATE code_revision SET revision = revision + 1 WHERE id = 1").update() != 1) {
             throw new IllegalStateException("code_revision row missing");
         }

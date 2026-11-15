@@ -12,6 +12,8 @@ import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.pgledger.application.principlefixture.Clean;
+import org.pgledger.testing.ArchitectureRules;
 import org.pgledger.testing.PrincipleRules;
 import org.pgledger.testing.PrincipleRules.Finding;
 
@@ -52,10 +54,23 @@ class PrincipleRulesTest {
     }
 
     @Test
-    @DisplayName("ARC-PRN-05 a transaction that writes a file, itself, through a method of ours or in a lambda it holds, is found; one that only reads is not")
+    @DisplayName("ARC-PRN-05 a transaction that writes a file, itself, through a method of ours or in a lambda it holds, is found, and so is one that a TransactionTemplate runs (TXF-006); one that only reads is not")
     void fileWriteInTransaction() {
         assertThat(keys(PrincipleRules.fileWritesInTransactions(FIXTURE))).containsExactlyInAnyOrder("Planted.writeDirect",
-                "Planted.writeIndirect", "Planted.writeInALambda");
+                "Planted.writeIndirect", "Planted.writeInALambda", "Planted.writeInATemplate");
+    }
+
+    @Test
+    @DisplayName("TXF-006 the rules that refuse a hand-made transaction find a TransactionTemplate and the savepoint of TransactionAspectSupport where they are planted, and nothing in the clean class")
+    void handMadeTransactions() {
+        JavaClasses clean = new ClassFileImporter().importClasses(Clean.class);
+
+        assertThat(ArchitectureRules.noTransactionTemplate().evaluate(FIXTURE).hasViolation()).isTrue();
+        assertThat(ArchitectureRules.noHandMadeTransactionControl().evaluate(FIXTURE).hasViolation()).isTrue();
+        assertThat(ArchitectureRules.noHandMadeTransactionControl().evaluate(FIXTURE).getFailureReport().getDetails())
+                .anyMatch(detail -> detail.contains("savepointByHand"));
+        assertThat(ArchitectureRules.noTransactionTemplate().evaluate(clean).hasViolation()).isFalse();
+        assertThat(ArchitectureRules.noHandMadeTransactionControl().evaluate(clean).hasViolation()).isFalse();
     }
 
     private Path source(String name, String text) throws IOException {
