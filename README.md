@@ -45,7 +45,9 @@ and no argument of an earlier version is accepted next to the new ones); what ch
   application has no path that updates or deletes a history row, and the grant template of the database module (`migrate` applies it to
   the application account) gives that account no `UPDATE` or `DELETE` on it. A mistake is marked with a `CORRECT` row. An operation that changes an
   existing row also stores the full row as it was before the change (`before_data`, returned by `ledger_history` with
-  `include_before`).
+  `include_before`). One exception: a `ledger_record_fix` that changes nothing of the defect but its `updated_at` and version (the
+  owner and the status stay) writes no history row of the defect and so stores no `before_data` of it; the fix row is its
+  history, and a row for the bookkeeping columns alone would put an empty edit row on the history of the defect for every fix.
 - **Retries are safe.** Every write tool takes a required `operationKey` (1 to 128 characters, for example a UUID). Repeating the same
   request with the same key returns the stored result and writes nothing twice. The keys belong to the author (as the keys of
   `artifact-begin` do): another author may use the same key for a write of its own. A key of the author that is already bound to
