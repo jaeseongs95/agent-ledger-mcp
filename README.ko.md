@@ -150,12 +150,12 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | `ledger.mcp.allowed-origins` | MCP 서버 | 허용하는 브라우저 출처, 기본 없음 |
 | `ledger.mcp.max-request-size` | MCP 서버 | 요청 본문의 최대 크기, 기본 1MB |
 | `ledger.mcp.code-poll-interval` | MCP 서버 | 다른 프로세스의 코드 변경을 확인하는 주기, 기본 5s |
-| `ledger.admin.token` | 관리 웹 | 관리 토큰, 16자 이상(비밀): `/api` 아래 읽기 전용 JSON 엔드포인트의 bearer입니다. 브라우저를 로그인시키지 않고 변경을 승인하지 않습니다 |
+| `ledger.admin.token` | 관리 웹 | 관리 토큰, 16자 이상(비밀): `/api` 아래 읽기 전용 JSON 엔드포인트의 bearer입니다. `ledger.admin.sign-in=token`이면 로그인 페이지의 비밀번호이기도 하며 변경은 결코 승인하지 않습니다 |
 | `ledger.admin.agent-token` | 관리 웹 | 필수: 에이전트의 bearer 토큰으로 `ledger.mcp.token`과 같은 값이어야 하고 `ledger.admin.token`과는 달라야 합니다. 관리 웹은 이 토큰을 `AGENT_TOKEN_FORBIDDEN`으로 거절합니다(비밀) |
 | `ledger.admin.allowed-hosts` | 관리 웹 | 허용하는 `Host` 값(DNS 리바인딩 방어), 기본 `127.0.0.1`과 `localhost` |
 | `ledger.admin.driver-file` | 관리 웹 | 드라이버 화면이 기록하는 드라이버 등록 파일, 기본 `/etc/pg-ledger-mcp/jdbc-driver.yaml` |
 | `ledger.admin.driver-directory` | 관리 웹 | 드라이버 jar를 가져올 수 있는 유일한 디렉터리, 기본 `/etc/pg-ledger-mcp/drivers` |
-| `ledger.admin.sign-in` | 관리 웹 | 소유자의 로그인 방식: `oidc` 또는 `passkey`. 없으면 새 설치는 `passkey`이고, `ledger.admin.oidc.*` 설정이 있는데 선택이 없는 설치는 시작할 때 거절합니다(추측하지 않습니다) |
+| `ledger.admin.sign-in` | 관리 웹 | 소유자의 로그인 방식으로 `token`, `oidc`, `passkey` 중 정확히 하나이며 로그인 페이지는 그것만 제공합니다. 없으면 새 설치는 `passkey`이고, `ledger.admin.oidc.*` 설정이 있는데 선택이 없는 설치는 시작할 때 거절합니다(추측하지 않습니다) |
 | `ledger.admin.oidc.owner-email` | 관리 웹 | `ledger.admin.sign-in=oidc`일 때 소유자의 이메일 주소 하나이며 공급자가 확인한 주소여야 합니다. 공급자 자체는 `spring.security.oauth2.client.*`입니다 |
 | `ledger.admin.oidc.issuer` | 관리 웹 | `ledger.admin.sign-in=oidc`일 때 그 주소가 유효한 발급자(`iss`): 주소는 그것을 확인한 발급자 안에서만 의미가 있습니다 |
 | `ledger.admin.oidc.owners` | 관리 웹 | 더 이상 지원하지 않는 이전의 소유자 목록입니다. 이것이 남은 설정은 시작할 때 거절하며 메시지가 `ledger.admin.oidc.owner-email`을 알려 줍니다 |
@@ -442,9 +442,9 @@ OpenID Connect로 로그인하고, 첫 패스키는 `passkey-code`로 등록합�
 
 관리 웹(`ledger-admin-web.jar`)은 소유자를 위한 서버 렌더링 콘솔이며 기본 주소는 `127.0.0.1:8865`입니다. 설치기가 만든 서비스 계정으로 실행하며 root로는 실행하지 않습니다.
 
-- **로그인, 둘 중 하나**(`ledger.admin.sign-in`). `passkey`(새 설치의 기본값)이면 소유자는 패스키로 로그인합니다. `oidc`이면 OpenID Connect로 로그인하며 소유자는
+- **로그인, 셋 중 하나**(`ledger.admin.sign-in`). `passkey`(새 설치의 기본값)이면 소유자는 패스키로 로그인합니다. `token`(개인판: 본인 컴퓨터나 서버의 한 사람)이면 애플리케이션의 로그인 페이지에 관리 토큰 `ledger.admin.token`을 입력합니다. `oidc`이면 OpenID Connect로 로그인하며 소유자는
   **이메일 주소 하나**입니다(`ledger.admin.oidc.owner-email`, `ledger.admin.oidc.issuer`의 공급자가 확인한 주소). 다른 주소나 공급자가 확인하지 않은 주소는 거절합니다.
-  둘 중 하나만 제공합니다. 관리 토큰 `ledger.admin.token`은 더 이상 브라우저를 로그인시키지 않고 읽기 전용 JSON 엔드포인트의 bearer로 남습니다. 에이전트의 토큰은 거절되므로
+  셋 중 하나만 제공하며, `oidc`나 `passkey`이면 토큰 입력란이 없고 보낸 토큰은 로그인으로 이어지지 않습니다. 관리 토큰 `ledger.admin.token`은 읽기 전용 JSON 엔드포인트의 bearer로도 남습니다. 어떤 로그인이든 변경은 패스키가 승인하므로, 토큰으로 연 세션도 `passkey-code`의 일회용 코드로 첫 패스키를 등록합니다. 에이전트의 토큰은 거절되므로
   MCP 토큰을 가진 에이전트가 스스로 부여를 줄 수 없습니다. 실패한 시도(패스키, 일회용 코드, 토큰)는 해당 클라이언트를 잠그고 모든 클라이언트를 늦춥니다(`ledger.admin.lockout.*`).
 - **어떻게 로그인했든 모든 변경은 패스키로 승인합니다.** 콘솔에서 하는 모든 변경(부여, 세션 키, 공통코드, 프로젝트, 드라이버, 패스키 닫기)은 사용자 확인을 요구하는 패스키로
   승인합니다. 화면이 서버에 바로 그 변경과 세션으로 만든 challenge를 요청하고, 인증기가 그것에 서명하며, 쓰기는 그 서명과 함께 갑니다. 서명은 그 변경 하나에, 한 번, 2분 동안만
@@ -502,7 +502,7 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 가로챈 토큰으로 다른
    ```
 
    설치기가 1.x 파일을 root로 열고, `secret-import-1x`가 `DBHUB_AUTH_TOKEN`을 `ledger.mcp.token`과 `ledger.admin.agent-token`으로,
-   `PGLEDGER_ADMIN_TOKEN`을 `ledger.admin.token`으로 옮깁니다. 어떤 토큰이든 만들기 전에 하므로 1.x의 클라이언트가 그대로 동작하고 관리 토큰은 읽기 전용 엔드포인트의 bearer로 남으며(브라우저를 더 이상 로그인시키지 않습니다) 값은 출력하지 않습니다.
+   `PGLEDGER_ADMIN_TOKEN`을 `ledger.admin.token`으로 옮깁니다. 어떤 토큰이든 만들기 전에 하므로 1.x의 클라이언트가 그대로 동작하고 관리 토큰은 읽기 전용 엔드포인트의 bearer로 남으며(브라우저는 `ledger.admin.sign-in=token`일 때만 로그인시킵니다) 값은 출력하지 않습니다.
    1.0.0 설치에는 관리 웹이 없어 `PGLEDGER_ADMIN_TOKEN`도 없습니다. 이 경우 에이전트용 토큰 두 개만 옮기고 명령이 그 사실을 알리며, 설치기가 `ledger.admin.token`을 새로 만들어 한 번 보여 줍니다.
    이미 있는 비밀은 그대로 둡니다. 새 유닛이 대체하는 1.x의 유닛 파일은 `<file>.1x-backup`으로 보관합니다. 터미널이 없으면 `--stdin`을 더하고 비밀번호를 표준 입력으로 줍니다.
 
@@ -528,7 +528,7 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 가로챈 토큰으로 다른
    `ledger_link`로 올바른 결함을 앞에 두고 다시 연결합니다.
    조건의 `code`(200자)와 `ci_ref`(2000자)는 이전 2.0 빌드보다 길어졌고, 작업의 `origin_ref`는 긴 텍스트(쓸 때 20000자까지)여서 1.x의 모든 값이 들어갑니다.
 7. 옛 부여는 세션 키 없이 복사됩니다. 모든 작성자는 `key-register`로 세션 키를 등록해야 하며, 그 뒤에 부여가 동작합니다.
-8. **확인.** `ledger-cli mcp-check --url=<its public URL>`와 `import-legacy --verify-only`를 실행하고, `ledger-cli passkey-code`를 실행해 관리 웹에서 첫 패스키를 등록합니다(1.x의 관리 토큰은 더 이상 브라우저를 로그인시키지 않습니다).
+8. **확인.** `ledger-cli mcp-check --url=<its public URL>`와 `import-legacy --verify-only`를 실행하고, `ledger-cli passkey-code`를 실행해 관리 웹에서 첫 패스키를 등록합니다(1.x의 관리 토큰은 `ledger.admin.sign-in=token`일 때만 브라우저를 로그인시키며, 기본값은 `passkey`입니다).
 
 **업그레이드 안내: 관리 웹 로그인.** 관리 웹에 OpenID Connect로 로그인했다면 그렇게 하겠다고 밝히십시오. `ledger.admin.sign-in=oidc`를 설정하고(`ledger.admin.oidc.*` 설정이 있는데
 `ledger.admin.sign-in`이 없는 설치는 그 키를 알리는 메시지와 함께 시작할 때 거절됩니다), 목록 `ledger.admin.oidc.owners`는 소유자의 이메일 주소 하나인 `ledger.admin.oidc.owner-email`과 그 주소가 유효한

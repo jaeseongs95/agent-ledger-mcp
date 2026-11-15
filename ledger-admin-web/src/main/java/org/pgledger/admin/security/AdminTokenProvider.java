@@ -16,8 +16,9 @@ import org.springframework.security.web.authentication.WebAuthenticationDetails;
 import org.springframework.stereotype.Component;
 
 /**
- * The one provider of the admin token: the {@code Authorization: Bearer} header of the read-only JSON endpoints ends here (the
- * token no longer signs a browser in: the owner signs in with OpenID Connect or a passkey). Presented and expected tokens are hashed first (the shared SHA-256 of the domain) and the digests are
+ * The one provider of the admin token: the {@code Authorization: Bearer} header of the read-only JSON endpoints and, only when
+ * {@code ledger.admin.sign-in=token}, the login form of the application's own page end here. Presented and expected tokens are
+ * hashed first (the shared SHA-256 of the domain) and the digests are
  * compared with {@link MessageDigest#isEqual}, which takes the same time whatever the input is. A locked client
  * address is refused before anything is compared (so a right token does not help during the lock); the token of the
  * MCP agents is refused with its own code. When the global budget of checks is used up the comparison is delayed, never
@@ -26,12 +27,12 @@ import org.springframework.stereotype.Component;
 @Component
 public final class AdminTokenProvider implements AuthenticationProvider {
 
-    /** The authority of a signed-in owner (OpenID Connect or passkey): the one place the name is written. */
+    /** The authority of a signed-in owner (token form, OpenID Connect or passkey): the one place the name is written. */
     public static final String OWNER_AUTHORITY = "ROLE_OWNER";
 
     /**
-     * The authority of the admin token: it reads the JSON endpoints under {@code /api} and nothing else. The token no longer
-     * signs a browser in and approves no change (the approval is a passkey), so it is not the owner.
+     * The authority of the admin token as a bearer header: it reads the JSON endpoints under {@code /api} and nothing else, and
+     * approves no change (the approval is a passkey), so it is not the owner.
      */
     public static final String API_READ_AUTHORITY = "ROLE_API_READ";
 
@@ -86,8 +87,11 @@ public final class AdminTokenProvider implements AuthenticationProvider {
             throw new AdminAuthenticationException(AdminCode.UNAUTHORIZED);
         }
         attempts.succeeded(client);
+        // the header reads the JSON endpoints only; the login form (ledger.admin.sign-in=token) is the owner, whose writes
+        // still need the approval of a passkey
+        String authority = authentication instanceof BearerTokenAuthenticationToken ? API_READ_AUTHORITY : OWNER_AUTHORITY;
         return UsernamePasswordAuthenticationToken.authenticated("owner", null,
-                List.of(new SimpleGrantedAuthority(API_READ_AUTHORITY)));
+                List.of(new SimpleGrantedAuthority(authority)));
     }
 
     /**

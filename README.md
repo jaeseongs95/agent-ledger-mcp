@@ -166,12 +166,12 @@ There is no command that prints a stored secret.
 | `ledger.mcp.allowed-origins` | MCP server | accepted browser origins, default none |
 | `ledger.mcp.max-request-size` | MCP server | largest request body, default 1MB |
 | `ledger.mcp.code-poll-interval` | MCP server | how often a code change of another process is looked up, default 5s |
-| `ledger.admin.token` | admin web | the admin token, at least 16 characters (secret): the bearer of the read-only JSON endpoints under `/api`; it signs no browser in and approves no change |
+| `ledger.admin.token` | admin web | the admin token, at least 16 characters (secret): the bearer of the read-only JSON endpoints under `/api`; with `ledger.admin.sign-in=token` it is also the password of the login page; it never approves a change |
 | `ledger.admin.agent-token` | admin web | required: the agents' bearer token, equal to `ledger.mcp.token`, and distinct from `ledger.admin.token`; the admin web refuses it with `AGENT_TOKEN_FORBIDDEN` (secret) |
 | `ledger.admin.allowed-hosts` | admin web | accepted `Host` values (DNS rebinding guard), default `127.0.0.1` and `localhost` |
 | `ledger.admin.driver-file` | admin web | the driver registration file the driver page writes, default `/etc/pg-ledger-mcp/jdbc-driver.yaml` |
 | `ledger.admin.driver-directory` | admin web | the one directory a driver jar may be taken from, default `/etc/pg-ledger-mcp/drivers` |
-| `ledger.admin.sign-in` | admin web | how the owner signs in: `oidc` or `passkey`; absent means `passkey` for a new installation, and an installation with `ledger.admin.oidc.*` settings and no choice is refused at start (nothing is guessed) |
+| `ledger.admin.sign-in` | admin web | how the owner signs in, exactly one of `token`, `oidc` or `passkey`; the login page offers only that one; absent means `passkey` for a new installation, and an installation with `ledger.admin.oidc.*` settings and no choice is refused at start (nothing is guessed) |
 | `ledger.admin.oidc.owner-email` | admin web | with `ledger.admin.sign-in=oidc`: the one e-mail address of the owner, which the provider must have verified; the provider itself is `spring.security.oauth2.client.*` |
 | `ledger.admin.oidc.issuer` | admin web | with `ledger.admin.sign-in=oidc`: the issuer (`iss`) the address counts for: an address is only meaningful at the issuer that verified it |
 | `ledger.admin.oidc.owners` | admin web | no longer supported (the earlier list of owners): a configuration that still has it is refused at start, and the message names `ledger.admin.oidc.owner-email` |
@@ -493,11 +493,14 @@ service user), and every owner operation is recorded with that user.
 The admin web (`ledger-admin-web.jar`) is a server-rendered console for the owner, on `127.0.0.1:8865` by default. It runs as
 the service account of the installation and never as root.
 
-- **Sign-in, one of two** (`ledger.admin.sign-in`). With `passkey` (the default of a new installation) the owner signs in with a
-  passkey. With `oidc` the owner signs in with OpenID Connect, and the owner is **one e-mail address**
+- **Sign-in, one of three** (`ledger.admin.sign-in`). With `passkey` (the default of a new installation) the owner signs in with a
+  passkey. With `token` (the personal edition, one person on their own computer or server) the owner types the admin token
+  `ledger.admin.token` into the login page of the application. With `oidc` the owner signs in with OpenID Connect, and the owner is **one e-mail address**
   (`ledger.admin.oidc.owner-email`, verified by the provider at `ledger.admin.oidc.issuer`); another address, or one the provider did not
-  verify, is refused. Only one of the two is offered. The admin token `ledger.admin.token` no longer signs a browser in: it stays the
-  bearer of the read-only JSON endpoints. The agents' token is refused, so an agent that holds the MCP token cannot grant itself
+  verify, is refused. Only one of the three is offered: with `oidc` or `passkey` the token form is absent and a posted token
+  finds no sign-in. The admin token `ledger.admin.token` also stays the bearer of the read-only JSON endpoints. Whichever sign-in
+  is chosen, a change is approved by a passkey, so a session opened with the token registers its first passkey with the one-time
+  code of `passkey-code`. The agents' token is refused, so an agent that holds the MCP token cannot grant itself
   anything. Failed attempts (passkey, one-time code, token) lock the client and slow down all clients (`ledger.admin.lockout.*`).
 - **Approval of every change by a passkey, whichever way you signed in.** Every change you make in the console (grants, session
   keys, common codes, projects, the driver, closing a passkey) is approved with a passkey, with user verification: the page asks the
@@ -571,7 +574,7 @@ import, check. Do the steps in this order; the installer stops nothing of 1.x by
 
    The installer opens the 1.x file as root and `secret-import-1x` moves `DBHUB_AUTH_TOKEN` to `ledger.mcp.token` and
    `ledger.admin.agent-token` and `PGLEDGER_ADMIN_TOKEN` to `ledger.admin.token`, before any token is generated: the clients of 1.x keep working
-   and the admin token stays the bearer of the read-only endpoints (it no longer signs a browser in), and no value is printed. A 1.0.0 installation had no admin web and so no `PGLEDGER_ADMIN_TOKEN`: then only
+   and the admin token stays the bearer of the read-only endpoints (it signs a browser in only with `ledger.admin.sign-in=token`), and no value is printed. A 1.0.0 installation had no admin web and so no `PGLEDGER_ADMIN_TOKEN`: then only
    the two tokens of the agents are moved, the command says so, and the installer generates `ledger.admin.token` and shows it once.
    A secret that exists is kept. The unit files of 1.x that the new units replace are
    kept as `<file>.1x-backup`. Without a terminal, add `--stdin` and give the passwords on standard input.
@@ -607,7 +610,7 @@ import, check. Do the steps in this order; the installer stops nothing of 1.x by
    when written), so every value of 1.x fits.
 7. The old grants are copied without a session key. Every author registers a session key with `key-register`; then its grants work.
 8. **Check.** `ledger-cli mcp-check --url=<its public URL>` and `import-legacy --verify-only`; run `ledger-cli passkey-code` and register
-   your first passkey in the admin web (the admin token of 1.x no longer signs in a browser).
+   your first passkey in the admin web (the admin token of 1.x signs a browser in only with `ledger.admin.sign-in=token`; the default is `passkey`).
 
 **Upgrade note: the admin web sign-in.** If you signed in to the admin web with OpenID Connect, say so: set `ledger.admin.sign-in=oidc`
 (an installation with `ledger.admin.oidc.*` settings and no `ledger.admin.sign-in` is refused at start with a message that names it), and

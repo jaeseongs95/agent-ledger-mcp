@@ -16,8 +16,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * The login page: the sign-in the owner chose ({@code ledger.admin.sign-in}) and the one-time code of the owner's shell that
- * reaches the registration of a passkey. With OpenID Connect it has one link per registered provider; with a passkey it has the
- * passkey button. In setup mode (no database, so no passkey) it only says how to register the JDBC driver.
+ * reaches the registration of a passkey. With the token it has the token form; with OpenID Connect it has one link per
+ * registered provider; with a passkey it has the passkey button. In setup mode (no database, so no passkey) it only says how to register the JDBC driver.
  */
 @Controller
 public class LoginController {
@@ -28,6 +28,7 @@ public class LoginController {
 
     private final List<Provider> providers = new ArrayList<>();
     private final boolean passkeySignIn;
+    private final boolean tokenSignIn;
     private final boolean enrollment;
     private final boolean setup;
 
@@ -35,7 +36,8 @@ public class LoginController {
             AdminMode mode) {
         this.setup = mode == AdminMode.SETUP;
         boolean oidc = properties.effectiveSignIn() == SignInMethod.OIDC;
-        this.passkeySignIn = !setup && !oidc;
+        this.passkeySignIn = !setup && properties.effectiveSignIn() == SignInMethod.PASSKEY;
+        this.tokenSignIn = !setup && properties.effectiveSignIn() == SignInMethod.TOKEN;
         this.enrollment = !setup;
         if (!setup && oidc && clients.getIfAvailable() instanceof Iterable<?> registrations) {
             for (Object registration : registrations) {
@@ -51,6 +53,7 @@ public class LoginController {
             @RequestParam(name = "logout", required = false) String logout, Model model) {
         model.addAttribute("providers", providers);
         model.addAttribute("passkeySignIn", passkeySignIn);
+        model.addAttribute("tokenSignIn", tokenSignIn);
         model.addAttribute("enrollment", enrollment);
         model.addAttribute("setupMode", setup);
         model.addAttribute("errorKey", error == null ? null : error.messageKey());

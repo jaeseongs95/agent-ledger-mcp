@@ -100,6 +100,19 @@ class OidcTest {
     }
 
     @Test
+    @DisplayName("PSK-TOK-05: with sign-in=oidc the login page has no token form and a post of the admin token finds no sign-in")
+    void tok05_noTokenForm() throws Exception {
+        Browser browser = new Browser(mvc);
+        String csrf = browser.csrfOf("/login");
+
+        assertThat(browser.perform(browser.get("/login")).andReturn().getResponse().getContentAsString())
+                .doesNotContain("type=\"password\"");
+        browser.perform(browser.form("/login", Browser.Form.of("username", "owner", "token", AdminTestSettings.TOKEN), csrf)
+                .accept(MediaType.APPLICATION_JSON)).andExpect(status().is4xxClientError());
+        browser.perform(browser.get("/api/session").accept(MediaType.APPLICATION_JSON)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
     @DisplayName("ADM-031: a valid ID token of an allowed, verified e-mail signs the owner in")
     void adm031_allowedEmailSignsIn() throws Exception {
         Browser browser = new Browser(mvc);
