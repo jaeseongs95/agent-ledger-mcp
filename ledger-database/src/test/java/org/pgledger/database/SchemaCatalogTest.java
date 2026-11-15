@@ -235,20 +235,25 @@ class SchemaCatalogTest {
         String insert = "INSERT INTO schema_history (version, attempt, script, digest, applied_at, outcome) VALUES "
                 + "(98, :attempt, 'V98__x.sql', :digest, TIMESTAMP '2026-11-05 10:00:00', :outcome)";
         String digest = "a".repeat(64);
-        jdbc.sql(insert).param("attempt", 1).param("digest", digest).param("outcome", "FAILED").update();
-        jdbc.sql(insert).param("attempt", 2).param("digest", digest).param("outcome", "SUCCEEDED").update();
+        try {
+            jdbc.sql(insert).param("attempt", 1).param("digest", digest).param("outcome", "FAILED").update();
+            jdbc.sql(insert).param("attempt", 2).param("digest", digest).param("outcome", "SUCCEEDED").update();
 
-        assertThat(catchThrowable(() -> jdbc.sql(insert).param("attempt", 2).param("digest", digest)
-                .param("outcome", "FAILED").update())).as("the same (version, attempt)")
-                .isInstanceOf(org.springframework.dao.DuplicateKeyException.class);
-        for (String outcome : List.of("SUCCESS", "MAYBE", "succeeded", "")) {
-            Throwable refused = catchThrowable(() -> jdbc.sql(insert).param("attempt", 3).param("digest", digest)
-                    .param("outcome", outcome).update());
-            assertThat(refused).as("outcome '%s'", outcome).isInstanceOf(DataIntegrityViolationException.class);
-            assertThat(sqlState(refused)).startsWith("23");
+            assertThat(catchThrowable(() -> jdbc.sql(insert).param("attempt", 2).param("digest", digest)
+                    .param("outcome", "FAILED").update())).as("the same (version, attempt)")
+                    .isInstanceOf(org.springframework.dao.DuplicateKeyException.class);
+            for (String outcome : List.of("SUCCESS", "MAYBE", "succeeded", "")) {
+                Throwable refused = catchThrowable(() -> jdbc.sql(insert).param("attempt", 3).param("digest", digest)
+                        .param("outcome", outcome).update());
+                assertThat(refused).as("outcome '%s'", outcome).isInstanceOf(DataIntegrityViolationException.class);
+                assertThat(sqlState(refused)).startsWith("23");
+            }
+            assertThat(jdbc.sql("SELECT attempt FROM schema_history WHERE version = 98 ORDER BY attempt")
+                    .query(Integer.class).list()).containsExactly(1, 2);
+        } finally {
+            // the schema of the class is shared by its tests (SCH-012 counts the failed attempts of a migrated schema): leave it as found
+            jdbc.sql("DELETE FROM schema_history WHERE version = 98").update();
         }
-        assertThat(jdbc.sql("SELECT attempt FROM schema_history WHERE version = 98 ORDER BY attempt")
-                .query(Integer.class).list()).containsExactly(1, 2);
     }
 
     @Test

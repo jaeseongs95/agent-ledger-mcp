@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -61,7 +62,7 @@ class SchemaSettingsSourceTest {
             public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) throws IOException {
                 String relative = root.relativize(file).toString().replace('\\', '/');
                 if (isText(file) && !file.toAbsolutePath().equals(self) && ofInterest.test(relative)
-                        && pattern.matcher(new String(Files.readAllBytes(file), StandardCharsets.UTF_8)).find()) {
+                        && pattern.matcher(StandardCharsets.UTF_8.decode(ByteBuffer.wrap(Files.readAllBytes(file)))).find()) {
                     found.add(relative);
                 }
                 return FileVisitResult.CONTINUE;
