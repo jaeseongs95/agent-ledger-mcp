@@ -20,7 +20,6 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.pgledger.application.admin.CommonCodeService;
 import org.pgledger.application.admin.CommonCodeService.CodeCommand;
 import org.pgledger.application.admin.CommonCodeService.CodeResult;
-import org.pgledger.application.admin.CommonCodeWriter;
 import org.pgledger.application.admin.OwnerAuditWriter;
 import org.pgledger.application.support.Expect;
 import org.pgledger.application.support.LedgerServiceTest;
@@ -253,8 +252,8 @@ class CommonCodeTest {
                 return seen;
             }
         };
-        CommonCodeService service = new CommonCodeService(racing, s.bean(CommonCodeWriter.class),
-                s.bean(CodeRevisionRepository.class), s.bean(OwnerAuditWriter.class), s.bean(LinkRepository.class));
+        CommonCodeService service = new CommonCodeService(racing, s.bean(CodeRevisionRepository.class),
+                s.bean(OwnerAuditWriter.class), s.bean(LinkRepository.class));
         long audit = auditRows(s, subject);
 
         LedgerException failure = Expect.failure(() -> s.ctx().tx(() -> service.set(loser, TestOwners.OWNER)),
@@ -313,7 +312,7 @@ class CommonCodeTest {
     }
 
     @Test
-    @DisplayName("SVC-CC-12 (TXF-002): 8 calls that add the same new code at the same time (addIfAbsent) leave one row: exactly one call adds it, the others answer empty, none fails, and the revision moves once with one audit row")
+    @DisplayName("SVC-CC-12 (TXF-002, principle 4.4): 8 calls that add the same new code at the same time (addIfAbsent) leave one row: exactly one call adds it, each of the others answers empty (it read the committed row) or ends with the translated DUPLICATE_KEY (it met the primary key); no raw exception, no call is run again, and the revision moves once with one audit row")
     void cc12_concurrentAddOfTheSameCode(Scenario s) {
         CommonCodeService service = s.bean(CommonCodeService.class);
         String name = "CC12_" + s.code();
@@ -324,16 +323,48 @@ class CommonCodeTest {
                 .<Callable<Optional<CodeResult>>>mapToObj(i -> () -> service.addIfAbsent(seed, TestOwners.OWNER)).toList();
         List<Parallel.Outcome<Optional<CodeResult>>> outcomes = Parallel.all(calls);
 
-        assertThat(outcomes).allSatisfy(outcome -> assertThat(outcome.failure()).as("the loser answers, it does not fail")
-                .isNull());
-        assertThat(outcomes.stream().filter(outcome -> outcome.value().isPresent())).hasSize(1);
+        assertThat(outcomes).allSatisfy(outcome -> assertThat(outcome.failure()).as("only the translated DUPLICATE_KEY")
+                .satisfiesAnyOf(failure -> assertThat(failure).isNull(),
+                        failure -> assertThat(failure).isInstanceOfSatisfying(LedgerException.class,
+                                refused -> assertThat(refused.code()).isEqualTo(ConflictCode.DUPLICATE_KEY))));
+        assertThat(outcomes.stream().filter(outcome -> outcome.succeeded() && outcome.value().isPresent()))
+                .as("exactly one call adds the code").hasSize(1);
         assertThat(codeRows(s, name)).isEqualTo(1);
         assertThat(revision(s)).isEqualTo(before + 1);
         assertThat(auditRows(s, "RELATION_KIND/" + name)).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("SVC-CC-13 (TXF-002): 8 calls that set the same new code at the same time create it once (the one creation path): none fails with a duplicate key, the one that lost the unique key changes the row of the winner like any existing code, and the row holds one of the commands")
+    @DisplayName("SVC-CC-16 (TXF-002, principle 4.4): a creation that meets the code of another call at the same moment (its read saw no row, its insert breaks the primary key) ends with DUPLICATE_KEY, for addIfAbsent and for set: no raw exception, nothing of it stays written (no revision bump, no audit row), and the code of the other call is untouched")
+    void cc16_aSimultaneousCreationEndsWithDuplicateKey(Scenario s) {
+        CommonCodeService real = s.bean(CommonCodeService.class);
+        String name = "CC16_" + s.code();
+        String subject = "RELATION_KIND/" + name;
+        real.set(code("RELATION_KIND", name), TestOwners.OWNER);
+        // the repository of the service under test sees no row, as a read that ran before the other call committed would
+        CommonCodeRepository blind = new CommonCodeRepository(s.ctx().jdbc()) {
+            @Override
+            public Optional<VersionedCode> findVersioned(CodeGroup group, CodeValue code) {
+                return Optional.empty();
+            }
+        };
+        CommonCodeService service = new CommonCodeService(blind, s.bean(CodeRevisionRepository.class),
+                s.bean(OwnerAuditWriter.class), s.bean(LinkRepository.class));
+        long before = revision(s);
+        long audit = auditRows(s, subject);
+        CodeCommand other = new CodeCommand("RELATION_KIND", name, "다른 이름", "Other", null, null, 99, null);
+
+        Expect.failure(() -> s.ctx().tx(() -> service.addIfAbsent(other, TestOwners.OWNER)), ConflictCode.DUPLICATE_KEY);
+        Expect.failure(() -> s.ctx().tx(() -> service.set(other, TestOwners.OWNER)), ConflictCode.DUPLICATE_KEY);
+
+        assertThat(revision(s)).isEqualTo(before);
+        assertThat(auditRows(s, subject)).isEqualTo(audit);
+        assertThat(s.bean(CommonCodeRepository.class).find(CodeGroup.RELATION_KIND, CodeValue.of(name)).orElseThrow()
+                .nameEn()).isEqualTo("Name");
+    }
+
+    @Test
+    @DisplayName("SVC-CC-13 (TXF-002, principle 4.4): 8 calls that set the same new code at the same time create it once (the one creation path): each other call ends with the translated DUPLICATE_KEY (it met the primary key) or VERSION_CONFLICT (it read the committed row and lost the version), never a raw exception, and the row holds one of the commands")
     void cc13_concurrentSetOfTheSameNewCode(Scenario s) {
         CommonCodeService service = s.bean(CommonCodeService.class);
         String name = "CC13_" + s.code();
@@ -343,10 +374,11 @@ class CommonCodeTest {
 
         List<Parallel.Outcome<CodeResult>> outcomes = Parallel.all(calls);
 
-        assertThat(outcomes).allSatisfy(outcome -> assertThat(outcome.failure()).as("no duplicate key reaches the caller")
+        assertThat(outcomes).allSatisfy(outcome -> assertThat(outcome.failure()).as("no raw exception reaches the caller")
                 .satisfiesAnyOf(failure -> assertThat(failure).isNull(),
                         failure -> assertThat(failure).isInstanceOfSatisfying(LedgerException.class,
-                                refused -> assertThat(refused.code()).isEqualTo(ConflictCode.VERSION_CONFLICT))));
+                                refused -> assertThat(refused.code()).isIn(ConflictCode.VERSION_CONFLICT,
+                                        ConflictCode.DUPLICATE_KEY))));
         assertThat(outcomes.stream().filter(Parallel.Outcome::succeeded)).as("at least the call that created it")
                 .isNotEmpty();
         assertThat(codeRows(s, name)).isEqualTo(1);

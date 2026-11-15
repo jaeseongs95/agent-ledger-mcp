@@ -22,8 +22,6 @@ import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.CodeValue;
 import org.pgledger.domain.value.OwnerIdentity;
 import org.pgledger.domain.value.Tokens;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,14 +30,13 @@ import org.springframework.transaction.annotation.Transactional;
  * The extensible code lists. A code is added or updated (names, descriptions, order, state); it is never deleted
  * or renamed, because rows keep pointing at it, and there is no method that could. A change bumps the code
  * revision in the same transaction so other processes notice; setting a code to what it already is changes
- * nothing and does not bump. A code is created in one place only (insert first; a duplicate key means another call created
- * it, and its row decides) and changed by an update that is conditional on the version of the row that was read.
+ * nothing and does not bump. A code is created in one place only (read first; the insert at the same moment as another call
+ * ends with the translated unique-key error) and changed by an update that is conditional on the version of the row that was
+ * read. The transaction is the one of the service method (principle 4.4): no nested write, no retry.
  */
 @Service
 @Transactional
 public class CommonCodeService {
-
-    private static final Logger LOG = LoggerFactory.getLogger(CommonCodeService.class);
 
     /** The default position of a code that has none. */
     public static final int DEFAULT_SORT_ORDER = 100;
@@ -64,15 +61,13 @@ public class CommonCodeService {
     }
 
     private final CommonCodeRepository codes;
-    private final CommonCodeWriter writer;
     private final CodeRevisionRepository revision;
     private final OwnerAuditWriter audit;
     private final LinkRepository links;
 
-    public CommonCodeService(CommonCodeRepository codes, CommonCodeWriter writer, CodeRevisionRepository revision,
-            OwnerAuditWriter audit, LinkRepository links) {
+    public CommonCodeService(CommonCodeRepository codes, CodeRevisionRepository revision, OwnerAuditWriter audit,
+            LinkRepository links) {
         this.codes = codes;
-        this.writer = writer;
         this.revision = revision;
         this.audit = audit;
         this.links = links;
@@ -82,30 +77,33 @@ public class CommonCodeService {
      * Sets the code and, when that changes anything, records who did it in the owner's audit trail. A code that does not exist
      * is created ({@link #create}, the one place that creates a row); a code that exists is changed by an update that is
      * conditional on the version that was read, so a change that another action made in between is never overwritten: the
-     * lost race is a VERSION_CONFLICT. When two actions create the same new code at the same time, the one that loses the
-     * unique key reads the row of the winner and changes that row like any existing code.
+     * lost race is a VERSION_CONFLICT. When two actions create the same new code at the same time, the primary key decides and
+     * the one that loses it ends with DUPLICATE_KEY.
      *
      * @throws ConflictException VERSION_CONFLICT (args: {@code common_code}, {@code <group>/<code>}, the version that was
-     *         read, the version now) when the code was changed by another action after this one read it
+     *         read, the version now) when the code was changed by another action after this one read it; DUPLICATE_KEY when
+     *         another action created the code at the same moment
      */
     public CodeResult set(CodeCommand command, OwnerIdentity actor) {
         CodeGroup group = Tokens.parse("group", command.group(), CodeGroup.values());
         CodeValue code = CodeValue.of(command.code());
         CodeState state = stateOf(command);
         Optional<VersionedCode> existing = codes.findVersioned(group, code);
-        Optional<CodeResult> created = existing.isPresent() ? Optional.empty() : create(command, group, code, state, actor);
-        return created.orElseGet(() -> change(existing.or(() -> codes.findVersioned(group, code))
-                .orElseThrow(() -> vanished(group, code)), command, state, actor));
+        if (existing.isEmpty()) {
+            return create(command, group, code, state, actor);
+        }
+        return change(existing.get(), command, state, actor);
     }
 
     /**
      * Adds the code when it does not exist, with the revision bump and the audit row of {@link #set}; a code that exists is left
      * exactly as it is (nothing is written, not even by a command that would not change it). The first setup of an installation
      * adds the codes of the seed through this, so it can never overwrite a code that the owner changed or retired. Two calls
-     * that add the same new code at the same time add one row: the one that loses the unique key answers empty, like a call
-     * that finds the code.
+     * that add the same new code at the same time add one row: the primary key decides, and the call that loses it ends with
+     * the translated DUPLICATE_KEY (nothing is run again).
      *
      * @return the new code and the revision, or empty when the code exists
+     * @throws ConflictException DUPLICATE_KEY when another call created the code at the same moment
      */
     public Optional<CodeResult> addIfAbsent(CodeCommand command, OwnerIdentity actor) {
         CodeGroup group = Tokens.parse("group", command.group(), CodeGroup.values());
@@ -113,7 +111,7 @@ public class CommonCodeService {
         if (codes.findVersioned(group, code).isPresent()) {
             return Optional.empty();
         }
-        return create(command, group, code, stateOf(command), actor);
+        return Optional.of(create(command, group, code, stateOf(command), actor));
     }
 
     /**
@@ -139,25 +137,25 @@ public class CommonCodeService {
     }
 
     /**
-     * The one place that creates a code: the insert first, the revision bump and the audit row after it. The insert is a nested
-     * write ({@link CommonCodeWriter}): when another action created the code first the unique key refuses it, Spring takes the
-     * insert back and the row of the winner decides: empty, nothing was written here.
+     * The one place that creates a code: the insert, then the revision bump and the audit row, in the transaction of the
+     * calling method (principle 4.4). The callers have read before and found no row; a creation at the very same moment as
+     * another call is decided by the primary key: the call that loses it ends with the translated DUPLICATE_KEY, and the
+     * transaction is rolled back with everything it wrote (the rare simultaneous first creation, accepted).
      */
-    private Optional<CodeResult> create(CodeCommand command, CodeGroup group, CodeValue code, CodeState state,
+    private CodeResult create(CodeCommand command, CodeGroup group, CodeValue code, CodeState state,
             OwnerIdentity actor) {
         int sort = command.sortOrder() != null ? command.sortOrder() : DEFAULT_SORT_ORDER;
         CommonCode created = new CommonCode(group, code, command.nameKo(), command.nameEn(), command.descriptionKo(),
                 command.descriptionEn(), sort, state, directionOf(command, CodeDirection.CANONICAL), AuthorId.OWNER);
         try {
-            writer.insert(created);
+            codes.insert(created);
         } catch (DuplicateKeyException duplicate) {
-            LOG.debug("the code {}/{} was added by another call first; its row decides", group.name(), code.value(),
-                    duplicate);
-            return Optional.empty();
+            throw new ConflictException(ConflictCode.DUPLICATE_KEY,
+                    List.of("common code " + group.name() + "/" + code.value()), duplicate);
         }
         revision.bump();
         audit.record(actor, OwnerAction.CODE_SET, group.name() + "/" + code.value(), "added state=" + state.name());
-        return Optional.of(new CodeResult(created, revision.current()));
+        return new CodeResult(created, revision.current());
     }
 
     /** Changes the code that exists, if that changes anything, by an update that is conditional on the version read. */
