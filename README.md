@@ -64,14 +64,15 @@ and no argument of an earlier version is accepted next to the new ones); what ch
   existing one when the case is ignored is refused (`DUPLICATE_KEY`), and an id is always compared exactly. A defect id that a caller
   chooses, and a task id in the form `<CODE>-T-0001` that a caller chooses, must have a number that is not above the next number of
   the project: a free number below it is accepted, and a number above it is refused with `ID_NUMBER_AHEAD`, whose message names the
-  next id, so that one id cannot stop the numbering by the server. Such an id is written as the server writes it (a number of at
+  next id, so that one id cannot stop the numbering by the server (when another request takes the number while this one runs,
+  `ID_COUNTER_CHANGED` tells you to send the request again). Such an id is written as the server writes it (a number of at
   least 1, zero padded to 4 digits and not otherwise): `<CODE>-D-00002` and number 0 are refused (`VALIDATION_FAILED` at `id`).
 - **One defect, one root cause, many observed cases.** Each observation of a defect (symptom, log, user report) is a case under it
   (`ledger_record_case`). A merged defect (`MERGED`, `merged_into`) keeps its cases; `ledger_defect` shows them under the defect it
   was merged into, and a `MERGED` defect takes no new cases.
 - **Common codes.** Defect category, defect severity and relation kind are the three groups `DEFECT_CATEGORY`, `DEFECT_SEVERITY` and
   `RELATION_KIND`, with Korean and English names. The active values are part of the tool definitions. A retired code stays on
-  existing rows and is refused when newly assigned. A severity is required on every defect. A relation kind has a direction, which is
+  existing rows and is refused when newly assigned. A severity is required on every defect. Only a write that stores the category or the severity (the create and the edit of `ledger_save`) checks the common codes; a fix and a state change do not, so a defect that still holds the retired `UNRATED` can be fixed, moved and verified, and is rated by an edit. A relation kind has a direction, which is
   part of its code: `caused_by` (a is caused by b) and `blocks` (a blocks b) are directed, keep `a` and `b` in the order the caller gave
   them, and so (a, b) and (b, a) are two relations; `same_site`, `same_family`, `same_fix_unit` and `regression_of` have no direction
   and are one relation in either order. A kind that is added with `code-set` or in the admin console declares its direction as well
