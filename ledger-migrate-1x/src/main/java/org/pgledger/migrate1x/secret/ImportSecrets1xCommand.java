@@ -3,6 +3,7 @@ package org.pgledger.migrate1x.secret;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.List;
@@ -151,6 +152,7 @@ public class ImportSecrets1xCommand implements Command {
         for (ImportedSecret imported : ImportedSecret.values()) {
             present.put(imported, store.exists(imported.secret()));
         }
+        List<String> written = new ArrayList<>();
         for (ImportedSecret imported : ImportedSecret.values()) {
             String name = imported.secret().value();
             if (present.get(imported) && !replace) {
@@ -165,9 +167,17 @@ public class ImportSecrets1xCommand implements Command {
             char[] value = values.get(imported.source()).toCharArray();
             try {
                 store.store(imported.secret(), value);
+            } catch (FailureException failure) {
+                // every value and every path was checked above, so what can still fail is a write: when an earlier secret is stored
+                // already the set is torn (the two tokens of the agents must be one value), and the refusal says what to do
+                if (written.isEmpty()) {
+                    throw failure;
+                }
+                throw new FailureException(MigrationError.SECRETS_PARTIAL, failure, String.join(", ", written), name);
             } finally {
                 Arrays.fill(value, '\0');
             }
+            written.add(name);
             output.info(messages.get(present.get(imported) ? "import-secrets-1x.replaced" : "import-secrets-1x.stored",
                     name, imported.source().setting()));
         }
