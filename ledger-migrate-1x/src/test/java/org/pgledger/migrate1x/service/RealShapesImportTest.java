@@ -1,4 +1,4 @@
-package org.pgledger.application;
+package org.pgledger.migrate1x.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -11,9 +11,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.pgledger.application.admin.GrantService;
 import org.pgledger.application.admin.GrantService.GrantCommand;
-import org.pgledger.application.legacy.ImportReport;
-import org.pgledger.application.legacy.LegacyImportService;
-import org.pgledger.application.legacy.TableCheck;
 import org.pgledger.application.read.DetailService;
 import org.pgledger.application.read.ListService;
 import org.pgledger.application.read.ListService.ConditionsQuery;
@@ -28,7 +25,6 @@ import org.pgledger.application.write.SaveService;
 import org.pgledger.application.write.TransitionCommand;
 import org.pgledger.application.write.TransitionService;
 import org.pgledger.application.write.WriteResult.SaveResult;
-import org.pgledger.apptest.LedgerTestRunners;
 import org.pgledger.domain.error.LookupCode;
 import org.pgledger.domain.error.ValidationCode;
 import org.pgledger.domain.error.ValidationException;
@@ -37,12 +33,13 @@ import org.pgledger.domain.model.ConditionLink;
 import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.ConditionId;
 import org.pgledger.domain.value.TaskId;
+import org.pgledger.migrate1x.fixture.LegacyFixtures;
+import org.pgledger.migrate1x.fixture.LegacyLedger;
+import org.pgledger.migrate1x.support.ImportRunners;
 import org.pgledger.testing.TestOwners;
-import org.pgledger.testing.legacy.LegacyFixtures;
-import org.pgledger.testing.legacy.LegacyLedger;
 
 /**
- * REH3-IMP-01 .. 04, REH3-ID-03, REH3-TXT-05 (and the import side of REH3-ID-08): the legacy ledger with the shapes of the
+ * REH3-IMP-01 .. 04, REH3-ID-03, REH3-TXT-05 (and the import side of REH3-ID-08): the 1.x ledger with the shapes of the
  * real 1.x data (rehearsal 3) through the import service in the real application context, then the tools by the ids that
  * 1.x used.
  */
@@ -50,7 +47,7 @@ class RealShapesImportTest {
 
     private static void withRig(LegacyLedger legacy, Consumer<LedgerAppContext> body) {
         try (legacy) {
-            LedgerTestRunners.importing(legacy, legacy.reader(), body);
+            ImportRunners.importing(legacy, legacy.reader(), body);
         }
     }
 
@@ -246,7 +243,7 @@ class RealShapesImportTest {
 
             assertThat(count(ctx, "SELECT COUNT(*) FROM task WHERE id = ? AND title = 'edited' AND state = 'ACTIVE'", id))
                     .isEqualTo(1);
-            assertThat(count(ctx, "SELECT COUNT(*) FROM history WHERE entity = 'TASK' AND entity_id = ? AND op <> 'LEGACY_NOTE'",
+            assertThat(count(ctx, "SELECT COUNT(*) FROM history WHERE entity = 'TASK' AND entity_id = ? AND op <> 'IMPORTED_NOTE'",
                     other)).isZero();
         });
     }

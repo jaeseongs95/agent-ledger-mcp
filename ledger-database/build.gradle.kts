@@ -27,11 +27,9 @@ dependencies {
 }
 
 // The test database support (TEST_CASES.md 1.4a): the settings, the connection pools and the schema per test on the PostgreSQL of
-// the test PC, and the builder of the legacy ledger for the tests (MIG-024): the table shapes of the old schema on that
-// PostgreSQL (in a schema of its own) and the data of the old installer, shared by the tests of the import in the application
-// and CLI modules. H2 is not a test database. The PostgreSQL driver is a test fixture dependency and so is on the test class
-// path of every module that uses the fixtures; the product ships none, and the runtime class path check does not look at
-// test fixtures.
+// the test PC, shared by the tests of the modules that use the database. H2 is not a test database. The PostgreSQL driver is a
+// test fixture dependency and so is on the test class path of every module that uses the fixtures; the product ships none, and
+// the runtime class path check does not look at test fixtures.
 dependencies {
     testFixturesImplementation(platform(libs.spring.boot.bom))
     testFixturesApi("org.postgresql:postgresql")

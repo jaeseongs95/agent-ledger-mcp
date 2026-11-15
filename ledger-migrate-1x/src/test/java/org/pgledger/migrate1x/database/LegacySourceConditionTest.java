@@ -1,11 +1,10 @@
-package org.pgledger.database;
+package org.pgledger.migrate1x.database;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import javax.sql.DataSource;
-import org.pgledger.database.driver.LegacySourceConfiguration;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.validation.autoconfigure.ValidationAutoConfiguration;

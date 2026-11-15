@@ -34,7 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
  * when its digest is the one that was confirmed ({@link RetireRefusal#SOURCE_CHANGED} otherwise). Nothing runs by itself: the
  * command of the owner is the only caller.
  *
- * <p>Like the import it exists only where {@code ledger.cli.enabled=true}.
+ * <p>Like the import it is imported by the database configuration of the tool ({@link ImportServices}) and exists only there.
  */
 @Service
 @Transactional(transactionManager = LegacySourceRepository.TRANSACTION_MANAGER)

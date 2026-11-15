@@ -1,4 +1,4 @@
-package org.pgledger.application;
+package org.pgledger.migrate1x.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -27,9 +27,6 @@ import java.util.function.Supplier;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.pgledger.application.legacy.ImportReport;
-import org.pgledger.application.legacy.LegacyImportService;
-import org.pgledger.application.legacy.TableCheck;
 import org.pgledger.application.read.DetailService;
 import org.pgledger.application.read.HistoryService;
 import org.pgledger.application.read.HistoryService.HistoryQuery;
@@ -59,15 +56,9 @@ import org.pgledger.application.write.WriteResult.RecordCaseResult;
 import org.pgledger.application.write.WriteResult.RecordFixResult;
 import org.pgledger.application.write.WriteResult.SaveResult;
 import org.pgledger.application.write.WriteResult.TransitionResult;
-import org.pgledger.apptest.LedgerTestRunners;
-import org.pgledger.apptest.MisbehavingTarget;
 import org.pgledger.apptest.TestKeyRing;
 import org.pgledger.database.repository.Counter;
 import org.pgledger.database.repository.IdAllocator;
-import org.pgledger.database.repository.LegacyRow;
-import org.pgledger.database.repository.LegacySourceRepository;
-import org.pgledger.database.repository.LegacyTable;
-import org.pgledger.database.repository.LegacyTargetRepository;
 import org.pgledger.database.time.UtcTime;
 import org.pgledger.domain.context.ToolScope;
 import org.pgledger.domain.error.ConflictCode;
@@ -82,20 +73,22 @@ import org.pgledger.domain.error.ValidationIssue;
 import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.rule.Channel;
 import org.pgledger.domain.value.ProjectCode;
+import org.pgledger.migrate1x.database.LegacySourceRepository;
+import org.pgledger.migrate1x.database.LegacyTable;
+import org.pgledger.migrate1x.fixture.LegacyFixtures;
+import org.pgledger.migrate1x.fixture.LegacyFixtures.Category;
+import org.pgledger.migrate1x.fixture.LegacyLedger;
+import org.pgledger.migrate1x.fixture.MisbehavingTarget;
+import org.pgledger.migrate1x.support.ImportRunners;
 import org.pgledger.testing.TestOwners;
-import org.pgledger.testing.legacy.LegacyFixtures;
-import org.pgledger.testing.legacy.LegacyFixtures.Category;
-import org.pgledger.testing.legacy.LegacyLedger;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * MIG-001 .. MIG-024 and MIG-027 .. MIG-033 on the PostgreSQL of the test PC: the legacy import service in the real
- * application context (a freshly migrated schema, the real repositories and services, the real migrator) with the legacy
+ * MIG-001 .. MIG-024 and MIG-027 .. MIG-033, M1X-003 (MIG-004 is replaced by it: the 1.x request receipts are not imported)
+ * and M1X-050 (the vocabulary of the imported rows, MIG-003) on the PostgreSQL of the test PC: the 1.x import service in the
+ * real application context (a freshly migrated schema, the real repositories and services, the real migrator) with the 1.x
  * ledger of {@link LegacyFixtures} (a schema of its own, {@code timestamptz}, {@code uuid} and {@code jsonb} columns as in the
  * real 1.x) as its source, read by the read-only account. Every test reads the tables of both sides with its own queries.
  * MIG-025 is test server stage work and is not here.
@@ -142,7 +135,7 @@ class LegacyImportTest {
 
     private static void withRig(LegacyLedger legacy, DataSource source, Consumer<Rig> body, Class<?>... configurations) {
         try (legacy) {
-            LedgerTestRunners.importing(legacy, source, ctx -> body.accept(new Rig(legacy, ctx)), configurations);
+            ImportRunners.importing(legacy, source, ctx -> body.accept(new Rig(legacy, ctx)), configurations);
         }
     }
 
@@ -222,7 +215,7 @@ class LegacyImportTest {
     // ---------------------------------------------------------------------------------------------- MIG-001 .. 004
 
     @Test
-    @DisplayName("MIG-001 every table of the legacy ledger arrives with its row count, no extra rows; the report has one line per table")
+    @DisplayName("MIG-001 every table of the 1.x ledger that is copied (twelve: the request receipts are not, M1X-003) arrives with its row count, no extra rows; the report has one line per table")
     void mig001_everyRowIsCopied() {
         withRich(rig -> {
             ImportReport report = rig.importAll();
@@ -233,7 +226,8 @@ class LegacyImportTest {
                 assertThat(rig.count("SELECT COUNT(*) FROM " + table.targetName())).as(table.name()).isEqualTo(legacyRows);
                 total += legacyRows;
             }
-            assertThat(report.tables()).hasSize(LegacyTable.values().length).allMatch(TableCheck::matches);
+            assertThat(LegacyTable.values()).hasSize(12);
+            assertThat(report.tables()).hasSize(12).hasSize(LegacyTable.values().length).allMatch(TableCheck::matches);
             assertThat(report.rows()).isEqualTo(total);
             assertThat(report.schema()).isEqualTo(rig.legacy().schema());
         });
@@ -265,7 +259,7 @@ class LegacyImportTest {
     }
 
     @Test
-    @DisplayName("MIG-003 every field of every history row is equal (the JSON text of changes, legacy_ref, the legacy operations and assurances, login, request id, corrects_id), the entity is the upper-case name, and before_data is NULL on every row")
+    @DisplayName("MIG-003 / M1X-050 every field of every history row is equal (the JSON text of changes, source_ref from legacy_ref, login, request id, corrects_id), the 1.x operations and assurances arrive under the imported vocabulary (LEGACY_ becomes IMPORTED_), the entity is the upper-case name, and before_data is NULL on every row")
     void mig003_historyFields() {
         withRich(rig -> {
             rig.importAll();
@@ -275,62 +269,58 @@ class LegacyImportTest {
                     + "request_id, legacy_ref FROM " + rig.legacy().schema() + ".history ORDER BY id");
             List<Map<String, Object>> rows = rig.rows("SELECT id, author_id, login, actor_assurance, entity, entity_id, op, "
                     + "from_state, to_state, changes, before_data, reason, evidence_uri, evidence_sha256, corrects_id, "
-                    + "request_id, legacy_ref FROM history ORDER BY id");
+                    + "request_id, source_ref FROM history ORDER BY id");
 
             assertThat(rows).hasSameSizeAs(legacyRows).hasSize(10);
             for (int i = 0; i < rows.size(); i++) {
                 Map<String, Object> legacy = legacyRows.get(i);
                 Map<String, Object> row = rows.get(i);
-                for (String column : List.of("id", "author_id", "login", "actor_assurance", "entity_id", "op", "from_state",
-                        "to_state", "changes", "reason", "evidence_uri", "evidence_sha256", "corrects_id", "request_id",
-                        "legacy_ref")) {
+                for (String column : List.of("id", "author_id", "login", "entity_id", "from_state", "to_state", "changes",
+                        "reason", "evidence_uri", "evidence_sha256", "corrects_id", "request_id")) {
                     assertThat(text(row, column)).as("history %s of row %d", column, i).isEqualTo(text(legacy, column));
                 }
+                // the vocabulary of the imported rows (M1X-050): 1.x wrote LEGACY_LOGIN, LEGACY_NOTE ..., 2.0 holds IMPORTED_*
+                assertThat(text(row, "actor_assurance")).as("assurance of row %d", i).isEqualTo(imported(text(legacy, "actor_assurance")));
+                assertThat(text(row, "op")).as("op of row %d", i).isEqualTo(imported(text(legacy, "op")));
+                assertThat(text(row, "source_ref")).as("source_ref of row %d", i).isEqualTo(text(legacy, "legacy_ref"));
                 assertThat(text(row, "entity")).isEqualTo(text(legacy, "entity").toUpperCase(Locale.ROOT));
                 assertThat(row.get("before_data")).as("before_data of row %d", i).isNull();
             }
-            assertThat(rows.stream().map(row -> text(row, "op")).toList()).contains("IMPORT", "LEGACY_NOTE", "LEGACY_CHANGE",
-                    "CORRECT");
-            assertThat(rows.stream().map(row -> text(row, "actor_assurance")).distinct().toList()).contains("LEGACY_LOGIN",
-                    "LEGACY_UNKNOWN", "LEGACY_SHARED");
+            assertThat(rows.stream().map(row -> text(row, "op")).toList()).contains("IMPORT", "IMPORTED_NOTE", "IMPORTED_CHANGE",
+                    "CORRECT").noneMatch(op -> op.startsWith("LEGACY_"));
+            assertThat(rows.stream().map(row -> text(row, "actor_assurance")).distinct().toList()).contains("IMPORTED_LOGIN",
+                    "IMPORTED_UNKNOWN", "IMPORTED_SHARED").noneMatch(assurance -> assurance.startsWith("LEGACY_"));
         });
     }
 
+    /** The name 2.0 holds for a value that 1.x wrote with its LEGACY_ prefix (M1X-050); any other value is the same. */
+    private static String imported(String oneXValue) {
+        return oneXValue.startsWith("LEGACY_") ? "IMPORTED_" + oneXValue.substring("LEGACY_".length()) : oneXValue;
+    }
+
     @Test
-    @DisplayName("MIG-004 every receipt arrives with its stored response and payload digest, flagged LEGACY; a replay with an imported request id is REQUEST_ID_LEGACY and neither returns the stored response nor writes")
-    void mig004_receipts() {
+    @DisplayName("M1X-003 (replaces MIG-004) the request receipts of 1.x are not imported: the new request_receipt is empty after the import, the report names twelve tables and none of them is request_receipt, the table has no column origin, and the comparison of the other twelve is equal")
+    void m1x003_receiptsAreNotImported() {
         withRich(rig -> {
-            rig.importAll();
+            assertThat(rig.legacy().count("request_receipt")).as("the 1.x fixture holds receipts").isEqualTo(3);
 
-            List<Map<String, Object>> receipts = rig.rows("SELECT request_id, operation, payload_sha256, author_id, login, "
-                    + "response, origin FROM request_receipt ORDER BY request_id");
-            assertThat(receipts).hasSize(3).allSatisfy(receipt -> assertThat(receipt.get("origin")).isEqualTo("LEGACY"));
-            assertThat(receipts.stream().map(receipt -> text(receipt, "operation")).toList())
-                    .containsExactlyInAnyOrder("SAVE", "TRANSITION", "RECORD_FIX");
-            String imported = UUID.nameUUIDFromBytes("request-1".getBytes(StandardCharsets.UTF_8)).toString();
-            // the legacy column is jsonb: the text the import reads is PostgreSQL's normalised form of the JSON, and it is
-            // copied as it is
-            String stored = rig.ctx().jdbc().sql("SELECT response FROM request_receipt WHERE request_id = ?").param(imported)
-                    .query(String.class).single();
-            assertThat(stored).isEqualTo(rig.legacy().rows("SELECT response FROM " + rig.legacy().schema()
-                    + ".request_receipt WHERE request_id = ?", UUID.fromString(imported)).getFirst().get("response").toString());
-            assertSameJson(stored, "{\"id\":\"OLD-D-0001\",\"version\":1}");
-            assertThat(rig.ctx().jdbc().sql("SELECT payload_sha256 FROM request_receipt WHERE request_id = ?").param(imported)
-                    .query(String.class).single()).isEqualTo("c".repeat(64));
+            ImportReport report = rig.importAll();
 
-            long defects = rig.count("SELECT COUNT(*) FROM defect");
-            long history = rig.count("SELECT COUNT(*) FROM history");
-            for (String requestId : List.of(imported, UUID.nameUUIDFromBytes("request-pending".getBytes(StandardCharsets.UTF_8))
-                    .toString())) {
-                LedgerException refused = Expect.failure(() -> rig.ctx().bean(SaveService.class).save(SEED,
-                        new SaveCommand(requestId, "defect", null, 0L, Fields.of(defectFields("old", "replay")), Scenario.REASON)),
-                        ConflictCode.REQUEST_ID_LEGACY);
-                assertThat(refused.getMessage()).doesNotContain("OLD-D-0001");
-            }
-            assertThat(rig.count("SELECT COUNT(*) FROM defect")).isEqualTo(defects);
-            assertThat(rig.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
-            assertThat(rig.ctx().jdbc().sql("SELECT response FROM request_receipt WHERE request_id = ?").param(imported)
-                    .query(String.class).single()).isEqualTo(stored);
+            assertThat(rig.count("SELECT COUNT(*) FROM request_receipt")).isZero();
+            assertThat(report.tables()).hasSize(12).allMatch(TableCheck::matches);
+            assertThat(report.tables().stream().map(check -> check.table().targetName()).toList())
+                    .doesNotContain("request_receipt");
+            assertThat(report.tables().stream().map(check -> check.table().sourceName()).toList())
+                    .doesNotContain("request_receipt");
+            assertThat(report.detail()).doesNotContain("request_receipt");
+            // the column list of the table, from the metadata of a query on it: no column origin (it held LEGACY or NATIVE)
+            assertThat(rig.ctx().jdbc().sql("SELECT * FROM request_receipt").query().rowSet().getMetaData().getColumnNames())
+                    .containsExactlyInAnyOrder("request_id", "operation", "payload_sha256", "author_id", "login", "response",
+                            "created_at")
+                    .doesNotContain("origin");
+            // the verification does not look at the receipts either, and the 1.x receipts are still there (nothing is changed)
+            assertThat(rig.service().verify().tables()).hasSize(12).allMatch(TableCheck::matches);
+            assertThat(rig.legacy().count("request_receipt")).isEqualTo(3);
         });
     }
 
@@ -761,15 +751,16 @@ class LegacyImportTest {
             for (String[] column : new String[][] {{"history", "at"}, {"task", "created_at"}, {"task", "updated_at"},
                     {"defect", "created_at"}, {"defect", "updated_at"}, {"defect_fix", "ci_completed_at"},
                     {"defect_fix", "recorded_at"}, {"defect_case", "recorded_at"}, {"session_grant", "granted_at"},
-                    {"session_grant", "expires_at"}, {"session_grant", "revoked_at"}, {"request_receipt", "created_at"}}) {
-                String key = "request_receipt".equals(column[0]) ? "request_id" : "id";
+                    {"session_grant", "expires_at"}, {"session_grant", "revoked_at"}}) {
+                // the request receipts of 1.x are not copied, so their times are not compared (M1X-003)
+                String key = "id";
                 List<Map<String, Object>> legacy = rig.legacy().rows("SELECT " + key + " AS k, EXTRACT(EPOCH FROM " + column[1]
                         + ") AS e FROM " + rig.legacy().schema() + "." + column[0] + " ORDER BY " + key);
                 for (Map<String, Object> row : legacy) {
                     // the new schema names the time of a history row occurred_at (the legacy column is at)
                     String target = "history".equals(column[0]) && "at".equals(column[1]) ? "occurred_at" : column[1];
                     Instant instant = rig.instant("SELECT " + target + " AS t FROM " + column[0] + " WHERE " + key + " = ?",
-                            row.get("k") instanceof UUID ? row.get("k").toString() : row.get("k"));
+                            row.get("k"));
                     if (row.get("e") == null) {
                         assertThat(instant).as("%s.%s %s", column[0], column[1], row.get("k")).isNull();
                     } else {
@@ -953,7 +944,7 @@ class LegacyImportTest {
             assertThat(changes).isEqualTo(rig.legacy().rows("SELECT changes FROM " + rig.legacy().schema()
                     + ".history WHERE id = 2").getFirst().get("changes").toString());
             assertSameJson(changes, "{\"title\":[\"old\",\"First old defect\"],\"quote\":\"\\\"x\\\"\"}");
-            assertThat(page.items().stream().filter(view -> view.id() == 13).findFirst().orElseThrow().legacyRef())
+            assertThat(page.items().stream().filter(view -> view.id() == 13).findFirst().orElseThrow().sourceRef())
                     .isEqualTo("older:1");
         });
     }
@@ -1015,7 +1006,7 @@ class LegacyImportTest {
             try (LegacyLedger legacy = LegacyFixtures.rich()) {
                 DataSource source = legacy.reader(zone);
                 assertThat(JdbcClient.create(source).sql("SHOW TIME ZONE").query(String.class).single()).isEqualTo(zone);
-                LedgerTestRunners.importing(legacy, source, ctx -> {
+                ImportRunners.importing(legacy, source, ctx -> {
                     Rig rig = new Rig(legacy, ctx);
                     rig.importAll();
                     for (Map<String, Object> row : legacy.rows("SELECT id AS k, EXTRACT(EPOCH FROM at) AS e FROM "

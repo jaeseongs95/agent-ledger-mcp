@@ -1,16 +1,16 @@
-package org.pgledger.application.legacy;
+package org.pgledger.migrate1x.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.pgledger.database.repository.LegacyObject;
-import org.pgledger.database.repository.LegacyObject.Kind;
-import org.pgledger.database.repository.LegacyRoleSkip;
 import org.pgledger.domain.value.Sha256;
+import org.pgledger.migrate1x.database.LegacyObject;
+import org.pgledger.migrate1x.database.LegacyObject.Kind;
+import org.pgledger.migrate1x.database.LegacyRoleSkip;
 
-/** RET-018: the list that {@code retire-legacy} shows and the digest the owner confirms. */
+/** RET-018: the list that {@code retire-1x} shows and the digest the owner confirms. */
 class LegacyRetirePlanTest {
 
     private static final List<LegacyObject> OBJECTS = List.of(

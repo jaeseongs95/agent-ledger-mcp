@@ -1,15 +1,12 @@
-package org.pgledger.database;
+package org.pgledger.migrate1x.database;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.pgledger.database.driver.LegacySourceConfiguration;
-import org.pgledger.database.driver.LegacySourceWiring;
-import org.pgledger.database.repository.LegacySourceRepository;
-import org.pgledger.database.support.Databases;
-import org.pgledger.database.support.RecordingDataSource;
+import org.pgledger.application.support.RecordingDataSource;
+import org.pgledger.migrate1x.support.TestLedgerDatabase;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.jdbc.autoconfigure.DataSourceTransactionManagerAutoConfiguration;
 import org.springframework.boot.jdbc.autoconfigure.JdbcClientAutoConfiguration;
@@ -33,9 +30,10 @@ class LegacySourceWiringTest {
     @Test
     @DisplayName("TXD-012 a legacy data source gets its own JdbcClient, transaction manager and repository; the unqualified JdbcClient and transaction manager are those of the ledger data source")
     void theLegacyBeansAreQualifiedAndTheLedgerKeepsTheDefaults() {
-        try (Databases databases = new Databases()) {
-            RecordingDataSource ledger = new RecordingDataSource(databases.newDataSource());
-            RecordingDataSource legacy = new RecordingDataSource(databases.newDataSource());
+        try (TestLedgerDatabase ledgerDatabase = TestLedgerDatabase.empty();
+                TestLedgerDatabase legacyDatabase = TestLedgerDatabase.empty()) {
+            RecordingDataSource ledger = new RecordingDataSource(ledgerDatabase.dataSource());
+            RecordingDataSource legacy = new RecordingDataSource(legacyDatabase.dataSource());
             new ApplicationContextRunner()
                     .withConfiguration(AutoConfigurations.of(ValidationAutoConfiguration.class,
                             JdbcTemplateAutoConfiguration.class, JdbcClientAutoConfiguration.class,

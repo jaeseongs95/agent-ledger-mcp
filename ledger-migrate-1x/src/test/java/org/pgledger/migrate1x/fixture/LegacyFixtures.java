@@ -1,6 +1,6 @@
 package org.pgledger.migrate1x.fixture;
 
-import static org.pgledger.testing.legacy.LegacyLedger.at;
+import static org.pgledger.migrate1x.fixture.LegacyLedger.at;
 
 import java.io.IOException;
 import java.io.InputStream;

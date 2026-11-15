@@ -20,7 +20,7 @@ of the write tools, the keys of the results, the `_hostAttestation` key) and cha
 - ledger-cli
 - Admin web
 - Client hooks
-- Migrating from 1.x
+- Upgrading from 1.x
 - Build and test
 - Layout
 
@@ -28,7 +28,7 @@ of the write tools, the keys of the results, the `_hostAttestation` key) and cha
 
 - **Author identity is proved, not claimed.** Every write and every `ledger_whoami` carries the reserved key `_hostAttestation`,
   which the host hook of the client fills in. Models must omit it. The author is `<vendor>:<session-id>`, for example
-  `claude:1f2e3d4c` or `codex:9a8b7c6d`; the owner of the ledger is `user:owner`. A legacy `author_id` is accepted and ignored.
+  `claude:1f2e3d4c` or `codex:9a8b7c6d`; the owner of the ledger is `user:owner`. A deprecated `author_id` key is accepted and ignored.
 - **Writes need a live grant.** The owner grants an author a scope on a project with `ledger-cli grant` (or on the grants page of
   the admin web). The scopes are `defect`, `task`, `fix` and `verify`. A write without a matching grant is refused.
 - **Verification is separate.** `VERIFIED`, `MET` and `NOT_MET` are set only through the reviewer tools `ledger_review` and
@@ -41,12 +41,12 @@ of the write tools, the keys of the results, the `_hostAttestation` key) and cha
   existing row also stores the full row as it was before the change (`before_data`, returned by `ledger_history` with
   `include_before`).
 - **Retries are safe.** Pass `request_id`, a UUID. Repeating the same request returns the stored result and writes nothing twice.
-  A receipt that was imported from the 1.x ledger answers `REQUEST_ID_LEGACY`: use a new request id.
+  A request id that is already bound to another operation, payload, author or channel is refused with `REQUEST_CONFLICT`.
 - **Optimistic locking.** Edits and transitions carry `expected_version`; a stale version is `VERSION_CONFLICT`.
 - **Projects and ids.** A defect belongs to a project and gets the id `<CODE>-D-0001`, `<CODE>-D-0002`, and so on. A task without
   an id gets `<CODE>-T-0001`, and so on. The server assigns them. An id that a caller chooses for a task or a condition is 1 to 120
-  characters without whitespace, in any case (the ids of 1.x are kept); an id that equals an existing one when the case is ignored is
-  refused (`DUPLICATE_KEY`), and an id is always compared exactly.
+  characters without whitespace, in any case and with any characters (`:`, `/`, `#`, `.`, `_`, `-` and so on); an id that equals an
+  existing one when the case is ignored is refused (`DUPLICATE_KEY`), and an id is always compared exactly.
 - **One defect, one root cause, many observed cases.** Each observation of a defect (symptom, log, user report) is a case under it
   (`ledger_record_case`). A merged defect (`MERGED`, `merged_into`) keeps its cases; `ledger_defect` shows them under the defect it
   was merged into, and a `MERGED` defect takes no new cases.
@@ -68,7 +68,6 @@ of the write tools, the keys of the results, the `_hostAttestation` key) and cha
   product, and `SqlBuilder` chooses it from the product of the connection. PostgreSQL is the database that is tested and
   guaranteed in this edition. Other products may work but are not tested, and this edition contains no tailoring for a
   particular product (column types, collations, session settings). The database must use UTF-8 and compare text case-sensitively.
-  `import-legacy` reads the 1.x ledger, which is a PostgreSQL database.
 
 A direct MCP caller is not authenticated as a host: the bearer token admits the caller, and the signed attestation proves the author.
 
@@ -183,11 +182,12 @@ The build is a Gradle multi-module project.
 | `ledger-domain` | aggregates, value types, state rules, error codes and `ToolContract`, the list of tool names |
 | `ledger-attestation` | the `_hostAttestation` token, RFC 8785 canonical JSON and the Ed25519 key forms, shared by the hook and the server (JDK only) |
 | `ledger-database` | Spring Data JDBC repositories, the schema files `V{n}__*.sql` and their runner, the loader of the registered JDBC driver |
-| `ledger-application` | the application services: write gate, receipts, history, the write and read operations, grants, session keys, the legacy import |
+| `ledger-application` | the application services: write gate, receipts, history, the write and read operations, grants, session keys |
 | `ledger-mcp-server` | the Spring Boot MCP server (`ledger-mcp-server.jar`) |
 | `ledger-admin-web` | the Spring Boot admin web for the owner (`ledger-admin-web.jar`) |
 | `ledger-cli` | the owner command line tool (`ledger-cli.jar`) |
 | `ledger-seed` | the seed bundle of a new installation, the default defect categories and the install defaults in one H2 file, and its reader; only `ledger-cli` uses it |
+| `ledger-migrate-1x` | the separate tool that moves a 1.x installation to 2.0 (`ledger-migrate-1x.jar`, see Upgrading from 1.x); it uses `ledger-domain`, `ledger-database` and `ledger-application`, and no other module uses it |
 | `ledger-client-hook` | the one hook jar of all clients (`ledger-client-hook.jar`) |
 | `ledger-system-test` | test code only: the system test of the packaged product, which starts the built jars against the local PostgreSQL |
 
@@ -242,11 +242,6 @@ There is no command that prints a stored secret.
 | `ledger.attachments.upload-ttl` | servers, CLI | how long an upload lives after its last chunk, default 10m |
 | `ledger.attachments.orphan-grace` | servers, CLI | how long a file without a row (or a replaced file) waits before `attachments-check` moves it to `orphans/`, default 24h |
 | `ledger.attachments.reaper-interval` | MCP server | how often expired uploads are removed, default 1m |
-| `ledger.import.source.url` | `import-legacy` | JDBC URL of the database that holds the 1.x ledger |
-| `ledger.import.source.username` | `import-legacy` | a read-only account of that database (`retire-legacy` needs an account that owns the 1.x objects) |
-| `ledger.import.source.password` | `import-legacy` | its password (secret) |
-| `ledger.import.source.schema` | `import-legacy` | the 1.x schema, default `ledger` |
-| `ledger.import.source.roles` | `retire-legacy` | the database roles of the 1.x installer that `retire-legacy` removes after the schema, default `ledger_owner`, `ledger_author`, `ledger_reviewer`, `ledger_reader` |
 | `ledger.secrets.home` | `ledger-cli` | the directory of the installation that holds the settings, the driver registration, the driver jars and the secret directory, default `/etc/pg-ledger-mcp` (the Windows installer gives its own) |
 | `ledger.secrets.directory` | `ledger-cli` | the secret directory, default `/etc/pg-ledger-mcp/secrets` |
 | `ledger.secrets.instance` | `ledger-cli` | the instance name that the default paths follow, default `pg-ledger-mcp` |
@@ -280,15 +275,16 @@ What every target has in common:
 - **Two database accounts**, created beforehand with the tools of your DBMS (creating an account is not ANSI SQL and is not part of the
   product). The application account is used by both servers and by the owner commands of `ledger-cli`; `migrate` gives it the least
   privilege of `ledger-database/src/main/resources/db-templates/dml-grants.sql` (no DDL, no `UPDATE` or `DELETE` on the history). The
-  DDL account is used only by `migrate`, `setup` and `import-legacy`; its password is typed with hidden input and is never stored. The
+  DDL account is used only by `migrate` and `setup`; its password is typed with hidden input and is never stored. The
   session time zone of the database must be UTC, and the application account must be allowed to use the schema, a step of your DBMS
   that is not part of the product SQL: `setup` checks it and says so when it is missing (see First setup).
-- **Jars and the driver.** Build the jars with `./gradlew assemble` (the jars only; `./gradlew build` also runs the tests, which need a PostgreSQL of their own, see Build and test) and collect the three jars of the host in one directory. The
-  JDBC driver of your database is obtained by you, and you name its class; it is not bundled.
+- **Jars and the driver.** Build the jars with `./gradlew assemble` (the jars only; `./gradlew build` also runs the tests, which need a PostgreSQL of their own, see Build and test) and collect the jars in one directory: the three jars of the host, and
+  `ledger-migrate-1x.jar`, the tool that moves a 1.x installation (see Upgrading from 1.x). The installers use the three jars of the host only; they do not know the
+  tool and do not copy it, because it is no part of the services. The JDBC driver of your database is obtained by you, and you name its class; it is not bundled.
 
 ```sh
 mkdir dist
-cp ledger-cli/build/libs/ledger-cli.jar ledger-mcp-server/build/libs/ledger-mcp-server.jar ledger-admin-web/build/libs/ledger-admin-web.jar dist/
+cp ledger-cli/build/libs/ledger-cli.jar ledger-mcp-server/build/libs/ledger-mcp-server.jar ledger-admin-web/build/libs/ledger-admin-web.jar ledger-migrate-1x/build/libs/ledger-migrate-1x.jar dist/
 ```
 
 - **What an installer does.** The installers are thin: they start only what Java cannot do, and everything else is a command of
@@ -330,7 +326,6 @@ The options of `deploy/install.sh` are given as `--name=value`; the ones it does
 | `--acme-directory=<url>` | with `--tls-acme`, optional: the ACME directory URL of the certificate authority; the default is the production directory of Let's Encrypt, `https://acme-v02.api.letsencrypt.org/directory` |
 | `--acme-email=<address>` | with `--tls-acme`, optional: the contact address of the ACME account |
 | `--agree-tos` | with `--tls-acme`: you have read the terms of service of the certificate authority and agree to them; the first order needs it |
-| `--from-1x-env=<file>` | migration from 1.x: the 1.x environment file; its two tokens become secrets before any token is generated, and the public host names it allows must be carried by `--mcp-host` and `--admin-host` or the installation stops before anything is changed (see Migrating from 1.x) |
 | `--stdin` | read the passwords from standard input instead of the terminal: first the one of the application account (only while it is not stored), then the DDL one; the convention of `docker login --password-stdin` |
 
 `render-deploy`, `prepare-host` and `seal-host` take five more options that the installers set themselves: `--platform=<platform>`
@@ -347,7 +342,8 @@ before anything is read or written.
 Run as root; the user `pg-ledger-mcp` is created when it is missing, `prepare-host` (Java) creates `/opt/<name>` (root, 0755),
 `/etc/<name>` (the service user, 0750), its `drivers` folder (root, 0755) and its `secrets` folder (the service user, 0700), copies the
 jars and the driver and renders the units into `/etc/systemd/system`, which are then enabled; the secrets are stored by the service
-user. A unit file of 1.x that a rendered unit replaces is kept as `<file>.1x-backup`.
+user. A file that the installer did not render and that a rendered file replaces is kept as `<file>.backup`; to move a 1.x installation,
+see Upgrading from 1.x.
 
 ```sh
 sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<driver-class> --owner-account=<ddl-account> --app-account=<app-account> --jdbc-url=<jdbc-url>
@@ -505,7 +501,7 @@ and the ports from it when an option is not given, and the installers ask for th
 1. Check the MCP server with `ledger-cli mcp-check`; without a registered driver the MCP server stops and says why, and the admin web
    starts in a setup mode that offers only the login page, which tells you to register the driver with `ledger-cli driver-register`
    (without a database there is no passkey to sign in with, so the driver page of the admin web is a console page).
-2. Set up the owner side: `project-add`, `code-set` and, when you come from 1.x, `import-legacy` (see Migrating from 1.x). On Linux run
+2. Set up the owner side: `project-add` and `code-set`; when you come from 1.x, see Upgrading from 1.x instead of creating projects by hand. On Linux run
    `ledger-cli` as the service user, for example `sudo -u <name> java -jar /opt/<name>/ledger-cli.jar --ledger.secrets.instance=<name> project-add ...`.
 3. Install the client hooks (see Client hooks), register the key of each session with `key-register` and issue the grants with `grant`.
 
@@ -534,11 +530,8 @@ service user), and every owner operation is recorded with that user.
 | `secret-set` | `secret-set <name> [--stdin] [--if-absent]` | store a secret from hidden input, or with `--stdin` from the first line of standard input (never from an argument or the environment); `--if-absent` keeps an existing secret and asks for nothing |
 | `driver-register` | `driver-register --jar=<path> --class=<driver-class>` | register the JDBC driver; needs no database |
 | `token-generate` | `token-generate <name> [--print] [--copy-to=<name>]` | store a random token (32 bytes from `SecureRandom`) as a secret; an existing secret is kept; `--print` shows a token that was just created, once; `--copy-to` stores the same token under a second name, once |
-| `secret-import-1x` | `secret-import-1x [--env=<file>] [--stdin]` | move the two tokens of a 1.x installation (`DBHUB_AUTH_TOKEN` to `ledger.mcp.token` and `ledger.admin.agent-token`, `PGLEDGER_ADMIN_TOKEN` to `ledger.admin.token`) from its environment file, given as a file or on standard input, into the secret store; an existing secret is kept, no value is printed |
 | `migrate` | `migrate [--owner-account=<account>] [--app-account=<account>] [--stdin]` | apply the pending schema files, as the DDL account when `--owner-account` is given (its password is typed, or with `--stdin` read from standard input, and not stored), and then the grants of `dml-grants.sql` to the application account |
 | `setup` | `setup [--owner-account=<account>] [--app-account=<account>] [--stdin]` | the first setup: migrate as `migrate` does, check that the application account can use the schema (exit code `3` and the missing step when it cannot), add the seed codes that are missing (a code that exists is never changed) and compare the seed with the database by counts and digest; running it again changes nothing |
-| `import-legacy` | `import-legacy [--verify-only] [--owner-account=<account>] [--stdin]` | copy the 1.x ledger into the new schema and compare every table; it writes the whole ledger, so it runs as the DDL account |
-| `retire-legacy` | `retire-legacy [--confirm=<sha256> --backup-tested]` | after you accept 2.0, remove what the 1.x installer made in the database: triggers, views, tables, functions, sequences, the schema and the database roles. Without options it lists them with the SHA-256 of the list and changes nothing; `--confirm` drops exactly that list in one transaction and needs `--backup-tested`, your statement that a `pg_dump` backup of the 1.x database was made and its restore was tested (the command cannot check that) |
 | `key-register` | `key-register <author> <public-key-or-block> <fingerprint> [--replace=<current-fingerprint>]` | bind the public key a session printed to its author; a live key is replaced only with `--replace` |
 | `key-revoke` | `key-revoke <author> --fingerprint=<fingerprint>` | close the live key of an author |
 | `passkey-code` | `passkey-code [--remove-existing]` | issue the one-time code that enrols a passkey of the owner in the admin web (shown once, valid 15 minutes, stored only as its hash; a new code ends the earlier unused one); `--remove-existing` closes every live passkey first, for an owner who lost them all |
@@ -552,9 +545,9 @@ service user), and every owner operation is recorded with that user.
 | `attachments-rekey` | `attachments-rekey --from=<keyId>` | write the attachment files of the key `<keyId>` again under the active key `ledger.attachments.active-key-id` (a different key); the old files are moved to `orphans/` by `attachments-check` after `ledger.attachments.orphan-grace` |
 | `attachments-key-create` | `attachments-key-create` | create a new 256-bit key file in the key directory (readable by the service account only) and print its key id, never the key; set `ledger.attachments.active-key-id` to it to write new uploads with it |
 | `mcp-check` | `mcp-check [--url=<url>] [--ledger.mcp.token=<token>]` | connect to a running MCP server and check its tools |
-| `render-deploy` | `render-deploy --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--from-1x-env=<file>] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>] [--check]` | write the service definitions (systemd units, or WinSW configurations on Windows), the settings and the optional nginx site; the installers call it |
-| `prepare-host` | `prepare-host --jars=<dir> --driver-jar=<file> [--winsw=<file>] --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--from-1x-env=<file>] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>]` | prepare the files of the host (run as root, or elevated on Windows): the folders with owner and mode, or their ACLs, the copies of the jars and the driver (on Windows also of WinSW), and what `render-deploy` writes; the installers call it |
-| `seal-host` | `seal-host --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--from-1x-env=<file>] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>]` | Windows, last: give LocalService its access and hand the secrets over to it; the installer calls it |
+| `render-deploy` | `render-deploy --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>] [--check]` | write the service definitions (systemd units, or WinSW configurations on Windows), the settings and the optional nginx site; the installers call it |
+| `prepare-host` | `prepare-host --jars=<dir> --driver-jar=<file> [--winsw=<file>] --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>]` | prepare the files of the host (run as root, or elevated on Windows): the folders with owner and mode, or their ACLs, the copies of the jars and the driver (on Windows also of WinSW), and what `render-deploy` writes; the installers call it |
+| `seal-host` | `seal-host --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>]` | Windows, last: give LocalService its access and hand the secrets over to it; the installer calls it |
 | `install-default` | `install-default <name>` | print one default of the installation from the seed bundle (`instance-name`, `mcp-port` or `admin-port`); the installers ask for their defaults with it |
 | `tls-issue` | `tls-issue --mcp-host=<host>[,<host>...] [--admin-host=<host>[,<host>...]] [--name=<name>] [--webroot=<dir>] [--tls-dir=<dir>] [--acme-directory=<url>] [--acme-email=<address>] [--agree-tos]` | order a certificate for the host names given from a certificate authority that speaks ACME and write `fullchain.pem` and `privkey.pem`; the first run creates the account and needs `--agree-tos`; see Automatic certificate |
 | `tls-renew` | `tls-renew --mcp-host=<host>[,<host>...] [--admin-host=<host>[,<host>...]] [--name=<name>] [--webroot=<dir>] [--tls-dir=<dir>] [--acme-directory=<url>] [--renew-before-days=<n>]` | order a new certificate when the present one expires within `--renew-before-days` (default 30) or does not name exactly the host names given, and otherwise do nothing; the timer of `--tls-acme` runs it |
@@ -622,67 +615,184 @@ content, its order and its request id) and the time. A captured token cannot car
   accounts. The hook creates the folder and the key file owner-only and reads an existing one whoever may reach it or owns it (a
   link is followed): the personal edition trusts the whole PC. A directory where the key file belongs, and an empty key file, are refused.
 
-## Migrating from 1.x
+## Upgrading from 1.x
 
 1.x was a DBHub and Node implementation on PostgreSQL functions; 2.0.0 replaces all of it. Existing data is moved, not converted in
 place. The 1.x schema stays and can be used to go back. See the [release notes](docs/release-notes/2.0.0.md) for the contract changes.
 
-The installation replaces the 1.x service on the same host, which stays on the 1.x database until it is switched: stop it, install,
-import, check. Do the steps in this order; the installer stops nothing of 1.x by itself.
+Version 2.0 itself knows nothing of 1.x: its services, its installers and `ledger-cli` read no 1.x setting, file or table. The move is
+done by a separate tool, the module `ledger-migrate-1x`. The build makes it as `ledger-migrate-1x/build/libs/ledger-migrate-1x.jar`, and
+it is kept in the distribution folder `dist` next to the other jars (the `cp` step of Installation). The installers do not know it and
+do not copy it, because it is no part of the services. It is run from there with the Java 25 runtime of the installation, as
+`java -jar dist/ledger-migrate-1x.jar <command> [options]`. The folder `dist` has to be readable by the service user (not under `/home`), because the
+commands that use the secret store run as that user. The tool reads the settings of the installation the way the services do (the settings
+directory `ledger.secrets.home`, with `application.yaml`, `local.yaml`, the driver registration and the secret directory); for an
+instance with another name give `--ledger.secrets.instance=<name>`. A command that needs the ledger database needs the registered JDBC
+driver; `stop-1x` and `import-secrets-1x` need none.
+
+| Migration command | Syntax | What |
+|---|---|---|
+| `stop-1x` | `stop-1x [--name=<instance>] [--platform=<platform>] [--unit-dir=<dir>] [--home=<dir>] [--env=<file> [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]]]` | first step: stop and disable the two services of 1.x, `<name>` and `<name>-admin`, and keep each definition as a backup next to it (`<file>.1x-backup`); with `--env` it first checks the public host names of 1.x |
+| `import-secrets-1x` | `import-secrets-1x --env=<file> [--replace]` or `import-secrets-1x --stdin [--replace]` | after the installer: move the secrets of 1.x into the secret store of 2.0; with `--replace` they replace the tokens that the installer generated |
+| `import-1x` | `import-1x [--verify-only] [--owner-account=<account>] [--stdin]` | copy the 1.x ledger into the new schema in one transaction and compare every table by row count and SHA-256; `--verify-only` repeats only the comparison |
+| `retire-1x` | `retire-1x [--confirm=<sha256> --backup-tested]` | after you accept 2.0, remove what the 1.x installer made in the database; without options it lists it and changes nothing |
+
+The order of an upgrade is: back up, `stop-1x`, prepare the database accounts, install 2.0 with the installer, `import-secrets-1x`, restart
+the services, `import-1x`, check, and, only after you accept 2.0, `retire-1x`. The 1.x service stays on the 1.x database until it is stopped, and
+the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
 
 1. **Back up.** Dump the ledger database with the dump tool of your DBMS, and copy the 1.x settings directory `/etc/pg-ledger-mcp`
    (the file `/etc/pg-ledger-mcp/env` holds the 1.x tokens and passwords) and the 1.x unit files in `/etc/systemd/system`.
-2. **Stop the 1.x services.** On a host that runs them under the default names:
-   `sudo systemctl stop pg-ledger-mcp pg-ledger-mcp-admin`. Their clients are refused until the new server runs. To keep 1.x running
-   next to the new installation, give the new one its own `--name=<name>` and its own ports instead.
-3. **Create the two database accounts** of the new installation with the tools of your DBMS (see above: the application account and
-   the DDL account); the 1.x accounts stay as they are. When the new schema lives in the database of the 1.x ledger, set
-   `ledger.schema.name` to a schema other than the 1.x schema `ledger`.
-4. **Install with the tokens of 1.x.** Add `--from-1x-env=<file>` to the Linux installation:
+2. **Stop the 1.x services with `stop-1x`.** Run it first, as root, on the host of 1.x. Given the 1.x environment file and the host options
+   (the same ones that you will give the installer of 2.0 in step 4), it checks the public host names of 1.x before it stops anything:
 
    ```sh
-   sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<driver-class> --owner-account=<ddl-account> --app-account=<app-account> --jdbc-url=<jdbc-url> --from-1x-env=/etc/pg-ledger-mcp/env
+   sudo java -jar dist/ledger-migrate-1x.jar stop-1x --env=/etc/pg-ledger-mcp/env --mcp-host=<mcp-host> --admin-host=<admin-host>
    ```
 
-   The installer opens the 1.x file as root and `secret-import-1x` moves `DBHUB_AUTH_TOKEN` to `ledger.mcp.token` and
-   `ledger.admin.agent-token` and `PGLEDGER_ADMIN_TOKEN` to `ledger.admin.token`, before any token is generated: the clients of 1.x keep working
-   and the admin token stays the bearer of the read-only endpoints (it signs a browser in only with `ledger.admin.sign-in=token`), and no value is printed. A 1.0.0 installation had no admin web and so no `PGLEDGER_ADMIN_TOKEN`: then only
-   the two tokens of the agents are moved, the command says so, and the installer generates `ledger.admin.token` and shows it once.
-   A secret that exists is kept. The unit files of 1.x that the new units replace are
-   kept as `<file>.1x-backup`. Without a terminal, add `--stdin` and give the passwords on standard input.
+   - **What it changes.** It stops and disables the two services of 1.x, `<name>` (the MCP server) and `<name>-admin` (the admin web, which
+     1.0.0 did not have); `<name>` is `--name=<instance>`, default `pg-ledger-mcp`. It keeps the definition of each next to it as a backup. On
+     Linux (`--platform=linux`, the default) the unit file `<unit-dir>/<service>.service` is moved to `<service>.service.1x-backup`; the
+     directory is `--unit-dir=<dir>`, default `/etc/systemd/system`. On Windows (`--platform=windows`) the output of `sc.exe qc <service>`
+     is saved as `<home>/<service>.1x-backup` (`--home=<dir>`, default `C:/ProgramData/<name>`) and the service is set to disabled.
+     `--unit-dir` belongs to Linux and `--home` to Windows, and the other one is refused. The 1.x database and the 1.x environment file are not touched.
+   - **What it reads.** The definitions of the two services and, with `--env=<file>`, the host names that the 1.x environment file allows.
+   - **Why it starts a process.** Java has no API for the service manager of the host, so the command runs `systemctl` (Linux) or `sc.exe`
+     (Windows) with fixed arguments (`stop`, `disable` and `daemon-reload`, or `qc`, `stop` and `config`) and the validated name, in one place of its code.
+     It touches only a service called `<name>` or `<name>-admin` whose definition is the one of 1.x: a Linux unit has an `EnvironmentFile=`
+     line that names `/etc/<name>/env`, and a Windows service whose binary is `ledger-mcp-server.jar` or `ledger-admin-web.jar` is one of 2.0.
+     Every service is checked before the first change; otherwise the command stops with `NOT_1X_SERVICE` and has changed nothing.
+   - **The public host names of 1.x.** The clients reach the 1.x server through the host names that the 1.x setting `DBHUB_ALLOWED_HOSTS`
+     allows (the admin web of 1.1.0: `PGLEDGER_ADMIN_ALLOWED_HOSTS`), for example the name of your reverse proxy. The `Host` check of 2.0 allows
+     `127.0.0.1`, `localhost` and the names of `--mcp-host` and `--admin-host` only, so a name that is missing would make every client request
+     fail with HTTP 403 right after the migration. With `--env=<file>` the command therefore refuses, before it stops anything, when the file
+     allows a public host name that `--mcp-host` (or `--admin-host`) does not carry: it stops with `HOSTS_DROPPED` and exit code 2, names the host
+     names and the option, and has changed nothing. Add the names to the option, one name or a comma list (`--mcp-host=<name>[,<name>...]`;
+     `--mcp-host` can be given without `--admin-host`), and give the same options to the installer. The loopback names need no option, and
+     nothing else of the file is printed. A name that the clients no longer use is removed from a copy of the file, and the copy is given to
+     `--env`. The two host options without `--env` are refused.
+   - **Run it again** when it stopped half way: a service that was stopped before is reported as such, a backup file that holds other bytes
+     than the definition is never replaced (`BACKUP_DIFFERS`), and a failed call of the service manager (`SERVICE_COMMAND_FAILED`) leaves what
+     was done and the next run continues. The clients of 1.x are refused from now on, until the server of 2.0 runs. To keep 1.x running
+     next to the new installation instead, do not run `stop-1x`, and give the new one its own `--name=<name>` and its own ports.
+3. **Create the two database accounts** of the new installation with the tools of your DBMS (see Installation: the application account and
+   the DDL account); the 1.x accounts stay as they are. When the new schema lives in the database of the 1.x ledger, set
+   `ledger.schema.name` to a schema other than the 1.x schema `ledger`.
+4. **Install 2.0** with the installer of your host (see Installation). The installer knows nothing of 1.x; give it the host names that
+   you gave `stop-1x`:
 
-   **The public host names of 1.x.** The clients reach the 1.x server through the host names that its file allows in
-   the 1.x setting `DBHUB_ALLOWED_HOSTS` (the admin web of 1.1.0: `PGLEDGER_ADMIN_ALLOWED_HOSTS`), for example the name of your reverse proxy. The `Host`
-   check of 2.0 allows `127.0.0.1`, `localhost` and the names of `--mcp-host` and `--admin-host` only, so a name that is missing would
-   make every client request fail with HTTP 403 right after the migration. The installer therefore gives the file to the check of the
-   options (`render-deploy --check`, which root runs) before it creates or changes anything. When the file allows a public host name that
-   `--mcp-host` (or `--admin-host`) does not carry, it stops with exit code 2, names the host names and the option, and has written
-   nothing. Add the names to the option, one name or a comma list (`--mcp-host=<name>[,<name>...]`, `--mcp-host` can be given without
-   `--admin-host`); with `--nginx-conf` the nginx site serves the same names. The loopback names need no option, and nothing else of the
-   file is printed. A name that the clients no longer use is removed from a copy of the file, and the copy is given to `--from-1x-env`.
-5. As the service user, store the password of a read-only account of the 1.x database: `secret-set ledger.import.source.password`, and run
-   `import-legacy --owner-account=<account> --ledger.import.source.url=<jdbc-url> --ledger.import.source.username=<account>`.
-   When the import has finished and its verification has passed, the read-only account of the 1.x database that was made for the import may be dropped.
-6. The import reads the 1.x schema read only, copies everything in one transaction and rolls back on any failure; then it compares the
-   number of rows and the SHA-256 digest of every table (`--verify-only` repeats the comparison). It runs once, on the schema that
-   `migrate` and `setup` made, which is the state after the installer (the installer runs `setup`: the seed codes and the audit rows of
-   that are accepted, and a seed code that 1.x also has takes the 1.x values). It refuses when a table of ledger data, a session key or
-   an earlier import is already there, and it lists every value of the old data that the new schema cannot hold; it never invents a value.
-   The ids of 1.x are kept as they are: an id of a task or a condition is 1 to 120 characters without whitespace or control
-   characters, in any case and with any characters (`:`, `/`, `#`, `.`, `_`, `-` ...); defect ids keep their form (`<CODE>-D-0001`). Ids of one
-   kind that differ only in case are one id to the new schema (a lookup compares the id exactly, and the key of the id in upper case is
-   unique on every DBMS), so the import refuses such a pair and lists it, and a task or condition cannot be created with an id that
-   equals an existing one when the case is ignored. An empty text of 1.x (`purpose`, `success_condition`, `behavior`, `root_cause`
-   and `condition_text` allowed `''`) is stored as NULL and the tools return an empty string for it, as 1.x did.
-   1.x stored every relation with its smaller id first and kept nowhere which defect the caller named first, so the import copies the
-   relations of the directed kinds (`caused_by`, `blocks`) as they are stored and never guesses; it lists them (the count and the ids,
-   also in the audit row and with `--verify-only`). Check each one and, where it is the wrong way round, remove it and link it again with
-   `ledger_link` with the right defect first.
-   The `code` of a condition (200 characters) and the `ci_ref` (2000 characters) are longer than in the earlier 2.0 builds, and the `origin_ref` of a task is a long text (up to 20000 characters
-   when written), so every value of 1.x fits.
-7. The old grants are copied without a session key. Every author registers a session key with `key-register`; then its grants work.
-8. **Check.** `ledger-cli mcp-check --url=<its public URL>` and `import-legacy --verify-only`; run `ledger-cli passkey-code` and register
-   your first passkey in the admin web (the admin token of 1.x signs a browser in only with `ledger.admin.sign-in=token`; the default is `passkey`).
+   ```sh
+   sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<driver-class> --owner-account=<ddl-account> --app-account=<app-account> --jdbc-url=<jdbc-url> --mcp-host=<mcp-host> --admin-host=<admin-host>
+   ```
+
+   The installer generates tokens of its own (each shown once) and starts the two services with them.
+5. **Move the secrets of 1.x with `import-secrets-1x`.** The secret store belongs to the service account, which the installer creates, so
+   this runs after the installer. The 1.x file is owned by root and the secret store by the service user, so root opens the file and pipes
+   it to the tool, which runs as the service user:
+
+   ```sh
+   sudo sh -c 'runuser -u pg-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar import-secrets-1x --replace --stdin < /etc/pg-ledger-mcp/env'
+   ```
+
+   - **What it reads.** The 1.x environment file, given with `--stdin` (as above) or with `--env=<file>` for an operator who can read the file as the
+     service user; exactly one of the two. Only the two tokens are read, and all values are checked before anything is written (at least 16 characters, and the admin token
+     differs from the agent token). It uses no database.
+   - **What it changes.** The installer has generated tokens of its own already, so without `--replace` a secret that exists is kept. With `--replace`
+     the three secrets take the 1.x values: `DBHUB_AUTH_TOKEN` of 1.x becomes `ledger.mcp.token` and `ledger.admin.agent-token`, and `PGLEDGER_ADMIN_TOKEN` of 1.x becomes
+     `ledger.admin.token`. The clients of 1.x keep working, and the admin token stays the bearer of the read-only endpoints (it signs a
+     browser in only with `ledger.admin.sign-in=token`). A 1.0.0 installation had no admin web and so no `PGLEDGER_ADMIN_TOKEN`: then only
+     the two tokens of the agents are replaced, the command says so, and the `ledger.admin.token` of the installer stays. Only the names of the
+     secrets are printed, never a value.
+   - For an instance with another name the service user is that name (`runuser -u <name>`), and the tool takes `--ledger.secrets.instance=<name>`.
+
+   The services read their secrets at start, so restart the two services of 2.0:
+
+   ```sh
+   sudo systemctl restart pg-ledger-mcp pg-ledger-mcp-admin
+   ```
+
+6. **Import the ledger with `import-1x`.** Store the password of a read-only account of the 1.x database as the service user, then run the import
+   as the DDL account; the settings of the 1.x source are described in the table below:
+
+   ```sh
+   sudo runuser -u pg-ledger-mcp -- java -jar dist/ledger-cli.jar secret-set ledger.import.source.password
+   sudo runuser -u pg-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar import-1x --owner-account=<ddl-account> --ledger.import.source.url=<jdbc-url> --ledger.import.source.username=<account>
+   ```
+
+   The import writes the whole ledger, which neither application account may do, so `--owner-account=<account>` runs it as the DDL account, whose
+   password is typed with hidden input and is not stored (`--stdin` takes it from the first line of standard input instead and needs `--owner-account`).
+   It reads the 1.x schema read only and writes the new schema in one transaction; see What the import does below.
+7. **Register the session keys.** The grants of 1.x are copied without a session key. Every author registers a session key with
+   `ledger-cli key-register`; then its grants work.
+8. **Check.** Run `ledger-cli mcp-check --url=<its public URL>` and `import-1x --verify-only` (it needs the settings of the 1.x source and
+   changes nothing), and run `ledger-cli passkey-code` and register your first passkey in the admin web (the admin token of 1.x signs a
+   browser in only with `ledger.admin.sign-in=token`; the default is `passkey`). Clients: the tools `execute_sql_reader` and `search_objects_reader` were removed; the read tools replace them. The results of the write
+   tools keep their keys without the `rows[0].result` wrapping. Install the hook jar (a Java 25 runtime) on every client host before the server is switched.
+   When the checks have passed, the read-only account of the 1.x database that was made for the import may be dropped.
+9. **Roll back** if the check fails: stop the services of 2.0, put each `<unit>.1x-backup` back under its own name in place of the unit of 2.0
+   (copy it, so that the backup stays), run `sudo systemctl daemon-reload`, and run `sudo systemctl enable --now <name>` and the same for
+   `<name>-admin` to start the 1.x services with their previous configuration. On Windows run `sc.exe config <name> start= auto` (the start type
+   before `stop-1x` is in the backup file) and `sc.exe start <name>`, and the same for `<name>-admin`. `stop-1x` prints these steps. The 1.x database
+   was only read, so 1.x continues as it was.
+10. **Retire the 1.x database objects with `retire-1x`, after you accept 2.0.** The kept units (`<unit>.1x-backup`) and the 1.x database are the way
+    back until then, and nothing deletes them before. The 1.x installer made functions, triggers, views, tables, a schema and
+    four database roles in your database, and `import-1x` only reads them. Make a `pg_dump` backup of the 1.x database and test the restore of that 1.x backup: after the next step it is the
+    only way back. Stop the 1.x service (`stop-1x`), store the password of an account that owns the 1.x objects (the owner role of the 1.x installer
+    or a role that has its rights) with `secret-set ledger.import.source.password`, set `ledger.import.source.username` to that account
+    and run `retire-1x` without options:
+
+    ```sh
+    sudo runuser -u pg-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar retire-1x --ledger.import.source.username=<owner-account>
+    ```
+
+    It checks that `import-1x --verify-only` matches, that no other session runs as a 1.x
+    role or holds a lock in the 1.x schema and that the account owns the objects; it prints every object in the order it is dropped and
+    the SHA-256 of that list, and changes nothing. Read the list, then run `retire-1x --confirm=<sha256> --backup-tested`:
+
+    ```sh
+    sudo runuser -u pg-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar retire-1x --ledger.import.source.username=<owner-account> --confirm=<sha256> --backup-tested
+    ```
+
+    The command cannot check the backup, so `--backup-tested` is your statement that the 1.x backup was made and its restore was tested. It drops
+    the triggers, views, tables, functions, sequences and the schema in one transaction, and then the roles of
+    `ledger.import.source.roles`; a role that is the account of the run or of the 2.0 settings, has other members or owns objects
+    elsewhere stays and is listed as `SKIPPED`. The ledger never runs this by itself.
+
+### What the import does
+
+- It reads the 1.x schema read only, copies everything in one transaction and rolls back on any failure; then it compares the
+  number of rows and the SHA-256 digest of every table (`--verify-only` repeats the comparison). It runs once, on the schema that
+  `migrate` and `setup` made, which is the state after the installer (the installer runs `setup`: the seed codes and the audit rows of
+  that are accepted, and a seed code that 1.x also has takes the 1.x values). It refuses when a table of ledger data, a session key or
+  an earlier import is already there, and it lists every value of the old data that the new schema cannot hold; it never invents a value.
+- The ids of 1.x are kept as they are: an id of a task or a condition is 1 to 120 characters without whitespace or control
+  characters, in any case and with any characters (`:`, `/`, `#`, `.`, `_`, `-` ...); defect ids keep their form (`<CODE>-D-0001`). Ids of one
+  kind that differ only in case are one id to the new schema (a lookup compares the id exactly, and the key of the id in upper case is
+  unique on every DBMS), so the import refuses such a pair and lists it.
+- An empty text of 1.x (`purpose`, `success_condition`, `behavior`, `root_cause` and `condition_text` allowed `''`) is stored as NULL and
+  the tools return an empty string for it, as 1.x did. The `code` of a condition (200 characters) and the `ci_ref` (2000 characters) are
+  longer than in the earlier 2.0 builds, and the `origin_ref` of a task is a long text (up to 20000 characters when written), so every value of 1.x fits.
+- 1.x stored every relation with its smaller id first and kept nowhere which defect the caller named first, so the import copies the
+  relations of the directed kinds (`caused_by`, `blocks`) as they are stored and never guesses; it lists them (the count and the ids,
+  also in the audit row and with `--verify-only`). Check each one and, where it is the wrong way round, remove it and link it again with
+  `ledger_link` with the right defect first.
+- The grants of 1.x are copied without a session key (step 7). The request receipts of 1.x are not carried over: a request id of 1.x is never
+  replayed by 2.0, so a write that repeats one is judged by the normal rules like any new request. The history rows that come from 1.x
+  carry the neutral names `IMPORT`, `IMPORTED_NOTE`, `IMPORTED_CHANGE`, `IMPORTED_LOGIN`, `IMPORTED_SHARED` and `IMPORTED_UNKNOWN`, and the field `legacy_ref` of 1.x is
+  `source_ref` in the read tools.
+
+### Settings of the 1.x source
+
+The rows `ledger.import.source.*` belong to the commands `import-1x` and `retire-1x` and to no other part of 2.0. Put them in `local.yaml` of the settings
+directory or give them on the command line as `--name=value`; the password is a secret and is never put in a file.
+
+| Key | Used by | Meaning |
+|---|---|---|
+| `ledger.import.source.url` | `import-1x`, `retire-1x` | JDBC URL of the database that holds the 1.x ledger |
+| `ledger.import.source.username` | `import-1x`, `retire-1x` | a read-only account of that database (`retire-1x` needs an account that owns the 1.x objects) |
+| `ledger.import.source.password` | `import-1x`, `retire-1x` | its password (secret) |
+| `ledger.import.source.schema` | `import-1x`, `retire-1x` | the 1.x schema, default `ledger` |
+| `ledger.import.source.roles` | `retire-1x` | the database roles of the 1.x installer that `retire-1x` removes after the schema, default `ledger_owner`, `ledger_author`, `ledger_reviewer`, `ledger_reader` |
 
 **Upgrade note: the admin web sign-in.** If you signed in to the admin web with OpenID Connect, say so: set `ledger.admin.sign-in=oidc`
 (an installation with `ledger.admin.oidc.*` settings and no `ledger.admin.sign-in` is refused at start with a message that names it), and
@@ -690,24 +800,6 @@ replace the list `ledger.admin.oidc.owners` by the one e-mail address of the own
 counts for, `ledger.admin.oidc.issuer`; a configuration that still has the list is refused at start and the message names both keys,
 because the product never picks one of several people silently. Whichever way you sign in, register a passkey with `passkey-code`: it
 approves every change.
-9. **Roll back** if the check fails: stop the new services, copy the `<file>.1x-backup` unit files back in place of the new ones (the
-   backup stays), run `sudo systemctl daemon-reload` and start the 1.x services. The 1.x schema and data were only read, so 1.x
-   continues as it was. A later run of the installer keeps a backup that equals the unit in place and writes the new unit; when the
-   backup holds other bytes, `prepare-host` stops with `HOST_FAILED` naming both files and changes nothing.
-10. Clients: the tools `execute_sql_reader` and `search_objects_reader` were removed; the read tools replace them. The results of the write
-   tools keep their keys without the `rows[0].result` wrapping. Install the hook jar (a Java 25 runtime) before the server is switched.
-11. **Retire the 1.x database objects (after you accept 2.0).** The 1.x installer made functions, triggers, views, tables, a schema and
-   four database roles in your database, and `import-legacy` only reads them. Keep the 1.x schema as the rollback source until you
-   accept 2.0. Then make a `pg_dump` backup of the 1.x database and test the restore of that 1.x backup: after the next step it is the
-   only way back. Stop the 1.x service, store the password of an account that owns the 1.x objects (the owner role of the 1.x installer
-   or a role that has its rights) with `secret-set ledger.import.source.password`, set `ledger.import.source.username` to that account
-   and run `retire-legacy` without options. It checks that `import-legacy --verify-only` matches, that no other session runs as a 1.x
-   role or holds a lock in the 1.x schema and that the account owns the objects; it prints every object in the order it is dropped and
-   the SHA-256 of that list, and changes nothing. Read the list, then run `retire-legacy --confirm=<sha256> --backup-tested`. The command
-   cannot check the backup, so `--backup-tested` is your statement that the 1.x backup was made and its restore was tested. It drops
-   the triggers, views, tables, functions, sequences and the schema in one transaction, and then the roles of
-   `ledger.import.source.roles`; a role that is the account of the run or of the 2.0 settings, has other members or owns objects
-   elsewhere stays and is listed as `SKIPPED`. The ledger never runs this by itself.
 
 ## Build and test
 
@@ -779,7 +871,7 @@ together with the properties above.
 ## Layout
 
 - `ledger-domain`, `ledger-attestation`, `ledger-database`, `ledger-application`, `ledger-mcp-server`, `ledger-admin-web`,
-  `ledger-cli`, `ledger-client-hook`: the modules above, each with `src/main` and `src/test`; `ledger-system-test` has `src/test` only.
+  `ledger-cli`, `ledger-client-hook`, `ledger-migrate-1x`: the modules above, each with `src/main` and `src/test`; `ledger-system-test` has `src/test` only.
 - `clients/claude`, `clients/codex`, `clients/antigravity`: the manifests and README of each client plugin; the build stages them with
   the hook jar into `ledger-client-hook/build/client-plugins`.
 - `docs/`: the test case catalogue, the release note format and the release notes.

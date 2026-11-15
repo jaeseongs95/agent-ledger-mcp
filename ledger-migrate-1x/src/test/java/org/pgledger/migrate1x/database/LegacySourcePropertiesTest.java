@@ -1,4 +1,4 @@
-package org.pgledger.database;
+package org.pgledger.migrate1x.database;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -6,9 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.pgledger.database.driver.LegacySourceProperties;
-import org.pgledger.database.repository.LegacySourceRepository;
-import org.pgledger.testing.legacy.LegacyLedger;
+import org.pgledger.migrate1x.fixture.LegacyLedger;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
 import org.springframework.jdbc.core.simple.JdbcClient;

@@ -1,4 +1,4 @@
-package org.pgledger.cli.secret;
+package org.pgledger.migrate1x.secret;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

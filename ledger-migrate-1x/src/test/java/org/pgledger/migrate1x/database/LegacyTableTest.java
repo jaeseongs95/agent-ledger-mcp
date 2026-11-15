@@ -1,4 +1,4 @@
-package org.pgledger.database;
+package org.pgledger.migrate1x.database;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -10,23 +10,19 @@ import java.util.Objects;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.pgledger.database.repository.ColumnRule;
-import org.pgledger.database.repository.LegacyColumn;
-import org.pgledger.database.repository.LegacyTable;
-import org.pgledger.database.repository.LegacyTargetRepository;
-import org.pgledger.database.support.DatabaseTest;
-import org.pgledger.database.support.LedgerTestContext;
-import org.pgledger.database.support.SqlText;
-import org.pgledger.database.support.SqlText.Group;
-import org.pgledger.testing.legacy.LegacyLedger;
+import org.pgledger.migrate1x.fixture.LegacyLedger;
+import org.pgledger.migrate1x.support.SqlText;
+import org.pgledger.migrate1x.support.SqlText.Group;
+import org.pgledger.migrate1x.support.TestLedgerDatabase;
+import org.springframework.jdbc.core.simple.JdbcClient;
 
 /**
  * MIG-024 (the table shapes of the fixture against the catalogue of the import) and the catalogue of the legacy import
  * against the real schema files: every column the import writes is a column of the migrated schema and no column of the
  * schema is forgotten; the legacy side of the catalogue is the shape the fixture builds; every statement the catalogue
- * builds is ANSI SQL (the checks of ANSI-001 .. ANSI-003 and ANSI-014).
+ * builds is ANSI SQL (the checks of ANSI-001 .. ANSI-003 and ANSI-014). The request receipts of 1.x are no table of the
+ * catalogue (M1X-003).
  */
-@DatabaseTest
 class LegacyTableTest {
 
     /**
@@ -47,9 +43,13 @@ class LegacyTableTest {
 
     @Test
     @DisplayName("MIG-024 the new side of the catalogue lists exactly the columns of the tables of the migrated schema, and the database metadata gives NOT NULL and the width of the columns the import checks")
-    void theTargetColumnsAreTheColumnsOfTheSchema(LedgerTestContext ctx) {
-        LegacyTargetRepository target = ctx.bean(LegacyTargetRepository.class);
+    void theTargetColumnsAreTheColumnsOfTheSchema() {
+        try (TestLedgerDatabase database = TestLedgerDatabase.migrated()) {
+            checkTargetColumns(new LegacyTargetRepository(JdbcClient.create(database.dataSource()), database.dataSource()));
+        }
+    }
 
+    private static void checkTargetColumns(LegacyTargetRepository target) {
         for (LegacyTable table : LegacyTable.values()) {
             Map<String, ColumnRule> rules = target.columnRules(table);
             List<String> expected = new ArrayList<>(names(table.targetColumns()));
@@ -112,7 +112,8 @@ class LegacyTableTest {
                 }
             }
         }
-        assertThat(order).hasSize(13).doesNotHaveDuplicates();
+        // twelve tables: the request receipts of 1.x are not copied (M1X-003)
+        assertThat(order).hasSize(12).doesNotHaveDuplicates().doesNotContain("request_receipt");
     }
 
     @Test

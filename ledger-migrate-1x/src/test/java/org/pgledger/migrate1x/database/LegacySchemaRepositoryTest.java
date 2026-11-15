@@ -1,4 +1,4 @@
-package org.pgledger.database;
+package org.pgledger.migrate1x.database;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -13,18 +13,14 @@ import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.pgledger.database.repository.LegacyInventory;
-import org.pgledger.database.repository.LegacyObject;
-import org.pgledger.database.repository.LegacyObject.Kind;
-import org.pgledger.database.repository.LegacyRoleSkip;
-import org.pgledger.database.repository.LegacySchemaRepository;
+import org.pgledger.migrate1x.database.LegacyObject.Kind;
+import org.pgledger.migrate1x.fixture.LegacyFixtures;
+import org.pgledger.migrate1x.fixture.LegacyLedger;
 import org.pgledger.testing.database.TestDatabase;
-import org.pgledger.testing.legacy.LegacyFixtures;
-import org.pgledger.testing.legacy.LegacyLedger;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 /**
- * RET-001 .. RET-006 (the repository part of {@code retire-legacy}): the list of the objects of a legacy schema, what stands in
+ * RET-001 .. RET-006 (the repository part of {@code retire-1x}): the list of the objects of a legacy schema, what stands in
  * the way, and the drop, on the PostgreSQL of the test PC with the legacy fixture that has functions, a trigger and a view.
  * No test creates or drops a role: the owner account of the tests may not, and a role belongs to the whole cluster.
  */

@@ -2231,5 +2231,41 @@ Rows that moved with their code keep their IDs and run in `ledger-migrate-1x`: s
 | M1X-040 | UNIT | `stop-1x` on the units of M1X-010 with a `daemon-reload` that fails (exit code 1) | `stop-1x`, then again with a working `daemon-reload` | the first: exit 1 `SERVICE_COMMAND_FAILED` naming `systemctl daemon-reload`; the units are already moved to their backups; the second: both services are reported as stopped before and the `daemon-reload` runs again, exit 0 | rerun rule | no |
 | M1X-024 | CLI | `import-secrets-1x --stdin` with the 1.x environment of SEC-027 and the three secrets of 2.0 already stored (the installer of 2.0 generated them); then with `--replace`; then `--replace` with `--env` and a second source | run (no driver, no database) | without `--replace` all three are kept, the output says `import-secrets-1x.kept` for each (SEC-027 unchanged); with `--replace` the files hold the 1.x values (the agent token twice, the admin token once), the output names `import-secrets-1x.replaced` and the secret names only, never a value; a 1.0.0 environment without the admin token keeps `ledger.admin.token` as it is and says so; exactly one of `--env` and `--stdin` is still required (exit 2) | order of the upgrade (the installer runs first) | no |
 | M1X-018 | CLI | `stop-1x --platform=windows --unit-dir=<dir>` and `stop-1x --platform=linux --home=<dir>`; `--platform=macos` | run | exit 2 `INVALID_OPTION_VALUE` for each (an option of the other platform, an unknown platform); no call, no file | usage rule | no |
-| M1X-041 | SYSTEM | the built tool jar, the test database with the 1.x fixture | `java -jar ledger-migrate-1x.jar import-1x --verify-only` and `import-secrets-1x --stdin` as separate processes (SYS rows' way of starting a jar) | exit codes and output as the in-process rows (CLI-044); the secret files are written owner-only | SYS rule | yes |
+| M1X-041 | SYSTEM | the built tool jar, a temporary installation home (`MigrationToolJarTest`; the commands that need a database are tested in process by CLI-044 and RET-007 ..) | `java -jar ledger-migrate-1x.jar` with no command; `stop-1x --unit-dir=<empty>`; `import-secrets-1x --stdin` with a 1.x environment on standard input, as separate processes (the way the SYS rows start a jar) | exit 2 with `Usage: java -jar ledger-migrate-1x.jar` and the four commands on the standard error; exit 1 `NO_1X_SERVICE`, no program started; exit 0, the three secret files hold the 1.x values, the output names the secrets and holds no value | SYS rule | no |
 | M1X-050 | UNIT | a 1.x row with the assurance `LEGACY_LOGIN`, the operations `LEGACY_NOTE` and `LEGACY_CHANGE`, `legacy_ref`, an actor id that is no author id | the row mapper of the tool | the 2.0 row has `IMPORTED_LOGIN`, `IMPORTED_NOTE`, `IMPORTED_CHANGE`, `source_ref` with the same text, the actor id unchanged (an `ImportedActorId` when it is no author id); `LEGACY_SHARED` and `LEGACY_UNKNOWN` map to `IMPORTED_SHARED` and `IMPORTED_UNKNOWN`; a value that is none of them is reported (`UNKNOWN_VALUE`) | decision 5 (replaces the vocabulary of MIG-003) | no |
+| M1X-060 | DOCS | `docs/testing/TEST_CASES.md` | read the amendments below | each earlier row that named something this unit removed or renamed is listed with its new wording; the earlier rows are not repeated | this unit | no |
+
+### 43.1 Amendments to earlier rows
+
+The rows below keep their IDs; where they say what the table names, the amendment is the wording that holds from this unit on.
+
+| Row | Amendment |
+|---|---|
+| 1.5 (error tokens) | the row `REQUEST_ID_LEGACY` is deleted; the code count is 86 (DOM-026) |
+| DOM-003, DOM-037 | `SessionKey` has no `agent:` rule: `agent:claude:1` is another key than `claude:1`, and an `ImportedActorId` (not an `AuthorId`); the examples `agent:codex:7` read `codex:7` |
+| DOM-021 | "column holding legacy inactive value" reads "retired value"; the detail key is `holdsRetiredValue` |
+| DOM-024, MCR-H10 | the imported operations are `IMPORT`, `IMPORTED_NOTE`, `IMPORTED_CHANGE` and need `source_ref` (was `legacy_ref`); the assurances are `DECLARED`, `IMPORTED_LOGIN`, `IMPORTED_SHARED`, `IMPORTED_UNKNOWN` |
+| DOM-036, REH3-ADM-01, REH3-MCP-01, REH3-TXT-01, REH3-TXT-02, REH3-LEN-02, SVC-NORM-02 | the rules are stated as rules of 2.0 (free-text ids in any case, texts that may be empty, the longer columns) without "as 1.x did" or the 1.x lengths |
+| REPO-001, REPO-002, REPO-003, REPO-041 | `request_receipt` has no `origin` column and no `NATIVE`/`LEGACY` value; the check of the history column is `source_ref`; the receipt case of REPO-003 is an `operation` outside the set |
+| SVC-RCP-15 | deleted (an imported receipt does not exist); the other SVC-RCP rows are unchanged |
+| SVC-PRN-01, SVC-PRN-02 | "imported TRANSITION rows" (rows with `source_ref`) instead of legacy rows |
+| SCH-015 | the neighbour schema of the test is "a neighbour schema", no longer the 1.x schema `ledger`; DBN-002 runs in `ledger-migrate-1x` (`LegacySourceNameTest`) |
+| ARC-012 | one configuration of a second data source in the database module (`ApplicationAccountConfiguration`), the 1.x source configuration is the tool's |
+| MCW-002, MCW-004, MCW-005, MCW-007, MCW-008 | "legacy author_id" reads "deprecated author_id" (accepted and ignored); "legacy JSON string" reads "JSON text form" |
+| MCR-H08 | the history output field is `source_ref`; there is no `agent:` prefix rule |
+| MIG-003, MIG-006, MIG-012 | the imported vocabulary of M1X-050; MIG-004 is replaced by M1X-003 |
+| MIG-034 | its body tests are deleted (`DriverAuditTest`, `RuntimeToolTest`); the audit row of the import is MIG-031 in the tool |
+| HK-021 | the environment variable of the older-Java case is `LEDGER_HOOK_OLDER_JAVA` (the client hook module is outside the writeTargets of the unit migratetool: the rename is made by the unit that owns it) |
+| FUP-CLI-02 | drops "the 1.x form" |
+| CLI-001 | the command order is `secret-set, token-generate, driver-register, migrate, setup, key-register, ...`; the three 1.x commands are not commands of `ledger-cli`; CLI-015 and CLI-PRN-13 list `import-1x` and `retire-1x` for the tool only (M1X-022) |
+| CLI-012, CLI-045 .. CLI-048, CLI-PRN-14 | run in the tool (`import-1x`, `import-secrets-1x`); the secrecy test of `ledger-cli` runs `setup` where it ran `import-legacy` |
+| CLI-PRN-07, RET-016 | there are no IMPORT and RETIRE contexts in `LedgerRefusals` of `ledger-cli`; the translation of the tool is `Refusals` (`RefusalsTest` of the tool, the cases of RET-016 unchanged) |
+| INS-012, SEC-025 | the owner-account commands of `ledger-cli` are `migrate` and `setup`; `import-1x` of the tool takes the option too |
+| INS-027, INS-039 | "no other installer and no unit template"; the commands that need no database no longer list `secret-import-1x` |
+| INS-042, REH2-INS-01 .. 04, REH3-INS-01, REH3-INS-02 | the unit that the installer did not render is kept as `<file>.backup` (class `BackupOfForeignFileTest`); "the README rollback" reads "a rollback" |
+| INS-043, REH4-INS-01 | replaced by M1X-030 (the installers know nothing of 1.x; the option `--from-1x-env` and the step `secret-import-1x` are gone) |
+| REH4-HOST-01 .. 07 | run in the tool as `stop-1x --env=<file> --mcp-host=.. --admin-host=..` (M1X-016, M1X-017); the codes `HOSTS_DROPPED` and `ENV_FILE_FAILED` are the tool's |
+| REH4-SEED-01, REH4-SEED-02 | the seed report says "changed by the operator or imported" (Korean "또는 가져온 것") |
+| REH2-DOC-01, REH3-DOC-01, FUP-DOC-03, REH4-DOC-01 (host part) | the README sentences they asserted are in the guide of the tool now (M1X-031); the tests assert the command names and the tool jar (`UPG-DOC-01`: the README and both parts of the release note name `stop-1x`, `import-secrets-1x`, `import-1x`, `retire-1x` and `ledger-migrate-1x.jar`) |
+| DOC-005, DOC-006, DOC-007, DOC-012, DOC-027, DOC-034 | the command table of `ledger-cli` lists no 1.x command, the installer rows have no `[--from-1x-env=<file>]`, the module list names `ledger-migrate-1x`, DOC-027 names `import-1x` and no `REQUEST_ID_LEGACY`, DOC-034 asserts that no text names the 1.x environment file under another name |
+| RET-007 .. RET-015, RET-017 | run in the tool (`retire-1x`, the settings `ledger.import.source.*`) |

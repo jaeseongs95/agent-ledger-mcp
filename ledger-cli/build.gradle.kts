@@ -34,8 +34,7 @@ dependencies {
     testImplementation(testFixtures(project(":ledger-attestation")))
     // OwnerOnlyFiles (owner-only file rights) needs a domain class, so it stays in the domain test fixtures.
     testImplementation(testFixtures(project(":ledger-domain")))
-    // The test database support (the PostgreSQL of the test PC: settings, pools, schema per test, PostgreSQL driver) and the
-    // builder of the legacy ledger (the table shapes of the old schema and the data of the old installer), MIG-024.
+    // The test database support (the PostgreSQL of the test PC: settings, pools, schema per test, PostgreSQL driver).
     testImplementation(testFixtures(project(":ledger-database")))
 }
 
