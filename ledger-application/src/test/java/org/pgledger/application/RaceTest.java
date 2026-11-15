@@ -345,8 +345,11 @@ class RaceTest {
     // -------------------------------------------------------------- SVC-GRT-06
 
     @Test
-    @DisplayName("SVC-GRT-06: two grants of the same key at the same time leave exactly one live grant")
+    @DisplayName("SVC-GRT-06: two grants of the same key at the same time leave exactly one live grant, without any retry of the transaction (the proxy of GrantService has no retry advice, TXA-01)")
     void grt06_parallelGrants(Scenario s) {
+        assertThat(((org.springframework.aop.framework.Advised) s.bean(GrantService.class)).getAdvisors())
+                .extracting(advisor -> advisor.getAdvice().getClass().getName())
+                .noneMatch(name -> name.contains("Retry"));
         String author = "claude:grt06";
         s.ctx().enroll(author);
         List<Callable<Object>> calls = IntStream.range(0, 2).<Callable<Object>>mapToObj(i -> () -> s.bean(

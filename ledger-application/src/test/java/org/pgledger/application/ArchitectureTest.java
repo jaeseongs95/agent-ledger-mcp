@@ -106,6 +106,10 @@ class ArchitectureTest {
                                 "org.springframework.jdbc.core.JdbcTemplate")
                         .orShould().dependOnClassesThat().haveFullyQualifiedName(
                                 "org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate")),
+                new Rule("ARC-039 no retry of a transaction method (principle 4.4: a lost race is decided by the affected "
+                        + "rows of a conditional statement, never by running the transaction again)", noClasses().should()
+                        .dependOnClassesThat().resideInAnyPackage("org.springframework.resilience..",
+                                "org.springframework.retry..")),
                 new Rule("ARC-013 no TransactionTemplate", noClasses().should().dependOnClassesThat()
                         .haveFullyQualifiedName("org.springframework.transaction.support.TransactionTemplate")),
                 new Rule("ARC-013 @Transactional only on services", noClasses().that().areNotAnnotatedWith(

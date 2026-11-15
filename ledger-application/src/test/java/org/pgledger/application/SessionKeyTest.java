@@ -199,26 +199,60 @@ class SessionKeyTest {
     }
 
     @Test
-    @DisplayName("SVC-KEY-13 (audit2 S7): the retry advice wraps the transaction advice of SessionKeyService (retry outer, transaction inner), so every attempt has a transaction of its own; three registrations of the same key for the same author at the same moment all succeed with the one row")
-    void key13_retryIsOutsideTheTransaction(Scenario s) {
+    @DisplayName("SVC-KEY-13 (audit2 S7, changed by TXA-01): the proxy of SessionKeyService has the transaction advice and no retry advice (a lost race is not a reason to run the transaction again, principle 4.4); three registrations of the same key for the same author at the same moment all succeed with the one row, the two that lost read the row of the one that won")
+    void key13_noRetryAroundTheTransaction(Scenario s) {
         SessionKeyService keys = s.bean(SessionKeyService.class);
         assertThat(org.springframework.aop.support.AopUtils.isAopProxy(keys)).isTrue();
         List<String> advice = java.util.Arrays.stream(((org.springframework.aop.framework.Advised) keys).getAdvisors())
                 .map(advisor -> advisor.getAdvice().getClass().getName()).toList();
-        int retry = indexContaining(advice, "Retry");
-        int transaction = indexContaining(advice, "TransactionInterceptor");
-        assertThat(retry).as("the retry advice is on the proxy: %s", advice).isNotNegative();
-        assertThat(transaction).as("the transaction advice is on the proxy: %s", advice).isNotNegative();
-        assertThat(retry).as("an advisor earlier in the list is the outer one: %s", advice).isLessThan(transaction);
+        assertThat(indexContaining(advice, "TransactionInterceptor")).as("the transaction advice is on the proxy: %s", advice)
+                .isNotNegative();
+        assertThat(indexContaining(advice, "Retry")).as("no retry advice is on the proxy: %s", advice).isNegative();
 
         String author = newAuthor();
         String key = publicKey(TestKeyRing.newPair());
         List<Callable<Registered>> calls = IntStream.range(0, 3).<Callable<Registered>>mapToObj(i -> () -> keys.register(
                 new RegisterCommand(author, key, "n" + i), TestOwners.OWNER)).toList();
         List<Parallel.Outcome<Registered>> outcomes = Parallel.all(calls);
-        assertThat(outcomes).allSatisfy(outcome -> assertThat(outcome.failure()).as("a conflict is retried, not thrown").isNull());
+        assertThat(outcomes).allSatisfy(outcome -> assertThat(outcome.failure()).as("the loser answers with the row of the winner").isNull());
         assertThat(outcomes.stream().map(outcome -> outcome.value().id()).distinct()).hasSize(1);
         assertThat(s.count("SELECT COUNT(*) FROM session_key WHERE author_id = ?", author)).isEqualTo(1);
+        assertThat(s.count("SELECT COUNT(*) FROM owner_audit WHERE subject = ?", author)).as("one audit row: the losers wrote none")
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("SVC-KEY-18 (TXA-01): two confirmed replacements of the same live key with different new keys at the same time: the conditional close decides, exactly one new key is live, the old row is closed once, the loser is refused KEY_REPLACEMENT_NOT_CONFIRMED naming the live key of the winner, and one KEY_REPLACED audit row exists")
+    void key18_parallelReplacement(Scenario s) {
+        SessionKeyService keys = s.bean(SessionKeyService.class);
+        String author = s.actorWith("defect");
+        String liveFingerprint = keys.live(author).orElseThrow().fingerprint();
+        List<Callable<Registered>> calls = IntStream.range(0, 2).<Callable<Registered>>mapToObj(i -> () -> keys.registerReplacing(
+                new RegisterCommand(author, publicKey(TestKeyRing.newPair()), "r" + i), TestOwners.OWNER, liveFingerprint)).toList();
+        List<Parallel.Outcome<Registered>> outcomes = Parallel.all(calls);
+        assertThat(outcomes.stream().filter(Parallel.Outcome::succeeded)).hasSize(1);
+        assertThat(outcomes.stream().filter(o -> !o.succeeded())).singleElement().satisfies(o -> assertThat(o.failure())
+                .isInstanceOfSatisfying(LedgerException.class, failure -> {
+                    assertThat(failure.code()).isEqualTo(ConflictCode.KEY_REPLACEMENT_NOT_CONFIRMED);
+                    assertThat(failure.args().get(1)).isEqualTo(keys.live(author).orElseThrow().fingerprint());
+                }));
+        assertThat(s.count("SELECT COUNT(*) FROM session_key WHERE author_id = ? AND revoked_at IS NULL", author)).isEqualTo(1);
+        assertThat(s.count("SELECT COUNT(*) FROM session_key WHERE author_id = ?", author)).isEqualTo(2);
+        assertThat(s.count("SELECT COUNT(*) FROM owner_audit WHERE subject = ? AND operation = 'KEY_REPLACED'", author)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("SVC-KEY-19 (TXA-01): a registration that lost the race gives its key number back: three registrations of the same key at the same time use exactly one number of the counter")
+    void key19_aLostRaceLeavesNoGapInTheNumbers(Scenario s) {
+        SessionKeyService keys = s.bean(SessionKeyService.class);
+        String author = newAuthor();
+        String key = publicKey(TestKeyRing.newPair());
+        long before = s.ctx().jdbc().sql("SELECT issued_no FROM id_counter WHERE name = 'SESSION_KEY'").query(Long.class).single();
+        List<Callable<Registered>> calls = IntStream.range(0, 3).<Callable<Registered>>mapToObj(i -> () -> keys.register(
+                new RegisterCommand(author, key, null), TestOwners.OWNER)).toList();
+        assertThat(Parallel.all(calls)).allSatisfy(outcome -> assertThat(outcome.failure()).isNull());
+        long after = s.ctx().jdbc().sql("SELECT issued_no FROM id_counter WHERE name = 'SESSION_KEY'").query(Long.class).single();
+        assertThat(after).isEqualTo(before + 1);
     }
 
     @Test

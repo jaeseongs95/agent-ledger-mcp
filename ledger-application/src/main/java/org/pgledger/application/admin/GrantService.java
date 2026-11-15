@@ -27,8 +27,6 @@ import org.pgledger.domain.value.OwnerIdentity;
 import org.pgledger.domain.value.ProjectId;
 import org.pgledger.domain.value.Tokens;
 import org.pgledger.domain.value.UtcInstant;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.resilience.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -71,11 +69,11 @@ public class GrantService {
 
     /**
      * Issues the grants and returns the id of each, one per scope in the order given; who issued them is recorded in the
-     * owner's audit trail in the same transaction. Another grant of the same key that commits first makes the insert a
-     * duplicate key; the whole call is then retried in a new transaction (the retry is the outer advice, the
-     * transaction the inner one), which closes that grant first.
+     * owner's audit trail in the same transaction. Grants of one author run one after the other: the live key of the
+     * author is held (a conditional UPDATE, {@code requireLiveKey}) before any grant row is read or written, so another
+     * grant of the same key that commits first is seen by the lookup that follows and is closed before the insert; no
+     * insert can meet a live row of its key, and no call is run again.
      */
-    @Retryable(includes = DuplicateKeyException.class, maxRetries = 3, delay = 10)
     public List<Long> grant(GrantCommand command, OwnerIdentity actor) {
         return issueAll(command, actor);
     }
