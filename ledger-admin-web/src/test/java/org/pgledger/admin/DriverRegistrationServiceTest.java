@@ -29,19 +29,23 @@ import org.opentest4j.TestAbortedException;
 import org.pgledger.admin.app.LedgerAdminProperties;
 import org.pgledger.admin.setup.DriverRegistrationService;
 import org.pgledger.admin.support.TestDriverJar;
+import org.pgledger.application.admin.DriverAuditService;
 import org.pgledger.application.admin.OwnerAuditWriter;
 import org.pgledger.database.driver.DriverLoader;
 import org.pgledger.database.driver.DriverRegistrar;
 import org.pgledger.database.driver.DriverRegistration;
 import org.pgledger.database.driver.DriverRegistrationFile;
 import org.pgledger.database.driver.LedgerJdbcProperties;
+import org.pgledger.database.repository.OwnerAuditRepository;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.domain.rule.OwnerAction;
 import org.pgledger.testing.OwnerOnlyFiles;
 import org.pgledger.testing.TestOwners;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.transaction.TransactionSystemException;
 import org.springframework.transaction.support.AbstractPlatformTransactionManager;
 import org.springframework.transaction.support.DefaultTransactionStatus;
@@ -108,11 +112,21 @@ class DriverRegistrationServiceTest {
                 .run(context -> body.accept(context.getBean(DriverRegistrationService.class)));
     }
 
-    /** The service of a console: with the writer of the audit row and the transaction manager of its database. */
+    /** What the application's configuration does for its services: {@code @Transactional} is applied to the beans. */
+    @Configuration(proxyBeanMethods = false)
+    @EnableTransactionManagement
+    static class DeclaredTransactions {
+    }
+
+    /**
+     * The service of a console: with the audit service of its database (a real {@link DriverAuditService}, whose
+     * {@code @Transactional} methods run on the transaction manager of the test, around the writer of the audit row).
+     */
     private static void withAuditedService(Path registrationFile, Path driverDirectory, OwnerAuditWriter writer,
             PlatformTransactionManager transactions, Body body) {
         runner(registrationFile, driverDirectory, TestDriverJar.url())
-                .withBean(OwnerAuditWriter.class, () -> writer)
+                .withUserConfiguration(DeclaredTransactions.class)
+                .withBean(DriverAuditService.class, () -> new DriverAuditService(writer, mock(OwnerAuditRepository.class)))
                 .withBean(PlatformTransactionManager.class, () -> transactions)
                 .run(context -> body.accept(context.getBean(DriverRegistrationService.class)));
     }

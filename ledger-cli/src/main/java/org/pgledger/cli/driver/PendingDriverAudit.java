@@ -1,13 +1,9 @@
 package org.pgledger.cli.driver;
 
 import java.util.Optional;
-import org.pgledger.application.admin.OwnerAuditWriter;
+import org.pgledger.application.admin.DriverAuditService;
 import org.pgledger.cli.database.CliActor;
 import org.pgledger.database.driver.DriverRegistrationFile;
-import org.pgledger.database.repository.OwnerAuditRepository;
-import org.pgledger.domain.rule.OwnerAction;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * The audit row of a driver registration that was made while the ledger schema was not up to date (the first registration of an
@@ -18,22 +14,20 @@ import org.springframework.transaction.support.TransactionTemplate;
  * actor of the run that records it (the account the installer runs as, {@code cli:<user>}) and the time of the registration
  * in its detail.
  *
+ * <p>The file is read here, outside any transaction; the check of the trail and the row are one transaction, a method of
+ * {@link DriverAuditService} (principle 4.4: this class opens none).
+ *
  * <p>It exists only when the CLI has its database, like {@code CliLedger} (see {@code CliLedgerConfiguration}).
  */
 public final class PendingDriverAudit {
 
     private final DriverRegistrationFile file;
-    private final OwnerAuditWriter writer;
-    private final OwnerAuditRepository trail;
-    private final PlatformTransactionManager transactions;
+    private final DriverAuditService audit;
     private final CliActor actor;
 
-    public PendingDriverAudit(DriverRegistrationFile file, OwnerAuditWriter writer, OwnerAuditRepository trail,
-            PlatformTransactionManager transactions, CliActor actor) {
+    public PendingDriverAudit(DriverRegistrationFile file, DriverAuditService audit, CliActor actor) {
         this.file = file;
-        this.writer = writer;
-        this.trail = trail;
-        this.transactions = transactions;
+        this.audit = audit;
         this.actor = actor;
     }
 
@@ -44,19 +38,9 @@ public final class PendingDriverAudit {
      */
     public Optional<String> recordIfMissing() {
         return file.read().flatMap(entry -> {
-            String known = detail(entry.jar(), entry.sha256());
-            Boolean written = new TransactionTemplate(transactions).execute(status -> {
-                boolean present = trail.findBySubjectOrderById(entry.className()).stream()
-                        .anyMatch(row -> row.operation() == OwnerAction.DRIVER_REGISTERED && row.detail() != null
-                                && row.detail().startsWith(known));
-                if (present) {
-                    return false;
-                }
-                writer.record(actor.current(), OwnerAction.DRIVER_REGISTERED, entry.className(),
-                        known + " registered_at=" + entry.registeredAt());
-                return true;
-            });
-            return Boolean.TRUE.equals(written) ? Optional.of(entry.className()) : Optional.empty();
+            boolean written = audit.recordIfMissing(actor.current(), entry.className(),
+                    detail(entry.jar(), entry.sha256()), entry.registeredAt());
+            return written ? Optional.of(entry.className()) : Optional.empty();
         });
     }
 
