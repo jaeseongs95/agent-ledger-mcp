@@ -47,7 +47,7 @@ import org.springframework.transaction.TransactionException;
  *
  * <p>Why this applier and why the explicit command. The ledger does not use Flyway: a Flyway release from 10 on needs a module for
  * every DBMS it supports and answers "Unsupported Database" for one it has none for, while the ledger asks for ANSI SQL on any
- * database whose JDBC driver the owner registers (the two differences, the row limit and the long text type, are decided by the dialect of SqlBuilder). And the ledger
+ * database whose JDBC driver the owner registers (the three differences, the row limit, the long text type and the encoding probe, are decided by the dialect of SqlBuilder). And the ledger
  * migrates by the explicit command {@code ledger-cli migrate} and not when the server starts, because the server never holds the
  * password of the DDL account: the schema is changed by the DDL account of the operator, the servers run on the application account
  * that can read and write the tables and cannot change them, so a server that is taken over cannot change the schema.

@@ -43,7 +43,9 @@ class DatabaseEncodingTest {
         for (Locale locale : List.of(Locale.ROOT, Locale.KOREAN)) {
             String text = new MessageFormat(ResourceBundle.getBundle("messages/ledger-errors", locale)
                     .getString(refused.code().messageKey()), locale).format(refused.args().toArray());
-            assertThat(text).as(locale.toLanguageTag()).contains(refused.args().getFirst()).contains("UTF-8");
+            assertThat(text).as(locale.toLanguageTag()).contains(refused.args().getFirst()).contains("UTF-8")
+                    .doesNotContainIgnoringCase("postgres").doesNotContainIgnoringCase("mysql").doesNotContainIgnoringCase("mariadb")
+                    .doesNotContainIgnoringCase("oracle").doesNotContainIgnoringCase("db2").doesNotContainIgnoringCase("sql server");
         }
     }
 
@@ -174,8 +176,8 @@ class DatabaseEncodingTest {
     }
 
     @Test
-    @DisplayName("RUN-032 a null SQLSTATE and a failure with no SQLException are propagated; a class 22 state is found deep in the causes and in the next exceptions")
-    void run032_theChainIsWalked() {
+    @DisplayName("RUN-032 a null SQLSTATE and a failure with no SQLException are propagated; the main SQLException is the first one in the causes")
+    void run032_theMainExceptionDecides() {
         RuntimeException noState = failedWith(new SQLException("no state"));
         RuntimeException noSql = new IllegalStateException("not a database failure");
         assertThat(DatabaseEncoding.probeFailure(noState)).isSameAs(noState);
@@ -183,23 +185,63 @@ class DatabaseEncodingTest {
 
         RuntimeException deep = new IllegalStateException("outer", new RuntimeException("middle", new SQLException("inner", "22021")));
         assertThat(DatabaseEncoding.dataExceptionState(deep)).contains("22021");
-
-        SQLException first = new SQLException("first", "08006");
-        first.setNextException(new SQLException("second", "22P05"));
-        assertThat(DatabaseEncoding.dataExceptionState(failedWith(first))).contains("22P05");
-
-        SQLException wrapper = new SQLException("batch", "HY000", new SQLException("cause", "22021"));
-        assertThat(DatabaseEncoding.dataExceptionState(new IllegalStateException(wrapper))).contains("22021");
+        assertThat(DatabaseEncoding.probeFailure(deep)).isInstanceOf(InfrastructureException.class);
     }
 
     @Test
-    @DisplayName("RUN-032 the walk ends on a loop of causes or next exceptions")
-    void run032_aLoopEndsTheWalk() {
+    @DisplayName("RUN-032 the first SQLSTATE that is not null among the main exception and its next exceptions decides: 22 refuses, any other propagates")
+    void run032_theFirstStateOfTheNextChainDecides() {
+        // the main exception has no state: the first state that is not null is the one of its next exception
+        SQLException noState = new SQLException("no state");
+        noState.setNextException(new SQLException("second", "22P05"));
+        assertThat(DatabaseEncoding.dataExceptionState(failedWith(noState))).contains("22P05");
+        assertThat(DatabaseEncoding.probeFailure(failedWith(noState))).isInstanceOf(InfrastructureException.class);
+
+        // another state first: a 22P05 later in the chain does not make it an encoding problem
+        SQLException connection = new SQLException("first", "08006");
+        connection.setNextException(new SQLException("second", "22P05"));
+        RuntimeException lost = failedWith(connection);
+        assertThat(DatabaseEncoding.dataExceptionState(lost)).isEmpty();
+        assertThat(DatabaseEncoding.probeFailure(lost)).isSameAs(lost);
+
+        // the cause of an SQLException is not a next exception: the HY000 decides
+        SQLException wrapper = new SQLException("batch", "HY000", new SQLException("cause", "22021"));
+        RuntimeException other = new IllegalStateException(wrapper);
+        assertThat(DatabaseEncoding.dataExceptionState(other)).isEmpty();
+        assertThat(DatabaseEncoding.probeFailure(other)).isSameAs(other);
+    }
+
+    @Test
+    @DisplayName("RUN-032 the walk ends on a loop of next exceptions")
+    void run032_aLoopOfNextExceptionsEndsTheWalk() {
         SQLException a = new SQLException("a", "08006");
         SQLException b = new SQLException("b", "08001");
         a.setNextException(b);
         b.setNextException(a);
         assertThat(DatabaseEncoding.dataExceptionState(failedWith(a))).isEmpty();
         assertThat(DatabaseEncoding.probeFailure(failedWith(a))).isInstanceOf(UncategorizedSQLException.class);
+
+        SQLException unnamedA = new SQLException("a");
+        SQLException unnamedB = new SQLException("b");
+        unnamedA.setNextException(unnamedB);
+        unnamedB.setNextException(unnamedA);
+        assertThat(DatabaseEncoding.dataExceptionState(failedWith(unnamedA))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("RUN-032 the walk ends on a loop of causes (A to B to A), with and without an SQLException before the loop")
+    void run032_aLoopOfCausesEndsTheWalk() {
+        RuntimeException a = new RuntimeException("a");
+        RuntimeException b = new RuntimeException("b", a);
+        a.initCause(b);
+        assertThat(DatabaseEncoding.dataExceptionState(a)).isEmpty();
+        assertThat(DatabaseEncoding.probeFailure(a)).isSameAs(a);
+
+        RuntimeException c = new RuntimeException("c");
+        RuntimeException d = new RuntimeException("d", c);
+        c.initCause(d);
+        RuntimeException outer = new IllegalStateException("outer", new RuntimeException("middle", c));
+        assertThat(DatabaseEncoding.dataExceptionState(outer)).isEmpty();
+        assertThat(DatabaseEncoding.probeFailure(outer)).isSameAs(outer);
     }
 }

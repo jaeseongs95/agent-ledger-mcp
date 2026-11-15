@@ -82,29 +82,45 @@ public final class DatabaseEncoding {
     }
 
     /**
-     * The SQLSTATE of the first {@link SQLException} in the chain of {@code failure} that has one of the class 22, the data exceptions
-     * of the SQL standard (a character that has no equivalent in the character set of the database, a character outside its
-     * repertoire, and the like), whatever the product's own code is: only the first two characters are looked at. The chain is the
-     * causes and, for an {@code SQLException}, its next exceptions; a loop ends the walk.
+     * The SQLSTATE of the failure when it is of the class 22, the data exceptions of the SQL standard (a character that has no
+     * equivalent in the character set of the database, a character outside its repertoire, and the like), whatever the product's own
+     * code is: only the first two characters are looked at. Which state counts: the causes are followed to the first
+     * {@link SQLException}, the main one; the first SQLSTATE that is not null among that exception and its next exceptions is the
+     * state of the failure, and it is returned only if it is of the class 22. So a failure whose state is another one is not an
+     * encoding problem even when a later exception of its chain has the class 22, and a failure with no SQLSTATE is none. Neither walk
+     * visits an exception twice, so a loop ends it.
      *
-     * @return the SQLSTATE, empty when no exception of the chain has one of the class 22
+     * <p>A limit: a character set error whose SQLSTATE is not of the class 22 (MySQL answers some with {@code HY000}) is not
+     * recognised here and is propagated as it is; the probe runs before any DDL, so nothing has been changed then.
+     *
+     * @return the SQLSTATE, empty when the state of the failure is not of the class 22 or there is none
      */
     public static Optional<String> dataExceptionState(Throwable failure) {
+        SQLException main = firstSqlException(failure);
+        return main == null ? Optional.empty() : Optional.ofNullable(firstState(main))
+                .filter(state -> state.startsWith(DATA_EXCEPTION_CLASS));
+    }
+
+    /** The first {@link SQLException} in the chain of causes (starting with {@code failure} itself), null if there is none. */
+    private static SQLException firstSqlException(Throwable failure) {
         Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         for (Throwable link = failure; link != null && seen.add(link); link = link.getCause()) {
             if (link instanceof SQLException sql) {
-                for (SQLException next = sql; next != null; next = next.getNextException()) {
-                    String state = next.getSQLState();
-                    if (state != null && state.startsWith(DATA_EXCEPTION_CLASS)) {
-                        return Optional.of(state);
-                    }
-                    if (next.getNextException() != null && !seen.add(next.getNextException())) {
-                        break;
-                    }
-                }
+                return sql;
             }
         }
-        return Optional.empty();
+        return null;
+    }
+
+    /** The first SQLSTATE that is not null of {@code main} and its next exceptions, null if there is none. */
+    private static String firstState(SQLException main) {
+        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (SQLException next = main; next != null && seen.add(next); next = next.getNextException()) {
+            if (next.getSQLState() != null) {
+                return next.getSQLState();
+            }
+        }
+        return null;
     }
 
     /**

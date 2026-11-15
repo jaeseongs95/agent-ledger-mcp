@@ -70,6 +70,9 @@ of the write tools, the keys of the results, the `_hostAttestation` key) and cha
   this edition contains no tailoring for a particular product (collations, session settings). The database must use UTF-8 and compare text case-sensitively.
   `migrate` proves the encoding before it changes anything: it sends a text of three characters (two Korean letters and an emoji) through a query of the dialect and
   refuses to go on when the database gives back another length or another text; it does not read the list of character sets of the database.
+  Where a database keeps a default character set for each schema and a character set for the server as well as one for the connection (MariaDB
+  and MySQL do), all three must be utf8mb4: the default character set of the database of the JDBC URL (the schema that is checked), the variable
+  character_set_server and the character set of the connection. `migrate` refuses to go on, before it changes anything, when the first two are not.
 
 A direct MCP caller is not authenticated as a host: the bearer token admits the caller, and the signed attestation proves the author.
 

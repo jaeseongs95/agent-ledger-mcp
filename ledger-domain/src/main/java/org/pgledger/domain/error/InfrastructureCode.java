@@ -39,7 +39,7 @@ public enum InfrastructureCode implements ErrorCode {
     SCHEMA_PENDING,
     /** A migration failed (its cause is the database failure); {0} = the version, {1} = the file name. */
     SCHEMA_MIGRATION_FAILED,
-    /** The encoding of the database is not UTF-8; {0} = what the database reports. */
+    /** The database does not store UTF-8 (the probe of the encoding failed); {0} = what the database reports. */
     SCHEMA_ENCODING_NOT_UTF8,
     /** The grants cannot be applied to the account. */
     SCHEMA_GRANT_FAILED,

@@ -140,9 +140,10 @@ public class SqlBuilder {
 
     /**
      * The text that the encoding probe sends: two Korean letters (U+D55C, U+AE00) and one emoji outside the Basic Multilingual Plane
-     * (U+1F600), written as escapes so that the encoding of this source file decides nothing. It is three code points, ten bytes in
-     * UTF-8 and four UTF-16 code units. A database that does not store UTF-8 cannot give it back (it answers a replacement character
-     * or a question mark, or a length counted in bytes).
+     * (U+1F600), written as {@code \}{@code u} escapes, so that the encoding of this source file decides nothing (the build compiles in
+     * UTF-8 all the same, and {@code DatabaseEncodingTest} asserts that the constant equals the UTF-8 literal of the three characters,
+     * three code points, ten bytes in UTF-8, four UTF-16 code units). A database that does not store UTF-8 cannot give it back (it
+     * answers a replacement character or a question mark, or a length counted in bytes, or fails with a data exception).
      */
     public static final String ENCODING_PROBE_TEXT = "한글😀";
 
@@ -159,8 +160,11 @@ public class SqlBuilder {
      * every character set the product supports, another does not exist). The caller binds {@link #ENCODING_PROBE_TEXT} to both
      * placeholders; the query gives back the length and the value, and the database judges nothing: the caller refuses an answer whose
      * length is not {@link #ENCODING_PROBE_CODE_POINTS} (where {@link #countsCodePoints(Database)}) or whose value is not the text sent.
-     * Every query casts the bind value to a character type of the database, so the value passes through the character set of the
-     * database and not only through the driver.
+     * Every query casts the bind value to a character type of the database, so the value passes through the database and not only
+     * through the driver. What that proves differs by product: where the character set is one property of the database, the
+     * database itself; for MariaDB and MySQL the cast to CHAR is made in the character set of the connection only, so the first probe
+     * proves the connection and not the default character set of the schema or of the server, which the columns of the tables get;
+     * that is what {@link #generateSchemaCharsetProbe(Database)} is for.
      */
     public static String generateEncodingProbe(Database database) {
         // PostgreSQL: CHAR_LENGTH: https://www.postgresql.org/docs/current/functions-string.html
@@ -190,9 +194,14 @@ public class SqlBuilder {
      * Whether the length that {@link #generateEncodingProbe(Database)} gives is the number of code points, so that the probe text is
      * 3. It is not for H2, whose CHAR_LENGTH counts UTF-16 code units (the emoji counts 2, the probe text 4): there only the value
      * proves the encoding. The difference is a property of the product, so it is decided here with the query and not in the caller.
+     * H2 is refused as the ledger database ({@code EmbeddedDatabaseRefusal}), so the product's {@code migrate} never reaches this case;
+     * it stays so that the switch has a row for every {@link Database}.
      */
     public static boolean countsCodePoints(Database database) {
-        // H2: CHAR_LENGTH counts UTF-16 code units: https://h2database.com/html/functions.html#char_length
+        // H2: CHAR_LENGTH: https://h2database.com/html/functions.html#char_length
+        //   the documentation does not say what it counts; that it counts UTF-16 code units is the H2 implementation (the length of a
+        //   Java String) and has not been run here: H2 is not on the test class path of this module (the build allows its driver on
+        //   the seed bundle and the command line only)
         // every other product: the number of characters, which are code points in a UTF-8 database (see the documentation cited by
         // generateEncodingProbe)
         return switch (database) {
@@ -212,7 +221,9 @@ public class SqlBuilder {
      * the probe of {@link #generateEncodingProbe(Database)} passes through the connection, which may convert). It gives the default
      * character set of the schema, the character set of the server and, as the third column, 1 when both are {@code utf8mb4} and 0
      * otherwise; the database compares the names (any case), the caller reads the third column only and puts the first two in the
-     * refusal. A product without this probe gives an empty result: the encoding is then proved by the first probe alone.
+     * refusal. A product without this probe gives an empty result: the encoding is then proved by the first probe alone. The schema it
+     * looks at is the database of the connection (the one {@code DATABASE()} names, the database of the JDBC URL); where the connection
+     * has none the query gives no row, which the caller refuses.
      */
     public static Optional<String> generateSchemaCharsetProbe(Database database) {
         // MariaDB, MySQL: the schema (SCHEMATA) and the server variable report the character set by name, and a name may come in any
