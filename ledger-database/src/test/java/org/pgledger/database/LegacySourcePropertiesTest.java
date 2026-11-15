@@ -50,7 +50,7 @@ class LegacySourcePropertiesTest {
             assertThat(new LegacySourceRepository(jdbc, legacy.reader(), "ledger_old").schema()).isEqualTo("ledger_old");
             assertThatThrownBy(() -> new LegacySourceRepository(jdbc, legacy.reader(), "ledger.old")).isInstanceOf(IllegalArgumentException.class);
             assertThatThrownBy(() -> new LegacySourceRepository(jdbc, legacy.reader(), "Ledger")).isInstanceOf(IllegalArgumentException.class);
-            assertThatThrownBy(() -> new LegacySourceRepository(jdbc, legacy.reader(), null)).isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> new LegacySourceRepository(jdbc, legacy.reader(), (String) null)).isInstanceOf(IllegalArgumentException.class);
         }
     }
 }
