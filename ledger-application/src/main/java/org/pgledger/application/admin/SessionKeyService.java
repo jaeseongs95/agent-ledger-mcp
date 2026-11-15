@@ -8,10 +8,12 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
-import org.pgledger.application.admin.SessionKeyWriter.NewKey;
 import org.pgledger.attestation.AttestationException;
 import org.pgledger.attestation.KeyBlock;
 import org.pgledger.attestation.PublicKeys;
+import org.pgledger.database.repository.Counter;
+import org.pgledger.database.repository.IdAllocator;
+import org.pgledger.database.repository.SessionKeyRepository;
 import org.pgledger.database.repository.SessionKeyStateRepository;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ConflictException;
@@ -23,8 +25,6 @@ import org.pgledger.domain.model.SessionPublicKey;
 import org.pgledger.domain.rule.OwnerAction;
 import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.OwnerIdentity;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,8 +42,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class SessionKeyService {
 
-    private static final Logger LOG = LoggerFactory.getLogger(SessionKeyService.class);
-
     /** The author and its public key (X.509 DER in base64, as the hook prints it) with an optional note. */
     public record RegisterCommand(String author, String publicKey, String note) {
     }
@@ -52,15 +50,21 @@ public class SessionKeyService {
     public record Registered(long id, String author, String fingerprint) {
     }
 
+    /** The key to bind: the author, the public key as stored (base64 of the X.509 DER), its fingerprint and the owner's note. */
+    private record NewKey(AuthorId author, String text, String fingerprint, String note) {
+    }
+
     private final SessionKeyStateRepository state;
-    private final SessionKeyWriter writer;
+    private final SessionKeyRepository keys;
+    private final IdAllocator ids;
     private final OwnerAuditWriter audit;
     private final Clock clock;
 
-    public SessionKeyService(SessionKeyStateRepository state, SessionKeyWriter writer, OwnerAuditWriter audit,
-            Clock clock) {
+    public SessionKeyService(SessionKeyStateRepository state, SessionKeyRepository keys, IdAllocator ids,
+            OwnerAuditWriter audit, Clock clock) {
         this.state = state;
-        this.writer = writer;
+        this.keys = keys;
+        this.ids = ids;
         this.audit = audit;
         this.clock = clock;
     }
@@ -71,10 +75,11 @@ public class SessionKeyService {
      * for another author is refused (DUPLICATE_KEY). An author that already has another live key is refused
      * (KEY_REPLACEMENT_NOT_CONFIRMED, naming the fingerprint and the registration time of the live key): a key is never
      * replaced silently, because whoever gets the owner to register a key under a known author name would otherwise
-     * inherit that author's grants. Another registration of the same author or key that commits first makes the insert a
-     * duplicate key (or the conditional close of the replaced key affect no row): this call is the loser, it does not run
-     * again, it reads what the winner left and answers with that (the repeated registration of the same key answers with its
-     * row).
+     * inherit that author's grants. Another registration of the same author or key that commits first makes the conditional
+     * close of the replaced key affect no row: this call is the loser, it does not run again, it reads what the winner left and
+     * answers with that (the repeated registration of the same key answers with its row). A registration that breaks the
+     * unique key at the insert (the same moment as another one) ends with the translated DUPLICATE_KEY and everything it wrote
+     * is rolled back with its transaction (principle 4.4).
      */
     public Registered register(RegisterCommand command, OwnerIdentity actor) {
         return bind(command, actor, null);
@@ -130,11 +135,25 @@ public class SessionKeyService {
                 .orElseGet(() -> current
                         .map(open -> {
                             requireConfirmed(open, author, replacedFingerprint);
-                            return write(() -> writer.replace(open.id(), key, now), actor, author, fingerprint,
+                            return write(() -> closeAndInsert(open.id(), key, now), actor, author, fingerprint,
                                     OwnerAction.KEY_REPLACED, " replaced=" + open.fingerprint());
                         })
-                        .orElseGet(() -> write(() -> Optional.of(writer.bind(key, now)), actor, author, fingerprint,
+                        .orElseGet(() -> write(() -> Optional.of(insert(key, now)), actor, author, fingerprint,
                                 OwnerAction.KEY_REGISTERED, "")));
+    }
+
+    /** Inserts the key as the live key of its author. */
+    private SessionPublicKey insert(NewKey key, Instant now) {
+        return keys.insert(SessionPublicKey.register(ids.next(Counter.SESSION_KEY), key.author(), key.text(),
+                key.fingerprint(), AuthorId.OWNER, now, key.note()));
+    }
+
+    /** Closes the live key {@code replacedId} and inserts the new key in its place; empty when the close affected no row. */
+    private Optional<SessionPublicKey> closeAndInsert(long replacedId, NewKey key, Instant now) {
+        if (!state.close(replacedId, now)) {
+            return Optional.empty();
+        }
+        return Optional.of(insert(key, now));
     }
 
     /**
@@ -143,17 +162,16 @@ public class SessionKeyService {
      */
     private Registered write(Supplier<Optional<SessionPublicKey>> racingWrite, OwnerIdentity actor, AuthorId author,
             String fingerprint, OwnerAction action, String replacedDetail) {
-        // The close and the insert are the writes that other registrations race for. Whoever loses is decided by the
-        // database, not by running this method again: the conditional close affects no row (the answer is empty), or the
-        // insert breaks a unique key. SessionKeyWriter runs them in a nested transaction, so what the loser wrote (the
-        // closed key, the number of the counter) is taken back by Spring's savepoint and the transaction stays usable on
-        // every DBMS.
+        // The close and the insert are the writes that other registrations race for, in the one transaction of this
+        // method (principle 4.4: no nested write, no retry). Whoever loses is decided by the database: the conditional
+        // close affects no row (nothing was written: the answer is empty and the winner's state is read), or the insert
+        // breaks a unique key and the call ends with the translated DUPLICATE_KEY; the transaction is rolled back with
+        // everything the loser wrote (the closed key, the number of the counter).
         Optional<SessionPublicKey> written;
         try {
             written = racingWrite.get();
         } catch (DuplicateKeyException duplicate) {
-            LOG.debug("the key of {} was registered by another call first; its row decides", author.value(), duplicate);
-            return lostRace(author, fingerprint);
+            throw new ConflictException(ConflictCode.DUPLICATE_KEY, List.of("public key " + fingerprint), duplicate);
         }
         return written.map(row -> {
             audit.record(actor, action, author.value(), "key=" + fingerprint + replacedDetail);
