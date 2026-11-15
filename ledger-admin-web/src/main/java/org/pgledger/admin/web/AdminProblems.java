@@ -2,7 +2,6 @@ package org.pgledger.admin.web;
 
 import java.util.List;
 import java.util.Locale;
-import java.util.UUID;
 import org.pgledger.domain.error.AdminCode;
 import org.pgledger.domain.error.AdminException;
 import org.pgledger.domain.error.ConflictCode;
@@ -26,6 +25,7 @@ import org.springframework.context.support.DefaultMessageSourceResolvable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.stereotype.Component;
+import org.springframework.util.IdGenerator;
 
 /**
  * The one place that turns a failure of the admin web into a problem detail (RFC 9457): the business failures of the
@@ -41,9 +41,11 @@ public class AdminProblems {
     public static final String FORBIDDEN = "FORBIDDEN";
 
     private final MessageSource messages;
+    private final IdGenerator ids;
 
-    public AdminProblems(MessageSource messages) {
+    public AdminProblems(MessageSource messages, IdGenerator ids) {
         this.messages = messages;
+        this.ids = ids;
     }
 
     public ProblemDetail problem(LedgerException failure, Locale locale) {
@@ -75,7 +77,7 @@ public class AdminProblems {
 
     /** The trace id of a server failure: it is in the problem and in the log line of the failure. */
     public String newTraceId() {
-        return UUID.randomUUID().toString();
+        return ids.generateId().toString();
     }
 
     /** The status of a code, by a complete switch over the code enums. */

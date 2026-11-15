@@ -146,4 +146,14 @@ class SeedBuilderTest {
         }
         assertThat(SeedDigest.of(List.of())).isNotEqualTo(digest);
     }
+
+    @Test
+    @DisplayName("HLP-002 the digest has fixed vectors: the SHA-256 of the lines 'group US code US texts US sort US state LF', an absent text as the empty text")
+    void theDigestHasFixedVectors() {
+        assertThat(SeedDigest.of(List.of(new SeedCode("g", "c", "Ko", "En", "dKo", "dEn", 7, "ACTIVE"))))
+                .isEqualTo("c6f62c81189e297fee7194d09b36b139c9c366b7775969b57733b588f7379c26");
+        assertThat(SeedDigest.of(List.of(new SeedCode("a", "b", null, null, null, null, 1, "S"))))
+                .isEqualTo("86bc10f810b9b05a7a843fc22a3302dc289f44e818ca859e8a2ab4ba62095db1");
+        assertThat(SeedDigest.of(List.of())).isEqualTo("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    }
 }
