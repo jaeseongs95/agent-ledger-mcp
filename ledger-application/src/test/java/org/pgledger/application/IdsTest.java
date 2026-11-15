@@ -136,8 +136,8 @@ class IdsTest {
             assertThat(e.args()).containsExactly(ahead, s.taskId(3));
             assertThat(s.count("SELECT COUNT(*) FROM task WHERE id = ?", ahead)).isZero();
         }
-        // a number below the counter, a free text and a number of 19 digits (a free id: it has no number) are accepted
-        for (String free : List.of(s.code() + "-T-1", s.code() + "-T|PIPE", s.code() + "-T-" + "9".repeat(19))) {
+        // free texts and a number of 19 digits (a free id: it has no number) are accepted
+        for (String free : List.of(s.code() + "-T-first", s.code() + "-T|PIPE", s.code() + "-T-" + "9".repeat(19))) {
             assertThat(save.save(Scenario.AUTHOR, s.create("task", free, s.taskFields("free"))).id()).isEqualTo(free);
         }
         assertThat(counter(s, "next_task_no")).isEqualTo(2);
@@ -155,6 +155,100 @@ class IdsTest {
         assertThat(e.details()).containsEntry("op_index", List.of("2")).containsEntry("op", List.of("save"));
         assertThat(counter(s, "next_defect_no")).isZero();
         assertThat(s.newDefect("after").id()).isEqualTo(s.defectId(1));
+    }
+
+    @Test
+    @DisplayName("VRF-046 (D-0049): an explicit defect id is stored only in the canonical form: no other padding, no number 0")
+    void vrf046_canonicalDefectIds(Scenario s) {
+        s.newDefect("one");
+        s.newDefect("two");
+        SaveService save = s.bean(SaveService.class);
+        long defects = s.count("SELECT COUNT(*) FROM defect WHERE project_id = ?", s.projectId());
+        // 00002 has the number of E2E-D-0002 (which exists), 000003 is the next number padded to six digits
+        for (String padded : List.of(s.code() + "-D-00002", s.code() + "-D-000003")) {
+            long number = Long.parseLong(padded.substring(padded.lastIndexOf('-') + 1));
+            LedgerException e = Expect.failure(() -> save.save(Scenario.AUTHOR, defect(s, padded, "padded")),
+                    ValidationCode.VALIDATION_FAILED);
+            ValidationIssue issue = Expect.firstIssue(e);
+            assertThat(issue.path()).isEqualTo("id");
+            assertThat(issue.reason()).isEqualTo(ValidationReason.ID_NOT_CANONICAL);
+            assertThat(issue.reasonArgs()).containsExactly(s.defectId((int) number));
+        }
+        LedgerException zero = Expect.failure(() -> save.save(Scenario.AUTHOR, defect(s, s.code() + "-D-0000", "zero")),
+                ValidationCode.VALIDATION_FAILED);
+        assertThat(Expect.firstIssue(zero).path()).isEqualTo("id");
+        assertThat(Expect.firstIssue(zero).reason()).isEqualTo(ValidationReason.MUST_BE_POSITIVE);
+        assertThat(s.count("SELECT COUNT(*) FROM defect WHERE project_id = ?", s.projectId())).isEqualTo(defects);
+        assertThat(counter(s, "next_defect_no")).isEqualTo(2);
+        // the canonical id of the next number is saved, and the largest number (18 digits) is canonical but ahead
+        assertThat(save.save(Scenario.AUTHOR, defect(s, s.defectId(3), "three")).id()).isEqualTo(s.defectId(3));
+        Expect.failure(() -> save.save(Scenario.AUTHOR, defect(s, s.code() + "-D-999999999999999999", "huge")),
+                ValidationCode.ID_NUMBER_AHEAD);
+        // the pattern of DefectId itself still reads the padded id (reads and the import use it)
+        assertThat(org.pgledger.domain.value.DefectId.parse(s.code() + "-D-00002")).isPresent();
+    }
+
+    @Test
+    @DisplayName("VRF-047 (D-0049): an explicit task id of the issued form is stored only in the canonical form, a free text is unchanged")
+    void vrf047_canonicalTaskIds(Scenario s) {
+        s.newTask("one");
+        SaveService save = s.bean(SaveService.class);
+        for (String padded : List.of(s.code() + "-T-00001", s.code() + "-T-1", s.code() + "-T-2")) {
+            long number = Long.parseLong(padded.substring(padded.lastIndexOf('-') + 1));
+            LedgerException e = Expect.failure(() -> save.save(Scenario.AUTHOR,
+                    s.create("task", padded, s.taskFields("padded"))), ValidationCode.VALIDATION_FAILED);
+            ValidationIssue issue = Expect.firstIssue(e);
+            assertThat(issue.path()).isEqualTo("id");
+            assertThat(issue.reason()).isEqualTo(ValidationReason.ID_NOT_CANONICAL);
+            assertThat(issue.reasonArgs()).containsExactly(s.taskId((int) number));
+        }
+        LedgerException zero = Expect.failure(() -> save.save(Scenario.AUTHOR,
+                s.create("task", s.code() + "-T-0000", s.taskFields("zero"))), ValidationCode.VALIDATION_FAILED);
+        assertThat(Expect.firstIssue(zero).reason()).isEqualTo(ValidationReason.MUST_BE_POSITIVE);
+        assertThat(counter(s, "next_task_no")).isEqualTo(1);
+        // the canonical next id, a free text and a number of 19 digits are saved
+        for (String accepted : List.of(s.taskId(2), s.code() + "-T|PIPE", s.code() + "-T-" + "9".repeat(19))) {
+            assertThat(save.save(Scenario.AUTHOR, s.create("task", accepted, s.taskFields("ok"))).id())
+                    .isEqualTo(accepted);
+        }
+    }
+
+    @Test
+    @DisplayName("VRF-037: two creates with the same explicit id, the next number, at the same time: one is saved, the other is DUPLICATE_KEY")
+    void vrf037_sameNumberTwice(Scenario s) {
+        s.newDefect("one");
+        s.newDefect("two");
+        s.newDefect("three");
+        List<Callable<SaveResult>> calls = List.of(
+                () -> s.bean(SaveService.class).save(Scenario.AUTHOR, defect(s, s.defectId(4), "a")),
+                () -> s.bean(SaveService.class).save(Scenario.AUTHOR, defect(s, s.defectId(4), "b")));
+        List<Outcome<SaveResult>> outcomes = Parallel.all(calls);
+        assertThat(outcomes.stream().filter(Outcome::succeeded)).hasSize(1);
+        assertThat(outcomes.stream().filter(o -> !o.succeeded()).map(o -> ((LedgerException) o.failure()).code()))
+                .containsExactly(ConflictCode.DUPLICATE_KEY);
+        assertThat(counter(s, "next_defect_no")).isEqualTo(4);
+        assertThat(s.count("SELECT COUNT(*) FROM defect WHERE id = ?", s.defectId(4))).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("VRF-038: a create without id and a create with the explicit id of the next number at the same time: two numbers, or DUPLICATE_KEY for the explicit one")
+    void vrf038_automaticAgainstExplicit(Scenario s) {
+        s.newDefect("one");
+        s.newDefect("two");
+        s.newDefect("three");
+        List<Callable<SaveResult>> calls = List.of(
+                () -> s.bean(SaveService.class).save(Scenario.AUTHOR, defect(s, null, "automatic")),
+                () -> s.bean(SaveService.class).save(Scenario.AUTHOR, defect(s, s.defectId(4), "explicit")));
+        List<Outcome<SaveResult>> outcomes = Parallel.all(calls);
+        assertThat(outcomes.get(0).failure()).as("the automatic create always succeeds").isNull();
+        if (outcomes.get(1).succeeded()) {
+            assertThat(outcomes.get(0).value().id()).isEqualTo(s.defectId(5));
+            assertThat(counter(s, "next_defect_no")).isEqualTo(5);
+        } else {
+            assertThat(((LedgerException) outcomes.get(1).failure()).code()).isEqualTo(ConflictCode.DUPLICATE_KEY);
+            assertThat(outcomes.get(0).value().id()).isEqualTo(s.defectId(4));
+            assertThat(counter(s, "next_defect_no")).isEqualTo(4);
+        }
     }
 
     @Test
@@ -201,8 +295,9 @@ class IdsTest {
     @DisplayName("SVC-IDS-06: tasks are numbered like defects, explicit free-text ids are accepted")
     void ids06_tasks(Scenario s) {
         assertThat(s.newTask("auto").id()).isEqualTo(s.taskId(1));
+        // changed by D-0049: the issued form with a number is held to the canonical form (VRF-047), a free text is not
         assertThat(s.bean(SaveService.class).save(Scenario.AUTHOR,
-                s.create("task", s.code() + "-T-1", s.taskFields("explicit"))).id()).isEqualTo(s.code() + "-T-1");
+                s.create("task", s.code() + "-T-first", s.taskFields("explicit"))).id()).isEqualTo(s.code() + "-T-first");
         assertThat(s.bean(SaveService.class).save(Scenario.AUTHOR,
                 s.create("task", s.code() + "-T|PIPE", s.taskFields("pipe"))).id()).isEqualTo(s.code() + "-T|PIPE");
     }

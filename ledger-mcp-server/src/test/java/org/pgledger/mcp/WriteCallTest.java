@@ -390,12 +390,16 @@ class WriteCallTest {
         Seed seed = Seed.create(session, scenario);
         int before = Ledger.history(session, seed.project()).size();
 
-        ToolError fix = session.failed("ledger_record_fix",
+        CallToolResult fixResult = session.call("ledger_record_fix",
                 Calls.RecordFix.of(seed.verified(), "c".repeat(40), Scenario.AUTHOR));
-        ToolError save = session.failed("ledger_save",
+        CallToolResult saveResult = session.call("ledger_save",
                 Calls.Save.edit("defect", seed.verified(), 3, Fields.titled("changed"), Scenario.AUTHOR));
 
-        for (ToolError error : List.of(fix, save)) {
+        for (CallToolResult result : List.of(fixResult, saveResult)) {
+            assertThat(result.isError()).isTrue();
+            // the text content starts with the code, then the message (the contract of the error tokens)
+            assertThat(McpSession.text(result)).startsWith("VERIFIED_DEFECT: ");
+            ToolError error = session.error(result);
             assertThat(error.code()).isEqualTo("VERIFIED_DEFECT");
             assertThat(error.message()).contains(seed.verified(), "reviewer", "ledger_review");
         }

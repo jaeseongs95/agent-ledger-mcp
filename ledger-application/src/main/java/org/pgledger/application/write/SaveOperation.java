@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.LongFunction;
 import java.util.function.Supplier;
 import org.pgledger.application.gate.Lookup;
 import org.pgledger.application.gate.Target;
@@ -213,6 +214,7 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
             throw new ValidationException(ValidationCode.ID_PREFIX_MISMATCH, List.of(explicit, prefix),
                     List.of(new ValidationIssue("id", ValidationReason.MUST_START_WITH, List.of(prefix))), Map.of());
         }
+        requireCanonical(explicit, candidate.number(), number -> DefectId.of(project.code(), number).value());
         if (defects.existsById(candidate)) {
             throw duplicate(HistoryEntity.DEFECT, explicit);
         }
@@ -221,6 +223,24 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
             throw idAhead(explicit, DefectId.of(project.code(), next).value());
         });
         return candidate;
+    }
+
+    /**
+     * An explicit id that has a number is stored only in the form the server writes it (D-0049): the number is at least 1 and
+     * the text is the one of {@code canonical}. The pattern of {@link DefectId} is wider on purpose (reads, the lookup and the
+     * import of 1.x use it), but in a save {@code P-D-0002} and {@code P-D-00002} would be two rows of one number, and the
+     * number 0 would be a past number that is always free; so only the save refuses them.
+     *
+     * @param canonical the id that the server writes for a number
+     */
+    private static void requireCanonical(String explicit, long number, LongFunction<String> canonical) {
+        if (number < 1) {
+            throw ValidationException.invalid("id", ValidationReason.MUST_BE_POSITIVE);
+        }
+        String written = canonical.apply(number);
+        if (!written.equals(explicit)) {
+            throw ValidationException.invalid("id", ValidationReason.ID_NOT_CANONICAL, written);
+        }
     }
 
     /** The refusal of an explicit id whose number is above the next number of the project; {@code nextId} is the id to give. */
@@ -238,6 +258,9 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
             return candidate;
         }
         TaskId candidate = TaskId.of(explicit);
+        // an id of the issued form has a number and is written the way the server writes it (a free text has none)
+        candidate.numberIn(project.code()).ifPresent(number -> requireCanonical(explicit, number,
+                numberOfId -> TaskId.issue(project.code(), numberOfId).value()));
         // the id of another case is the same id (the key is UNIQUE): the refusal names the id that exists, and a create that
         // races with the one of another case is stopped by the key itself (see inserted)
         tasks.findByIdKey(candidate.key()).ifPresent(existing -> {

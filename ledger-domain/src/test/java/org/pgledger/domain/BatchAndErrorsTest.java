@@ -176,6 +176,10 @@ class BatchAndErrorsTest {
                 .contains("X-D-0004");
         assertThat(new MessageFormat(koReasons.getString("reason.NUMBER_ABOVE_NEXT")).format(new Object[] {"X-D-0004"}))
                 .contains("X-D-0004");
+        for (ResourceBundle reasons : List.of(enReasons, koReasons)) {
+            assertThat(new MessageFormat(reasons.getString("reason.ID_NOT_CANONICAL")).format(new Object[] {"X-D-0004"}))
+                    .contains("X-D-0004");
+        }
     }
 
     @Test

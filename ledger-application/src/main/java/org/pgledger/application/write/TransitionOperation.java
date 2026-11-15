@@ -19,6 +19,7 @@ import org.pgledger.application.write.WriteResult.TransitionResult;
 import org.pgledger.database.repository.DefectCaseRepository;
 import org.pgledger.database.repository.DefectFixRepository;
 import org.pgledger.database.repository.HistoryRepository;
+import org.pgledger.database.repository.MergeChainRepository;
 import org.pgledger.domain.error.TrustCode;
 import org.pgledger.domain.error.TrustException;
 import org.pgledger.domain.error.ValidationException;
@@ -63,20 +64,22 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
     private final CodeRules codeRules;
     private final DefectFixRepository fixes;
     private final DefectCaseRepository cases;
+    private final MergeChainRepository mergeChain;
     private final HistoryRepository historyRows;
     private final HistoryWriter history;
     private final AttachmentLinks attachments;
     private final Clock clock;
 
     public TransitionOperation(WriteGate gate, ReceiptService receipts, Rows rows, CodeRules codeRules,
-            DefectFixRepository fixes, DefectCaseRepository cases, HistoryRepository historyRows,
-            HistoryWriter history, AttachmentLinks attachments, Clock clock) {
+            DefectFixRepository fixes, DefectCaseRepository cases, MergeChainRepository mergeChain,
+            HistoryRepository historyRows, HistoryWriter history, AttachmentLinks attachments, Clock clock) {
         super(gate, receipts, ReceiptOperation.TRANSITION, TransitionResult.class);
         this.gate = gate;
         this.rows = rows;
         this.codeRules = codeRules;
         this.fixes = fixes;
         this.cases = cases;
+        this.mergeChain = mergeChain;
         this.historyRows = historyRows;
         this.history = history;
         this.attachments = attachments;
@@ -205,17 +208,24 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
 
     /**
      * The sessions that reported the defect: the one that registered it (none for a row without one) and the ones that
-     * recorded a case of it. Only a verification looks at them, so only then are the cases read.
+     * recorded a case of it, and the same for every defect merged into it, directly or through others, because the
+     * product shows their cases as the cases of this defect ({@code ledger_defect}). The fixes are not read like that: only
+     * the fixes of the defect itself are shown as its fixes. Only a verification looks at the reporters, so only then are
+     * they read.
      */
     private List<SessionKey> reporters(Defect row, DefectStatus to) {
         if (to != DefectStatus.VERIFIED) {
             return List.of();
         }
+        List<Defect> sources = new ArrayList<>(List.of(row));
+        mergeChain.mergedInto(row.id()).forEach(merged -> sources.add(rows.defect(merged)));
         List<SessionKey> reporters = new ArrayList<>();
-        if (row.createdBy() != null) {
-            reporters.add(row.createdBy().sessionKey());
+        for (Defect source : sources) {
+            if (source.createdBy() != null) {
+                reporters.add(source.createdBy().sessionKey());
+            }
+            cases.findByDefectIdOrderById(source.id()).forEach(c -> reporters.add(c.recordedBy().sessionKey()));
         }
-        cases.findByDefectIdOrderById(row.id()).forEach(c -> reporters.add(c.recordedBy().sessionKey()));
         return reporters;
     }
 
@@ -247,7 +257,9 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
             Evidence evidence, String attachment) {
         Condition row = rows.conditionForWrite(id, expected);
         recheck(ctx, HistoryEntity.CONDITION, row.projectId(), row.state(), to);
-        row.state().requireTransitionTo(to, evidence);
+        // the session that registered the condition does not judge it (the principle of the defects and the tasks)
+        List<SessionKey> registrants = row.createdBy() == null ? List.of() : List.of(row.createdBy().sessionKey());
+        row.state().requireTransitionTo(to, evidence, ctx.author().sessionKey(), registrants);
         Condition saved = rows.saveCondition(row.transitioned(to));
         long historyId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.CONDITION, id.value(),
                 HistoryOp.TRANSITION, ChangeSet.empty()).withStates(row.state().name(), to.name())

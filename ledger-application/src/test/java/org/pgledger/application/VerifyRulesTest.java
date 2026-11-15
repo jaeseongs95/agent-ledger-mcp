@@ -23,11 +23,13 @@ import org.pgledger.application.write.TransitionService;
 import org.pgledger.application.write.WriteResult.RecordFixResult;
 import org.pgledger.application.write.WriteResult.SaveResult;
 import org.pgledger.application.write.WriteResult.TransitionResult;
+import org.pgledger.domain.context.ActorScope;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.LedgerException;
 import org.pgledger.domain.error.TransitionCode;
 import org.pgledger.domain.rule.DefectStatus;
 import org.pgledger.domain.rule.TaskState;
+import org.pgledger.domain.value.AuthorId;
 
 /**
  * VRF-002 .. VRF-006, VRF-009, VRF-012, VRF-015 and VRF-016: a VERIFIED defect is changed by no record_fix and no save until a
@@ -37,7 +39,7 @@ import org.pgledger.domain.rule.TaskState;
 class VerifyRulesTest {
 
     /** What a refused write must leave as it was. */
-    private record State(long version, String status, String owner, long fixes, long history) {
+    private record State(long version, String status, String owner, long fixes, long history, long historyCounter) {
     }
 
     private static State state(Scenario s, String defectId) {
@@ -45,7 +47,8 @@ class VerifyRulesTest {
         return new State(defect.version(), defect.status().name(),
                 defect.ownerActorId() == null ? null : defect.ownerActorId().value(),
                 s.count("SELECT COUNT(*) FROM defect_fix WHERE defect_id = ?", defectId),
-                s.count("SELECT COUNT(*) FROM history WHERE entity_id LIKE ?", defectId + "%"));
+                s.count("SELECT COUNT(*) FROM history WHERE entity_id LIKE ?", defectId + "%"),
+                s.count("SELECT issued_no FROM id_counter WHERE name = 'HISTORY'"));
     }
 
     private static RecordFixCommand fix(String defect, String commit, String ciRef, String conclusion, Boolean mark) {
@@ -219,9 +222,86 @@ class VerifyRulesTest {
     }
 
     @Test
-    @DisplayName("VRF-016: a release condition has no registrant rule: the session that registered it may judge it (unchanged)")
-    void vrf016_conditionsAreUnchanged(Scenario s) {
+    @DisplayName("VRF-016: a release condition is judged (MET, NOT_MET) by none of the session that registered it; leaving MET needs no such check")
+    void vrf016_conditionsFollowTheSamePrinciple(Scenario s) {
         SaveResult c = s.newCondition("1", "r1", "c1");
-        assertThat(review(s, Scenario.AUTHOR, "condition", c.id(), 1, "MET").to()).isEqualTo("MET");
+        for (String to : List.of("MET", "NOT_MET")) {
+            Expect.failure(() -> review(s, Scenario.AUTHOR, "condition", c.id(), 1, to), TransitionCode.SAME_SESSION);
+        }
+        assertThat(s.bean(org.pgledger.application.write.Rows.class).condition(
+                org.pgledger.domain.value.ConditionId.of(c.id())).state()).isEqualTo(
+                        org.pgledger.domain.rule.ConditionState.UNKNOWN);
+        String independent = s.actorWith("verify");
+        assertThat(review(s, independent, "condition", c.id(), 1, "MET").to()).isEqualTo("MET");
+        assertThat(review(s, Scenario.AUTHOR, "condition", c.id(), 2, "UNKNOWN").to()).isEqualTo("UNKNOWN");
+    }
+
+    @Test
+    @DisplayName("VRF-018: the registrant and the case sessions of a defect that was merged into this one count as reporters of it, the fixes of the merged defect do not")
+    void vrf018_mergedDefectsAreReported(Scenario s) {
+        String registrarOfB = s.actorWith("defect", "verify");
+        String observerOfB = s.actorWith("defect", "verify");
+        String fixerOfA = s.actorWith("fix", "verify");
+        String fixerOfB = s.actorWith("fix", "verify");
+        SaveResult a = s.newDefect("a");
+        var fieldsOfB = s.defectFields("b");
+        SaveResult b = s.bean(SaveService.class).save(registrarOfB, s.create("defect", null, fieldsOfB));
+        s.bean(RecordCaseService.class).recordCase(observerOfB,
+                new RecordCaseCommand(Scenario.uuid(), b.id(), "seen", Scenario.REASON, null, null, null));
+        s.fix(fixerOfA, a.id(), Scenario.commit('a'));
+        s.fix(fixerOfB, b.id(), Scenario.commit('b'));
+        MergeFixture.merge(s, b.id(), s.defect(b.id()).version(), a.id());
+        long version = s.defect(a.id()).version();
+        for (String refused : List.of(Scenario.AUTHOR, registrarOfB, observerOfB, fixerOfA)) {
+            Expect.failure(() -> review(s, refused, "defect", a.id(), version, "VERIFIED"),
+                    TransitionCode.SAME_SESSION);
+        }
+        // a session whose only part is a fix of the merged defect: the detail of A does not show that fix as one of A
+        assertThat(review(s, fixerOfB, "defect", a.id(), version, "VERIFIED").to()).isEqualTo("VERIFIED");
+    }
+
+    @Test
+    @DisplayName("VRF-019: every record_fix saves the defect row with its version: the version moves, and a read of the row from before the fix cannot be saved")
+    void vrf019_recordFixAlwaysWritesTheDefect(Scenario s) {
+        SaveResult d = s.sourceFixedDefect("d");
+        var staleRead = s.defect(d.id());
+        assertThat(staleRead.version()).isEqualTo(2);
+        // a new commit by the owner (the owner and the status stay) and new CI data of a known commit
+        RecordFixResult sameOwner = s.fix(Scenario.AUTHOR, d.id(), Scenario.commit('b'));
+        assertThat(sameOwner.version()).isEqualTo(3);
+        assertThat(sameOwner.transitionHistoryId()).isNull();
+        RecordFixResult ci = s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR,
+                fix(d.id(), Scenario.commit('a'), "ci-1", "success", null));
+        assertThat(ci.version()).isEqualTo(4);
+        assertThat(ci.transitionHistoryId()).isNull();
+        assertThat(s.defect(d.id()).version()).isEqualTo(4);
+        // the verification that read the defect before the fixes loses against them: its conditional save conflicts
+        var stale = staleRead.transitioned(DefectStatus.VERIFIED, null, java.time.Instant.parse("2026-11-16T00:00:00Z"));
+        Expect.failure(() -> s.ctx().tx(() -> ScopedValue.where(ActorScope.CURRENT, AuthorId.OWNER)
+                .call(() -> s.bean(org.pgledger.application.write.Rows.class).saveDefect(stale))),
+                ConflictCode.VERSION_CONFLICT);
+        assertThat(s.defect(d.id()).status()).isEqualTo(DefectStatus.SOURCE_FIXED);
+    }
+
+    @org.junit.jupiter.api.RepeatedTest(20)
+    @DisplayName("VRF-028: a record_fix of the owner and a verification of the same defect at the same time never both succeed, and no fix row lands on the verified defect")
+    void vrf028_fixAgainstVerification(Scenario s) {
+        SaveResult d = s.sourceFixedDefect("d");
+        String independent = s.actorWith("verify");
+        List<java.util.concurrent.Callable<Object>> calls = List.of(
+                () -> s.fix(Scenario.AUTHOR, d.id(), Scenario.commit('b')),
+                () -> review(s, independent, "defect", d.id(), 2, "VERIFIED"));
+        var outcomes = org.pgledger.application.support.Parallel.all(calls);
+        assertThat(outcomes.stream().filter(o -> o.succeeded())).hasSizeLessThan(2);
+        for (var outcome : outcomes) {
+            if (!outcome.succeeded()) {
+                assertThat(outcome.failure()).isInstanceOf(LedgerException.class);
+                assertThat(((LedgerException) outcome.failure()).code()).isIn(ConflictCode.VERSION_CONFLICT,
+                        TransitionCode.TRANSITION_INVALID, TransitionCode.VERIFIED_DEFECT);
+            }
+        }
+        if (outcomes.get(1).succeeded()) {
+            assertThat(s.count("SELECT COUNT(*) FROM defect_fix WHERE defect_id = ?", d.id())).isEqualTo(1);
+        }
     }
 }

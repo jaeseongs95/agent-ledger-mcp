@@ -130,7 +130,8 @@ class FixTest {
         assertThat(row.op()).isEqualTo(HistoryOp.EDIT);
         assertThat(s.changes(row.id()).entries()).containsOnlyKeys("ci_conclusion", "ci_completed_at");
         assertThat(update.transitionHistoryId()).isNull();
-        assertThat(update.version()).isEqualTo(2);
+        // the defect row is saved by every record_fix (VRF-019): the version moves although nothing else of the defect does
+        assertThat(update.version()).isEqualTo(3);
     }
 
     @Test

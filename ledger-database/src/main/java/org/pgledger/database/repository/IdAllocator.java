@@ -2,6 +2,8 @@ package org.pgledger.database.repository;
 
 import java.util.List;
 import java.util.OptionalLong;
+import org.pgledger.domain.error.ConflictCode;
+import org.pgledger.domain.error.ConflictException;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.domain.error.LookupCode;
@@ -62,10 +64,18 @@ public class IdAllocator {
     }
 
     /**
-     * The update writes only for the next number (a concurrent transaction that holds the row is waited for, as for any
-     * allocation, and the condition is decided against what it committed). When it wrote no row the column is read: it only
-     * grows, so a number at or below the value read is past for good, whatever another transaction does meanwhile, and one
-     * above it is ahead.
+     * The update writes only for the next number. The row it sees decides: when that row does not satisfy the condition the
+     * statement writes nothing and does not wait for a transaction that holds the row (a number that such a transaction took
+     * and has not committed is not seen), and when it does, the statement waits for the lock of a concurrent writer and is
+     * decided again against what that writer committed. When it wrote no row the column is read. The column only grows
+     * (what is committed), so a number at or below the value read is past for good and is accepted; a number above the next
+     * one is ahead, and the next number named is the committed counter plus one, true when it was read (a transaction that
+     * has not committed may have taken it, and the same request sent again after its commit is then decided anew). A value
+     * read that is exactly the number minus one means that the counter changed between the statement and the read: the
+     * request is neither accepted nor "ahead", and the caller is told to send it again (VERSION_CONFLICT, nothing is retried
+     * here).
+     *
+     * @throws ConflictException VERSION_CONFLICT when the counter changed while the call ran
      */
     private OptionalLong take(String update, String select, ProjectCode code, long number) {
         int rows = jdbc.sql(update).param("n", number).param("previous", number - 1).param("code", code.value())
@@ -75,6 +85,10 @@ public class IdAllocator {
         }
         long last = jdbc.sql(select).param("code", code.value()).query(Long.class).optional()
                 .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND, List.of("project", code.value())));
+        if (number == last + 1) {
+            throw new ConflictException(ConflictCode.VERSION_CONFLICT, List.of("counter of project", code.value(),
+                    Long.toString(number - 1), "changed while this request ran"));
+        }
         return number <= last ? OptionalLong.empty() : OptionalLong.of(last + 1);
     }
 

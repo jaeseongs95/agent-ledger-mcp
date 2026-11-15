@@ -304,14 +304,34 @@ class TransitionPolicyTest {
     @Test
     void dom019_conditionPolicy() {
         for (ConditionState to : List.of(ConditionState.MET, ConditionState.NOT_MET)) {
-            Expect.failsWith(TransitionCode.EVIDENCE_REQUIRED,
-                    () -> ConditionState.UNKNOWN.requireTransitionTo(to, Evidence.NONE));
-            assertThatCode(() -> ConditionState.UNKNOWN.requireTransitionTo(to, EVIDENCE)).doesNotThrowAnyException();
+            Expect.failsWith(TransitionCode.EVIDENCE_REQUIRED, () -> ConditionState.UNKNOWN.requireTransitionTo(to,
+                    Evidence.NONE, ME.sessionKey(), List.of()));
+            assertThatCode(() -> ConditionState.UNKNOWN.requireTransitionTo(to, EVIDENCE, ME.sessionKey(), List.of()))
+                    .doesNotThrowAnyException();
         }
         // leaving MET or NOT_MET for UNKNOWN needs no evidence (unchanged from the old ledger by design)
-        assertThatCode(() -> ConditionState.MET.requireTransitionTo(ConditionState.UNKNOWN, Evidence.NONE))
-                .doesNotThrowAnyException();
+        assertThatCode(() -> ConditionState.MET.requireTransitionTo(ConditionState.UNKNOWN, Evidence.NONE,
+                ME.sessionKey(), List.of())).doesNotThrowAnyException();
         Expect.failsWith(TransitionCode.TRANSITION_INVALID,
-                () -> ConditionState.MET.requireTransitionTo(ConditionState.MET, EVIDENCE));
+                () -> ConditionState.MET.requireTransitionTo(ConditionState.MET, EVIDENCE, ME.sessionKey(), List.of()));
+    }
+
+    @Test
+    void vrf017_theSessionThatRegisteredAConditionDoesNotJudgeIt() {
+        List<SessionKey> registrants = List.of(ME.sessionKey());
+        for (ConditionState to : List.of(ConditionState.MET, ConditionState.NOT_MET)) {
+            Expect.failsWith(TransitionCode.SAME_SESSION, () -> ConditionState.UNKNOWN.requireTransitionTo(to,
+                    EVIDENCE, ME.sessionKey(), registrants));
+            assertThatCode(() -> ConditionState.UNKNOWN.requireTransitionTo(to, EVIDENCE, OTHER.sessionKey(),
+                    registrants)).doesNotThrowAnyException();
+            assertThatCode(() -> ConditionState.UNKNOWN.requireTransitionTo(to, EVIDENCE, ME.sessionKey(), List.of()))
+                    .doesNotThrowAnyException();
+        }
+        // leaving MET for UNKNOWN is no judgement: no check of the session
+        assertThatCode(() -> ConditionState.MET.requireTransitionTo(ConditionState.UNKNOWN, Evidence.NONE,
+                ME.sessionKey(), registrants)).doesNotThrowAnyException();
+        // the order is the one of the other states: evidence first
+        Expect.failsWith(TransitionCode.EVIDENCE_REQUIRED, () -> ConditionState.UNKNOWN.requireTransitionTo(
+                ConditionState.MET, Evidence.NONE, ME.sessionKey(), registrants));
     }
 }

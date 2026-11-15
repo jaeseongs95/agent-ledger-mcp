@@ -7,6 +7,8 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.LongStream;
@@ -111,6 +113,39 @@ class CounterTest {
         LookupException unknown = catchThrowableOfType(LookupException.class,
                 () -> ctx.tx(() -> ids.takeDefectNo(ProjectCode.of("NOSUCH"), 1)));
         assertThat(unknown.code()).isEqualTo(LookupCode.NOT_FOUND);
+    }
+
+    @Test
+    void vrf036_aNumberTakenAndNotCommittedIsNotWaitedFor() throws InterruptedException {
+        Project project = seed.project();
+        for (int i = 0; i < 3; i++) {
+            ctx.tx(() -> ids.nextDefectNo(project.code()));
+        }
+        CountDownLatch holding = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Thread holder = new Thread(() -> ctx.tx(() -> {
+            ids.nextDefectNo(project.code());
+            holding.countDown();
+            try {
+                release.await(30, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return null;
+        }));
+        holder.start();
+        try {
+            assertThat(holding.await(30, TimeUnit.SECONDS)).isTrue();
+            // the number 4 is taken by a transaction that has not committed: the statement does not see it and does not wait;
+            // the number after it is ahead of what is committed, and the answer names the committed next number
+            assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 5))).hasValue(4);
+        } finally {
+            release.countDown();
+            holder.join();
+        }
+        assertThat(defectCounter(project)).isEqualTo(4);
+        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 5))).isEmpty();
+        assertThat(defectCounter(project)).isEqualTo(5);
     }
 
     @Test
