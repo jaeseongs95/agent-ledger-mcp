@@ -9,10 +9,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.FailureException;
+import org.pgledger.cli.LedgerCliApplication;
 import org.pgledger.cli.secret.ConsoleSecretInput;
 import org.pgledger.cli.secret.StdinSecretInput;
 import org.pgledger.cli.support.ScriptedSecretInput;
 import org.pgledger.database.driver.LedgerJdbcProperties;
+import org.springframework.boot.SpringApplication;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.core.env.MapPropertySource;
 import org.springframework.core.env.SimpleCommandLinePropertySource;
@@ -129,6 +131,22 @@ class OwnerAccountPropertySourceTest {
         fromEnvironment.getPropertySources().addLast(new MapPropertySource("systemEnvironment", Map.of("OWNER_ACCOUNT", "x")));
         processor.postProcessEnvironment(fromEnvironment, null);
         assertThat(fromEnvironment.getPropertySources().stream()).noneMatch(OwnerAccountPropertySource.class::isInstance);
+    }
+
+    @Test
+    @DisplayName("M1X-009 (review C2) the post-processor of ledger-cli (registered in its spring.factories, so it is on the class path of every program built on this module) acts only for the application ledger-cli: another program is never asked for a password by it, whatever its command line says")
+    void m1x009_onlyForTheCommandLineToolItself() {
+        OwnerAccountEnvironmentPostProcessor processor = new OwnerAccountEnvironmentPostProcessor();
+
+        StandardEnvironment other = new StandardEnvironment();
+        other.getPropertySources().addFirst(new SimpleCommandLinePropertySource("--owner-account=ledger_ddl", "migrate"));
+        processor.postProcessEnvironment(other, new SpringApplication(OwnerAccountPropertySourceTest.class));
+        assertThat(other.getPropertySources().stream()).noneMatch(OwnerAccountPropertySource.class::isInstance);
+
+        StandardEnvironment own = new StandardEnvironment();
+        own.getPropertySources().addFirst(new SimpleCommandLinePropertySource("--owner-account=ledger_ddl", "migrate"));
+        processor.postProcessEnvironment(own, new SpringApplication(LedgerCliApplication.class));
+        assertThat(own.getPropertySources().iterator().next()).isInstanceOf(OwnerAccountPropertySource.class);
     }
 
     @Test

@@ -2,7 +2,9 @@ package org.pgledger.migrate1x.wiring;
 
 import java.util.Set;
 import org.pgledger.cli.owner.OwnerAccountEnvironmentPostProcessor;
+import org.pgledger.migrate1x.Migrate1xApplication;
 import org.pgledger.migrate1x.tool.ToolCommand;
+import org.springframework.boot.SpringApplication;
 
 /**
  * The owner account of a run of {@code import-1x}, which writes the whole ledger: everything is the post-processor of
@@ -17,5 +19,11 @@ public final class ImportOwnerAccount extends OwnerAccountEnvironmentPostProcess
     @Override
     protected Set<String> commands() {
         return COMMANDS;
+    }
+
+    /** The tool only: the post-processor of this class is on the class path of no other program, but the check is the same rule. */
+    @Override
+    protected boolean appliesTo(SpringApplication application) {
+        return application == null || application.getAllSources().contains(Migrate1xApplication.class);
     }
 }
