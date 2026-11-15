@@ -16,15 +16,14 @@ public enum TextRule {
     PURPOSE(4000, false),
     SUCCESS_CONDITION(4000, false),
     /**
-     * 20000: {@code origin_ref} is a long text column ({@code text} without a limit in 1.x, up to 9408 characters in the production
-     * ledger). The write limit is above the longest value of 1.x so that an imported value can be saved again; the request
-     * size of the server bounds the rest.
+     * 20000: {@code origin_ref} is a long text column. The write limit leaves room for a long imported value so that it can be
+     * saved again; the request size of the server bounds the rest.
      */
     ORIGIN_REF(20000, false),
     ORIGIN_QUOTE(2000, false),
     RELEASE(100, false),
     GOAL_LABEL(200, false),
-    /** 200: the longest code of the 1.x ledger is 79 characters (the column held 64 in earlier 2.0 builds). */
+    /** 200: room for the long codes of imported conditions. */
     CONDITION_CODE(200, false),
     CONDITION_TEXT(4000, false),
     OBSERVATION(4000, true),
@@ -33,7 +32,7 @@ public enum TextRule {
     GRANT_NOTE(500, false),
     REPO(300, false),
     BRANCH(300, false),
-    /** 2000: the longest CI reference of the 1.x ledger is 533 characters (the column held 500 in earlier 2.0 builds). */
+    /** 2000: room for the long CI references of imported rows (a build URL with its query). */
     CI_REF(2000, true),
     EVIDENCE_URI(2000, true),
     PROJECT_TITLE(200, true),
@@ -66,7 +65,7 @@ public enum TextRule {
     }
 
     /**
-     * The value of a field that has to be given and may be empty (the NOT NULL columns of 1.x that allowed {@code ''}: purpose,
+     * The value of a field that has to be given and may be empty (the NOT NULL fields that allow {@code ''}: purpose,
      * success condition, behavior, root cause, condition text): {@code null} is a validation failure (REQUIRED), a blank text is
      * the empty text {@code ""}, which the row stores as NULL (see {@link #emptyToNull}); too long is a validation failure.
      */
@@ -79,7 +78,7 @@ public enum TextRule {
 
     /**
      * The text a row stores: NULL for an empty text (no column holds {@code ''}: a DBMS of the Oracle kind cannot, and the
-     * two would be different values otherwise). The tools show such a field as {@code ""} again, as 1.x did.
+     * two would be different values otherwise). The tools show such a field as {@code ""} again.
      */
     public static String emptyToNull(String text) {
         return text == null || text.isEmpty() ? null : text;

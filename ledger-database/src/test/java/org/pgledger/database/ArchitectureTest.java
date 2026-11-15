@@ -25,6 +25,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.pgledger.database.repository.HistoryRepository;
 import org.pgledger.testing.ArchitectureRules;
 import org.pgledger.testing.CodingScan;
+import org.pgledger.testing.NoOneXRules;
 import org.pgledger.testing.PrincipleRules;
 import org.pgledger.testing.SourceRules;
 import java.util.Map;
@@ -88,13 +89,11 @@ class ArchitectureTest {
                 new Rule("ARC-009 no web in the database module", noClasses().should().dependOnClassesThat()
                         .resideInAnyPackage("org.springframework.web..", "org.springframework.http..",
                                 "jakarta.servlet..")),
-                // The two configurations of a second data source make the JdbcClient of that data source (principle 3.9): the
-                // legacy ledger (LegacySourceWiring) and the application account of the check of setup
-                // (ApplicationAccountConfiguration). A third class is a finding.
-                new Rule("ARC-012 JDBC clients only in the repository package, but the two second-data-source configurations",
+                // The configuration of a second data source makes the JdbcClient of that data source (principle 3.9): the
+                // application account of the check of setup (ApplicationAccountConfiguration). A second class is a finding.
+                new Rule("ARC-012 JDBC clients only in the repository package, but the second-data-source configuration",
                         noClasses().that()
                         .resideOutsideOfPackage("org.pgledger.database.repository..")
-                        .and().doNotHaveFullyQualifiedName("org.pgledger.database.driver.LegacySourceWiring")
                         .and().doNotHaveFullyQualifiedName("org.pgledger.database.driver.ApplicationAccountConfiguration")
                         .should().dependOnClassesThat()
                         .haveFullyQualifiedName("org.springframework.jdbc.core.simple.JdbcClient")
@@ -119,8 +118,7 @@ class ArchitectureTest {
                                 .orShould().dependOnClassesThat().haveFullyQualifiedName(
                                         "org.springframework.jdbc.datasource.SimpleDriverDataSource")),
                 // principle 4.4: nothing opens a transaction by hand, no exception: the file of the migrator is a @Transactional
-                // method of a service, and the snapshot of the legacy source is one of LegacySnapshotService of the application
-                // module, on the transaction manager bean of the legacy data source
+                // method of a service
                 new Rule("TXD-005 no TransactionTemplate here", ArchitectureRules.noTransactionTemplate()),
                 new Rule("TXF-001 no TransactionAspectSupport and no hand-made savepoint here",
                         ArchitectureRules.noHandMadeTransactionControl()),
@@ -206,5 +204,23 @@ class ArchitectureTest {
         assertThat(SourceRules.operatingSystemDetection(MAIN_JAVA, Path.of("src", "test", "java"))).isEmpty();
         ArchitectureRules.noOperatingSystemDetection().check(MAIN);
         assertThat(SourceRules.forbiddenBuildSwitches(List.of(Path.of("build.gradle.kts")))).isEmpty();
+    }
+
+    @Test
+    @DisplayName("ARC-1X-01 no class or package of the module is named after 1.x")
+    void arc1x01_noClassNamedAfterOneX() {
+        NoOneXRules.noClassNamedAfterOneX().check(MAIN);
+    }
+
+    @Test
+    @DisplayName("ARC-1X-02 no class of the module depends on the migration tool")
+    void arc1x02_noDependencyOnTheMigrationTool() {
+        NoOneXRules.noDependencyOnTheMigrationTool().check(MAIN);
+    }
+
+    @Test
+    @DisplayName("ARC-1X-03 no main source or resource of the module names 1.x")
+    void arc1x03_noOneXTextInMainSources() {
+        assertThat(NoOneXRules.oneXTextInMainSources()).isEmpty();
     }
 }

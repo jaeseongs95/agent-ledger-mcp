@@ -183,7 +183,7 @@ class ReadQueryTest {
                 .containsOnlyKeys("title");
         assertThat(edit.vendor()).isEqualTo("claude");
         assertThat(edit.requestId()).isNotBlank();
-        assertThat(edit.legacyRef()).isNull();
+        assertThat(edit.sourceRef()).isNull();
         assertThat(corrected.correctsId()).isEqualTo(edited.historyId());
     }
 
@@ -201,21 +201,21 @@ class ReadQueryTest {
     }
 
     @Test
-    @DisplayName("MCR-H10: imported rows are visible with their legacy reference and assurance")
+    @DisplayName("MCR-H10: imported rows are visible with their source reference and assurance")
     void h10_importedRows(Scenario s) {
         SaveResult d = s.newDefect("d");
-        // SQL, because no service writes this row: a history row of the operation IMPORT with the assurance LEGACY_LOGIN and a
-        // legacy reference is made only by the legacy import, from a legacy database that this case does not have (the
-        // import has its own cases, MIG-*); this case is about how the history read shows such a row
+        // SQL, because no service writes this row: a history row of the operation IMPORT with the assurance IMPORTED_LOGIN and a
+        // source reference is made only by an import (the migration tool), which this case does not have; this case is
+        // about how the history read shows such a row
         s.ctx().jdbc().sql("INSERT INTO history (id, occurred_at, author_id, login, actor_assurance, entity, entity_id, op, "
-                + "changes, reason, request_id, legacy_ref) VALUES (?, TIMESTAMP '2025-01-01 00:00:00', "
-                + "'agent:claude:old', 'ledger_author', 'LEGACY_LOGIN', 'DEFECT', ?, 'IMPORT', '{}', "
-                + "'imported from the old ledger', ?, 'legacy-7')")
+                + "changes, reason, request_id, source_ref) VALUES (?, TIMESTAMP '2025-01-01 00:00:00', "
+                + "'claude:old', 'ledger_author', 'IMPORTED_LOGIN', 'DEFECT', ?, 'IMPORT', '{}', "
+                + "'imported by a migration', ?, 'import-7')")
                 .param(s.count("SELECT MAX(id) FROM history") + 1).param(d.id()).param(Scenario.uuid()).update();
         s.ctx().jdbc().sql("UPDATE id_counter SET issued_no = issued_no + 1 WHERE name = 'HISTORY'").update();
         HistoryView imported = rows(s).stream().filter(h -> "IMPORT".equals(h.op())).findFirst().orElseThrow();
-        assertThat(imported.legacyRef()).isEqualTo("legacy-7");
-        assertThat(imported.actorAssurance()).isEqualTo("LEGACY_LOGIN");
+        assertThat(imported.sourceRef()).isEqualTo("import-7");
+        assertThat(imported.actorAssurance()).isEqualTo("IMPORTED_LOGIN");
         assertThat(imported.vendor()).isEqualTo("claude");
         assertThat(imported.beforeData()).isNull();
     }
@@ -484,7 +484,7 @@ class ReadQueryTest {
         var p1 = s.defectFields("urgent");
         p1.put("severity", "P1");
         SaveResult urgent = s.bean(SaveService.class).save(Scenario.AUTHOR, s.create("defect", null, p1));
-        // SQL, because no service can make this state: UNRATED is the severity of a row of the old ledger only (its code is
+        // SQL, because no service can make this state: UNRATED is the severity of an imported row only (its code is
         // INACTIVE, a save refuses it, CODE_INVALID), so only imported data holds it
         s.ctx().jdbc().sql("UPDATE defect SET severity = 'UNRATED' WHERE id = ?").param(open.id()).update();
         ListService lists = s.bean(ListService.class);
@@ -578,7 +578,7 @@ class ReadQueryTest {
         SaveResult open = s.newDefect("open");
         SaveResult source = s.newDefect("source");
         s.newDefect("rated later");
-        // SQL, because no service can make this state: UNRATED is the severity of a row of the old ledger only (its code is
+        // SQL, because no service can make this state: UNRATED is the severity of an imported row only (its code is
         // INACTIVE, a save refuses it); the statistics count what imported data holds as well
         s.ctx().jdbc().sql("UPDATE defect SET severity = 'UNRATED' WHERE id = ?").param(open.id()).update();
         s.newTask("t1");

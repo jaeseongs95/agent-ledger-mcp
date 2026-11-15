@@ -1,7 +1,7 @@
 package org.pgledger.cli;
 
 /** Every reason a command can be refused; each code has a message under {@link #messageKey()} in the message bundles. */
-public enum ErrorCode {
+public enum ErrorCode implements ErrorKey {
 
     MISSING_COMMAND,
     UNKNOWN_COMMAND,
@@ -44,26 +44,11 @@ public enum ErrorCode {
     MCP_AUTHORIZATION_REFUSED,
     MCP_FAILED,
     MCP_TOOL_MISSING,
-    IMPORT_SOURCE_NOT_CONFIGURED,
-    IMPORT_TARGET_NOT_EMPTY,
-    IMPORT_SOURCE_INCOMPLETE,
-    IMPORT_DATA_REFUSED,
-    IMPORT_VERIFY_FAILED,
-    RETIRE_BACKUP_NOT_ACKNOWLEDGED,
-    RETIRE_VERIFY_FAILED,
-    RETIRE_OWN_SCHEMA,
-    RETIRE_SESSIONS_CONNECTED,
-    RETIRE_NOT_OWNER,
-    RETIRE_SOURCE_CHANGED,
     INVALID_DEPLOY_VALUE,
-    LEGACY_HOSTS_DROPPED,
     DEPLOY_WRITE_FAILED,
     GRANT_FAILED,
     SECRET_TOO_LONG,
     STDIN_FAILED,
-    ENV_FILE_FAILED,
-    ENV_KEYS_MISSING,
-    INVALID_1X_VALUE,
     HOST_FAILED,
     HOST_UNSUPPORTED,
     APP_ACCOUNT_NO_ACCESS,

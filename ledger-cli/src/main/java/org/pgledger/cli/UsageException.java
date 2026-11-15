@@ -11,31 +11,31 @@ public final class UsageException extends CliException {
 
     private static final long serialVersionUID = 1L;
 
-    private final CliCommand command;
+    private final CommandName command;
 
-    public UsageException(ErrorCode code, String... arguments) {
+    public UsageException(ErrorKey code, String... arguments) {
         super(code, null, arguments);
         this.command = null;
     }
 
-    public UsageException(ErrorCode code, Throwable cause, String... arguments) {
+    public UsageException(ErrorKey code, Throwable cause, String... arguments) {
         super(code, cause, arguments);
         this.command = null;
     }
 
-    private UsageException(UsageException refusal, CliCommand command) {
+    private UsageException(UsageException refusal, CommandName command) {
         super(refusal.code(), refusal.getCause(), refusal.arguments().toArray(String[]::new));
         this.command = command;
         setStackTrace(refusal.getStackTrace());
     }
 
     /** The command whose command line was refused; empty when no command was known. */
-    public Optional<CliCommand> command() {
+    public Optional<CommandName> command() {
         return Optional.ofNullable(command);
     }
 
     /** The same refusal, known to belong to this command. */
-    public UsageException forCommand(CliCommand refused) {
+    public UsageException forCommand(CommandName refused) {
         return new UsageException(this, refused);
     }
 }

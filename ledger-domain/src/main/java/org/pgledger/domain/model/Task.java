@@ -14,7 +14,7 @@ import org.pgledger.domain.value.TextRule;
 
 /**
  * A task. {@code version} is 0 until the first save, which stores 1. {@code purpose} and {@code successCondition} may be empty:
- * the row holds NULL then (the 1.x columns allowed {@code ''}; no column of this schema holds it) and the tools show
+ * the row holds NULL then (no column of this schema holds {@code ''}) and the tools show
  * {@code ""}. {@code idKey} is the id in upper case, the column under the UNIQUE constraint that refuses ids that differ only
  * in case; it is derived from the id, whatever is passed.
  */

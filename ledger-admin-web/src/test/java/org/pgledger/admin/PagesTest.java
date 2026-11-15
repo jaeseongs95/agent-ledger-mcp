@@ -43,8 +43,8 @@ class PagesTest {
     }
 
     @Test
-    @DisplayName("REH3-ADM-01 a task whose id has the characters / # ? : and an id of 109 characters (ids of 1.x) are opened from the task list, and the history filter takes the long id")
-    void reh3Adm01_idsOfOneX() throws Exception {
+    @DisplayName("REH3-ADM-01 a task whose id has the characters / # ? : and an id of 109 characters (free-text ids) are opened from the task list, and the history filter takes the long id")
+    void reh3Adm01_freeTextIds() throws Exception {
         Seeded project = seeds.project();
         String odd = "AGS#9/x.y:z_1?a=b";
         String longId = "ags:" + "x".repeat(105);

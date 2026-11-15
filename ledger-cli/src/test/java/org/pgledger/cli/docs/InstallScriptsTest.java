@@ -74,7 +74,7 @@ class InstallScriptsTest {
 
     /**
      * The shell text of a line with what cannot start a command taken out: quoted text, parameter expansions, escaped quotes
-     * and the names of options ({@code --from-1x-env} is a name, not the command {@code env}).
+     * and the names of options ({@code --tls-acme} is a name, not a command).
      */
     private static String bare(String line) {
         // "$JAVA" is the Java runtime of the installation (--java or the one on the PATH): it starts the Java commands
@@ -201,7 +201,7 @@ class InstallScriptsTest {
                 "    --acme-email=*) EMAIL=${arg#*=} ;;", "    --agree-tos) AGREE=--agree-tos ;;");
         assertThat(text(SH).toLowerCase(Locale.ROOT)).doesNotContain("certbot", "acme.sh", "cloudflare", "lightsail");
         // the steps of an installation without --tls-acme are in the file as they were, in the same order
-        assertThat(code).containsSubsequence("\"$JAVA\" $JVM_OPTS -jar \"$JARS/ledger-cli.jar\" --ledger.secrets.home=/nonexistent render-deploy --check --java=\"$JAVA\" ${FROM_ENV:+--from-1x-env=\"$FROM_ENV\"} \"$@\"",
+        assertThat(code).containsSubsequence("\"$JAVA\" $JVM_OPTS -jar \"$JARS/ledger-cli.jar\" --ledger.secrets.home=/nonexistent render-deploy --check --java=\"$JAVA\" \"$@\"",
                 "useradd --system --user-group --no-create-home --shell /usr/sbin/nologin \"$SVC\" || [ $? = 9 ]",
                 "as_svc setup --owner-account=\"$OWNER\" --app-account=\"$APP_ACCOUNT\" $STDIN", "systemctl daemon-reload",
                 "systemctl enable \"$SVC\" \"$ADMIN\"", "systemctl restart \"$SVC\" \"$ADMIN\"", "if [ -n \"$NGINX\" ]; then", "if [ -n \"$ACME\" ]; then");
@@ -302,7 +302,7 @@ class InstallScriptsTest {
     }
 
     @Test
-    @DisplayName("INS-027 deploy/ holds the two installers and nothing else: the 1.x installers and the unit templates are gone")
+    @DisplayName("INS-027 deploy/ holds the two installers and nothing else: no other installer and no unit template")
     void ins027_theOldInstallerFilesAreGone() {
         assertThat(Repository.filesDirectlyIn("deploy")).containsExactly("install.cmd", "install.sh");
         assertThat(Repository.subdirectories("deploy")).isEmpty();
@@ -467,32 +467,23 @@ class InstallScriptsTest {
         assertThat(code.stream().filter(line -> line.contains("--check")).count()).isEqualTo(1);
     }
 
-    // ---- the migration from 1.x and the passwords on standard input (INS-043, SEC-024) ----
+    // ---- the upgrade tool and the passwords on standard input (INS-043, SEC-024) ----
 
     @Test
-    @DisplayName("INS-043 install.sh takes --from-1x-env=<file> and --stdin itself (neither goes on to render-deploy), checks that the file can be read before the first operating system step, and imports it before any token is generated")
-    void ins043_theMigrationOptionsAndTheirOrder() {
+    @DisplayName("INS-043 install.sh takes --stdin itself (it does not go on to render-deploy) and knows nothing of an earlier major version: its header names the separate tool ledger-migrate-1x, and it has no option, no step and no environment file of one")
+    void ins043_theInstallersKnowNothingOfAnEarlierVersion() {
         List<String> code = shCodeLines();
-        int imported = firstIndex(code, "secret-import-1x");
-        int firstToken = firstIndex(code, "token-generate");
 
-        assertThat(code).contains("    --from-1x-env=*) FROM_ENV=${arg#*=} ;;", "    --stdin) STDIN=--stdin ;;");
-        assertThat(firstIndex(code, "[ -r \"$FROM_ENV\" ]")).as("the file is checked").isNotNegative()
-                .isLessThan(firstIndex(code, "useradd"));
-        assertThat(imported).as("the import is there").isNotNegative();
-        assertThat(imported).as("the tokens of 1.x are in the store before a token is generated").isLessThan(firstToken);
-        assertThat(code.get(imported)).as("root opens the file of root, Java reads standard input, the file is no argument")
-                .isEqualTo("[ -z \"$FROM_ENV\" ] || as_svc secret-import-1x --stdin < \"$FROM_ENV\"");
-        // REH4-INS-01: Java, run by root, compares the host names of the file with the options in the check phase only
-        assertThat(code.stream().filter(line -> line.contains("FROM_ENV") && line.contains("render-deploy")).toList()).containsExactly(
-                "\"$JAVA\" $JVM_OPTS -jar \"$JARS/ledger-cli.jar\" --ledger.secrets.home=/nonexistent render-deploy --check --java=\"$JAVA\" ${FROM_ENV:+--from-1x-env=\"$FROM_ENV\"} \"$@\"");
-        assertThat(code.stream().filter(line -> line.contains("prepare-host") || line.contains("tls-issue") || line.contains("tls-renew"))
-                .filter(line -> line.contains("FROM_ENV"))).isEmpty();
+        assertThat(code).contains("    --stdin) STDIN=--stdin ;;");
+        assertThat(code.stream().filter(line -> line.contains("render-deploy") || line.contains("prepare-host"))
+                .filter(line -> line.contains("STDIN"))).isEmpty();
+        assertThat(text(SH)).contains("ledger-migrate-1x").doesNotContain("FROM_ENV", "from-1x", "secret-import", "1x-backup", "1.x");
+        assertThat(text(CMD)).contains("ledger-migrate-1x").doesNotContain("from-1x", "secret-import", "1x-backup", "1.x");
     }
 
     @Test
     @DisplayName("INS-043 install.sh stops, disables and removes nothing of another installation: no systemctl stop, disable, mask or rm, and the only unit it enables or restarts are its own two")
-    void ins043_the1xServicesAreNotTouched() {
+    void ins043_theServicesOfAnotherInstallationAreNotTouched() {
         for (String line : shCodeLines()) {
             if (line.contains("systemctl")) {
                 assertThat(line).as(line).containsPattern("systemctl (daemon-reload|enable \"\\$SVC\" \"\\$ADMIN\"|restart \"\\$SVC\" \"\\$ADMIN\"|enable --now \"\\$SVC-tls-renew.timer\")$");
@@ -509,8 +500,8 @@ class InstallScriptsTest {
         assertThat(uses).hasSize(2);
         assertThat(uses).anySatisfy(line -> assertThat(line).endsWith("as_svc secret-set ledger.jdbc.password --if-absent $STDIN"));
         assertThat(uses).anySatisfy(line -> assertThat(line).endsWith("--app-account=\"$APP_ACCOUNT\" $STDIN"));
-        assertThat(shCodeLines().stream().filter(line -> line.matches(".*\\s<\\s.*")).toList()).as("the one redirect is the 1.x file")
-                .hasSize(1);
+        assertThat(shCodeLines().stream().filter(line -> line.matches(".*\\s<\\s.*")).toList()).as("no secret is read from a file")
+                .isEmpty();
     }
 
     @Test

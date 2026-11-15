@@ -10,7 +10,7 @@ import org.springframework.context.annotation.Configuration;
  * configuration of the database module, so there is exactly one {@link Clock}.
  */
 @Configuration(proxyBeanMethods = false)
-class CliClockConfiguration {
+public class CliClockConfiguration {
 
     /** A {@code @Bean} method because {@link Clock} is a JDK class: the one UTC clock of the tool (principle 4.5). */
     @Bean

@@ -32,7 +32,7 @@ import org.pgledger.domain.value.Sha256;
 public record HistoryEntry(@Id Long id, @Column("occurred_at") Instant at, ActorId authorId, String login, ActorAssurance actorAssurance,
         HistoryEntity entity, String entityId, HistoryOp op, String fromState, String toState, JsonDocument changes,
         JsonDocument beforeData, String reason, String evidenceUri, Sha256 evidenceSha256, Long correctsId,
-        RequestId requestId, String legacyRef, String attachmentId) {
+        RequestId requestId, String sourceRef, String attachmentId) {
 
     private static final Set<HistoryOp> OPS_WITH_BEFORE_DATA = EnumSet.of(HistoryOp.EDIT, HistoryOp.TRANSITION,
             HistoryOp.UNLINK);
@@ -46,9 +46,9 @@ public record HistoryEntry(@Id Long id, @Column("occurred_at") Instant at, Actor
     public HistoryEntry(Long id, Instant at, ActorId authorId, String login, ActorAssurance actorAssurance,
             HistoryEntity entity, String entityId, HistoryOp op, String fromState, String toState,
             JsonDocument changes, JsonDocument beforeData, String reason, String evidenceUri, Sha256 evidenceSha256,
-            Long correctsId, RequestId requestId, String legacyRef) {
+            Long correctsId, RequestId requestId, String sourceRef) {
         this(id, at, authorId, login, actorAssurance, entity, entityId, op, fromState, toState, changes, beforeData,
-                reason, evidenceUri, evidenceSha256, correctsId, requestId, legacyRef, null);
+                reason, evidenceUri, evidenceSha256, correctsId, requestId, sourceRef, null);
     }
 
     @PersistenceCreator
@@ -60,14 +60,14 @@ public record HistoryEntry(@Id Long id, @Column("occurred_at") Instant at, Actor
                 "TRANSITION");
         require((op == HistoryOp.CORRECT) == (correctsId != null), "corrects_id", ValidationReason.SET_EXACTLY_FOR,
                 "CORRECT");
-        require(!op.legacyOnly() || legacyRef != null, "legacy_ref",
+        require(!op.importedOnly() || sourceRef != null, "source_ref",
                 ValidationReason.REQUIRED_FOR_IMPORTED_OPERATIONS);
         require(beforeData == null || OPS_WITH_BEFORE_DATA.contains(op), "before_data",
                 ValidationReason.EXISTS_ONLY_FOR, OPS_WITH_BEFORE_DATA_TEXT);
         require(entityId != null && !entityId.isBlank() && entityId.length() <= 300, "entity_id",
                 ValidationReason.MUST_BE_CHARS_RANGE, "1", "300");
         require(reason != null && !reason.isBlank(), "reason", ValidationReason.REQUIRED);
-        if (legacyRef == null) {
+        if (sourceRef == null) {
             Reason.validated(reason);
             require(actorAssurance == ActorAssurance.DECLARED && authorId instanceof AuthorId, "actor_assurance",
                     ValidationReason.NATIVE_ENTRY_NEEDS_DECLARED_AUTHOR);

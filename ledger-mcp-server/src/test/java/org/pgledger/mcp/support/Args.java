@@ -8,7 +8,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * The arguments of a tool call as the wire carries them: a flat object. Tests that need keys the contract does not
- * know (an unknown argument, a legacy key) or values of a wrong type build the call from these pairs; the calls
+ * know (an unknown argument, a deprecated key) or values of a wrong type build the call from these pairs; the calls
  * that follow the contract use the typed records of {@link Calls} instead.
  */
 public record Args(@JsonAnyGetter Map<String, Object> values) {

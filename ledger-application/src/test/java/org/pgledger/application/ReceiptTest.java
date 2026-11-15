@@ -2,7 +2,6 @@ package org.pgledger.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -45,9 +44,7 @@ import org.pgledger.domain.error.TrustCode;
 import org.pgledger.domain.model.Receipt;
 import org.pgledger.domain.model.ReceiptOperation;
 import org.pgledger.domain.rule.Channel;
-import org.pgledger.domain.rule.ReceiptOrigin;
 import org.pgledger.domain.value.AuthorId;
-import org.pgledger.domain.value.JsonDocument;
 import org.pgledger.domain.value.RequestId;
 import org.pgledger.domain.value.Sha256;
 
@@ -399,39 +396,6 @@ class ReceiptTest {
                         org.pgledger.apptest.TestKeyRing.DIRECT_DIGEST)
                 .call(() -> restarted.getBean(SaveService.class).save(token, create(s, id, "d")))).isEqualTo(first));
         assertThat(defects(s)).isEqualTo(1);
-    }
-
-    // ---------------------------------------------------------------------- 15
-
-    private void legacyReceipt(Scenario s, String id) {
-        s.bean(org.springframework.transaction.support.TransactionTemplate.class).executeWithoutResult(
-                status -> s.bean(ReceiptRepository.class).insert(new Receipt(RequestId.parse(id),
-                        ReceiptOperation.SAVE, Sha256.ofText("legacy " + id), AuthorId.of(Scenario.AUTHOR),
-                        Channel.AUTHOR.login(), JsonDocument.of("{\"status\":\"COMMITTED\"}"),
-                        ReceiptOrigin.LEGACY, Instant.parse("2025-01-01T00:00:00Z"))));
-    }
-
-    @Test
-    @DisplayName("SVC-RCP-15: a legacy request id is refused, even with a payload that hashes the same")
-    void rcp15_legacyWithTheSamePayload(Scenario s) {
-        String id = Scenario.uuid();
-        s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, id, "d"));
-        s.ctx().jdbc().sql("UPDATE request_receipt SET origin = 'LEGACY' WHERE request_id = ?").param(id).update();
-        Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, id, "d")),
-                ConflictCode.REQUEST_ID_LEGACY);
-        assertThat(defects(s)).isEqualTo(1);
-    }
-
-    @Test
-    @DisplayName("SVC-RCP-15: a legacy request id is refused for another payload, and a new id works")
-    void rcp15_legacyWithAnotherPayload(Scenario s) {
-        String id = Scenario.uuid();
-        legacyReceipt(s, id);
-        Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, id, "another")),
-                ConflictCode.REQUEST_ID_LEGACY);
-        assertThat(defects(s)).isZero();
-        assertThat(s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, Scenario.uuid(), "another")).version())
-                .isEqualTo(1);
     }
 
     // ---------------------------------------------------------------------- 14

@@ -17,7 +17,7 @@ VALUES ('DEFECT_SEVERITY', 'P2', '중대', 'Major', '우회 가능한 잘못된 
 INSERT INTO common_code (code_group, code, name_ko, name_en, description_ko, description_en, sort_order, state, created_by)
 VALUES ('DEFECT_SEVERITY', 'P3', '경미', 'Minor', '불편, 비용 또는 문구 문제', 'Inconvenience, cost or wording', 3, 'ACTIVE', 'user:owner');
 INSERT INTO common_code (code_group, code, name_ko, name_en, description_ko, description_en, sort_order, state, created_by)
-VALUES ('DEFECT_SEVERITY', 'UNRATED', '미분류', 'Unrated', '기존 행 전용, 다음 변경에 P1/P2/P3 지정 필요', 'Legacy only; rate P1, P2 or P3 on the next write', 9, 'INACTIVE', 'user:owner');
+VALUES ('DEFECT_SEVERITY', 'UNRATED', '미분류', 'Unrated', '가져온 행 전용, 다음 변경에 P1/P2/P3 지정 필요', 'Imported rows only; rate P1, P2 or P3 on the next write', 9, 'INACTIVE', 'user:owner');
 
 INSERT INTO common_code (code_group, code, name_ko, name_en, description_ko, description_en, sort_order, state, created_by)
 VALUES ('RELATION_KIND', 'same_site', '동일 위치', 'Same site', '코드 또는 제품의 같은 위치', 'Same place in the code or product', 1, 'ACTIVE', 'user:owner');

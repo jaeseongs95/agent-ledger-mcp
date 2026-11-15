@@ -36,9 +36,6 @@ class NoDriverTest {
                 Arguments.of((Object) new String[] { "migrate" }),
                 // SET-018: the first setup uses the database like migrate (the seed is read first and needs no driver)
                 Arguments.of((Object) new String[] { "setup" }),
-                Arguments.of((Object) new String[] { "import-legacy" }),
-                Arguments.of((Object) new String[] { "import-legacy", "--verify-only" }),
-                Arguments.of((Object) new String[] { "retire-legacy" }),
                 Arguments.of((Object) new String[] { "project-add", "e2e", "E2E", "End-to-end test project" }),
                 Arguments.of((Object) new String[] { "code-set", "DEFECT_CATEGORY", "BUG", "ko-name" }),
                 Arguments.of((Object) new String[] { "codes" }),

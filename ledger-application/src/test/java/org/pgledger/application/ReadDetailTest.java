@@ -43,7 +43,7 @@ import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
 import org.pgledger.domain.rule.RelationEnd;
 import org.pgledger.domain.value.JsonDocument;
-import org.pgledger.domain.value.LegacyActorId;
+import org.pgledger.domain.value.ImportedActorId;
 import org.pgledger.domain.value.RequestId;
 
 /** MCR-G01 .. MCR-G07, MCR-D01 .. MCR-D05, MCR-T01, MCR-T02 and the read side of SVC-CAS-12 .. -14, SVC-FIX-11, -12. */
@@ -230,10 +230,10 @@ class ReadDetailTest {
         SaveResult d = s.newDefect("d");
         IdAllocator ids = s.bean(IdAllocator.class);
         s.ctx().tx(() -> s.bean(HistoryRepository.class).insert(new HistoryEntry(ids.next(Counter.HISTORY),
-                Instant.parse("2027-01-01T00:00:00Z"), new LegacyActorId("agent:claude:old"), "ledger_author",
-                ActorAssurance.LEGACY_LOGIN, HistoryEntity.DEFECT, d.id(), HistoryOp.IMPORT, null, null,
-                JsonDocument.EMPTY_OBJECT, null, "imported from the old ledger", null, null, null,
-                new RequestId(java.util.UUID.randomUUID()), "legacy-1")));
+                Instant.parse("2027-01-01T00:00:00Z"), new ImportedActorId("claude:old"), "ledger_author",
+                ActorAssurance.IMPORTED_LOGIN, HistoryEntity.DEFECT, d.id(), HistoryOp.IMPORT, null, null,
+                JsonDocument.EMPTY_OBJECT, null, "imported by a migration", null, null, null,
+                new RequestId(java.util.UUID.randomUUID()), "import-1")));
         DefectDetail detail = s.bean(DetailService.class).defect(d.id());
         assertThat(detail.lastChange().op()).isEqualTo("CREATE");
         assertThat(detail.recentChanges()).extracting(DetailService.ChangeSummary::op).contains("IMPORT");

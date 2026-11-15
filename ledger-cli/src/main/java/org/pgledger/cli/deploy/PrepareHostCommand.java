@@ -35,8 +35,8 @@ import org.springframework.stereotype.Component;
  *
  * <p>Ownership and the modes of a directory are set with the attribute views of the file system, chosen by what the file
  * system supports (never by the name of the operating system), and a file system that has neither a view nor the other is
- * refused. An existing directory gets the same owner and mode as a new one (a re-run is an upgrade), a file of 1.x that a
- * rendered file replaces is kept ({@link DeployFiles#BACKUP_SUFFIX}). {@code --root} puts everything below a directory (a test).
+ * refused. An existing directory gets the same owner and mode as a new one (a re-run is an upgrade), a file that this command
+ * did not render and that a rendered file replaces is kept ({@link DeployFiles#BACKUP_SUFFIX}). {@code --root} puts everything below a directory (a test).
  * The Java 25 check is the JVM's own: the jars are compiled for Java 25 and another runtime refuses to load them.
  */
 @Component

@@ -125,8 +125,8 @@ class SchemaCatalogTest {
         assertThat(tableNames("TABLE")).isEqualTo(new TreeSet<>(TABLES));
         assertThat(tableNames("VIEW")).as("no views").isEmpty();
         assertThat(columns().stream().filter(c -> "defect".equals(c.table())).map(Column::name)).contains("case_seq");
-        assertThat(columns().stream().filter(c -> "request_receipt".equals(c.table())).map(Column::name))
-                .contains("origin");
+        assertThat(columns().stream().filter(c -> "history".equals(c.table())).map(Column::name))
+                .contains("source_ref");
     }
 
     @ParameterizedTest
@@ -144,7 +144,7 @@ class SchemaCatalogTest {
 
     /** The enum-valued columns of REPO-002 are text; the CHECK that closes their value set is proved by REPO-003. */
     @ParameterizedTest
-    @CsvSource({"common_code.state", "defect_fix.origin", "request_receipt.origin"})
+    @CsvSource({"common_code.state", "defect_fix.origin", "request_receipt.operation"})
     void repo002_anEnumColumnIsText(String column) {
         String table = column.substring(0, column.indexOf('.'));
         String name = column.substring(column.indexOf('.') + 1);
@@ -174,9 +174,9 @@ class SchemaCatalogTest {
                         + "TIMESTAMP '2026-11-05 10:00:00', 'NATIVE')",
                 "INSERT INTO defect_fix (id, defect_id, repo, commit_sha, recorded_by, recorded_at, origin) VALUES "
                         + "(900003, :defect, 'r', 'b', 'claude:a', TIMESTAMP '2026-11-05 10:00:00', 'OTHER')",
-                "INSERT INTO request_receipt (request_id, operation, payload_sha256, author_id, login, origin, "
-                        + "created_at) VALUES ('22222222-2222-2222-2222-222222222222', 'SAVE', 'aa', 'claude:a', "
-                        + "'ledger_author', 'OTHER', TIMESTAMP '2026-11-05 10:00:00')",
+                "INSERT INTO request_receipt (request_id, operation, payload_sha256, author_id, login, "
+                        + "created_at) VALUES ('22222222-2222-2222-2222-222222222222', 'OTHER', 'aa', 'claude:a', "
+                        + "'ledger_author', TIMESTAMP '2026-11-05 10:00:00')",
                 "INSERT INTO session_grant (id, author_id, project_id, grant_scope, granted_by, granted_at, active_key) "
                         + "VALUES (900002, 'claude:a', :project, 'ADMIN', 'user:owner', "
                         + "TIMESTAMP '2026-11-05 10:00:00', 'k900002')",

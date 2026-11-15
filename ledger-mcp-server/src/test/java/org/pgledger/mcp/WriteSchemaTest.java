@@ -40,7 +40,7 @@ class WriteSchemaTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("org.pgledger.mcp.support.ToolNames#write")
-    @DisplayName("MCW-002: _hostAttestation is an optional string, author_id is a declared legacy key that is ignored, "
+    @DisplayName("MCW-002: _hostAttestation is an optional string, author_id is a declared deprecated key that is ignored, "
             + "every object of the schema is closed")
     void attestationIsOptionalAndTheSchemaIsClosed(String tool, McpSession session) {
         SchemaView schema = input(session, tool);

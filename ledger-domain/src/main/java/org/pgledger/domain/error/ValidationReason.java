@@ -24,7 +24,7 @@ public enum ValidationReason {
     /** {0} = the shortest, {1} = the longest length in characters. */
     MUST_BE_CHARS_RANGE,
     /** {0} = the shortest, {1} = the longest length in characters. */
-    LEGACY_ACTOR_ID_LENGTH,
+    IMPORTED_ACTOR_ID_LENGTH,
     /** {0} = the fewest, {1} = the most items. */
     MUST_HOLD_ITEMS,
     /** {0} = the value that was given. */
@@ -68,7 +68,7 @@ public enum ValidationReason {
     MUST_BE_POSITIVE,
     /** {0} = the longest length in characters: an id of a task or condition has 1 to {0} characters, no whitespace, no control character. */
     MUST_BE_ID,
-    /** {0} = the id of the same kind that this id equals when the case is ignored (the legacy import reports the later one). */
+    /** {0} = the id of the same kind that this id equals when the case is ignored (an import reports the later one). */
     ID_DIFFERS_ONLY_IN_CASE,
     MUST_NOT_BE_BLANK,
     MUST_BE_UUID,
@@ -91,7 +91,7 @@ public enum ValidationReason {
     KEY_BLOCK_FINGERPRINT_DIFFERS,
     /** {0} = the author the pasted block is for. */
     KEY_BLOCK_AUTHOR_DIFFERS,
-    /** The defect is merged, through the chain of its merge targets, into itself (the legacy import cannot order the rows). */
+    /** The defect is merged, through the chain of its merge targets, into itself (an import cannot order the rows). */
     MERGE_CHAIN_LOOPS,
     /** {0} = the number of stored relations of the code: their ends are kept under the direction it has, so it cannot change. */
     DIRECTION_IN_USE;

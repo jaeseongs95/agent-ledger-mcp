@@ -93,7 +93,7 @@ class OwnerAccountPropertySourceTest {
     }
 
     @Test
-    @DisplayName("INS-012 the post-processor adds the source only for --owner-account=<account> of migrate or import-legacy on the command line, never from the environment, and not for a blank value")
+    @DisplayName("INS-012 the post-processor adds the source only for --owner-account=<account> of migrate or setup on the command line, never from the environment, and not for a blank value")
     void ins012_thePostProcessor() {
         OwnerAccountEnvironmentPostProcessor processor = new OwnerAccountEnvironmentPostProcessor();
 
@@ -112,7 +112,7 @@ class OwnerAccountPropertySourceTest {
         StandardEnvironment otherCommand = new StandardEnvironment();
         otherCommand.getPropertySources().addFirst(new SimpleCommandLinePropertySource("--owner-account=ledger_ddl", "secret-set"));
         processor.postProcessEnvironment(otherCommand, null);
-        assertThat(otherCommand.getPropertySources().stream()).as("only migrate and import-legacy ask for the password")
+        assertThat(otherCommand.getPropertySources().stream()).as("only migrate and setup ask for the password")
                 .noneMatch(OwnerAccountPropertySource.class::isInstance);
 
         StandardEnvironment without = new StandardEnvironment();
@@ -137,7 +137,7 @@ class OwnerAccountPropertySourceTest {
         OwnerAccountEnvironmentPostProcessor processor = new OwnerAccountEnvironmentPostProcessor();
 
         // SET-017: setup migrates, so it takes the password of the owner account as migrate does
-        for (String command : new String[] { "migrate", "setup", "import-legacy" }) {
+        for (String command : new String[] { "migrate", "setup" }) {
             StandardEnvironment piped = new StandardEnvironment();
             piped.getPropertySources().addFirst(new SimpleCommandLinePropertySource("--owner-account=ledger_ddl", "--stdin", command));
             processor.postProcessEnvironment(piped, null);

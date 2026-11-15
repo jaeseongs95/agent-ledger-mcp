@@ -20,7 +20,7 @@ import org.pgledger.domain.value.CodeValue;
 import org.pgledger.domain.value.ConditionId;
 import org.pgledger.domain.value.DefectId;
 import org.pgledger.domain.value.JsonDocument;
-import org.pgledger.domain.value.LegacyActorId;
+import org.pgledger.domain.value.ImportedActorId;
 import org.pgledger.domain.value.RequestId;
 import org.pgledger.domain.value.TaskId;
 
@@ -74,10 +74,10 @@ class LinksAndHistoryTest {
     private static final String REASON = "a reason of enough length";
 
     private static HistoryEntry entry(HistoryOp op, String to, Long corrects, JsonDocument before, String login,
-            ActorId author, ActorAssurance assurance, String legacyRef) {
+            ActorId author, ActorAssurance assurance, String sourceRef) {
         return new HistoryEntry(null, DomainFixtures.NOW, author, login, assurance, HistoryEntity.DEFECT,
                 "E2E-D-0001", op, to == null ? null : "OPEN", to, null, before, REASON, null, null, corrects, REQUEST,
-                legacyRef);
+                sourceRef);
     }
 
     private static HistoryEntry author(HistoryOp op, String to, Long corrects, JsonDocument before) {
@@ -105,15 +105,15 @@ class LinksAndHistoryTest {
             author(op, null, null, null);
         }
         Expect.invalid(() -> author(HistoryOp.CORRECT, null, 7L, before));
-        // imported operations need a legacy reference; imported rows carry no before_data
-        ActorId legacy = new LegacyActorId("agent:claude:1");
-        entry(HistoryOp.IMPORT, null, null, null, "postgres", legacy, ActorAssurance.LEGACY_LOGIN, "legacy:42");
-        Expect.invalid(() -> entry(HistoryOp.IMPORT, null, null, null, "postgres", legacy,
-                ActorAssurance.LEGACY_LOGIN, null));
-        Expect.invalid(() -> entry(HistoryOp.IMPORT, null, null, before, "postgres", legacy,
-                ActorAssurance.LEGACY_LOGIN, "legacy:42"));
+        // imported operations need a source reference; imported rows carry no before_data
+        ActorId imported = new ImportedActorId("agent:claude:1");
+        entry(HistoryOp.IMPORT, null, null, null, "postgres", imported, ActorAssurance.IMPORTED_LOGIN, "import:42");
+        Expect.invalid(() -> entry(HistoryOp.IMPORT, null, null, null, "postgres", imported,
+                ActorAssurance.IMPORTED_LOGIN, null));
+        Expect.invalid(() -> entry(HistoryOp.IMPORT, null, null, before, "postgres", imported,
+                ActorAssurance.IMPORTED_LOGIN, "import:42"));
         // a native entry needs a declared author and a proper reason
-        Expect.invalid(() -> entry(HistoryOp.EDIT, null, null, null, "ledger_author", legacy,
+        Expect.invalid(() -> entry(HistoryOp.EDIT, null, null, null, "ledger_author", imported,
                 ActorAssurance.DECLARED, null));
         Expect.failsWith(ValidationCode.REASON_INVALID, () -> new HistoryEntry(null, DomainFixtures.NOW,
                 AuthorId.of("claude:me"), "ledger_author", ActorAssurance.DECLARED, HistoryEntity.DEFECT,

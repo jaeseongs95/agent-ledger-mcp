@@ -11,6 +11,10 @@ evaluationDependsOn(":ledger-admin-web")
 // The built client hook jar (ledger-client-hook.jar); the same arrangement as in ledger-mcp-server (its bootJar).
 evaluationDependsOn(":ledger-client-hook")
 
+// The built migration tool jar (ledger-migrate-1x.jar, M1X-002, M1X-041): started as a process and looked into; the one place a
+// build script names the tool, as the system test starts the jars of all programs.
+evaluationDependsOn(":ledger-migrate-1x")
+
 dependencies {
     // The test database support: the settings of the database and the passwords read from their files, the name of a test
     // schema, and the PostgreSQL JDBC driver (a test fixture dependency: the tests connect as the owner to read the rows).
@@ -24,15 +28,17 @@ val hookJar = project(":ledger-client-hook").tasks.named<Jar>("bootJar")
 val cliJar = project(":ledger-cli").tasks.named<Jar>("bootJar")
 val mcpJar = project(":ledger-mcp-server").tasks.named<Jar>("bootJar")
 val adminJar = project(":ledger-admin-web").tasks.named<Jar>("bootJar")
+val migrateJar = project(":ledger-migrate-1x").tasks.named<Jar>("bootJar")
 
 tasks.test {
-    dependsOn(cliJar, mcpJar, adminJar, hookJar)
+    dependsOn(cliJar, mcpJar, adminJar, hookJar, migrateJar)
     // The paths are passed in, never guessed. The jars are inputs, so a change of a product jar runs the test again
     // (the database is an input too, which is why the test is never up to date, see the root build).
-    inputs.files(cliJar, mcpJar, adminJar, hookJar)
+    inputs.files(cliJar, mcpJar, adminJar, hookJar, migrateJar)
     // the paths are known at configuration time (the archive file of a jar task), no configuration is resolved
     systemProperty("ledger.cli.jar", cliJar.flatMap { it.archiveFile }.get().asFile.absolutePath)
     systemProperty("ledger.mcp.jar", mcpJar.flatMap { it.archiveFile }.get().asFile.absolutePath)
     systemProperty("ledger.admin.jar", adminJar.flatMap { it.archiveFile }.get().asFile.absolutePath)
     systemProperty("ledger.hook.jar", hookJar.flatMap { it.archiveFile }.get().asFile.absolutePath)
+    systemProperty("ledger.migrate.jar", migrateJar.flatMap { it.archiveFile }.get().asFile.absolutePath)
 }

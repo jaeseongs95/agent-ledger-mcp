@@ -551,23 +551,24 @@ class SchemaMigratorTest {
     }
 
     @Test
-    void sch015_aLegacySchemaIsLeftUntouched() {
-        // the legacy schema plays the old schema `ledger`; the schema of the product is the one the migrator creates
+    void sch015_aNeighbourSchemaIsLeftUntouched() {
+        // the neighbour schema is another program's schema with a table of its own; the schema of the product is the one the
+        // migrator creates
         DataSource database = databases.database().pool();
-        String legacy = databases.newSchema().name();
+        String neighbour = databases.newSchema().name();
         String named = databases.reserveSchemaName();
         JdbcClient jdbc = JdbcClient.create(database);
-        jdbc.sql("CREATE TABLE " + legacy + ".defect (id VARCHAR(20) NOT NULL, title VARCHAR(50), "
-                + "CONSTRAINT pk_legacy_defect PRIMARY KEY (id))").update();
-        jdbc.sql("INSERT INTO " + legacy + ".defect (id, title) VALUES ('OLD-D-1', 'old')").update();
+        jdbc.sql("CREATE TABLE " + neighbour + ".defect (id VARCHAR(20) NOT NULL, title VARCHAR(50), "
+                + "CONSTRAINT pk_neighbour_defect PRIMARY KEY (id))").update();
+        jdbc.sql("INSERT INTO " + neighbour + ".defect (id, title) VALUES ('OLD-D-1', 'old')").update();
         SchemaProperties properties = new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, true, named);
         // the data source of the product names its schema itself: here the schema that the migrator creates
         DataSource product = TestDatabase.scoped(database, named);
         TestSchemaServices.migrator(product, properties, clock).migrate();
         TestSchemaServices.verifier(product, properties).verify();
         assertThat(jdbc.sql("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = :schema")
-                .param("schema", legacy).query(Integer.class).single()).isEqualTo(1);
-        assertThat(jdbc.sql("SELECT title FROM " + legacy + ".defect WHERE id = 'OLD-D-1'").query(String.class).single())
+                .param("schema", neighbour).query(Integer.class).single()).isEqualTo(1);
+        assertThat(jdbc.sql("SELECT title FROM " + neighbour + ".defect WHERE id = 'OLD-D-1'").query(String.class).single())
                 .isEqualTo("old");
         assertThat(jdbc.sql("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = :schema")
                 .param("schema", named).query(Integer.class).single()).isEqualTo(tablesOfTheShippedFiles());

@@ -208,7 +208,7 @@ public final class ArchitectureRules {
                 .beAnnotatedWith(TRANSACTIONAL);
     }
 
-    /** ARC-019 / ARC-024: no time without the injected Clock, no default zone, no legacy date classes. */
+    /** ARC-019 / ARC-024: no time without the injected Clock, no default zone, no old date classes. */
     public static ArchRule noAmbientTime(String... allowedPackages) {
         DescribedPredicate<JavaMethodCall> nowWithoutClock = DescribedPredicate.describe(
                 "calls a java.time now(..) overload that does not take a Clock",

@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 
 /** The account of this process (JDK ProcessHandle) resolved to a principal of the given file system, so it compares equal to file owners. */
 @Component
-class SystemProcessUser implements ProcessUser {
+public class SystemProcessUser implements ProcessUser {
 
     @Override
     public UserPrincipal current(FileSystem fileSystem) throws IOException {

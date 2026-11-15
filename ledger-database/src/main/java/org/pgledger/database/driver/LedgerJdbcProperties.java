@@ -23,7 +23,7 @@ public record LedgerJdbcProperties(String url, String username, String password,
 
     /**
      * Never prints the password, and not the password inside the URL either. A record prints every component by
-     * default, and a settings object ends up in logs and failure messages ({@code LegacySourceProperties} does the same).
+     * default, and a settings object ends up in logs and failure messages.
      */
     @Override
     public String toString() {

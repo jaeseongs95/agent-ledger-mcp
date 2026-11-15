@@ -68,7 +68,7 @@ public class TasksController {
     }
 
     /**
-     * The page of one task. The id is a query parameter and not a path segment: the ids of 1.x contain characters (a slash,
+     * The page of one task. The id is a query parameter and not a path segment: ids are free text and may contain characters (a slash,
      * a number sign, a question mark) that a path segment cannot carry, and the web container refuses an encoded slash.
      */
     @GetMapping("/tasks/detail")

@@ -25,7 +25,7 @@ import org.springframework.stereotype.Component;
 /**
  * The access of an installation on a file system with ACLs (Windows), written with {@link AclFileAttributeView} and no
  * {@code icacls}: https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/nio/file/attribute/AclFileAttributeView.html .
- * The rights are the ones the installer of 1.x/2.0 gave with {@code icacls}: the home is closed to every account but SYSTEM
+ * The rights are the ones the installer gave with {@code icacls}: the home is closed to every account but SYSTEM
  * and Administrators; the one service account reads and runs the jars, changes the settings and writes its logs; the secrets
  * belong to the service account alone, and Administrators keep only the right to see that a file exists. An ACL is written
  * whole ({@code setAcl}) and is not propagated to the children by the file system: this class sets it on each path itself.

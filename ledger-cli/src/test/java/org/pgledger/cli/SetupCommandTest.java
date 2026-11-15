@@ -43,8 +43,8 @@ class SetupCommandTest {
 
     private static final Pattern DIGESTS = Pattern
             .compile("digest of the seed ([0-9a-f]{64}), digest of the same codes in the database ([0-9a-f]{64})\\.");
-    /** REH4-SEED-01: what the report says about a code that differs from the seed (the operator changed it, or import-legacy took it from 1.x). */
-    private static final String KEPT_REASON = "changed by the operator or taken from 1.x by import-legacy";
+    /** REH4-SEED-01: what the report says about a code that differs from the seed (the operator changed it, or it was imported). */
+    private static final String KEPT_REASON = "changed by the operator or imported";
     private static final String CODES = "SELECT code_group, code, name_ko, name_en, description_ko, description_en, sort_order, state "
             + "FROM common_code WHERE code_group = 'DEFECT_CATEGORY' ORDER BY sort_order, code";
 
@@ -199,7 +199,7 @@ class SetupCommandTest {
     }
 
     @Test
-    @DisplayName("REH4-SEED-02 the Korean report says that a code that differs from the seed was kept whether the operator changed it or import-legacy took it from 1.x, with the same six values")
+    @DisplayName("REH4-SEED-02 the Korean report says that a code that differs from the seed was kept whether the operator changed it or it was imported, with the same six values")
     void reh4Seed02_theKoreanReport() throws IOException {
         Properties korean = new Properties();
         try (InputStream stream = new ClassPathResource("messages_ko.properties").getInputStream()) {
@@ -207,9 +207,9 @@ class SetupCommandTest {
         }
         String text = korean.getProperty("setup.report");
 
-        assertThat(text).contains("import-legacy").contains("1.x").contains("시드와 다르지만 그대로 둔")
+        assertThat(text).contains("가져온 것").contains("시드와 다르지만 그대로 둔")
                 .contains("{0}").contains("{1}").contains("{2}").contains("{3}").contains("{4}").contains("{5}");
-        assertThat(bundle().getProperty("setup.report")).contains("import-legacy").contains("1.x");
+        assertThat(bundle().getProperty("setup.report")).contains(KEPT_REASON);
     }
 
     static Stream<Arguments> usageRefusals() {

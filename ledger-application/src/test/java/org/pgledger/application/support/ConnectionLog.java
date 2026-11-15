@@ -13,7 +13,8 @@ import org.springframework.jdbc.datasource.DelegatingDataSource;
 /**
  * A DataSource that records how its connections are set up and ended: the calls of {@code setReadOnly},
  * {@code setTransactionIsolation}, {@code commit} and {@code rollback}, as {@code name[arguments]} (test spy; the proxy
- * is test-only). The legacy import must read in a read-only transaction of the isolation REPEATABLE READ (MIG-008).
+ * is test-only). A service that needs another isolation level or a read-only transaction declares it on its
+ * {@code @Transactional} method, and a test reads it here.
  */
 public final class ConnectionLog extends DelegatingDataSource {
 

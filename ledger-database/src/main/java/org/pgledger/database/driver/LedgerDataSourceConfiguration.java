@@ -31,9 +31,9 @@ public class LedgerDataSourceConfiguration {
 
     /**
      * A pool around the registered driver: an external type (Hikari) whose driver is not on the class path of Boot. It is the
-     * primary {@link DataSource}: the command line tool may have a second one for the legacy ledger
-     * ({@link LegacySourceConfiguration}), and every injection point that does not name that one, and the auto-configuration
-     * of Spring Boot (the {@code JdbcClient}, the transaction manager), take this one.
+     * primary {@link DataSource}: the command line tool of another program may have a second data source, and every
+     * injection point that does not name that one, and the auto-configuration of Spring Boot (the {@code JdbcClient}, the
+     * transaction manager), take this one.
      */
     @Bean(destroyMethod = "close")
     @Primary

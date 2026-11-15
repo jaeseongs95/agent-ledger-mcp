@@ -7,8 +7,8 @@ import org.pgledger.cli.secret.SecretInput;
 import org.springframework.core.env.PropertySource;
 
 /**
- * The database account and password of one run of the owner commands that change the schema or write the whole ledger
- * ({@code migrate}, {@code import-legacy}): the properties {@code ledger.jdbc.username} and {@code ledger.jdbc.password}
+ * The database account and password of one run of the owner commands that change the schema
+ * ({@code migrate}, {@code setup}): the properties {@code ledger.jdbc.username} and {@code ledger.jdbc.password}
  * in front of every other source, so the one DataSource of the run connects as the owner account and not as the account of
  * the service. The password is typed with hidden input ({@link SecretInput}, which in the product is the console) and lives
  * in memory for this run only: it is never stored, written or printed.

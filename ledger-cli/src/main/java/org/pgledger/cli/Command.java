@@ -8,7 +8,8 @@ import org.springframework.boot.ApplicationArguments;
 /** One command of the tool; the runner finds every implementation as a bean and dispatches by {@link #name()}. */
 public interface Command {
 
-    CliCommand name();
+    /** The name of the command; the commands of this tool answer a {@link CliCommand}, another program its own {@link CommandName}. */
+    CommandName name();
 
     /**
      * The names of the options of this command ({@code --name=value}, a single word without a dot). Every other option

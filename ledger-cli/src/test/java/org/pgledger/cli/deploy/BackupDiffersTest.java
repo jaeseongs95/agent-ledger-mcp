@@ -15,16 +15,16 @@ import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.FailureException;
 
 /**
- * REH2-INS-02 at the level of the writer, on any file system: a file of 1.x and a backup with other bytes. The writer that
+ * REH2-INS-02 at the level of the writer, on any file system: a file this command did not render and a backup with other bytes. The writer that
  * {@code prepare-host} uses ({@link DeployFiles#writeIntoHost}) lets the refusal reach the command, which reports every failure
  * of the host with {@link HostFiles#failure}: HOST_FAILED naming both files, never the raw
  * {@code FileAlreadyExistsException}.
  */
 class BackupDiffersTest {
 
-    private static final String ONE_X = "[Unit]\nDescription=1.x\n";
+    private static final String FOREIGN = "[Unit]\nDescription=hand-written\n";
     private static final String UNIT = "/etc/systemd/system/pg-ledger-mcp.service";
-    private static final String RENDERED = Text.GENERATED + "\n[Unit]\nDescription=2.0\n";
+    private static final String RENDERED = Text.GENERATED + "\n[Unit]\nDescription=rendered\n";
 
     @TempDir
     Path tmp;
@@ -34,13 +34,13 @@ class BackupDiffersTest {
     private final ServicePlatform linux = DeployTestBeans.platforms().of(DeployLayout.Platform.LINUX);
 
     @Test
-    @DisplayName("REH2-INS-02 a file of 1.x and a backup with other bytes: BackupDiffersException naming both files, nothing of either changed; prepare-host reports it as HOST_FAILED naming both files, not as FileAlreadyExistsException")
+    @DisplayName("REH2-INS-02 a file that this command did not render and a backup with other bytes: BackupDiffersException naming both files, nothing of either changed; prepare-host reports it as HOST_FAILED naming both files, not as FileAlreadyExistsException")
     void otherBytesAreRefused() throws IOException {
         Path unit = tmp.resolve("etc/systemd/system/pg-ledger-mcp.service");
         Path backup = unit.resolveSibling("pg-ledger-mcp.service" + DeployFiles.BACKUP_SUFFIX);
         Files.createDirectories(unit.getParent());
-        Files.writeString(unit, ONE_X + "# changed since\n", StandardCharsets.UTF_8);
-        Files.writeString(backup, ONE_X, StandardCharsets.UTF_8);
+        Files.writeString(unit, FOREIGN + "# changed since\n", StandardCharsets.UTF_8);
+        Files.writeString(backup, FOREIGN, StandardCharsets.UTF_8);
 
         assertThatThrownBy(() -> files.writeIntoHost(linux, tmp, List.of(new RenderedFile(UNIT, RENDERED)), (path, how) -> { }))
                 .isInstanceOfSatisfying(DeployFiles.BackupDiffersException.class, refused -> {
@@ -51,7 +51,7 @@ class BackupDiffersTest {
                     assertThat(failure.arguments().getFirst()).contains(unit.toString()).contains(backup.toString());
                     assertThat(String.join(" ", failure.arguments())).doesNotContain("FileAlreadyExistsException");
                 });
-        assertThat(Files.readString(unit, StandardCharsets.UTF_8)).isEqualTo(ONE_X + "# changed since\n");
-        assertThat(Files.readString(backup, StandardCharsets.UTF_8)).isEqualTo(ONE_X);
+        assertThat(Files.readString(unit, StandardCharsets.UTF_8)).isEqualTo(FOREIGN + "# changed since\n");
+        assertThat(Files.readString(backup, StandardCharsets.UTF_8)).isEqualTo(FOREIGN);
     }
 }

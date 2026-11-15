@@ -113,42 +113,12 @@ class LedgerRefusalsTest {
     }
 
     @Test
-    @DisplayName("CLI-PRN-07 import: a duplicate key is IMPORT_TARGET_NOT_EMPTY naming the tables, a legacy ledger that is not complete is IMPORT_SOURCE_INCOMPLETE naming the missing steps, data that cannot be imported is IMPORT_DATA_REFUSED with the number of issues, a failed comparison is IMPORT_VERIFY_FAILED with its first table; a NOT_FOUND with one argument and an integrity failure that is no comparison are LEDGER_REFUSED")
-    void importLegacy() {
-        assertRefusedAs(new ConflictException(ConflictCode.DUPLICATE_KEY, List.of("defect", "history")), Context.IMPORT,
-                ErrorCode.IMPORT_TARGET_NOT_EMPTY, "defect, history");
-        assertRefusedAs(new LookupException(LookupCode.NOT_FOUND, List.of("missing", "step 1, step 2")), Context.IMPORT,
-                ErrorCode.IMPORT_SOURCE_INCOMPLETE, "step 1, step 2");
-        assertRefusedAs(new LookupException(LookupCode.NOT_FOUND, List.of("project")), Context.IMPORT,
-                ErrorCode.LEDGER_REFUSED, "NOT_FOUND");
-        ValidationException two = new ValidationException(ValidationCode.VALIDATION_FAILED, List.of(), List.of(
-                new ValidationIssue("a[1].x", ValidationReason.REQUIRED, List.of()),
-                new ValidationIssue("a[2].x", ValidationReason.REQUIRED, List.of())), Map.of());
-        assertRefusedAs(two, Context.IMPORT, ErrorCode.IMPORT_DATA_REFUSED, "2");
-        assertRefusedAs(new InfrastructureException(InfrastructureCode.INTEGRITY_VIOLATION,
-                List.of("defect", "3", "2", "aaaa", "bbbb", "task", "1", "1", "cccc", "dddd")), Context.IMPORT,
-                ErrorCode.IMPORT_VERIFY_FAILED, "defect", "3", "2", "aaaa", "bbbb");
-        assertRefusedAs(new InfrastructureException(InfrastructureCode.INTEGRITY_VIOLATION, List.of("receipt")), Context.IMPORT,
-                ErrorCode.LEDGER_REFUSED, "INTEGRITY_VIOLATION");
-        assertRefusedAs(new InfrastructureException(InfrastructureCode.INTERNAL_ERROR, List.of()), Context.IMPORT,
-                ErrorCode.LEDGER_REFUSED, "INTERNAL_ERROR");
-        assertRefusedAs(new TrustException(TrustCode.AUTHOR_ID_FORMAT, List.of("x")), Context.IMPORT,
-                ErrorCode.LEDGER_REFUSED, "AUTHOR_ID_FORMAT");
-    }
-
-    @Test
-    @DisplayName("RET-016 retire: the verification that retire-legacy runs first is refused with its own words: a failed comparison is RETIRE_VERIFY_FAILED with its first table, an incomplete legacy ledger is IMPORT_SOURCE_INCOMPLETE, data that cannot be imported is IMPORT_DATA_REFUSED; an integrity failure that is no comparison is LEDGER_REFUSED")
-    void retireLegacy() {
-        assertRefusedAs(new InfrastructureException(InfrastructureCode.INTEGRITY_VIOLATION,
-                List.of("defect", "3", "2", "aaaa", "bbbb", "task", "1", "1", "cccc", "dddd")), Context.RETIRE,
-                ErrorCode.RETIRE_VERIFY_FAILED, "defect", "3", "2", "aaaa", "bbbb");
-        assertRefusedAs(new LookupException(LookupCode.NOT_FOUND, List.of("missing", "step 1, step 2")), Context.RETIRE,
-                ErrorCode.IMPORT_SOURCE_INCOMPLETE, "step 1, step 2");
-        ValidationException one = new ValidationException(ValidationCode.VALIDATION_FAILED, List.of(), List.of(
-                new ValidationIssue("a[1].x", ValidationReason.REQUIRED, List.of())), Map.of());
-        assertRefusedAs(one, Context.RETIRE, ErrorCode.IMPORT_DATA_REFUSED, "1");
-        assertRefusedAs(new InfrastructureException(InfrastructureCode.INTEGRITY_VIOLATION, List.of("receipt")), Context.RETIRE,
-                ErrorCode.LEDGER_REFUSED, "INTEGRITY_VIOLATION");
+    @DisplayName("CLI-PRN-07 an infrastructure failure (an integrity violation included) is LEDGER_REFUSED with its code in every context: no command reads its arguments")
+    void infrastructure() {
+        for (Context context : Context.values()) {
+            assertRefusedAs(new InfrastructureException(InfrastructureCode.INTEGRITY_VIOLATION, List.of("receipt")), context,
+                    ErrorCode.LEDGER_REFUSED, "INTEGRITY_VIOLATION");
+        }
     }
 
     @Test
@@ -158,18 +128,5 @@ class LedgerRefusalsTest {
             assertRefusedAs(new ConflictException(ConflictCode.SESSION_KEY_REQUIRED, List.of("claude:a")), context,
                     ErrorCode.NO_SESSION_KEY, "claude:a");
         }
-    }
-
-    @Test
-    @DisplayName("CLI-PRN-07 the groups of a failed comparison are read by name: five arguments per table, and none when there are fewer than five")
-    void tableMismatches() {
-        List<LedgerRefusals.TableMismatch> groups = LedgerRefusals.TableMismatch
-                .of(List.of("defect", "3", "2", "aaaa", "bbbb", "task", "1", "1", "cccc", "dddd", "stray"));
-
-        assertThat(groups).extracting(LedgerRefusals.TableMismatch::table).containsExactly("defect", "task");
-        assertThat(groups.getFirst().texts()).containsExactly("defect", "3", "2", "aaaa", "bbbb");
-        assertThat(groups.getFirst().legacyRows()).isEqualTo("3");
-        assertThat(groups.getFirst().targetDigest()).isEqualTo("bbbb");
-        assertThat(LedgerRefusals.TableMismatch.of(List.of("a", "b"))).isEmpty();
     }
 }

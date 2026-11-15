@@ -6,8 +6,8 @@ import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationReason;
 
 /**
- * An id of a task or condition: the domain of 1.x, 1 to {@value #MAX_LENGTH} characters with no whitespace (any Unicode
- * separator) and no control or format character, in any case. The ids of 1.x are kept as they are, so this is all the rule
+ * An id of a task or condition: 1 to {@value #MAX_LENGTH} characters with no whitespace (any Unicode
+ * separator) and no control or format character, in any case. Ids are kept as given, so this is all the rule
  * there is; the id of a defect has its own format ({@link DefectId}). This record is the plain form; {@link TaskId} and
  * {@link ConditionId} add their own rules on top of {@link #PATTERN}.
  *

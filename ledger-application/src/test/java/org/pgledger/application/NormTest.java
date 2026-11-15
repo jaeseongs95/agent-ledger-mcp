@@ -159,7 +159,7 @@ class NormTest {
 
     @ParameterizedTest
     @MethodSource("blankRequiredFields")
-    @DisplayName("SVC-NORM-02: a blank required field (title, release, code, observation, repo, reason) is refused and named; the five long texts of 1.x that allowed '' follow REH3-TXT-01")
+    @DisplayName("SVC-NORM-02: a blank required field (title, release, code, observation, repo, reason) is refused and named; the five long texts that may be empty follow REH3-TXT-01")
     void norm02_blankRequiredFields(Required required, Scenario s) {
         LedgerException e = Expect.failure(() -> required.write().accept(s), required.code());
         assertThat(((ValidationException) e).issues().get(0).path()).isEqualTo(required.path());

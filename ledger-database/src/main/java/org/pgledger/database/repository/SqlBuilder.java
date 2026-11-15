@@ -88,7 +88,7 @@ public class SqlBuilder {
         // PostgreSQL: https://www.postgresql.org/docs/current/sql-select.html
         // H2: https://h2database.com/html/commands.html#select
         // Oracle: https://docs.oracle.com/en/database/oracle/oracle-database/23/sqlrf/SELECT.html
-        // Db2: https://www.ibm.com/docs/en/db2/12.1.x?topic=design-guidelines-restricting-select-statements
+        // Db2: https://www.ibm.com/docs/en/db2?topic=design-guidelines-restricting-select-statements
         // SQL Server: https://learn.microsoft.com/en-us/sql/t-sql/queries/select-order-by-clause-transact-sql
         // MariaDB 10.6+: https://mariadb.com/docs/server/reference/sql-statements/data-manipulation/selecting-data/select-offset-fetch
         // MySQL: https://dev.mysql.com/doc/refman/8.4/en/select.html

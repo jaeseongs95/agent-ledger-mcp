@@ -133,7 +133,7 @@ public class HistoryQueryRepository {
     }
 
     /**
-     * The newest history ids of one entity, newest first, without the rows imported from an older ledger when
+     * The newest history ids of one entity, newest first, without the rows imported from another ledger when
      * {@code withoutImport} is set; at most {@code count} ids.
      */
     public List<Long> newestOfEntity(HistoryEntity entity, String entityId, boolean withoutImport, int count) {

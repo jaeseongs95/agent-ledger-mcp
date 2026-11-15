@@ -6,9 +6,9 @@ import org.pgledger.cli.CliMessages;
 import org.pgledger.cli.CliOutput;
 
 /**
- * What a command tells about the backup of a file of 1.x ({@link DeployFiles.Backup}): that it moved the previous file there
- * (the first run), or that the backup was there already with the same bytes and was left as it was (a later run after the
- * rollback of the migration).
+ * What a command tells about the backup of a file that it did not render ({@link DeployFiles.Backup}): that it moved the
+ * previous file there (the first run), or that the backup was there already with the same bytes and was left as it was (a
+ * later run after a rollback).
  */
 final class BackupNotice {
 

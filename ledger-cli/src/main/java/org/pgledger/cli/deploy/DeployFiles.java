@@ -40,12 +40,12 @@ public final class DeployFiles {
     private static final FileAttribute<?> READABLE = PosixFilePermissions
             .asFileAttribute(PosixFilePermissions.fromString("rw-r--r--"));
 
-    /** What a file of 1.x that is replaced is kept as. */
-    public static final String BACKUP_SUFFIX = ".1x-backup";
+    /** What a file that this command did not render and that is replaced is kept as. */
+    public static final String BACKUP_SUFFIX = ".backup";
 
-    /** What happened to the backup of a file of 1.x that is replaced: made now, or found and left as it was. */
+    /** What happened to the backup of a file that this command did not render and that is replaced: made now, or found and left as it was. */
     public enum Backup {
-        /** The previous file was moved to {@code <file>.1x-backup} by this run (the first run). */
+        /** The previous file was moved to {@code <file>.backup} by this run (the first run). */
         MOVED,
         /** The backup was there already with the same bytes as the file (a rollback copied it back): it is left as it is. */
         KEPT
@@ -111,7 +111,7 @@ public final class DeployFiles {
     }
 
     /**
-     * The backup that a file of 1.x could not be moved to, because it is there and holds other bytes: neither file is
+     * The backup that a file that this command did not render could not be moved to, because it is there and holds other bytes: neither file is
      * changed. A refusal of its own (and no {@code FileAlreadyExistsException}), so the report of a failure names what the
      * operator has to look at: the file and its backup.
      */
@@ -130,8 +130,8 @@ public final class DeployFiles {
     }
 
     /**
-     * A file of that name that this command did not render (the unit of a 1.x installation, a hand-written one) is moved to
-     * {@code <file>.1x-backup} before it is replaced, so the old installation can be put back (the rollback of the migration).
+     * A file of that name that this command did not render (a hand-written one, the unit of an earlier installation) is moved to
+     * {@code <file>.backup} before it is replaced, so the earlier installation can be put back (the rollback of the installation).
      * When the backup is already there it is never overwritten: with the same bytes as the file (the rollback of the README
      * copies the backup back and leaves it) it is the backup of this very file, so it stays as it is and the file is replaced;
      * with other bytes it is the backup of another file, the write is refused with {@link BackupDiffersException} and nothing of

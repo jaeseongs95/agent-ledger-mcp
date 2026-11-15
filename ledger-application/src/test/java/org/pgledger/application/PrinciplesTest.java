@@ -55,7 +55,7 @@ import org.pgledger.domain.rule.HistoryOp;
 import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.ConditionId;
 import org.pgledger.domain.value.JsonDocument;
-import org.pgledger.domain.value.LegacyActorId;
+import org.pgledger.domain.value.ImportedActorId;
 import org.pgledger.domain.value.PageCursor;
 import org.pgledger.domain.value.RequestId;
 import org.pgledger.domain.error.ValidationCode;
@@ -67,47 +67,47 @@ import org.pgledger.domain.error.ValidationCode;
 @LedgerServiceTest
 class PrinciplesTest {
 
-    private static final String LEGACY_AUTHOR = "agent:claude:old";
+    private static final String IMPORTED_AUTHOR = "claude:old";
 
-    /** Puts an imported TRANSITION row of the task into the history, as the legacy import does (the states are text). */
-    private static void legacyTransition(Scenario s, String taskId, String from, String to) {
+    /** Puts an imported TRANSITION row of the task into the history, as an import does (the states are text). */
+    private static void importedTransition(Scenario s, String taskId, String from, String to) {
         IdAllocator ids = s.bean(IdAllocator.class);
         s.ctx().tx(() -> s.bean(HistoryRepository.class).insert(new HistoryEntry(ids.next(Counter.HISTORY),
-                Instant.parse("2027-01-01T00:00:00Z"), new LegacyActorId(LEGACY_AUTHOR), "ledger_author",
-                ActorAssurance.LEGACY_LOGIN, HistoryEntity.TASK, taskId, HistoryOp.TRANSITION, from, to,
-                JsonDocument.EMPTY_OBJECT, null, "imported from the old ledger", null, null, null,
-                new RequestId(UUID.randomUUID()), "legacy-" + UUID.randomUUID())));
+                Instant.parse("2027-01-01T00:00:00Z"), new ImportedActorId(IMPORTED_AUTHOR), "ledger_author",
+                ActorAssurance.IMPORTED_LOGIN, HistoryEntity.TASK, taskId, HistoryOp.TRANSITION, from, to,
+                JsonDocument.EMPTY_OBJECT, null, "imported by a migration", null, null, null,
+                new RequestId(UUID.randomUUID()), "import-" + UUID.randomUUID())));
     }
 
     // --------------------------------------------------------------------------------------------------- F1
 
     @Test
-    @DisplayName("SVC-PRN-01: a legacy transition whose state is NULL or none of the task states is not a report: the detail of the task reads it and names the real reporter")
-    void prn01_detailIgnoresLegacyTransitionsOfUnknownStates(Scenario s) {
+    @DisplayName("SVC-PRN-01: an imported transition whose state is NULL or none of the task states is not a report: the detail of the task reads it and names the real reporter")
+    void prn01_detailIgnoresImportedTransitionsOfUnknownStates(Scenario s) {
         SaveResult task = s.newTask("t");
         s.bean(TransitionService.class).transition(Scenario.AUTHOR,
                 s.move("task", task.id(), 1, "REPORTED_DONE", Scenario.EVIDENCE));
         // later rows than the real report: were they reports, they would be the latest one
-        legacyTransition(s, task.id(), null, "REPORTED_DONE");
-        legacyTransition(s, task.id(), "WEIRD", "REPORTED_DONE");
-        legacyTransition(s, task.id(), "PLANNED", "WEIRD2");
+        importedTransition(s, task.id(), null, "REPORTED_DONE");
+        importedTransition(s, task.id(), "WEIRD", "REPORTED_DONE");
+        importedTransition(s, task.id(), "PLANNED", "WEIRD2");
 
         assertThat(s.bean(DetailService.class).task(task.id()).completedBy()).isEqualTo(Scenario.AUTHOR);
 
-        SaveResult onlyLegacy = s.newTask("t2");
-        legacyTransition(s, onlyLegacy.id(), null, "REPORTED_DONE");
-        legacyTransition(s, onlyLegacy.id(), "WEIRD", "WEIRD2");
-        assertThat(s.bean(DetailService.class).task(onlyLegacy.id()).completedBy()).isNull();
+        SaveResult onlyImported = s.newTask("t2");
+        importedTransition(s, onlyImported.id(), null, "REPORTED_DONE");
+        importedTransition(s, onlyImported.id(), "WEIRD", "WEIRD2");
+        assertThat(s.bean(DetailService.class).task(onlyImported.id()).completedBy()).isNull();
     }
 
     @Test
     @DisplayName("SVC-PRN-02: a transition of a task whose history holds such rows is decided by the rules of the state machine, never by an exception of the parser")
-    void prn02_transitionIgnoresLegacyTransitionsOfUnknownStates(Scenario s) {
+    void prn02_transitionIgnoresImportedTransitionsOfUnknownStates(Scenario s) {
         SaveResult task = s.newTask("t");
         s.bean(TransitionService.class).transition(Scenario.AUTHOR,
                 s.move("task", task.id(), 1, "REPORTED_DONE", Scenario.EVIDENCE));
-        legacyTransition(s, task.id(), null, "REPORTED_DONE");
-        legacyTransition(s, task.id(), "WEIRD", "WEIRD2");
+        importedTransition(s, task.id(), null, "REPORTED_DONE");
+        importedTransition(s, task.id(), "WEIRD", "WEIRD2");
 
         // the real report still counts: the reporter cannot verify the task himself ...
         Expect.failure(() -> s.bean(ReviewService.class).review(Scenario.AUTHOR,

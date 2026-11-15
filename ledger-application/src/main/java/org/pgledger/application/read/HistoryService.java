@@ -58,7 +58,7 @@ public class HistoryService {
     public record HistoryView(long id, Instant at, String authorId, String vendor, String login,
             String actorAssurance, String entity, String entityId, String op, String fromState, String toState,
             JsonDocument changes, JsonDocument beforeData, String reason, String evidenceUri, Long correctsId,
-            String requestId, String legacyRef, String attachmentId) {
+            String requestId, String sourceRef, String attachmentId) {
     }
 
     private final HistoryQueryRepository queries;
@@ -109,7 +109,7 @@ public class HistoryService {
         return new HistoryView(row.id(), row.at(), row.authorId().value(), vendor,
                 row.login(), row.actorAssurance().name(), row.entity().token(), row.entityId(), row.op().name(),
                 row.fromState(), row.toState(), row.changes(), before, row.reason(),
-                row.evidenceUri(), row.correctsId(), row.requestId().toString(), row.legacyRef(),
+                row.evidenceUri(), row.correctsId(), row.requestId().toString(), row.sourceRef(),
                 row.attachmentId());
     }
 }

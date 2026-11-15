@@ -64,7 +64,7 @@ public class IdAllocator {
     }
 
     /**
-     * After rows with explicit surrogate ids were copied in (the legacy import): the counter is at least {@code atLeast}, so
+     * After rows with explicit surrogate ids were copied in (an import): the counter is at least {@code atLeast}, so
      * the next number issued is above every id in use. A counter that is already higher is left alone.
      */
     public void raise(Counter counter, long atLeast) {

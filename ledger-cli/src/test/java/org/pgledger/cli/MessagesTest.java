@@ -27,8 +27,7 @@ class MessagesTest {
     void everyKeyIsDefinedInBothBundles() throws IOException {
         List<String> required = new ArrayList<>(List.of("usage.header", "secret-set.prompt", "secret-set.stored",
                 "key-register.registered", "key-register.replaced", "key-register.server", "key-revoke.revoked",
-                "migrate.applied", "migrate.current", "import-legacy.table", "import-legacy.imported", "import-legacy.verified",
-                "import-legacy.violation", "import-legacy.direction", "import-legacy.direction.relation", "import-legacy.mismatch", "retire-legacy.object", "retire-legacy.listed", "retire-legacy.removed", "driver-register.registered", "project-add.added", "code-set.set",
+                "migrate.applied", "migrate.current", "driver-register.registered", "project-add.added", "code-set.set",
                 "codes.line", "codes.line.relation", "grant.issued", "grant.never", "revoke.revoked", "grants.none", "grants.line", "mcp-check.ok",
                 "attachments-check.summary", "attachments-check.files", "attachments-check.missing", "attachments-check.damaged",
                 "attachments-check.unreferenced", "attachments-check.purged", "attachments-rekey.done", "attachments-key-create.created"));

@@ -34,8 +34,7 @@ dependencies {
     testImplementation(testFixtures(project(":ledger-attestation")))
     // OwnerOnlyFiles (owner-only file rights) needs a domain class, so it stays in the domain test fixtures.
     testImplementation(testFixtures(project(":ledger-domain")))
-    // The test database support (the PostgreSQL of the test PC: settings, pools, schema per test, PostgreSQL driver) and the
-    // builder of the legacy ledger (the table shapes of the old schema and the data of the old installer), MIG-024.
+    // The test database support (the PostgreSQL of the test PC: settings, pools, schema per test, PostgreSQL driver).
     testImplementation(testFixtures(project(":ledger-database")))
 }
 
@@ -47,6 +46,13 @@ dependencies {
 // other module keep the whole of -Xlint:all as errors.
 tasks.named<JavaCompile>("compileJava") {
     options.compilerArgs.add("-Xlint:-classfile")
+}
+
+// The plain jar (the classes of this module with the classifier plain, which the Boot plugin gives it) stays enabled: the migration
+// tool (ledger-migrate-1x) is built on the command line machinery and the secret store of this module and takes its classes from
+// it, so its secret store cannot differ from this one. It takes no library of this module with it (isTransitive = false there).
+tasks.jar {
+    enabled = true
 }
 
 tasks.bootJar {

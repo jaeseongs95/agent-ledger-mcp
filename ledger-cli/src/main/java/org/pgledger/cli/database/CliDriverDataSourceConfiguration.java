@@ -5,7 +5,6 @@ import org.pgledger.database.driver.ApplicationAccountConfiguration;
 import org.pgledger.database.driver.ApplicationAccountSettings;
 import org.pgledger.database.driver.LedgerDataSourceConfiguration;
 import org.pgledger.database.driver.LedgerJdbcProperties;
-import org.pgledger.database.driver.LegacySourceConfiguration;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.bind.PropertySourcesPlaceholdersResolver;
 import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
@@ -30,7 +29,7 @@ import org.springframework.core.env.MutablePropertySources;
  */
 @Configuration(proxyBeanMethods = false)
 @Conditional(CliDatabaseCondition.class)
-@Import({LedgerDataSourceConfiguration.class, LegacySourceConfiguration.class, ApplicationAccountConfiguration.class})
+@Import({LedgerDataSourceConfiguration.class, ApplicationAccountConfiguration.class})
 public class CliDriverDataSourceConfiguration {
 
     private static final String ATTACHED_VIEW = "configurationProperties";

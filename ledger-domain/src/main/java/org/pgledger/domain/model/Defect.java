@@ -28,7 +28,7 @@ public record Defect(@Id DefectId id, ProjectId projectId, String title, CodeVal
         @ReadOnlyProperty long caseSeq, @Version long version, Instant createdAt, Instant updatedAt,
         @CreatedBy @InsertOnlyProperty ActorId createdBy) {
 
-    /** {@code behavior} and {@code rootCause} may be empty: the row holds NULL then (the 1.x columns allowed {@code ''}). */
+    /** {@code behavior} and {@code rootCause} may be empty: the row holds NULL then (no column of this schema holds {@code ''}). */
     public Defect {
         behavior = TextRule.emptyToNull(behavior);
         rootCause = TextRule.emptyToNull(rootCause);

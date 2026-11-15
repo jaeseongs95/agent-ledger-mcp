@@ -4,16 +4,13 @@ import java.util.Objects;
 import java.util.Optional;
 
 /** The commands this tool offers; the usage text lists them in this order. */
-public enum CliCommand {
+public enum CliCommand implements CommandName {
 
     SECRET_SET("secret-set"),
     TOKEN_GENERATE("token-generate"),
-    SECRET_IMPORT_1X("secret-import-1x"),
     DRIVER_REGISTER("driver-register"),
     MIGRATE("migrate"),
     SETUP("setup"),
-    IMPORT_LEGACY("import-legacy"),
-    RETIRE_LEGACY("retire-legacy"),
     KEY_REGISTER("key-register"),
     KEY_REVOKE("key-revoke"),
     PASSKEY_CODE("passkey-code"),
@@ -51,8 +48,8 @@ public enum CliCommand {
      */
     public boolean usesDatabase() {
         return switch (this) {
-            case SECRET_SET, TOKEN_GENERATE, SECRET_IMPORT_1X, MCP_CHECK, RENDER_DEPLOY, PREPARE_HOST, SEAL_HOST,
-                    INSTALL_DEFAULT, TLS_ISSUE, TLS_RENEW -> false;
+            case SECRET_SET, TOKEN_GENERATE, MCP_CHECK, RENDER_DEPLOY, PREPARE_HOST, SEAL_HOST, INSTALL_DEFAULT,
+                    TLS_ISSUE, TLS_RENEW -> false;
             default -> true;
         };
     }

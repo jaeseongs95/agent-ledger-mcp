@@ -121,13 +121,13 @@ class EnumsAndCodesTest {
                 () -> category().check("defect.category", CodeValue.of("RETIRED"), CodeValue.of("ARC")));
         // retained when unchanged on a column that is not always-active
         category().check("defect.category", CodeValue.of("RETIRED"), CodeValue.of("RETIRED"));
-        // always-active: refused on every write, and the details flag the legacy value
-        var legacy = Expect.failsWith(ValidationCode.CODE_INVALID,
+        // always-active: refused on every write, and the details flag the retired value
+        var retired = Expect.failsWith(ValidationCode.CODE_INVALID,
                 () -> severity().check("defect.severity", CodeValue.of("UNRATED"), CodeValue.of("UNRATED")));
-        assertThat(legacy.details().get("holdsLegacyValue")).containsExactly("true");
-        var notLegacy = Expect.failsWith(ValidationCode.CODE_INVALID,
+        assertThat(retired.details().get("holdsRetiredValue")).containsExactly("true");
+        var notRetired = Expect.failsWith(ValidationCode.CODE_INVALID,
                 () -> severity().check("defect.severity", CodeValue.of("P9"), null));
-        assertThat(notLegacy.details().get("holdsLegacyValue")).containsExactly("false");
+        assertThat(notRetired.details().get("holdsRetiredValue")).containsExactly("false");
     }
 
     @Test
