@@ -103,6 +103,21 @@ class ReadContractTest {
         assertThat(codes.items()).extracting(ReadOutputs.CodeRow::code).contains("P1", "P2", "P3");
     }
 
+    @Test
+    @DisplayName("MCR-K02: ledger_codes says how a relation kind keeps its two ends: caused_by and blocks are GIVEN (directed), the other kinds and every other group CANONICAL")
+    void theCodesToolNamesTheDirection(McpSession session) {
+        List<ReadOutputs.CodeRow> kinds = session.readItems(session.call("ledger_codes", Calls.Codes.of("RELATION_KIND")),
+                ReadOutputs.CodeRow.class).items();
+        List<ReadOutputs.CodeRow> severities = session.readItems(
+                session.call("ledger_codes", Calls.Codes.of("DEFECT_SEVERITY")), ReadOutputs.CodeRow.class).items();
+
+        assertThat(kinds).filteredOn(row -> "GIVEN".equals(row.direction())).extracting(ReadOutputs.CodeRow::code)
+                .containsExactlyInAnyOrder("caused_by", "blocks");
+        assertThat(kinds).filteredOn(row -> "CANONICAL".equals(row.direction())).extracting(ReadOutputs.CodeRow::code)
+                .contains("same_site", "same_family", "same_fix_unit", "regression_of");
+        assertThat(severities).extracting(ReadOutputs.CodeRow::direction).containsOnly("CANONICAL");
+    }
+
     /** A request to a read tool with a bearer that must not be accepted. */
     private record Unauthorized(String tool, String bearer, List<Header> headers) {
 

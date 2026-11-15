@@ -28,6 +28,7 @@ import org.pgledger.domain.error.LookupCode;
 import org.pgledger.domain.error.TransitionCode;
 import org.pgledger.domain.error.ValidationCode;
 import org.pgledger.domain.error.ValidationException;
+import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.model.HistoryEntry;
 import org.pgledger.domain.rule.HistoryOp;
 
@@ -53,6 +54,116 @@ class LinkTest {
         assertThat(row.op()).isEqualTo(HistoryOp.LINK);
         assertThat(row.beforeData()).isNull();
         assertThat(s.changes(row.id()).entries()).containsExactly(Map.entry("kind", new Change(null, "same_family")));
+    }
+
+    @Test
+    @DisplayName("LDIR-04: a directed relation (caused_by, blocks) keeps the ends in the order of the caller, and the other order is another relation")
+    void ldir04_directedRelationKeepsTheCallersOrder(Scenario s) {
+        SaveResult d1 = s.newDefect("one");
+        SaveResult d2 = s.newDefect("two");
+        // d2 sorts after d1; the caller names it first: "d2 is caused by d1"
+        LinkResult first = link(s, "caused_by", d2.id(), d1.id(), null);
+        assertThat(first.id()).isEqualTo(d2.id() + "|" + d1.id() + "|caused_by");
+        assertThat(s.count("SELECT COUNT(*) FROM defect_relation WHERE a = ? AND b = ? AND kind = 'caused_by'",
+                d2.id(), d1.id())).isEqualTo(1);
+        // "d1 is caused by d2" is another statement, so it is stored as well
+        LinkResult other = link(s, "caused_by", d1.id(), d2.id(), null);
+        assertThat(other.id()).isEqualTo(d1.id() + "|" + d2.id() + "|caused_by");
+        assertThat(s.count("SELECT COUNT(*) FROM defect_relation WHERE kind = 'caused_by' AND a IN (?, ?)", d1.id(),
+                d2.id())).isEqualTo(2);
+        Expect.failure(() -> link(s, "caused_by", d2.id(), d1.id(), null), TransitionCode.NOTHING_CHANGES);
+        // the history of a link names the ends in the stored order
+        assertThat(s.historyRow(first.historyId()).entityId()).isEqualTo(first.id());
+        LinkResult blocks = link(s, "blocks", d2.id(), d1.id(), null);
+        assertThat(blocks.id()).isEqualTo(d2.id() + "|" + d1.id() + "|blocks");
+    }
+
+    @Test
+    @DisplayName("LDIR-05: an unlink finds a directed relation with the same rule that stored it, and keeps the removed row")
+    void ldir05_unlinkOfADirectedRelation(Scenario s) {
+        SaveResult d1 = s.newDefect("one");
+        SaveResult d2 = s.newDefect("two");
+        link(s, "caused_by", d2.id(), d1.id(), null);
+        // the relation of the other direction is not stored, so removing it changes nothing
+        Expect.failure(() -> link(s, "caused_by", d1.id(), d2.id(), true), TransitionCode.NOTHING_CHANGES);
+        assertThat(s.count("SELECT COUNT(*) FROM defect_relation WHERE kind = 'caused_by' AND a IN (?, ?)", d1.id(),
+                d2.id())).isEqualTo(1);
+        LinkResult removed = link(s, "caused_by", d2.id(), d1.id(), true);
+        assertThat(removed.removed()).isTrue();
+        assertThat(removed.id()).isEqualTo(d2.id() + "|" + d1.id() + "|caused_by");
+        HistoryEntry row = s.historyRow(removed.historyId());
+        assertThat(row.op()).isEqualTo(HistoryOp.UNLINK);
+        assertThat(row.beforeData()).isNotNull();
+        assertThat(s.count("SELECT COUNT(*) FROM defect_relation WHERE kind = 'caused_by' AND a IN (?, ?)", d1.id(),
+                d2.id())).isZero();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"same_site", "same_family", "same_fix_unit", "regression_of"})
+    @DisplayName("LDIR-06: a relation kind without a direction (same_site, same_family, same_fix_unit, regression_of) is one relation in either order and is stored in canonical order")
+    void ldir06_canonicalKinds(String kind, Scenario s) {
+        SaveResult d1 = s.newDefect("one");
+        SaveResult d2 = s.newDefect("two");
+        LinkResult first = link(s, kind, d2.id(), d1.id(), null);
+        assertThat(first.id()).isEqualTo(d1.id() + "|" + d2.id() + "|" + kind);
+        Expect.failure(() -> link(s, kind, d1.id(), d2.id(), null), TransitionCode.NOTHING_CHANGES);
+        assertThat(s.count("SELECT COUNT(*) FROM defect_relation WHERE a = ? AND b = ? AND kind = ?", d1.id(), d2.id(),
+                kind)).isEqualTo(1);
+        // either order removes it
+        assertThat(link(s, kind, d2.id(), d1.id(), true).removed()).isTrue();
+        assertThat(s.count("SELECT COUNT(*) FROM defect_relation WHERE kind = ? AND a IN (?, ?)", kind, d1.id(),
+                d2.id())).isZero();
+    }
+
+    @Test
+    @DisplayName("LDIR-07: a relation kind added later declares its direction, and a retired directed kind is still unlinked in the stored order")
+    void ldir07_newDirectedKind(Scenario s) {
+        String kind = "DIR_" + s.code();
+        CommonCodeService codes = s.bean(CommonCodeService.class);
+        codes.set(new CodeCommand("RELATION_KIND", kind, "방향", "Directed", null, null, 61, null, "GIVEN"),
+                TestOwners.OWNER);
+        SaveResult d1 = s.newDefect("one");
+        SaveResult d2 = s.newDefect("two");
+        assertThat(link(s, kind, d2.id(), d1.id(), null).id()).isEqualTo(d2.id() + "|" + d1.id() + "|" + kind);
+        // retired: new links are refused, the direction stays (a command without direction keeps it), the unlink works
+        codes.set(new CodeCommand("RELATION_KIND", kind, "방향", "Directed", null, null, 61, "INACTIVE"),
+                TestOwners.OWNER);
+        Expect.failure(() -> link(s, kind, d1.id(), d2.id(), null), ValidationCode.CODE_INVALID);
+        Expect.failure(() -> link(s, kind, d1.id(), d2.id(), true), TransitionCode.NOTHING_CHANGES);
+        assertThat(link(s, kind, d2.id(), d1.id(), true).removed()).isTrue();
+        // a kind without a direction is canonical
+        String plain = "PLN_" + s.code();
+        codes.set(new CodeCommand("RELATION_KIND", plain, "일반", "Plain", null, null, 62, null), TestOwners.OWNER);
+        assertThat(link(s, plain, d2.id(), d1.id(), null).id()).isEqualTo(d1.id() + "|" + d2.id() + "|" + plain);
+    }
+
+    @Test
+    @DisplayName("LDIR-09: the direction of a relation kind cannot change while relations of it are stored")
+    void ldir09_directionInUse(Scenario s) {
+        String kind = "USE_" + s.code();
+        CommonCodeService codes = s.bean(CommonCodeService.class);
+        // no relation yet: the owner may still change the direction, in both ways
+        codes.set(new CodeCommand("RELATION_KIND", kind, "사용", "Use", null, null, 63, null, "GIVEN"), TestOwners.OWNER);
+        codes.set(new CodeCommand("RELATION_KIND", kind, "사용", "Use", null, null, 63, null, "CANONICAL"),
+                TestOwners.OWNER);
+        SaveResult d1 = s.newDefect("one");
+        SaveResult d2 = s.newDefect("two");
+        link(s, kind, d2.id(), d1.id(), null);
+        LedgerException refused = Expect.failure(() -> codes.set(new CodeCommand("RELATION_KIND", kind, "사용", "Use",
+                null, null, 63, null, "GIVEN"), TestOwners.OWNER), ValidationCode.VALIDATION_FAILED);
+        assertThat(Expect.firstIssue(refused).reason()).isEqualTo(ValidationReason.DIRECTION_IN_USE);
+        assertThat(Expect.firstIssue(refused).reasonArgs()).containsExactly("1");
+        // the same direction (or none) and other changes are fine
+        codes.set(new CodeCommand("RELATION_KIND", kind, "사용 중", "In use", null, null, 63, null, "CANONICAL"),
+                TestOwners.OWNER);
+        codes.set(new CodeCommand("RELATION_KIND", kind, "사용 중", "In use", null, null, 63, "INACTIVE"),
+                TestOwners.OWNER);
+        // a value that is no direction is refused
+        Expect.failure(() -> codes.set(new CodeCommand("RELATION_KIND", kind, "사용 중", "In use", null, null, 63, null,
+                "SIDEWAYS"), TestOwners.OWNER), ValidationCode.VALIDATION_FAILED);
+        // a code of another group is never directed
+        Expect.failure(() -> codes.set(new CodeCommand("DEFECT_CATEGORY", "DIR_" + s.code(), "방향", "Dir", null, null, 64,
+                null, "GIVEN"), TestOwners.OWNER), ValidationCode.VALIDATION_FAILED);
     }
 
     @Test

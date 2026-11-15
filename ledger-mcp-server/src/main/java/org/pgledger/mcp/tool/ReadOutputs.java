@@ -81,7 +81,8 @@ public final class ReadOutputs {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
-    public record Relation(@JsonProperty("kind") String kind, @JsonProperty("other") String other) {
+    public record Relation(@JsonProperty("kind") String kind, @JsonProperty("other") String other,
+            @JsonProperty("end") String end) {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
@@ -193,7 +194,7 @@ public final class ReadOutputs {
             @JsonProperty("name_ko") String nameKo, @JsonProperty("name_en") String nameEn,
             @JsonProperty("description_ko") String descriptionKo,
             @JsonProperty("description_en") String descriptionEn, @JsonProperty("sort_order") int sortOrder,
-            @JsonProperty("state") String state) {
+            @JsonProperty("state") String state, @JsonProperty("direction") String direction) {
     }
 
     public static <S, T> Items<T> page(Page<S> page, Function<S, T> view) {
@@ -217,7 +218,7 @@ public final class ReadOutputs {
                 d.tasks().stream().map(t -> new TaskRef(t.task(), t.state(), t.owner())).toList(), d.conditions(),
                 d.cases().stream().map(c -> new Case(c.source(), c.defect(), c.caseId(), c.observation(),
                         c.evidence(), c.userQuote(), c.observedAt(), c.by(), c.at())).toList(),
-                d.relations().stream().map(r -> new Relation(r.kind(), r.other())).toList(),
+                d.relations().stream().map(r -> new Relation(r.kind(), r.other(), r.end().token())).toList(),
                 d.recentChanges().stream().map(c -> new ChangeSummary(c.id(), c.at(), c.author(), c.op(),
                         c.reason())).toList());
     }
@@ -283,6 +284,6 @@ public final class ReadOutputs {
 
     public static CodeRow codeRow(CatalogService.CodeView c) {
         return new CodeRow(c.group(), c.code(), c.nameKo(), c.nameEn(), c.descriptionKo(), c.descriptionEn(),
-                c.sortOrder(), c.state().token());
+                c.sortOrder(), c.state().token(), c.direction().token());
     }
 }

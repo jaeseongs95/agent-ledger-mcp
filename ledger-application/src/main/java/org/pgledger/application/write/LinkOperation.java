@@ -26,6 +26,7 @@ import org.pgledger.domain.model.DefectRelation;
 import org.pgledger.domain.model.DefectTaskLink;
 import org.pgledger.domain.model.Link;
 import org.pgledger.domain.model.ReceiptOperation;
+import org.pgledger.domain.rule.CodeDirection;
 import org.pgledger.domain.rule.CodeGroup;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
@@ -69,7 +70,8 @@ public class LinkOperation extends WriteOperation<LinkCommand, LinkResult> {
     /**
      * The kind of a request: structural, or the code of an existing relation kind; anything else is refused. This
      * reads the relation kind codes, so it is called once per request, by {@link #resolve}; {@link #prepare} runs
-     * only after that succeeded and takes the kind from the token alone.
+     * only after that succeeded and reads them again only to learn the direction of a relation kind
+     * ({@link #directionOf}).
      */
     private LinkKind knownKind(String token) {
         LinkKind kind = LinkKind.ofToken(token);
@@ -80,10 +82,20 @@ public class LinkOperation extends WriteOperation<LinkCommand, LinkResult> {
         if (token != null && catalog.entries().stream().anyMatch(e -> Objects.equals(e.code().value(), token))) {
             return kind;
         }
+        throw unknownKind(catalog, token);
+    }
+
+    /** How the ends of a relation of this kind are kept (the kind exists: {@link #resolve} refused any other). */
+    private CodeDirection directionOf(String token) {
+        CodeCatalog catalog = codes.catalog(CodeGroup.RELATION_KIND);
+        return catalog.directionOf(CodeValue.of(token)).orElseThrow(() -> unknownKind(catalog, token));
+    }
+
+    private static ValidationException unknownKind(CodeCatalog catalog, String token) {
         List<String> allowed = new ArrayList<>(List.of(LinkKind.DEFECT_TASK.token(),
                 LinkKind.CONDITION_TASK.token(), LinkKind.CONDITION_DEFECT.token()));
         catalog.validCodes().forEach(code -> allowed.add(code.value()));
-        throw ValidationException.invalid("kind", ValidationReason.UNKNOWN_VALUE, allowed, String.valueOf(token));
+        return ValidationException.invalid("kind", ValidationReason.UNKNOWN_VALUE, allowed, String.valueOf(token));
     }
 
     @Override
@@ -101,8 +113,10 @@ public class LinkOperation extends WriteOperation<LinkCommand, LinkResult> {
     protected Prepared<LinkResult> prepare(LinkCommand c) {
         LinkKind kind = LinkKind.ofToken(c.kind());
         boolean remove = c.remove() != null && c.remove();
-        // the two ends as the payload names them: a relation has no direction, so its ends are in the order of the
-        // domain's relation (the one place that knows it), whichever way the caller gave them
+        // the direction of a relation kind is a property of its code: a directed kind (GIVEN) keeps the ends as the caller
+        // gave them, any other keeps them in canonical order; the domain's pair is the one place that knows the order
+        CodeDirection direction = kind == LinkKind.RELATION ? directionOf(c.kind()) : CodeDirection.CANONICAL;
+        // the two ends as the payload names them, in the order that the relation is stored
         List<String> ends = switch (kind) {
             case CONDITION_TASK -> {
                 ConditionId.of(c.a());
@@ -120,17 +134,17 @@ public class LinkOperation extends WriteOperation<LinkCommand, LinkResult> {
                 yield List.of(c.a(), c.b());
             }
             case RELATION -> {
-                DefectRelation relation = new DefectRelation(DefectId.of(c.a()), DefectId.of(c.b()),
-                        CodeValue.of(c.kind()), AuthorId.OWNER);
-                yield List.of(relation.a().value(), relation.b().value());
+                DefectRelation.Pair pair = DefectRelation.Pair.of(DefectId.of(c.a()), DefectId.of(c.b()), direction);
+                yield List.of(pair.first().value(), pair.second().value());
             }
         };
         CanonicalPayload.Fields payload = CanonicalPayload.Fields.empty().text("kind", c.kind())
                 .text("a", ends.get(0)).text("b", ends.get(1)).text("remove", Boolean.toString(remove));
-        return new Prepared<>(payload, ctx -> execute(ctx, kind, c.kind(), c.a(), c.b(), remove));
+        return new Prepared<>(payload, ctx -> execute(ctx, kind, c.kind(), c.a(), c.b(), direction, remove));
     }
 
-    private LinkResult execute(WriteContext ctx, LinkKind kind, String token, String a, String b, boolean remove) {
+    private LinkResult execute(WriteContext ctx, LinkKind kind, String token, String a, String b,
+            CodeDirection direction, boolean remove) {
         AuthorId author = ctx.author();
         Link link = switch (kind) {
             case DEFECT_TASK -> {
@@ -151,8 +165,9 @@ public class LinkOperation extends WriteOperation<LinkCommand, LinkResult> {
                 yield ConditionLink.toDefect(ConditionId.of(a), defect, author);
             }
             case RELATION -> {
-                DefectRelation relation = new DefectRelation(DefectId.of(a), DefectId.of(b), CodeValue.of(token),
-                        author);
+                // an unlink finds the row by the same rule that stored it: for a directed kind only the given order
+                DefectRelation relation = DefectRelation.between(DefectId.of(a), DefectId.of(b), CodeValue.of(token),
+                        direction, author);
                 if (!remove) {
                     codes.catalog(CodeGroup.RELATION_KIND).check("defect_relation.kind", relation.relation(), null);
                 }

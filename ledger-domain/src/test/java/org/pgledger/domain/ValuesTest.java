@@ -13,6 +13,7 @@ import org.pgledger.domain.model.DefectFields;
 import org.pgledger.domain.model.DefectFix;
 import org.pgledger.domain.model.TaskFields;
 import org.pgledger.domain.rule.CiConclusion;
+import org.pgledger.domain.rule.CodeDirection;
 import org.pgledger.domain.rule.CodeGroup;
 import org.pgledger.domain.rule.CodeState;
 import org.pgledger.domain.value.AuthorId;
@@ -190,7 +191,8 @@ class ValuesTest {
         assertThat(Evidence.of("  ", null).provided()).isFalse();
         assertThat(Evidence.of("", null)).isEqualTo(Evidence.NONE);
         CommonCode code = new CommonCode(CodeGroup.DEFECT_CATEGORY, CodeValue.of("UI_UX"), "화면", null, "설명", " ",
-                25, CodeState.ACTIVE, AuthorId.OWNER);
+                25, CodeState.ACTIVE, null, AuthorId.OWNER);
+        assertThat(code.direction()).as("no direction is the canonical order").isEqualTo(CodeDirection.CANONICAL);
         assertThat(code.nameEn()).isEqualTo("화면");
         assertThat(code.descriptionEn()).isEqualTo("설명");
         assertThat(ValidationCode.VALIDATION_FAILED.token()).isEqualTo("VALIDATION_FAILED");

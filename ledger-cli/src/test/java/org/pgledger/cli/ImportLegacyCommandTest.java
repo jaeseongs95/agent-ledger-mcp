@@ -88,12 +88,32 @@ class ImportLegacyCommandTest {
         }
         assertThat(output.info()).contains("Imported " + rows + " rows of " + LegacyTable.values().length
                 + " tables from the legacy schema " + legacy.schema()).contains("key-register");
+        // the relation of the fixture has a kind without a direction, so there is nothing to check (CLI-DIR-02)
+        assertThat(output.info()).doesNotContain("Check ").doesNotContain("relations_of_unknown_direction");
         List<Map<String, Object>> audit = database.rows(AUDIT);
         assertThat(audit).hasSize(1);
         assertThat(audit.getFirst().get("actor")).isEqualTo("cli:" + USER);
         assertThat(audit.getFirst().get("operation")).isEqualTo("IMPORT");
         assertThat(audit.getFirst().get("subject")).isEqualTo("legacy schema " + legacy.schema());
         assertThat(count("session_key")).isZero();
+    }
+
+    @Test
+    @DisplayName("CLI-DIR-02 import-legacy prints the relations of a directed kind (count, then one id per line) that 1.x stored with the smaller id first, imported as stored; none are printed when there are none; --verify-only prints them too")
+    void listsRelationsOfUnknownDirection(Cli cli) {
+        LegacyFixtures.withDirectedRelations(legacy);
+        RecordingOutput output = new RecordingOutput();
+
+        Outcome result = run(cli, output, "import-legacy");
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(output.info()).contains("Check 2 relations of a kind that has a direction")
+                .contains("relation E2E-D-0007|OLD-D-0001|caused_by").contains("relation OLD-D-0001|OLD-D-0002|blocks")
+                .doesNotContain("old_custom").doesNotContain("same_site");
+        assertThat(database.rows(AUDIT).getFirst().get("detail").toString()).endsWith("relations_of_unknown_direction=2");
+        RecordingOutput verified = new RecordingOutput();
+        assertThat(run(cli, verified, "import-legacy", "--verify-only").exitCode()).isZero();
+        assertThat(verified.info()).contains("Check 2 relations of a kind that has a direction");
     }
 
     @Test

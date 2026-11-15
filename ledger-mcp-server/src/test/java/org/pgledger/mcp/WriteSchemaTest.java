@@ -107,6 +107,30 @@ class WriteSchemaTest {
     }
 
     @Test
+    @DisplayName("MCW-DIR-01: ledger_link says which relation kinds are directed: its description, the descriptions of a and b, and the line of every relation kind in the list of kinds (GIVEN: a is the subject; otherwise no direction)")
+    void linkStatesWhichKindsAreDirected(McpSession session) {
+        String description = session.tool("ledger_link").description();
+        SchemaView properties = input(session, "ledger_link");
+        String kinds = properties.properties().get("kind").description();
+
+        assertThat(description).contains("directed").contains("caused_by = a is caused by b")
+                .contains("blocks = a blocks b").contains("(a, b) and (b, a) are two different relations")
+                .contains("one relation in either order");
+        assertThat(properties.properties().get("a").description()).contains("subject").contains("caused_by")
+                .contains("blocks");
+        assertThat(properties.properties().get("b").description()).contains("object");
+        for (CodeRow row : CodeListing.active(session, "RELATION_KIND")) {
+            boolean directed = "caused_by".equals(row.code()) || "blocks".equals(row.code());
+            assertThat(kinds).as(row.code()).contains(row.code() + " ").contains(CodeListing.line(row));
+            assertThat(CodeListing.line(row)).as(row.code())
+                    .endsWith(directed ? "[directed: a is the subject, b the object]"
+                            : "[no direction: a and b are interchangeable]");
+        }
+        // the three fixed kinds are no relation kind and carry no direction
+        assertThat(kinds).doesNotContain("defect_task [").doesNotContain("condition_task [");
+    }
+
+    @Test
     @DisplayName("MCW-017: the description of ledger_review says CI is optional metadata, that the reviewer runs the "
             + "program and where to find the fixing session")
     void reviewDescriptionStatesTheReviewRules(McpSession session) {

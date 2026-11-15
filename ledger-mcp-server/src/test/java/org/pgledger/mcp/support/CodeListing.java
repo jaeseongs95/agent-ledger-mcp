@@ -2,6 +2,7 @@ package org.pgledger.mcp.support;
 
 import java.util.Comparator;
 import java.util.List;
+import org.pgledger.mcp.catalog.ToolCatalog;
 import org.pgledger.mcp.tool.ReadOutputs.CodeRow;
 
 /**
@@ -24,7 +25,15 @@ public final class CodeListing {
     public static String line(CodeRow row) {
         String description = row.descriptionKo() == null || row.descriptionKo().isBlank() ? ""
                 : ": " + row.descriptionKo() + " / " + row.descriptionEn();
-        return row.code() + " " + row.nameKo() + " (" + row.nameEn() + ")" + description;
+        return row.code() + " " + row.nameKo() + " (" + row.nameEn() + ")" + description + directionNote(row);
+    }
+
+    /** What a relation kind adds to its line: whether its two ends are ordered (D-0016); no other group has it. */
+    private static String directionNote(CodeRow row) {
+        if (!"RELATION_KIND".equals(row.group())) {
+            return "";
+        }
+        return "GIVEN".equals(row.direction()) ? ToolCatalog.DIRECTED_NOTE : ToolCatalog.UNDIRECTED_NOTE;
     }
 
     /** The codes of the rows. */

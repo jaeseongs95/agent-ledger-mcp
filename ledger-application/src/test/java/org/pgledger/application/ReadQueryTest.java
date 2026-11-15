@@ -652,6 +652,12 @@ class ReadQueryTest {
         assertThat(view.state()).isEqualTo(org.pgledger.domain.rule.CodeState.ACTIVE);
         assertThat(everything.stream().filter(c -> Objects.equals(c.code(), retired)).findFirst().orElseThrow().state())
                 .isEqualTo(org.pgledger.domain.rule.CodeState.INACTIVE);
+        // D-0016: the list says how a relation kind keeps its two ends; any other group is CANONICAL
+        assertThat(view.direction()).isEqualTo(org.pgledger.domain.rule.CodeDirection.CANONICAL);
+        var kinds = catalog.codes(new CodesQuery("RELATION_KIND", true, 1000, null)).items();
+        assertThat(kinds).filteredOn(c -> c.direction() == org.pgledger.domain.rule.CodeDirection.GIVEN)
+                .extracting(CatalogService.CodeView::code).contains("caused_by", "blocks")
+                .doesNotContain("same_site", "same_family", "same_fix_unit", "regression_of");
         assertThat(catalog.codes(new CodesQuery(null, true, 1000, null)).items()).extracting(
                 CatalogService.CodeView::group).containsOnly("DEFECT_CATEGORY", "DEFECT_SEVERITY", "RELATION_KIND");
         Expect.failure(() -> catalog.codes(new CodesQuery("X", null, null, null)), ValidationCode.VALIDATION_FAILED);

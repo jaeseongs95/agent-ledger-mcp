@@ -22,6 +22,7 @@ import org.pgledger.domain.model.DefectFix;
 import org.pgledger.domain.model.HistoryEntry;
 import org.pgledger.domain.model.Task;
 import org.pgledger.domain.rule.HistoryEntity;
+import org.pgledger.domain.rule.RelationEnd;
 import org.pgledger.domain.value.DefectId;
 import org.pgledger.domain.value.TaskId;
 import org.springframework.stereotype.Service;
@@ -52,7 +53,8 @@ public class DetailService {
             String userQuote, Instant observedAt, String by, Instant at) {
     }
 
-    public record RelationView(String kind, String other) {
+    /** A relation of the defect: its kind, the other defect and which end of the relation the defect itself is. */
+    public record RelationView(String kind, String other, RelationEnd end) {
     }
 
     public record ChangeSummary(long id, Instant at, String author, String op, String reason) {
@@ -102,7 +104,7 @@ public class DetailService {
                 .flatMap(java.util.Optional::stream).map(t -> new TaskRef(t.id().value(), t.state().name(),
                         t.ownerActorId() == null ? null : t.ownerActorId().value())).toList();
         List<RelationView> relations = links.relationsOf(id).stream().map(r -> new RelationView(r.relation().value(),
-                (Objects.equals(r.a(), id) ? r.b() : r.a()).value())).toList();
+                (Objects.equals(r.a(), id) ? r.b() : r.a()).value(), r.endOf(id))).toList();
         List<Long> newest = historyQueries.newestOfEntity(HistoryEntity.DEFECT, rawId, true, 1);
         LastChange last = newest.isEmpty() ? null : lastChange(historyRows.findById(newest.getFirst()).orElseThrow());
         List<ChangeSummary> recent = historyQueries.newestOfEntity(HistoryEntity.DEFECT, rawId, false,

@@ -101,6 +101,15 @@ public class ImportLegacyCommand implements Command {
         }
         output.info(messages.get(verifyOnly ? "import-legacy.verified" : "import-legacy.imported",
                 String.valueOf(report.rows()), String.valueOf(report.tables().size()), report.schema()));
+        // 1.x did not keep which defect the caller of a link named first: the relations of a kind that 2.0 keeps with a
+        // direction are imported as stored and listed here, one per line, for the owner to check (D-0016)
+        if (!report.relationsOfUnknownDirection().isEmpty()) {
+            output.info(messages.get("import-legacy.direction",
+                    String.valueOf(report.relationsOfUnknownDirection().size())));
+            for (String relation : report.relationsOfUnknownDirection()) {
+                output.info(messages.get("import-legacy.direction.relation", relation));
+            }
+        }
     }
 
     /**

@@ -92,7 +92,9 @@ public enum ValidationReason {
     /** {0} = the author the pasted block is for. */
     KEY_BLOCK_AUTHOR_DIFFERS,
     /** The defect is merged, through the chain of its merge targets, into itself (the legacy import cannot order the rows). */
-    MERGE_CHAIN_LOOPS;
+    MERGE_CHAIN_LOOPS,
+    /** {0} = the number of stored relations of the code: their ends are kept under the direction it has, so it cannot change. */
+    DIRECTION_IN_USE;
 
     private static final String PREFIX = "reason.";
 

@@ -149,6 +149,12 @@ class SchemaCatalogTest {
                         + "VALUES ('RELATION_KIND', 'zz', 'a', 'a', 1, 'MAYBE', 'user:owner')",
                 "INSERT INTO common_code (code_group, code, name_ko, name_en, sort_order, state, created_by) "
                         + "VALUES ('OTHER', 'zz', 'a', 'a', 1, 'ACTIVE', 'user:owner')",
+                // V4: the direction is GIVEN or CANONICAL, and only a relation kind can be GIVEN
+                "INSERT INTO common_code (code_group, code, name_ko, name_en, sort_order, state, direction, created_by) "
+                        + "VALUES ('RELATION_KIND', 'zz', 'a', 'a', 1, 'ACTIVE', 'MAYBE', 'user:owner')",
+                "INSERT INTO common_code (code_group, code, name_ko, name_en, sort_order, state, direction, created_by) "
+                        + "VALUES ('DEFECT_SEVERITY', 'zz', 'a', 'a', 1, 'ACTIVE', 'GIVEN', 'user:owner')",
+                "INSERT INTO defect_relation (a, b, kind, created_by) VALUES (:defect, :defect, 'blocks', 'user:owner')",
                 "INSERT INTO id_counter (name, issued_no) VALUES ('OTHER', 1)",
                 "UPDATE defect SET status = 'FIXED' WHERE id = :defect",
                 "UPDATE task SET state = 'DONE' WHERE id = :task",
@@ -218,6 +224,23 @@ class SchemaCatalogTest {
                 .query(Integer.class).single()).isZero();
         assertThat(jdbc.sql("SELECT DISTINCT code_group FROM common_code").query(String.class).list())
                 .containsExactlyInAnyOrder("DEFECT_SEVERITY", "RELATION_KIND");
+    }
+
+    /** SCH-035: V4 adds the direction to every code; only caused_by and blocks of the seed are GIVEN. */
+    @Test
+    void sch035_theDirectionOfTheRelationKinds() {
+        assertThat(columns()).filteredOn(c -> Objects.equals(c.table(), "common_code") && "direction".equals(c.name()))
+                .singleElement().satisfies(c -> {
+                    assertThat(c.type()).isEqualTo(Types.VARCHAR);
+                    assertThat(c.nullable()).isFalse();
+                });
+        assertThat(jdbc.sql("SELECT code FROM common_code WHERE direction = 'GIVEN' ORDER BY code")
+                .query(String.class).list()).containsExactly("blocks", "caused_by");
+        assertThat(jdbc.sql("SELECT code FROM common_code WHERE code_group = 'RELATION_KIND' AND direction = "
+                + "'CANONICAL' ORDER BY sort_order").query(String.class).list())
+                .containsExactly("same_site", "same_family", "same_fix_unit", "regression_of");
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM common_code WHERE code_group <> 'RELATION_KIND' AND direction <> "
+                + "'CANONICAL'").query(Integer.class).single()).isZero();
     }
 
     @Test

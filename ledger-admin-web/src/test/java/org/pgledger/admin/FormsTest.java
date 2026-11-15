@@ -21,6 +21,7 @@ import org.pgledger.application.admin.CommonCodeService;
 import org.pgledger.application.admin.GrantService;
 import org.pgledger.database.repository.ProjectRepository;
 import org.pgledger.domain.model.CommonCode;
+import org.pgledger.domain.rule.CodeDirection;
 import org.pgledger.domain.rule.CodeGroup;
 import org.pgledger.domain.rule.CodeState;
 import org.pgledger.domain.value.ProjectId;
@@ -242,6 +243,37 @@ class FormsTest {
         assertThat(html).contains("UI_UX").contains("badge-INACTIVE");
         assertThat(codes.set(new CommonCodeService.CodeCommand("DEFECT_CATEGORY", "TMPCAT", "임시", "Temp", null, null,
                 null, "ACTIVE"), TestOwners.OWNER).revision()).as("the revision is bumped by the two changes").isGreaterThan(before);
+    }
+
+    @Test
+    @DisplayName("ADM-DIR-01: the direction of a relation kind is set in the code form and shown in the list; empty keeps it; "
+            + "a value that is no direction, or a direction on another group, is 400 VALIDATION_FAILED")
+    void admDir01_theDirectionOfARelationKind() throws Exception {
+        Browser browser = Browser.signedIn(mvc);
+
+        browser.perform(browser.form("/codes", Form.of("group", "RELATION_KIND", "code", "dir_form", "nameKo", "방향",
+                "nameEn", "Directed", "direction", "GIVEN"), browser.csrfOf("/codes")))
+                .andExpect(status().is3xxRedirection());
+        assertThat(codes.list(CodeGroup.RELATION_KIND)).anyMatch(code -> "dir_form".equals(code.code().value())
+                && code.direction() == CodeDirection.GIVEN);
+        // the same code again with the direction left empty keeps GIVEN
+        browser.perform(browser.form("/codes", Form.of("group", "RELATION_KIND", "code", "dir_form", "nameKo", "방향 2",
+                "nameEn", "Directed", "direction", ""), browser.csrfOf("/codes")))
+                .andExpect(status().is3xxRedirection());
+        assertThat(codes.list(CodeGroup.RELATION_KIND)).anyMatch(code -> "dir_form".equals(code.code().value())
+                && code.direction() == CodeDirection.GIVEN && "방향 2".equals(code.nameKo()));
+        // a code of the seed that is directed and one that is not, as the list shows them
+        String html = browser.perform(browser.get("/codes")).andReturn().getResponse().getContentAsString();
+        assertThat(html).contains("caused_by").contains("directed: a to b").contains("no direction: (a, b)");
+
+        post(browser, "/codes", "/codes", Form.of("group", "RELATION_KIND", "code", "dir_form", "nameKo", "방향",
+                "direction", "SIDEWAYS")).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.errors[0].path").value("direction"))
+                .andExpect(jsonPath("$.errors[0].allowed[0]").value("GIVEN"));
+        post(browser, "/codes", "/codes", Form.of("group", "DEFECT_CATEGORY", "code", "ABC", "nameKo", "n",
+                "direction", "GIVEN")).andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].path").value("direction"));
     }
 
     @Test

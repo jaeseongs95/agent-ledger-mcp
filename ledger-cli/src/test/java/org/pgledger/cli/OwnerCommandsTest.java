@@ -259,6 +259,34 @@ class OwnerCommandsTest {
         assertThat(detailOfFirstRefusal(unknown)).startsWith("VALIDATION_FAILED");
     }
 
+    private static final String DIRECTION = "SELECT direction FROM common_code WHERE code_group = 'RELATION_KIND' AND code = 'dir_cli'";
+
+    @Test
+    @DisplayName("CLI-DIR-01 code-set --direction sets the direction of a relation kind (GIVEN or CANONICAL), an absent option keeps it, codes lists it for a relation kind; a value that is no direction and a direction on another group are refused (VALIDATION_FAILED, nothing stored)")
+    void setsTheDirectionOfARelationKind(Cli cli) {
+        assertThat(run(cli, "code-set", "RELATION_KIND", "dir_cli", "ko-name", "--direction=GIVEN").exitCode()).isZero();
+        assertThat(database.rows(DIRECTION).getFirst().get("direction")).isEqualTo("GIVEN");
+        // without the option the direction stays
+        assertThat(run(cli, "code-set", "RELATION_KIND", "dir_cli", "new-ko-name", "--sort=77").exitCode()).isZero();
+        assertThat(database.rows(DIRECTION).getFirst().get("direction")).isEqualTo("GIVEN");
+        RecordingOutput listed = new RecordingOutput();
+        assertThat(run(cli, listed, "codes", "RELATION_KIND").exitCode()).isZero();
+        assertThat(listed.info()).contains("RELATION_KIND dir_cli ACTIVE 77 new-ko-name / new-ko-name direction GIVEN")
+                .contains("RELATION_KIND same_site ACTIVE 1 동일 위치 / Same site direction CANONICAL")
+                .contains("RELATION_KIND caused_by ACTIVE 2 원인 관계 / Caused by direction GIVEN");
+        assertThat(run(cli, "code-set", "RELATION_KIND", "dir_cli", "new-ko-name", "--direction=CANONICAL").exitCode())
+                .isZero();
+        assertThat(database.rows(DIRECTION).getFirst().get("direction")).isEqualTo("CANONICAL");
+
+        Outcome sideways = run(cli, "code-set", "RELATION_KIND", "dir_cli", "n", "--direction=SIDEWAYS");
+        assertThat(sideways.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
+        assertThat(detailOfFirstRefusal(sideways)).startsWith("VALIDATION_FAILED");
+        Outcome category = run(cli, "code-set", "DEFECT_CATEGORY", "BUG", "n", "--direction=GIVEN");
+        assertThat(category.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
+        assertThat(detailOfFirstRefusal(category)).startsWith("VALIDATION_FAILED");
+        assertThat(database.rows(CODES)).isEmpty();
+    }
+
     // CLI-008 / CLI-016 -----------------------------------------------------------------------------------------
 
     @Test

@@ -3,6 +3,7 @@ package org.pgledger.database;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.assertj.core.groups.Tuple.tuple;
 
 import java.sql.SQLException;
 import java.util.stream.Stream;
@@ -27,6 +28,7 @@ import org.pgledger.domain.model.DefectTaskLink;
 import org.pgledger.domain.model.Project;
 import org.pgledger.domain.model.Task;
 import org.pgledger.domain.rule.CiConclusion;
+import org.pgledger.domain.rule.CodeDirection;
 import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.CodeValue;
 import org.pgledger.domain.value.CommitSha;
@@ -125,20 +127,32 @@ class ConstraintTest {
     }
 
     @Test
-    void repo022_relationsAreCanonicalAndUniquePerKind() {
+    void repo022_relationsAreUniquePerKindAndTheirEndsAreTwoDifferentDefects() {
         Project project = seed.project();
         Defect d1 = seed.defect(project, 1, "one", LedgerTestContext.START);
         Defect d2 = seed.defect(project, 2, "two", LedgerTestContext.START);
         Task task = seed.task(project, 1, "task");
-        assertThat(ctx.tx(() -> links.add(new DefectRelation(d2.id(), d1.id(), CodeValue.of("same_site"), BY))))
-                .isTrue();
-        assertThat(ctx.tx(() -> links.add(new DefectRelation(d1.id(), d2.id(), CodeValue.of("same_site"), BY))))
-                .as("the pair is the same relation in either order").isFalse();
-        assertThat(ctx.tx(() -> links.add(new DefectRelation(d1.id(), d2.id(), CodeValue.of("blocks"), BY))))
-                .as("another kind is another relation").isTrue();
-        assertThatThrownBy(() -> jdbc.sql("INSERT INTO defect_relation (a, b, kind, created_by) VALUES (:a, :b, "
-                + "'x', 'user:owner')").param("a", d2.id().value()).param("b", d1.id().value()).update())
-                .isInstanceOf(DataIntegrityViolationException.class);
+        CodeValue sameSite = CodeValue.of("same_site");
+        assertThat(ctx.tx(() -> links.add(DefectRelation.between(d2.id(), d1.id(), sameSite, CodeDirection.CANONICAL,
+                BY)))).isTrue();
+        assertThat(ctx.tx(() -> links.add(DefectRelation.between(d1.id(), d2.id(), sameSite, CodeDirection.CANONICAL,
+                BY)))).as("the pair is the same relation in either order").isFalse();
+        assertThat(ctx.tx(() -> links.add(DefectRelation.between(d1.id(), d2.id(), CodeValue.of("blocks"),
+                CodeDirection.GIVEN, BY)))).as("another kind is another relation").isTrue();
+        // LDIR-03: a directed relation may have its ends in descending order (the order check of V1 is gone with V4),
+        // and the other direction is a row of its own
+        assertThat(ctx.tx(() -> links.add(DefectRelation.between(d2.id(), d1.id(), CodeValue.of("blocks"),
+                CodeDirection.GIVEN, BY)))).isTrue();
+        assertThat(links.relationsOf(d1.id())).extracting(DefectRelation::a, DefectRelation::b, r -> r.relation().value())
+                .containsExactlyInAnyOrder(
+                        tuple(d1.id(), d2.id(), "same_site"),
+                        tuple(d1.id(), d2.id(), "blocks"),
+                        tuple(d2.id(), d1.id(), "blocks"));
+        assertThat(links.countRelations(CodeValue.of("blocks"))).isEqualTo(2);
+        assertThat(links.countRelations(sameSite)).isEqualTo(1);
+        assertThatThrownBy(() -> jdbc.sql("INSERT INTO defect_relation (a, b, kind, created_by) VALUES (:a, :a, "
+                + "'x', 'user:owner')").param("a", d1.id().value()).update())
+                .as("the two ends are two different defects").isInstanceOf(DataIntegrityViolationException.class);
         assertThat(ctx.tx(() -> links.add(new DefectTaskLink(d1.id(), task.id(), BY)))).isTrue();
         assertThat(ctx.tx(() -> links.add(new DefectTaskLink(d1.id(), task.id(), BY)))).isFalse();
         assertThat(links.tasksOf(d1.id())).hasSize(1);

@@ -10,6 +10,7 @@ import org.pgledger.database.repository.CommonCodeRepository;
 import org.pgledger.database.repository.ProjectRepository;
 import org.pgledger.domain.model.CommonCode;
 import org.pgledger.domain.model.Project;
+import org.pgledger.domain.rule.CodeDirection;
 import org.pgledger.domain.rule.CodeGroup;
 import org.pgledger.domain.rule.CodeState;
 import org.pgledger.domain.value.MaxRows;
@@ -33,8 +34,9 @@ public class CatalogService {
     public record ProjectView(String id, String code, String title) {
     }
 
+    /** A code as listed; {@code direction} is how a relation of the code keeps its two ends (CANONICAL outside RELATION_KIND). */
     public record CodeView(String group, String code, String nameKo, String nameEn, String descriptionKo,
-            String descriptionEn, int sortOrder, CodeState state) {
+            String descriptionEn, int sortOrder, CodeState state, CodeDirection direction) {
     }
 
     private final ProjectRepository projects;
@@ -77,7 +79,7 @@ public class CatalogService {
                 .map(after -> firstAfter(listed, key, after)).orElse(0);
         return slice(listed, start, maxRows, PageCursor.Kind.CODES, criteria, key,
                 c -> new CodeView(c.group().name(), c.code().value(), c.nameKo(), c.nameEn(), c.descriptionKo(),
-                        c.descriptionEn(), c.sortOrder(), c.state()));
+                        c.descriptionEn(), c.sortOrder(), c.state(), c.direction()));
     }
 
     /** The index after the row the cursor names (the end of the list when it names none). */

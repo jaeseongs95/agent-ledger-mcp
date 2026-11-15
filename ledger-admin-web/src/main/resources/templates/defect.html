@@ -41,7 +41,7 @@
     <ul>
       <li th:each="t : ${defect.tasks()}"><a th:href="@{/tasks/detail(id=${t.task()})}" th:text="${t.task()}">task</a> <span th:text="${t.state()}">state</span></li>
       <li th:each="c : ${defect.conditions()}" th:text="${c}">condition</li>
-      <li th:each="r : ${defect.relations()}"><span th:text="${r.kind()}">kind</span> <a th:href="@{/defects/{id}(id=${r.other()})}" th:text="${r.other()}">ID</a></li>
+      <li th:each="r : ${defect.relations()}"><span th:text="${r.kind()}">kind</span> <a th:href="@{/defects/{id}(id=${r.other()})}" th:text="${r.other()}">ID</a> <small th:text="#{'defect.relationEnd.' + ${r.end().token()}}">this defect is a</small></li>
     </ul>
   </section>
 

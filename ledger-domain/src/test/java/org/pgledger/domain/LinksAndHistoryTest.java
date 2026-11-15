@@ -11,6 +11,7 @@ import org.pgledger.domain.model.DefectTaskLink;
 import org.pgledger.domain.model.HistoryEntry;
 import org.pgledger.domain.rule.ActorAssurance;
 import org.pgledger.domain.rule.Channel;
+import org.pgledger.domain.rule.CodeDirection;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
 import org.pgledger.domain.value.ActorId;
@@ -32,8 +33,8 @@ class LinksAndHistoryTest {
     @Test
     void dom023_relationsAreCanonicalAndLinkIdsAreUnambiguous() {
         CodeValue kind = CodeValue.of("same_site");
-        DefectRelation ab = new DefectRelation(D1, D2, kind, AuthorId.OWNER);
-        DefectRelation ba = new DefectRelation(D2, D1, kind, AuthorId.OWNER);
+        DefectRelation ab = DefectRelation.between(D1, D2, kind, CodeDirection.CANONICAL, AuthorId.OWNER);
+        DefectRelation ba = DefectRelation.between(D2, D1, kind, CodeDirection.CANONICAL, AuthorId.OWNER);
         assertThat(ab).isEqualTo(ba);
         assertThat(ba.historyId()).isEqualTo("E2E-D-0001|E2E-D-0002|same_site");
         Expect.invalid(() -> new DefectRelation(D1, D1, kind, AuthorId.OWNER));
@@ -52,6 +53,21 @@ class LinksAndHistoryTest {
                         .linkKey());
         Expect.invalid(() -> new ConditionLink(ConditionId.of("C1"), null, null, AuthorId.OWNER));
         Expect.invalid(() -> new ConditionLink(ConditionId.of("C1"), TaskId.of("T"), D1, AuthorId.OWNER));
+    }
+
+    @Test
+    void ldir02_aDirectedRelationKeepsTheOrderOfTheCallerAndItsHistoryIdFollowsIt() {
+        CodeValue kind = CodeValue.of("caused_by");
+        DefectRelation ab = DefectRelation.between(D1, D2, kind, CodeDirection.GIVEN, AuthorId.OWNER);
+        DefectRelation ba = DefectRelation.between(D2, D1, kind, CodeDirection.GIVEN, AuthorId.OWNER);
+        assertThat(ab).as("(a, b) and (b, a) of a directed kind are two relations").isNotEqualTo(ba);
+        assertThat(ab.a()).isEqualTo(D1);
+        assertThat(ab.b()).isEqualTo(D2);
+        assertThat(ba.a()).isEqualTo(D2);
+        assertThat(ba.b()).isEqualTo(D1);
+        assertThat(ab.historyId()).isEqualTo("E2E-D-0001|E2E-D-0002|caused_by");
+        assertThat(ba.historyId()).isEqualTo("E2E-D-0002|E2E-D-0001|caused_by");
+        Expect.invalid(() -> DefectRelation.between(D1, D1, kind, CodeDirection.GIVEN, AuthorId.OWNER));
     }
 
     private static final RequestId REQUEST = new RequestId(UUID.randomUUID());

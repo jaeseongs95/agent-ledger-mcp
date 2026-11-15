@@ -24,6 +24,8 @@ import org.pgledger.admin.console.McpStatus;
 import org.pgledger.admin.support.AdminTest;
 import org.pgledger.admin.support.Browser;
 import org.pgledger.domain.rule.AttentionKind;
+import org.pgledger.domain.rule.CodeDirection;
+import org.pgledger.domain.rule.RelationEnd;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -78,6 +80,13 @@ class MessagesTest {
         }
         for (AttentionKind kind : AttentionKind.values()) {
             names.add("attention." + kind);
+        }
+        // D-0016: the end of a relation (defect page) and the direction of a relation kind (code page)
+        for (RelationEnd end : RelationEnd.values()) {
+            names.add("defect.relationEnd." + end.token());
+        }
+        for (CodeDirection direction : CodeDirection.values()) {
+            names.add("codes.direction." + direction.token());
         }
         List<String> missing = new ArrayList<>();
         for (String file : List.of("admin.properties", "admin_ko.properties")) {

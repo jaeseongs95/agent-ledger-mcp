@@ -9,6 +9,7 @@ import org.pgledger.domain.error.ValidationCode;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationIssue;
 import org.pgledger.domain.error.ValidationReason;
+import org.pgledger.domain.rule.CodeDirection;
 import org.pgledger.domain.rule.CodeGroup;
 import org.pgledger.domain.value.CodeValue;
 
@@ -24,6 +25,14 @@ public record CodeCatalog(CodeGroup group, List<CommonCode> entries) {
         return entries.stream().filter(CommonCode::active)
                 .sorted(Comparator.comparingInt(CommonCode::sortOrder).thenComparing(c -> c.code().value()))
                 .map(CommonCode::code).toList();
+    }
+
+    /**
+     * The direction of an entry, whatever its state (a retired kind still has relations, and an unlink must find them);
+     * none when the catalog has no such code.
+     */
+    public Optional<CodeDirection> directionOf(CodeValue code) {
+        return entries.stream().filter(e -> Objects.equals(e.code(), code)).map(CommonCode::direction).findFirst();
     }
 
     /**

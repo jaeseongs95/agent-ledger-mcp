@@ -125,6 +125,18 @@ public final class LegacyFixtures {
                 "updated_at", at("2026-11-01T00:00:00Z"), "created_by", UNKNOWN);
     }
 
+    /**
+     * Adds relations of the kinds that 2.0 keeps with a direction (a {@code caused_by} and a {@code blocks}), stored as 1.x
+     * stored every relation (the smaller id is {@code a}), and a relation of a kind that only this installation has
+     * (MIG-035: 1.x did not keep which defect the caller named first).
+     */
+    public static LegacyLedger withDirectedRelations(LegacyLedger l) {
+        l.insert("defect_relation", "a", "E2E-D-0007", "b", "OLD-D-0001", "kind", "caused_by", "created_by", SEED);
+        l.insert("defect_relation", "a", "OLD-D-0001", "b", "OLD-D-0002", "kind", "blocks", "created_by", RELINK);
+        relation(l, "old_custom", "옛 종류", "Old kind", "이 설치에만 있는 종류", "A kind only this installation has", 7);
+        return l.insert("defect_relation", "a", "OLD-D-0001", "b", "OLD-D-0003", "kind", "old_custom", "created_by", SEED);
+    }
+
     /** Adds a task and a condition whose ids have lower-case letters (MIG-028: the ids of 1.x are kept). */
     public static LegacyLedger withLowerCaseIds(LegacyLedger ledger) {
         ledger.insert("task", "id", "old-t-lower", "project_id", "old", "title", "Lower-case id", "purpose", "p",

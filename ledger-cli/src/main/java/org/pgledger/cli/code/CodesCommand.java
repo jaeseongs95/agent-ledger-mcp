@@ -19,7 +19,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * {@code codes [<group>]}: lists the common codes of one group, or of every group, one line each: group, code, state, sort
- * order and the names in both languages (the texts as stored).
+ * order and the names in both languages (the texts as stored); a relation kind adds its direction (GIVEN or CANONICAL).
  */
 @Component
 public class CodesCommand implements Command {
@@ -50,8 +50,10 @@ public class CodesCommand implements Command {
         for (CodeGroup group : groups) {
             List<CommonCode> codes = target.call(() -> target.codes().list(group));
             for (CommonCode code : codes) {
-                output.info(messages.get("codes.line", group.name(), code.code().value(), code.state().name(),
-                        String.valueOf(code.sortOrder()), code.nameKo(), code.nameEn()));
+                // a relation kind also says how a relation of it keeps its two ends; the other groups have no direction
+                String key = group == CodeGroup.RELATION_KIND ? "codes.line.relation" : "codes.line";
+                output.info(messages.get(key, group.name(), code.code().value(), code.state().name(),
+                        String.valueOf(code.sortOrder()), code.nameKo(), code.nameEn(), code.direction().name()));
             }
         }
     }

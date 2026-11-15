@@ -12,6 +12,7 @@ import java.util.Objects;
 import java.util.stream.Stream;
 import org.pgledger.application.admin.CommonCodeService;
 import org.pgledger.domain.model.CommonCode;
+import org.pgledger.domain.rule.CodeDirection;
 import org.pgledger.domain.rule.CodeGroup;
 import org.pgledger.mcp.error.ToolResults;
 import org.pgledger.mcp.reflection.CodeSlot;
@@ -52,6 +53,10 @@ import org.springframework.stereotype.Component;
 public class ToolCatalog implements SmartInitializingSingleton {
 
     private static final Logger LOG = LoggerFactory.getLogger(ToolCatalog.class);
+
+    /** What the line of a relation kind ends with: the order of its two ends matters (a is the subject), or does not. */
+    public static final String DIRECTED_NOTE = " [directed: a is the subject, b the object]";
+    public static final String UNDIRECTED_NOTE = " [no direction: a and b are interchangeable]";
 
     private final McpSyncServer server;
     private final List<ToolAdapter> adapters;
@@ -179,11 +184,21 @@ public class ToolCatalog implements SmartInitializingSingleton {
         input.describe(slot.path(), described.isBlank() ? listing : described + "\n" + listing);
     }
 
-    /** {@code CODE name_ko (name_en): description_ko / description_en}, the texts exactly as stored. */
+    /**
+     * {@code CODE name_ko (name_en): description_ko / description_en}, the texts exactly as stored; a relation kind ends with
+     * whether its two ends are ordered (its direction), so a kind that is added later says it too.
+     */
     private static String line(CommonCode code) {
         String description = code.descriptionKo() == null || code.descriptionKo().isBlank() ? ""
                 : ": " + code.descriptionKo() + " / " + code.descriptionEn();
-        return code.code().value() + " " + code.nameKo() + " (" + code.nameEn() + ")" + description;
+        return code.code().value() + " " + code.nameKo() + " (" + code.nameEn() + ")" + description + directionNote(code);
+    }
+
+    private static String directionNote(CommonCode code) {
+        if (code.group() != CodeGroup.RELATION_KIND) {
+            return "";
+        }
+        return code.direction() == CodeDirection.GIVEN ? DIRECTED_NOTE : UNDIRECTED_NOTE;
     }
 
     private String empty(CodeGroup group) {

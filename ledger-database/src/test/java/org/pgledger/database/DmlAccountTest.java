@@ -225,11 +225,11 @@ class DmlAccountTest {
             assertThat(ctx.tx(() -> ctx.bean(LinkRepository.class).add(link))).isTrue();
             assertThat(ctx.tx(() -> ctx.bean(LinkRepository.class).remove(defect.id(), task.id()))).isTrue();
             CommonCode code = new CommonCode(CodeGroup.DEFECT_CATEGORY, CodeValue.of("UI_" + project.code().value()),
-                    "화면", null, null, null, 25, CodeState.ACTIVE, AuthorId.OWNER);
+                    "화면", null, null, null, 25, CodeState.ACTIVE, null, AuthorId.OWNER);
             ctx.tx(() -> {
                 ctx.bean(CommonCodeRepository.class).insert(code);
                 ctx.bean(CommonCodeRepository.class).update(new CommonCode(code.group(), code.code(), "화면2", null,
-                        null, null, 26, CodeState.INACTIVE, AuthorId.OWNER));
+                        null, null, 26, CodeState.INACTIVE, null, AuthorId.OWNER));
                 ctx.bean(CodeRevisionRepository.class).bump();
                 return null;
             });

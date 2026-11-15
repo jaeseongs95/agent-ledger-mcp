@@ -4,6 +4,7 @@ import java.util.Objects;
 import java.util.Optional;
 import org.pgledger.domain.model.CodeCatalog;
 import org.pgledger.domain.model.CommonCode;
+import org.pgledger.domain.rule.CodeDirection;
 import org.pgledger.domain.rule.CodeGroup;
 import org.pgledger.domain.rule.CodeState;
 import org.pgledger.domain.value.ActorId;
@@ -19,7 +20,7 @@ import org.springframework.stereotype.Repository;
 public class CommonCodeRepository {
 
     private static final String COLUMNS = "code_group, code, name_ko, name_en, description_ko, description_en, "
-            + "sort_order, state, created_by";
+            + "sort_order, state, direction, created_by";
 
     private final JdbcClient jdbc;
 
@@ -33,7 +34,8 @@ public class CommonCodeRepository {
                 .query((rs, n) -> new CommonCode(CodeGroup.valueOf(rs.getString("code_group")),
                         CodeValue.of(rs.getString("code")), rs.getString("name_ko"), rs.getString("name_en"),
                         rs.getString("description_ko"), rs.getString("description_en"), rs.getInt("sort_order"),
-                        CodeState.valueOf(rs.getString("state")), ActorId.ofStored(rs.getString("created_by"))))
+                        CodeState.valueOf(rs.getString("state")), CodeDirection.valueOf(rs.getString("direction")),
+                        ActorId.ofStored(rs.getString("created_by"))))
                 .list());
     }
 
@@ -43,7 +45,7 @@ public class CommonCodeRepository {
 
     public void insert(CommonCode code) {
         jdbc.sql("INSERT INTO common_code (" + COLUMNS + ") VALUES (:group, :code, :nameKo, :nameEn, :descKo, "
-                + ":descEn, :sortOrder, :state, :createdBy)")
+                + ":descEn, :sortOrder, :state, :direction, :createdBy)")
                 .param("group", code.group().name())
                 .param("code", code.code().value())
                 .param("nameKo", code.nameKo())
@@ -52,14 +54,18 @@ public class CommonCodeRepository {
                 .param("descEn", code.descriptionEn())
                 .param("sortOrder", code.sortOrder())
                 .param("state", code.state().name())
+                .param("direction", code.direction().name())
                 .param("createdBy", code.createdBy().value())
                 .update();
     }
 
-    /** Changes text, order and state of an entry; false when it does not exist. The key and creator stay. */
+    /**
+     * Changes text, order, state and direction of an entry; false when it does not exist. The key and creator stay. Whether
+     * a direction may change is the service's rule (see {@code CommonCodeService}).
+     */
     public boolean update(CommonCode code) {
         return jdbc.sql("UPDATE common_code SET name_ko = :nameKo, name_en = :nameEn, description_ko = :descKo, "
-                + "description_en = :descEn, sort_order = :sortOrder, state = :state "
+                + "description_en = :descEn, sort_order = :sortOrder, state = :state, direction = :direction "
                 + "WHERE code_group = :group AND code = :code")
                 .param("nameKo", code.nameKo())
                 .param("nameEn", code.nameEn())
@@ -67,6 +73,7 @@ public class CommonCodeRepository {
                 .param("descEn", code.descriptionEn())
                 .param("sortOrder", code.sortOrder())
                 .param("state", code.state().name())
+                .param("direction", code.direction().name())
                 .param("group", code.group().name())
                 .param("code", code.code().value())
                 .update() == 1;
