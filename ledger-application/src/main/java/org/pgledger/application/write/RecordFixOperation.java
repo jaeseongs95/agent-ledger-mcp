@@ -110,7 +110,6 @@ public class RecordFixOperation extends WriteOperation<RecordFixCommand, RecordF
         Optional<DefectFix> known = fixes.findByDefectIdAndRepoAndCommitSha(defectId, repo, commit);
         // a commit that is recorded already keeps the owner of the defect; a new one is owned by the recording session
         ActorId nextOwner = known.isPresent() ? defect.ownerActorId() : author;
-        ChangeSet amended = known.map(row -> amendedChanges(row, ciRef, conclusion, completedAt)).orElse(null);
         String oldOwner = defect.ownerActorId() == null ? null : defect.ownerActorId().value();
         String newOwner = nextOwner == null ? null : nextOwner.value();
         DefectStatus status = defect.status();
@@ -132,7 +131,8 @@ public class RecordFixOperation extends WriteOperation<RecordFixCommand, RecordF
             defectOp = HistoryOp.EDIT;
         }
         FixWrite fix = known
-                .map(row -> amendFix(ctx, row, fixEntityId, ciRef, conclusion, completedAt, evidence, amended))
+                .map(row -> amendFix(ctx, row, fixEntityId, ciRef, conclusion, completedAt, evidence,
+                        amendedChanges(row, ciRef, conclusion, completedAt)))
                 .orElseGet(() -> recordFix(ctx, defectId, fixEntityId, repo, commit, branch, ciRef, conclusion,
                         completedAt, evidence, now));
         long fixId = fix.fixId();

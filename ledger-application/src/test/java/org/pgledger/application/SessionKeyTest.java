@@ -308,16 +308,32 @@ class SessionKeyTest {
         String key = publicKey(TestKeyRing.newPair());
         java.util.concurrent.atomic.AtomicBoolean raced = new java.util.concurrent.atomic.AtomicBoolean();
         java.util.concurrent.atomic.AtomicBoolean blind = new java.util.concurrent.atomic.AtomicBoolean();
+        // the counter right after the winner committed: the loser takes the next number in its transaction and must give it back
+        long[] counter = new long[1];
+        java.util.function.LongSupplier issued = () -> s.ctx().jdbc()
+                .sql("SELECT issued_no FROM id_counter WHERE name = 'SESSION_KEY'").query(Long.class).single();
         // The state repository of the service under test: after its lookup by fingerprint found nothing the other
-        // registration makes the key live, and the one lookup of the live key of the author that follows still sees nothing
-        // (the read that the other registration had not committed yet): the loser meets the unique key at its insert.
+        // registration commits the key in its own transaction on its own connection (another thread, awaited here: the loser
+        // has only read so far and holds no lock the winner needs), and the one lookup of the live key of the author that
+        // follows still sees nothing (the read that the other registration had not committed yet): the loser meets the
+        // unique key at its insert.
         org.pgledger.database.repository.SessionKeyStateRepository racing =
                 new org.pgledger.database.repository.SessionKeyStateRepository(s.ctx().jdbc()) {
                     @Override
                     public java.util.Optional<SessionPublicKey> findLiveByFingerprint(String fingerprint) {
                         java.util.Optional<SessionPublicKey> seen = super.findLiveByFingerprint(fingerprint);
                         if (raced.compareAndSet(false, true)) {
-                            real.register(new RegisterCommand(author, key, "the other registration"), TestOwners.OWNER);
+                            try {
+                                Parallel.start(() -> real.register(
+                                        new RegisterCommand(author, key, "the other registration"), TestOwners.OWNER))
+                                        .get(60, java.util.concurrent.TimeUnit.SECONDS);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                                throw new IllegalStateException("the winner was interrupted", e);
+                            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+                                throw new IllegalStateException("the winner did not commit", e);
+                            }
+                            counter[0] = issued.getAsLong();
                             blind.set(true);
                         }
                         return seen;
@@ -335,15 +351,10 @@ class SessionKeyTest {
                 s.bean(org.pgledger.database.repository.SessionKeyRepository.class),
                 s.bean(org.pgledger.database.repository.IdAllocator.class),
                 s.bean(org.pgledger.application.admin.OwnerAuditWriter.class), s.bean(java.time.Clock.class));
-        // the counter after the winner: the loser takes the next number in its transaction and must give it back
-        long[] counter = new long[1];
-        java.util.function.LongSupplier issued = () -> s.ctx().jdbc()
-                .sql("SELECT issued_no FROM id_counter WHERE name = 'SESSION_KEY'").query(Long.class).single();
 
-        LedgerException failure = Expect.failure(() -> s.ctx().tx(() -> {
-            counter[0] = issued.getAsLong();
-            return service.register(new RegisterCommand(author, key, "the loser"), TestOwners.OWNER);
-        }), ConflictCode.DUPLICATE_KEY);
+        LedgerException failure = Expect.failure(() -> s.ctx().tx(
+                () -> service.register(new RegisterCommand(author, key, "the loser"), TestOwners.OWNER)),
+                ConflictCode.DUPLICATE_KEY);
 
         assertThat(raced).isTrue();
         assertThat(blind).as("the stale read was used: the loser did reach the insert").isFalse();

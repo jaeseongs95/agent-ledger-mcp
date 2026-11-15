@@ -88,11 +88,9 @@ public class CommonCodeService {
         CodeGroup group = Tokens.parse("group", command.group(), CodeGroup.values());
         CodeValue code = CodeValue.of(command.code());
         CodeState state = stateOf(command);
-        Optional<VersionedCode> existing = codes.findVersioned(group, code);
-        if (existing.isEmpty()) {
-            return create(command, group, code, state, actor);
-        }
-        return change(existing.get(), command, state, actor);
+        return codes.findVersioned(group, code)
+                .map(existing -> change(existing, command, state, actor))
+                .orElseGet(() -> create(command, group, code, state, actor));
     }
 
     /**
