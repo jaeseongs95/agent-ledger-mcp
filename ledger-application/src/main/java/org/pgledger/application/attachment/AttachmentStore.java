@@ -161,7 +161,8 @@ public class AttachmentStore {
      * the size and the SHA-256 of the plain bytes are checked against the declared ones; only then the end mark (the empty segment marked
      * "last") is appended and the file is made read only. A finish that fails before that leaves the bytes as they were, so a retry or
      * the chunks that are missing can still follow. A finish that is repeated after it succeeded (its transaction failed) finds the
-     * end mark and the read-only file, checks again and changes nothing.
+     * valid end segment, checks again and changes nothing. Whether the file is closed is read from its data and never from its permission
+     * bit; making the file read only after the finish is a second guard.
      *
      * @return the length of the finished file
      * @throws ConflictException ARTIFACT_INCOMPLETE when a chunk was appended and is not recorded or bytes are missing;
@@ -173,9 +174,16 @@ public class AttachmentStore {
         Path file = pathOf(key);
         try {
             prepareFolder(key);
-            boolean finished = Files.exists(file, LinkOption.NOFOLLOW_LINKS) && !Files.isWritable(file);
-            try (FileChannel channel = finished ? files.openRead(file) : files.openReadWrite(file);
-                    FileLock lock = channel.tryLock(LOCK_POSITION, 1, finished)) {
+            // Whether the file is closed is decided from its data (is its last segment the valid end segment?), never from its
+            // permission bit: a process that runs as root can write a read-only file, and the bit is only a second guard.
+            boolean exists = Files.exists(file, LinkOption.NOFOLLOW_LINKS);
+            boolean sealed = exists && endSegmentPresent(file, key, aes, storedBytes, nextSequence);
+            if (exists && !sealed) {
+                // the file is open for more bytes whatever its bit says: this class owns it and makes it writable
+                makeWritable(file);
+            }
+            try (FileChannel channel = sealed ? files.openRead(file) : files.openReadWrite(file);
+                    FileLock lock = channel.tryLock(LOCK_POSITION, 1, sealed)) {
                 if (lock == null) {
                     throw busy(null);
                 }
@@ -183,15 +191,14 @@ public class AttachmentStore {
                 if (size < storedBytes) {
                     throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
                 }
-                boolean marked = false;
-                if (size > storedBytes) {
+                boolean marked = sealed;
+                if (!sealed && size > storedBytes) {
+                    // a finish that ran at the same moment may have closed the file after the first look: decide again, inside the lock
                     marked = size - storedBytes == SegmentCipher.OVERHEAD
                             && isEndMark(channel, storedBytes, aes, key, nextSequence);
                     if (!marked) {
                         throw new ConflictException(ConflictCode.ARTIFACT_INCOMPLETE, List.of("a chunk is not recorded"));
                     }
-                } else if (finished) {
-                    throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
                 }
                 Sha256Hex.Running digest = Sha256Hex.running();
                 long plainBytes = walk(channel, storedBytes, nextSequence, aes, key, digest);
@@ -207,6 +214,7 @@ public class AttachmentStore {
                     throw new ConflictException(ConflictCode.ARTIFACT_HASH_MISMATCH, List.of("SHA-256"));
                 }
                 if (marked) {
+                    makeReadOnly(file);
                     return size;
                 }
                 byte[] endMark = cipher.seal(aes, key, nextSequence, true, new byte[0]);
@@ -219,6 +227,28 @@ public class AttachmentStore {
             throw busy(failure);
         } catch (IOException failure) {
             throw failed(failure);
+        }
+    }
+
+    /**
+     * Whether the file ends with the valid end segment (empty plain bytes, the "last" mark, the number {@code nextSequence}, the tag of
+     * this storage key) right after the {@code storedBytes} the database knows of. A file that is exactly as long as the database says has
+     * none; a longer tail that is not the end segment is a chunk that was not recorded (ARTIFACT_INCOMPLETE); a shorter file is damaged.
+     */
+    private boolean endSegmentPresent(Path file, StorageKey key, AttachmentKeys.Key aes, long storedBytes, long nextSequence)
+            throws IOException {
+        try (FileChannel probe = files.openRead(file)) {
+            long size = probe.size();
+            if (size < storedBytes) {
+                throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
+            }
+            if (size == storedBytes) {
+                return false;
+            }
+            if (size - storedBytes == SegmentCipher.OVERHEAD && isEndMark(probe, storedBytes, aes, key, nextSequence)) {
+                return true;
+            }
+            throw new ConflictException(ConflictCode.ARTIFACT_INCOMPLETE, List.of("a chunk is not recorded"));
         }
     }
 
