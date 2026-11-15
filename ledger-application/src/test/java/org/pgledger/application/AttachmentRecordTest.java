@@ -246,7 +246,7 @@ class AttachmentRecordTest {
         String attachment = attachmentOf(s, Scenario.AUTHOR);
 
         RecordFixResult result = s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR,
-                fix(d.id(), attachment, null));
+                fix(d.id(), attachment, Scenario.uuid()));
 
         assertThat(result.transitionHistoryId()).as("the defect moved to SOURCE_FIXED").isNotNull();
         assertThat(s.historyRow(result.historyId()).attachmentId()).isEqualTo(attachment);

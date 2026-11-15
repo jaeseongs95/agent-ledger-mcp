@@ -604,7 +604,10 @@ class ReceiptTest {
         assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
         assertThat(s.count("SELECT COUNT(*) FROM request_receipt")).isEqualTo(receipts);
 
-        assertThat(call.apply("k".repeat(128), Scenario.REASON)).isNotNull();
+        // a key of its own of 128 characters (a fixed one would meet the receipt of another test that uses the longest key)
+        String longest = Scenario.uuid() + "k".repeat(128 - 36);
+        assertThat(longest).hasSize(128);
+        assertThat(call.apply(longest, Scenario.REASON)).isNotNull();
         assertThat(s.count("SELECT COUNT(*) FROM history")).isGreaterThan(history);
     }
 }

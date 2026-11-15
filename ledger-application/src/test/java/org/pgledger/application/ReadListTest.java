@@ -176,9 +176,10 @@ class ReadListTest {
     @DisplayName("MCR-006: one row more than the limit is truncated and has a cursor")
     void mcr006_oneMore(Tool tool, LedgerAppContext ctx) {
         Scenario s = fixture(ctx);
-        int total = total(s, tool);
-        Page<?> page = call(s, tool, total - 1, null, false);
-        assertThat(page.items()).hasSize(total - 1);
+        // the schema of the context is shared by the test classes, so the projects may be more than the largest limit (1000)
+        int limit = Math.min(total(s, tool) - 1, 1000);
+        Page<?> page = call(s, tool, limit, null, false);
+        assertThat(page.items()).hasSize(limit);
         assertThat(page.truncated()).isTrue();
         assertThat(page.nextCursor()).isNotBlank();
     }
