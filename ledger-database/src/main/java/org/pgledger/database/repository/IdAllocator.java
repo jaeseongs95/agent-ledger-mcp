@@ -1,6 +1,7 @@
 package org.pgledger.database.repository;
 
 import java.util.List;
+import java.util.OptionalLong;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.domain.error.LookupCode;
@@ -39,16 +40,42 @@ public class IdAllocator {
                 .query(Long.class).single();
     }
 
-    /** After an explicit defect id was used: the counter never lags behind the highest number in use. */
-    public void raiseDefectNo(ProjectCode code, long atLeast) {
-        jdbc.sql("UPDATE project SET next_defect_no = :n WHERE code = :code AND next_defect_no < :n")
-                .param("n", atLeast).param("code", code.value()).update();
+    /**
+     * Takes the number of an explicit defect id. The column holds the last number that was issued, so the next number is the
+     * column plus one: that number is taken (the column is set to it, by the one conditional UPDATE that decides it) and a
+     * number at or below the column is a past number that nothing issued any more (a free gap), which is accepted and leaves
+     * the column alone. A number above the next one is refused, so one explicit id cannot push the counter out of reach of
+     * the ids that the server issues.
+     *
+     * @return empty when the number is accepted; otherwise the next number of the project, which the caller names in its refusal
+     * @throws LookupException NOT_FOUND when the project does not exist
+     */
+    public OptionalLong takeDefectNo(ProjectCode code, long number) {
+        return take("UPDATE project SET next_defect_no = :n WHERE code = :code AND next_defect_no = :previous",
+                "SELECT next_defect_no FROM project WHERE code = :code", code, number);
     }
 
-    /** After an explicit task id was used: the counter never lags behind the highest number in use. */
-    public void raiseTaskNo(ProjectCode code, long atLeast) {
-        jdbc.sql("UPDATE project SET next_task_no = :n WHERE code = :code AND next_task_no < :n")
-                .param("n", atLeast).param("code", code.value()).update();
+    /** As {@link #takeDefectNo} for the number of an explicit task id of the form the server issues. */
+    public OptionalLong takeTaskNo(ProjectCode code, long number) {
+        return take("UPDATE project SET next_task_no = :n WHERE code = :code AND next_task_no = :previous",
+                "SELECT next_task_no FROM project WHERE code = :code", code, number);
+    }
+
+    /**
+     * The update writes only for the next number (a concurrent transaction that holds the row is waited for, as for any
+     * allocation, and the condition is decided against what it committed). When it wrote no row the column is read: it only
+     * grows, so a number at or below the value read is past for good, whatever another transaction does meanwhile, and one
+     * above it is ahead.
+     */
+    private OptionalLong take(String update, String select, ProjectCode code, long number) {
+        int rows = jdbc.sql(update).param("n", number).param("previous", number - 1).param("code", code.value())
+                .update();
+        if (rows == 1) {
+            return OptionalLong.empty();
+        }
+        long last = jdbc.sql(select).param("code", code.value()).query(Long.class).optional()
+                .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND, List.of("project", code.value())));
+        return number <= last ? OptionalLong.empty() : OptionalLong.of(last + 1);
     }
 
     /** The next number of a surrogate key sequence (history, fix, case, grant). */

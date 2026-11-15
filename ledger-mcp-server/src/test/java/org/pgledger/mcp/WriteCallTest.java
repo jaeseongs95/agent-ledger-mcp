@@ -383,6 +383,25 @@ class WriteCallTest {
         assertThat(error.issues()).containsExactly(new ToolError.Issue("evidence_uri", "is required", List.of()));
     }
 
+    @Test
+    @DisplayName("VRF-007: ledger_record_fix and ledger_save of a VERIFIED defect are VERIFIED_DEFECT, the message names "
+            + "the defect and says that a reviewer reopens it first, and nothing is written")
+    void verifiedDefectRefusesFixAndSave(McpSession session, Scenario scenario) {
+        Seed seed = Seed.create(session, scenario);
+        int before = Ledger.history(session, seed.project()).size();
+
+        ToolError fix = session.failed("ledger_record_fix",
+                Calls.RecordFix.of(seed.verified(), "c".repeat(40), Scenario.AUTHOR));
+        ToolError save = session.failed("ledger_save",
+                Calls.Save.edit("defect", seed.verified(), 3, Fields.titled("changed"), Scenario.AUTHOR));
+
+        for (ToolError error : List.of(fix, save)) {
+            assertThat(error.code()).isEqualTo("VERIFIED_DEFECT");
+            assertThat(error.message()).contains(seed.verified(), "reviewer", "ledger_review");
+        }
+        assertThat(Ledger.history(session, seed.project())).hasSize(before);
+    }
+
     /** A save made invalid in one argument: how, and what the answer must be. */
     private record BadValue(String name, UnaryOperator<Args> change, String token, List<String> paths) {
 

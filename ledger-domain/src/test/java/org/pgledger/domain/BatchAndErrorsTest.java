@@ -116,11 +116,12 @@ class BatchAndErrorsTest {
         // ARTIFACT_UNSUPPORTED_PURPOSE (validation), ARTIFACT_NOT_FOUND (lookup), nine conflicts (with ARTIFACT_STORAGE_FULL),
         // four infrastructure codes and the code of the encoding of the database (RUN-017), and no code for the long text type
         // of the schema files (the dialect of SqlBuilder decides, RUN-003 retired) and none for an interrupted wait for another
-        // runner (the database waits, RUN-012)
-        assertThat(codes).hasSize(85);
+        // runner (the database waits, RUN-012), and the two codes of the unit verifyrules (VERIFIED_DEFECT, ID_NUMBER_AHEAD)
+        assertThat(codes).hasSize(87);
         assertThat(codes.stream().map(ErrorCode::token)).doesNotHaveDuplicates();
         assertThat(codes.stream().map(ErrorCode::token)).contains("AUTHOR_ID_FORMAT", "SESSION_NOT_GRANTED",
-                "HOST_ATTESTATION_REQUIRED", "VERSION_CONFLICT", "SAME_SESSION", "MERGED_DEFECT", "CODE_REQUIRED",
+                "HOST_ATTESTATION_REQUIRED", "VERSION_CONFLICT", "SAME_SESSION", "MERGED_DEFECT", "VERIFIED_DEFECT",
+                "ID_NUMBER_AHEAD", "CODE_REQUIRED",
                 "CODE_INVALID", "ATTESTATION_UNSIGNED", "ATTESTATION_MALFORMED",
                 "ATTESTATION_VERSION_UNSUPPORTED", "ATTESTATION_SIGNATURE_INVALID", "ATTESTATION_BINDING_MISMATCH",
                 "ATTESTATION_TIME_WINDOW", "KEY_REPLACEMENT_NOT_CONFIRMED", "SESSION_KEY_REQUIRED", "ARTIFACT_UNSUPPORTED_PURPOSE", "ARTIFACT_CHUNK_CONFLICT",
@@ -153,6 +154,28 @@ class BatchAndErrorsTest {
         }
         assertThat(Set.copyOf(en.keySet())).as("no unused key").isEqualTo(expected);
         assertThat(ko.getString("error.SESSION_NOT_GRANTED")).contains("부여");
+    }
+
+    @Test
+    void vrf008_theMessagesOfTheVerificationRulesAndTheIdsSayWhatToDo() {
+        ResourceBundle en = ResourceBundle.getBundle("messages/ledger-errors", Locale.ROOT);
+        ResourceBundle ko = ResourceBundle.getBundle("messages/ledger-errors", Locale.of("ko"));
+        assertThat(new MessageFormat(en.getString("error.VERIFIED_DEFECT")).format(new Object[] {"X-D-0001"}))
+                .contains("X-D-0001", "reviewer", "ledger_review", "reopen");
+        assertThat(new MessageFormat(ko.getString("error.VERIFIED_DEFECT")).format(new Object[] {"X-D-0001"}))
+                .contains("X-D-0001", "검토자", "ledger_review", "다시 열");
+        for (ResourceBundle bundle : List.of(en, ko)) {
+            assertThat(new MessageFormat(bundle.getString("error.ID_NUMBER_AHEAD"))
+                    .format(new Object[] {"X-D-0100", "X-D-0004"})).contains("X-D-0100", "X-D-0004");
+        }
+        assertThat(en.getString("error.SAME_SESSION")).contains("registered", "case", "fix", "reported");
+        assertThat(ko.getString("error.SAME_SESSION")).contains("등록", "사례", "수정", "보고");
+        ResourceBundle enReasons = ResourceBundle.getBundle("messages/ledger-reasons", Locale.ROOT);
+        ResourceBundle koReasons = ResourceBundle.getBundle("messages/ledger-reasons", Locale.of("ko"));
+        assertThat(new MessageFormat(enReasons.getString("reason.NUMBER_ABOVE_NEXT")).format(new Object[] {"X-D-0004"}))
+                .contains("X-D-0004");
+        assertThat(new MessageFormat(koReasons.getString("reason.NUMBER_ABOVE_NEXT")).format(new Object[] {"X-D-0004"}))
+                .contains("X-D-0004");
     }
 
     @Test

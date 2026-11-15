@@ -81,6 +81,8 @@ public enum ValidationReason {
     MUST_NOT_BE_NEGATIVE,
     /** {0} = the prefix the id must start with. */
     MUST_START_WITH,
+    /** {0} = the next id of the project: the number of an explicit id is at most the number of that id. */
+    NUMBER_ABOVE_NEXT,
     /** The text is not an Ed25519 public key in X.509 DER form in base64 (what the hook command session-key prints). */
     MUST_BE_ED25519_PUBLIC_KEY,
     /** The author is the owner role {@code user:owner}: only sessions sign, so no key is registered for it. */

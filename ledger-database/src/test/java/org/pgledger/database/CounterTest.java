@@ -67,14 +67,68 @@ class CounterTest {
         assertThat(ctx.tx(() -> ids.nextDefectNo(project.code()))).isEqualTo(1);
         assertThat(ctx.tx(() -> ids.nextDefectNo(project.code()))).isEqualTo(2);
         assertThat(ctx.tx(() -> ids.nextTaskNo(project.code()))).isEqualTo(1);
-        ctx.tx(() -> {
-            ids.raiseDefectNo(project.code(), 100);
-            ids.raiseDefectNo(project.code(), 50);
-            return null;
-        });
-        assertThat(ctx.tx(() -> ids.nextDefectNo(project.code()))).isEqualTo(101);
+        // an explicit number is taken only up to the next one (VRF-020, D-0022)
+        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 3))).isEmpty();
+        assertThat(ctx.tx(() -> ids.nextDefectNo(project.code()))).isEqualTo(4);
         LookupException unknown = catchThrowableOfType(LookupException.class,
                 () -> ctx.tx(() -> ids.nextDefectNo(ProjectCode.of("NOSUCH"))));
+        assertThat(unknown.code()).isEqualTo(LookupCode.NOT_FOUND);
+    }
+
+    private long defectCounter(Project project) {
+        return JdbcClient.create(ctx.pool()).sql("SELECT next_defect_no FROM project WHERE code = :code")
+                .param("code", project.code().value()).query(Long.class).single();
+    }
+
+    private long taskCounter(Project project) {
+        return JdbcClient.create(ctx.pool()).sql("SELECT next_task_no FROM project WHERE code = :code")
+                .param("code", project.code().value()).query(Long.class).single();
+    }
+
+    @Test
+    void vrf020_anExplicitDefectNumberIsTakenUpToTheNextNumberOnly() {
+        Project project = seed.project();
+        ctx.tx(() -> ids.nextDefectNo(project.code()));
+        ctx.tx(() -> ids.nextDefectNo(project.code()));
+        assertThat(defectCounter(project)).isEqualTo(2);
+        // the next number: accepted, the counter is set to it
+        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 3))).isEmpty();
+        assertThat(defectCounter(project)).isEqualTo(3);
+        // past numbers: accepted, the counter stays
+        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 2))).isEmpty();
+        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 1))).isEmpty();
+        assertThat(defectCounter(project)).isEqualTo(3);
+        // above the next number: refused with the next number, the counter stays
+        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 5))).hasValue(4);
+        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 999_999_999_999_999_999L))).hasValue(4);
+        assertThat(defectCounter(project)).isEqualTo(3);
+        // then 4 is the next number
+        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 4))).isEmpty();
+        assertThat(defectCounter(project)).isEqualTo(4);
+        assertThat(ctx.tx(() -> ids.nextDefectNo(project.code()))).isEqualTo(5);
+        // the task counter was never touched
+        assertThat(taskCounter(project)).isZero();
+        LookupException unknown = catchThrowableOfType(LookupException.class,
+                () -> ctx.tx(() -> ids.takeDefectNo(ProjectCode.of("NOSUCH"), 1)));
+        assertThat(unknown.code()).isEqualTo(LookupCode.NOT_FOUND);
+    }
+
+    @Test
+    void vrf021_anExplicitTaskNumberIsTakenUpToTheNextNumberOnly() {
+        Project project = seed.project();
+        ctx.tx(() -> ids.nextDefectNo(project.code()));
+        ctx.tx(() -> ids.nextTaskNo(project.code()));
+        assertThat(ctx.tx(() -> ids.takeTaskNo(project.code(), 2))).isEmpty();
+        assertThat(taskCounter(project)).isEqualTo(2);
+        assertThat(ctx.tx(() -> ids.takeTaskNo(project.code(), 1))).isEmpty();
+        assertThat(ctx.tx(() -> ids.takeTaskNo(project.code(), 4))).hasValue(3);
+        assertThat(ctx.tx(() -> ids.takeTaskNo(project.code(), 123_456_789_012_345_678L))).hasValue(3);
+        assertThat(taskCounter(project)).isEqualTo(2);
+        assertThat(ctx.tx(() -> ids.nextTaskNo(project.code()))).isEqualTo(3);
+        // the defect counter is independent of the task counter
+        assertThat(defectCounter(project)).isEqualTo(1);
+        LookupException unknown = catchThrowableOfType(LookupException.class,
+                () -> ctx.tx(() -> ids.takeTaskNo(ProjectCode.of("NOSUCH"), 1)));
         assertThat(unknown.code()).isEqualTo(LookupCode.NOT_FOUND);
     }
 

@@ -29,8 +29,11 @@ import org.pgledger.application.write.WriteResult.SaveResult;
 import org.pgledger.database.repository.TaskRepository;
 import org.pgledger.domain.context.ActorScope;
 import org.pgledger.domain.error.ConflictCode;
+import org.pgledger.domain.error.LedgerException;
 import org.pgledger.domain.error.TransitionCode;
 import org.pgledger.domain.error.ValidationCode;
+import org.pgledger.domain.error.ValidationIssue;
+import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.model.Task;
 import org.pgledger.domain.model.TaskFields;
 import org.pgledger.domain.rule.DefectStatus;
@@ -64,15 +67,114 @@ class IdsTest {
                 ValidationCode.ID_PREFIX_MISMATCH);
     }
 
+    private static long counter(Scenario s, String column) {
+        return s.count("SELECT " + column + " FROM project WHERE id = ?", s.projectId());
+    }
+
     @Test
-    @DisplayName("SVC-IDS-03: an explicit id raises the counter, the next id is never a duplicate")
+    @DisplayName("SVC-IDS-03 / VRF-023: an explicit id with the next number raises the counter, the next id is never a duplicate")
     void ids03_explicitRaisesTheCounter(Scenario s) {
         s.newDefect("one");
         s.newDefect("two");
         s.newDefect("three");
-        SaveResult explicit = s.bean(SaveService.class).save(Scenario.AUTHOR, defect(s, s.defectId(100), "x"));
-        assertThat(explicit.id()).isEqualTo(s.defectId(100));
-        assertThat(s.newDefect("next").id()).isEqualTo(s.defectId(101));
+        SaveResult explicit = s.bean(SaveService.class).save(Scenario.AUTHOR, defect(s, s.defectId(4), "x"));
+        assertThat(explicit.id()).isEqualTo(s.defectId(4));
+        assertThat(counter(s, "next_defect_no")).isEqualTo(4);
+        assertThat(s.newDefect("next").id()).isEqualTo(s.defectId(5));
+    }
+
+    @Test
+    @DisplayName("VRF-024: a free number below the counter is accepted and leaves the counter alone")
+    void vrf024_aFreePastNumberIsAccepted(Scenario s) {
+        s.newDefect("one");
+        s.newDefect("two");
+        s.newDefect("three");
+        // what an import leaves behind: numbers 4 to 10 were used elsewhere, the counter is at 10, number 7 is free here
+        s.ctx().jdbc().sql("UPDATE project SET next_defect_no = 10 WHERE id = ?").param(s.projectId()).update();
+        SaveResult explicit = s.bean(SaveService.class).save(Scenario.AUTHOR, defect(s, s.defectId(7), "gap"));
+        assertThat(explicit.id()).isEqualTo(s.defectId(7));
+        assertThat(counter(s, "next_defect_no")).isEqualTo(10);
+        assertThat(s.newDefect("next").id()).isEqualTo(s.defectId(11));
+    }
+
+    @Test
+    @DisplayName("VRF-025: an explicit number above the next number is ID_NUMBER_AHEAD, nothing is written and the automatic ids go on")
+    void vrf025_aNumberAheadIsRefused(Scenario s) {
+        s.newDefect("one");
+        s.newDefect("two");
+        s.newDefect("three");
+        long history = s.count("SELECT COUNT(*) FROM history");
+        long defects = s.count("SELECT COUNT(*) FROM defect WHERE project_id = ?", s.projectId());
+        for (String id : List.of(s.defectId(5), s.defectId(100), s.code() + "-D-999999999999999999")) {
+            LedgerException e = Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR,
+                    defect(s, id, "ahead")), ValidationCode.ID_NUMBER_AHEAD);
+            assertThat(e.args()).containsExactly(id, s.defectId(4));
+            ValidationIssue issue = Expect.firstIssue(e);
+            assertThat(issue.path()).isEqualTo("id");
+            assertThat(issue.reason()).isEqualTo(ValidationReason.NUMBER_ABOVE_NEXT);
+            assertThat(issue.reasonArgs()).containsExactly(s.defectId(4));
+            assertThat(Expect.message(e)).contains(id, s.defectId(4));
+            assertThat(s.count("SELECT COUNT(*) FROM defect WHERE id = ?", id)).isZero();
+        }
+        assertThat(counter(s, "next_defect_no")).isEqualTo(3);
+        assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
+        assertThat(s.count("SELECT COUNT(*) FROM defect WHERE project_id = ?", s.projectId())).isEqualTo(defects);
+        assertThat(s.newDefect("next").id()).isEqualTo(s.defectId(4));
+    }
+
+    @Test
+    @DisplayName("VRF-026: an explicit task id of the issued form is taken up to the next number only, a free text id takes nothing")
+    void vrf026_taskNumbers(Scenario s) {
+        SaveService save = s.bean(SaveService.class);
+        assertThat(s.newTask("auto").id()).isEqualTo(s.taskId(1));
+        assertThat(save.save(Scenario.AUTHOR, s.create("task", s.taskId(2), s.taskFields("next"))).id())
+                .isEqualTo(s.taskId(2));
+        assertThat(counter(s, "next_task_no")).isEqualTo(2);
+        for (String ahead : List.of(s.taskId(4), s.code() + "-T-123456789012345678")) {
+            LedgerException e = Expect.failure(() -> save.save(Scenario.AUTHOR,
+                    s.create("task", ahead, s.taskFields("ahead"))), ValidationCode.ID_NUMBER_AHEAD);
+            assertThat(e.args()).containsExactly(ahead, s.taskId(3));
+            assertThat(s.count("SELECT COUNT(*) FROM task WHERE id = ?", ahead)).isZero();
+        }
+        // a number below the counter, a free text and a number of 19 digits (a free id: it has no number) are accepted
+        for (String free : List.of(s.code() + "-T-1", s.code() + "-T|PIPE", s.code() + "-T-" + "9".repeat(19))) {
+            assertThat(save.save(Scenario.AUTHOR, s.create("task", free, s.taskFields("free"))).id()).isEqualTo(free);
+        }
+        assertThat(counter(s, "next_task_no")).isEqualTo(2);
+        assertThat(s.newTask("next").id()).isEqualTo(s.taskId(3));
+    }
+
+    @Test
+    @DisplayName("VRF-027: a batch with an explicit number that is ahead fails as a whole and names the operation")
+    void vrf027_batch(Scenario s) {
+        BatchOpInput auto = new BatchOpInput.Save("defect", Fields.of(s.defectFields("auto")), Scenario.REASON, null, null);
+        BatchOpInput ahead = new BatchOpInput.Save("defect", Fields.of(s.defectFields("ahead")), Scenario.REASON,
+                s.defectId(100), null);
+        LedgerException e = Expect.failure(() -> s.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(),
+                List.of(auto, ahead)), ValidationCode.ID_NUMBER_AHEAD);
+        assertThat(e.details()).containsEntry("op_index", List.of("2")).containsEntry("op", List.of("save"));
+        assertThat(counter(s, "next_defect_no")).isZero();
+        assertThat(s.newDefect("after").id()).isEqualTo(s.defectId(1));
+    }
+
+    @Test
+    @DisplayName("VRF-022: two explicit ids at the same time, the next number and the one after it: each is saved or ID_NUMBER_AHEAD, the counter is the highest that was saved")
+    void vrf022_race(Scenario s) {
+        s.newDefect("one");
+        s.newDefect("two");
+        s.newDefect("three");
+        List<Callable<SaveResult>> calls = List.of(
+                () -> s.bean(SaveService.class).save(Scenario.AUTHOR, defect(s, s.defectId(4), "next")),
+                () -> s.bean(SaveService.class).save(Scenario.AUTHOR, defect(s, s.defectId(5), "after")));
+        List<Outcome<SaveResult>> outcomes = Parallel.all(calls);
+        assertThat(outcomes.get(0).failure()).as("the next number is always accepted").isNull();
+        if (outcomes.get(1).succeeded()) {
+            assertThat(counter(s, "next_defect_no")).isEqualTo(5);
+        } else {
+            assertThat(outcomes.get(1).failure()).isInstanceOf(LedgerException.class);
+            assertThat(((LedgerException) outcomes.get(1).failure()).code()).isEqualTo(ValidationCode.ID_NUMBER_AHEAD);
+            assertThat(counter(s, "next_defect_no")).isEqualTo(4);
+        }
     }
 
     @Test

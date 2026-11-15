@@ -545,4 +545,163 @@ class GateTest {
                 .isEqualTo(o.value().author()));
         assertThat(ActorScope.CURRENT.isBound()).isFalse();
     }
+
+    // -------------------------------------------------------------------------- 43 .. 47 (D-0024)
+
+    /** A kind of link that is not a relation, with the scope that it needs on every project it touches. */
+    record LinkKindCase(String kind, Scope scope) {
+        @Override
+        public String toString() {
+            return kind;
+        }
+    }
+
+    static Stream<LinkKindCase> linkKinds() {
+        return Stream.of(new LinkKindCase("defect_task", Scope.DEFECT), new LinkKindCase("condition_task", Scope.TASK),
+                new LinkKindCase("condition_defect", Scope.TASK));
+    }
+
+    /** The two ends of a link. */
+    record Ends(String a, String b) {
+    }
+
+    private static SaveResult createIn(Scenario s, String entity, String project) {
+        var fields = entity.equals("task") ? s.taskFields("other") : s.defectFields("other");
+        fields.put("project_id", project);
+        return s.bean(SaveService.class).save(Scenario.AUTHOR, s.create(entity, null, fields));
+    }
+
+    /** The ends of a link of this kind: the first in the project of the scenario, the second in {@code second}. */
+    private static Ends ends(Scenario s, String kind, String second) {
+        s.grant(Scenario.AUTHOR, second, "defect", "task");
+        return switch (kind) {
+            case "defect_task" -> new Ends(s.newDefect("first").id(), createIn(s, "task", second).id());
+            case "condition_task" -> new Ends(s.newCondition("1", "r1", "c1").id(), createIn(s, "task", second).id());
+            default -> new Ends(s.newCondition("1", "r1", "c1").id(), createIn(s, "defect", second).id());
+        };
+    }
+
+    private static String newActor(String label) {
+        return "claude:" + label + java.util.UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    private static LinkCommand link(String kind, Ends ends, Boolean remove) {
+        return new LinkCommand(Scenario.uuid(), kind, ends.a(), ends.b(), Scenario.REASON, remove);
+    }
+
+    @ParameterizedTest
+    @MethodSource("linkKinds")
+    @DisplayName("SVC-GATE-43 (VRF-030, VRF-031): a link between rows of two projects needs the scope of the kind on both projects")
+    void gate43_linkNeedsBothProjects(LinkKindCase kind, Scenario s) {
+        String other = s.otherProject();
+        Ends ends = ends(s, kind.kind(), other);
+        // grants on the first project only, on the second only, then on both; the refusal names the project that lacks it
+        var cases = List.of(new Grants("the first project only", List.of("source"), TrustCode.SESSION_NOT_GRANTED),
+                new Grants("the second project only", List.of("target"), TrustCode.SESSION_NOT_GRANTED),
+                new Grants("both projects", List.of("source", "target"), null));
+        var projects = java.util.Map.of("source", s.projectId(), "target", other);
+        var lacking = java.util.Map.of("the first project only", other, "the second project only", s.projectId());
+        for (Grants grants : cases) {
+            String actor = newActor("lk");
+            grants.on().forEach(label -> s.grant(actor, projects.get(label), kind.scope().token()));
+            Optional<ErrorCode> outcome = Expect.outcome(() -> s.bean(LinkService.class).link(actor,
+                    link(kind.kind(), ends, null)));
+            assertThat(outcome).as(grants.name()).isEqualTo(Optional.ofNullable(grants.expected()));
+            if (grants.expected() != null) {
+                LedgerException e = Expect.failure(() -> s.bean(LinkService.class).link(actor,
+                        link(kind.kind(), ends, null)), TrustCode.SESSION_NOT_GRANTED);
+                assertThat(e.details()).containsEntry("project", List.of(lacking.get(grants.name())))
+                        .containsEntry("scope", List.of(kind.scope().token()));
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @MethodSource("linkKinds")
+    @DisplayName("SVC-GATE-44 (VRF-032): both ends in one project need the scope there once, to link and to unlink")
+    void gate44_oneProjectIsOneCheck(LinkKindCase kind, Scenario s) {
+        Ends ends = switch (kind.kind()) {
+            case "defect_task" -> new Ends(s.newDefect("one").id(), s.newTask("one").id());
+            case "condition_task" -> new Ends(s.newCondition("1", "r1", "c1").id(), s.newTask("one").id());
+            default -> new Ends(s.newCondition("1", "r1", "c1").id(), s.newDefect("one").id());
+        };
+        String actor = newActor("lk");
+        s.grant(actor, s.projectId(), kind.scope().token());
+        assertThat(s.bean(LinkService.class).link(actor, link(kind.kind(), ends, null)).removed()).isFalse();
+        assertThat(s.bean(LinkService.class).link(actor, link(kind.kind(), ends, true)).removed()).isTrue();
+    }
+
+    @ParameterizedTest
+    @MethodSource("linkKinds")
+    @DisplayName("SVC-GATE-45 (VRF-033): the unlink of a link across two projects passes the same check as the link")
+    void gate45_unlinkNeedsBothProjects(LinkKindCase kind, Scenario s) {
+        String other = s.otherProject();
+        Ends ends = ends(s, kind.kind(), other);
+        var linked = s.bean(LinkService.class).link(Scenario.AUTHOR, link(kind.kind(), ends, null));
+        String firstOnly = newActor("ul");
+        s.grant(firstOnly, s.projectId(), kind.scope().token());
+        LedgerException e = Expect.failure(() -> s.bean(LinkService.class).link(firstOnly,
+                link(kind.kind(), ends, true)), TrustCode.SESSION_NOT_GRANTED);
+        assertThat(e.details()).containsEntry("project", List.of(other)).containsEntry("scope",
+                List.of(kind.scope().token()));
+        assertThat(s.count("SELECT COUNT(*) FROM history WHERE op = 'UNLINK' AND entity_id = ?", linked.id())).isZero();
+        String both = newActor("ul");
+        s.grant(both, s.projectId(), kind.scope().token());
+        s.grant(both, other, kind.scope().token());
+        assertThat(s.bean(LinkService.class).link(both, link(kind.kind(), ends, true)).removed()).isTrue();
+        assertThat(s.count("SELECT COUNT(*) FROM history WHERE op = 'UNLINK' AND entity_id = ?", linked.id()))
+                .isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("SVC-GATE-46 (VRF-034): a merge into a defect of another project needs the defect scope on both projects")
+    void gate46_mergeNeedsBothProjects(Scenario s) {
+        String other = s.otherProject();
+        s.grant(Scenario.AUTHOR, other, "defect");
+        SaveResult source = s.newDefect("source");
+        SaveResult sameProject = s.newDefect("same project");
+        SaveResult target = createIn(s, "defect", other);
+        java.util.function.BiFunction<String, String, org.pgledger.application.write.TransitionCommand> merge =
+                (id, into) -> new TransitionCommand(Scenario.uuid(), "defect", id, 1L, "MERGED", Scenario.REASON, null,
+                        null, into);
+        String firstOnly = newActor("mg");
+        s.grant(firstOnly, s.projectId(), "defect");
+        LedgerException e = Expect.failure(() -> s.bean(TransitionService.class).transition(firstOnly,
+                merge.apply(source.id(), target.id())), TrustCode.SESSION_NOT_GRANTED);
+        assertThat(e.details()).containsEntry("project", List.of(other)).containsEntry("scope", List.of("defect"));
+        String secondOnly = newActor("mg");
+        s.grant(secondOnly, other, "defect");
+        e = Expect.failure(() -> s.bean(TransitionService.class).transition(secondOnly,
+                merge.apply(source.id(), target.id())), TrustCode.SESSION_NOT_GRANTED);
+        assertThat(e.details()).containsEntry("project", List.of(s.projectId()));
+        assertThat(s.defect(source.id()).status()).isEqualTo(org.pgledger.domain.rule.DefectStatus.OPEN);
+        // a target in the project of the defect needs that grant only; a target that does not exist is NOT_FOUND as before
+        s.bean(TransitionService.class).transition(firstOnly, merge.apply(sameProject.id(), source.id()));
+        assertThat(s.defect(sameProject.id()).mergedInto().value()).isEqualTo(source.id());
+        String both = newActor("mg");
+        s.grant(both, s.projectId(), "defect");
+        s.grant(both, other, "defect");
+        Expect.failure(() -> s.bean(TransitionService.class).transition(both, merge.apply(source.id(), s.defectId(99))),
+                LookupCode.NOT_FOUND);
+        s.bean(TransitionService.class).transition(both, merge.apply(source.id(), target.id()));
+        assertThat(s.defect(source.id()).mergedInto().value()).isEqualTo(target.id());
+    }
+
+    @Test
+    @DisplayName("SVC-GATE-47 (VRF-035): the other end of a link that does not exist is NOT_FOUND and writes nothing")
+    void gate47_unknownOtherEnd(Scenario s) {
+        SaveResult defect = s.newDefect("d");
+        SaveResult condition = s.newCondition("1", "r1", "c1");
+        long history = s.count("SELECT COUNT(*) FROM history");
+        record Missing(String kind, String a, String b, String what) {
+        }
+        for (Missing missing : List.of(new Missing("defect_task", defect.id(), s.taskId(99), "task"),
+                new Missing("condition_task", condition.id(), s.taskId(98), "task"),
+                new Missing("condition_defect", condition.id(), s.defectId(97), "defect"))) {
+            LedgerException e = Expect.failure(() -> s.bean(LinkService.class).link(Scenario.AUTHOR,
+                    link(missing.kind(), new Ends(missing.a(), missing.b()), null)), LookupCode.NOT_FOUND);
+            assertThat(e.args()).containsExactly(missing.what(), missing.b());
+        }
+        assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
+    }
 }

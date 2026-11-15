@@ -49,7 +49,7 @@ import org.springframework.stereotype.Component;
  * is decided by that statement (VERSION_CONFLICT) and the state check and the fix insert see the same defect (no write
  * skew); an OPEN defect moves to SOURCE_FIXED in the same
  * transaction unless told not to, and recording a new fix commit makes the recording session the owner.
- * Recording a fix on a MERGED defect is allowed.
+ * Recording a fix on a MERGED defect is allowed; on a VERIFIED defect it is refused (VERIFIED_DEFECT, {@link Defect#requireNotVerified}).
  */
 @Component
 public class RecordFixOperation extends WriteOperation<RecordFixCommand, RecordFixResult> {
@@ -116,6 +116,8 @@ public class RecordFixOperation extends WriteOperation<RecordFixCommand, RecordF
         attachments.requireOwnedBy(attachment, ctx.author());
         Instant now = clock.instant();
         Defect defect = rows.defectForWrite(defectId, null);
+        // a VERIFIED defect is changed by no fix (nor by new CI data of one): a reviewer reopens it first
+        defect.requireNotVerified();
         String fixEntityId = defectId.value() + "@" + commit.value();
         ActorId author = ctx.author();
         Evidence evidence = Evidence.of(ciRef, null);

@@ -216,8 +216,17 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
         if (defects.existsById(candidate)) {
             throw duplicate(HistoryEntity.DEFECT, explicit);
         }
-        ids.raiseDefectNo(project.code(), candidate.number());
+        // the number is taken only up to the next number of the project (a free past number is accepted, a larger one refused)
+        ids.takeDefectNo(project.code(), candidate.number()).ifPresent(next -> {
+            throw idAhead(explicit, DefectId.of(project.code(), next).value());
+        });
         return candidate;
+    }
+
+    /** The refusal of an explicit id whose number is above the next number of the project; {@code nextId} is the id to give. */
+    private static ValidationException idAhead(String explicit, String nextId) {
+        return new ValidationException(ValidationCode.ID_NUMBER_AHEAD, List.of(explicit, nextId),
+                List.of(new ValidationIssue("id", ValidationReason.NUMBER_ABOVE_NEXT, List.of(nextId))), Map.of());
     }
 
     private TaskId taskId(Project project, String explicit) {
@@ -234,8 +243,11 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
         tasks.findByIdKey(candidate.key()).ifPresent(existing -> {
             throw duplicate(HistoryEntity.TASK, existing.id().value());
         });
-        // a free id has a number only in the form the server issues (at most 18 digits); any other id raises nothing
-        candidate.numberIn(project.code()).ifPresent(number -> ids.raiseTaskNo(project.code(), number));
+        // a free id has a number only in the form the server issues (at most 18 digits), and that number is taken only up to the
+        // next number of the project like a defect number; any other id has no number and takes nothing
+        candidate.numberIn(project.code()).ifPresent(number -> ids.takeTaskNo(project.code(), number).ifPresent(next -> {
+            throw idAhead(explicit, TaskId.issue(project.code(), next).value());
+        }));
         return candidate;
     }
 
@@ -251,6 +263,8 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
         switch (fields) {
             case DefectFields f -> {
                 Defect row = rows.defectForWrite(DefectId.of(id), expectedVersion);
+                // the rule of record_fix: a VERIFIED defect is reopened by a reviewer before its content changes
+                row.requireNotVerified();
                 Defect after = row.edited(f, now);
                 if (after.category() == null || after.severity() == null) {
                     codeRules.checkDefect(row, after.category(), after.severity());
