@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.BooleanSupplier;
 import org.pgledger.attestation.AttestationException;
 import org.pgledger.attestation.KeyBlock;
 import org.pgledger.attestation.PublicKeys;
@@ -129,10 +130,24 @@ public class SessionKeyService {
         Optional<SessionPublicKey> current = state.findLive(author);
         // another registration of this very key for this author became live after the lookup by fingerprint found
         // nothing: the same answer as for any repeated registration (no row, no audit, nothing closed)
-        if (current.isPresent() && Objects.equals(current.get().fingerprint(), fingerprint)) {
-            return registered(current.get());
-        }
-        current.ifPresent(open -> requireConfirmed(open, author, replacedFingerprint));
+        return current.filter(open -> Objects.equals(open.fingerprint(), fingerprint))
+                .map(SessionKeyService::registered)
+                .orElseGet(() -> current
+                        .map(open -> {
+                            requireConfirmed(open, author, replacedFingerprint);
+                            return write(command, actor, author, text, fingerprint, now, OwnerAction.KEY_REPLACED,
+                                    " replaced=" + open.fingerprint(), () -> state.close(open.id(), now));
+                        })
+                        .orElseGet(() -> write(command, actor, author, text, fingerprint, now,
+                                OwnerAction.KEY_REGISTERED, "", () -> true)));
+    }
+
+    /**
+     * Closes the old key ({@code closeOld}, true when it was closed; always true when there is none) and inserts the
+     * new one, then records the audit entry.
+     */
+    private Registered write(RegisterCommand command, OwnerIdentity actor, AuthorId author, String text,
+            String fingerprint, Instant now, OwnerAction action, String replacedDetail, BooleanSupplier closeOld) {
         // The close and the insert are the writes that other registrations race for. Whoever loses is decided by the
         // database, not by running this method again: the conditional close affects no row, or the insert breaks a
         // unique key. The savepoint takes back what the loser wrote (the closed key, the number of the counter) and
@@ -141,7 +156,7 @@ public class SessionKeyService {
         Object savepoint = transaction.createSavepoint();
         SessionPublicKey row;
         try {
-            if (current.isPresent() && !state.close(current.get().id(), now)) {
+            if (!closeOld.getAsBoolean()) {
                 transaction.rollbackToSavepoint(savepoint);
                 transaction.releaseSavepoint(savepoint);
                 return lostRace(author, fingerprint);
@@ -155,8 +170,7 @@ public class SessionKeyService {
             transaction.releaseSavepoint(savepoint);
             return lostRace(author, fingerprint);
         }
-        audit.record(actor, current.isPresent() ? OwnerAction.KEY_REPLACED : OwnerAction.KEY_REGISTERED,
-                author.value(), "key=" + fingerprint + current.map(open -> " replaced=" + open.fingerprint()).orElse(""));
+        audit.record(actor, action, author.value(), "key=" + fingerprint + replacedDetail);
         return registered(row);
     }
 
@@ -175,14 +189,15 @@ public class SessionKeyService {
      * whose key was closed meanwhile with nothing registered in its place has no live key (NOT_FOUND).
      */
     private Registered lostRace(AuthorId author, String fingerprint) {
-        Optional<SessionPublicKey> holder = state.findLiveByFingerprint(fingerprint);
-        if (holder.isPresent()) {
-            return sameAuthor(holder.get(), author, fingerprint);
-        }
-        SessionPublicKey live = state.findLive(author)
-                .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND, List.of("session key", author.value())));
-        throw new ConflictException(ConflictCode.KEY_REPLACEMENT_NOT_CONFIRMED,
-                List.of(author.value(), live.fingerprint(), live.registeredAt().toString()));
+        return state.findLiveByFingerprint(fingerprint)
+                .map(holder -> sameAuthor(holder, author, fingerprint))
+                .orElseGet(() -> {
+                    SessionPublicKey live = state.findLive(author)
+                            .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND,
+                                    List.of("session key", author.value())));
+                    throw new ConflictException(ConflictCode.KEY_REPLACEMENT_NOT_CONFIRMED,
+                            List.of(author.value(), live.fingerprint(), live.registeredAt().toString()));
+                });
     }
 
     /** Closes the live key of the author and records who did it; true when there was one. */
