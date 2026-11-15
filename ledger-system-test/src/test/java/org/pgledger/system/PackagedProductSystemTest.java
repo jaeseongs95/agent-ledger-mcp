@@ -214,7 +214,7 @@ class PackagedProductSystemTest {
         assertThat(tables).contains("project", "defect", "task", "history", "request_receipt", "session_key",
                 "session_grant", "schema_history");
         schemaHistoryAfterMigrate = schemaHistory(schema);
-        assertThat(schemaHistoryAfterMigrate).hasSize(3).allSatisfy(row -> assertThat(row.get("outcome"))
+        assertThat(schemaHistoryAfterMigrate).hasSize(ShippedMigrations.count()).allSatisfy(row -> assertThat(row.get("outcome"))
                 .isEqualTo("SUCCESS"));
         assertThat(privileges("history")).containsExactlyInAnyOrder("SELECT", "INSERT");
         assertThat(privileges("defect")).contains("SELECT", "INSERT", "UPDATE").doesNotContain("DELETE");
