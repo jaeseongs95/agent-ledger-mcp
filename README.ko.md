@@ -5,6 +5,10 @@
 AI 에이전트가 수행한 작업을 기록하는 장부이며, 하나의 MCP 엔드포인트로 제공됩니다. 결함, 작업, 수정과 그 검증을 누가 왜 수행했는지와 함께 기록합니다.
 에이전트는 MCP 도구로 읽고 쓰며, 자신의 데이터베이스 로그인을 받지 않습니다.
 
+이것은 **개인판**입니다. 한 사람이 본인의 컴퓨터나 본인의 서버에 설치해 실행하며, 설치 대상 전체를 신뢰합니다. 두 서비스(MCP 서버와 관리 웹)는
+루프백 주소 `127.0.0.1`에서만 수신합니다. 다른 컴퓨터에서 접근하게 하는 일, 곧 역방향 프록시와 TLS 인증서는 운영자가 고른 도구로 하는 운영자의 몫이며,
+설치기는 프록시 설정을 쓰지 않고 인증서를 발급하지 않습니다.
+
 2.0.0 버전은 Java 25와 Spring Boot로 다시 작성한 것이며 자체 도구 계약을 가집니다(모든 쓰기 도구는 필수 `operationKey`를 받고, 이전 버전의 인자는 새 인자와 함께 받아들이지 않습니다).
 클라이언트에 바뀐 내용은 [릴리스 노트](docs/release-notes/2.0.0.md)에 적습니다. 릴리스 노트의 형식은 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md)에 있습니다.
 
@@ -184,7 +188,7 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | `ledger.admin.sign-in` | 관리 웹 | 소유자의 로그인 방식으로 `token`, `oidc`, `passkey` 중 정확히 하나이며 로그인 페이지는 그것만 제공합니다. 없으면 새 설치는 `passkey`이고, `ledger.admin.oidc.*` 설정이 있는데 선택이 없는 설치는 시작할 때 거절합니다(추측하지 않습니다) |
 | `ledger.admin.oidc.owner-email` | 관리 웹 | `ledger.admin.sign-in=oidc`일 때 소유자의 이메일 주소 하나이며 공급자가 확인한 주소여야 합니다. 공급자 자체는 `spring.security.oauth2.client.*`입니다 |
 | `ledger.admin.oidc.issuer` | 관리 웹 | `ledger.admin.sign-in=oidc`일 때 그 주소가 유효한 발급자(`iss`): 주소는 그것을 확인한 발급자 안에서만 의미가 있습니다 |
-| `ledger.admin.passkey.rp-id` | 관리 웹 | 패스키가 묶이는 호스트 이름. 기본값은 `ledger.admin.allowed-hosts`의 루프백이 아닌 호스트 하나이고, 없으면 `localhost`입니다(공개 호스트가 여럿이면 이 설정이 필요합니다) |
+| `ledger.admin.passkey.rp-id` | 관리 웹 | 패스키가 묶이는 호스트 이름. 기본값은 `ledger.admin.allowed-hosts`의 루프백이 아닌 호스트 하나이고, 없으면 `localhost`입니다 |
 | `ledger.admin.passkey.origins` | 관리 웹 | 브라우저가 보이는 origin(스킴, 호스트, 포트): `http://localhost`를 뺀 모든 origin은 `https`입니다. 기본값은 `https://<rp-id>`이고 `localhost`는 `http://localhost:<server.port>`입니다 |
 | `ledger.admin.lockout.max-failures` | 관리 웹 | 한 클라이언트가 잠기기 전의 실패 횟수(관리 토큰, 패스키 로그인, 일회용 코드), 기본 5 |
 | `ledger.admin.lockout.window` | 관리 웹 | 실패를 세는 기간, 기본 60s |
@@ -210,15 +214,15 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | `ledger.cli.driver.directory` | `ledger-cli` | `driver-register`가 jar를 가져오는 디렉터리, 기본 `/etc/pg-ledger-mcp/drivers` |
 | `ledger.cli.driver.file` | `ledger-cli` | `driver-register`가 기록하는 등록 파일, 기본 `/etc/pg-ledger-mcp/jdbc-driver.yaml` |
 
-서버는 루프백에서만 수신합니다(MCP `127.0.0.1:8765`, 관리 웹 `127.0.0.1:8865`). 외부에 공개하려면 HTTPS를 종단하는 역방향 프록시를 앞에 두고
-그 공개 호스트 이름을 허용 호스트에 적습니다. 관리 웹은 루프백 주소에서 온 `X-Forwarded-For`와 `X-Forwarded-Proto`만 신뢰합니다.
+서버는 루프백에서만 수신합니다(MCP `127.0.0.1:8765`, 관리 웹 `127.0.0.1:8865`). 두 서버의 코드에 고정되어 있어 주소를 바꾸는 설정은 없습니다. 외부에
+공개하려면 운영자가 고른 역방향 프록시(HTTPS를 종단함)를 같은 호스트에 두고, 그 프록시가 넘기는 호스트 이름 하나를 서비스의 허용 호스트에
+적습니다(`--mcp-host`, `--admin-host`). 관리 웹은 루프백 주소에서 온 `X-Forwarded-For`와 `X-Forwarded-Proto`만 신뢰합니다.
 서버는 드라이버 등록 파일과 비밀 디렉터리를 `spring.config.import`로 읽으며 설치기가 이를 서비스 정의에 넣습니다(설치 참조). `ledger-cli`는 기본으로 읽습니다.
 
 ## 설치
 
-설치기 두 개가 세 가지 대상을 다룹니다. **개인 PC**(Windows)는 `deploy\install.cmd`를 기본값으로 실행합니다. 두 서버는 루프백 주소에서만 듣고,
-역방향 프록시와 TLS는 없습니다. **Windows 서버**는 같은 스크립트를 실행하며, 외부에서 접근하게 할 때는 공개 호스트 이름을 지정하고 운영자가 준비한
-역방향 프록시를 그 앞에 둡니다. **Linux 서버**는 `sudo deploy/install.sh`를 실행하며, 선택적으로 nginx 사이트를 만듭니다. macOS는 지원하지 않습니다.
+설치기 두 개가 세 가지 대상을 다룹니다. 개인 PC와 Windows 서버는 `deploy\install.cmd`를, Linux 서버는 `sudo deploy/install.sh`를 실행합니다.
+대상은 옵션으로만 다르며, 어느 대상에서나 두 서버는 루프백 주소에서만 듣습니다(밖에서 접근하기 참조). macOS는 지원하지 않습니다.
 개인 PC가 Linux 데스크톱이면 Linux 절차를 따릅니다. 빌드에는 JDK 25가 필요하고, 호스트에는 모든 계정이 실행할 수 있는 경로(`/home` 아래가 아닌 곳, 서비스 계정도 실행하기 때문입니다)에 Java 25 런타임이 필요합니다.
 
 모든 대상에 공통인 것은 다음과 같습니다.
@@ -248,7 +252,7 @@ cp ledger-cli/build/libs/ledger-cli.jar ledger-mcp-server/build/libs/ledger-mcp-
   설정을 씁니다(`application.yaml`과 서비스별 파일 하나씩이 한 디렉터리에 놓입니다. 운영자의 설정은 그곳의 `local.yaml`에 두며, 마지막에 읽고 교체하지 않습니다).
   이어서 설치기는 `ledger-cli`로 비밀을 저장합니다. 앱 계정의 데이터베이스 비밀번호(숨김 입력), `ledger.admin.token`과 `ledger.mcp.token`(생성하며 그 단계의 끝에
   한 번만 표시), 복사본 `ledger.admin.agent-token`입니다. 그리고 드라이버를 등록하고, DDL 계정으로 `setup`을 실행하고(스키마, 부여, 시드 코드. 첫 설정 참조), 두 서비스를 시작합니다. Java가 할 수 없어
-  스크립트에 남는 것은 운영체제 사용자 생성(`useradd`), 그 사용자로 명령 시작(`runuser`), 서비스 관리자(`systemctl`, WinSW, `sc.exe`), `nginx -t`와 다시 읽기입니다.
+  스크립트에 남는 것은 운영체제 사용자 생성(`useradd`), 그 사용자로 명령 시작(`runuser`), 서비스 관리자(`systemctl`, WinSW, `sc.exe`)입니다.
   Java 25 확인은 JVM이 합니다. jar는 Java 25용으로 컴파일되어 다른 런타임은 읽지 못합니다. 내려받거나 설치하는 것은
   없습니다. 더 새로운 jar로 다시 실행하면 업그레이드입니다. 파일과 서비스는 교체되고, 스키마와 권한은 다시 적용되며, 비밀·토큰·데이터는 유지됩니다. 중간에 멈춘 실행도 같은 방법으로 고칩니다. 같은 옵션으로 다시 실행하면 됩니다(비밀을 저장하는 명령은
   데이터베이스를 쓰지 않습니다).
@@ -269,18 +273,11 @@ cp ledger-cli/build/libs/ledger-cli.jar ledger-mcp-server/build/libs/ledger-mcp-
 | `--schema=<name>` | `ledger.schema.name`, 선택 |
 | `--mcp-port=<n>` | MCP 서버의 루프백 포트, 기본값 8765 |
 | `--admin-port=<n>` | 관리 웹의 루프백 포트, 기본값 8865 |
-| `--mcp-host=<host>[,<host>...]` | MCP 서버의 공개 호스트 이름 하나, 또는 쉼표로 구분한 여러 개(이름마다 한 번, 최대 10개, 소문자, 포트 없음). 모든 이름이 그 `Host` 검사에서 허용되고 nginx 사이트에서 서비스됩니다. `--admin-host` 없이 줄 수 있습니다 |
-| `--admin-host=<host>[,<host>...]` | 관리 웹의 공개 호스트 이름이며 같은 형식입니다. 선택 옵션입니다. 주지 않으면 관리 웹은 루프백으로만 접근하고(그 `Host` 검사는 `127.0.0.1`과 `localhost`만 허용), nginx 사이트에도 관리 웹 블록이 없습니다. 공개 이름이 있으면 설치기가 `admin.yaml`에 `ledger.admin.passkey.rp-id`(첫 번째 이름)와 `ledger.admin.passkey.origins`(첫 번째 이름과 그 아래 이름마다 `https://<name>`)도 써서, 원격 설치의 passkey가 직접 고치지 않아도 동작합니다. 첫 번째 이름 아래가 아닌 이름은 접속은 되지만 passkey를 공유하지 않습니다(다른 구성은 `local.yaml`에 `rp-id`와 `origins`를 지정) |
-| `--nginx-conf=<path>` | Linux: 이 파일에 nginx 사이트를 씁니다. 경로는 호스트의 nginx가 `http` 문맥에 이미 포함하는 경로여야 합니다(예: Debian, Ubuntu 및 RHEL 계열 패키지가 포함하는 `/etc/nginx/conf.d/<name>.conf`). 설치기는 그 경로에 사이트를 쓰고 `nginx -t`와 다시 읽기만 실행하며, `sites-enabled`에는 아무것도 연결하지 않습니다. `--mcp-host`와, `--tls-certificate=<path>` 및 `--tls-key=<path>` 또는 `--tls-acme`가 필요합니다 |
-| `--tls-certificate=<path>` | 운영자의 TLS 인증서. 인증서를 발급하거나 갱신하는 것은 없습니다 |
-| `--tls-key=<path>` | 운영자의 TLS 키 |
-| `--tls-acme` | 운영자의 인증서와 키 대신 주는 플래그입니다. 인증서를 `ledger-cli`가 만들고 갱신합니다(자동 인증서 참조) |
-| `--acme-directory=<url>` | `--tls-acme`와 함께 쓰는 선택 옵션입니다. 인증 기관의 ACME 디렉터리 URL이며, 기본값은 Let's Encrypt의 운영 디렉터리 `https://acme-v02.api.letsencrypt.org/directory`입니다 |
-| `--acme-email=<address>` | `--tls-acme`와 함께 쓰는 선택 옵션입니다. ACME 계정의 연락 주소입니다 |
-| `--agree-tos` | `--tls-acme`와 함께 씁니다. 인증 기관의 서비스 약관을 읽고 동의한다는 표시이며, 첫 주문에 필요합니다 |
+| `--mcp-host=<host>` | 선택 옵션입니다. 운영자의 역방향 프록시가 MCP 서버를 위해 `Host` 헤더로 넘기는 호스트 이름 하나(소문자, 포트 없음)이며, MCP 서버의 `Host` 검사가 `127.0.0.1`과 `localhost`(항상 허용)에 더해 허용합니다. 주지 않으면 서버는 루프백으로만 접근합니다 |
+| `--admin-host=<host>` | 선택 옵션이며 관리 웹에 대해 같은 뜻이고, `--mcp-host`와 다른 이름이어야 합니다. 이 옵션이 있으면 설치기가 `admin.yaml`에 `ledger.admin.passkey.rp-id`(그 이름)와 `ledger.admin.passkey.origins`(`https://<name>`)도 써서, 원격 설치의 passkey가 직접 고치지 않아도 동작합니다(다른 구성은 `local.yaml`에 `rp-id`와 `origins`를 지정) |
 | `--stdin` | 비밀번호를 터미널 대신 표준 입력에서 읽음. 먼저 앱 계정의 비밀번호(아직 저장되어 있지 않을 때만), 그다음 DDL 계정의 비밀번호. `docker login --password-stdin`과 같은 관례입니다 |
 
-`render-deploy`, `prepare-host`, `seal-host`에는 설치기가 스스로 정하는 옵션이 다섯 더 있습니다. `--platform=<platform>`(`linux`가 기본값, 또는 `windows`),
+`render-deploy`와 `prepare-host`에는 설치기가 스스로 정하는 옵션이 다섯 더 있습니다. `--platform=<platform>`(`linux`가 기본값, 또는 `windows`),
 `--home=<path>`(Windows: 설치 디렉터리), `--java=<path>`(Java 실행 파일), `--root=<directory>`(파일을 제 경로 대신 한 디렉터리 아래에 둠. 제자리에 두기 전에
 살펴볼 때 씁니다), 그리고 `render-deploy`에만 있는 플래그 `--check`(모든 옵션을 검증하고 아무것도 바꾸지 않음. 설치기가 가장 먼저 실행하므로, 이름을 포함해
 잘못된 값은 아무것도 없을 때 설치를 멈춥니다)입니다. `prepare-host`는 `--jars=<dir>`, `--driver-jar=<file>`, Windows에서는 `--winsw=<file>`도 받습니다.
@@ -297,74 +294,15 @@ root로 실행합니다. 사용자 `pg-ledger-mcp`가 없으면 만들고, `prep
 sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<driver-class> --owner-account=<ddl-account> --app-account=<app-account> --jdbc-url=<jdbc-url>
 ```
 
-공개 이름과 TLS를 쓰려면 호스트 이름과 인증서·키 경로를 더합니다. nginx 사이트는 `X-Forwarded-For`를 연결 주소로 덮어쓰며, 관리 웹은 이 헤더를
-루프백 프록시에서 온 것만 믿습니다.
+### 밖에서 접근하기
 
-```sh
-sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<driver-class> --owner-account=<ddl-account> --app-account=<app-account> --jdbc-url=<jdbc-url> --mcp-host=<mcp-host> --admin-host=<admin-host> --nginx-conf=/etc/nginx/conf.d/pg-ledger-mcp.conf --tls-certificate=<certificate> --tls-key=<key>
-```
-
-### 자동 인증서
-
-`--tls-certificate`와 `--tls-key` 대신 `--tls-acme`를 주면 `ledger-cli`가 인증서를 직접 만들고 갱신합니다. 표준 ACME 클라이언트(RFC 8555)이며
-라이브러리 acme4j(Apache-2.0)로 만들었습니다. acme4j는 jose4j(Apache-2.0)와 Bouncy Castle(MIT 계열인 Bouncy Castle 라이선스)을 함께 가져오며,
-인증서 요청을 만드는 데 Bouncy Castle을 씁니다. 인증 기관은 ACME 디렉터리를 제공하는 어느 곳이든 됩니다. `--acme-directory=<url>`로 지정하며
-기본값은 Let's Encrypt의 운영 디렉터리입니다. 증명은 HTTP-01만 쓰므로 어떤 업체의 DNS나 CDN 인터페이스도 쓰지 않습니다. 결과는 `/etc/<name>/tls`의
-`fullchain.pem`과 `privkey.pem`이며 계정 키 `account.key`가 그 옆에 있습니다. 표준 PEM 파일이므로 다른 프록시도 그대로 쓸 수 있습니다. 키는 JDK로
-만들고(EC P-256), 서비스 사용자만 읽을 수 있게 저장하며, 출력하지 않습니다. 파일은 원자적으로 교체하므로 갱신이 실패해도 이전 인증서가 그대로 남습니다.
-
-운영자가 할 일은 다음 순서입니다.
-
-1. 호스트 이름, 즉 `--mcp-host`와 `--admin-host`의 DNS 레코드(`A`와 `AAAA`)를 서버로 지정합니다(목록이면 모든 이름. 관리 웹은 공개 이름이 있을 때만 필요합니다).
-2. 방화벽에서 `80`과 `443` 포트를 허용합니다. `80` 포트는 nginx에 닿아야 합니다. 인증 기관이 그곳에서 HTTP로 증명을 가져갑니다.
-3. 서버 앞에 CDN이나 다른 프록시를 두는 경우, 그 프록시는 경로 `/.well-known/acme-challenge/`를 `80` 포트의 서버로 그대로 통과시켜야 하며, 그 경로를
-   캐시하거나 리다이렉트해서는 안 됩니다. 오래 유지되는 MCP 연결(Streamable HTTP)에는 충분히 긴 프록시 타임아웃이 필요합니다. nginx 사이트 자체는 MCP
-   호스트에 `proxy_buffering off`와 `proxy_read_timeout 3600s`를 둡니다.
-4. 인증 기관의 서비스 약관을 읽고 `--agree-tos`를 줍니다. `--acme-email=<address>`는 선택 연락 주소입니다.
-
-```sh
-sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<driver-class> --owner-account=<ddl-account> --app-account=<app-account> --jdbc-url=<jdbc-url> --mcp-host=<mcp-host> --admin-host=<admin-host> --nginx-conf=/etc/nginx/conf.d/pg-ledger-mcp.conf --tls-acme --agree-tos
-```
-
-nginx 사이트에는 자기 호스트 이름의 `server` 블록만 있습니다(MCP 서버의 이름은 한 블록에, 관리 웹의 이름은 있을 때 다른 블록에 둡니다). `default_server`를 차지하지 않고 다른 사이트를 건드리지 않으므로 같은 호스트의 다른 서비스와
-함께 쓸 수 있습니다. 호스트 이름마다 80 포트 블록이 `/.well-known/acme-challenge/`를 웹 루트 `/var/www/<name>-acme`에서 제공하고 나머지는 https로
-리다이렉트하며, 443 블록은 PEM 파일을 씁니다.
-
-80 포트는 네트워크 전체에 열려 있으므로 80 포트 블록은 강화되어 있습니다. 80 포트 블록은 `/.well-known/acme-challenge/<token>` 경로이고 토큰이 base64url의
-문자(`A-Za-z0-9_-`)로만 이루어진 경우에, 그리고 `GET`과 `HEAD` 메서드에만 웹 루트의 파일을 제공합니다. `/.well-known/acme-challenge/` 아래의
-다른 요청에는 404로 응답하고, 나머지는 요청의 `Host` 헤더가 아니라 블록에 고정된 호스트 이름의 https로 리다이렉트합니다. 요청 본문은 `1k`까지만
-받고, 헤더, 본문, 유휴 연결은 `10s`까지만 기다립니다. 주소마다 초당 10건(순간 허용 20건)의 요청과 동시 연결 20개를 허용하고, 이를 넘으면 `429`로
-응답합니다. 이 한도는 인증 기관이 필요로 하는 양보다 훨씬 높습니다. 인증 기관은 여러 곳에서 동시에 확인하지만 각자 다른 주소에서 옵니다.
-nginx의 버전은 숨깁니다(`server_tokens off`, 443 블록에서도 같습니다). 주소를 세는 공유 메모리 영역 두 개는 사이트 파일의 맨 위에 선언하며
-인스턴스 이름을 담으므로(`<name>-acme-req`와 `<name>-acme-conn`) 다른 사이트나 다른 인스턴스에는 영향을 주지 않습니다. 80 포트 블록은
-`default_server`를 차지하지 않고, 다른 사이트를 바꾸지 않으며, 전역 지시어를 설정하지 않고, 서비스로 프록시하지 않습니다.
-
-권장 사항: 그 호스트에서 80 포트를 쓰는 사이트가 이것뿐이면, 그곳에서 아무도 서비스하지 않는 이름과 주소의 요청을 닫는 기본 서버를 따로 두는 것을 권장합니다.
-예를 들어 다음과 같습니다. 제품은 이 설정을 만들지 않습니다.
-
-```nginx
-server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    server_name _;
-    return 444;
-}
-```
-
-첫 발급: nginx는 인증서 파일이 생기기 전에는 443 블록을 읽을 수 없으므로, `render-deploy`는 `fullchain.pem`과 `privkey.pem`이 있을 때만 443 블록을 씁니다.
-그래서 설치기는 80 포트 블록만 있는 사이트를 쓰고, nginx가 읽게 한 뒤, 서비스 사용자로 `tls-issue`를 실행하고, `render-deploy`를 다시 실행하며(이제 443 블록이
-포함됩니다), nginx가 사이트를 다시 읽게 하고, 타이머를 켭니다. 설치기를 다시 실행하면 대신 `tls-renew`를 불러, 갱신할 때가 된 것만 주문합니다.
-
-갱신: `render-deploy --tls-acme`는 systemd 서비스 `<name>-tls-renew.service`와 타이머 `<name>-tls-renew.timer`를 씁니다. 타이머는 하루 두 번, 무작위 시각에
-실행됩니다. `tls-renew`는 현재 인증서가 30일 안에 만료되거나(`--renew-before-days=<n>`) 준 호스트 이름과 정확히 일치하지 않을 때만 새 인증서를 주문하며,
-그렇지 않으면 아무것도 하지 않고 그렇게 알립니다. 서비스는 서비스 사용자로 권한(capability) 없이 실행되고 TLS 디렉터리와 웹 루트만 쓸 수 있으며, 끝난 뒤
-`ExecStartPost=+/usr/bin/systemctl reload nginx`로 nginx를 다시 읽게 합니다. 이는 고정된 명령 한 줄이며, nginx를 다시 읽게 할 수 있는 것은 root뿐이므로
-systemd가 샌드박스 밖에서 전체 권한으로 실행합니다(systemd.service(5)의 `+` 접두사). 서비스 사용자의 입력은 이 명령에 닿지 않고, 관리할 `sudo` 규칙이나 polkit
-규칙도 없으며, 네트워크와 통신하고 키를 쓰는 프로세스는 아무 권한도 갖지 않습니다.
-
-자동 인증서는 Linux에서만 쓸 수 있습니다. nginx 사이트가 Linux용이기 때문입니다. Windows 설치기에는 자체 웹 서버가 없으며(Windows 서버는 운영자가 준비한
-리버스 프록시 뒤에 둡니다), 명령 자체는 어느 호스트에서나 실행됩니다. `--webroot=<dir>`와 `--tls-dir=<dir>`를 주면 증명은 운영자가 고른 웹 서버가 제공하는
-위치에, PEM 파일은 운영자의 프록시가 읽는 위치에 쓰이며, `--name=<name>`은 기본 디렉터리가 속한 인스턴스를 고릅니다.
+두 서버는 `127.0.0.1`에서만 수신하며, 이를 바꾸는 설정은 없습니다. 다른 컴퓨터에서 접근하게 하려면 운영자가 같은 호스트에 역방향 프록시와 TLS 인증서를
+운영자가 고른 도구로 둡니다. 설치기는 프록시 설정을 쓰지 않고, 인증서를 발급하지 않으며, 갱신 장치를 설치하지 않습니다. 프록시는 `127.0.0.1:8765`(MCP 서버)와
+`127.0.0.1:8865`(관리 웹)로 연결하고 클라이언트의 `Host` 헤더를 그대로 넘깁니다. 각 서비스에는 프록시가 그 서비스를 위해 넘기는 호스트 이름 하나를
+`--mcp-host=<host>`와 `--admin-host=<host>`로 줍니다. 그 이름은 해당 서비스의 `Host` 검사에서 `127.0.0.1`과 `localhost`(항상 허용)에 더해 허용됩니다.
+관리 웹의 이름이 있으면 설치기가 그에 맞는 passkey 설정도 씁니다(위의 옵션 참조). 관리 웹은 루프백 주소에서 온 `X-Forwarded-For`와 `X-Forwarded-Proto`만
+신뢰하므로, 프록시는 이 두 헤더를 자신이 받은 연결의 주소와 스킴으로 덮어써야 합니다. 오래 유지되는 MCP 연결(Streamable HTTP)에는 충분히 긴 프록시 타임아웃이
+필요합니다. 인증서, 그 갱신, 방화벽도 운영자의 몫입니다.
 
 ### Windows: 개인 PC 또는 서버
 
@@ -388,17 +326,18 @@ systemd가 샌드박스 밖에서 전체 권한으로 실행합니다(systemd.se
 deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <app-account> "<jdbc-url>"
 ```
 
-외부에서 접근하는 Windows 서버는 호스트 이름을 더하고, 직접 준비한 역방향 프록시를 두 루프백 포트 앞에 둡니다(설치기는 Windows에서 프록시 사이트를 쓰지
-않습니다).
+외부에서 접근하는 서버는 서비스마다 호스트 이름을 더하고, 직접 준비한 역방향 프록시를 두 루프백 포트 앞에 둡니다(밖에서 접근하기 참조).
 
 ```bat
 deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <app-account> "<jdbc-url>" "pg-ledger-mcp" "--mcp-host=<mcp-host> --admin-host=<admin-host>"
 ```
 
 모든 것은 `C:\ProgramData\<name>`에 놓입니다. 두 서비스는 LocalService로 실행하고, 실패하면 다시 시작하며(WinSW 설정), 로그는 `logs` 폴더에 씁니다.
-`prepare-host`는 폴더를 SYSTEM과 Administrators 외 모든 계정에게 닫고, `seal-host`는 설치 끝에 비밀을 LocalService에 넘깁니다(Java가 ACL로 하며 `icacls`는 쓰지 않습니다).
-설치한 사용자는 파일이 있다는 것만 볼 수 있고, `prepare-host`는 다시 실행하는 동안만 이를 되가져옵니다. 그래서 그 뒤에는
-`ledger-cli`의 소유자 명령이 비밀을 읽지 못합니다. 소유자 작업(프로젝트, 공통코드, 부여, 키)은 관리 웹의 화면에서 합니다(관리 웹 절 참고: 패스키 또는
+`prepare-host`는 폴더를 SYSTEM과 Administrators 외 모든 계정에게 닫고 같은 단계에서 LocalService에 필요한 접근을 줍니다(Java가 ACL로 하며 `icacls`는 쓰지 않습니다).
+jar는 읽고 실행하고, 설정, 로그, 데이터는 바꿀 수 있습니다. 비밀은 설치한 사용자의 것입니다. 비밀 폴더와 그 안에 만드는 비밀은 설치한 사용자(전체)와
+LocalService(읽기만)의 ACL로 만들어지고 다른 누구에게도 접근이 없으므로, 서비스는 읽을 수 있고 에이전트가 실행되는 계정은 읽을 수 없습니다.
+LocalService에 넘기는 것은 없으므로(소유자 변경도, 소유권을 가져오는 권한도 없습니다) `ledger-cli`의 소유자 명령은 설치한 사용자에게 계속 동작하고, 설치기를 다시
+실행해도 모든 것이 그대로입니다. 같은 사용자로 다시 실행합니다(개인판은 사용자가 한 사람입니다). 소유자 작업은 관리 웹에서도 합니다(관리 웹 절 참고: 패스키 또는
 OpenID Connect로 로그인하고, 첫 패스키는 `passkey-code`로 등록합니다). 개인 PC에서는 관리 웹을 `http://localhost:8865`로 엽니다(포트는 `--admin-port=<n>`입니다). 관리 웹은
 `Secure` 세션 쿠키를 설정하는데, 주요 브라우저는 `localhost`를 보안 컨텍스트로 취급하므로 이를 받아들이고, 패스키도 `localhost`에서는 HTTPS 없이 동작합니다.
 
@@ -422,7 +361,7 @@ OpenID Connect로 로그인하고, 첫 패스키는 `passkey-code`로 등록합�
 4. 시드와 데이터베이스를 코드 개수와 SHA-256 다이제스트로 대조하고 보고를 출력합니다. `setup`을 다시 실행해도 아무것도 바뀌지 않고 같은 보고가 나옵니다. 시드와 다른 운영자의
    코드는 바뀐 것으로 세고 그대로 둡니다.
 
-설치 기본값은 시드 번들 한 곳에 적습니다. `render-deploy`, `prepare-host`, `seal-host`는 옵션을 주지 않으면 이름과 포트를 거기서 가져오고, 설치 스크립트는
+설치 기본값은 시드 번들 한 곳에 적습니다. `render-deploy`와 `prepare-host`는 옵션을 주지 않으면 이름과 포트를 거기서 가져오고, 설치 스크립트는
 `install-default <name>`(`instance-name`, `mcp-port`, `admin-port`)으로 받으므로 어느 스크립트도 기본값의 사본을 갖지 않습니다.
 
 ### 설치 뒤
@@ -472,12 +411,9 @@ JDBC 드라이버의 타입 정보는 드라이버가 판단할 수 없는 형�
 | `attachments-rekey` | `attachments-rekey --from=<keyId>` | 키 `<keyId>`로 쓴 첨부 파일을 활성 키 `ledger.attachments.active-key-id`(다른 키여야 합니다)로 다시 씁니다. 옛 파일은 `ledger.attachments.orphan-grace`가 지난 뒤 `attachments-check`가 `orphans/`로 옮깁니다 |
 | `attachments-key-create` | `attachments-key-create` | 키 디렉터리에 새 256비트 키 파일을 만들고(서비스 계정만 읽을 수 있습니다) 키 ID를 출력합니다. 키 자체는 출력하지 않으며, 새 업로드를 그 키로 쓰려면 `ledger.attachments.active-key-id`를 그 값으로 설정합니다 |
 | `mcp-check` | `mcp-check [--url=<url>] [--ledger.mcp.token=<token>]` | 실행 중인 MCP 서버에 연결해 도구를 확인합니다 |
-| `render-deploy` | `render-deploy --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>] [--check]` | 서비스 정의(systemd 유닛, Windows에서는 WinSW 설정)와 설정, 선택적 nginx 사이트를 씁니다. 설치기가 호출합니다 |
-| `prepare-host` | `prepare-host --jars=<dir> --driver-jar=<file> [--winsw=<file>] --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>]` | 호스트의 파일을 준비합니다(root로, Windows에서는 관리자 권한으로 실행). 폴더를 소유자·모드 또는 ACL과 함께 만들고, jar와 드라이버(Windows에서는 WinSW도)를 복사하고, `render-deploy`가 쓰는 것을 씁니다. 설치기가 호출합니다 |
-| `seal-host` | `seal-host --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>]` | Windows, 마지막 단계: LocalService에 필요한 접근을 주고 비밀을 넘깁니다. 설치기가 호출합니다 |
+| `render-deploy` | `render-deploy --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>] [--admin-host=<host>] [--root=<directory>] [--check]` | 서비스 정의(systemd 유닛, Windows에서는 WinSW 설정)와 설정을 씁니다. 설치기가 호출합니다 |
+| `prepare-host` | `prepare-host --jars=<dir> --driver-jar=<file> [--winsw=<file>] --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>] [--admin-host=<host>] [--root=<directory>]` | 호스트의 파일을 준비합니다(root로, Windows에서는 관리자 권한으로 실행). 폴더를 소유자·모드 또는 ACL(Windows에서는 LocalService의 접근과 설치한 사용자의 비밀 폴더)과 함께 만들고, jar와 드라이버(Windows에서는 WinSW도)를 복사하고, `render-deploy`가 쓰는 것을 씁니다. 설치기가 호출합니다 |
 | `install-default` | `install-default <name>` | 시드 번들에서 설치 기본값 하나(`instance-name`, `mcp-port`, `admin-port`)를 출력합니다. 설치기가 기본값을 이것으로 받습니다 |
-| `tls-issue` | `tls-issue --mcp-host=<host>[,<host>...] [--admin-host=<host>[,<host>...]] [--name=<name>] [--webroot=<dir>] [--tls-dir=<dir>] [--acme-directory=<url>] [--acme-email=<address>] [--agree-tos]` | ACME를 쓰는 인증 기관에서 준 호스트 이름의 인증서를 발급받아 `fullchain.pem`과 `privkey.pem`을 씁니다. 첫 실행은 계정을 만들며 `--agree-tos`가 필요합니다. 자동 인증서 참조 |
-| `tls-renew` | `tls-renew --mcp-host=<host>[,<host>...] [--admin-host=<host>[,<host>...]] [--name=<name>] [--webroot=<dir>] [--tls-dir=<dir>] [--acme-directory=<url>] [--renew-before-days=<n>]` | 현재 인증서가 `--renew-before-days`(기본 30일) 안에 만료되거나 준 호스트 이름과 정확히 일치하지 않을 때 새 인증서를 발급받고, 그렇지 않으면 아무것도 하지 않습니다. `--tls-acme`의 타이머가 실행합니다 |
 
 ## 관리 웹
 
@@ -576,8 +512,8 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인�
      호스트 이름, 예를 들어 리버스 프록시의 이름으로 1.x 서버에 접속합니다. 2.0의 `Host` 검사는 `127.0.0.1`, `localhost`와 `--mcp-host`, `--admin-host`의 이름만
      허용하므로, 이름이 빠지면 이전 직후 모든 클라이언트 요청이 HTTP 403으로 실패합니다. 그래서 `--env=<file>`을 주면 명령은 아무것도 멈추기 전에, 파일이 허용하는
      공개 호스트 이름을 `--mcp-host`(또는 `--admin-host`)가 담지 않을 때 거절합니다. `HOSTS_DROPPED`와 종료 코드 2로 멈추고, 호스트 이름과 옵션을 알리며, 바꾼 것은 없습니다.
-     그 이름을 옵션에 더합니다. 이름 하나 또는 쉼표로 구분한 목록이며(`--mcp-host=<name>[,<name>...]`, `--mcp-host`는 `--admin-host` 없이 줄 수 있습니다),
-     같은 옵션을 설치 프로그램에도 줍니다. 루프백 이름은 옵션이 필요 없고, 파일의 그 밖의 내용은 출력하지 않습니다. 클라이언트가 더 쓰지 않는 이름은 파일의 사본에서 지우고,
+     그 이름을 옵션에 줍니다(`--mcp-host=<name>`, `--mcp-host`는 `--admin-host` 없이 줄 수 있습니다).
+     같은 옵션을 설치 프로그램에도 주며, 설치 프로그램은 서비스마다 호스트 이름 하나를 받습니다. 루프백 이름은 옵션이 필요 없고, 파일의 그 밖의 내용은 출력하지 않습니다. 클라이언트가 더 쓰지 않는 이름은 파일의 사본에서 지우고,
      그 사본을 `--env`로 줍니다. `--env` 없이 두 호스트 옵션만 주면 거절합니다.
    - **다시 실행.** 중간에 멈췄다면 다시 실행합니다. 이미 멈춘 서비스는 그렇다고 알리고, 정의와 다른 내용의 백업 파일은 절대 대체하지 않으며(`BACKUP_DIFFERS`), 서비스 관리자 호출이 실패하면
      (`SERVICE_COMMAND_FAILED`) 이미 한 일은 그대로 두고 다음 실행이 이어서 처리합니다. 이 시점부터 1.x의 클라이언트는 2.0 서버가 실행될 때까지 거절됩니다. 1.x를 새 설치와 나란히 두려면

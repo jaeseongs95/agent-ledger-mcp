@@ -347,7 +347,9 @@ class DocsTest {
     void readmeShowsOneHostNameForEachService(Language language) {
         assertThat(language.readme().codeSpans()).anyMatch(span -> span.equals("--mcp-host=<host>"))
                 .anyMatch(span -> span.equals("--admin-host=<host>"))
-                .noneMatch(span -> span.contains("[,<host>...]"));
+                .noneMatch(span -> (span.startsWith("--mcp-host=") || span.startsWith("--admin-host=")) && span.contains("[,"))
+                .noneMatch(span -> span.startsWith("render-deploy ") && span.contains("[,<host>...]"))
+                .noneMatch(span -> span.startsWith("prepare-host ") && span.contains("[,<host>...]"));
     }
 
     static Stream<Arguments> installNoteCases() {
