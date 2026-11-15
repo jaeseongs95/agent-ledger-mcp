@@ -1,6 +1,7 @@
 package org.pgledger.cli.deploy;
 
 import java.io.IOException;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -29,7 +30,7 @@ import org.springframework.stereotype.Component;
  * belong to the service account alone, and Administrators keep only the right to see that a file exists. An ACL is written
  * whole ({@code setAcl}) and is not propagated to the children by the file system: this class sets it on each path itself.
  *
- * <p>A component, because {@link #set} and {@link #grantTree} change the file system; the entries and the sets of rights
+ * <p>A component, because {@link #set}, {@link #reassign} and {@link #grantTree} change the file system; the entries and the sets of rights
  * are values and are built by static functions ({@link #allow}, {@link #closed}, {@link #with} ...) that touch nothing.
  */
 @Component
@@ -95,13 +96,90 @@ final class WindowsAccess {
         return acl;
     }
 
+    private static AclFileAttributeView view(Path path) {
+        return Files.getFileAttributeView(path, AclFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
+    }
+
     /** Gives the path to {@code owner} (when not null) and replaces its ACL. */
     void set(Path path, UserPrincipal owner, List<AclEntry> acl) throws IOException {
-        AclFileAttributeView view = Files.getFileAttributeView(path, AclFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
+        AclFileAttributeView view = view(path);
         if (owner != null) {
             view.setOwner(owner);
         }
         view.setAcl(acl);
+    }
+
+    /** What a path had before a run changed it: put back by {@link #restore} when the run fails. */
+    record Saved(Path path, UserPrincipal owner, List<AclEntry> acl) {
+    }
+
+    /** The owner and the ACL of the path, read before the first change (reading needs only the right to read the ACL). */
+    Saved save(Path path) throws IOException {
+        AclFileAttributeView view = view(path);
+        return new Saved(path, view.getOwner(), view.getAcl());
+    }
+
+    /**
+     * Puts the path back as {@link #save} found it, ACL first and owner last (the owner may not write the ACL of a path it
+     * gave away). A path that is as it was is not touched, so a path whose change never began, and which the caller could not
+     * change anyway, costs nothing.
+     */
+    void restore(Saved saved) throws IOException {
+        AclFileAttributeView view = view(saved.path());
+        boolean sameAcl = Objects.equals(saved.acl(), view.getAcl());
+        boolean sameOwner = Objects.equals(saved.owner(), view.getOwner());
+        if (sameAcl && sameOwner) {
+            return;
+        }
+        try (WindowsPrivileges.Enabled privileges = WindowsPrivileges.enable(WindowsPrivileges.TAKE_OWNERSHIP,
+                WindowsPrivileges.RESTORE)) {
+            try {
+                if (!sameAcl) {
+                    view.setAcl(saved.acl());
+                }
+                if (!sameOwner) {
+                    view.setOwner(saved.owner());
+                }
+            } catch (AccessDeniedException e) {
+                throw refused(saved.path(), privileges, e);
+            }
+        }
+    }
+
+    /**
+     * Makes the installer the owner of the path whoever owns it now, writes its ACL as that owner, and then gives it to
+     * {@code owner} (the installer itself for the secrets of a run, the service account for the secrets that are handed over).
+     * The ACL is written before the last owner change because the owner of a path may write its ACL, while the ACL that is
+     * written leaves the installer no right to change the owner: that last step, and the first one for a path that the
+     * service account owns and whose ACL gives Administrators nothing but the right to see it, are possible only with
+     * {@code SeTakeOwnershipPrivilege} (to take it) and {@code SeRestorePrivilege} (to name another owner), which an elevated
+     * token holds disabled and {@link WindowsPrivileges} enables for this one operation. {@code setAcl} of the JDK enables none,
+     * and its {@code setOwner} only the second.
+     *
+     * @throws PrivilegeNotHeldException when the process does not hold the privileges (it is not elevated) and the file system
+     *         refused the operation
+     */
+    void reassign(Path path, UserPrincipal installer, UserPrincipal owner, List<AclEntry> acl) throws IOException {
+        AclFileAttributeView view = view(path);
+        try (WindowsPrivileges.Enabled privileges = WindowsPrivileges.enable(WindowsPrivileges.TAKE_OWNERSHIP,
+                WindowsPrivileges.RESTORE)) {
+            try {
+                if (!Objects.equals(installer, view.getOwner())) {
+                    view.setOwner(installer);
+                }
+                view.setAcl(acl);
+                if (!Objects.equals(owner, installer)) {
+                    view.setOwner(owner);
+                }
+            } catch (AccessDeniedException e) {
+                throw refused(path, privileges, e);
+            }
+        }
+    }
+
+    /** A refusal of the file system is the missing privilege when the token does not hold them, and it is the refusal otherwise. */
+    private static IOException refused(Path path, WindowsPrivileges.Enabled privileges, AccessDeniedException refusal) {
+        return privileges.allHeld() ? refusal : new PrivilegeNotHeldException(path, refusal);
     }
 
     /** Adds the entry of {@code who} to the ACL of the folder and of everything in it, but for the subtree {@code skipped}. */

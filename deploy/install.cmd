@@ -21,7 +21,7 @@ rem account's (read only while it is not stored), then the DDL account's. It is 
 rem The name of the instance (default pg-ledger-mcp) gives the services <name> and <name>-admin and the home C:\ProgramData\<name>,
 rem so two instances can live on one host with their own ports; the Java validation of the name comes before any change.
 rem A re-run is an upgrade: jars, driver jar and files are replaced and the services are recreated; secrets, tokens and
-rem data are never replaced. The Java 25 check is the JVM's: the jars are compiled for it and no other runtime loads them.
+rem data are never replaced. A step that fails after the services were stopped starts again the ones that ran (:fail). The Java 25 check is the JVM's: the jars are compiled for it and no other runtime loads them.
 rem A personal PC gives no host names (loopback only); a Windows server that is reached from outside gives them and puts a
 rem reverse proxy of its own in front. Migration from 1.x: see the README (the 1.x service is stopped by the operator).
 setlocal EnableExtensions
@@ -36,13 +36,12 @@ set "NAME=%~8"
 set "CLIJAR=%~1\ledger-cli.jar"
 if "%NAME%"=="" call :ask instance-name NAME abcdefghijklmnopqrstuvwxyz0123456789- || exit /b 1
 call :ask mcp-port MCPPORT 0123456789 || exit /b 1
-set "SVC=%NAME%"
-set "ADMIN=%NAME%-admin"
-set "ACCOUNT=NT AUTHORITY\LocalService"
-set "WHOME=C:\ProgramData\%NAME%"
-set "HOME=C:/ProgramData/%NAME%"
+set "SVC=%NAME%" & set "ADMIN=%NAME%-admin"
+rem NATIVE: prepare-host and seal-host call the Windows API through Java (the privileges to take over the secrets), which Java 25 asks to allow.
+set "ACCOUNT=NT AUTHORITY\LocalService" & set "NATIVE=--enable-native-access=ALL-UNNAMED"
+set "WHOME=C:\ProgramData\%NAME%" & set "HOME=C:/ProgramData/%NAME%"
 set RENDER=--platform=windows "--home=%HOME%" "--name=%NAME%" "--java=%JAVA%" "--jdbc-url=%~7" "--app-account=%~6" %~9
-set JARCMD="%JAVA%" -Duser.timezone=UTC -jar "%WHOME%\lib\ledger-cli.jar"
+set JARCMD="%JAVA%" -Duser.timezone=UTC %NATIVE% -jar "%WHOME%\lib\ledger-cli.jar"
 set CLI=%JARCMD% --ledger.secrets.home=%HOME%/etc
 rem The hint at the end names the port of the MCP server: the value after --mcp-port in the render options (cmd splits it at the
 rem equals sign), the install default (above) when there is none. Java validates the option itself before anything is changed.
@@ -50,38 +49,38 @@ for %%P in (%~9) do if defined TAKE (set "MCPPORT=%%~P" & set "TAKE=") else if /
 rem Every option, the name included, is validated by Java before anything is created (the name is only ever used in quotes until then).
 "%JAVA%" -Duser.timezone=UTC -jar "%~1\ledger-cli.jar" --ledger.secrets.home=C:/nonexistent render-deploy --check %RENDER% || exit /b 1
 
-rem WinSW: stop what runs (the service manager is not Java's to talk to; the jars of a running service are locked).
-if exist "%WHOME%\lib\%SVC%.exe" "%WHOME%\lib\%SVC%.exe" stop /stopwait >nul 2>&1
-if exist "%WHOME%\lib\%ADMIN%.exe" "%WHOME%\lib\%ADMIN%.exe" stop /stopwait >nul 2>&1
-rem Folders and their ACLs, the secrets of an earlier run given back for this run, the jars, WinSW and the driver copied, the
-rem WinSW configurations and the settings rendered: Java (no secret is read: the home of this call has none).
-"%JAVA%" -Duser.timezone=UTC -jar "%~1\ledger-cli.jar" --ledger.secrets.home=C:/nonexistent prepare-host "--jars=%~1" "--winsw=%~2" "--driver-jar=%~3" %RENDER% || exit /b 1
+rem WinSW: note which services run (the STATE of sc.exe is 4 when one does, in any language) and stop them (the service manager is not
+rem Java's to talk to; the jars of a running service are locked). The steps after this point run in :steps (given the first six arguments, which a routine reads as its own); a failure goes to :fail.
+for %%S in (%SVC% %ADMIN%) do for /f "tokens=1,3" %%A in (' sc.exe query %%S 2^>nul') do if "%%A"=="STATE" if "%%B"=="4" set "UP=1" & set "UP_%%S=1"
+for %%S in (%SVC% %ADMIN%) do if exist "%WHOME%\lib\%%S.exe" "%WHOME%\lib\%%S.exe" stop /stopwait >nul 2>&1
+call :steps %1 %2 %3 %4 %5 %6 || goto :fail
+echo install.cmd: done. Check the MCP server with: %CLI% mcp-check --url=http://127.0.0.1:%MCPPORT%/mcp
+exit /b 0
 
+:steps
+rem Folders and their ACLs, the secrets of an earlier run given back for this run (first, and a failure here changes nothing), the jars,
+rem WinSW and the driver copied, the WinSW configurations and the settings rendered: Java (no secret is read: the home of this call has none).
+"%JAVA%" -Duser.timezone=UTC %NATIVE% -jar "%~1\ledger-cli.jar" --ledger.secrets.home=C:/nonexistent prepare-host "--jars=%~1" "--winsw=%~2" "--driver-jar=%~3" %RENDER% || exit /b 1
 rem Secrets: typed with hidden input or generated, as the administrator; an existing one is kept. The tokens are shown once.
 %CLI% secret-set ledger.jdbc.password --if-absent %STDIN% || exit /b 1
 %CLI% token-generate ledger.admin.token --print || exit /b 1
 rem The admin web must know the agents' token to refuse it: the same token under a second name.
 %CLI% token-generate ledger.mcp.token --print "--copy-to=ledger.admin.agent-token" || exit /b 1
-
 rem The driver is registered after the secrets (a registered driver makes the commands connect).
 %CLI% driver-register "--jar=%HOME%/etc/drivers/%~nx3" "--class=%~4" || exit /b 1
-
 rem The first setup through the DDL account (schema, grants, the seed codes); its password is typed and not stored.
 %CLI% setup "--owner-account=%~5" "--app-account=%~6" %STDIN% || exit /b 1
-
 rem WinSW registers the services from the configurations, sc.exe sets the one account (the service manager again).
-for %%S in (%SVC% %ADMIN%) do (
-  "%WHOME%\lib\%%S.exe" uninstall >nul 2>&1
-  "%WHOME%\lib\%%S.exe" install || exit /b 1
-  sc.exe config %%S obj= "%ACCOUNT%" >nul || exit /b 1
-)
-
+for %%S in (%SVC% %ADMIN%) do "%WHOME%\lib\%%S.exe" uninstall >nul 2>&1 & "%WHOME%\lib\%%S.exe" install && sc.exe config %%S obj= "%ACCOUNT%" >nul || exit /b 1
 rem The service account gets its access and the secrets are handed over to it (Java; the installer keeps no access to them).
 %JARCMD% --ledger.secrets.home=C:/nonexistent seal-host %RENDER% || exit /b 1
-
 for %%S in (%SVC% %ADMIN%) do "%WHOME%\lib\%%S.exe" start || exit /b 1
-echo install.cmd: done. Check the MCP server with: %CLI% mcp-check --url=http://127.0.0.1:%MCPPORT%/mcp
 exit /b 0
+
+:fail
+rem A step failed after the services were stopped: the access of the service account is given again, and the services that ran are started.
+for %%S in (%SVC% %ADMIN%) do if defined UP_%%S %JARCMD% --ledger.secrets.home=C:/nonexistent seal-host %RENDER% & "%WHOME%\lib\%%S.exe" start
+exit /b 1
 
 :ask
 rem An install default from Java: %1 its name, %2 the variable that gets it, %3 the characters its form has. A command that fails prints a
