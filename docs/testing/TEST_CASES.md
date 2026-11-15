@@ -1875,4 +1875,6 @@ Written before the code of the unit. Source: the audit against the development p
 |---|---|---|---|---|---|---|
 | HLP-001 | UNIT | `Sha256.ofText`, `Sha256.ofBytes` of the domain | digest "abc", the empty array, and four bytes (0, 1, 2, 0xff) | the FIPS 180-4 vectors `ba7816bf...15ad` and `e3b0c442...b855`; the four bytes give the same text as `Sha256Hex.of` (red before the fix is not possible: the two helpers gave the same text, the test pins the output while the code of the domain moves to `Sha256Hex`) | audit 3.2 | no |
 | HLP-002 | UNIT | `SeedDigest.of` | one code with every text, one code with absent texts, and no code | fixed vectors `c6f62c81...3c26`, `86bc10f8...5db1` and `e3b0c442...b855` (the SHA-256 of the lines, the same before and after the move to `Sha256Hex`) | audit 3.2 | no |
+| HLP-003 | UNIT | `AdminProblems.newTraceId` | build `AdminProblems` with a generator that returns a fixed UUID | the trace id is that UUID (red before the fix: the class has no generator and makes its own random id) | audit 3.7 | no |
+| HLP-004 | UNIT | `McpHttpExceptionAdvice` catch-all | build the advice with a generator that returns a fixed UUID, hand it an `IllegalStateException` | the problem detail property `traceId` is that UUID (red before the fix: the advice makes its own random id) | audit 3.7 | no |
 

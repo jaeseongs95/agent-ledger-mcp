@@ -1,6 +1,5 @@
 package org.pgledger.mcp.security;
 
-import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.support.MessageSourceAccessor;
@@ -9,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.IdGenerator;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
@@ -27,9 +27,11 @@ public class McpHttpExceptionAdvice extends ResponseEntityExceptionHandler {
     private static final Logger LOG = LoggerFactory.getLogger(McpHttpExceptionAdvice.class);
 
     private final MessageSourceAccessor messages;
+    private final IdGenerator ids;
 
-    public McpHttpExceptionAdvice(MessageSourceAccessor modelMessages) {
+    public McpHttpExceptionAdvice(MessageSourceAccessor modelMessages, IdGenerator ids) {
         this.messages = modelMessages;
+        this.ids = ids;
     }
 
     /** The body is larger than the limit: 413 with the code {@code PAYLOAD_TOO_LARGE}. */
@@ -43,7 +45,7 @@ public class McpHttpExceptionAdvice extends ResponseEntityExceptionHandler {
     /** The boundary: anything unexpected is logged with its cause and answered without any internal detail. */
     @ExceptionHandler(Exception.class)
     ResponseEntity<Object> unexpected(Exception failure) {
-        String traceId = UUID.randomUUID().toString();
+        String traceId = ids.generateId().toString();
         LOG.error("the request failed with {} (trace {})", McpHttpCode.INTERNAL_ERROR, traceId, failure);
         ProblemDetail problem = problem(HttpStatus.INTERNAL_SERVER_ERROR, McpHttpCode.INTERNAL_ERROR);
         problem.setProperty("traceId", traceId);
