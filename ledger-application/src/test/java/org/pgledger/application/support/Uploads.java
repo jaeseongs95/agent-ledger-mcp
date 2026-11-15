@@ -2,6 +2,7 @@ package org.pgledger.application.support;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.file.Path;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
@@ -10,18 +11,23 @@ import java.util.Random;
 import java.util.UUID;
 import org.pgledger.application.attachment.AttachmentFlow;
 import org.pgledger.application.attachment.AttachmentProperties;
+import org.pgledger.application.attachment.StorageKeys;
 import org.pgledger.application.attachment.UploadCommands.Begin;
 import org.pgledger.application.attachment.UploadCommands.Begun;
 import org.pgledger.application.attachment.UploadCommands.Chunk;
 import org.pgledger.application.attachment.UploadCommands.Finished;
 import org.pgledger.application.attachment.UploadCommands.ReadPage;
 import org.pgledger.application.attachment.UploadCommands.Received;
+import org.pgledger.application.attachment.UploadService;
+import org.pgledger.application.gate.WriteGate;
 import org.pgledger.database.repository.AttachmentFileRepository;
+import org.pgledger.database.repository.AttachmentRepository;
 import org.pgledger.database.repository.UploadStagingRepository;
 import org.pgledger.domain.model.AttachmentFile;
 import org.pgledger.domain.model.UploadStaging;
 import org.pgledger.domain.value.Sha256;
 import org.pgledger.domain.value.StorageKey;
+import org.springframework.util.IdGenerator;
 
 /** The commands and the steps of an upload as the tests send them: a body, its chunks, the calls of the flow and where the files are. */
 public final class Uploads {
@@ -108,6 +114,30 @@ public final class Uploads {
             }
             page = flow.read(actor, attachmentId, offset, pageBytes);
         }
+    }
+
+    /**
+     * The upload service as it is when the owner has set {@code active-key-id} to another key: the same components with the settings of
+     * the context and the new active key. It is no bean, so its methods run in a transaction only when the caller opens one
+     * ({@link LedgerAppContext#tx}).
+     */
+    public static UploadService serviceWithActiveKey(LedgerAppContext ctx, String activeKeyId) {
+        AttachmentProperties current = ctx.bean(AttachmentProperties.class);
+        AttachmentProperties switched = new AttachmentProperties(current.directory(), current.keyDirectory(), activeKeyId,
+                current.maxFileBytes(), current.stagingBudgetBytes(), current.attachmentBudgetBytes(),
+                current.maxOpenPerOwner(), current.uploadTtl(), current.orphanGrace(), current.reaperInterval());
+        return new UploadService(ctx.bean(WriteGate.class), ctx.bean(UploadStagingRepository.class),
+                ctx.bean(AttachmentRepository.class), ctx.bean(AttachmentFileRepository.class), switched,
+                ctx.bean(IdGenerator.class), ctx.bean(StorageKeys.class), ctx.bean(Clock.class));
+    }
+
+    /** A whole upload whose begin was made after {@code active-key-id} was set to {@code keyId}: the file is written with that key. */
+    public static Finished uploadWithKey(LedgerAppContext ctx, AttachmentFlow flow, String actor, String keyId, byte[] body,
+            int... sizes) {
+        UploadService switched = serviceWithActiveKey(ctx, keyId);
+        Begun begun = ctx.tx(() -> switched.begin(actor, begin(body)));
+        sendParts(flow, actor, begun.uploadId(), parts(body, sizes), 0);
+        return flow.finish(actor, begun.uploadId());
     }
 
     public static UploadStaging row(LedgerAppContext ctx, String uploadId) {
