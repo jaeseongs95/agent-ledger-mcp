@@ -30,13 +30,13 @@ import org.pgledger.admin.app.LedgerAdminProperties;
 import org.pgledger.admin.setup.DriverRegistrationService;
 import org.pgledger.admin.support.TestDriverJar;
 import org.pgledger.application.admin.DriverAuditService;
-import org.pgledger.application.admin.DriverAuditWriter;
 import org.pgledger.application.admin.OwnerAuditWriter;
 import org.pgledger.database.driver.DriverLoader;
 import org.pgledger.database.driver.DriverRegistrar;
 import org.pgledger.database.driver.DriverRegistration;
 import org.pgledger.database.driver.DriverRegistrationFile;
 import org.pgledger.database.driver.LedgerJdbcProperties;
+import org.pgledger.database.repository.DriverAuditKeyRepository;
 import org.pgledger.database.repository.OwnerAuditRepository;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
@@ -128,7 +128,7 @@ class DriverRegistrationServiceTest {
         runner(registrationFile, driverDirectory, TestDriverJar.url())
                 .withUserConfiguration(DeclaredTransactions.class)
                 .withBean(DriverAuditService.class, () -> new DriverAuditService(writer, mock(OwnerAuditRepository.class),
-                        mock(DriverAuditWriter.class)))
+                        mock(DriverAuditKeyRepository.class)))
                 .withBean(PlatformTransactionManager.class, () -> transactions)
                 .run(context -> body.accept(context.getBean(DriverRegistrationService.class)));
     }

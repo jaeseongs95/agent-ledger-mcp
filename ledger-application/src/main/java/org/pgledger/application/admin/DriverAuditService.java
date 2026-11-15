@@ -1,12 +1,14 @@
 package org.pgledger.application.admin;
 
 import java.time.Instant;
+import java.util.List;
+import org.pgledger.database.repository.DriverAuditKeyRepository;
 import org.pgledger.database.repository.OwnerAuditRepository;
+import org.pgledger.domain.error.ConflictCode;
+import org.pgledger.domain.error.ConflictException;
 import org.pgledger.domain.rule.OwnerAction;
 import org.pgledger.domain.value.OwnerIdentity;
 import org.pgledger.domain.value.Sha256;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,16 +23,14 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class DriverAuditService {
 
-    private static final Logger LOG = LoggerFactory.getLogger(DriverAuditService.class);
-
     private final OwnerAuditWriter writer;
     private final OwnerAuditRepository trail;
-    private final DriverAuditWriter once;
+    private final DriverAuditKeyRepository keys;
 
-    public DriverAuditService(OwnerAuditWriter writer, OwnerAuditRepository trail, DriverAuditWriter once) {
+    public DriverAuditService(OwnerAuditWriter writer, OwnerAuditRepository trail, DriverAuditKeyRepository keys) {
         this.writer = writer;
         this.trail = trail;
-        this.once = once;
+        this.keys = keys;
     }
 
     /** Appends the row {@link OwnerAction#DRIVER_REGISTERED} of a registration the owner has just made. */
@@ -40,14 +40,15 @@ public class DriverAuditService {
 
     /**
      * Appends the row of a registration made while the schema was not ready, unless the trail already holds one for exactly
-     * that registration (the same class, and a detail that starts with {@code known}). Two runs at the same time (migrate and
-     * setup) can both find no row; the database decides which of them writes it: the registration is claimed by a key that is
-     * unique ({@code driver_audit_key}), in a nested write ({@link DriverAuditWriter}), and the run that cannot insert the key
-     * answers false, as for a row that was there. Nothing is run again.
+     * that registration (the same class, and a detail that starts with {@code known}): the trail is read first, then the key of
+     * the registration and the row are written, in this one transaction. Two runs at the same time (migrate and setup) can both
+     * find no row; the database decides which of them writes it: the key is unique ({@code driver_audit_key}), and the run that
+     * cannot insert it ends with the translated DUPLICATE_KEY and writes nothing. Nothing is run again.
      *
      * @param known        the part of the detail that every row of the registration starts with
      * @param registeredAt when the registration was made (it follows {@code known} in the detail of the row)
-     * @return whether a row was written
+     * @return whether a row was written (false when the trail had one)
+     * @throws ConflictException DUPLICATE_KEY when another run claimed the registration at the same moment
      */
     public boolean recordIfMissing(OwnerIdentity actor, String className, String known, Instant registeredAt) {
         boolean present = trail.findBySubjectOrderById(className).stream()
@@ -57,12 +58,12 @@ public class DriverAuditService {
             return false;
         }
         try {
-            once.recordOnce(registrationKey(className, known, registeredAt), actor, className,
-                    known + " registered_at=" + registeredAt);
+            keys.insert(registrationKey(className, known, registeredAt));
         } catch (DuplicateKeyException duplicate) {
-            LOG.debug("the registration of {} is recorded by another run; its row stands", className, duplicate);
-            return false;
+            throw new ConflictException(ConflictCode.DUPLICATE_KEY, List.of("driver registration " + className),
+                    duplicate);
         }
+        writer.record(actor, OwnerAction.DRIVER_REGISTERED, className, known + " registered_at=" + registeredAt);
         return true;
     }
 
