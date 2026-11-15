@@ -22,6 +22,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -36,6 +37,8 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.pgledger.database.repository.DatabaseEncodingRepository;
+import org.pgledger.database.repository.DatabaseEncodingRepository.EncodingProbe;
 import org.pgledger.database.repository.SchemaHistoryRepository;
 import org.pgledger.database.repository.SchemaHistoryRepository.Outcome;
 import org.pgledger.database.repository.SchemaHistoryRepository.Row;
@@ -448,13 +451,101 @@ class SchemaMigratorTest {
         assertThat(tableExists("t_two")).isFalse();
     }
 
-    /** RUN-017: the encoding of the database is read from the standard view and has to be UTF-8; the test database is. */
+    /**
+     * RUN-029: the encoding of the test database is proved by the probe query of the dialect of its product: the text of three code
+     * points comes back whole, which the judgement accepts, and PostgreSQL has no probe of the schema character set. The real
+     * database and the real {@code SqlBuilder} (the product name from the connection) answer; nothing is replaced.
+     */
     @Test
-    void run017_theEncodingOfTheDatabaseIsReadWithoutAProductQuery() {
-        List<String> names = TestSchemaServices.history(pool).characterSets();
+    void run029_theTestDatabaseAnswersTheEncodingProbeWithTheTextWhole() {
+        SqlBuilder dialect = new SqlBuilder(pool);
+        DatabaseEncodingRepository encodings = TestSchemaServices.encodings(pool, dialect);
 
-        assertThat(names).as("the standard view lists the character set").isNotEmpty();
-        DatabaseEncoding.requireUtf8(names);
+        EncodingProbe probe = encodings.encodingProbe();
+
+        assertThat(probe.value()).as("the probe text, whole").isEqualTo("한글😀").isEqualTo(SqlBuilder.ENCODING_PROBE_TEXT);
+        assertThat(probe.length()).as("code points").isEqualTo(3);
+        assertThat(dialect.countsCodePoints()).isTrue();
+        DatabaseEncoding.requireUtf8(dialect.countsCodePoints(), probe.length(), probe.value());
+        assertThat(encodings.schemaCharsets()).as("PostgreSQL has no schema character set probe").isEmpty();
+    }
+
+    /**
+     * RUN-033: {@code migrate} on the test PostgreSQL with the real migrator and the real repository, and a {@link SqlBuilder} of the test
+     * that changes the text of one probe query only (nothing of the product is replaced); the encoding is refused before any DDL: the
+     * schema that the properties name is not made and neither is the history table nor a table of the file.
+     */
+    private InfrastructureException encodingRefusedBeforeAnyDdl(SqlBuilder dialect, String named) {
+        Path dir = files(Map.of("V1__one.sql", ONE));
+        SchemaMigrator refusing = TestSchemaServices.migrator(pool, props(dir, named), clock, dialect);
+
+        InfrastructureException refused = refusedWith(refusing::migrate, InfrastructureCode.SCHEMA_ENCODING_NOT_UTF8);
+
+        SchemaHistoryRepository repository = TestSchemaServices.history(pool);
+        assertThat(repository.schemaExists(named)).as("the named schema is not created").isFalse();
+        assertThat(repository.tableExists()).as("the history table is not created").isFalse();
+        assertThat(tableExists("t_one")).as("no file is applied").isFalse();
+        return refused;
+    }
+
+    /** RUN-033 (a): a database that answers with the right length and a text that lost the Korean letters. */
+    @Test
+    void run033_aLossyAnswerIsRefusedBeforeAnyDdl() {
+        SqlBuilder lossy = new SqlBuilder(pool) {
+            @Override
+            public String generateEncodingProbe() {
+                return "SELECT CHAR_LENGTH(CAST(? AS VARCHAR(40))), REPLACE(CAST(? AS VARCHAR(40)), '한글', '??')";
+            }
+        };
+
+        InfrastructureException refused = encodingRefusedBeforeAnyDdl(lossy, "ep_lossy_value");
+
+        assertThat(refused.args()).containsExactly("length=3, value=??😀");
+    }
+
+    /** RUN-033 (b): a probe that fails on the real database with a data exception (22P05: the text has no equivalent in LATIN1). */
+    @Test
+    void run033_aDataExceptionOfTheProbeIsRefusedBeforeAnyDdl() {
+        SqlBuilder failing = new SqlBuilder(pool) {
+            @Override
+            public String generateEncodingProbe() {
+                return "SELECT LENGTH(CONVERT_TO(CAST(? AS VARCHAR(40)), 'LATIN1')), CAST(? AS VARCHAR(40))";
+            }
+        };
+
+        InfrastructureException refused = encodingRefusedBeforeAnyDdl(failing, "ep_data_exception");
+
+        assertThat(refused.args()).containsExactly("SQLSTATE=22P05");
+        assertThat(refused.getCause()).as("the failure of the database is the cause").isInstanceOf(DataAccessException.class);
+    }
+
+    /**
+     * RUN-033 (c): the schema probe gives no row. The dialect of the test stays PostgreSQL, because the query of MariaDB and MySQL
+     * ({@code @@character_set_server}, {@code DATABASE()}) does not run on it; the test gives the text of the schema probe only, a query of
+     * the same shape (three columns) that finds no row, so the real repository (the list) and the real judgement run.
+     */
+    @Test
+    void run033_noSchemaRowIsRefusedBeforeAnyDdl() {
+        SqlBuilder noRow = new SqlBuilder(pool) {
+            @Override
+            public Optional<String> generateSchemaCharsetProbe() {
+                return Optional.of("SELECT schema_name, schema_name, 1 FROM information_schema.schemata "
+                        + "WHERE schema_name = 'ep_no_such_schema_anywhere'");
+            }
+        };
+
+        InfrastructureException refused = encodingRefusedBeforeAnyDdl(noRow, "ep_no_schema_row");
+
+        assertThat(refused.args()).containsExactly("schema character set=none");
+    }
+
+    /** RUN-029: {@code migrate} runs the probe before anything is changed and applies the files on the test database. */
+    @Test
+    void run029_migrateProvesTheEncodingAndApplies() {
+        Path dir = files(Map.of("V1__one.sql", ONE));
+
+        assertThat(migrator(dir).migrate()).containsExactly(1);
+        assertThat(tableExists("t_one")).isTrue();
     }
 
 

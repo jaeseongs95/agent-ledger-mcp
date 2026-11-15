@@ -71,10 +71,15 @@ and no argument of an earlier version is accepted next to the new ones); what ch
 - **ANSI SQL.** The product does not bundle a JDBC driver: the user obtains the JDBC driver of the database of their choice
   and registers it with `driver-register`. The SQL is ANSI and uses the JDBC standard, and no DBMS-specific feature is used: the
   schema files have no triggers, procedures, views, sequences, identity columns or boolean columns, and the rules that the database
-  used to enforce are enforced by the application services. Two places differ by product: the row limit of a list and the
-  declaration of the long text column type, and `SqlBuilder` chooses both from the product of the connection. PostgreSQL is the
-  database that is tested and guaranteed in this edition. Other products may work but are not tested, and outside these two places
+  used to enforce are enforced by the application services. Three places differ by product: the row limit of a list, the
+  declaration of the long text column type and the probe that proves the encoding of the database, and `SqlBuilder` chooses all three from the product of the connection. PostgreSQL is the
+  database that is tested and guaranteed in this edition. Other products may work but are not tested, and outside these three places
   this edition contains no tailoring for a particular product (collations, session settings). The database must use UTF-8 and compare text case-sensitively.
+  `migrate` proves the encoding before it changes anything: it sends a text of three characters (two Korean letters and an emoji) through a query of the dialect and
+  refuses to go on when the database gives back another length or another text; it does not read the list of character sets of the database.
+  Where a database keeps a default character set for each schema and a character set for the server as well as one for the connection (MariaDB
+  and MySQL do), all three must be utf8mb4: the default character set of the database of the JDBC URL (the schema that is checked), the variable
+  character_set_server and the character set of the connection. `migrate` refuses to go on, before it changes anything, when the first two are not.
 
 A direct MCP caller is not authenticated as a host: the bearer token admits the caller, and the signed attestation proves the author.
 
@@ -521,7 +526,7 @@ and the ports from it when an option is not given, and the installers ask for th
 one row to `SUCCEEDED`; if the file fails, the attempt is rolled back, the row stays `FAILED`, and the next run tries the version again as
 the next attempt without changing or deleting the earlier rows. Two `migrate` runs at the same time are safe: the second waits in the
 database for the first and then skips what the first has applied. A file that was changed after it was applied stops `migrate` before it
-applies anything, and every process at start; no row is added for it. The database must use the encoding UTF-8, and the long text type of
+applies anything, and every process at start; no row is added for it. The database must use the encoding UTF-8, which `migrate` proves with a probe query of the dialect before it changes anything, and the long text type of
 the schema files is decided by the database dialect of the ledger, which `migrate` takes from the product name of the connection (there is
 no setting for it). Each declaration is taken from the official documentation of the database it is for, and where a database sets a small
 default limit when the length is left out, the declaration carries a length. The type information of the JDBC driver is not used, because a

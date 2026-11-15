@@ -7,6 +7,7 @@ import java.time.Clock;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.pgledger.database.repository.DatabaseEncodingRepository;
 import org.pgledger.database.repository.SchemaHistoryRepository;
 import org.pgledger.database.repository.SessionClockRepository;
 import org.pgledger.database.schema.GrantApplier;
@@ -55,7 +56,7 @@ class SchemaWiringTest {
                         .hasSingleBean(GrantApplier.class).hasSingleBean(SchemaVerifier.class)
                         .hasSingleBean(UtcSessionCheck.class).doesNotHaveBean(SchemaGuard.class)
                         .hasSingleBean(SchemaFileApplier.class).hasSingleBean(SchemaHistoryRepository.class)
-                        .hasSingleBean(SessionClockRepository.class);
+                        .hasSingleBean(SessionClockRepository.class).hasSingleBean(DatabaseEncodingRepository.class);
                 // the service that applies one file runs in the transaction of the container (the proxy of @Transactional)
                 assertThat(AopUtils.isAopProxy(context.getBean(SchemaFileApplier.class))).isTrue();
                 // so does the grant step (TXF-005): several GRANT statements are one transaction, a service method

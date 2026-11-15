@@ -2,6 +2,7 @@ package org.pgledger.testing.database;
 
 import java.time.Clock;
 import javax.sql.DataSource;
+import org.pgledger.database.repository.DatabaseEncodingRepository;
 import org.pgledger.database.repository.SchemaHistoryRepository;
 import org.pgledger.database.repository.SessionClockRepository;
 import org.pgledger.database.repository.SqlBuilder;
@@ -39,6 +40,11 @@ public final class TestSchemaServices {
         return new SchemaHistoryRepository(JdbcClient.create(dataSource), dataSource);
     }
 
+    /** The encoding probes of the dialect that the {@code sqlBuilder} reports, over the data source. */
+    public static DatabaseEncodingRepository encodings(DataSource dataSource, SqlBuilder sqlBuilder) {
+        return new DatabaseEncodingRepository(JdbcClient.create(dataSource), sqlBuilder);
+    }
+
     public static SessionClockRepository sessionClock(DataSource dataSource) {
         return new SessionClockRepository(JdbcClient.create(dataSource));
     }
@@ -57,7 +63,8 @@ public final class TestSchemaServices {
         TransactionManager transactions = new DataSourceTransactionManager(dataSource);
         proxy.addAdvice(new TransactionInterceptor(transactions, new AnnotationTransactionAttributeSource()));
         SchemaFileApplier applier = (SchemaFileApplier) proxy.getProxy(TestSchemaServices.class.getClassLoader());
-        return new SchemaMigrator(history, applier, new PathMatchingResourcePatternResolver(), properties, clock, sqlBuilder);
+        return new SchemaMigrator(history, applier, new PathMatchingResourcePatternResolver(), properties, clock, sqlBuilder,
+                encodings(dataSource, sqlBuilder));
     }
 
     public static SchemaVerifier verifier(DataSource dataSource, SchemaProperties properties) {

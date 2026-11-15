@@ -5,6 +5,8 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import org.pgledger.database.repository.DatabaseEncodingRepository;
+import org.pgledger.database.repository.DatabaseEncodingRepository.EncodingProbe;
 import org.pgledger.database.repository.SchemaHistoryRepository;
 import org.pgledger.database.repository.SchemaHistoryRepository.Outcome;
 import org.pgledger.database.repository.SchemaHistoryRepository.Row;
@@ -45,7 +47,7 @@ import org.springframework.transaction.TransactionException;
  *
  * <p>Why this applier and why the explicit command. The ledger does not use Flyway: a Flyway release from 10 on needs a module for
  * every DBMS it supports and answers "Unsupported Database" for one it has none for, while the ledger asks for ANSI SQL on any
- * database whose JDBC driver the owner registers (the two differences, the row limit and the long text type, are decided by the dialect of SqlBuilder). And the ledger
+ * database whose JDBC driver the owner registers (the three differences, the row limit, the long text type and the encoding probe, are decided by the dialect of SqlBuilder). And the ledger
  * migrates by the explicit command {@code ledger-cli migrate} and not when the server starts, because the server never holds the
  * password of the DDL account: the schema is changed by the DDL account of the operator, the servers run on the application account
  * that can read and write the tables and cannot change them, so a server that is taken over cannot change the schema.
@@ -64,10 +66,13 @@ public class SchemaMigrator {
     private final SchemaProperties properties;
     private final Clock clock;
     private final SqlBuilder sqlBuilder;
+    private final DatabaseEncodingRepository encodings;
 
     public SchemaMigrator(SchemaHistoryRepository repository, SchemaFileApplier applier,
-            ResourcePatternResolver resolver, SchemaProperties properties, Clock clock, SqlBuilder sqlBuilder) {
+            ResourcePatternResolver resolver, SchemaProperties properties, Clock clock, SqlBuilder sqlBuilder,
+            DatabaseEncodingRepository encodings) {
         this.sqlBuilder = sqlBuilder;
+        this.encodings = encodings;
         this.repository = repository;
         this.applier = applier;
         this.resolver = resolver;
@@ -90,7 +95,7 @@ public class SchemaMigrator {
             // of the connection) decides, asked once; no setting. It is asked before any statement that changes the database,
             // so a product without a dialect is refused (DATABASE_PRODUCT_UNSUPPORTED) before a schema or a table is made.
             String longTextType = sqlBuilder.longTextType();
-            DatabaseEncoding.requireUtf8(repository.characterSets());
+            requireUtf8Database();
             if (properties.name() != null) {
                 // the data source of the application already names this schema for every connection (DriverDataSources)
                 ensureSchema(properties.name());
@@ -108,6 +113,25 @@ public class SchemaMigrator {
             return applied;
         } catch (CannotGetJdbcConnectionException e) {
             throw new InfrastructureException(InfrastructureCode.SCHEMA_DATABASE_UNREACHABLE, List.of(), e);
+        }
+    }
+
+    /**
+     * Proves that the database stores UTF-8 before anything is changed: the probe text goes through the probe query of the dialect and
+     * has to come back whole ({@link DatabaseEncoding#requireUtf8}); a product that also keeps a default character set for its schemas
+     * has that one proved too ({@link DatabaseEncoding#requireUtf8Schema}). The queries are the dialect's ({@link SqlBuilder}); no
+     * name of a character set is compared here. A probe query that fails with a data exception is refused as well
+     * ({@link DatabaseEncoding#probeFailure}).
+     */
+    private void requireUtf8Database() {
+        try {
+            EncodingProbe probe = encodings.encodingProbe();
+            DatabaseEncoding.requireUtf8(sqlBuilder.countsCodePoints(), probe.length(), probe.value());
+            encodings.schemaCharsets().ifPresent(DatabaseEncoding::requireUtf8Schema);
+        } catch (DataAccessException e) {
+            // a data exception (SQLSTATE class 22) of a probe query is the database saying that it cannot store the text: refused as
+            // an encoding problem; any other failure is thrown as it is
+            throw DatabaseEncoding.probeFailure(e);
         }
     }
 

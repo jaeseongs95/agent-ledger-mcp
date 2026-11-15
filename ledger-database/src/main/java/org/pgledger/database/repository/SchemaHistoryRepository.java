@@ -136,15 +136,6 @@ public class SchemaHistoryRepository {
         });
     }
 
-    /**
-     * The names of the character sets the database reports in the standard view {@code INFORMATION_SCHEMA.CHARACTER_SETS} (the
-     * encoding of the database: PostgreSQL lists the one that the database has). JDBC has no call for it and the view is ANSI, so no
-     * product query is asked; {@link org.pgledger.database.schema.DatabaseEncoding} judges the names.
-     */
-    public List<String> characterSets() {
-        return jdbc.sql("SELECT character_set_name FROM information_schema.character_sets").query(String.class).list();
-    }
-
     public boolean tableExists() {
         return inspect(dataSource, metaData -> {
             Connection connection = metaData.getConnection();
