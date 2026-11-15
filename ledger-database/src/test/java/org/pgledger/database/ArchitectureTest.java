@@ -152,6 +152,17 @@ class ArchitectureTest {
     }
 
     @Test
+    @DisplayName("OPK-025: the receipt repository inserts and reads by author and operation key, nothing else (the @Id of Receipt "
+            + "names the operation key only, while the primary key of the table is the pair, so no save, findById or deleteById by one key)")
+    void receiptsAreInsertAndReadByTheAuthorAndKeyOnly() {
+        Class<?> receipts = org.pgledger.database.repository.ReceiptRepository.class;
+        assertThat(Stream.of(receipts.getMethods()).map(m -> m.getName()).collect(java.util.stream.Collectors.toSet()))
+                .containsExactlyInAnyOrder("insert", "findByAuthorIdAndOperationKey");
+        assertThat(receipts.getInterfaces()).extracting(Class::getSimpleName)
+                .containsExactlyInAnyOrder("Repository", "Insertable");
+    }
+
+    @Test
     @DisplayName("ARC-017: configuration properties are records")
     void configurationPropertiesAreRecords() {
         classes().that().areAnnotatedWith(ConfigurationProperties.class).should().beRecords().check(MAIN);

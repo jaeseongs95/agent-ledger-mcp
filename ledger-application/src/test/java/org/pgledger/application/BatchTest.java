@@ -64,6 +64,26 @@ class BatchTest {
                 TrustCode.SESSION_NOT_GRANTED);
     }
 
+    @Test
+    @DisplayName("OPK-026: an operation of a batch that is null is VALIDATION_FAILED REQUIRED at ops[i] (not a NullPointerException), nothing is written and no receipt is kept")
+    void opk026_aNullOperation(Scenario s) {
+        for (List<BatchOpInput> ops : List.of(java.util.Arrays.asList((BatchOpInput) null),
+                java.util.Arrays.<BatchOpInput>asList(saveDefect(s, "first"), null))) {
+            String key = Scenario.uuid();
+            long receipts = s.count("SELECT COUNT(*) FROM request_receipt");
+            long history = s.count("SELECT COUNT(*) FROM history");
+
+            ValidationException refused = (ValidationException) Expect.failure(
+                    () -> batch(s, Scenario.AUTHOR, key, ops), ValidationCode.VALIDATION_FAILED);
+
+            assertThat(refused.issues()).hasSize(1);
+            assertThat(refused.issues().getFirst().path()).isEqualTo("ops[" + ops.indexOf(null) + "]");
+            assertThat(refused.issues().getFirst().reason()).isEqualTo(org.pgledger.domain.error.ValidationReason.REQUIRED);
+            assertThat(s.count("SELECT COUNT(*) FROM request_receipt")).isEqualTo(receipts);
+            assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
+        }
+    }
+
     // ---------------------------------------------------------------------- 06
 
     // The wire cases of SVC-BAT-06 and SVC-BAT-07 (an unknown key, an unknown or missing op, ops that is not an array, an

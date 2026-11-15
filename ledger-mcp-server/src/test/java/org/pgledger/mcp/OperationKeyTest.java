@@ -178,6 +178,29 @@ class OperationKeyTest {
     }
 
     @Test
+    @DisplayName("OPK-026: an element of ops that is null ([null], [operation, null]) is VALIDATION_FAILED at ops[i] (is required), "
+            + "not an internal error, and nothing is written")
+    void aNullOperationIsRefusedAtItsPosition(McpSession session, Scenario scenario) {
+        Object first = Args.from(session.mapper(), Calls.Op.recordCase("D-1", "first"));
+        List<List<Object>> lists = List.of(java.util.Arrays.asList((Object) null),
+                java.util.Arrays.asList(first, null), java.util.Arrays.asList(null, first));
+        List<Integer> positions = List.of(0, 1, 0);
+        for (int i = 0; i < lists.size(); i++) {
+            String batchKey = Calls.freshKey();
+            Args call = Args.from(session.mapper(), new Calls.Batch(List.of(), batchKey, Scenario.AUTHOR))
+                    .with("ops", lists.get(i));
+
+            ToolError error = session.failed("ledger_batch", call);
+
+            assertThat(error.code()).as("ops %s", lists.get(i)).isEqualTo("VALIDATION_FAILED");
+            assertThat(error.issues()).containsExactly(
+                    new ToolError.Issue("ops[" + positions.get(i) + "]", "is required", List.of()));
+            assertThat(Ledger.history(session, scenario.projectId())).isEmpty();
+            assertThat(Ledger.writes(scenario, batchKey)).isZero();
+        }
+    }
+
+    @Test
     @DisplayName("OPK-005: one operationKey for the batch: the same key with the same operations returns the stored "
             + "results and writes once; the same key with other operations is OPERATION_CONFLICT and writes nothing more "
             + "(changed by opkey round 2: the batch holds a receipt of its own under its key, operation BATCH)")

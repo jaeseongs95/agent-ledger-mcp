@@ -74,6 +74,11 @@ public class BatchService {
             throw ValidationException.invalid("ops", ValidationReason.MUST_HOLD_ITEMS, "1", String.valueOf(BatchOpKind.MAX_OPS_PER_BATCH));
         }
         OperationKey batchKey = OperationKey.parse(operationKey);
+        for (int i = 0; i < ops.size(); i++) {
+            if (ops.get(i) == null) {
+                throw ValidationException.invalid("ops[" + i + "]", ValidationReason.REQUIRED);
+            }
+        }
         boolean first = receipts.reserve(batchKey, ReceiptOperation.BATCH, BatchDigest.of(ops), author, Channel.AUTHOR,
                 Recorded.class) instanceof ReceiptService.Reservation.Reserved<Recorded>;
         List<WriteResult> results = new ArrayList<>();

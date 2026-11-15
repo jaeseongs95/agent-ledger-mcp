@@ -174,7 +174,17 @@ public final class ToolBinding {
                         List.of(type.getRawClass().getSimpleName()), List.of()));
                 return null;
             }
-            return mapper.convertValue(raw, type);
+            Object value = mapper.convertValue(raw, type);
+            if (value instanceof List<?> elements) {
+                // an element of an array that is null is no element: it is refused at its position (ops[1]), never handed on
+                for (int i = 0; i < elements.size(); i++) {
+                    if (elements.get(i) == null) {
+                        issues.add(new ValidationIssue(parameter.name() + "[" + i + "]", ValidationReason.REQUIRED,
+                                List.of(), List.of()));
+                    }
+                }
+            }
+            return value;
         } catch (JacksonException failure) {
             issues.add(issue(parameter.name(), failure));
             causes.add(failure);
