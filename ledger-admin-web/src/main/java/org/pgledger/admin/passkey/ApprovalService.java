@@ -115,10 +115,14 @@ public class ApprovalService {
                     .authenticatorData(Bytes.fromBase64(assertion.authenticatorData()))
                     .clientDataJSON(Bytes.fromBase64(assertion.clientDataJson()))
                     .signature(Bytes.fromBase64(assertion.signature())).build();
-            PublicKeyCredential<AuthenticatorAssertionResponse> credential = PublicKeyCredential
-                    .<AuthenticatorAssertionResponse>builder().id(assertion.credentialId())
-                    .type(PublicKeyCredentialType.PUBLIC_KEY).rawId(Bytes.fromBase64(assertion.credentialId()))
-                    .response(response).build();
+            // The setters return the raw builder type, so they are not chained (-Werror unchecked).
+            PublicKeyCredential.PublicKeyCredentialBuilder<AuthenticatorAssertionResponse> builder = PublicKeyCredential
+                    .builder();
+            builder.id(assertion.credentialId());
+            builder.type(PublicKeyCredentialType.PUBLIC_KEY);
+            builder.rawId(Bytes.fromBase64(assertion.credentialId()));
+            builder.response(response);
+            PublicKeyCredential<AuthenticatorAssertionResponse> credential = builder.build();
             operations.authenticate(new RelyingPartyAuthenticationRequest(options, credential));
         } catch (IllegalArgumentException | com.webauthn4j.util.exception.WebAuthnException failure) {
             throw AssertionFailures.translate(failure, party.rpId(), !live.isEmpty());

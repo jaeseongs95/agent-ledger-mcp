@@ -187,8 +187,8 @@ public class AdminSecurityConfiguration {
                         .disableDefaultRegistrationPage(true))
                 .oneTimeTokenLogin(ott -> ott.tokenService(codes).loginProcessingUrl("/login/ott")
                         .showDefaultSubmitPage(false).tokenGenerationSuccessHandler((request, response, token) -> { })
-                        .authenticationFailureHandler(failures)
-                        .authenticationSuccessHandler((request, response, authentication) -> {
+                        .failureHandler(failures)
+                        .successHandler((request, response, authentication) -> {
                             request.getSession().setMaxInactiveInterval(ENROLLMENT_SECONDS);
                             redirects.sendRedirect(request, response, "/passkeys");
                         }));
