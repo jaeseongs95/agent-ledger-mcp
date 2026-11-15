@@ -42,7 +42,8 @@ class SchemaCatalogTest {
 
     static final Set<String> TABLES = Set.of("project", "task", "defect", "defect_fix", "defect_case", "defect_task",
             "defect_relation", "release_condition", "condition_link", "session_grant", "session_key", "owner_audit", "history",
-            "request_receipt", "common_code", "code_revision", "id_counter", "schema_history", "driver_audit_key");
+            "request_receipt", "common_code", "code_revision", "id_counter", "schema_history", "driver_audit_key",
+            "owner_passkey_user", "owner_passkey", "owner_passkey_revocation", "owner_passkey_code");
 
     /** The timestamp columns of the schema, exactly as the catalogue lists them (SCH-018). */
     static final Set<String> TIMESTAMP_COLUMNS = Set.of("defect.created_at", "defect.updated_at", "task.created_at",
@@ -50,7 +51,8 @@ class SchemaCatalogTest {
             "defect_case.recorded_at", "session_grant.granted_at", "session_grant.expires_at",
             "session_grant.revoked_at", "session_grant.last_used_at", "session_key.registered_at",
             "session_key.revoked_at", "owner_audit.occurred_at", "history.occurred_at", "request_receipt.created_at",
-            "schema_history.applied_at");
+            "schema_history.applied_at", "owner_passkey.registered_at", "owner_passkey_revocation.revoked_at",
+            "owner_passkey_code.issued_at", "owner_passkey_code.expires_at", "owner_passkey_code.used_at");
 
     private LedgerTestContext ctx;
     private JdbcClient jdbc;
@@ -272,6 +274,48 @@ class SchemaCatalogTest {
 
         assertThat(thrown).isInstanceOf(org.springframework.dao.DuplicateKeyException.class);
         assertThat(sqlState(thrown)).startsWith("23");
+    }
+
+    /**
+     * SCH-038 (PSK-DB-01): V7 adds the passkey tables (the credential id is the key, the three flags are 0 or 1, a revocation and a
+     * code hash are unique, no column is a boolean or a BLOB) and lets the owner's audit trail carry the four passkey operations.
+     */
+    @Test
+    void sch038_thePasskeyTablesAndTheirAuditOperations() {
+        String credential = "cred-" + java.util.UUID.randomUUID();
+        String insert = "INSERT INTO owner_passkey (credential_id, user_id, public_key, signature_count, uv_initialized, "
+                + "backup_eligible, backup_state, attestation_object, label, fingerprint, registered_by, registered_at) "
+                + "VALUES (:id, 'u', 'AAAA', 0, 1, :flag, 0, 'BBBB', 'k', '0000-0000-0000-0000', 'cli:owner', "
+                + "TIMESTAMP '2026-11-15 10:00:00')";
+        jdbc.sql(insert).param("id", credential).param("flag", 0).update();
+
+        assertThat(sqlState(org.assertj.core.api.Assertions.catchThrowable(
+                () -> jdbc.sql(insert).param("id", credential).param("flag", 0).update()))).startsWith("23");
+        assertThat(sqlState(org.assertj.core.api.Assertions.catchThrowable(
+                () -> jdbc.sql(insert).param("id", credential + "-b").param("flag", 2).update()))).startsWith("23");
+        assertThat(columns()).filteredOn(c -> c.table().startsWith("owner_passkey"))
+                .noneMatch(c -> c.type() == Types.BLOB || c.type() == Types.BINARY || c.type() == Types.VARBINARY
+                        || c.type() == Types.LONGVARBINARY || c.type() == Types.BOOLEAN || c.type() == Types.BIT);
+        String revoke = "INSERT INTO owner_passkey_revocation (credential_id, revoked_by, revoked_at) VALUES (:id, "
+                + "'cli:owner', TIMESTAMP '2026-11-15 10:00:00')";
+        jdbc.sql(revoke).param("id", credential).update();
+        assertThat(sqlState(org.assertj.core.api.Assertions.catchThrowable(
+                () -> jdbc.sql(revoke).param("id", credential).update()))).startsWith("23");
+
+        String hash = java.util.UUID.randomUUID().toString().replace("-", "").repeat(2);
+        String code = "INSERT INTO owner_passkey_code (code_hash, issued_by, issued_at, expires_at) VALUES (:hash, "
+                + "'cli:owner', TIMESTAMP '2026-11-15 10:00:00', TIMESTAMP '2026-11-15 10:15:00')";
+        jdbc.sql(code).param("hash", hash).update();
+        assertThat(sqlState(org.assertj.core.api.Assertions.catchThrowable(
+                () -> jdbc.sql(code).param("hash", hash).update()))).startsWith("23");
+
+        long id = 910_000L;
+        for (String operation : List.of("PASSKEY_CODE_ISSUED", "PASSKEY_REGISTERED", "PASSKEY_REVOKED",
+                "PASSKEY_RESET")) {
+            jdbc.sql("INSERT INTO owner_audit (id, occurred_at, actor, operation, subject) VALUES (:id, "
+                    + "TIMESTAMP '2026-11-15 10:00:00', 'cli:owner', :operation, 'passkey')")
+                    .param("id", id++).param("operation", operation).update();
+        }
     }
 
     @Test

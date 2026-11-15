@@ -159,14 +159,15 @@ class SchemaMigratorTest {
         SchemaMigrator real = TestSchemaServices.migrator(pool,
                 new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, Databases.LONG_TEXT, true, null,
                         Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT)), clock);
-        assertThat(real.migrate()).containsExactly(1, 2, 3, 4, 5, 6);
+        assertThat(real.migrate()).containsExactly(1, 2, 3, 4, 5, 6, 7);
         assertThat(history()).isEqualTo(List.of(
                 success(1, "V1__core_tables.sql", resource("db/V1__core_tables.sql"), T0),
                 success(2, "V2__history_and_receipts.sql", resource("db/V2__history_and_receipts.sql"), T0),
                 success(3, "V3__seed_codes.sql", resource("db/V3__seed_codes.sql"), T0),
                 success(4, "V4__relation_direction.sql", resource("db/V4__relation_direction.sql"), T0),
                 success(5, "V5__common_code_version.sql", resource("db/V5__common_code_version.sql"), T0),
-                success(6, "V6__driver_audit_key.sql", resource("db/V6__driver_audit_key.sql"), T0)));
+                success(6, "V6__driver_audit_key.sql", resource("db/V6__driver_audit_key.sql"), T0),
+                success(7, "V7__owner_passkey.sql", resource("db/V7__owner_passkey.sql"), T0)));
         assertThat(tableExists("defect")).isTrue();
     }
 
