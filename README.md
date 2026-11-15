@@ -512,10 +512,10 @@ one row to `SUCCEEDED`; if the file fails, the attempt is rolled back, the row s
 the next attempt without changing or deleting the earlier rows. Two `migrate` runs at the same time are safe: the second waits in the
 database for the first and then skips what the first has applied. A file that was changed after it was applied stops `migrate` before it
 applies anything, and every process at start; no row is added for it. The database must use the encoding UTF-8, and the long text type of
-the schema files is taken from the JDBC driver (there is no setting for it): a large object type (`CLOB`, `LONGVARCHAR`) is preferred to
-`VARCHAR`, and a type that reports `CREATE_PARAMS` is declared with its largest reported length, because the parameters only say what may
-be given and some databases set a small default limit when the length is left out; without a large object type the plain `VARCHAR` type of
-the driver (for example `varchar` as the PostgreSQL driver reports it) or else the `VARCHAR` of the largest length, which must be at least 32768 characters, is used.
+the schema files is decided by the database dialect of the ledger, which `migrate` takes from the product name of the connection (there is
+no setting for it): `TEXT` on PostgreSQL, `CHARACTER LARGE OBJECT` on H2, `CLOB` on Oracle, `CLOB(100M)` on Db2 (a Db2 `CLOB` without a
+length holds only 1M), `NVARCHAR(MAX)` on SQL Server and `LONGTEXT` on MariaDB and MySQL. Each declaration is taken from the official
+documentation of that database; the type information of the JDBC driver is not used, because a driver may report it in a form that cannot be judged.
 
 The ledger does not use Flyway: a current Flyway release needs a module for each DBMS and refuses a database it has none for, while the
 ledger asks for ANSI SQL on any database whose driver you register. And the ledger migrates by this explicit command and not when a server
