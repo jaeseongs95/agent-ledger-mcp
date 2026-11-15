@@ -28,7 +28,7 @@ of the write tools, the keys of the results, the `_hostAttestation` key) and cha
 
 - **Author identity is proved, not claimed.** Every write and every `ledger_whoami` carries the reserved key `_hostAttestation`,
   which the host hook of the client fills in. Models must omit it. The author is `<vendor>:<session-id>`, for example
-  `claude:1f2e3d4c` or `codex:9a8b7c6d`; the owner of the ledger is `user:owner`. A deprecated `author_id` key is accepted and ignored.
+  `claude:1f2e3d4c` or `codex:9a8b7c6d`; the owner of the ledger is `user:owner`. The author is the attestation and nothing else: a tool has no `author_id` argument.
 - **Writes need a live grant.** The owner grants an author a scope on a project with `ledger-cli grant` (or on the grants page of
   the admin web). The scopes are `defect`, `task`, `fix` and `verify`. A write without a matching grant is refused.
 - **Verification is separate.** `VERIFIED`, `MET` and `NOT_MET` are set only through the reviewer tools `ledger_review` and
@@ -40,8 +40,12 @@ of the write tools, the keys of the results, the `_hostAttestation` key) and cha
   the application account) gives that account no `UPDATE` or `DELETE` on it. A mistake is marked with a `CORRECT` row. An operation that changes an
   existing row also stores the full row as it was before the change (`before_data`, returned by `ledger_history` with
   `include_before`).
-- **Retries are safe.** Pass `request_id`, a UUID. Repeating the same request returns the stored result and writes nothing twice.
-  A request id that is already bound to another operation, payload, author or channel is refused with `REQUEST_CONFLICT`.
+- **Retries are safe.** Every write tool takes a required `operationKey` (1 to 128 characters, for example a UUID). Repeating the same
+  request with the same key returns the stored result and writes nothing twice. A key that is already bound to another operation,
+  payload, author or channel is refused with `REQUEST_CONFLICT`. The server never makes a key up: a missing or empty key is refused
+  with `VALIDATION_FAILED` (path `operationKey`). `ledger_batch` takes one key for the whole batch. `artifact-chunk` and
+  `artifact-finish` take no `operationKey`: an upload starts with the `operationKey` of `artifact-begin`, a chunk is idempotent by its
+  `uploadId`, `sequence` and `chunkSha256`, and finish by its `uploadId`.
 - **Optimistic locking.** Edits and transitions carry `expected_version`; a stale version is `VERSION_CONFLICT`.
 - **Projects and ids.** A defect belongs to a project and gets the id `<CODE>-D-0001`, `<CODE>-D-0002`, and so on. A task without
   an id gets `<CODE>-T-0001`, and so on. The server assigns them. An id that a caller chooses for a task or a condition is 1 to 120
@@ -74,10 +78,12 @@ A direct MCP caller is not authenticated as a host: the bearer token admits the 
 ## MCP tools
 
 The server speaks MCP over Streamable HTTP at `/mcp` (default `127.0.0.1:8765`) and answers `/healthz`. Callers present
-the bearer token `ledger.mcp.token`. The write tools keep their names and input keys. The results carry their keys at the top
-level of the result; the wrapping `rows[0].result` of 1.x is gone. Every tool input is closed: an unknown argument is refused.
+the bearer token `ledger.mcp.token`. The results carry their keys at the top level of the result. Every tool input is closed:
+an unknown argument is refused, an object or an array argument must be sent as that JSON value (not as text), and the text
+`null` is a text, not a missing argument.
 
-Write tools (a login, an attestation and a live grant are needed):
+Write tools (a login, an attestation and a live grant are needed). Every write tool except `ledger_whoami` takes the required
+`operationKey`:
 
 | Tool | Channel | What |
 |---|---|---|
@@ -88,7 +94,7 @@ Write tools (a login, an attestation and a live grant are needed):
 | `ledger_record_case` | author | add an observed case under a defect (a `MERGED` defect is refused and names its target) |
 | `ledger_link` | author | link defects, tasks and conditions, or remove a link; the relation kinds `caused_by` and `blocks` are directed (`a` is the subject, an unlink names the ends in the order they were linked) |
 | `ledger_correct` | author | mark a history row as wrong |
-| `ledger_batch` | author | up to 200 of the operations above in one transaction: all commit or none |
+| `ledger_batch` | author | up to 200 of the operations above in one transaction: all commit or none; one `operationKey` for the batch, the operations carry none |
 | `ledger_review` | reviewer | `VERIFIED`, `MET`, `NOT_MET`, and reopening them; the evidence link is required |
 | `ledger_review_correct` | reviewer | mark a verification row as wrong |
 
@@ -97,8 +103,8 @@ Attachment tools (a login, an attestation and at least one live grant of the aut
 | Tool | What |
 |---|---|
 | `artifact-begin` | start the upload of a file that a record can point to; `operationKey` is required and makes the call repeatable, `purpose` is optional and only `evidence` is supported |
-| `artifact-chunk` | send the next chunk (at most 262144 bytes, base64) with its SHA-256; the last applied chunk sent again is answered with the current state |
-| `artifact-finish` | check the received bytes against the declared size and SHA-256 and keep the file as an attachment; the same upload id again gives the same attachment id |
+| `artifact-chunk` | send the next chunk (at most 262144 bytes, base64) with its SHA-256; the last applied chunk sent again is answered with the current state. It takes no `operationKey` (the one exception: the upload started with the `operationKey` of `artifact-begin`; a chunk is idempotent by `uploadId`, `sequence` and `chunkSha256`, other content under the same sequence is a conflict) |
+| `artifact-finish` | check the received bytes against the declared size and SHA-256 and keep the file as an attachment; the same upload id again gives the same attachment id. It takes no `operationKey` (it is idempotent by `uploadId`) |
 | `artifact-status` | the state, size, SHA-256, expiry and progress of an upload or an attachment (never a path or a storage key) |
 | `artifact-read` | one page of a kept attachment, decrypted and checked |
 
@@ -601,9 +607,11 @@ host; with no hook, or a failing hook, a write is refused with `HOST_ATTESTATION
 
 The hook signs only the ten write tools, named `mcp__<server>__ledger_<op>` or `mcp__<server>__<server>_ledger_<op>`
 (Codex Apps: `mcp__codex_apps__app_<app>_ledger_<op>`). The value of `_hostAttestation` is
-`pgla2.<author>.<tool>.<request id>.<arguments digest>.<issued at>.<signature>`: an Ed25519 signature over the author, the tool, the
-request id, the SHA-256 of the RFC 8785 canonical form of the arguments (without `_hostAttestation`; a batch: every operation, its
-content, its order and its request id) and the time. A captured token cannot carry other content. `pgla1` tokens are refused with
+`pgla2.<author>.<tool>.<operation key>.<arguments digest>.<issued at>.<signature>`: an Ed25519 signature over the author, the tool, the
+`operationKey` of the call (empty for `ledger_whoami` and the attachment tools), the SHA-256 of the RFC 8785 canonical form of the arguments (without
+`_hostAttestation`; a batch: every operation, its content, its order and the key of the batch) and the time. The hook reads the
+`operationKey` from the arguments the model sent and never makes one up; a call without one is refused by the server. A captured token
+cannot carry other content. `pgla1` tokens are refused with
 `ATTESTATION_VERSION_UNSUPPORTED`.
 
 - The hook keeps one Ed25519 key per MCP server name and author in an owner-only folder: `~/.pg-ledger-mcp/session-keys`, or the
@@ -611,7 +619,7 @@ content, its order and its request id) and the time. A captured token cannot car
   is `codex_apps.<app>`.
 - `java -jar ledger-client-hook.jar session-key <server> <author>` prints the server, the author, the public key and its fingerprint.
   The owner compares the fingerprint and registers the key on that server with `ledger-cli key-register` or on the grants page.
-- The server verifies the signature, the tool, the request id, the arguments and the time (`ledger.attestation.window`) before it
+- The server verifies the signature, the tool, the operation key, the arguments and the time (`ledger.attestation.window`) before it
   looks at any grant. A missing key and a wrong signature are the same refusal, `ATTESTATION_SIGNATURE_INVALID`; a different
   content is `ATTESTATION_BINDING_MISMATCH`.
 - Limits: another process of the same operating system user can read the key file, so isolation inside one user needs separate
@@ -622,6 +630,15 @@ content, its order and its request id) and the time. A captured token cannot car
 
 1.x was a DBHub and Node implementation on PostgreSQL functions; 2.0.0 replaces all of it. Existing data is moved, not converted in
 place. The 1.x schema stays and can be used to go back. See the [release notes](docs/release-notes/2.0.0.md) for the contract changes.
+
+A caller of 1.x has to make these changes to its tool calls; 2.0 accepts no old form next to the new one:
+
+- `request_id` and `batch_request_id` are replaced by the required `operationKey` (1 to 128 characters) on every write tool; the old
+  keys are refused as unknown arguments, a call without `operationKey` is refused, and the server never makes a key up. An operation inside
+  `ledger_batch` carries no key of its own.
+- The `author_id` argument is gone; the author is the host attestation.
+- An object or an array argument (`fields`, `ops`) must be sent as a JSON object or array, not as a JSON document in a string.
+- The text `null` is a text, not a missing argument; omit an argument that has no value.
 
 Version 2.0 itself knows nothing of 1.x: its services, its installers and `ledger-cli` read no 1.x setting, file or table. The move is
 done by a separate tool, the module `ledger-migrate-1x`. The build makes it as `ledger-migrate-1x/build/libs/ledger-migrate-1x.jar`, and
@@ -778,8 +795,9 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
   relations of the directed kinds (`caused_by`, `blocks`) as they are stored and never guesses; it lists them (the count and the ids,
   also in the audit row and with `--verify-only`). Check each one and, where it is the wrong way round, remove it and link it again with
   `ledger_link` with the right defect first.
-- The grants of 1.x are copied without a session key (step 7). The request receipts of 1.x are not carried over: a request id of 1.x is never
-  replayed by 2.0, so a write that repeats one is judged by the normal rules like any new request. The history rows that come from 1.x
+- The grants of 1.x are copied without a session key (step 7). The request receipts of 1.x are not carried over: every write of 2.0 needs an
+  `operationKey` and refuses the old `request_id` as an unknown argument, so a 1.x answer that was lost cannot cause a second write
+  in 2.0. The `request_id` of a 1.x history row is kept as its `operation_key`. The history rows that come from 1.x
   carry the neutral names `IMPORT`, `IMPORTED_NOTE`, `IMPORTED_CHANGE`, `IMPORTED_LOGIN`, `IMPORTED_SHARED` and `IMPORTED_UNKNOWN`, and the field `legacy_ref` of 1.x is
   `source_ref` in the read tools.
 

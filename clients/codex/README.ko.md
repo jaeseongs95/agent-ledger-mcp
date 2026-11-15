@@ -14,7 +14,7 @@
 
 읽기 도구, 알 수 없는 작업, 그 밖의 형태의 이름은 변경 없이 통과합니다.
 
-쓰기 호출에는 예약 인자 `_hostAttestation`을 추가합니다. 값은 작성자 `codex:<session_id>`의 Ed25519 세션 키로, 호출 대상 MCP 서버에 대해 만든 서명입니다. 서명은 도구, 요청 ID, 모든 인자의 정규형(RFC 8785)에 대한 SHA-256 다이제스트, 시각을 포함합니다. 호출에 `request_id`가 없으면 훅이 하나를 생성합니다. 다른 인자는 그대로 두며, 이전 커넥터의 `author_id`가 있어도 사용하거나 복사하지 않습니다. 훅은 `allow`와 `updatedInput`으로 응답하고, 거부할 때는 `deny`로 응답합니다. 모델이 `_hostAttestation`을 직접 넣거나 호스트의 `session_id`가 올바르지 않으면 호출을 거부합니다. 잘못된 JSON도 종료 코드 0과 함께 명시적으로 거부하는데, 실패한 훅 프로세스는 믿을 만한 차단 수단이 아니기 때문입니다. 훅은 그 밖의 권한 결정을 내리지 않습니다.
+쓰기 호출에는 예약 인자 `_hostAttestation`을 추가합니다. 값은 작성자 `codex:<session_id>`의 Ed25519 세션 키로, 호출 대상 MCP 서버에 대해 만든 서명입니다. 서명은 도구, 호출의 `operationKey`, 모든 인자의 정규형(RFC 8785)에 대한 SHA-256 다이제스트, 시각을 포함합니다. 훅은 호출의 `operationKey`를 인자에서 읽을 뿐 만들어 넣지 않으며, 없는 호출은 서버가 거절합니다. 다른 인자는 그대로 둡니다. 훅은 `allow`와 `updatedInput`으로 응답하고, 거부할 때는 `deny`로 응답합니다. 모델이 `_hostAttestation`을 직접 넣거나 호스트의 `session_id`가 올바르지 않으면 호출을 거부합니다. 잘못된 JSON도 종료 코드 0과 함께 명시적으로 거부하는데, 실패한 훅 프로세스는 믿을 만한 차단 수단이 아니기 때문입니다. 훅은 그 밖의 권한 결정을 내리지 않습니다.
 
 Codex Apps의 모든 앱은 가상 서버 `codex_apps`를 공유하므로, 서명의 대상(audience)을 앱으로 삼고 서버 식별자를 `codex_apps.<app>`으로 정합니다. `mcp__codex_apps__app_ledger_ledger_save`의 식별자는 `codex_apps.ledger`이며, 소유자는 키를 등록할 때 이 이름을 씁니다: `java -jar lib/ledger-client-hook.jar session-key codex_apps.ledger <author>`. `app_evil_ledger_save` 같은 비슷한 이름의 앱은 다른 식별자와 다른 키를 쓰므로, 그 서명은 `codex_apps.ledger`의 키로 검증되지 않습니다.
 
