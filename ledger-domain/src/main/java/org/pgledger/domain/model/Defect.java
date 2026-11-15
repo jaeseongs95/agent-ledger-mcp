@@ -18,9 +18,9 @@ import org.pgledger.domain.value.ProjectId;
 import org.pgledger.domain.value.TextRule;
 
 /**
- * A defect. {@code caseSeq} is a lock counter bumped by recording a case (it serialises with a merge of the same
- * row) and is never written by saving this record; it does not change {@code version}. {@code version} is 0 until
- * the first save, which stores 1.
+ * A defect. {@code caseSeq} is the number of the last case recorded under it: the conditional UPDATE that takes the next number
+ * is decided against a merge of the same row, and the counter is never written by saving this record; it does not change
+ * {@code version}. {@code version} is 0 until the first save, which stores 1.
  */
 @Table("defect")
 public record Defect(@Id DefectId id, ProjectId projectId, String title, CodeValue category, CodeValue severity,

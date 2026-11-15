@@ -9,8 +9,11 @@ import org.pgledger.domain.value.DefectId;
 import org.pgledger.domain.value.ProjectId;
 import org.springframework.data.repository.Repository;
 
-/** Defects: save (insert when the version is 0, update with the version check otherwise) and read. No delete. */
-public interface DefectRepository extends Repository<Defect, DefectId> {
+/**
+ * Defects: save (insert when the version is 0, update with the version check otherwise), read, and the number of the next case
+ * ({@link CaseSequence}). No delete.
+ */
+public interface DefectRepository extends Repository<Defect, DefectId>, CaseSequence {
 
     <S extends Defect> S save(S defect);
 

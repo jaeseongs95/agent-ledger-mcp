@@ -11,7 +11,6 @@ import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.pgledger.database.support.DatabaseTest;
-import org.pgledger.database.repository.DefectCaseLockRepository;
 import org.pgledger.database.repository.DefectRepository;
 import org.pgledger.database.support.LedgerTestContext;
 import org.pgledger.database.support.Parallel;
@@ -22,13 +21,15 @@ import org.pgledger.domain.rule.DefectStatus;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.support.TransactionTemplate;
 
-/** REPO-039, REPO-040: recording a case locks the defect row and serialises with a merge of the same row. */
+/**
+ * REPO-039, REPO-040: the number of the next case is one conditional UPDATE of the defect row (the statement of the use case,
+ * principle 4.4), which a merge of the same row is decided against.
+ */
 @DatabaseTest
 class CaseSequenceTest {
 
     private LedgerTestContext ctx;
     private Seed seed;
-    private DefectCaseLockRepository lock;
     private DefectRepository defects;
     private JdbcClient jdbc;
 
@@ -36,7 +37,6 @@ class CaseSequenceTest {
     void setUp(LedgerTestContext context) {
         ctx = context;
         seed = new Seed(ctx);
-        lock = ctx.bean(DefectCaseLockRepository.class);
         defects = ctx.bean(DefectRepository.class);
         jdbc = JdbcClient.create(ctx.pool());
     }
@@ -57,14 +57,14 @@ class CaseSequenceTest {
     }
 
     @Test
-    void repo039_theLockUpdateWorksOnLiveDefectsAndLeavesVersionAndTimeAlone() {
+    void repo039_nextCaseSeqWorksOnLiveDefectsAndLeavesVersionAndTimeAlone() {
         Project project = seed.project();
         Defect live = seed.defect(project, 1, "live", LedgerTestContext.START);
         Defect target = seed.defect(project, 2, "target", LedgerTestContext.START);
         Defect gone = merged(seed.defect(project, 3, "merged", LedgerTestContext.START), target);
-        assertThat(ctx.tx(() -> lock.lockForCase(live.id()))).isTrue();
-        assertThat(ctx.tx(() -> lock.lockForCase(live.id()))).isTrue();
-        assertThat(ctx.tx(() -> lock.lockForCase(gone.id()))).as("a merged defect takes no case").isFalse();
+        assertThat(ctx.tx(() -> defects.nextCaseSeq(live.id()))).isTrue();
+        assertThat(ctx.tx(() -> defects.nextCaseSeq(live.id()))).isTrue();
+        assertThat(ctx.tx(() -> defects.nextCaseSeq(gone.id()))).as("a merged defect takes no case").isFalse();
         assertThat(caseSeq(live)).isEqualTo(2);
         assertThat(caseSeq(gone)).isZero();
         Defect reread = defects.findById(live.id()).orElseThrow();
@@ -77,7 +77,7 @@ class CaseSequenceTest {
     }
 
     @Test
-    void repo040_aMergeWaitsForTheCaseThatLockedTheRow() throws Exception {
+    void repo040_aMergeWaitsForTheCaseThatWroteTheRow() throws Exception {
         Project project = seed.project();
         Defect source = seed.defect(project, 1, "source", LedgerTestContext.START);
         Defect target = seed.defect(project, 2, "target", LedgerTestContext.START);
@@ -85,7 +85,7 @@ class CaseSequenceTest {
         CountDownLatch locked = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         Future<Boolean> recorder = Parallel.start(() -> tx.execute(status -> {
-            boolean ok = lock.lockForCase(source.id());
+            boolean ok = defects.nextCaseSeq(source.id());
             locked.countDown();
             try {
                 release.await(30, TimeUnit.SECONDS);
@@ -106,6 +106,6 @@ class CaseSequenceTest {
         assertThat(caseSeq(source)).as("the case's bump survives the merge").isEqualTo(1);
         assertThat(defects.findById(source.id()).orElseThrow().status()).isEqualTo(DefectStatus.MERGED);
         // the other order: after the merge committed, the case is refused
-        assertThat(ctx.tx(() -> lock.lockForCase(source.id()))).isFalse();
+        assertThat(ctx.tx(() -> defects.nextCaseSeq(source.id()))).isFalse();
     }
 }
