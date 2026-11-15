@@ -6,7 +6,9 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import java.util.List;
 import java.util.UUID;
+import java.lang.reflect.Proxy;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -26,6 +28,8 @@ import org.pgledger.database.support.DatabaseTest;
 import org.pgledger.database.support.LedgerTestContext;
 import org.pgledger.database.support.Parallel;
 import org.pgledger.database.support.Seed;
+import org.pgledger.domain.error.ConflictCode;
+import org.pgledger.domain.error.ConflictException;
 import org.pgledger.domain.error.LookupCode;
 import org.pgledger.domain.error.LookupException;
 import org.pgledger.domain.model.Defect;
@@ -144,6 +148,66 @@ class CounterTest {
             holder.join();
         }
         assertThat(defectCounter(project)).isEqualTo(4);
+        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 5))).isEmpty();
+        assertThat(defectCounter(project)).isEqualTo(5);
+    }
+
+    /**
+     * An allocator whose JdbcClient runs {@code afterUpdate} right after an UPDATE of the project counter, whatever it wrote:
+     * the only way to put another transaction between the two statements of a take.
+     */
+    private IdAllocator allocatorWithHook(Runnable afterUpdate) {
+        JdbcClient real = ctx.bean(JdbcClient.class);
+        JdbcClient wrapped = (JdbcClient) Proxy.newProxyInstance(JdbcClient.class.getClassLoader(),
+                new Class<?>[] {JdbcClient.class}, (proxy, method, args) -> {
+                    Object result = invoke(method, real, args);
+                    if ("sql".equals(method.getName()) && args != null && args[0] instanceof String sql
+                            && result instanceof JdbcClient.StatementSpec spec) {
+                        return hooked(spec, sql.startsWith("UPDATE project"), afterUpdate);
+                    }
+                    return result;
+                });
+        return new IdAllocator(wrapped);
+    }
+
+    private static JdbcClient.StatementSpec hooked(JdbcClient.StatementSpec spec, boolean hook, Runnable afterUpdate) {
+        return (JdbcClient.StatementSpec) Proxy.newProxyInstance(JdbcClient.class.getClassLoader(),
+                new Class<?>[] {JdbcClient.StatementSpec.class}, (proxy, method, args) -> {
+                    Object result = invoke(method, spec, args);
+                    if (result == spec) {
+                        return proxy;
+                    }
+                    if (hook && "update".equals(method.getName())) {
+                        afterUpdate.run();
+                    }
+                    return result;
+                });
+    }
+
+    private static Object invoke(java.lang.reflect.Method method, Object target, Object[] args) throws Throwable {
+        try {
+            return method.invoke(target, args);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            throw e.getCause();
+        }
+    }
+
+    @Test
+    void vrf039_aCounterThatChangesBetweenTheTwoStatementsIsAConflict() {
+        Project project = seed.project();
+        for (int i = 0; i < 3; i++) {
+            ctx.tx(() -> ids.nextDefectNo(project.code()));
+        }
+        // the update for 5 (it needs the counter at 4) writes no row; then another transaction takes 4 and commits; the read sees 4
+        IdAllocator allocator = allocatorWithHook(() -> CompletableFuture.runAsync(
+                () -> ctx.tx(() -> ids.nextDefectNo(project.code()))).join());
+        ConflictException conflict = catchThrowableOfType(ConflictException.class,
+                () -> ctx.tx(() -> allocator.takeDefectNo(project.code(), 5)));
+        assertThat(conflict).isNotNull();
+        assertThat(conflict.code()).isEqualTo(ConflictCode.ID_COUNTER_CHANGED);
+        assertThat(conflict.args()).containsExactly(project.code().value());
+        assertThat(defectCounter(project)).isEqualTo(4);
+        // sent again, the number is the next one and is accepted
         assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 5))).isEmpty();
         assertThat(defectCounter(project)).isEqualTo(5);
     }

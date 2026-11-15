@@ -45,14 +45,18 @@ public record TaskId(String value) {
         return new TaskId(code.value() + "-T-" + DefectId.zeroPadded(number));
     }
 
-    /** The number of an id in the form the server issues, or none for any other free id; nothing is thrown. */
+    /**
+     * The number of an id in the form the server issues, or none for any other free id; nothing is thrown. The form is judged
+     * by the key of the id (its upper case, the column that makes the id unique): {@code e2e-t-0005} and {@code E2E-T-0005}
+     * are the same id, so both have the number 5 and neither passes for a free text.
+     */
     public OptionalLong number() {
-        Matcher matcher = ISSUED.matcher(value);
+        Matcher matcher = ISSUED.matcher(key());
         return matcher.matches() ? OptionalLong.of(Long.parseLong(matcher.group(2))) : OptionalLong.empty();
     }
 
-    /** The number of this id when it is an issued id of the project {@code code}, otherwise none. */
+    /** The number of this id when it is an issued id of the project {@code code} (in any case), otherwise none. */
     public OptionalLong numberIn(ProjectCode code) {
-        return value.startsWith(code.value() + "-T-") ? number() : OptionalLong.empty();
+        return key().startsWith(code.value() + "-T-") ? number() : OptionalLong.empty();
     }
 }

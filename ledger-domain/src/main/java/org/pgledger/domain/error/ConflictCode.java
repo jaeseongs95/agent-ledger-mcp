@@ -5,6 +5,11 @@ public enum ConflictCode implements ErrorCode {
     VERSION_CONFLICT,
     OPERATION_CONFLICT,
     DUPLICATE_KEY,
+    /**
+     * Another request changed the number counter of a project between the statement that takes an explicit number and the read
+     * that follows it: the explicit id is neither accepted nor ahead, and the request is to be sent again. Argument: the project code.
+     */
+    ID_COUNTER_CHANGED,
     KEY_REPLACEMENT_NOT_CONFIRMED,
     /** A grant for an author that has no live session key: no write of this author could be accepted. Argument: the author. */
     SESSION_KEY_REQUIRED,

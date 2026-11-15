@@ -55,19 +55,17 @@ import org.springframework.stereotype.Component;
 public class RecordFixOperation extends WriteOperation<RecordFixCommand, RecordFixResult> {
 
     private final Rows rows;
-    private final CodeRules codeRules;
     private final DefectFixRepository fixes;
     private final IdAllocator ids;
     private final HistoryWriter history;
     private final AttachmentLinks attachments;
     private final Clock clock;
 
-    public RecordFixOperation(WriteGate gate, ReceiptService receipts, Rows rows, CodeRules codeRules,
+    public RecordFixOperation(WriteGate gate, ReceiptService receipts, Rows rows,
             DefectFixRepository fixes, IdAllocator ids, HistoryWriter history, AttachmentLinks attachments,
             Clock clock) {
         super(gate, receipts, ReceiptOperation.RECORD_FIX, RecordFixResult.class);
         this.rows = rows;
-        this.codeRules = codeRules;
         this.fixes = fixes;
         this.ids = ids;
         this.history = history;
@@ -135,17 +133,18 @@ public class RecordFixOperation extends WriteOperation<RecordFixCommand, RecordF
         ChangeSet amended = known.isPresent() ? amendedChanges(known.get(), ciRef, conclusion, completedAt) : null;
         HistoryOp defectOp = null;
         if (defect.status() == DefectStatus.OPEN && mark) {
+            // a fix changes no code field (category, severity), so no code is checked: a defect that holds a retired code
+            // (the UNRATED of an import) is fixed all the same
             Defect after = defect.transitioned(DefectStatus.SOURCE_FIXED, null, now).ownedBy(nextOwner, now);
-            codeRules.checkDefect(defect, after.category(), after.severity());
             version = rows.saveDefect(after).version();
             defectOp = HistoryOp.TRANSITION;
             status = DefectStatus.SOURCE_FIXED;
         } else {
             // Also when the owner and the status stay the row is saved (updated_at and the version change): a concurrent
             // transition of the defect, a verification above all, is decided by this conditional statement, so no fix row is
-            // left on a defect that was verified in between. Only a change of the owner is a change that the history records.
+            // left on a defect that was verified in between. Only a change of the owner is a change that the history records
+            // (no history row, so no before_data, for the bookkeeping columns alone: it would be an empty edit row per fix).
             Defect after = defect.ownedBy(nextOwner, now);
-            codeRules.checkDefect(defect, after.category(), after.severity());
             version = rows.saveDefect(after).version();
             if (!Objects.equals(oldOwner, newOwner)) {
                 defectOp = HistoryOp.EDIT;

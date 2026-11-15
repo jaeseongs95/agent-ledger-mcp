@@ -283,6 +283,31 @@ class VerifyRulesTest {
         assertThat(s.defect(d.id()).status()).isEqualTo(DefectStatus.SOURCE_FIXED);
     }
 
+    @Test
+    @DisplayName("VRF-049: record_fix runs no code check: a defect with the retired severity UNRATED is fixed, by the owner, by another session and with new CI data")
+    void vrf049_unratedDefectIsFixed(Scenario s) {
+        SaveResult open = s.newDefect("open");
+        SaveResult fixed = s.sourceFixedDefect("fixed");
+        // SQL, because no service makes this state: UNRATED is the severity of an imported defect
+        for (SaveResult d : List.of(open, fixed)) {
+            s.ctx().jdbc().sql("UPDATE defect SET severity = 'UNRATED' WHERE id = ?").param(d.id()).update();
+        }
+        // an OPEN defect becomes SOURCE_FIXED
+        assertThat(s.fix(Scenario.AUTHOR, open.id(), Scenario.commit('a')).defectStatus()).isEqualTo("SOURCE_FIXED");
+        // by another session (the owner changes), by the owner (nothing but the version moves), CI data of a known commit
+        String other = s.actorWith("fix");
+        assertThat(s.fix(other, fixed.id(), Scenario.commit('b')).ownerActorId()).isEqualTo(other);
+        assertThat(s.fix(other, fixed.id(), Scenario.commit('c')).transitionHistoryId()).isNull();
+        s.bean(RecordFixService.class).recordFix(other, fix(fixed.id(), Scenario.commit('c'), "ci-1", "success", null));
+        for (SaveResult d : List.of(open, fixed)) {
+            assertThat(s.defect(d.id()).severity().value()).isEqualTo("UNRATED");
+        }
+        // a save of such a defect without a rating is still refused: UNRATED is never active
+        Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR,
+                s.edit("defect", open.id(), s.defect(open.id()).version(), Map.of("title", "changed"))),
+                org.pgledger.domain.error.ValidationCode.CODE_INVALID);
+    }
+
     @org.junit.jupiter.api.RepeatedTest(20)
     @DisplayName("VRF-028: a record_fix of the owner and a verification of the same defect at the same time never both succeed, and no fix row lands on the verified defect")
     void vrf028_fixAgainstVerification(Scenario s) {

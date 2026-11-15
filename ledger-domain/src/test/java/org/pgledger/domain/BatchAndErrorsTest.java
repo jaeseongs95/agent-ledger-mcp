@@ -116,8 +116,8 @@ class BatchAndErrorsTest {
         // ARTIFACT_UNSUPPORTED_PURPOSE (validation), ARTIFACT_NOT_FOUND (lookup), nine conflicts (with ARTIFACT_STORAGE_FULL),
         // four infrastructure codes and the code of the encoding of the database (RUN-017), and no code for the long text type
         // of the schema files (the dialect of SqlBuilder decides, RUN-003 retired) and none for an interrupted wait for another
-        // runner (the database waits, RUN-012), and the two codes of the unit verifyrules (VERIFIED_DEFECT, ID_NUMBER_AHEAD)
-        assertThat(codes).hasSize(87);
+        // runner (the database waits, RUN-012), and the three codes of the unit verifyrules (VERIFIED_DEFECT, ID_NUMBER_AHEAD, ID_COUNTER_CHANGED)
+        assertThat(codes).hasSize(88);
         assertThat(codes.stream().map(ErrorCode::token)).doesNotHaveDuplicates();
         assertThat(codes.stream().map(ErrorCode::token)).contains("AUTHOR_ID_FORMAT", "SESSION_NOT_GRANTED",
                 "HOST_ATTESTATION_REQUIRED", "VERSION_CONFLICT", "SAME_SESSION", "MERGED_DEFECT", "VERIFIED_DEFECT",
@@ -168,6 +168,10 @@ class BatchAndErrorsTest {
             assertThat(new MessageFormat(bundle.getString("error.ID_NUMBER_AHEAD"))
                     .format(new Object[] {"X-D-0100", "X-D-0004"})).contains("X-D-0100", "X-D-0004");
         }
+        assertThat(new MessageFormat(en.getString("error.ID_COUNTER_CHANGED")).format(new Object[] {"E2E"}))
+                .contains("E2E", "again");
+        assertThat(new MessageFormat(ko.getString("error.ID_COUNTER_CHANGED")).format(new Object[] {"E2E"}))
+                .contains("E2E", "다시 보내");
         assertThat(en.getString("error.SAME_SESSION")).contains("registered", "case", "fix", "reported");
         assertThat(ko.getString("error.SAME_SESSION")).contains("등록", "사례", "수정", "보고");
         ResourceBundle enReasons = ResourceBundle.getBundle("messages/ledger-reasons", Locale.ROOT);

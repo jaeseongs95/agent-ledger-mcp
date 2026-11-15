@@ -72,10 +72,10 @@ public class IdAllocator {
      * one is ahead, and the next number named is the committed counter plus one, true when it was read (a transaction that
      * has not committed may have taken it, and the same request sent again after its commit is then decided anew). A value
      * read that is exactly the number minus one means that the counter changed between the statement and the read: the
-     * request is neither accepted nor "ahead", and the caller is told to send it again (VERSION_CONFLICT, nothing is retried
-     * here).
+     * request is neither accepted nor "ahead", and the caller is told to send it again (ID_COUNTER_CHANGED, nothing is
+     * retried here).
      *
-     * @throws ConflictException VERSION_CONFLICT when the counter changed while the call ran
+     * @throws ConflictException ID_COUNTER_CHANGED when the counter changed while the call ran
      */
     private OptionalLong take(String update, String select, ProjectCode code, long number) {
         int rows = jdbc.sql(update).param("n", number).param("previous", number - 1).param("code", code.value())
@@ -86,8 +86,7 @@ public class IdAllocator {
         long last = jdbc.sql(select).param("code", code.value()).query(Long.class).optional()
                 .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND, List.of("project", code.value())));
         if (number == last + 1) {
-            throw new ConflictException(ConflictCode.VERSION_CONFLICT, List.of("counter of project", code.value(),
-                    Long.toString(number - 1), "changed while this request ran"));
+            throw new ConflictException(ConflictCode.ID_COUNTER_CHANGED, List.of(code.value()));
         }
         return number <= last ? OptionalLong.empty() : OptionalLong.of(last + 1);
     }

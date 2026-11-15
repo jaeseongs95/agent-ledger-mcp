@@ -184,6 +184,11 @@ class IdsTest {
         assertThat(save.save(Scenario.AUTHOR, defect(s, s.defectId(3), "three")).id()).isEqualTo(s.defectId(3));
         Expect.failure(() -> save.save(Scenario.AUTHOR, defect(s, s.code() + "-D-999999999999999999", "huge")),
                 ValidationCode.ID_NUMBER_AHEAD);
+        // a defect id in lower case never passes the pattern of DefectId (VRF-048)
+        Expect.failure(() -> save.save(Scenario.AUTHOR, defect(s, s.code().toLowerCase() + "-D-0004", "lower")),
+                ValidationCode.VALIDATION_FAILED);
+        Expect.failure(() -> save.save(Scenario.AUTHOR, defect(s, s.code() + "-d-0004", "lower")),
+                ValidationCode.VALIDATION_FAILED);
         // the pattern of DefectId itself still reads the padded id (reads and the import use it)
         assertThat(org.pgledger.domain.value.DefectId.parse(s.code() + "-D-00002")).isPresent();
     }
@@ -193,7 +198,9 @@ class IdsTest {
     void vrf047_canonicalTaskIds(Scenario s) {
         s.newTask("one");
         SaveService save = s.bean(SaveService.class);
-        for (String padded : List.of(s.code() + "-T-00001", s.code() + "-T-1", s.code() + "-T-2")) {
+        // the case of the id does not hide its number (VRF-048): the form is judged by the key of the id
+        for (String padded : List.of(s.code() + "-T-00001", s.code() + "-T-1", s.code() + "-T-2",
+                s.code() + "-t-0002", s.code().toLowerCase() + "-T-0002", s.code().toLowerCase() + "-t-00002")) {
             long number = Long.parseLong(padded.substring(padded.lastIndexOf('-') + 1));
             LedgerException e = Expect.failure(() -> save.save(Scenario.AUTHOR,
                     s.create("task", padded, s.taskFields("padded"))), ValidationCode.VALIDATION_FAILED);
@@ -252,7 +259,7 @@ class IdsTest {
     }
 
     @Test
-    @DisplayName("VRF-022: two explicit ids at the same time, the next number and the one after it: each is saved or ID_NUMBER_AHEAD, the counter is the highest that was saved")
+    @DisplayName("VRF-022: two explicit ids at the same time, the next number and the one after it: the second is saved, ID_NUMBER_AHEAD or ID_COUNTER_CHANGED, the counter is the highest that was saved")
     void vrf022_race(Scenario s) {
         s.newDefect("one");
         s.newDefect("two");
@@ -266,7 +273,9 @@ class IdsTest {
             assertThat(counter(s, "next_defect_no")).isEqualTo(5);
         } else {
             assertThat(outcomes.get(1).failure()).isInstanceOf(LedgerException.class);
-            assertThat(((LedgerException) outcomes.get(1).failure()).code()).isEqualTo(ValidationCode.ID_NUMBER_AHEAD);
+            // it did not see the number of the first (ahead), or the counter changed between its two statements
+            assertThat(((LedgerException) outcomes.get(1).failure()).code()).isIn(ValidationCode.ID_NUMBER_AHEAD,
+                    ConflictCode.ID_COUNTER_CHANGED);
             assertThat(counter(s, "next_defect_no")).isEqualTo(4);
         }
     }
