@@ -52,6 +52,10 @@ public final class DriverDataSources {
     /**
      * The check of the application account: a separate connection of that account (no pool, one connection per use) through the
      * registered driver, used by {@code setup} while the run itself is connected as another account (the owner account).
+     * A second data source is genuinely needed here (principle 3.9): the point of the check is to connect as the application
+     * account, which the ledger data source of the run, connected as the owner account, cannot do. It is called from the
+     * {@code @Bean} method of the one holder ({@code ApplicationAccountAccess}), holds no pool and no open connection
+     * ({@link SimpleDriverDataSource} connects at each call), so there is nothing for the container to close.
      *
      * @param application the settings of the application account ({@code ledger.jdbc.*} without the owner account of the run)
      */

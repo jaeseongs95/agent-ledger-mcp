@@ -1,6 +1,7 @@
 package org.pgledger.database;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noFields;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -106,6 +107,9 @@ class ArchitectureTest {
                                 .orShould().dependOnClassesThat().resideInAPackage("com.zaxxer.hikari..")
                                 .orShould().dependOnClassesThat().haveFullyQualifiedName(
                                         "org.springframework.jdbc.datasource.SimpleDriverDataSource")),
+                // principle 3.9: a pool is the return value of a @Bean method, which the container closes; no class keeps one
+                new Rule("TXD-004 no class holds a connection pool in a field", noFields().should().haveRawType(
+                        com.zaxxer.hikari.HikariDataSource.class)),
                 new Rule("ARC-027 DriverManager nowhere", noClasses().should().dependOnClassesThat()
                         .haveFullyQualifiedName("java.sql.DriverManager")),
                 new Rule("ARC-029 no JPA", noClasses().should().dependOnClassesThat().resideInAnyPackage(

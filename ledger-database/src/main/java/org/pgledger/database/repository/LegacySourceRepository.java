@@ -10,9 +10,10 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
-import org.pgledger.database.driver.LegacySourcePool;
+import org.pgledger.database.driver.LegacySourceConfiguration;
 import org.pgledger.database.driver.LegacySourceProperties;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -30,9 +31,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  * {@code ORDER BY}; values that are JSON in the legacy schema are read as text, never converted by a function.
  *
  * <p>A component that only {@code LegacySourceConfiguration} makes, from the settings {@code ledger.import.source.*} (the
- * scan of this package leaves it out), and a test hands it a database it has filled. One repository and one transaction
- * manager are made per legacy data source, which is a setting and not a bean, so the transaction manager is made here.
- * Spring's programmatic transaction support
+ * scan of this package leaves it out), and a test hands it a database it has filled. The legacy data source is a bean of
+ * {@code LegacySourceConfiguration}; the application's transaction manager belongs to the ledger data source, not to this
+ * one, so the snapshot of the legacy database still has a transaction manager made here (the snapshot belongs to the
+ * service layer, {@code LegacyImportService}, which calls {@link #readSnapshot}; moving its declaration there, as
+ * {@code @Transactional} with a transaction manager bean of the legacy data source, needs that service to change, and is
+ * left to the unit that owns it). Spring's programmatic transaction support
  * ({@link TransactionTemplate} over a {@link DataSourceTransactionManager}) is the standard tool for a transaction on a
  * second {@link DataSource}; it is described in the Spring Framework reference, "Programmatic Transaction Management"
  * (https://docs.spring.io/spring-framework/reference/data-access/transaction/programmatic.html), and the read-only and
@@ -59,10 +63,14 @@ public final class LegacySourceRepository {
     private final TransactionTemplate snapshot;
     private final String schema;
 
-    /** The repository of the legacy database of the settings {@code ledger.import.source.*}. */
+    /**
+     * The repository of the legacy database of the settings {@code ledger.import.source.*}, on the legacy data source bean
+     * ({@link LegacySourceConfiguration#DATA_SOURCE}, a pool that the container owns and closes).
+     */
     @Autowired
-    public LegacySourceRepository(LegacySourcePool pool, LegacySourceProperties properties) {
-        this(pool.dataSource(), properties.schema());
+    public LegacySourceRepository(@Qualifier(LegacySourceConfiguration.DATA_SOURCE) DataSource dataSource,
+            LegacySourceProperties properties) {
+        this(dataSource, properties.schema());
     }
 
     /**
@@ -76,6 +84,11 @@ public final class LegacySourceRepository {
                     + schema);
         }
         this.dataSource = dataSource;
+        // JdbcClient.create is a stateless facade over the given data source (it opens no connection and owns no pool). It is
+        // made here, and is no bean, because the one JdbcClient bean of the application is the auto-configured one over the
+        // primary ledger data source: a second JdbcClient bean would make Spring Boot back off from that one, and every
+        // repository of the ledger would then read the legacy database (principle 3.9, the exception the principle asks to
+        // be written down).
         this.jdbc = JdbcClient.create(dataSource);
         this.schema = schema;
         this.snapshot = new TransactionTemplate(new DataSourceTransactionManager(dataSource));

@@ -6,6 +6,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 
 /**
  * The application's DataSource from the registered driver. Without a registration the context fails to start with
@@ -28,8 +29,14 @@ public class LedgerDataSourceConfiguration {
         return loader.load(properties.driver());
     }
 
-    /** A pool around the registered driver: an external type (Hikari) whose driver is not on the class path of Boot. */
+    /**
+     * A pool around the registered driver: an external type (Hikari) whose driver is not on the class path of Boot. It is the
+     * primary {@link DataSource}: the command line tool may have a second one for the legacy ledger
+     * ({@link LegacySourceConfiguration}), and every injection point that does not name that one, and the auto-configuration
+     * of Spring Boot (the {@code JdbcClient}, the transaction manager), take this one.
+     */
     @Bean(destroyMethod = "close")
+    @Primary
     DataSource dataSource(RegisteredDriver registeredDriver, LedgerJdbcProperties properties,
             SchemaProperties schema) {
         return DriverDataSources.create(registeredDriver, properties, schema.name());
