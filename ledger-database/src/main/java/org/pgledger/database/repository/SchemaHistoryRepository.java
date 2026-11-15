@@ -42,8 +42,16 @@ public class SchemaHistoryRepository {
         SUCCEEDED, FAILED
     }
 
-    /** One row of {@code getTypeInfo}: the name of a type the database offers, its JDBC type ({@code java.sql.Types}) and its precision. */
-    public record TypeInfo(String name, int dataType, long precision) {
+    /**
+     * One row of {@code getTypeInfo}: the name of a type the database offers, its JDBC type ({@code java.sql.Types}), its precision and
+     * its {@code CREATE_PARAMS} (the parameters used in creating the type, may be null: it tells what can be given, not what is required).
+     */
+    public record TypeInfo(String name, int dataType, long precision, String createParams) {
+
+        /** Whether the type reports parameters (a length) for its creation, that is, {@code CREATE_PARAMS} is not null or blank. */
+        public boolean needsLength() {
+            return createParams != null && !createParams.isBlank();
+        }
     }
 
     /**
@@ -154,12 +162,13 @@ public class SchemaHistoryRepository {
         return inspect(dataSource, SchemaHistoryRepository::typeInfo);
     }
 
-    /** The rows of {@code metaData.getTypeInfo()}: the columns {@code TYPE_NAME}, {@code DATA_TYPE} and {@code PRECISION}. */
+    /** The rows of {@code metaData.getTypeInfo()}: the columns {@code TYPE_NAME}, {@code DATA_TYPE}, {@code PRECISION} and {@code CREATE_PARAMS}. */
     public static List<TypeInfo> typeInfo(DatabaseMetaData metaData) throws SQLException {
         List<TypeInfo> types = new ArrayList<>();
         try (ResultSet rs = metaData.getTypeInfo()) {
             while (rs.next()) {
-                types.add(new TypeInfo(rs.getString("TYPE_NAME"), rs.getInt("DATA_TYPE"), rs.getLong("PRECISION")));
+                types.add(new TypeInfo(rs.getString("TYPE_NAME"), rs.getInt("DATA_TYPE"), rs.getLong("PRECISION"),
+                        rs.getString("CREATE_PARAMS")));
             }
         }
         return List.copyOf(types);

@@ -187,17 +187,24 @@ class SchemaMigratorTest {
         String type = LongTextType.choose(TestSchemaServices.history(pool).typeInfo());
         JdbcClient jdbc = JdbcClient.create(pool);
         jdbc.sql("CREATE TABLE t_long (id INTEGER NOT NULL, body " + type + ", CONSTRAINT pk_t_long PRIMARY KEY (id))").update();
-        String text = "긴".repeat(50_000);
+        // 40000 characters of mixed Korean and ASCII text
+        String text = "긴 text 글 ".repeat(5_715).substring(0, 40_000);
+        assertThat(text).hasSize(40_000);
+        // the driver of PostgreSQL reports no CLOB or LONGVARCHAR: the declaration is a VARCHAR type without parameters, no length written
+        assertThat(type).as("the declaration chosen from the PostgreSQL driver").isEqualTo("varchar");
 
         jdbc.sql("INSERT INTO t_long (id, body) VALUES (1, :body)").param("body", text).update();
 
         assertThat(jdbc.sql("SELECT body FROM t_long WHERE id = 1").query(String.class).single()).isEqualTo(text);
+        jdbc.sql("DROP TABLE t_long").update();
         // and the files are applied with it: the placeholder is gone from the DDL that ran, and a long text fits the real columns
         Path dir = files(Map.of("V1__long.sql", "CREATE TABLE t_files (id INTEGER NOT NULL, body ${long_text}, "
                 + "CONSTRAINT pk_t_files PRIMARY KEY (id));\n"));
         assertThat(migrator(dir).migrate()).containsExactly(1);
         jdbc.sql("INSERT INTO t_files (id, body) VALUES (1, :body)").param("body", text).update();
-        assertThat(jdbc.sql("SELECT LENGTH(body) FROM t_files WHERE id = 1").query(Integer.class).single()).isEqualTo(50_000);
+        assertThat(jdbc.sql("SELECT LENGTH(body) FROM t_files WHERE id = 1").query(Integer.class).single()).isEqualTo(40_000);
+        jdbc.sql("INSERT INTO t_files (id, body) VALUES (2, :body)").param("body", text).update();
+        assertThat(jdbc.sql("SELECT body FROM t_files WHERE id = 2").query(String.class).single()).isEqualTo(text);
     }
 
     @Test
