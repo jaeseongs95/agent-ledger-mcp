@@ -68,7 +68,7 @@ class DocsTest {
     private static final Pattern KEY = Pattern.compile("ledger(\\.[a-z0-9-]+)+");
     private static final Pattern CONFIGURATION_PROPERTIES = Pattern
             .compile("@ConfigurationProperties\\(\\s*(?:(?:prefix|value)\\s*=\\s*)?\"([a-z.-]+)\"");
-    private static final Pattern MCP_TOOL = Pattern.compile("@McpTool\\(\\s*name\\s*=\\s*\"([a-z_]+)\"");
+    private static final Pattern MCP_TOOL = Pattern.compile("@McpTool\\(\\s*name\\s*=\\s*\"([a-z_-]+)\"");
     private static final Pattern MODULE = Pattern.compile("\"(ledger-[a-z-]+)\"");
     private static final Pattern VENDOR = Pattern.compile(
             "(?i)\\b(PostgreSQL|Postgres|MySQL|MariaDB|Oracle|SQL Server|H2|DB2|SQLite|Derby|HSQLDB)\\b");
