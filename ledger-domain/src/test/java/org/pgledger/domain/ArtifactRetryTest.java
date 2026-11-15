@@ -49,6 +49,15 @@ class ArtifactRetryTest {
     }
 
     @Test
+    @DisplayName("ATA-041: the storage codes are those of design 3.2 (IO_ERROR, UNSAFE, KEY_MISSING); the settings failure of the key directory is no code of a tool")
+    void theStorageCodesAreThoseOfTheCommonTable() {
+        List<String> infrastructure = java.util.Arrays.stream(InfrastructureCode.values()).map(Enum::name).toList();
+
+        assertThat(infrastructure).contains("ARTIFACT_STORAGE_IO_ERROR", "ARTIFACT_STORAGE_UNSAFE", "ARTIFACT_KEY_MISSING",
+                "ARTIFACT_CORRUPTED").doesNotContain("ARTIFACT_STORAGE_FAILED", "ARTIFACT_KEY_DIRECTORY_INSIDE_STORAGE");
+    }
+
+    @Test
     @DisplayName("ATA-040: a code of no upload tool has no answer")
     void aCodeOfNoUploadToolHasNoAnswer() {
         assertThat(ArtifactRetry.retryable(TrustCode.HOST_ATTESTATION_REQUIRED, Map.of())).isEmpty();

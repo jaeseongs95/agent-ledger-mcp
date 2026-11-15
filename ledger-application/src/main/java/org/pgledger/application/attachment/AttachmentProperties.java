@@ -4,17 +4,15 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.List;
-import org.pgledger.domain.error.InfrastructureCode;
-import org.pgledger.domain.error.InfrastructureException;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.util.unit.DataSize;
 import org.springframework.validation.annotation.Validated;
 
 /**
- * Settings of the attachments ({@code ledger.attachments.*}, the ten keys of the common design, section 3.1). A value that does
- * not bind, or a key directory inside the attachment directory, stops the start. The chunk size is no setting: it is the contract
+ * Settings of the attachments ({@code ledger.attachments.*}, the keys of the common design, section 3.1). A value that does
+ * not bind, or a key directory inside the attachment directory ({@link AttachmentSettingsException}, a failure of the settings and no
+ * error code of a tool), stops the start. The chunk size is no setting: it is the contract
  * constant {@link #CHUNK_BYTES}, the same for every client and every installation.
  *
  * @param directory             where the files of the bodies are kept (below the installation's data directory)
@@ -51,7 +49,7 @@ public record AttachmentProperties(@NotNull Path directory, @NotNull Path keyDir
             directory = directory.toAbsolutePath().normalize();
             keyDirectory = keyDirectory.toAbsolutePath().normalize();
             if (keyDirectory.startsWith(directory)) {
-                throw new InfrastructureException(InfrastructureCode.ARTIFACT_KEY_DIRECTORY_INSIDE_STORAGE, List.of());
+                throw new AttachmentSettingsException(AttachmentSettingsException.KEY_DIRECTORY_INSIDE_DIRECTORY);
             }
         }
         require(maxFileBytes.toBytes() >= 1, "max-file-bytes");

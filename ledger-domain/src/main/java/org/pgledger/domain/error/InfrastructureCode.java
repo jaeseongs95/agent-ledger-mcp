@@ -61,10 +61,8 @@ public enum InfrastructureCode implements ErrorCode {
     ARTIFACT_STORAGE_UNSAFE,
     /** A key file that stored files need is missing; {0} = the key id (never the key). */
     ARTIFACT_KEY_MISSING,
-    /** The storage failed for a reason of the file system; {0} = the class of the failure. */
-    ARTIFACT_STORAGE_FAILED,
-    /** The key directory is inside the attachment directory (the start fails). */
-    ARTIFACT_KEY_DIRECTORY_INSIDE_STORAGE;
+    /** The disk could not be read or written (the SSH name of the common table); {0} = the class of the failure. */
+    ARTIFACT_STORAGE_IO_ERROR;
 
     @Override
     public ErrorCategory category() {

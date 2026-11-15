@@ -145,8 +145,7 @@ class AttachmentCatalogTest {
         for (String code : List.of("ARTIFACT_UNSUPPORTED_PURPOSE", "ARTIFACT_NOT_FOUND", "ARTIFACT_EXPIRED",
                 "ARTIFACT_CHUNK_CONFLICT", "ARTIFACT_BUSY", "ARTIFACT_INCOMPLETE", "ARTIFACT_OPERATION_CONFLICT",
                 "ARTIFACT_LIMIT", "ARTIFACT_HASH_MISMATCH", "CHUNK_HASH_MISMATCH", "ARTIFACT_CORRUPTED",
-                "ARTIFACT_STORAGE_UNSAFE", "ARTIFACT_KEY_MISSING", "ARTIFACT_STORAGE_FAILED",
-                "ARTIFACT_KEY_DIRECTORY_INSIDE_STORAGE")) {
+                "ARTIFACT_STORAGE_FULL", "ARTIFACT_STORAGE_UNSAFE", "ARTIFACT_KEY_MISSING", "ARTIFACT_STORAGE_IO_ERROR")) {
             String key = "error." + code;
             assertThat(english.containsKey(key)).as(key + " in English").isTrue();
             assertThat(korean.containsKey(key)).as(key + " in Korean").isTrue();

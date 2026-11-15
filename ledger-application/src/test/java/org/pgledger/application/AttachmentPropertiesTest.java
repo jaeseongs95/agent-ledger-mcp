@@ -14,9 +14,8 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.pgledger.application.attachment.AttachmentProperties;
+import org.pgledger.application.attachment.AttachmentSettingsException;
 import org.pgledger.application.support.AttachmentSettings;
-import org.pgledger.domain.error.InfrastructureCode;
-import org.pgledger.domain.error.InfrastructureException;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
@@ -90,12 +89,13 @@ class AttachmentPropertiesTest {
     }
 
     @Test
-    @DisplayName("ATA-019: a key directory inside the attachment directory (or the same one) is refused with ARTIFACT_KEY_DIRECTORY_INSIDE_STORAGE; a sibling whose name only starts the same is allowed")
+    @DisplayName("ATA-019: a key directory inside the attachment directory (or the same one) is a failure of the settings (no tool error code) whose message names both keys in English and Korean; a sibling whose name only starts the same is allowed")
     void ata019_theKeyDirectoryInsideTheStorageIsRefused() {
         for (Path inside : new Path[] {DIRECTORY.resolve("keys"), DIRECTORY, DIRECTORY.resolve("a").resolve("b")}) {
             assertThatThrownBy(() -> AttachmentSettings.properties(DIRECTORY, inside, "key-a"))
-                    .isInstanceOfSatisfying(InfrastructureException.class, failure -> assertThat(failure.code())
-                            .isEqualTo(InfrastructureCode.ARTIFACT_KEY_DIRECTORY_INSIDE_STORAGE));
+                    .isInstanceOfSatisfying(AttachmentSettingsException.class, failure -> assertThat(failure.getMessage())
+                            .contains("ledger.attachments.key-directory", "ledger.attachments.directory", "must name a folder outside",
+                                    "폴더 밖의 폴더여야 합니다"));
         }
         assertThat(AttachmentSettings.properties(DIRECTORY, BASE.resolve("attachments-keys"), "key-a").keyDirectory())
                 .isEqualTo(BASE.resolve("attachments-keys"));
@@ -103,7 +103,7 @@ class AttachmentPropertiesTest {
         Map<String, Object> values = required();
         values.put("ledger.attachments.key-directory", DIRECTORY.resolve("keys").toString());
         assertThatThrownBy(() -> bind(values)).as("the start fails when the setting is bound")
-                .hasRootCauseInstanceOf(InfrastructureException.class);
+                .hasRootCauseInstanceOf(AttachmentSettingsException.class);
     }
 
     @Test

@@ -421,7 +421,7 @@ public class AttachmentStore {
      * afterwards; a failure before that leaves the old row valid and the new file as a file without a row (the partial file is removed
      * when it can be).
      *
-     * @throws InfrastructureException ARTIFACT_CORRUPTED when the old file does not pass; ARTIFACT_STORAGE_FAILED when the new
+     * @throws InfrastructureException ARTIFACT_CORRUPTED when the old file does not pass; ARTIFACT_STORAGE_IO_ERROR when the new
      *         file cannot be written (it is never overwritten)
      */
     public void rekey(StorageKey from, String fromKeyId, StorageKey to, String toKeyId) {
@@ -657,7 +657,7 @@ public class AttachmentStore {
     }
 
     private static InfrastructureException failed(IOException failure) {
-        return new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_FAILED,
+        return new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_IO_ERROR,
                 List.of(failure.getClass().getSimpleName()), failure);
     }
 }

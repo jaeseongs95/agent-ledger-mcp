@@ -87,7 +87,7 @@ public class AttachmentKeys {
             }
             return new Key(keyId, new SecretKeySpec(bytes, "AES"));
         } catch (IOException failure) {
-            throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_FAILED,
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_IO_ERROR,
                     List.of(failure.getClass().getSimpleName()), failure);
         } finally {
             Arrays.fill(bytes, (byte) 0);
@@ -115,7 +115,7 @@ public class AttachmentKeys {
             }
             return keyId;
         } catch (IOException failure) {
-            throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_FAILED,
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_IO_ERROR,
                     List.of(failure.getClass().getSimpleName()), failure);
         } finally {
             Arrays.fill(bytes, (byte) 0);

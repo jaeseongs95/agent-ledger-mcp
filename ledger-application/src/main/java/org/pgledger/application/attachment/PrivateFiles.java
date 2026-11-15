@@ -116,7 +116,7 @@ public class PrivateFiles {
                 settle(directory);
             }
         } catch (IOException failure) {
-            throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_FAILED,
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_IO_ERROR,
                     List.of(failure.getClass().getSimpleName()), failure);
         }
         requireDirectory(directory);
@@ -157,7 +157,7 @@ public class PrivateFiles {
                 throw unsafe("the file system has neither POSIX permissions nor ACLs");
             }
         } catch (IOException failure) {
-            throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_FAILED,
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_IO_ERROR,
                     List.of(failure.getClass().getSimpleName()), failure);
         }
     }
@@ -209,7 +209,7 @@ public class PrivateFiles {
                     .orElseThrow(() -> unsafe("the account of this process is not known"));
             return fileSystem.getUserPrincipalLookupService().lookupPrincipalByName(name);
         } catch (IOException failure) {
-            throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_FAILED,
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_IO_ERROR,
                     List.of(failure.getClass().getSimpleName()), failure);
         }
     }
