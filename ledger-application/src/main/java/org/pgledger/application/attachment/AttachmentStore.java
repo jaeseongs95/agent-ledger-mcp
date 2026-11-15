@@ -82,7 +82,7 @@ public class AttachmentStore {
 
     // ------------------------------------------------------------------------------------------------ start
 
-    /** Makes the attachment directory and the quarantine folder when they are missing and requires both to be private. */
+    /** Makes the attachment directory and the quarantine folder, owner-only, when they are missing and requires both to be directories. */
     public void prepare() {
         files.ensureDirectory(properties.directory());
         files.ensureDirectory(properties.directory().resolve(QUARANTINE));
@@ -96,10 +96,11 @@ public class AttachmentStore {
      * has to free the disk (ARTIFACT_STORAGE_FULL, not retryable). A disk that cannot be read is no "full" disk but a failure of the
      * storage (ARTIFACT_STORAGE_IO_ERROR).
      *
-     * <p>The directory is made first when it is missing and required to be private, the same rule as every write ({@code prepareFolder}):
+     * <p>The directory is made first when it is missing (owner-only), the same rule as every write ({@code prepareFolder}):
      * a begin may come before the first write has made the folder, and the file store of a path that does not exist cannot be read. A
-     * folder that cannot be made (its parent is missing, no right) or is not private is still the failure it is
-     * (ARTIFACT_STORAGE_IO_ERROR, ARTIFACT_STORAGE_UNSAFE); nothing is measured on another folder instead.
+     * folder that cannot be made (its parent is missing, no right) or is a file is still the failure it is
+     * (ARTIFACT_STORAGE_IO_ERROR, ARTIFACT_STORAGE_UNSAFE); nothing is measured on another folder instead. Who else may reach an
+     * existing folder is not looked at.
      */
     public void requireDiskSpace(long requestedBytes) {
         files.ensureDirectory(properties.directory());

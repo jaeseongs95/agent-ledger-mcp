@@ -63,26 +63,26 @@ public class AttachmentKeys {
     /**
      * The key of a key id (the name of its file).
      *
-     * @throws InfrastructureException ARTIFACT_KEY_MISSING when the file is not there; ARTIFACT_STORAGE_UNSAFE when the file
-     *         is not private or has not the length of a key
+     * @throws InfrastructureException ARTIFACT_KEY_MISSING when there is no usable key: the file is not there, is empty or has not
+     *         the length of a key; ARTIFACT_STORAGE_UNSAFE when the path is not a regular file (a link is followed) or the key
+     *         folder is not a directory. Who else may reach the file or its folder is not looked at.
      */
     public Key byId(String keyId) {
         Path file = fileOf(keyId);
-        if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
+        if (!Files.exists(file)) {
             throw new InfrastructureException(InfrastructureCode.ARTIFACT_KEY_MISSING, List.of(keyId));
         }
         files.requireDirectory(properties.keyDirectory());
         byte[] bytes = new byte[KEY_BYTES];
         try (FileChannel channel = files.openRead(file)) {
+            // no usable key (edition 11 of the design): an empty file or a file that has not the length of a key is a missing key
             if (channel.size() != KEY_BYTES) {
-                throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_UNSAFE,
-                        List.of("the key file " + keyId + " has not the length of a key"));
+                throw new InfrastructureException(InfrastructureCode.ARTIFACT_KEY_MISSING, List.of(keyId));
             }
             ByteBuffer buffer = ByteBuffer.wrap(bytes);
             while (buffer.hasRemaining()) {
                 if (channel.read(buffer) < 0) {
-                    throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_UNSAFE,
-                            List.of("the key file " + keyId + " is shorter than a key"));
+                    throw new InfrastructureException(InfrastructureCode.ARTIFACT_KEY_MISSING, List.of(keyId));
                 }
             }
             return new Key(keyId, new SecretKeySpec(bytes, "AES"));
@@ -123,7 +123,7 @@ public class AttachmentKeys {
     }
 
     /**
-     * The start check of the keys: the key directory is private and every key id in the list has its key file (the active key
+     * The start check of the keys: the key directory is a directory and every key id in the list has its key file (the active key
      * too). A row whose key file is missing stops the start, naming the key id only.
      */
     public void requirePresent(Collection<String> keyIds) {

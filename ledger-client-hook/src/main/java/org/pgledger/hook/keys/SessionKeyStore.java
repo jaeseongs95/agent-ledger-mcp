@@ -2,7 +2,6 @@ package org.pgledger.hook.keys;
 
 import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.security.KeyPair;
 import java.util.Arrays;
@@ -15,14 +14,15 @@ import org.springframework.stereotype.Component;
  * The Ed25519 key pairs of the authors, one file per (MCP server, author) in one folder. This package is the only place
  * of the hook that uses file system APIs. The store finds the folder and orders the steps; each step is a class of its
  * own, which is the reason that changes it: {@link SessionKeyFile} (the name and the content of the file),
- * {@link Protection} (owner and access of the folder and the files), {@link KeyFileReader} (open and read an existing
- * file safely) and {@link KeyFileWriter} (create a new file without a race).
+ * {@link Protection} (the owner-only access of the folder and the files it creates), {@link KeyFileReader} (open and read an
+ * existing file) and {@link KeyFileWriter} (create a new file without a race).
  *
  * <p>Why per server: the hook signs for the MCP server named in the host's tool name, and the owner registers the
  * public key of each server separately, so a signature made for one server (the test server, a look-alike server) never
  * verifies on another: a key registered on one server is simply another key than the one of the other.
  *
- * <p>An existing file is read and checked; it is never overwritten, repaired or deleted. A missing file is created
+ * <p>An existing file is read and checked for its kind and its format only (who may reach it and who owns it is not looked at,
+ * a link is followed); it is never overwritten, repaired or deleted. A missing file is created
  * with a new key pair; if another process created it in the meantime, that process's file is read.
  */
 @Component
@@ -59,8 +59,8 @@ public final class SessionKeyStore {
             Protection protection = Protection.of(directory.getFileSystem(), userName);
             prepareDirectory(directory, protection);
             Path file = directory.resolve(keyFile.fileName());
-            KeyFileReader reader = new KeyFileReader(protection);
-            if (Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
+            KeyFileReader reader = new KeyFileReader();
+            if (Files.exists(file)) {
                 return read(reader, file, keyFile);
             }
             return create(reader, new KeyFileWriter(protection), file, keyFile);
@@ -84,10 +84,10 @@ public final class SessionKeyStore {
             Files.createDirectories(directory, protection.folderAttributes());
             protection.settle(directory);
         }
+        // an existing folder is used as it is (a link is followed): who may reach it and who owns it is not looked at
         if (!Files.isDirectory(directory)) {
             throw new SessionKeyException(Reason.FOLDER_UNAVAILABLE);
         }
-        protection.requireOwnerOnly(directory);
     }
 
     private static SessionKey read(KeyFileReader reader, Path file, SessionKeyFile keyFile) throws IOException {

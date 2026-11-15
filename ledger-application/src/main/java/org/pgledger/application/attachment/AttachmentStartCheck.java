@@ -3,9 +3,9 @@ package org.pgledger.application.attachment;
 import org.springframework.stereotype.Component;
 
 /**
- * The check at the start of a server (common design 4.3): the attachment directory and its quarantine folder exist and only the service
- * account may use them, the key directory is private, and every key file that a current file or an upload names is there (the active
- * key too). A missing key file stops the start and names the key id, never the key. The class opens no transaction.
+ * The check at the start of a server (common design 4.3): the attachment directory and its quarantine folder exist (they are made
+ * owner-only when missing; an existing one is used as it is) and are directories, the key directory is a directory, and every key file
+ * that a current file or an upload names is there (the active key too). A missing key file stops the start and names the key id, never the key. The class opens no transaction.
  */
 @Component
 @ConditionalOnAttachments

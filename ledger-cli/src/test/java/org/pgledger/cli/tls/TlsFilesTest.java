@@ -20,6 +20,9 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mockito;
 import org.pgledger.cli.CliMessages;
 import org.pgledger.cli.CliOutput;
+import org.pgledger.cli.ErrorCode;
+import org.pgledger.cli.FailureException;
+import org.pgledger.testing.BroadAccess;
 import org.pgledger.cli.secret.ProcessUser;
 import org.pgledger.cli.secret.SecretProtection;
 import org.pgledger.cli.support.RequiresOwnerOnlyStorage;
@@ -140,6 +143,59 @@ class TlsFilesTest {
         assertThat(read.getPrivate().getEncoded()).isEqualTo(keys.getPrivate().getEncoded());
         assertThat(read.getPublic().getEncoded()).isEqualTo(keys.getPublic().getEncoded());
         assertThat(Files.readString(files.accountKey(tls))).contains("-----BEGIN PRIVATE KEY-----", "-----BEGIN PUBLIC KEY-----");
+    }
+
+    @Test
+    @DisplayName("SFR-014: an account key in a TLS directory and a file that other accounts may reach, and an account key that is a link to a valid key file, are found and read as the same key pair (no refusal for permissions or a link; the link case is skipped where this process may not make links)")
+    void sfr014_accountKeyIsReadWhoeverMayReachIt() throws Exception {
+        TlsFiles files = new TlsFiles(USER);
+        Path tls = Files.createDirectories(tmp.resolve("tls"));
+        java.security.KeyPair keys = files.newKeyPair();
+        files.writeAccountKey(tls, keys);
+        org.junit.jupiter.api.Assumptions.assumeTrue(BroadAccess.supported(tls), "the file system has neither POSIX permissions nor ACLs");
+        BroadAccess.open(tls);
+        BroadAccess.open(files.accountKey(tls));
+        assertThat(BroadAccess.reachedByOthers(files.accountKey(tls))).isTrue();
+
+        assertThat(files.hasAccountKey(tls)).isTrue();
+        assertThat(files.readAccountKey(tls).getPrivate().getEncoded()).isEqualTo(keys.getPrivate().getEncoded());
+
+        Path real = tmp.resolve("account-real.key");
+        Files.move(files.accountKey(tls), real);
+        org.junit.jupiter.api.Assumptions.assumeTrue(BroadAccess.link(files.accountKey(tls), real),
+                "this process may not make symbolic links");
+        assertThat(files.hasAccountKey(tls)).isTrue();
+        assertThat(files.readAccountKey(tls).getPrivate().getEncoded()).isEqualTo(keys.getPrivate().getEncoded());
+    }
+
+    @Test
+    @DisplayName("SFR-015: a directory or an empty file at the place of the account key or of the chain is refused with TLS_FILE_UNUSABLE naming the path, before anything is sent; a missing chain is no certificate (empty)")
+    void sfr015_notRegularOrEmptyIsRefused() throws Exception {
+        TlsFiles files = new TlsFiles(USER);
+        Path tls = Files.createDirectories(tmp.resolve("tls"));
+
+        assertThat(files.readCertificate(tls)).as("no file, no certificate").isEmpty();
+        assertThat(files.hasAccountKey(tls)).isFalse();
+
+        Files.createDirectory(files.accountKey(tls));
+        Files.createDirectory(files.chain(tls));
+        assertThat(files.hasAccountKey(tls)).as("something is there: it is refused when read, not replaced by a new account").isTrue();
+        assertUnusable(() -> files.readAccountKey(tls), files.accountKey(tls));
+        assertUnusable(() -> files.readCertificate(tls), files.chain(tls));
+
+        Files.delete(files.accountKey(tls));
+        Files.delete(files.chain(tls));
+        Files.createFile(files.accountKey(tls));
+        Files.createFile(files.chain(tls));
+        assertUnusable(() -> files.readAccountKey(tls), files.accountKey(tls));
+        assertUnusable(() -> files.readCertificate(tls), files.chain(tls));
+    }
+
+    private static void assertUnusable(org.assertj.core.api.ThrowableAssert.ThrowingCallable action, Path path) {
+        assertThatThrownBy(action).isInstanceOfSatisfying(FailureException.class, e -> {
+            assertThat(e.code()).isEqualTo(ErrorCode.TLS_FILE_UNUSABLE);
+            assertThat(e.arguments()).containsExactly(path.toString());
+        });
     }
 
     @Test

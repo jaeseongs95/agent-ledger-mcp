@@ -83,7 +83,7 @@ class AttachmentDiskMarginTest {
     }
 
     @Test
-    @DisplayName("ATA-043: a begin before the attachment directory exists makes it (private) and measures its disk; when it cannot be made (its parent is missing) the answer is ARTIFACT_STORAGE_IO_ERROR, not a margin on another folder")
+    @DisplayName("ATA-043: a begin before the attachment directory exists makes it (private) and measures its disk; a missing parent is made too (SFR-006); when it cannot be made (a regular file stands where a parent belongs) the answer is ARTIFACT_STORAGE_IO_ERROR, not a margin on another folder")
     void ata043_beginBeforeTheDirectoryExists() {
         StoreFixture fixture = StoreFixture.create();
         try {
@@ -96,13 +96,23 @@ class AttachmentDiskMarginTest {
             assertThat(directory).as("the folder is made the way every write makes it").isDirectory();
             fixture.files().requireDirectory(directory);
 
-            Path noParent = fixture.root().resolve("no-such-parent").resolve("attachments");
+            // changed by SFR-006: a missing parent is made too (the product makes its own folders); what cannot be made is a folder
+            // below a regular file, and that is still the failure it is, with nothing measured on another folder
+            Path aFile = Files.writeString(fixture.root().resolve("a-file"), "not a folder");
+            Path belowAFile = aFile.resolve("data").resolve("attachments");
             AttachmentStore unreachable = new AttachmentStore(
-                    AttachmentSettings.properties(noParent, fixture.properties().keyDirectory(), fixture.keyId()), fixture.files(),
+                    AttachmentSettings.properties(belowAFile, fixture.properties().keyDirectory(), fixture.keyId()), fixture.files(),
                     fixture.keys(), fixture.cipher());
             assertThatThrownBy(() -> unreachable.requireDiskSpace(600)).isInstanceOfSatisfying(InfrastructureException.class,
                     failure -> assertThat(failure.code()).isEqualTo(InfrastructureCode.ARTIFACT_STORAGE_IO_ERROR));
-            assertThat(noParent.getParent()).as("nothing was made on the way").doesNotExist();
+            assertThat(aFile).as("the file is not replaced").hasContent("not a folder");
+
+            Path noParent = fixture.root().resolve("no-such-parent").resolve("attachments");
+            AttachmentStore parentMissing = new AttachmentStore(
+                    AttachmentSettings.properties(noParent, fixture.properties().keyDirectory(), fixture.keyId()), fixture.files(),
+                    fixture.keys(), fixture.cipher());
+            parentMissing.requireDiskSpace(600);
+            assertThat(noParent).as("the parent and the folder are made").isDirectory();
         } finally {
             fixture.close();
         }

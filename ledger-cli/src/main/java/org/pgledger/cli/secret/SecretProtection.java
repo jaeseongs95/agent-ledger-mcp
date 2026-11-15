@@ -29,16 +29,19 @@ import org.pgledger.cli.FailureException;
  *
  * <ul>
  * <li>{@link Posix}: the permissions {@code rwx------} (directory) and {@code rw-------} (file), given at creation; a path
- *     with any group or other permission is refused.
+ *     that was just created with any group or other permission is refused ({@link #settle}).
  * <li>{@link Acl} ({@link AclFileAttributeView}, the Windows file systems): an ACL with one ALLOW entry that grants the
  *     owner everything, and nothing inherited, given at creation (the {@code acl:acl} attribute of the Windows provider);
- *     a path whose ACL allows more than looking at its attributes and ACL to any other principal is refused. SYSTEM and
- *     Administrators are not exempt: an administrator can take ownership of any file whatever its ACL, so this protects
- *     against the other accounts of the machine, and an entry for them would add exposure only. The same rule and the same
- *     harmless set as the key store of the hook ({@code ledger-client-hook}, {@code SessionKeyStore}); the two modules do not
- *     depend on each other, so the few lines are repeated. Reference:
+ *     what the parent hands down is replaced by that ACL right after creation ({@link #settle}). SYSTEM and Administrators
+ *     are not exempt: an administrator can take ownership of any file whatever its ACL, and an entry for them would add
+ *     exposure only. The same rule and the same harmless set as the key store of the hook ({@code ledger-client-hook},
+ *     {@code SessionKeyStore}); the two modules do not depend on each other, so the few lines are repeated. Reference:
  *     https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/nio/file/attribute/AclFileAttributeView.html
  * </ul>
+ *
+ * <p>The protection is made and verified for what this process <b>creates</b>; an existing path is never judged by it (the
+ * personal edition trusts the whole PC, and a folder on a data volume inherits Authenticated Users on Windows by default).
+ * Reading an existing secret asks only for the kind of the path ({@link SecretStore}).
  */
 public sealed interface SecretProtection {
 
@@ -49,7 +52,8 @@ public sealed interface SecretProtection {
     FileAttribute<?>[] fileAttributes();
 
     /**
-     * Refuses a path that another principal can use.
+     * Refuses a path that another principal can use. It judges what this process has just created ({@link #settle}), never a
+     * path that existed before.
      *
      * @throws FailureException LOOSE_PERMISSIONS naming the path and what is open
      */

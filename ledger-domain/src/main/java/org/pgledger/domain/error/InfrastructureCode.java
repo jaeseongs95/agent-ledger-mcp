@@ -62,9 +62,17 @@ public enum InfrastructureCode implements ErrorCode {
     DATABASE_PRODUCT_MISMATCH,
     /** A stored attachment fails the check of its tags, end mark, size or hash. */
     ARTIFACT_CORRUPTED,
-    /** The attachment folder, a file of it or a key file is not safe to use (a link, a wrong owner, open to others); {0} = what. */
+    /**
+     * The storage path cannot be used for this purpose (design edition 11): it is not a regular file or a folder where one belongs, or
+     * it cannot be made owner-only (a file system without POSIX permissions or ACLs such as FAT, or the account of the process is not
+     * known). Who else may reach an existing path, its owner and a link are not looked at in the personal edition. Not a disk failure
+     * (ARTIFACT_STORAGE_IO_ERROR); {0} = what.
+     */
     ARTIFACT_STORAGE_UNSAFE,
-    /** A key file that stored files need is missing; {0} = the key id (never the key). */
+    /**
+     * There is no usable key for a key id (design edition 11): its key file is missing, is empty or has not the length of a key
+     * (256 bits); {0} = the key id (never the key).
+     */
     ARTIFACT_KEY_MISSING,
     /** The disk could not be read or written (the SSH name of the common table); {0} = the class of the failure. */
     ARTIFACT_STORAGE_IO_ERROR;

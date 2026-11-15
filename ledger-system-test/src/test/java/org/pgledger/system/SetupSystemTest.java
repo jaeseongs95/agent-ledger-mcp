@@ -5,17 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.AclEntry;
-import java.nio.file.attribute.AclEntryFlag;
-import java.nio.file.attribute.AclEntryPermission;
-import java.nio.file.attribute.AclEntryType;
-import java.nio.file.attribute.AclFileAttributeView;
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.AfterAll;
@@ -110,12 +103,9 @@ class SetupSystemTest {
         assertThat(rendered.exit()).as(rendered.streams()).isZero();
 
         Path source = Path.of(System.getProperty("ledger.test.postgres-jar"));
-        // the product refuses a driver jar that an account other than its owner can change: the directory and the jar are made
-        // writable by their owner alone, as prepare-host would leave them
+        // the product does not look at who may write the jar or its directory (the personal edition trusts the whole PC)
         Path drivers = Files.createDirectories(etc.resolve("drivers"));
-        ownerOnly(drivers);
         Path copy = Files.createFile(drivers.resolve(source.getFileName()));
-        ownerOnly(copy);
         Files.write(copy, Files.readAllBytes(source));
         JavaProcess.Result registered = cli(null, "driver-register", "--jar=" + copy, "--class=org.postgresql.Driver");
         assertThat(registered.exit()).as(registered.streams()).isZero();
@@ -214,15 +204,4 @@ class SetupSystemTest {
         }
     }
 
-    /** Makes a file or directory usable by its owner alone on a file system with ACLs (the POSIX permissions of a new file are the product's check otherwise). */
-    private static void ownerOnly(Path path) throws IOException {
-        AclFileAttributeView view = Files.getFileAttributeView(path, AclFileAttributeView.class);
-        if (view == null) {
-            return;
-        }
-        Set<AclEntryFlag> flags = Files.isDirectory(path)
-                ? EnumSet.of(AclEntryFlag.FILE_INHERIT, AclEntryFlag.DIRECTORY_INHERIT) : EnumSet.noneOf(AclEntryFlag.class);
-        view.setAcl(List.of(AclEntry.newBuilder().setType(AclEntryType.ALLOW).setPrincipal(view.getOwner())
-                .setPermissions(EnumSet.allOf(AclEntryPermission.class)).setFlags(flags).build()));
-    }
 }

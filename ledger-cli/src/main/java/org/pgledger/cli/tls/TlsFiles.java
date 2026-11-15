@@ -5,8 +5,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.security.GeneralSecurityException;
@@ -32,6 +32,8 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.pgledger.cli.ErrorCode;
+import org.pgledger.cli.FailureException;
 import org.pgledger.cli.deploy.DeployLayout;
 import org.pgledger.cli.secret.ProcessUser;
 import org.pgledger.cli.secret.SecretProtection;
@@ -79,8 +81,12 @@ class TlsFiles {
         return directory.resolve(DeployLayout.TLS_KEY_FILE);
     }
 
+    /**
+     * Whether something is at the place of the account key (a link is followed). Whether it can be used is decided by
+     * {@link #readAccountKey}, which refuses what is not a regular file or is empty before anything is sent to the authority.
+     */
     boolean hasAccountKey(Path directory) {
-        return Files.isRegularFile(accountKey(directory), LinkOption.NOFOLLOW_LINKS);
+        return Files.exists(accountKey(directory));
     }
 
     /** A new EC P-256 key pair, made with the JDK. */
@@ -104,8 +110,15 @@ class TlsFiles {
         }
     }
 
+    /**
+     * Reads the account key whoever may reach the file (the personal edition trusts the whole PC; a link is followed).
+     *
+     * @throws FailureException TLS_FILE_UNUSABLE when the path is not a regular file or the file is empty
+     */
     KeyPair readAccountKey(Path directory) throws IOException {
-        Map<String, byte[]> blocks = blocks(Files.readString(accountKey(directory), StandardCharsets.US_ASCII));
+        Path file = accountKey(directory);
+        requireUsable(file);
+        Map<String, byte[]> blocks = blocks(Files.readString(file, StandardCharsets.US_ASCII));
         try {
             KeyFactory factory = KeyFactory.getInstance("EC");
             PrivateKey privateKey = factory.generatePrivate(new PKCS8EncodedKeySpec(required(blocks, "PRIVATE KEY")));
@@ -143,15 +156,18 @@ class TlsFiles {
     }
 
     /**
-     * The first certificate of {@code fullchain.pem} (the one of the host names), or empty when there is no such file.
+     * The first certificate of {@code fullchain.pem} (the one of the host names), or empty when there is no such file (a link is
+     * followed).
      *
      * @throws CertificateException when the file holds no certificate or cannot be parsed (the parser's exception is the cause)
+     * @throws FailureException TLS_FILE_UNUSABLE when the path is not a regular file or the file is empty
      */
     Optional<X509Certificate> readCertificate(Path directory) throws IOException, CertificateException {
         Path file = chain(directory);
-        if (!Files.isRegularFile(file)) {
+        if (!Files.exists(file)) {
             return Optional.empty();
         }
+        requireUsable(file);
         try (InputStream in = Files.newInputStream(file)) {
             return Optional.of(firstCertificate(in));
         }
@@ -220,6 +236,14 @@ class TlsFiles {
     /** Whether the token is made of the base64url alphabet only, and not empty or longer than any real token. */
     static boolean isPlainToken(String token) {
         return token != null && TOKEN.matcher(token).matches();
+    }
+
+    /** A file that is read is a regular file (a link is followed) and not empty; who else may reach it is not looked at. */
+    private static void requireUsable(Path file) throws IOException {
+        BasicFileAttributes attributes = Files.readAttributes(file, BasicFileAttributes.class);
+        if (!attributes.isRegularFile() || attributes.size() == 0) {
+            throw new FailureException(ErrorCode.TLS_FILE_UNUSABLE, file.toString());
+        }
     }
 
     private static String pem(String type, byte[] der) {

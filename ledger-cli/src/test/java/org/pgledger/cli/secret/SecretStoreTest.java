@@ -115,46 +115,52 @@ class SecretStoreTest {
 
     @Test
     @RequiresPosixPermissions
-    @DisplayName("SEC-006 an existing directory with mode 0755 is refused with its path and mode and is not narrowed")
-    void sec006_refusesLooseDirectory() throws IOException {
+    @DisplayName("SEC-006 (changed by SFR-010) an existing directory with mode 0755 is used as it is: the secret is stored in it, the directory keeps its mode and the new file is 0600")
+    void sec006_usesLooseDirectory() throws IOException {
         Path directory = tmp.resolve("secrets");
         Files.createDirectory(directory);
         Files.setPosixFilePermissions(directory, PosixFilePermissions.fromString("rwxr-xr-x"));
 
-        assertRefused(() -> store(directory).store(NAME, "v".toCharArray()), ErrorCode.LOOSE_PERMISSIONS, directory.toString(), "rwxr-xr-x");
-        assertRefused(() -> store(directory).check(NAME), ErrorCode.LOOSE_PERMISSIONS, directory.toString(), "rwxr-xr-x");
+        assertThatCode(() -> store(directory).check(NAME)).doesNotThrowAnyException();
+        Path file = store(directory).store(NAME, "v".toCharArray());
 
         assertThat(Files.getPosixFilePermissions(directory)).isEqualTo(PosixFilePermissions.fromString("rwxr-xr-x"));
-        assertThat(names(directory)).isEmpty();
-    }
-
-    @Test
-    @RequiresPosixPermissions
-    @DisplayName("SEC-006 an existing file with mode 0644 is refused with its path and mode and keeps its content and mode")
-    void sec006_refusesLooseFile() throws IOException {
-        Path directory = tmp.resolve("secrets");
-        SecretStore store = store(directory);
-        Path file = store.store(NAME, "old-value".toCharArray());
-        Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-r--r--"));
-
-        assertRefused(() -> store.store(NAME, "new".toCharArray()), ErrorCode.LOOSE_PERMISSIONS, file.toString(), "rw-r--r--");
-
-        assertThat(Files.readString(file)).isEqualTo("old-value");
-        assertThat(Files.getPosixFilePermissions(file)).isEqualTo(PosixFilePermissions.fromString("rw-r--r--"));
+        assertThat(Files.getPosixFilePermissions(file)).isEqualTo(PosixFilePermissions.fromString("rw-------"));
         assertThat(names(directory)).containsExactly("cloudflare-api-token");
     }
 
     @Test
     @RequiresPosixPermissions
-    @DisplayName("SEC-006 a symbolic link in place of the secret file is refused")
-    void sec006_refusesSymbolicLinkTarget() throws IOException {
+    @DisplayName("SEC-006 (changed by SFR-010) an existing file with mode 0644 is read and replaced: the old value is loaded, the replacement is a new 0600 file")
+    void sec006_replacesLooseFile() throws IOException {
+        Path directory = tmp.resolve("secrets");
+        SecretStore store = store(directory);
+        Path file = store.store(NAME, "old-value".toCharArray());
+        Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-r--r--"));
+
+        assertThat(new String(store.load(NAME))).isEqualTo("old-value");
+        store.store(NAME, "new".toCharArray());
+
+        assertThat(Files.readString(file)).isEqualTo("new");
+        assertThat(Files.getPosixFilePermissions(file)).isEqualTo(PosixFilePermissions.fromString("rw-------"));
+        assertThat(names(directory)).containsExactly("cloudflare-api-token");
+    }
+
+    @Test
+    @RequiresPosixPermissions
+    @DisplayName("SEC-006 (changed by SFR-011) a symbolic link in place of the secret file is followed when it is read; a store replaces the link, not the file it points at")
+    void sec006_followsSymbolicLinkTarget() throws IOException {
         Path directory = tmp.resolve("secrets");
         SecretStore store = store(directory);
         store.store(new SecretName("other"), "x".toCharArray());
         Files.createSymbolicLink(directory.resolve("cloudflare-api-token"), directory.resolve("other"));
 
-        assertRefused(() -> store.store(NAME, "v".toCharArray()), ErrorCode.UNEXPECTED_FILE_TYPE,
-                directory.resolve("cloudflare-api-token").toString());
+        assertThat(new String(store.load(NAME))).isEqualTo("x");
+        assertThat(store.exists(NAME)).isTrue();
+        store.store(NAME, "v".toCharArray());
+
+        assertThat(Files.isSymbolicLink(directory.resolve("cloudflare-api-token"))).isFalse();
+        assertThat(Files.readString(directory.resolve("cloudflare-api-token"))).isEqualTo("v");
         assertThat(Files.readString(directory.resolve("other"))).isEqualTo("x");
     }
 
@@ -187,34 +193,18 @@ class SecretStoreTest {
 
     @Test
     @RequiresPosixPermissions
-    @DisplayName("SEC-013 a directory owned by another user is refused naming path, owner and current user, before any prompt")
-    void sec013_refusesDirectoryOfAnotherOwner() throws IOException {
+    @DisplayName("SEC-013 (changed by SFR-010) a directory and a file whose owner is not the account the command runs as (here: the process account is taken to be root) are used as they are: the check passes, the secret is read and replaced. The owner of a real file cannot be changed without a privilege, so the process account is the stub")
+    void sec013_usesDirectoryAndFileOfAnotherOwner() throws IOException {
         Path directory = tmp.resolve("secrets");
-        store(directory).store(NAME, "old".toCharArray());
-        String owner = Files.getOwner(directory).getName();
+        Path file = store(directory).store(NAME, "old".toCharArray());
         UserPrincipal root = named("root");
         assumeThat(root).isNotEqualTo(Files.getOwner(directory));
 
-        assertRefused(() -> store(directory, users(root)).store(NAME, "new".toCharArray()), ErrorCode.FOREIGN_OWNER, directory.toString(), owner, "root");
-        assertRefused(() -> store(directory, users(root)).check(NAME), ErrorCode.FOREIGN_OWNER, directory.toString(), owner, "root");
+        assertThatCode(() -> store(directory, users(root)).check(NAME)).doesNotThrowAnyException();
+        assertThat(new String(store(directory, users(root)).load(NAME))).isEqualTo("old");
+        store(directory, users(root)).store(NAME, "new".toCharArray());
 
-        assertThat(Files.readString(directory.resolve("cloudflare-api-token"))).isEqualTo("old");
-    }
-
-    @Test
-    @RequiresPosixPermissions
-    @DisplayName("SEC-013 an existing secret file owned by another user is refused even when the directory is ours")
-    void sec013_refusesFileOfAnotherOwner() throws IOException {
-        Path directory = tmp.resolve("secrets");
-        Path file = store(directory).store(NAME, "old".toCharArray());
-        String owner = Files.getOwner(file).getName();
-        UserPrincipal me = Files.getOwner(directory);
-        UserPrincipal root = named("root");
-        assumeThat(root).isNotEqualTo(me);
-
-        assertRefused(() -> store(directory, users(me, root)).store(NAME, "new".toCharArray()), ErrorCode.FOREIGN_OWNER, file.toString(), owner, "root");
-
-        assertThat(Files.readString(file)).isEqualTo("old");
+        assertThat(Files.readString(file)).isEqualTo("new");
     }
 
     @Test
@@ -317,7 +307,7 @@ class SecretStoreTest {
         assertThat(names(directory)).containsExactly("cloudflare-api-token");
     }
 
-    /** SYSTEM exists on every Windows file system and is not the current user; the lookup is by the file system, as FileTrust does. */
+    /** SYSTEM exists on every Windows file system and is not the current user; the lookup is by the file system. */
     private static UserPrincipal system() {
         try {
             return FileSystems.getDefault().getUserPrincipalLookupService().lookupPrincipalByName("SYSTEM");
@@ -328,8 +318,8 @@ class SecretStoreTest {
     }
 
     @Test
-    @DisplayName("SEC-018 on a file system with ACLs an existing directory whose ACL allows another account is refused naming it, and is not narrowed")
-    void sec018_refusesDirectoryThatAllowsAnotherAccount() throws IOException {
+    @DisplayName("SEC-018 (changed by SFR-010) on a file system with ACLs an existing directory whose ACL allows another account is used as it is: check and store pass, its ACL is not narrowed")
+    void sec018_usesDirectoryThatAllowsAnotherAccount() throws IOException {
         assumeAclFileSystem();
         Path directory = tmp.resolve("secrets");
         store(directory).store(NAME, "old".toCharArray());
@@ -337,50 +327,33 @@ class SecretStoreTest {
         Files.getFileAttributeView(directory, AclFileAttributeView.class).setAcl(List.of(allowAll(owner), allowAll(system())));
         List<AclEntry> before = acl(directory);
 
-        for (Runnable action : List.<Runnable>of(() -> store(directory).store(NAME, "new".toCharArray()),
-                () -> store(directory).check(NAME))) {
-            assertThatThrownBy(action::run).isInstanceOfSatisfying(FailureException.class, e -> {
-                assertThat(e.code()).isEqualTo(ErrorCode.LOOSE_PERMISSIONS);
-                assertThat(e.arguments().getFirst()).isEqualTo(directory.toString());
-            });
-        }
+        assertThatCode(() -> store(directory).check(NAME)).doesNotThrowAnyException();
+        store(directory).store(NAME, "new".toCharArray());
 
         assertThat(acl(directory)).isEqualTo(before);
-        assertThat(Files.readString(directory.resolve("cloudflare-api-token"))).isEqualTo("old");
+        assertThat(Files.readString(directory.resolve("cloudflare-api-token"))).isEqualTo("new");
+        assertOwnerOnlyAcl(directory.resolve("cloudflare-api-token"));
     }
 
     @Test
-    @DisplayName("SEC-019 on a file system with ACLs an existing secret file whose ACL allows another account is refused and keeps its content")
-    void sec019_refusesFileThatAllowsAnotherAccount() throws IOException {
+    @DisplayName("SEC-019 (changed by SFR-010) on a file system with ACLs an existing secret file whose ACL allows another account is read and replaced: the replacement is a new owner-only file")
+    void sec019_replacesFileThatAllowsAnotherAccount() throws IOException {
         assumeAclFileSystem();
         Path directory = tmp.resolve("secrets");
         Path file = store(directory).store(NAME, "old".toCharArray());
         UserPrincipal owner = Files.getOwner(file);
         Files.getFileAttributeView(file, AclFileAttributeView.class).setAcl(List.of(allowAll(owner), allowAll(system())));
 
-        assertThatThrownBy(() -> store(directory).store(NAME, "new".toCharArray())).isInstanceOfSatisfying(FailureException.class,
-                e -> {
-                    assertThat(e.code()).isEqualTo(ErrorCode.LOOSE_PERMISSIONS);
-                    assertThat(e.arguments().getFirst()).isEqualTo(file.toString());
-                });
+        assertThat(new String(store(directory).load(NAME))).isEqualTo("old");
+        store(directory).store(NAME, "new".toCharArray());
 
-        assertThat(Files.readString(file)).isEqualTo("old");
+        assertThat(Files.readString(file)).isEqualTo("new");
+        assertOwnerOnlyAcl(file);
     }
 
-    @Test
-    @DisplayName("SEC-020 on a file system with ACLs a directory or file owned by an account other than the current user is refused (FOREIGN_OWNER)")
-    void sec020_refusesAnotherOwner() throws IOException {
-        assumeAclFileSystem();
-        Path directory = tmp.resolve("secrets");
-        Path file = store(directory).store(NAME, "old".toCharArray());
-        UserPrincipal other = system();
-        assumeThat(other).isNotEqualTo(Files.getOwner(directory));
-
-        assertRefused(() -> store(directory, users(other)).store(NAME, "new".toCharArray()), ErrorCode.FOREIGN_OWNER,
-                directory.toString(), Files.getOwner(directory).getName(), other.getName());
-
-        assertThat(Files.readString(file)).isEqualTo("old");
-    }
+    // SEC-020 (an owner that is not the current user is refused, FOREIGN_OWNER) was removed with the rule: the owner of an existing
+    // file is no longer looked at (SFR-010). A stub account cannot test the new rule on a file system with ACLs, because the store
+    // takes ownership of what it creates for the account it is given (SEC-016), so the rule is shown by the absence of the check.
 
     @Test
     @DisplayName("SEC-022 exists reports whether a secret is stored, and refuses like check when the store or the file cannot be used")
