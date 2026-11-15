@@ -42,7 +42,7 @@ final class Attestations {
      * arguments, or the stamped arguments themselves) for a call whose own arguments were {@code sent}.
      *
      * @param server the MCP server of the call: the hook signs with the key of this server and this author
-     * @param op the operation after {@code ledger_} (save, whoami ...)
+     * @param op the operation after {@code ledger_} (save, whoami ...), or the name of an attachment tool (artifact-chunk ...)
      */
     static Stamp verify(Path keyDirectory, Window window, String server, String author, String op, JsonNode sent,
             JsonNode carrier) {
@@ -53,7 +53,7 @@ final class Attestations {
         assertThat(parsed.text()).as("canonical token text").isEqualTo(token);
         AttestationClaims claims = parsed.claims();
         assertThat(claims.author()).as("author").isEqualTo(author);
-        assertThat(claims.tool()).as("tool").isEqualTo("ledger_" + op);
+        assertThat(claims.tool()).as("tool").isEqualTo(Hosts.canonical(op));
         assertThat(claims.issuedAt()).as("issuedAt").isBetween(window.from(), window.to());
         // throws AttestationException (SIGNATURE_INVALID) if the key of the author did not sign these claims
         parsed.verify(publicKey(keyDirectory, server, author));
@@ -62,8 +62,12 @@ final class Attestations {
         boolean keeps = given != null && given.isString() && !given.stringValue().isBlank();
         String added = null;
         ObjectNode handedToTheHost = ((ObjectNode) sent).deepCopy();
-        if ("whoami".equals(op)) {
-            assertThat(claims.requestId()).as("whoami has no request id").isEmpty();
+        boolean hasRequestId = Hosts.hasRequestId(op);
+        if (!hasRequestId) {
+            assertThat(claims.requestId()).as(op + " has no request id").isEmpty();
+            if (!sent.has("request_id")) {
+                assertThat(carrier.has("request_id")).as("no request_id added for " + op).isFalse();
+            }
         } else {
             handedToTheHost.put("request_id", claims.requestId());
         }
@@ -71,9 +75,9 @@ final class Attestations {
         // here with the shared class from the tests' own reading of the JSON
         Map<?, ?> plain = (Map<?, ?>) Json.MAPPER.treeToValue(handedToTheHost, Object.class);
         assertThat(claims.argumentsDigest()).as("arguments digest").isEqualTo(ArgumentsDigest.of(plain));
-        if (!"whoami".equals(op) && keeps) {
+        if (hasRequestId && keeps) {
             assertThat(claims.requestId()).as("the request id of the call is signed as it is").isEqualTo(given.stringValue());
-        } else if (!"whoami".equals(op)) {
+        } else if (hasRequestId) {
             assertThat(claims.requestId()).as("a generated request id").isNotEmpty();
             assertThat(UUID.fromString(claims.requestId()).toString()).isEqualTo(claims.requestId());
             assertThat(carrier.path("request_id").stringValue()).as("request_id in the arguments").isEqualTo(claims.requestId());

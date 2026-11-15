@@ -15,7 +15,10 @@ public final class ContractVectors {
     /** Authors: {@code valid} is a list of texts, {@code invalid} a list of {@code {value, why}}; a null value is allowed. */
     public static final String AUTHORS = "/contract/author-vectors.json";
 
-    /** Tool names: {@code write} (the ten that carry the attestation) and {@code read}, canonical {@code ledger_<op>}. */
+    /**
+     * Tool names: {@code write} (the ten ledger tools that carry the attestation, canonical {@code ledger_<op>}),
+     * {@code attachment} (the five that carry it too, canonical {@code artifact-<op>}) and {@code read}.
+     */
     public static final String WRITE_TOOLS = "/contract/write-tool-vectors.json";
 
     private ContractVectors() {

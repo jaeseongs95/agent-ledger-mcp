@@ -71,6 +71,74 @@ class ToolSelectionTest {
         assertThat(run.document()).isEqualTo(AGY.untouched());
     }
 
+    // ---- ATA-021: the five attachment tools ----
+
+    /** (host, a name that is no signed attachment tool: look-alike prefix, no server, another tool, near miss). */
+    static Stream<Arguments> otherArtifactNames() {
+        return Stream.of(
+                Arguments.argumentSet("claude look-alike prefix", new ClaudeHost(), "mcp__ledger__other_artifact-begin"),
+                Arguments.argumentSet("claude prefix of another server", new ClaudeHost(), "mcp__a__b_artifact-chunk"),
+                Arguments.argumentSet("claude no server", new ClaudeHost(), "mcp__artifact-begin"),
+                Arguments.argumentSet("claude another tool", new ClaudeHost(), "mcp__ledger__artifact-delete"),
+                Arguments.argumentSet("claude a list tool", new ClaudeHost(), "mcp__ledger__artifact-list"),
+                Arguments.argumentSet("claude a suffix", new ClaudeHost(), "mcp__ledger__artifact-begin-extra"),
+                Arguments.argumentSet("claude upper case", new ClaudeHost(), "mcp__ledger__artifact-Begin"),
+                Arguments.argumentSet("claude underscore", new ClaudeHost(), "mcp__ledger__artifact_begin"),
+                Arguments.argumentSet("claude codex apps namespace", new ClaudeHost(), "mcp__codex_apps__app_ledger_artifact-begin"),
+                Arguments.argumentSet("codex look-alike prefix", CODEX, "mcp__test__other_artifact-begin"),
+                Arguments.argumentSet("codex no server", CODEX, "mcp__artifact-chunk"),
+                Arguments.argumentSet("codex another tool", CODEX, "mcp__test__artifact-delete"),
+                Arguments.argumentSet("codex a suffix", CODEX, "mcp__test__artifact-read-extra"),
+                Arguments.argumentSet("codex apps: no app", CODEX, "mcp__codex_apps__app_artifact-begin"),
+                Arguments.argumentSet("codex apps: another tool", CODEX, "mcp__codex_apps__app_ledger_artifact-delete"),
+                Arguments.argumentSet("codex apps: another pseudo server", CODEX, "mcp__other__app_ledger_artifact-begin"),
+                Arguments.argumentSet("antigravity look-alike prefix", AGY, "mcp:test:other_artifact-begin"),
+                Arguments.argumentSet("antigravity no server", AGY, "mcp:artifact-begin"),
+                Arguments.argumentSet("antigravity another tool", AGY, "mcp:test:artifact-delete"),
+                Arguments.argumentSet("antigravity a suffix", AGY, "mcp:test:artifact-finish-extra"));
+    }
+
+    @ParameterizedTest
+    @MethodSource("otherArtifactNames")
+    @DisplayName("HK-011 ATA-021 an attachment tool name with a look-alike server prefix, without a server, with another tool name or a suffix is not touched, even with a reserved key")
+    void otherArtifactNamesAreNotTouched(HostScenario host, String name, HookFixture fixture) {
+        Run run = fixture.runClean(host, host.event(name, Json.tree(Map.of(Json.RESERVED_KEY, "model:value"))));
+        assertThat(run.document()).isEqualTo(host.untouched());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"other_artifact-begin", "artifact-delete", "artifact-begin-extra", "artifact_begin", "ledger_artifact-begin"})
+    @DisplayName("HK-012 ATA-021 call_mcp_tool: a ToolName that is no attachment tool, or has a prefix other than the ServerName, passes, even with a reserved key")
+    void wrapperOtherArtifactToolPasses(String toolName, HookFixture fixture) {
+        Run run = fixture.runClean(AGY, AGY.wrapperEvent(envelope(toolName, Map.of(Json.RESERVED_KEY, Json.of("null")))));
+        assertThat(run.document()).isEqualTo(AGY.untouched());
+    }
+
+    @ParameterizedTest
+    @MethodSource("org.pgledger.hook.Hosts#withArtifactOps")
+    @DisplayName("HK-013 ATA-021 an attachment tool: a reserved key is denied in every host")
+    void attachmentToolDeniesReservedKey(HostScenario host, String op, HookFixture fixture) {
+        JsonNode input = Json.tree(Map.of(Json.RESERVED_KEY, Json.of("null")));
+        Run run = fixture.runClean(host, host.event(host.toolName(op), input));
+        assertThat(run.document()).isEqualTo(host.denied(Refusal.RESERVED_FIELD));
+    }
+
+    private static Stream<String> artifactOps() {
+        return Hosts.ARTIFACT_OPS.stream();
+    }
+
+    @ParameterizedTest
+    @MethodSource("artifactOps")
+    @DisplayName("HK-012 ATA-021 call_mcp_tool with Arguments as an object: the five attachment tools are stamped for their own name, plain and with the ServerName as prefix, and only Arguments is overwritten")
+    void wrapperArtifactToolsAreStamped(String op, HookFixture fixture) {
+        for (String toolName : List.of(op, "t0001sink_" + op)) {
+            Run run = fixture.runClean(AGY, AGY.wrapperEvent(envelope(toolName, INPUT)));
+            Attestations.Stamp stamp = fixture.stampCarrier("t0001sink", AGY.author(ID), op, INPUT, AGY.echoed(run));
+            assertThat(stamp.claims().tool()).as(toolName).isEqualTo(op);
+            assertThat(run.document()).as(toolName).isEqualTo(AGY.allowedWrapped(Json.stamped(INPUT, stamp.token(), null)));
+        }
+    }
+
     private static Stream<String> writeOps() {
         return Hosts.WRITE_OPS.stream();
     }

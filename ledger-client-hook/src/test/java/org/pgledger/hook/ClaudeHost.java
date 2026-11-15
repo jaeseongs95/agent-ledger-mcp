@@ -18,7 +18,7 @@ final class ClaudeHost extends FlatHost {
 
     @Override
     public String toolName(String operation) {
-        return "mcp__ledger__ledger_" + operation;
+        return "mcp__ledger__" + Hosts.canonical(operation);
     }
 
     @Override

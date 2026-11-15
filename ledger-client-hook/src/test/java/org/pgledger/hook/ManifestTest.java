@@ -22,7 +22,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import tools.jackson.databind.JsonNode;
 
-/** HK-010: the client manifests call the jar with the right argument, their matchers select exactly the ten write tools. */
+/** HK-010: the client manifests call the jar with the right argument, their matchers select exactly the ten write tools and the five attachment tools. */
 class ManifestTest {
 
     private static final Path CLIENTS = Path.of(System.getProperty("ledger.hook.clients"));
@@ -63,19 +63,26 @@ class ManifestTest {
     private static Stream<String> names(Client client, String op) {
         return switch (client) {
             case CLAUDE -> SERVERS.stream().flatMap(server -> Stream.of(
-                    "mcp__" + server + "__ledger_" + op, "mcp__" + server + "__" + server + "_ledger_" + op));
+                    "mcp__" + server + "__" + Hosts.canonical(op), "mcp__" + server + "__" + server + "_" + Hosts.canonical(op)));
             case CODEX -> Stream.concat(SERVERS.stream().flatMap(server -> Stream.of(
-                    "mcp__" + server + "__ledger_" + op, "mcp__" + server + "__" + server + "_ledger_" + op)),
-                    Stream.of("mcp__codex_apps__app_ledger_ledger_" + op));
-            case ANTIGRAVITY -> Stream.of("mcp:test:ledger_" + op, "mcp:test/ledger_" + op, "mcp:test_ledger_" + op,
-                    "mcp:ledger_ledger_" + op, "mcp:t0001sink_isolated-01:t0001sink_isolated-01_ledger_" + op);
+                    "mcp__" + server + "__" + Hosts.canonical(op), "mcp__" + server + "__" + server + "_" + Hosts.canonical(op))),
+                    Stream.of("mcp__codex_apps__app_ledger_" + Hosts.canonical(op)));
+            case ANTIGRAVITY -> Stream.of("mcp:test:" + Hosts.canonical(op), "mcp:test/" + Hosts.canonical(op),
+                    "mcp:test_" + Hosts.canonical(op), "mcp:ledger_" + Hosts.canonical(op),
+                    "mcp:t0001sink_isolated-01:t0001sink_isolated-01_" + Hosts.canonical(op));
         };
     }
+
+    /** Attachment tool names that are none of the five (ATA-021): the matcher must not select them, in any naming. */
+    private static final List<String> OTHER_ARTIFACT_NAMES = List.of(
+            "artifact-delete", "artifact-begin-extra", "artifact_begin", "artifact-", "artifact-Begin", "xartifact-begin");
 
     /** (client, tool name, whether the matcher must select it) */
     static Stream<Arguments> matcherCases() {
         return Stream.of(Client.values()).flatMap(client -> Stream.of(
                         Hosts.WRITE_OPS.stream().flatMap(op -> names(client, op)).map(name -> Map.entry(name, true)),
+                        Hosts.ARTIFACT_OPS.stream().flatMap(op -> names(client, op)).map(name -> Map.entry(name, true)),
+                        OTHER_ARTIFACT_NAMES.stream().flatMap(other -> names(client, other)).map(name -> Map.entry(name, false)),
                         READ_OPS.stream().flatMap(op -> names(client, op)).map(name -> Map.entry(name, false)),
                         Stream.of("Bash", "mcp__other__read", "ledger_save", "mcp__ledger_save", "mcp:ledger_save",
                                 "mcp__ledger__ledger_save_extra", "xmcp__ledger__ledger_save")

@@ -38,7 +38,7 @@ final class AntigravityHost implements HostScenario {
 
     @Override
     public String toolName(String operation) {
-        return "mcp:test:ledger_" + operation;
+        return "mcp:test:" + Hosts.canonical(operation);
     }
 
     @Override
@@ -58,7 +58,7 @@ final class AntigravityHost implements HostScenario {
 
     @Override
     public byte[] echoEvent(String operation, Object arguments) {
-        return wrapperEvent(new Envelope("test", "ledger_" + operation, arguments, null));
+        return wrapperEvent(new Envelope("test", Hosts.canonical(operation), arguments, null));
     }
 
     @Override
