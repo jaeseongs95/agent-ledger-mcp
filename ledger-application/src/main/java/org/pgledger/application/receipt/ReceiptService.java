@@ -21,15 +21,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.TransactionStatus;
-import org.springframework.transaction.interceptor.TransactionAspectSupport;
 
 /**
- * Idempotency. The receipt is inserted first, in the transaction of the write, under a savepoint: a duplicate key
- * (the same request id from another or an earlier call) rolls back to the savepoint only, so the transaction
- * stays usable on every DBMS, and the stored response is returned. A concurrent duplicate waits on the key until
- * the first call commits. A failed write rolls its receipt back with everything else, so a retry with a corrected
- * payload is not a conflict.
+ * Idempotency. The receipt is inserted first, in the transaction of the write, by {@link ReceiptWriter} in a nested
+ * transaction (a savepoint that Spring makes and rolls back): a duplicate key (the same request id from another or an
+ * earlier call) takes back that insert only, so the transaction stays usable on every DBMS, and the stored response is
+ * returned. A concurrent duplicate waits on the key until the first call commits. A failed write rolls its receipt back
+ * with everything else, so a retry with a corrected payload is not a conflict.
  */
 @Component
 public class ReceiptService {
@@ -37,13 +35,15 @@ public class ReceiptService {
     private static final Logger LOG = LoggerFactory.getLogger(ReceiptService.class);
 
     private final ReceiptRepository receipts;
+    private final ReceiptWriter writer;
     private final ReceiptCompletionRepository completion;
     private final LedgerJson json;
     private final Clock clock;
 
-    public ReceiptService(ReceiptRepository receipts, ReceiptCompletionRepository completion, LedgerJson json,
-            Clock clock) {
+    public ReceiptService(ReceiptRepository receipts, ReceiptWriter writer, ReceiptCompletionRepository completion,
+            LedgerJson json, Clock clock) {
         this.receipts = receipts;
+        this.writer = writer;
         this.completion = completion;
         this.json = json;
         this.clock = clock;
@@ -74,16 +74,11 @@ public class ReceiptService {
      */
     public <R> Reservation<R> reserve(RequestId id, ReceiptOperation operation, Sha256 digest, AuthorId author,
             Channel channel, Class<R> responseType) {
-        TransactionStatus transaction = TransactionAspectSupport.currentTransactionStatus();
-        Object savepoint = transaction.createSavepoint();
         try {
-            receipts.insert(Receipt.reserve(id, operation, digest, author, channel, clock.instant()));
-            transaction.releaseSavepoint(savepoint);
+            writer.insert(Receipt.reserve(id, operation, digest, author, channel, clock.instant()));
             return new Reservation.Reserved<>();
         } catch (DuplicateKeyException duplicate) {
             LOG.debug("request id {} is already reserved; the stored receipt decides", id, duplicate);
-            transaction.rollbackToSavepoint(savepoint);
-            transaction.releaseSavepoint(savepoint);
             return new Reservation.Replayed<>(storedResponse(id, operation, digest, author, channel, responseType));
         }
     }

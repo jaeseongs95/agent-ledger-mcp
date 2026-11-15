@@ -93,6 +93,8 @@ class ArchitectureTest {
                                 "org.springframework.retry..")),
                 new Rule("ARC-013 no TransactionTemplate", noClasses().should().dependOnClassesThat()
                         .haveFullyQualifiedName("org.springframework.transaction.support.TransactionTemplate")),
+                new Rule("TXF-001 no TransactionAspectSupport and no hand-made savepoint (a nested write is a @Service method "
+                        + "with Propagation.NESTED)", ArchitectureRules.noHandMadeTransactionControl()),
                 new Rule("ARC-013 @Transactional only on services", noClasses().that().areNotAnnotatedWith(
                         Service.class).should().beAnnotatedWith(Transactional.class)),
                 new Rule("ARC-015 no switch over a String", noClasses().should().callMethodWhere(
