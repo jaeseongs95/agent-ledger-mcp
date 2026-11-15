@@ -513,6 +513,7 @@ class DocsTest {
         assertThat(guide).contains("<unit>.1x-backup").contains("systemctl daemon-reload").contains("enable --now")
                 .contains(english ? "so that the backup stays" : "백업이 남도록 복사합니다")
                 .contains("NO_1X_SERVICE_WINDOWS").doesNotContain("sc.exe");
+        assertNoWindowsRollback(guide, "README " + language);
         // the same commands in the same order in both languages: the fenced commands of the guide are equal
         assertThat(Markdown.of(guide).fences()).isEqualTo(Markdown.of(upgradeGuide(Language.EN)).fences());
     }
@@ -526,7 +527,28 @@ class DocsTest {
 
         assertInOrder(part, List.of("`stop-1x`", "`import-secrets-1x`", "`import-1x`", "`retire-1x`"), "2.0.0 note " + language);
         assertThat(part).contains(english ? "so that the backup stays" : "백업이 남도록 복사합니다")
-                .contains("NO_1X_SERVICE_WINDOWS").doesNotContain("sc.exe qc");
+                .contains("NO_1X_SERVICE_WINDOWS");
+        // the 2.0.0 installer text of the part names sc.exe for 2.0 (the service managers), so the steps of the upgrade are
+        // checked where they are: the section on the migration, and the rollback step wherever it is written
+        String migration = note().part(language.partHeading()).subsections().stream()
+                .filter(section -> language.sections().get(2).equals(section.heading())).findFirst().orElseThrow().body()
+                .stream().reduce("", (left, right) -> left + "\n" + right);
+        assertThat(migration).as("migration section of the 2.0.0 note " + language).contains("<unit>.1x-backup")
+                .doesNotContain("sc.exe");
+        assertNoWindowsRollback(part, "2.0.0 note " + language);
+    }
+
+    /**
+     * 1.x ran on Linux with systemd only: no line that says how to start the kept 1.x services again (the line holds
+     * {@code enable --now}) names Windows or {@code sc.exe}. The earlier check looked for {@code sc.exe qc} in the whole part,
+     * which names {@code sc.exe} for the 2.0 installer, so it let "on Windows sc.exe config ..." of the rollback step pass.
+     */
+    private static void assertNoWindowsRollback(String text, String what) {
+        List<String> rollback = text.lines().filter(line -> line.contains("enable --now")).toList();
+
+        assertThat(rollback).as("lines of the rollback in " + what).isNotEmpty();
+        assertThat(rollback).as("rollback of 1.x in " + what).noneMatch(line -> line.contains("sc.exe")
+                || line.toLowerCase(Locale.ROOT).contains("windows"));
     }
 
     @ParameterizedTest
