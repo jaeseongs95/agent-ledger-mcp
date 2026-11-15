@@ -105,6 +105,14 @@ class ArchitectureTest {
     }
 
     @Test
+    @DisplayName("HK-051 the settings come through the record KeyStoreProperties only: no @Value and no lookup in the Spring Environment in any hook class")
+    void settingsOnlyThroughConfigurationProperties() {
+        noClasses().should().dependOnClassesThat().haveFullyQualifiedName("org.springframework.beans.factory.annotation.Value")
+                .orShould().dependOnClassesThat().haveFullyQualifiedName("org.springframework.core.env.Environment")
+                .check(hook);
+    }
+
+    @Test
     @DisplayName("ARC-033 no operating system detection in main and test code")
     void noOperatingSystemDetection() {
         ArchitectureRules.noOperatingSystemDetection().check(hook);

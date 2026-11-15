@@ -8,6 +8,8 @@ import java.security.KeyPair;
 import java.util.Arrays;
 import java.util.Objects;
 import org.pgledger.hook.keys.SessionKeyException.Reason;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
 
 /**
  * The Ed25519 key pairs of the authors, one file per (MCP server, author) in one folder. This package is the only place
@@ -23,10 +25,17 @@ import org.pgledger.hook.keys.SessionKeyException.Reason;
  * <p>An existing file is read and checked; it is never overwritten, repaired or deleted. A missing file is created
  * with a new key pair; if another process created it in the meantime, that process's file is read.
  */
+@Component
 public final class SessionKeyStore {
 
     private final KeyFolder folder;
     private final String userName;
+
+    /** The store of the application: the folder and the account that the settings name (see {@link KeyStoreProperties}). */
+    @Autowired
+    SessionKeyStore(KeyStoreProperties properties) {
+        this(properties.folder(), properties.userName());
+    }
 
     /**
      * A store in this folder, for the key files of the operating system account {@code userName}; nothing is created
