@@ -72,6 +72,22 @@ public class WriteGate {
         };
     }
 
+    /**
+     * The gate of a call that touches no project (the upload tools of the attachments): the host attestation is checked like
+     * for every write (signed token, live key of the author, bound to the tool and the arguments, inside the time window; the key
+     * is held until the transaction ends), and the author needs at least one live grant. Which project the evidence is for is not
+     * known when it is uploaded; the record that points to it is a write of its own and passes its own gate. The call carries no
+     * request id: its attestation is signed with an empty one.
+     */
+    public GateSession openWithAnyGrant(String actor, Channel channel) {
+        AuthorId author = attestation.verifyForWrite(actor, ToolCall.current(), "");
+        if (grants.findLive(author, clock.instant()).isEmpty()) {
+            throw new TrustException(TrustCode.SESSION_NOT_GRANTED, List.of(author.value(), "any", "any"),
+                    Map.of("author", List.of(author.value())));
+        }
+        return new GateSession(author, channel);
+    }
+
     private static void requireReviewerForVerification(Channel channel, List<Target> targets) {
         if (!channel.mayVerify() && targets.stream().anyMatch(t -> t.scope() == Scope.VERIFY)) {
             throw new TrustException(TrustCode.VERIFY_NEEDS_REVIEWER_LOGIN, List.of());

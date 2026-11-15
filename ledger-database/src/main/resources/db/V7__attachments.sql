@@ -62,6 +62,13 @@ CREATE TABLE attachment_file (
 );
 CREATE INDEX ix_attachment_file_attachment ON attachment_file (attachment_id, created_at);
 
+-- The owner's audit trail names the two operations of the attachments that the owner runs: a re-encryption and the emptying of the
+-- quarantine folder.
+ALTER TABLE owner_audit DROP CONSTRAINT ck_owner_audit_operation;
+ALTER TABLE owner_audit ADD CONSTRAINT ck_owner_audit_operation CHECK (operation IN ('GRANT_ISSUED', 'GRANT_REVOKED',
+  'KEY_REGISTERED', 'KEY_REPLACED', 'KEY_REVOKED', 'CODE_SET', 'PROJECT_ADDED', 'DRIVER_REGISTERED', 'IMPORT',
+  'ATTACHMENT_REKEY', 'ORPHANS_PURGED'));
+
 -- The attachment a history row points to: the id of a row of attachment (no foreign key; the write checks it).
 ALTER TABLE history ADD COLUMN attachment_id VARCHAR(36);
 CREATE INDEX ix_history_attachment ON history (attachment_id);
