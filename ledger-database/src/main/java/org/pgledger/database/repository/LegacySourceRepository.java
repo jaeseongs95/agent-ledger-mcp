@@ -1,13 +1,11 @@
 package org.pgledger.database.repository;
 
 import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
-import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
 import org.pgledger.database.driver.LegacySourceConfiguration;
@@ -16,35 +14,36 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.TransactionDefinition;
-import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * The read side of the legacy import: the old schema {@code ledger}, on a {@link DataSource} of its own (the connection of
  * the legacy account; in production the same registered driver and DBMS as the new schema, in a test a second embedded
- * database). It only reads. Every connection it uses is read-only ({@link TransactionTemplate#setReadOnly}, which Spring
- * hands to {@code Connection.setReadOnly(true)}), so a DBMS that honours the JDBC hint refuses a write on it, and the whole
- * import reads one snapshot (isolation REPEATABLE READ), so the rows the validation pass saw are the rows the copy pass
- * and the comparison see. The statements are plain ANSI: a select list, a table of the legacy schema and an
- * {@code ORDER BY}; values that are JSON in the legacy schema are read as text, never converted by a function.
+ * database). It only reads, and it joins the transaction of its caller like every repository (principle 4.4): the whole
+ * import reads one snapshot, a read-only transaction with the isolation REPEATABLE READ that the service
+ * {@code LegacySnapshotService} of the application declares with {@code @Transactional} on the transaction manager of this
+ * data source ({@link #TRANSACTION_MANAGER}); Spring hands the read-only hint to {@code Connection.setReadOnly(true)}, so a DBMS
+ * that honours it refuses a write, and the rows the validation pass saw are the rows the copy pass and the comparison see. The
+ * statements are plain ANSI: a select list, a table of the legacy schema and an {@code ORDER BY}; values that are JSON in the
+ * legacy schema are read as text, never converted by a function.
  *
- * <p>A component that only {@code LegacySourceConfiguration} makes, from the settings {@code ledger.import.source.*} (the
- * scan of this package leaves it out), and a test hands it a database it has filled. The legacy data source is a bean of
- * {@code LegacySourceConfiguration}; the application's transaction manager belongs to the ledger data source, not to this
- * one, so the snapshot of the legacy database still has a transaction manager made here (the snapshot belongs to the
- * service layer, {@code LegacyImportService}, which calls {@link #readSnapshot}; moving its declaration there, as
- * {@code @Transactional} with a transaction manager bean of the legacy data source, needs that service to change, and is
- * left to the unit that owns it). Spring's programmatic transaction support
- * ({@link TransactionTemplate} over a {@link DataSourceTransactionManager}) is the standard tool for a transaction on a
- * second {@link DataSource}; it is described in the Spring Framework reference, "Programmatic Transaction Management"
- * (https://docs.spring.io/spring-framework/reference/data-access/transaction/programmatic.html), and the read-only and
- * isolation settings of a transaction definition in "Transaction Definition"
- * (https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative/tx-decl-explained.html).
+ * <p>A component that only {@link org.pgledger.database.driver.LegacySourceWiring} makes (the scan of this package leaves it
+ * out), from the settings {@code ledger.import.source.*}. The legacy ledger is genuinely a second database (principle 3.9), so
+ * it has a {@link JdbcClient} and a transaction manager of its own, both beans next to its data source and qualified by name:
+ * the {@code JdbcClient} and the transaction manager of the ledger database stay the {@code @Primary} ones for every other
+ * injection point.
  */
 @Component
 public final class LegacySourceRepository {
+
+    /** The name of the {@link JdbcClient} bean of the legacy data source. */
+    public static final String JDBC_CLIENT = "legacySourceJdbcClient";
+
+    /**
+     * The name of the transaction manager bean of the legacy data source: the {@code transactionManager} of
+     * {@code @Transactional} on the service method that reads the legacy ledger.
+     */
+    public static final String TRANSACTION_MANAGER = "legacySourceTransactionManager";
 
     /** The legacy schema name is an identifier, so it cannot be a bind value: it is checked against this form. */
     private static final Pattern SCHEMA = Pattern.compile("[a-z][a-z0-9_]{0,29}");
@@ -60,53 +59,37 @@ public final class LegacySourceRepository {
 
     private final DataSource dataSource;
     private final JdbcClient jdbc;
-    private final TransactionTemplate snapshot;
     private final String schema;
 
     /**
-     * The repository of the legacy database of the settings {@code ledger.import.source.*}, on the legacy data source bean
-     * ({@link LegacySourceConfiguration#DATA_SOURCE}, a pool that the container owns and closes).
+     * The repository of the legacy database of the settings {@code ledger.import.source.*}, on the legacy beans (a pool that the
+     * container owns and closes, and the {@code JdbcClient} over it).
      */
     @Autowired
-    public LegacySourceRepository(@Qualifier(LegacySourceConfiguration.DATA_SOURCE) DataSource dataSource,
-            LegacySourceProperties properties) {
-        this(dataSource, properties.schema());
+    public LegacySourceRepository(@Qualifier(JDBC_CLIENT) JdbcClient jdbc,
+            @Qualifier(LegacySourceConfiguration.DATA_SOURCE) DataSource dataSource, LegacySourceProperties properties) {
+        this(jdbc, dataSource, properties.schema());
     }
 
     /**
+     * @param jdbc       the client over {@code dataSource}
      * @param dataSource the connection of the legacy account
      * @param schema     the legacy schema (lower case letters, digits and {@code _}, at most 30)
      * @throws IllegalArgumentException when the schema is not an identifier of that form
      */
-    public LegacySourceRepository(DataSource dataSource, String schema) {
+    public LegacySourceRepository(JdbcClient jdbc, DataSource dataSource, String schema) {
         if (schema == null || !SCHEMA.matcher(schema).matches()) {
             throw new IllegalArgumentException("the legacy schema must be lower case letters, digits and _ (max 30): "
                     + schema);
         }
+        this.jdbc = jdbc;
         this.dataSource = dataSource;
-        // JdbcClient.create is a stateless facade over the given data source (it opens no connection and owns no pool). It is
-        // made here, and is no bean, because the one JdbcClient bean of the application is the auto-configured one over the
-        // primary ledger data source: a second JdbcClient bean would make Spring Boot back off from that one, and every
-        // repository of the ledger would then read the legacy database (principle 3.9, the exception the principle asks to
-        // be written down).
-        this.jdbc = JdbcClient.create(dataSource);
         this.schema = schema;
-        this.snapshot = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
-        this.snapshot.setReadOnly(true);
-        this.snapshot.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
     }
 
     /** The legacy schema the statements read. */
     public String schema() {
         return schema;
-    }
-
-    /**
-     * Runs the work in one read-only snapshot of the legacy database: every {@link #scan} inside it sees the same rows. The
-     * snapshot ends when the work returns or throws; nothing is ever written to the legacy database.
-     */
-    public <T> T readSnapshot(Supplier<T> work) {
-        return snapshot.execute(status -> work.get());
     }
 
     /**

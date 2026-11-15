@@ -22,7 +22,8 @@ import org.pgledger.cli.key.SessionKeyRegistry;
 import org.pgledger.cli.secret.ProcessUser;
 import org.pgledger.cli.secret.SecretInput;
 import org.pgledger.cli.secret.StandardInput;
-import org.pgledger.database.repository.LegacySourceRepository;
+import org.pgledger.database.driver.LegacySourceConfiguration;
+import org.pgledger.database.driver.LegacySourceWiring;
 import org.pgledger.database.schema.ApplicationAccountAccess;
 import org.pgledger.database.schema.SchemaProperties;
 import org.pgledger.testing.database.TestDatabaseScanFilter;
@@ -66,12 +67,16 @@ public final class CliExtension implements ParameterResolver {
     /** The name the test application account is shown under in the refusal (the tests read it back from the message arguments). */
     public static final String APPLICATION_ACCOUNT_NAME = "test_app_account";
 
+    /** The legacy ledger of a test: the connection of its read-only account and its schema. */
+    private record LegacyReader(DataSource reader, String schema) {
+    }
+
     public static final class Cli {
 
         private final DataSource database;
         private final String processUser;
         private final List<String> extraArguments;
-        private final LegacySourceRepository legacySource;
+        private final LegacyReader legacySource;
         private final byte[] standardInput;
         private final HostAccounts hostAccounts;
         private final DataSource applicationAccount;
@@ -80,7 +85,7 @@ public final class CliExtension implements ParameterResolver {
             this(null, null, List.of(), null, null, null, null);
         }
 
-        private Cli(DataSource database, String processUser, List<String> extraArguments, LegacySourceRepository legacySource,
+        private Cli(DataSource database, String processUser, List<String> extraArguments, LegacyReader legacySource,
                 byte[] standardInput, HostAccounts hostAccounts, DataSource applicationAccount) {
             this.hostAccounts = hostAccounts;
             this.applicationAccount = applicationAccount;
@@ -129,8 +134,9 @@ public final class CliExtension implements ParameterResolver {
         }
 
         /** A Cli whose application has this legacy ledger as the source of {@code import-legacy} (the way the settings {@code ledger.import.source.*} would configure it). */
-        public Cli withLegacySource(LegacySourceRepository source) {
-            return new Cli(database, processUser, extraArguments, source, standardInput, hostAccounts, applicationAccount);
+        public Cli withLegacySource(DataSource reader, String schema) {
+            return new Cli(database, processUser, extraArguments, new LegacyReader(reader, schema), standardInput,
+                    hostAccounts, applicationAccount);
         }
 
         /** A Cli that also gets these command line arguments (for example {@code --spring.config.import=...}). */
@@ -162,7 +168,9 @@ public final class CliExtension implements ParameterResolver {
                             generic.getBeanFactory().registerSingleton("testDatabaseScanFilter", new TestDatabaseScanFilter());
                         }
                         if (database != null) {
-                            generic.registerBean("testDataSource", DataSource.class, () -> new DelegatingDataSource(database));
+                            // the ledger data source is the primary one, as in production (a legacy data source may join it)
+                            generic.registerBean("testDataSource", DataSource.class, () -> new DelegatingDataSource(database),
+                                    bd -> bd.setPrimary(true));
                         }
                         if (applicationAccount != null) {
                             generic.registerBean("testApplicationAccountAccess", ApplicationAccountAccess.class,
@@ -171,7 +179,12 @@ public final class CliExtension implements ParameterResolver {
                                                     generic.getBean(SchemaProperties.class))));
                         }
                         if (legacySource != null) {
-                            generic.registerBean("testLegacySource", LegacySourceRepository.class, () -> legacySource);
+                            // the legacy data source is a bean of the context, as the pool is in production
+                            // (LegacySourceConfiguration); the test owns it, so the context does not close it. The legacy
+                            // JdbcClient, its transaction manager and the repository are the production ones (LegacySourceWiring).
+                            generic.registerBean(LegacySourceConfiguration.DATA_SOURCE, DataSource.class,
+                                    () -> legacySource.reader(), bd -> bd.setDestroyMethodName(""));
+                            generic.registerBean(LegacySourceWiring.class);
                         }
                         if (processUser != null) {
                             UserPrincipal principal = () -> processUser;
@@ -196,6 +209,11 @@ public final class CliExtension implements ParameterResolver {
                             generic.registerBean("testCliOutput", CliOutput.class, () -> output, bd -> bd.setPrimary(true));
                         }
                     });
+            if (legacySource != null) {
+                // the settings that the wiring of the legacy source reads; the connection is the bean above, never opened by url
+                builder.properties("ledger.import.source.url=jdbc:unused:test",
+                        "ledger.import.source.schema=" + legacySource.schema());
+            }
             if (database != null) {
                 // the test brings its own database: the product's configuration of the DataSource is left out of the scan, and
                 // the registration of the PostgreSQL driver lets the product's own condition hold (TestDatabaseScanFilter)

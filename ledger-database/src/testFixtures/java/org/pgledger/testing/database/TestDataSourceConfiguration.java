@@ -4,6 +4,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import javax.sql.DataSource;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.core.env.Environment;
 
 /**
@@ -20,7 +21,9 @@ public class TestDataSourceConfiguration {
     /** The time zone of the database sessions of a context; UTC when absent. */
     public static final String ZONE_PROPERTY = "ledger.test.session-zone";
 
+    /** {@code @Primary}, as the ledger data source of the product is: a test that adds a second data source (the legacy ledger) keeps this one the default. */
     @Bean
+    @Primary
     DataSource dataSource(Environment environment) {
         String schema = environment.getRequiredProperty(TestSchemaInitializer.SCHEMA_PROPERTY);
         String zone = environment.getProperty(ZONE_PROPERTY, "UTC");

@@ -11,6 +11,7 @@ import org.pgledger.database.repository.LegacySourceRepository;
 import org.pgledger.testing.legacy.LegacyLedger;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
+import org.springframework.jdbc.core.simple.JdbcClient;
 
 /**
  * MIG-020 (settings part): the connection of the legacy ledger is read from {@code ledger.import.source.*} like the other
@@ -45,10 +46,11 @@ class LegacySourcePropertiesTest {
         assertThat(binder.bind("ledger.import.source", LegacySourceProperties.class).get().schema()).isEqualTo("ledger_old");
 
         try (LegacyLedger legacy = LegacyLedger.create()) {
-            assertThat(new LegacySourceRepository(legacy.reader(), "ledger_old").schema()).isEqualTo("ledger_old");
-            assertThatThrownBy(() -> new LegacySourceRepository(legacy.reader(), "ledger.old")).isInstanceOf(IllegalArgumentException.class);
-            assertThatThrownBy(() -> new LegacySourceRepository(legacy.reader(), "Ledger")).isInstanceOf(IllegalArgumentException.class);
-            assertThatThrownBy(() -> new LegacySourceRepository(legacy.reader(), null)).isInstanceOf(IllegalArgumentException.class);
+            JdbcClient jdbc = JdbcClient.create(legacy.reader());
+            assertThat(new LegacySourceRepository(jdbc, legacy.reader(), "ledger_old").schema()).isEqualTo("ledger_old");
+            assertThatThrownBy(() -> new LegacySourceRepository(jdbc, legacy.reader(), "ledger.old")).isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> new LegacySourceRepository(jdbc, legacy.reader(), "Ledger")).isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> new LegacySourceRepository(jdbc, legacy.reader(), null)).isInstanceOf(IllegalArgumentException.class);
         }
     }
 }

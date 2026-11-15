@@ -118,18 +118,14 @@ class ArchitectureTest {
                                 .orShould().dependOnClassesThat().resideInAPackage("com.zaxxer.hikari..")
                                 .orShould().dependOnClassesThat().haveFullyQualifiedName(
                                         "org.springframework.jdbc.datasource.SimpleDriverDataSource")),
-                // principle 4.4: nothing opens a transaction by hand. One class still does and waits for the service layer: the
-                // legacy source opens the read-only snapshot on the second data source for LegacyImportService (the next commit
-                // moves it and removes this name). The migrator is no exception any more: its file is a @Transactional method.
-                new Rule("TXD-005 no TransactionTemplate here, but the legacy source (see the comment)",
-                        noClasses().that().doNotHaveFullyQualifiedName("org.pgledger.database.repository.LegacySourceRepository")
-                                .should().dependOnClassesThat().haveFullyQualifiedName(
-                                        "org.springframework.transaction.support.TransactionTemplate")),
+                // principle 4.4: nothing opens a transaction by hand, no exception: the file of the migrator is a @Transactional
+                // method of a service, and the snapshot of the legacy source is one of LegacySnapshotService of the application
+                // module, on the transaction manager bean of the legacy data source
+                new Rule("TXD-005 no TransactionTemplate here", ArchitectureRules.noTransactionTemplate()),
                 // principles 3.9 and 4.4: no JdbcClient.create, no new TransactionTemplate, no new DataSourceTransactionManager
-                // outside a @Configuration class (TXD-010). The legacy source repository still has its own JdbcClient until its
-                // data source is declared in the configuration (the next commit removes this name).
+                // outside a @Configuration class (TXD-010), no exception
                 new Rule("TXD-010 no own JDBC plumbing outside a @Configuration class",
-                        ArchitectureRules.noOwnJdbcPlumbing("org.pgledger.database.repository.LegacySourceRepository")),
+                        ArchitectureRules.noOwnJdbcPlumbing()),
                 // principle 3.9: a pool is the return value of a @Bean method, which the container closes; no class keeps one
                 new Rule("TXD-004 no class holds a connection pool in a field", noFields().should().haveRawType(
                         com.zaxxer.hikari.HikariDataSource.class)),

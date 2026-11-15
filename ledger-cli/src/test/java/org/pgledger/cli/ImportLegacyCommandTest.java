@@ -62,8 +62,8 @@ class ImportLegacyCommandTest {
     }
 
     private Outcome run(Cli cli, RecordingOutput output, String... args) {
-        return cli.withDatabase(database.dataSource()).withLegacySource(new LegacySourceRepository(legacy.reader(),
-                legacy.schema())).asProcessUser(USER).run(tmp.resolve("secrets"), null, output, args);
+        return cli.withDatabase(database.dataSource()).withLegacySource(legacy.reader(), legacy.schema())
+                .asProcessUser(USER).run(tmp.resolve("secrets"), null, output, args);
     }
 
     private long count(String table) {
@@ -141,9 +141,8 @@ class ImportLegacyCommandTest {
     @DisplayName("CLI-047 a legacy database without installer steps is IMPORT_SOURCE_INCOMPLETE (exit 1) naming them, a command without the legacy connection is IMPORT_SOURCE_NOT_CONFIGURED (exit 1); nothing is written")
     void refusesAnIncompleteOrMissingSource(Cli cli) {
         try (LegacyLedger older = LegacyLedger.create(Set.of("schema"))) {
-            Outcome incomplete = cli.withDatabase(database.dataSource()).withLegacySource(new LegacySourceRepository(older.reader(),
-                    older.schema())).asProcessUser(USER).run(tmp.resolve("secrets"), null, new RecordingOutput(),
-                    "import-legacy");
+            Outcome incomplete = cli.withDatabase(database.dataSource()).withLegacySource(older.reader(), older.schema())
+                    .asProcessUser(USER).run(tmp.resolve("secrets"), null, new RecordingOutput(), "import-legacy");
 
             assertThat(incomplete.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
             assertThat(incomplete.code()).contains(ErrorCode.IMPORT_SOURCE_INCOMPLETE);
