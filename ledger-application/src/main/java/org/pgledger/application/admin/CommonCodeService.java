@@ -115,6 +115,23 @@ public class CommonCodeService {
         return create(command, group, code, stateOf(command), actor);
     }
 
+    /**
+     * Adds every code of the list that does not exist yet ({@link #addIfAbsent} for each, with its revision bump and audit row),
+     * in one transaction: the first setup of an installation seeds its codes through this, and a code that is invalid or a
+     * database failure leaves none of the list behind. A code that exists is left as it is.
+     *
+     * @return how many codes were added
+     */
+    public int seed(List<CodeCommand> commands, OwnerIdentity actor) {
+        int added = 0;
+        for (CodeCommand command : commands) {
+            if (addIfAbsent(command, actor).isPresent()) {
+                added++;
+            }
+        }
+        return added;
+    }
+
     private static CodeState stateOf(CodeCommand command) {
         return command.state() == null || command.state().isBlank() ? CodeState.ACTIVE
                 : Tokens.parse("state", command.state(), CodeState.values());

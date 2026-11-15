@@ -269,6 +269,50 @@ class CommonCodeTest {
     }
 
     @Test
+    @DisplayName("SVC-CC-14 (TXF-003): seed is one use case and one transaction: a list with one invalid code adds nothing (the codes before it are taken back with the revision and the audit rows), and the same list without it adds them all")
+    void cc14_aSeedWithAnInvalidCodeAddsNothing(Scenario s) {
+        CommonCodeService service = s.bean(CommonCodeService.class);
+        String first = "CC14A_" + s.code();
+        String second = "CC14B_" + s.code();
+        long before = revision(s);
+        List<CodeCommand> broken = List.of(named(first, "하나", "One", null), named(second, "둘", "Two", null),
+                named("CC14C_" + s.code(), "", "Three", null));
+
+        Expect.failure(() -> service.seed(broken, TestOwners.OWNER), ValidationCode.VALIDATION_FAILED);
+
+        assertThat(codeRows(s, first)).as("the code before the invalid one was taken back").isZero();
+        assertThat(codeRows(s, second)).isZero();
+        assertThat(revision(s)).as("no revision bump of the codes that were taken back").isEqualTo(before);
+        assertThat(auditRows(s, "RELATION_KIND/" + first)).isZero();
+
+        assertThat(service.seed(broken.subList(0, 2), TestOwners.OWNER)).isEqualTo(2);
+        assertThat(codeRows(s, first)).isEqualTo(1);
+        assertThat(codeRows(s, second)).isEqualTo(1);
+        assertThat(revision(s)).isEqualTo(before + 2);
+    }
+
+    @Test
+    @DisplayName("SVC-CC-15 (TXF-003): seed answers how many codes it added; a code that exists is left exactly as the owner left it, and a second seed of the same list adds none")
+    void cc15_seedAddsOnlyTheAbsentCodes(Scenario s) {
+        CommonCodeService service = s.bean(CommonCodeService.class);
+        String mine = "CC15A_" + s.code();
+        String fresh = "CC15B_" + s.code();
+        service.set(new CodeCommand("RELATION_KIND", mine, "내 이름", "My name", null, null, 77, "INACTIVE"), TestOwners.OWNER);
+        List<CodeCommand> seed = List.of(named(mine, "시드", "Seed", null), named(fresh, "새것", "New", null));
+        long before = revision(s);
+
+        assertThat(service.seed(seed, TestOwners.OWNER)).isEqualTo(1);
+
+        CommonCode kept = s.bean(CommonCodeRepository.class).find(CodeGroup.RELATION_KIND, CodeValue.of(mine)).orElseThrow();
+        assertThat(kept.nameKo()).isEqualTo("내 이름");
+        assertThat(kept.state()).isEqualTo(CodeState.INACTIVE);
+        assertThat(codeRows(s, fresh)).isEqualTo(1);
+        assertThat(revision(s)).isEqualTo(before + 1);
+        assertThat(service.seed(seed, TestOwners.OWNER)).isZero();
+        assertThat(revision(s)).isEqualTo(before + 1);
+    }
+
+    @Test
     @DisplayName("SVC-CC-12 (TXF-002): 8 calls that add the same new code at the same time (addIfAbsent) leave one row: exactly one call adds it, the others answer empty, none fails, and the revision moves once with one audit row")
     void cc12_concurrentAddOfTheSameCode(Scenario s) {
         CommonCodeService service = s.bean(CommonCodeService.class);
