@@ -271,17 +271,21 @@ public class UploadService {
 
     // ------------------------------------------------------------------------------------------------ status and read
 
-    /** {@code artifact-status}: an upload of the author, or an attachment; no path and no storage key. */
+    /**
+     * {@code artifact-status}: an attachment, or an upload of the author; no path and no storage key. The attachment is looked up
+     * first: finish keeps the upload row under the same id (state COMPLETED), and a finished upload is answered in the attachment
+     * form (no expiry, no sequence), not from that row.
+     */
     public Status status(String actor, String id) {
         AuthorId author = gate.openWithAnyGrant(actor, Channel.AUTHOR).author();
         requireUuid("id", id);
-        return uploads.findById(id).filter(row -> Objects.equals(row.owner(), author))
-                .map(row -> new Status(row.id(), row.state().name(), row.fileName(), row.mediaType(), row.declaredSize(),
-                        row.declaredSha256().hex(), row.expiresAt(), row.receivedBytes(), row.nextSequence()))
-                .orElseGet(() -> attachments.findById(id)
-                        .map(found -> new Status(found.id(), UploadState.COMPLETED.name(), found.fileName(),
-                                found.mediaType(), found.sizeBytes(), found.contentSha256().hex(), null, found.sizeBytes(),
-                                null))
+        return attachments.findById(id)
+                .map(found -> new Status(found.id(), UploadState.COMPLETED.name(), found.fileName(), found.mediaType(),
+                        found.sizeBytes(), found.contentSha256().hex(), null, found.sizeBytes(), null))
+                .orElseGet(() -> uploads.findById(id).filter(row -> Objects.equals(row.owner(), author))
+                        .map(row -> new Status(row.id(), row.state().name(), row.fileName(), row.mediaType(),
+                                row.declaredSize(), row.declaredSha256().hex(), row.expiresAt(), row.receivedBytes(),
+                                row.nextSequence()))
                         .orElseThrow(() -> new LookupException(LookupCode.ARTIFACT_NOT_FOUND, List.of(id))));
     }
 
