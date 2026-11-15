@@ -31,8 +31,8 @@ import tools.jackson.databind.json.JsonMapper;
  * reflection; everything wrong with the arguments (an unknown key, a missing one, a wrong type, a value outside a
  * closed set) is raised here as one VALIDATION_FAILED with all its issues.
  *
- * <p>An argument that is an object or an array and arrives as text is the old form of the tool contract (a JSON
- * document in a string); it is read as that document here and nowhere else.
+ * <p>An argument that is an object or an array must arrive as that JSON value: a text there is refused as a value of the
+ * wrong type (it is not read as a JSON document), and the text {@code null} is a text, not a missing argument.
  *
  * <p><b>Why this is not Spring AI's own callback</b> (principle 2.1: the answer to "does Spring offer it?" is
  * recorded here). Spring AI's {@code SyncMcpToolMethodCallback} binds and calls an {@code @McpTool} method, and it is
@@ -128,13 +128,7 @@ public final class ToolBinding {
                             List.of()));
                 }
             } else {
-                int issuesBefore = issues.size();
                 values[i] = bind(parameter, raw, issues, causes);
-                // a text that holds the JSON null is no value either (the old form of "the argument is missing")
-                if (values[i] == null && parameter.required() && issues.size() == issuesBefore) {
-                    issues.add(new ValidationIssue(parameter.name(), ValidationReason.REQUIRED, List.of(),
-                            List.of()));
-                }
             }
         }
         for (ChoiceSlot slot : choiceSlots) {
@@ -172,16 +166,15 @@ public final class ToolBinding {
 
     private Object bind(ToolParameter parameter, Object raw, List<ValidationIssue> issues,
             List<JacksonException> causes) {
-        Object source = raw;
         try {
-            if (source instanceof String text && parameter.structured()) {
-                source = mapper.readValue(text, Object.class);
-            }
-            if (source == null) {
+            JavaType type = mapper.constructType(parameter.type());
+            if (raw instanceof String && parameter.structured()) {
+                // a JSON document in a string is not an object or an array
+                issues.add(new ValidationIssue(parameter.name(), ValidationReason.WRONG_TYPE,
+                        List.of(type.getRawClass().getSimpleName()), List.of()));
                 return null;
             }
-            JavaType type = mapper.constructType(parameter.type());
-            return mapper.convertValue(source, type);
+            return mapper.convertValue(raw, type);
         } catch (JacksonException failure) {
             issues.add(issue(parameter.name(), failure));
             causes.add(failure);

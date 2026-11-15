@@ -41,7 +41,7 @@ import tools.jackson.core.type.TypeReference;
 
 /**
  * ATA-001 and ATA-032 through the real server and the real tool calls: the five attachment tools with the attestation of the hook
- * (signed for the hyphenated tool name, with no request id). The upload goes through begin, three chunks, finish, status and read;
+ * (signed for the hyphenated tool name, with an empty operation key in the claim). The upload goes through begin, three chunks, finish, status and read;
  * the cases of the storage itself (tampering, budgets, races) are those of the application tests.
  */
 @McpServerTest

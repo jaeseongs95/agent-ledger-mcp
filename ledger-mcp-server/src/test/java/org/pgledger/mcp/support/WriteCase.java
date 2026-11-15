@@ -7,7 +7,8 @@ import org.pgledger.mcp.tool.WriteOutputs;
 
 /**
  * One write tool with a call that succeeds on the {@link Seed} rows when the actor is attested: the tool, the record
- * of its result and the arguments as a function of the seed and of the attestation (null leaves it out).
+ * of its result and the arguments as a function of the seed and of the attestation (null leaves it out). Every call
+ * the function builds carries a fresh {@code operationKey} (see {@link Calls}).
  */
 public record WriteCase(String tool, Class<?> output, String actor, BiFunction<Seed, String, Object> arguments) {
 
@@ -48,6 +49,11 @@ public record WriteCase(String tool, Class<?> output, String actor, BiFunction<S
                 new WriteCase("ledger_review_correct", WriteOutputs.Corrected.class, Scenario.REVIEWER,
                         (seed, actor) -> Calls.Correct.of(seed.verificationRow(), actor)),
                 new WriteCase("ledger_whoami", WriteOutputs.Whoami.class, Scenario.AUTHOR,
-                        (seed, actor) -> new Calls.Whoami(actor, null)));
+                        (seed, actor) -> new Calls.Whoami(actor)));
+    }
+
+    /** The nine write tools that take an {@code operationKey}: the ten without ledger_whoami. */
+    public static List<WriteCase> keyed() {
+        return all().stream().filter(write -> !"ledger_whoami".equals(write.tool())).toList();
     }
 }

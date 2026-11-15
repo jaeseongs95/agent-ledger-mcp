@@ -35,27 +35,28 @@ import tools.jackson.core.type.TypeReference;
 /**
  * MCW-030 .. MCW-039: the signed attestation as the server sees it on the wire. A caller that holds the bearer token and
  * nothing else (no hook, no key) writes nothing as anybody: the plain {@code <vendor>:<session-id>} that the old hook
- * sent, a forged signature, a signature of another author, a token for another tool or request id, a token of another
+ * sent, a forged signature, a signature of another author, a token for another tool or operation key, a token of another
  * time, an author without a registered key, a revoked key. The calls are sent with {@link McpSession#callUnsigned}, so
- * the test decides exactly what the attestation is.
+ * the test decides exactly what the attestation is. The claim of a write tool names the {@code operationKey} of the call
+ * (whoami has none: its claim key is empty).
  */
 @McpServerTest
 class AttestationWireTest {
 
     private static final String WHOAMI = "ledger_whoami";
 
-    /** The call of the case as a flat object with this request id (not whoami), before the hook attests it. */
-    private static Args argsOf(McpSession session, WriteCase write, Seed seed, String requestId) {
+    /** The call of the case as a flat object with this operation key (not whoami, which takes none), before the hook attests it. */
+    private static Args argsOf(McpSession session, WriteCase write, Seed seed, String operationKey) {
         Args call = Args.from(session.mapper(), write.call(seed));
         if (!WHOAMI.equals(write.tool())) {
-            call = call.with("request_id", requestId);
+            call = call.with("operationKey", operationKey);
         }
         return call;
     }
 
-    /** The call of the case as a flat object: with this request id (not whoami) and this attestation. */
-    private static Args callOf(McpSession session, WriteCase write, Seed seed, String requestId, String attestation) {
-        return argsOf(session, write, seed, requestId).with("_hostAttestation", attestation);
+    /** The call of the case as a flat object: with this operation key (not whoami) and this attestation. */
+    private static Args callOf(McpSession session, WriteCase write, Seed seed, String operationKey, String attestation) {
+        return argsOf(session, write, seed, operationKey).with("_hostAttestation", attestation);
     }
 
     /**
@@ -69,11 +70,12 @@ class AttestationWireTest {
     }
 
     /** The digest of the call of the case, for the tokens of the tests that are not about the arguments. */
-    private static String digestOf(McpSession session, WriteCase write, Seed seed, String requestId) {
-        return digest(session, argsOf(session, write, seed, requestId));
+    private static String digestOf(McpSession session, WriteCase write, Seed seed, String operationKey) {
+        return digest(session, argsOf(session, write, seed, operationKey));
     }
 
-    private static String requestIdFor(WriteCase write) {
+    /** The operation key a call of the case carries and its claim names: a fresh one, or empty for whoami (it carries none). */
+    private static String operationKeyFor(WriteCase write) {
         return WHOAMI.equals(write.tool()) ? "" : UUID.randomUUID().toString();
     }
 
@@ -97,7 +99,7 @@ class AttestationWireTest {
         int before = Ledger.history(session, seed.project()).size();
 
         // the author id of a session is public: ledger_history lists it as author_id
-        Args call = callOf(session, write, seed, requestIdFor(write), write.actor());
+        Args call = callOf(session, write, seed, operationKeyFor(write), write.actor());
         ToolError error = refused(session, write, call, "ATTESTATION_UNSIGNED");
 
         assertThat(error.message()).contains("not signed");
@@ -113,15 +115,15 @@ class AttestationWireTest {
         keys.enroll(Scenario.NOGRANT);
         int before = Ledger.history(session, seed.project()).size();
         Instant now = keys.clock().instant();
-        String requestId = requestIdFor(write);
+        String operationKey = operationKeyFor(write);
 
-        String digest = digestOf(session, write, seed, requestId);
-        String strangersKey = KeyRing.token(KeyRing.newPair(), write.actor(), write.tool(), requestId, digest, now);
-        String anotherAuthorsKey = KeyRing.token(keys.pairOf(Scenario.NOGRANT), write.actor(), write.tool(), requestId,
-                digest, now);
+        String digest = digestOf(session, write, seed, operationKey);
+        String strangersKey = KeyRing.token(KeyRing.newPair(), write.actor(), write.tool(), operationKey, digest, now);
+        String anotherAuthorsKey = KeyRing.token(keys.pairOf(Scenario.NOGRANT), write.actor(), write.tool(),
+                operationKey, digest, now);
         for (String forged : List.of(strangersKey, anotherAuthorsKey)) {
-            refused(session, write, callOf(session, write, seed, requestId, forged), "ATTESTATION_SIGNATURE_INVALID",
-                    forged);
+            refused(session, write, callOf(session, write, seed, operationKey, forged),
+                    "ATTESTATION_SIGNATURE_INVALID", forged);
         }
         assertThat(Ledger.history(session, seed.project())).hasSize(before);
     }
@@ -133,10 +135,11 @@ class AttestationWireTest {
         Seed seed = Seed.create(session, scenario);
         keys.enroll(write.actor());
         String otherTool = WHOAMI.equals(write.tool()) ? "ledger_save" : WHOAMI;
-        String requestId = requestIdFor(write);
+        String operationKey = operationKeyFor(write);
 
-        String token = keys.token(write.actor(), otherTool, requestId, digestOf(session, write, seed, requestId));
-        ToolError error = refused(session, write, callOf(session, write, seed, requestId, token),
+        String token = keys.token(write.actor(), otherTool, operationKey,
+                digestOf(session, write, seed, operationKey));
+        ToolError error = refused(session, write, callOf(session, write, seed, operationKey, token),
                 "ATTESTATION_BINDING_MISMATCH", token);
 
         assertThat(error.details()).containsEntry("field", List.of("tool"));
@@ -144,23 +147,55 @@ class AttestationWireTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("org.pgledger.mcp.support.WriteCase#all")
-    @DisplayName("MCW-033: a token signed for another request_id, or for none, is ATTESTATION_BINDING_MISMATCH (request_id) for all ten tools")
-    void anotherRequestId(WriteCase write, McpSession session, Scenario scenario, @Autowired KeyRing keys) {
+    @DisplayName("MCW-033: a token signed for another operationKey, or for none, is ATTESTATION_BINDING_MISMATCH (operationKey; was request_id) for all ten tools")
+    void anotherOperationKey(WriteCase write, McpSession session, Scenario scenario, @Autowired KeyRing keys) {
         Seed seed = Seed.create(session, scenario);
         keys.enroll(write.actor());
-        String sent = WHOAMI.equals(write.tool()) ? "" : UUID.randomUUID().toString();
-        // a token for a request id that the call does not carry (for whoami: any id, it carries none)
+        String sent = operationKeyFor(write);
+        // a token for an operation key that the call does not carry (for whoami: any key, it carries none)
         String signedFor = UUID.randomUUID().toString();
 
         String digest = digestOf(session, write, seed, sent);
         String token = keys.token(write.actor(), write.tool(), signedFor, digest);
         ToolError error = refused(session, write, callOf(session, write, seed, sent, token),
                 "ATTESTATION_BINDING_MISMATCH", token);
-        assertThat(error.details()).containsEntry("field", List.of("request_id"));
+        assertThat(error.details()).containsEntry("field", List.of("operationKey"));
         if (!WHOAMI.equals(write.tool())) {
-            String withoutId = keys.token(write.actor(), write.tool(), "", digest);
-            refused(session, write, callOf(session, write, seed, sent, withoutId), "ATTESTATION_BINDING_MISMATCH");
+            String withoutKey = keys.token(write.actor(), write.tool(), "", digest);
+            refused(session, write, callOf(session, write, seed, sent, withoutKey), "ATTESTATION_BINDING_MISMATCH");
         }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("org.pgledger.mcp.support.WriteCase#keyed")
+    @DisplayName("OPK-010: a token signed for another operation key is ATTESTATION_BINDING_MISMATCH with details.field operationKey for the nine write tools and writes nothing (no history row, no receipt); the same token under its own key writes once")
+    void aTokenForAnotherOperationKeyWritesNothing(WriteCase write, McpSession session, Scenario scenario,
+            @Autowired KeyRing keys) {
+        Seed seed = Seed.create(session, scenario);
+        keys.enroll(write.actor());
+        int before = Ledger.history(session, seed.project()).size();
+        long receiptsBefore = Ledger.receiptsOf(scenario, write.actor());
+        String sent = UUID.randomUUID().toString();
+        String signedFor = UUID.randomUUID().toString();
+        // the digest is that of the call as sent: only the operation key of the claim differs from the call
+        String digest = digestOf(session, write, seed, sent);
+
+        String token = keys.token(write.actor(), write.tool(), signedFor, digest);
+        ToolError error = refused(session, write, callOf(session, write, seed, sent, token),
+                "ATTESTATION_BINDING_MISMATCH", token);
+
+        assertThat(error.details()).containsEntry("field", List.of("operationKey"));
+        assertThat(Ledger.history(session, seed.project())).hasSize(before);
+        assertThat(Ledger.receipts(scenario, sent)).isZero();
+        assertThat(Ledger.receipts(scenario, signedFor)).isZero();
+        assertThat(Ledger.receiptsOf(scenario, write.actor())).isEqualTo(receiptsBefore);
+
+        String own = keys.token(write.actor(), write.tool(), sent, digest);
+        CallToolResult written = session.callUnsigned(write.tool(), callOf(session, write, seed, sent, own));
+        assertThat(written.isError()).as("the token for the key of the call: %s", written.content()).isFalse();
+        assertThat(Ledger.history(session, seed.project()).size()).isGreaterThan(before);
+        assertThat(Ledger.receipts(scenario, sent)).isOne();
+        assertThat(Ledger.receipts(scenario, signedFor)).isZero();
     }
 
     @Test
@@ -171,19 +206,19 @@ class AttestationWireTest {
         keys.enroll(save.actor());
         Instant now = keys.clock().instant();
         for (long offset : new long[] {-600, 600, -3600 * 24, 3600 * 24}) {
-            String requestId = UUID.randomUUID().toString();
-            String token = KeyRing.token(keys.pairOf(save.actor()), save.actor(), save.tool(), requestId,
-                    digestOf(session, save, seed, requestId), now.plusSeconds(offset));
-            ToolError error = refused(session, save, callOf(session, save, seed, requestId, token),
+            String operationKey = UUID.randomUUID().toString();
+            String token = KeyRing.token(keys.pairOf(save.actor()), save.actor(), save.tool(), operationKey,
+                    digestOf(session, save, seed, operationKey), now.plusSeconds(offset));
+            ToolError error = refused(session, save, callOf(session, save, seed, operationKey, token),
                     "ATTESTATION_TIME_WINDOW", token);
             assertThat(error.details()).containsEntry("window_seconds", List.of("300"));
         }
         // 240 seconds either way is inside the window (the clock of the test runs on while the calls are made)
         for (long offset : new long[] {-240, 240}) {
-            String requestId = UUID.randomUUID().toString();
-            String token = KeyRing.token(keys.pairOf(save.actor()), save.actor(), save.tool(), requestId,
-                    digestOf(session, save, seed, requestId), now.plusSeconds(offset));
-            assertThat(session.callUnsigned(save.tool(), callOf(session, save, seed, requestId, token)).isError())
+            String operationKey = UUID.randomUUID().toString();
+            String token = KeyRing.token(keys.pairOf(save.actor()), save.actor(), save.tool(), operationKey,
+                    digestOf(session, save, seed, operationKey), now.plusSeconds(offset));
+            assertThat(session.callUnsigned(save.tool(), callOf(session, save, seed, operationKey, token)).isError())
                     .isFalse();
         }
     }
@@ -195,11 +230,11 @@ class AttestationWireTest {
         WriteCase save = WriteCase.all().getFirst();
         String stranger = "claude:nokey" + UUID.randomUUID().toString().substring(0, 8);
         scenario.grant(stranger, "defect");
-        String requestId = UUID.randomUUID().toString();
-        String token = KeyRing.token(KeyRing.newPair(), stranger, save.tool(), requestId,
-                digestOf(session, save, seed, requestId), keys.clock().instant());
+        String operationKey = UUID.randomUUID().toString();
+        String token = KeyRing.token(KeyRing.newPair(), stranger, save.tool(), operationKey,
+                digestOf(session, save, seed, operationKey), keys.clock().instant());
 
-        ToolError error = refused(session, save, callOf(session, save, seed, requestId, token),
+        ToolError error = refused(session, save, callOf(session, save, seed, operationKey, token),
                 "ATTESTATION_SIGNATURE_INVALID", token);
 
         assertThat(error.message()).doesNotContain(stranger).contains("session-key");
@@ -213,14 +248,14 @@ class AttestationWireTest {
         keys.enroll(write.actor());
         String stranger = "claude:nokey" + UUID.randomUUID().toString().substring(0, 8);
         scenario.grant(stranger, "defect");
-        String requestId = requestIdFor(write);
+        String operationKey = operationKeyFor(write);
         Instant now = keys.clock().instant();
         List<ToolError> errors = new java.util.ArrayList<>();
         for (String author : List.of(write.actor(), stranger)) {
-            String signed = KeyRing.token(KeyRing.newPair(), author, write.tool(), requestId,
-                    digestOf(session, write, seed, requestId), now);
+            String signed = KeyRing.token(KeyRing.newPair(), author, write.tool(), operationKey,
+                    digestOf(session, write, seed, operationKey), now);
             String zero = signed.substring(0, signed.lastIndexOf('.') + 1) + "A".repeat(86);
-            Args call = argsOf(session, write, seed, requestId).with("_hostAttestation", zero);
+            Args call = argsOf(session, write, seed, operationKey).with("_hostAttestation", zero);
             errors.add(refused(session, write, call, "ATTESTATION_SIGNATURE_INVALID", zero, author));
         }
         assertThat(errors.get(1).message()).isEqualTo(errors.get(0).message());
@@ -257,15 +292,15 @@ class AttestationWireTest {
     }
 
     @Test
-    @DisplayName("MCW-037: a signed call that is captured and sent again returns the stored response; with other content under the same request_id it is ATTESTATION_BINDING_MISMATCH (arguments; was REQUEST_CONFLICT before the signature covered the content); the same token for another request_id is a binding mismatch")
+    @DisplayName("MCW-037: a signed call that is captured and sent again returns the stored response; with other content under the same operationKey it is ATTESTATION_BINDING_MISMATCH (arguments; was REQUEST_CONFLICT before the signature covered the content); the same token for another operationKey is a binding mismatch (operationKey)")
     void replayOfASignedCall(McpSession session, Scenario scenario, @Autowired KeyRing keys) {
         WriteCase save = WriteCase.all().getFirst();
         String author = scenario.actorWith("rp", "defect");
         keys.enroll(author);
-        String requestId = UUID.randomUUID().toString();
+        String operationKey = UUID.randomUUID().toString();
         Args signed = Args.of().with("entity", "defect").with("reason", Scenario.REASON)
-                .with("fields", Fields.defect(scenario.projectId(), "captured")).with("request_id", requestId);
-        String token = keys.token(author, save.tool(), requestId, digest(session, signed));
+                .with("fields", Fields.defect(scenario.projectId(), "captured")).with("operationKey", operationKey);
+        String token = keys.token(author, save.tool(), operationKey, digest(session, signed));
         Args captured = signed.with("_hostAttestation", token);
 
         WriteOutputs.Saved first = session.ok(save.tool(), captured, WriteOutputs.Saved.class);
@@ -277,8 +312,9 @@ class AttestationWireTest {
         assertThat(conflict.code()).isEqualTo("ATTESTATION_BINDING_MISMATCH");
         assertThat(conflict.details()).containsEntry("field", List.of("arguments"));
 
-        ToolError moved = session.failed(save.tool(), captured.with("request_id", UUID.randomUUID().toString()));
+        ToolError moved = session.failed(save.tool(), captured.with("operationKey", UUID.randomUUID().toString()));
         assertThat(moved.code()).isEqualTo("ATTESTATION_BINDING_MISMATCH");
+        assertThat(moved.details()).containsEntry("field", List.of("operationKey"));
         assertThat(Ledger.history(session, scenario.projectId())).hasSize(1);
     }
 
@@ -304,14 +340,14 @@ class AttestationWireTest {
                 .authorFormatOk()).isFalse();
     }
 
-    /** The token of the hook for exactly these arguments (the hook signs after it has put the request id in). */
-    private static String signedFor(McpSession session, KeyRing keys, String author, String tool, String requestId,
+    /** The token of the hook for exactly these arguments (the operation key is in them as the caller sent it). */
+    private static String signedFor(McpSession session, KeyRing keys, String author, String tool, String operationKey,
             Args arguments) {
-        return keys.token(author, tool, requestId, digest(session, arguments));
+        return keys.token(author, tool, operationKey, digest(session, arguments));
     }
 
-    private static Args batchCall(McpSession session, String requestId, Calls.Op... ops) {
-        return Args.from(session.mapper(), Calls.Batch.of(null, ops)).with("request_id", requestId);
+    private static Args batchCall(McpSession session, String operationKey, Calls.Op... ops) {
+        return Args.from(session.mapper(), Calls.Batch.of(null, ops)).with("operationKey", operationKey);
     }
 
     @Test
@@ -320,16 +356,16 @@ class AttestationWireTest {
         String author = scenario.actorWith("br", "defect");
         keys.enroll(author);
         String project = scenario.projectId();
-        String batchId = UUID.randomUUID().toString();
-        Args legitimate = batchCall(session, batchId, Calls.Op.save("defect", Fields.defect(project, "one")));
-        String token = signedFor(session, keys, author, "ledger_batch", batchId, legitimate);
+        String batchKey = UUID.randomUUID().toString();
+        Args legitimate = batchCall(session, batchKey, Calls.Op.save("defect", Fields.defect(project, "one")));
+        String token = signedFor(session, keys, author, "ledger_batch", batchKey, legitimate);
 
+        // (the operations carry no key of their own, so the changes are in the operations themselves)
         List<Args> variants = List.of(
-                batchCall(session, batchId, Calls.Op.save("defect", Fields.defect(project, "one")),
+                batchCall(session, batchKey, Calls.Op.save("defect", Fields.defect(project, "one")),
                         Calls.Op.save("defect", Fields.defect(project, "extra"))),
-                batchCall(session, batchId, Calls.Op.save("defect", Fields.defect(project, "changed"))),
-                batchCall(session, batchId, Calls.Op.save("defect", Fields.defect(project, "one"))
-                        .withRequestId(UUID.randomUUID().toString())));
+                batchCall(session, batchKey, Calls.Op.save("defect", Fields.defect(project, "changed"))),
+                batchCall(session, batchKey, Calls.Op.save("task", Fields.task(project, "one"))));
         int before = Ledger.history(session, project).size();
         for (Args variant : variants) {
             ToolError error = session.failed("ledger_batch", variant.with("_hostAttestation", token));
@@ -349,14 +385,14 @@ class AttestationWireTest {
     void saveTokenCannotCarryOtherContent(McpSession session, Scenario scenario, @Autowired KeyRing keys) {
         String author = scenario.actorWith("pl", "defect");
         keys.enroll(author);
-        String requestId = UUID.randomUUID().toString();
+        String operationKey = UUID.randomUUID().toString();
         Args signed = Args.of().with("entity", "defect").with("reason", Scenario.REASON)
-                .with("fields", Fields.defect(scenario.projectId(), "signed")).with("request_id", requestId);
+                .with("fields", Fields.defect(scenario.projectId(), "signed")).with("operationKey", operationKey);
         Args other = signed.with("fields", Fields.defect(scenario.projectId(), "attacker content"));
-        String token = signedFor(session, keys, author, "ledger_save", requestId, signed);
+        String token = signedFor(session, keys, author, "ledger_save", operationKey, signed);
         int before = Ledger.history(session, scenario.projectId()).size();
 
-        // the attacker is first: the other content must not win the race for the request id
+        // the attacker is first: the other content must not win the race for the operation key
         ToolError raced = session.failed("ledger_save", other.with("_hostAttestation", token));
         assertThat(raced.code()).isEqualTo("ATTESTATION_BINDING_MISMATCH");
         assertThat(raced.details()).containsEntry("field", List.of("arguments"));
@@ -375,11 +411,11 @@ class AttestationWireTest {
     void anIntegerBeyondTheExactRangeIsNotVerified(McpSession session, Scenario scenario, @Autowired KeyRing keys) {
         String author = scenario.actorWith("pl", "defect");
         keys.enroll(author);
-        String requestId = UUID.randomUUID().toString();
+        String operationKey = UUID.randomUUID().toString();
         Args signed = Args.of().with("entity", "defect").with("reason", Scenario.REASON)
-                .with("fields", Fields.defect(scenario.projectId(), "signed")).with("request_id", requestId)
+                .with("fields", Fields.defect(scenario.projectId(), "signed")).with("operationKey", operationKey)
                 .with("expected_version", 9007199254740992.0);
-        String token = signedFor(session, keys, author, "ledger_save", requestId, signed);
+        String token = signedFor(session, keys, author, "ledger_save", operationKey, signed);
         int before = Ledger.history(session, scenario.projectId()).size();
 
         for (long integer : new long[] {9007199254740993L, 9007199254740992L}) {

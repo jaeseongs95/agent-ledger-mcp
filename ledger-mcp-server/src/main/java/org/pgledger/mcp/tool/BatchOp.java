@@ -7,8 +7,9 @@ import org.pgledger.application.write.BatchOpInput;
 
 /**
  * One operation of {@code ledger_batch} as it arrives on the wire: {@code op} picks the variant, the other keys are
- * the keys of the single tool. The component names are the wire keys; {@link #toInput()} hands the operation to the
- * batch service.
+ * the keys of the single tool, except the operation key: the batch has one {@code operationKey} and an operation carries
+ * none (an {@code operationKey} in an operation is an unknown key). The component names are the wire keys;
+ * {@link #toInput()} hands the operation to the batch service.
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "op")
 @JsonSubTypes({
@@ -24,13 +25,11 @@ public sealed interface BatchOp {
 
     record Save(@JsonProperty("entity") String entity, @JsonProperty("fields") SaveFields fields,
             @JsonProperty("reason") String reason, @JsonProperty("id") String id,
-            @JsonProperty("expected_version") Long expectedVersion, @JsonProperty("request_id") String requestId)
-            implements BatchOp {
+            @JsonProperty("expected_version") Long expectedVersion) implements BatchOp {
 
         @Override
         public BatchOpInput toInput() {
-            return new BatchOpInput.Save(entity, fields == null ? null : fields.toInput(), reason, id, expectedVersion,
-                    requestId);
+            return new BatchOpInput.Save(entity, fields == null ? null : fields.toInput(), reason, id, expectedVersion);
         }
     }
 
@@ -38,13 +37,12 @@ public sealed interface BatchOp {
             @JsonProperty("expected_version") Long expectedVersion, @JsonProperty("to") String to,
             @JsonProperty("reason") String reason, @JsonProperty("evidence_uri") String evidenceUri,
             @JsonProperty("evidence_sha256") String evidenceSha256, @JsonProperty("merged_into") String mergedInto,
-            @JsonProperty("attachment_id") String attachmentId,
-            @JsonProperty("request_id") String requestId) implements BatchOp {
+            @JsonProperty("attachment_id") String attachmentId) implements BatchOp {
 
         @Override
         public BatchOpInput toInput() {
             return new BatchOpInput.Transition(entity, id, expectedVersion, to, reason, evidenceUri, evidenceSha256,
-                    mergedInto, attachmentId, requestId);
+                    mergedInto, attachmentId);
         }
     }
 
@@ -54,46 +52,42 @@ public sealed interface BatchOp {
             @JsonProperty("ci_conclusion") String ciConclusion,
             @JsonProperty("ci_completed_at") String ciCompletedAt,
             @JsonProperty("mark_source_fixed") Boolean markSourceFixed,
-            @JsonProperty("attachment_id") String attachmentId,
-            @JsonProperty("request_id") String requestId) implements BatchOp {
+            @JsonProperty("attachment_id") String attachmentId) implements BatchOp {
 
         @Override
         public BatchOpInput toInput() {
             return new BatchOpInput.RecordFix(defectId, repo, commitSha, reason, branch, ciRef, ciConclusion,
-                    ciCompletedAt, markSourceFixed, attachmentId, requestId);
+                    ciCompletedAt, markSourceFixed, attachmentId);
         }
     }
 
     record RecordCase(@JsonProperty("defect_id") String defectId, @JsonProperty("observation") String observation,
             @JsonProperty("reason") String reason, @JsonProperty("evidence") String evidence,
             @JsonProperty("user_quote") String userQuote, @JsonProperty("observed_at") String observedAt,
-            @JsonProperty("attachment_id") String attachmentId,
-            @JsonProperty("request_id") String requestId) implements BatchOp {
+            @JsonProperty("attachment_id") String attachmentId) implements BatchOp {
 
         @Override
         public BatchOpInput toInput() {
             return new BatchOpInput.RecordCase(defectId, observation, reason, evidence, userQuote, observedAt,
-                    attachmentId, requestId);
+                    attachmentId);
         }
     }
 
     record Link(@JsonProperty("kind") String kind, @JsonProperty("a") String a, @JsonProperty("b") String b,
-            @JsonProperty("reason") String reason, @JsonProperty("remove") Boolean remove,
-            @JsonProperty("request_id") String requestId) implements BatchOp {
+            @JsonProperty("reason") String reason, @JsonProperty("remove") Boolean remove) implements BatchOp {
 
         @Override
         public BatchOpInput toInput() {
-            return new BatchOpInput.Link(kind, a, b, reason, remove, requestId);
+            return new BatchOpInput.Link(kind, a, b, reason, remove);
         }
     }
 
     record Correct(@JsonProperty("history_id") Long historyId, @JsonProperty("reason") String reason,
-            @JsonProperty("attachment_id") String attachmentId,
-            @JsonProperty("request_id") String requestId) implements BatchOp {
+            @JsonProperty("attachment_id") String attachmentId) implements BatchOp {
 
         @Override
         public BatchOpInput toInput() {
-            return new BatchOpInput.Correct(historyId, reason, attachmentId, requestId);
+            return new BatchOpInput.Correct(historyId, reason, attachmentId);
         }
     }
 }

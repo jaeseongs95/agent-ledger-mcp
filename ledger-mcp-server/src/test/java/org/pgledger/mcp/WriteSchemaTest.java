@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.modelcontextprotocol.spec.McpSchema.Tool;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -40,16 +41,48 @@ class WriteSchemaTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("org.pgledger.mcp.support.ToolNames#write")
-    @DisplayName("MCW-002: _hostAttestation is an optional string, author_id is a declared deprecated key that is ignored, "
-            + "every object of the schema is closed")
+    @DisplayName("MCW-002: _hostAttestation is an optional string, author_id, request_id and batch_request_id are not "
+            + "declared (removed, was: author_id a declared deprecated key), every object of the schema is closed")
     void attestationIsOptionalAndTheSchemaIsClosed(String tool, McpSession session) {
         SchemaView schema = input(session, tool);
 
         assertThat(schema.properties().get("_hostAttestation").type()).isEqualTo("string");
-        assertThat(schema.required()).doesNotContain("_hostAttestation", "author_id");
-        assertThat(schema.properties().get("author_id").description()).contains("ignored");
+        assertThat(schema.required()).doesNotContain("_hostAttestation");
+        assertThat(schema.properties()).doesNotContainKeys("author_id", "request_id", "batch_request_id");
         assertThat(schema.closed()).isTrue();
         assertThat(schema.objects()).allMatch(SchemaView::closed);
+    }
+
+    static Stream<String> keyedWriteTools() {
+        return ToolNames.write().filter(tool -> !"ledger_whoami".equals(tool));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("keyedWriteTools")
+    @DisplayName("MCW-002: the nine write tools declare operationKey as a required string, 1..128 characters (ledger_batch: "
+            + "one key for the whole batch, the operations carry none; the others: the server never makes a key up)")
+    void everyKeyedWriteToolRequiresAnOperationKey(String tool, McpSession session) {
+        SchemaView schema = input(session, tool);
+        SchemaView key = schema.properties().get("operationKey");
+
+        assertThat(key).as("operationKey of %s", tool).isNotNull();
+        assertThat(key.type()).isEqualTo("string");
+        assertThat(schema.required()).contains("operationKey");
+        assertThat(key.description()).startsWith("Required.").contains("1..128 characters");
+        if ("ledger_batch".equals(tool)) {
+            assertThat(key.description()).contains("whole batch").contains("carry no key of their own");
+        } else {
+            assertThat(key.description()).contains("never makes a key up");
+        }
+    }
+
+    @Test
+    @DisplayName("MCW-002: ledger_whoami declares only _hostAttestation: it carries no operationKey and no author_id")
+    void whoamiDeclaresOnlyTheAttestation(McpSession session) {
+        SchemaView schema = input(session, "ledger_whoami");
+
+        assertThat(schema.propertyNames()).containsExactly("_hostAttestation");
+        assertThat(schema.required()).isEmpty();
     }
 
     @Test

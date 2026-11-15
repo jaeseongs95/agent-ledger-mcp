@@ -3,7 +3,6 @@ package org.pgledger.mcp.support;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.pgledger.attestation.ArgumentsDigest;
@@ -16,22 +15,25 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * What the client hook does for the tests: a write call whose {@code _hostAttestation} is a plain author of the ledger
  * format ({@code claude:e2e-author}) becomes the call the hook would send: the author is signed for the tool and the
- * request id of the call (a request id that is missing is made here, as the hook makes it) and the signed text takes the
- * place of the plain author. This is the one place of the MCP tests that makes a signature for the tests that are not
- * about the attestation itself; the authors are registered with their keys the first time they are used. A value that is
- * not a plain author (an empty or malformed one, a token a test made itself) is sent as it is, and so is a call whose
- * test asks for {@link McpSession#callUnsigned}.
+ * {@code operationKey} of the call exactly as the call carries it, and the signed text takes the place of the plain
+ * author. Like the hook, it never makes a key up and changes no argument but {@code _hostAttestation}: a call without
+ * a key (or with a key that is no text) is signed with the empty key, and the server refuses it. The calls of
+ * {@link Calls} carry a fresh key already; a test that wants another key puts it into the call. This is the one place of
+ * the MCP tests that makes a signature for the tests that are not about the attestation itself; the authors are
+ * registered with their keys the first time they are used. A value that is not a plain author (an empty or malformed
+ * one, a token a test made itself) is sent as it is, and so is a call whose test asks for
+ * {@link McpSession#callUnsigned}.
  */
 public final class Attester {
 
     private static final String ATTESTATION = "_hostAttestation";
-    private static final String REQUEST_ID = "request_id";
+    private static final String OPERATION_KEY = "operationKey";
     private static final String WHOAMI = "ledger_whoami";
     /** The tools that carry the attestation: the nine writes, whoami and the five attachment tools (a read tool never gets one). */
     private static final Set<String> ATTESTED_TOOLS = Stream.concat(ToolContract.WRITE.stream(),
             ToolContract.ATTACHMENT.stream()).collect(Collectors.toUnmodifiableSet());
-    /** The tools whose attestation is signed with an empty request id, which the hook does not add: whoami and the attachment tools. */
-    private static final Set<String> WITHOUT_REQUEST_ID = Stream.concat(Stream.of(WHOAMI),
+    /** The tools whose attestation is signed with an empty operation key: whoami and the attachment tools. */
+    private static final Set<String> WITHOUT_OPERATION_KEY = Stream.concat(Stream.of(WHOAMI),
             ToolContract.ATTACHMENT.stream()).collect(Collectors.toUnmodifiableSet());
 
     private final KeyRing keys;
@@ -62,15 +64,13 @@ public final class Attester {
         if (!(call.get(ATTESTATION) instanceof String author) || !AuthorId.matches(author)) {
             return arguments;
         }
-        String requestId = "";
-        if (!WITHOUT_REQUEST_ID.contains(tool)) {
-            requestId = call.get(REQUEST_ID) instanceof String given && !given.isBlank() ? given
-                    : UUID.randomUUID().toString();
-            call.put(REQUEST_ID, requestId);
+        String operationKey = "";
+        if (!WITHOUT_OPERATION_KEY.contains(tool) && call.get(OPERATION_KEY) instanceof String given) {
+            operationKey = given;
         }
         keys.enroll(author);
-        // the hook signs the arguments it hands the host: the request id is in, the attestation itself is not
-        call.put(ATTESTATION, keys.token(author, tool, requestId, ArgumentsDigest.of(call)));
+        // the hook signs the arguments it hands the host: the operation key is in as the caller sent it, the attestation itself is not
+        call.put(ATTESTATION, keys.token(author, tool, operationKey, ArgumentsDigest.of(call)));
         return call;
     }
 }

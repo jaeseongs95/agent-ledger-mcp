@@ -201,7 +201,7 @@ class TransportTest {
     static Stream<BadFrame> badFrames() {
         return Stream.of(
                 new BadFrame("a JSON text cut in the middle",
-                        session -> session.mapper().writeValueAsString(new Calls.Whoami(Scenario.AUTHOR, null))
+                        session -> session.mapper().writeValueAsString(Calls.Whoami.as(Scenario.AUTHOR))
                                 .substring(0, 12)),
                 new BadFrame("valid JSON that is no JSON-RPC message",
                         session -> session.mapper().writeValueAsString(new Calls.Nothing())),

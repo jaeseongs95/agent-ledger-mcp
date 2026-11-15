@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
@@ -52,26 +51,29 @@ class WriteCallTest {
     }
 
     @Test
-    @DisplayName("MCW-004: whoami accepts the deprecated author_id and ignores it: the author is the attestation")
-    void whoamiIgnoresTheDeprecatedAuthorId(McpSession session, Scenario scenario) {
-        String author = scenario.actorWith("whoami", "defect", "task", "fix", "verify");
+    @DisplayName("MCW-004: whoami takes no author_id any more (removed without a shim): it is refused as an unknown "
+            + "argument, the author is the attestation and nothing else")
+    void whoamiRefusesTheRemovedAuthorId(McpSession session) {
+        Args call = Args.from(session.mapper(), Calls.Whoami.as(Scenario.AUTHOR)).with("author_id", Scenario.NOGRANT);
 
-        Whoami who = session.ok("ledger_whoami", new Calls.Whoami(author, Scenario.NOGRANT), Whoami.class);
+        ToolError error = session.failed("ledger_whoami", call);
 
-        assertThat(who).isEqualTo(new Whoami("ledger_author", author, true, false,
-                List.of(new Grant(scenario.projectId(), "defect", null), new Grant(scenario.projectId(), "fix", null),
-                        new Grant(scenario.projectId(), "task", null),
-                        new Grant(scenario.projectId(), "verify", null))));
+        assertThat(error.code()).isEqualTo("VALIDATION_FAILED");
+        assertThat(error.issues()).containsExactly(new ToolError.Issue("author_id", UNKNOWN_ARGUMENT, List.of()));
     }
 
     @Test
-    @DisplayName("MCW-005: save with only the deprecated author_id is HOST_ATTESTATION_REQUIRED")
-    void theDeprecatedAuthorIdAloneAuthorisesNothing(McpSession session, Scenario scenario) {
-        ToolError error = session.failed("ledger_save",
-                Calls.Save.create("defect", Fields.defect(scenario.projectId(), "t"), null)
-                        .withAuthorId(Scenario.AUTHOR));
+    @DisplayName("MCW-005: save with only author_id (no attestation) is VALIDATION_FAILED: author_id is not a known "
+            + "argument any more, so it authorises nothing, and nothing is written")
+    void theRemovedAuthorIdAloneAuthorisesNothing(McpSession session, Scenario scenario) {
+        Args call = Args.from(session.mapper(),
+                Calls.Save.create("defect", Fields.defect(scenario.projectId(), "t"), null))
+                .with("author_id", Scenario.AUTHOR);
 
-        assertThat(error.code()).isEqualTo("HOST_ATTESTATION_REQUIRED");
+        ToolError error = session.failed("ledger_save", call);
+
+        assertThat(error.code()).isEqualTo("VALIDATION_FAILED");
+        assertThat(error.issues()).containsExactly(new ToolError.Issue("author_id", UNKNOWN_ARGUMENT, List.of()));
         assertThat(Ledger.history(session, scenario.projectId())).isEmpty();
     }
 
@@ -147,7 +149,8 @@ class WriteCallTest {
     @DisplayName("MCW-027: a batch operation with an unknown or missing op names the key and the allowed ops, and "
             + "no internal class name is in the result")
     void aBadOpNamesNoInternalClass(BadOp bad, McpSession session) {
-        Args call = Args.of().with("ops", List.of(bad.op())).with("_hostAttestation", Scenario.AUTHOR);
+        Args call = Args.of().with("ops", List.of(bad.op())).with("operationKey", Calls.freshKey())
+                .with("_hostAttestation", Scenario.AUTHOR);
 
         CallToolResult result = session.call("ledger_batch", call);
         ToolError error = session.error(result);
@@ -160,16 +163,16 @@ class WriteCallTest {
     }
 
     @Test
-    @DisplayName("MCW-027: ops that are no JSON at all are refused with the sentence of the reason bundle, not the "
-            + "text of the JSON library")
-    void unreadableOpsGetTheSentenceOfTheBundle(McpSession session) {
-        Args call = Args.of().with("ops", "[{not json").with("_hostAttestation", Scenario.AUTHOR);
+    @DisplayName("MCW-027: ops that are a text (JSON or not) are refused with the sentence of the reason bundle for "
+            + "the wrong type, not the text of the JSON library (changed: the JSON text form is no longer read)")
+    void textOpsGetTheSentenceOfTheBundle(McpSession session) {
+        Args call = Args.of().with("ops", "[{not json").with("operationKey", Calls.freshKey())
+                .with("_hostAttestation", Scenario.AUTHOR);
 
         ToolError error = session.failed("ledger_batch", call);
 
         assertThat(error.code()).isEqualTo("VALIDATION_FAILED");
-        assertThat(error.issues()).containsExactly(
-                new ToolError.Issue("ops", "does not fit the input of the tool as JSON", List.of()));
+        assertThat(error.issues()).containsExactly(new ToolError.Issue("ops", "must be of type List", List.of()));
     }
 
     @Test
@@ -184,35 +187,45 @@ class WriteCallTest {
     // ------------------------------------------------------------------------------------- MCW-007 .. MCW-009
 
     @Test
-    @DisplayName("MCW-007: fields as an object and as the JSON text form with the same request id are one write "
-            + "and a receipt replay")
-    void fieldsAsObjectAndAsTextAreTheSameRequest(McpSession session, Scenario scenario) {
-        String request = UUID.randomUUID().toString();
+    @DisplayName("MCW-007: fields as an object is one write and a receipt replay of the same operation key; fields as "
+            + "the JSON text form is VALIDATION_FAILED (wrong type) and changes nothing (changed: the text form is gone)")
+    void fieldsAsAnObjectIsReplayedAndAsTextIsRefused(McpSession session, Scenario scenario) {
+        String operationKey = Calls.freshKey();
         Fields fields = Fields.defect(scenario.projectId(), "text form");
 
         WriteOutputs.Saved first = session.ok("ledger_save",
-                Calls.Save.create("defect", fields, Scenario.AUTHOR).withRequestId(request), WriteOutputs.Saved.class);
-        WriteOutputs.Saved replay = session.ok("ledger_save", new Calls.TextSave("defect",
-                session.mapper().writeValueAsString(fields), Scenario.REASON, request, Scenario.AUTHOR),
+                Calls.Save.create("defect", fields, Scenario.AUTHOR).withOperationKey(operationKey),
                 WriteOutputs.Saved.class);
+        WriteOutputs.Saved replay = session.ok("ledger_save",
+                Calls.Save.create("defect", fields, Scenario.AUTHOR).withOperationKey(operationKey),
+                WriteOutputs.Saved.class);
+        ToolError text = session.failed("ledger_save", new Calls.TextSave("defect",
+                session.mapper().writeValueAsString(fields), Scenario.REASON, operationKey, Scenario.AUTHOR));
 
         assertThat(replay).isEqualTo(first);
+        assertThat(text.code()).isEqualTo("VALIDATION_FAILED");
+        assertThat(text.issues()).containsExactly(new ToolError.Issue("fields", "must be of type SaveFields", List.of()));
         assertThat(Ledger.history(session, scenario.projectId())).hasSize(1);
     }
 
     @Test
-    @DisplayName("MCW-008: ops as an array and as the JSON text form give identical results")
-    void opsAsArrayAndAsTextGiveIdenticalResults(McpSession session, Scenario scenario) {
-        String request = UUID.randomUUID().toString();
+    @DisplayName("MCW-008: ops as an array is one batch and a receipt replay of the same operation key; ops as the JSON "
+            + "text form is VALIDATION_FAILED (wrong type) and changes nothing (changed: the text form is gone)")
+    void opsAsAnArrayAreReplayedAndAsTextAreRefused(McpSession session, Scenario scenario) {
+        String operationKey = Calls.freshKey();
         List<Calls.Op> ops = List.of(Calls.Op.save("defect", Fields.defect(scenario.projectId(), "batched")));
 
         BatchResults first = session.ok("ledger_batch",
-                new Calls.Batch(ops, request, Scenario.AUTHOR), BatchResults.class);
-        BatchResults replay = session.ok("ledger_batch", new Calls.TextBatch(
-                session.mapper().writeValueAsString(ops), request, Scenario.AUTHOR), BatchResults.class);
+                new Calls.Batch(ops, operationKey, Scenario.AUTHOR), BatchResults.class);
+        BatchResults replay = session.ok("ledger_batch",
+                new Calls.Batch(ops, operationKey, Scenario.AUTHOR), BatchResults.class);
+        ToolError text = session.failed("ledger_batch", new Calls.TextBatch(
+                session.mapper().writeValueAsString(ops), operationKey, Scenario.AUTHOR));
 
         assertThat(replay).isEqualTo(first);
         assertThat(first.count()).isEqualTo(1);
+        assertThat(text.code()).isEqualTo("VALIDATION_FAILED");
+        assertThat(text.issues()).containsExactly(new ToolError.Issue("ops", "must be of type List", List.of()));
         assertThat(Ledger.history(session, scenario.projectId())).hasSize(1);
     }
 
@@ -231,12 +244,13 @@ class WriteCallTest {
 
     private static Malformed badFields(String name, Object value) {
         return new Malformed("fields " + name, "ledger_save", Args.of().with("_hostAttestation", Scenario.AUTHOR)
-                .with("entity", "defect").with("reason", Scenario.REASON), "fields", value);
+                .with("operationKey", Calls.freshKey()).with("entity", "defect").with("reason", Scenario.REASON),
+                "fields", value);
     }
 
     private static Malformed badOps(String name, Object value) {
-        return new Malformed("ops " + name, "ledger_batch", Args.of().with("_hostAttestation", Scenario.AUTHOR),
-                "ops", value);
+        return new Malformed("ops " + name, "ledger_batch", Args.of().with("_hostAttestation", Scenario.AUTHOR)
+                .with("operationKey", Calls.freshKey()), "ops", value);
     }
 
     static Stream<Malformed> malformedStructures() {
@@ -244,7 +258,7 @@ class WriteCallTest {
                 badFields("is a text that is not JSON", "{"),
                 badFields("is a JSON array text", "[]"),
                 badFields("is a JSON number text", "7"),
-                badFields("is the text null", "null"),
+                badFields("is the text null (a plain text, not a missing argument)", "null"),
                 badFields("is null", null),
                 badFields("is an empty object", Args.of()),
                 badOps("is a text that is not JSON", "{"),
@@ -386,16 +400,16 @@ class WriteCallTest {
                         "VALIDATION_FAILED", List.of("expected_version")),
                 new BadValue("expected_version negative", call -> call.with("expected_version", -1),
                         "VALIDATION_FAILED", List.of("expected_version")),
-                new BadValue("request_id that is no UUID", call -> call.with("request_id", "not-a-uuid"),
-                        "VALIDATION_FAILED", List.of("request_id")),
+                new BadValue("operationKey that is empty", call -> call.with("operationKey", ""),
+                        "VALIDATION_FAILED", List.of("operationKey")),
                 new BadValue("reason of nine characters", call -> call.with("reason", "123456789"),
                         "REASON_INVALID", List.of("reason")));
     }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("badValues")
-    @DisplayName("MCW-018: a text, a fraction, a negative version, a request id that is no UUID and a short reason are "
-            + "refused without coercion")
+    @DisplayName("MCW-018: a text, a fraction, a negative version, an empty operationKey (was: a request id that is no "
+            + "UUID) and a short reason are refused without coercion")
     void aBadValueIsRefused(BadValue bad, McpSession session, Scenario scenario) {
         Seed seed = Seed.create(session, scenario);
         int before = Ledger.history(session, seed.project()).size();

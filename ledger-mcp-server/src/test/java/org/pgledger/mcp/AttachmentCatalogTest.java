@@ -7,14 +7,20 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.ResourceBundle;
+import java.util.UUID;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.pgledger.domain.rule.ToolContract;
+import org.pgledger.mcp.error.ToolError;
+import org.pgledger.mcp.support.Args;
+import org.pgledger.mcp.support.AttachmentCalls.Chunk;
+import org.pgledger.mcp.support.AttachmentCalls.Finish;
 import org.pgledger.mcp.support.McpServerTest;
 import org.pgledger.mcp.support.McpSession;
+import org.pgledger.mcp.support.Scenario;
 import org.pgledger.mcp.support.SchemaView;
 
 /**
@@ -134,6 +140,48 @@ class AttachmentCatalogTest {
                 .contains("ARTIFACT_BUSY").contains("send the same chunk again later");
         assertThat(finish).contains("ARTIFACT_INCOMPLETE").contains("send the last chunk again")
                 .contains("ARTIFACT_HASH_MISMATCH").contains("the bytes are kept");
+    }
+
+    @Test
+    @DisplayName("OPK-011: artifact-chunk and artifact-finish have no operationKey property (the one exception: an upload "
+            + "starts with the operationKey of artifact-begin, a chunk is repeatable by uploadId + sequence + chunkSha256, "
+            + "finish by uploadId), artifact-begin declares it and requires it, and the descriptions of chunk and finish say so")
+    void chunkAndFinishTakeNoOperationKey(McpSession session) {
+        SchemaView begin = SchemaView.of(session.mapper(), session.tool("artifact-begin").inputSchema());
+        SchemaView chunk = SchemaView.of(session.mapper(), session.tool("artifact-chunk").inputSchema());
+        SchemaView finish = SchemaView.of(session.mapper(), session.tool("artifact-finish").inputSchema());
+
+        assertThat(begin.properties()).containsKey("operationKey");
+        assertThat(begin.required()).contains("operationKey");
+        assertThat(begin.properties().get("operationKey").description()).startsWith("Required.");
+        assertThat(chunk.properties()).doesNotContainKey("operationKey");
+        assertThat(chunk.required()).doesNotContain("operationKey");
+        assertThat(finish.properties()).doesNotContainKey("operationKey");
+        assertThat(finish.required()).doesNotContain("operationKey");
+        assertThat(session.tool("artifact-begin").description()).contains("the server never makes a key up");
+        assertThat(session.tool("artifact-chunk").description()).contains("takes no operationKey")
+                .contains("the one exception").contains("uploadId, sequence and chunkSha256");
+        assertThat(session.tool("artifact-finish").description()).contains("takes no operationKey")
+                .contains("the one exception").contains("repeatable by its uploadId");
+    }
+
+    @Test
+    @DisplayName("OPK-011: an operationKey sent to artifact-chunk or artifact-finish is refused as an unknown argument")
+    void anOperationKeyToChunkOrFinishIsUnknown(McpSession session) {
+        String uploadId = UUID.randomUUID().toString();
+        Args chunk = Args.from(session.mapper(), Chunk.of(uploadId, 0, new byte[] {1}, Scenario.AUTHOR))
+                .with("operationKey", UUID.randomUUID().toString());
+        Args finish = Args.from(session.mapper(), new Finish(uploadId, Scenario.AUTHOR))
+                .with("operationKey", UUID.randomUUID().toString());
+
+        ToolError chunkError = session.failed("artifact-chunk", chunk);
+        ToolError finishError = session.failed("artifact-finish", finish);
+
+        ToolError.Issue unknown = new ToolError.Issue("operationKey", "is not a known argument", List.of());
+        assertThat(chunkError.code()).isEqualTo("VALIDATION_FAILED");
+        assertThat(chunkError.issues()).containsExactly(unknown);
+        assertThat(finishError.code()).isEqualTo("VALIDATION_FAILED");
+        assertThat(finishError.issues()).containsExactly(unknown);
     }
 
     @Test
