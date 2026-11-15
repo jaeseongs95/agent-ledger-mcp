@@ -151,9 +151,18 @@ class WindowsAccessTest {
         Files.createDirectories(home.resolve("lib"));
         Files.createDirectories(home.resolve("etc/secrets"));
         Files.createDirectories(home.resolve("logs"));
+        // what prepare-host leaves for seal-host since the attachments: the data folder, the attachment folder and the folder of
+        // the attachment keys inside the secrets (seal-host gives the service account its entry on the first two and fails on a
+        // folder that is not there)
+        Path attachments = Files.createDirectories(home.resolve("data/attachments"));
+        Path keys = Files.createDirectories(home.resolve("etc/secrets/attachment-keys"));
         Files.writeString(home.resolve("lib/ledger-cli.jar"), "jar");
         Files.writeString(home.resolve("etc/application.yaml"), "yaml");
         Files.writeString(home.resolve("etc/secrets/ledger.mcp.token"), "never-printed-0123456789");
+        Files.writeString(keys.resolve("k1"), "never-printed-key-0123456789");
+        // a file the service made in the attachment folder: its ACL is its own and seal-host must leave it as it is
+        Path made = Files.writeString(attachments.resolve("made-by-the-service.bin"), "ciphertext");
+        List<AclEntry> madeBefore = Files.getFileAttributeView(made, AclFileAttributeView.class).getAcl();
         RecordingOutput output = new RecordingOutput();
         try {
             Outcome result = cli.withHostAccounts(accounts).run(tmp.resolve("secrets"), null, output, "seal-host",
@@ -165,7 +174,8 @@ class WindowsAccessTest {
             assertThat(accounts.askedUsers()).contains(DeployLayout.WINDOWS_SERVICE_ACCOUNT, WindowsAccess.ADMINISTRATORS);
             UserPrincipal administrators = fileSystem.getUserPrincipalLookupService()
                     .lookupPrincipalByName(WindowsAccess.ADMINISTRATORS);
-            for (Path secret : List.of(home.resolve("etc/secrets/ledger.mcp.token"), home.resolve("etc/secrets"))) {
+            for (Path secret : List.of(home.resolve("etc/secrets/ledger.mcp.token"), keys.resolve("k1"), keys,
+                    home.resolve("etc/secrets"))) {
                 assertThat(Files.getOwner(secret)).as(secret.toString()).isEqualTo(self);
                 List<AclEntry> acl = Files.getFileAttributeView(secret, AclFileAttributeView.class).getAcl();
                 assertThat(acl.stream().map(AclEntry::principal)).as(secret.toString()).containsExactly(self, administrators);
@@ -178,6 +188,12 @@ class WindowsAccessTest {
             assertThat(Files.getFileAttributeView(home.resolve("etc/application.yaml"), AclFileAttributeView.class).getAcl()
                     .stream().filter(entry -> entry.principal().equals(self)).toList()).hasSize(1)
                     .allSatisfy(entry -> assertThat(entry.permissions()).contains(AclEntryPermission.WRITE_DATA));
+            for (Path folder : List.of(home.resolve("data"), attachments)) {
+                assertThat(Files.getFileAttributeView(folder, AclFileAttributeView.class).getAcl().stream()
+                        .filter(entry -> entry.principal().equals(self)).toList()).as(folder.toString()).hasSize(1)
+                        .allSatisfy(entry -> assertThat(entry.permissions()).contains(AclEntryPermission.WRITE_DATA));
+            }
+            assertThat(Files.getFileAttributeView(made, AclFileAttributeView.class).getAcl()).isEqualTo(madeBefore);
             assertThat(output.info()).contains("Handed the secrets of the instance pg-ledger-mcp").doesNotContain("never-printed");
         } finally {
             reopen(tmp);
