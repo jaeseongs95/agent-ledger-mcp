@@ -4,11 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
+import org.pgledger.database.repository.AttachmentFileRepository;
 import org.pgledger.database.repository.AttachmentRepository;
 import org.pgledger.database.repository.UploadStagingRepository;
 import org.pgledger.database.support.DatabaseTest;
 import org.pgledger.database.support.LedgerTestContext;
 import org.pgledger.domain.model.Attachment;
+import org.pgledger.domain.model.AttachmentFile;
 import org.pgledger.domain.model.UploadStaging;
 import org.pgledger.domain.rule.UploadState;
 import org.pgledger.domain.value.AuthorId;
@@ -94,18 +96,46 @@ class AttachmentRepositoryTest {
     @Test
     void ata016_anAttachmentIsInsertedAndReadAndItsStorageKeyIsKnown(LedgerTestContext ctx) {
         AttachmentRepository attachments = ctx.bean(AttachmentRepository.class);
-        UploadStagingRepository uploads = ctx.bean(UploadStagingRepository.class);
         Attachment attachment = new Attachment("bbbbbbbb-0000-0000-0000-000000000001", "report.md", "text/markdown", 100,
-                SHA, StorageKey.of("4".repeat(32)), "k1", ALICE, T0);
+                SHA, ALICE, T0);
+        long before = attachments.keptBytes();
         ctx.tx(() -> {
             attachments.insert(attachment);
             return null;
         });
         assertThat(attachments.findById(attachment.id())).contains(attachment);
-        assertThat(attachments.holdsStorageKey(attachment.storageKey())).isTrue();
-        assertThat(uploads.holdsStorageKey(attachment.storageKey())).isFalse();
-        assertThat(attachments.keyIdsInUse()).contains("k1");
+        assertThat(attachments.keptBytes()).as("the attachment budget counts the kept bytes").isEqualTo(before + 100);
         assertThat(attachments.isReferenced(attachment.id())).as("no history row points to it").isFalse();
         assertThat(attachments.page("", 10)).extracting(Attachment::id).contains(attachment.id());
+    }
+
+    /** ATA-016: the file of an attachment is its latest row; a rekey adds a row and the older file is a replaced file. */
+    @Test
+    void ata016_theCurrentFileIsTheLatestRowAndTheOlderOneIsReplaced(LedgerTestContext ctx) {
+        AttachmentFileRepository files = ctx.bean(AttachmentFileRepository.class);
+        UploadStagingRepository uploads = ctx.bean(UploadStagingRepository.class);
+        String attachmentId = "bbbbbbbb-0000-0000-0000-000000000002";
+        AttachmentFile first = new AttachmentFile("cccccccc-0000-0000-0000-000000000001", attachmentId,
+                StorageKey.of("5".repeat(32)), "key-a", T0);
+        AttachmentFile second = new AttachmentFile("cccccccc-0000-0000-0000-000000000002", attachmentId,
+                StorageKey.of("6".repeat(32)), "key-b", T0.plusSeconds(60));
+        ctx.tx(() -> {
+            files.insert(first);
+            return null;
+        });
+        assertThat(files.currentOf(attachmentId)).contains(first);
+        assertThat(files.currentFilesOfKey("key-a")).isGreaterThanOrEqualTo(1);
+        ctx.tx(() -> {
+            files.insert(second);
+            return null;
+        });
+        assertThat(files.currentOf(attachmentId)).contains(second);
+        assertThat(files.isReplaced(first.storageKey())).isTrue();
+        assertThat(files.isReplaced(second.storageKey())).isFalse();
+        assertThat(files.holdsStorageKey(first.storageKey())).as("a replaced file still has its row").isTrue();
+        assertThat(uploads.holdsStorageKey(first.storageKey())).isFalse();
+        assertThat(files.keyIdsInUse()).contains("key-b").as("only current files need their key").doesNotContain("key-a");
+        assertThat(files.currentPage("", 100)).extracting(AttachmentFile::id).contains(second.id())
+                .doesNotContain(first.id());
     }
 }

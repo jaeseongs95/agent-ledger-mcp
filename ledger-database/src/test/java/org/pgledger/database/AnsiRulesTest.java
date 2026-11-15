@@ -329,10 +329,10 @@ class AnsiRulesTest {
 
     /** ATA-017: an attachment is written once. No SQL of the product (every module's main sources and the schema files) changes or deletes it. */
     @Test
-    @DisplayName("ATA-017: no UPDATE or DELETE statement names the table attachment and no foreign key names it")
+    @DisplayName("ATA-017: no UPDATE or DELETE statement names the tables attachment and attachment_file and no foreign key names them")
     void noStatementChangesOrDeletesAnAttachment() {
-        Pattern changes = Pattern.compile("(?i)\\bUPDATE\\s+attachment\\b|\\bDELETE\\s+FROM\\s+attachment\\b|\\bTRUNCATE\\b[^;]*\\battachment\\b"
-                + "|\\bREFERENCES\\s+attachment\\b");
+        Pattern changes = Pattern.compile("(?i)\\bUPDATE\\s+attachment(_file)?\\b|\\bDELETE\\s+FROM\\s+attachment(_file)?\\b"
+                + "|\\bTRUNCATE\\b[^;]*\\battachment(_file)?\\b|\\bREFERENCES\\s+attachment(_file)?\\b");
         List<SqlText> sources = Stream.of("ledger-database", "ledger-application", "ledger-mcp-server", "ledger-admin-web",
                 "ledger-cli").map(module -> Path.of("..", module, "src", "main", "java")).filter(Files::isDirectory)
                 .flatMap(dir -> files(dir, ".*\\.java").stream()).map(AnsiRulesTest::javaLiterals).toList();

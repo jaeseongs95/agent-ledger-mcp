@@ -43,7 +43,7 @@ class SchemaCatalogTest {
     static final Set<String> TABLES = Set.of("project", "task", "defect", "defect_fix", "defect_case", "defect_task",
             "defect_relation", "release_condition", "condition_link", "session_grant", "session_key", "owner_audit", "history",
             "request_receipt", "common_code", "code_revision", "id_counter", "schema_history", "driver_audit_key",
-            "upload_staging", "attachment");
+            "upload_staging", "attachment", "attachment_file");
 
     /** The timestamp columns of the schema, exactly as the catalogue lists them (SCH-018). */
     static final Set<String> TIMESTAMP_COLUMNS = Set.of("defect.created_at", "defect.updated_at", "task.created_at",
@@ -52,7 +52,7 @@ class SchemaCatalogTest {
             "session_grant.revoked_at", "session_grant.last_used_at", "session_key.registered_at",
             "session_key.revoked_at", "owner_audit.occurred_at", "history.occurred_at", "request_receipt.created_at",
             "schema_history.applied_at", "upload_staging.expires_at", "upload_staging.created_at",
-            "upload_staging.updated_at", "attachment.created_at");
+            "upload_staging.updated_at", "attachment.created_at", "attachment_file.created_at");
 
     private LedgerTestContext ctx;
     private JdbcClient jdbc;
@@ -283,13 +283,15 @@ class SchemaCatalogTest {
      */
     @Test
     void ata015_theAttachmentTablesHoldMetadataOnly() {
-        List<Column> own = columns().stream()
-                .filter(c -> Objects.equals(c.table(), "upload_staging") || Objects.equals(c.table(), "attachment")).toList();
+        List<Column> own = columns().stream().filter(c -> Objects.equals(c.table(), "upload_staging")
+                || Objects.equals(c.table(), "attachment") || Objects.equals(c.table(), "attachment_file")).toList();
         assertThat(own.stream().map(Column::key)).contains("upload_staging.owner", "upload_staging.operation_key",
                 "upload_staging.declared_sha256", "upload_staging.stored_bytes", "upload_staging.next_sequence",
                 "upload_staging.last_chunk_sha256", "upload_staging.storage_key", "upload_staging.key_id",
-                "upload_staging.state", "attachment.size_bytes", "attachment.content_sha256", "attachment.storage_key",
-                "attachment.key_id", "attachment.created_by");
+                "upload_staging.state", "attachment.size_bytes", "attachment.content_sha256", "attachment.created_by",
+                "attachment_file.attachment_id", "attachment_file.storage_key", "attachment_file.key_id");
+        assertThat(own.stream().map(Column::key)).as("the location and the key moved to attachment_file")
+                .doesNotContain("attachment.storage_key", "attachment.key_id");
         assertThat(own).as("no body column of any kind")
                 .noneMatch(c -> c.type() == Types.BLOB || c.type() == Types.CLOB || c.type() == Types.BINARY
                         || c.type() == Types.VARBINARY || c.type() == Types.LONGVARBINARY || c.type() == Types.LONGVARCHAR
@@ -302,7 +304,7 @@ class SchemaCatalogTest {
         // no foreign key: neither of the two tables nor the history column is the side of one (JDBC metadata)
         long foreignKeys = withConnection(c -> {
             long count = 0;
-            for (String table : List.of("upload_staging", "attachment")) {
+            for (String table : List.of("upload_staging", "attachment", "attachment_file")) {
                 try (ResultSet rs = c.getMetaData().getImportedKeys(c.getCatalog(), c.getSchema(), table)) {
                     while (rs.next()) {
                         count++;
