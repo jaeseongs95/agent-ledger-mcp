@@ -73,6 +73,38 @@ class PrincipleRulesTest {
         assertThat(ArchitectureRules.noHandMadeTransactionControl().evaluate(clean).hasViolation()).isFalse();
     }
 
+    @Test
+    @DisplayName("TXP-001 a @Transactional with NESTED, REQUIRES_NEW or MANDATORY is found (red on 8800df2: its four writer beans were NESTED); the default propagation is not")
+    void nonDefaultPropagation() {
+        JavaClasses clean = new ClassFileImporter().importClasses(Clean.class, Clean.Registrations.class);
+
+        assertThat(keys(PrincipleRules.nonDefaultPropagation(FIXTURE))).containsExactlyInAnyOrder("Planted.nested",
+                "Planted.requiresNew", "Planted.mandatory");
+        assertThat(PrincipleRules.nonDefaultPropagation(clean)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("TXP-003 a @Transactional bean named Writer, Recorder, Entry or Coordinator is found, a transactional service of another name is not")
+    void transactionOnlyBean() {
+        JavaClasses clean = new ClassFileImporter().importClasses(Clean.class, Clean.Registrations.class);
+
+        assertThat(keys(PrincipleRules.transactionOnlyBeans(FIXTURE))).containsExactly("PlantedWriter");
+        assertThat(PrincipleRules.transactionOnlyBeans(clean)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("TXP-002 an assignment of a column to itself in the SET clause of a SQL literal is found (SET version = version, SET note = note, also inside a list); a counter, a bind parameter and a text outside a literal are not")
+    void lockOnlyUpdate() throws IOException {
+        source("Planted.java", "class Planted { String a = \"UPDATE defect SET version = version WHERE id = :id\"; }");
+        source("PlantedList.java", "class PlantedList { String a = \"UPDATE session_key SET \" + \"revoked_at = :now, note = note WHERE id = :id\"; }");
+        source("Clean.java", "class Clean { String a = \"UPDATE c SET n = n + 1 WHERE id = :id\"; "
+                + "String b = \"UPDATE d SET a = :a, b = :b WHERE id = :id\"; "
+                + "String c = \"SELECT x FROM t WHERE y = y\"; } // SET q = q");
+
+        assertThat(keys(PrincipleRules.lockOnlyUpdates(sources))).containsExactlyInAnyOrder("Planted.java",
+                "PlantedList.java");
+    }
+
     private Path source(String name, String text) throws IOException {
         return Files.writeString(sources.resolve(name), text);
     }

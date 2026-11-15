@@ -30,6 +30,16 @@ public final class Clean {
         return answer().map(String::strip).orElse("");
     }
 
+    /** A service whose use case is one method with the default propagation (TXP-001, TXP-003). */
+    @Transactional
+    public static class Registrations {
+
+        @Transactional(readOnly = true)
+        String read() {
+            return "x";
+        }
+    }
+
     /** A transaction that reads a file and writes none. */
     @Transactional
     String readsOnly(Path file) throws IOException {

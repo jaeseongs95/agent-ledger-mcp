@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 import org.springframework.context.annotation.Bean;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.interceptor.TransactionAspectSupport;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -69,6 +70,29 @@ public final class Planted {
                 throw new UncheckedIOException(e);
             }
         });
+    }
+
+    /** A write that runs in a savepoint (TXP-001). */
+    @Transactional(propagation = Propagation.NESTED)
+    void nested() {
+        throw new UnsupportedOperationException("planted");
+    }
+
+    /** A write that runs in a transaction of its own (TXP-001). */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    void requiresNew() {
+        throw new UnsupportedOperationException("planted");
+    }
+
+    /** A method that demands a transaction of its caller (TXP-001). */
+    @Transactional(propagation = Propagation.MANDATORY)
+    void mandatory() {
+        throw new UnsupportedOperationException("planted");
+    }
+
+    /** A bean that exists to give another service a transaction, named for that role (TXP-003). */
+    @Transactional
+    public static class PlantedWriter {
     }
 
     /** A savepoint that is made by hand with the handle of the current transaction (TXF-001). */

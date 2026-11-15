@@ -113,6 +113,30 @@ public final class CodingScan {
         return out.toString();
     }
 
+    /**
+     * The content of every string literal and text block of a source, in the order they are written; comments and character
+     * literals are not looked at. For a rule about the text of a statement (a SQL literal), which {@link #strip} blanks.
+     */
+    public static List<String> stringLiterals(Path file) {
+        String source;
+        try {
+            source = Files.readString(file);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        List<String> literals = new ArrayList<>();
+        Matcher matcher = LEXEME.matcher(source);
+        while (matcher.find()) {
+            String lexeme = matcher.group();
+            if (lexeme.startsWith("\"\"\"")) {
+                literals.add(lexeme.substring(3, lexeme.length() - 3));
+            } else if (lexeme.startsWith("\"")) {
+                literals.add(lexeme.substring(1, lexeme.length() - 1));
+            }
+        }
+        return literals;
+    }
+
     private static List<Path> javaFiles(Path... roots) {
         List<Path> files = new ArrayList<>();
         for (Path root : roots) {
