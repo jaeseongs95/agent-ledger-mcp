@@ -36,8 +36,8 @@ public class CliErrorTranslator {
     /** The usage line of the refused command, or of every command when there is none (no word or a word that is no command). */
     private String usageText(UsageException usage) {
         List<String> lines = new ArrayList<>();
-        lines.add(messages.get("usage.header"));
         List<CommandName> shown = usage.command().map(List::of).orElse(commands);
+        lines.add(messages.get(shown.isEmpty() ? "usage.header" : shown.getFirst().usageHeaderKey()));
         for (CommandName command : shown) {
             lines.add(messages.get(command.usageKey()));
         }

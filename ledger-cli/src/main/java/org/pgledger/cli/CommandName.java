@@ -15,4 +15,9 @@ public interface CommandName {
 
     /** Whether the command works on the ledger database. */
     boolean usesDatabase();
+
+    /** Message key of the first line of the usage text of the program this command belongs to (it names the program). */
+    default String usageHeaderKey() {
+        return "usage.header";
+    }
 }

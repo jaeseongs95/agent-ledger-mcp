@@ -33,6 +33,12 @@ public enum ToolCommand implements CommandName {
         };
     }
 
+    /** The first line of the usage text names this program, not {@code ledger-cli}. */
+    @Override
+    public String usageHeaderKey() {
+        return "usage.header.migrate-1x";
+    }
+
     /** Message key of this command line in the usage text. */
     public String usageKey() {
         return "usage." + cliName;
