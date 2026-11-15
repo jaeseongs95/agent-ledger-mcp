@@ -48,19 +48,18 @@ public interface AttestationVerifier {
      * {@link #verifyForWrite}. An author without the ledger format is the answer {@link Proof.MalformedAuthor} (nothing
      * after the format check is run for it); every other failure is thrown.
      *
-     * @param presented       the raw value of {@code _hostAttestation}; {@code null} is HOST_ATTESTATION_REQUIRED
-     * @param tool            the tool of the call (the wire name), or {@code null} outside a tool call
-     * @param requestId       the request id of the call as the caller sent it; {@code null} and empty are the same
-     * @param argumentsDigest the digest of the arguments of the call as the server received them
-     *                        ({@link org.pgledger.attestation.ArgumentsDigest}), or {@code null} outside a tool call
-     *                        (never equal to a signed digest)
+     * @param presented the raw value of {@code _hostAttestation}; {@code null} is HOST_ATTESTATION_REQUIRED
+     * @param call      the call the attestation is checked against: its tool and the digest of its arguments as the
+     *                  server received them ({@link org.pgledger.attestation.ArgumentsDigest}), or
+     *                  {@link ToolCall.Outside} outside a tool call (which matches no signed tool and no signed digest)
+     * @param requestId the request id of the call as the caller sent it; {@code null} and empty are the same
      * @throws TrustException with the code of the first check that fails
      */
-    Proof prove(String presented, String tool, String requestId, String argumentsDigest);
+    Proof prove(String presented, ToolCall call, String requestId);
 
     /** As {@link #prove}, with a malformed author refused as AUTHOR_ID_FORMAT: the author the attestation proves. */
-    default AuthorId verify(String presented, String tool, String requestId, String argumentsDigest) {
-        return prove(presented, tool, requestId, argumentsDigest).requireAuthor();
+    default AuthorId verify(String presented, ToolCall call, String requestId) {
+        return prove(presented, call, requestId).requireAuthor();
     }
 
     /**
@@ -68,5 +67,5 @@ public interface AttestationVerifier {
      * also locked until the transaction ends (a conditional UPDATE, like the grant check), so closing the key waits for
      * this write, and a write that verified the key before a close committed cannot commit after it.
      */
-    AuthorId verifyForWrite(String presented, String tool, String requestId, String argumentsDigest);
+    AuthorId verifyForWrite(String presented, ToolCall call, String requestId);
 }

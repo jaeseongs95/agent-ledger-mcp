@@ -33,14 +33,8 @@ class ArchitectureTest {
     private static final Path MAIN_JAVA = Path.of("src", "main", "java");
 
     /** ARC-PRN-01 .. 06 (TEST_CASES.md section 25): what this module allows of each rule (key to reason). */
-    private static final String OUTSIDE_A_TOOL_CALL = "ToolScope answers an Optional, and the contract of AttestationVerifier "
-            + "(a parameter may not be an Optional, ARC-PRN-02, and the attestation module and its test doubles read null as "
-            + "'outside a tool call') takes the tool and the digest as text, null when there is none";
-
     private static final Map<String, Map<String, String>> PRINCIPLE_ALLOWED = Map.of(
             PrincipleRules.OR_ELSE_NULL, Map.of(
-                    "WriteGate.java", OUTSIDE_A_TOOL_CALL,
-                    "WhoamiService.java", OUTSIDE_A_TOOL_CALL,
                     "LegacyRowMapper.java", "a mapped row of a legacy table is a map from column to value in which SQL NULL is the "
                             + "value null (the link key of a link without a valid condition, a token column that holds no constant "
                             + "of the new schema): the row is written to a nullable column"));

@@ -4,8 +4,8 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import org.pgledger.application.gate.AttestationVerifier;
+import org.pgledger.application.gate.ToolCall;
 import org.pgledger.database.repository.GrantStateRepository;
-import org.pgledger.domain.context.ToolScope;
 import org.pgledger.domain.model.SessionGrant;
 import org.pgledger.domain.rule.Channel;
 import org.springframework.stereotype.Service;
@@ -47,9 +47,8 @@ public class WhoamiService {
      *        the error of the gate, so a session finds out here why it cannot write.
      */
     public Whoami whoami(String actor, Channel channel) {
-        // outside a tool call there is no tool and no digest: the contract of AttestationVerifier says null for that
-        return switch (attestation.prove(actor, ToolScope.current().orElse(null), "",
-                ToolScope.argumentsDigest().orElse(null))) {
+        // outside a tool call there is no tool and no digest: that is the call ToolCall.Outside, which matches nothing signed
+        return switch (attestation.prove(actor, ToolCall.current(), "")) {
             case AttestationVerifier.Proof.MalformedAuthor malformed ->
                 new Whoami(malformed.text(), false, channel.mayVerify(), channel.login(), List.of());
             case AttestationVerifier.Proof.Proven proven -> {
