@@ -79,7 +79,7 @@ public class McpCheckCommand implements Command {
         this.messages = messages;
     }
 
-    /** The address the MCP server binds to by default (see its {@code server.address}): loopback, the MCP port of the install defaults. */
+    /** The address the MCP server binds to by default (the server listens on {@code 127.0.0.1} only, see {@code LoopbackOnly} of the MCP server): loopback, the MCP port of the install defaults. */
     private String defaultUrl() {
         return "http://127.0.0.1:" + defaults.mcpPort() + DEFAULT_PATH;
     }

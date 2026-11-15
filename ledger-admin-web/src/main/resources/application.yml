@@ -9,8 +9,8 @@ spring:
   # A deployment reads the registration of the JDBC driver and the secrets through spring.config.import, set by the
   # service unit (for example optional:file:/etc/pg-ledger-mcp/jdbc-driver.yaml and optional:configtree:/etc/pg-ledger-mcp/secrets/).
 server:
-  # the admin is reached through the reverse proxy of the host, never directly from another machine
-  address: 127.0.0.1
+  # The admin web listens on 127.0.0.1 only: LoopbackOnly sets the address in code, so there is no setting for it. Reaching it from
+  # another machine is a reverse proxy of the operator on this host.
   port: 8865
   # The reverse proxy on this host tells the original scheme and client address (X-Forwarded-Proto, X-Forwarded-For).
   # Tomcat believes these headers only from its internal proxies, and Boot's default list of them trusts every private

@@ -20,8 +20,8 @@ spring:
         annotation-scanner:
           enabled: false
 server:
-  # the server is reached through the reverse proxy of the host, never directly from another machine
-  address: 127.0.0.1
+  # The server listens on 127.0.0.1 only: LoopbackOnly sets the address in code, so there is no setting for it. Reaching it from
+  # another machine is a reverse proxy of the operator on this host.
   port: 8765
 management:
   endpoints:
