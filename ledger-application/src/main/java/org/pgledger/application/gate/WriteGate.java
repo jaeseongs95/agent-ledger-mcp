@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
 /**
  * Decides whether a write may start. The order is fixed: a verification through the author channel, the host
  * attestation (present; a signed token with an author of the right format; the signature under the live key of the
- * author, which is read and not locked; the tool, request id and arguments digest of the call; the time
+ * author, which is read and not locked; the tool, operation key and arguments digest of the call; the time
  * window), the project, the grant. The attestation is
  * checked by the {@link AttestationVerifier}: nothing is looked up for a caller that cannot prove its author, and the
  * grant is only asked for the author the signature proves. The grant check is a conditional UPDATE in the
@@ -42,10 +42,10 @@ public class WriteGate {
      * Runs the checks and returns the trusted session.
      *
      * @param actor     the host attestation as the caller sent it
-     * @param requestId the request id the attestation must be bound to (the request id of the call; of a batch, the one
-     *                  of the whole batch), as the caller sent it
+     * @param operationKey the operation key the attestation must be bound to (the key of the call; of a batch, the one
+     *                     of the whole batch), as the caller sent it
      */
-    public GateSession open(String actor, String requestId, Channel channel, Lookup lookup) {
+    public GateSession open(String actor, String operationKey, Channel channel, Lookup lookup) {
         // a verification through the author channel is refused first, so it is looked up first (once)
         Optional<Resolution> early = !channel.mayVerify() && lookup.mayVerify() ? Optional.of(lookup.find().get())
                 : Optional.empty();
@@ -55,7 +55,7 @@ public class WriteGate {
             }
         });
         // outside a tool call there is no tool and no digest: that is the call ToolCall.Outside, which matches nothing signed
-        AuthorId author = attestation.verifyForWrite(actor, ToolCall.current(), requestId);
+        AuthorId author = attestation.verifyForWrite(actor, ToolCall.current(), operationKey);
         Resolution resolution = early.orElseGet(lookup.find());
         return switch (resolution) {
             case Resolution.Unresolved unresolved -> throw unresolved.failure();
@@ -77,7 +77,8 @@ public class WriteGate {
      * for every write (signed token, live key of the author, bound to the tool and the arguments, inside the time window; the key
      * is held until the transaction ends), and the author needs at least one live grant. Which project the evidence is for is not
      * known when it is uploaded; the record that points to it is a write of its own and passes its own gate. The call carries no
-     * request id: its attestation is signed with an empty one.
+     * operation key in its claim (the begin has its own {@code operationKey}, which the digest of the arguments covers): its
+     * attestation is signed with an empty one.
      */
     public GateSession openWithAnyGrant(String actor, Channel channel) {
         AuthorId author = attestation.verifyForWrite(actor, ToolCall.current(), "");

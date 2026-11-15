@@ -25,13 +25,13 @@ class BatchRollbackTest {
     void bat03_allOrNothing(Scenario s) {
         SaveResult existing = s.newDefect("existing");
         String actor = s.actorWith("defect");
-        String requestId = Scenario.uuid();
+        String operationKey = Scenario.uuid();
         List<BatchOpInput> ops = List.of(
-                new BatchOpInput.Save("defect", Fields.of(s.defectFields("created by the batch")), Scenario.REASON, null, null,
+                new BatchOpInput.Save("defect", Fields.of(s.defectFields("created by the batch")), Scenario.REASON, null,
                         null),
                 new BatchOpInput.Transition("defect", existing.id(), 9L, "DISPUTED", Scenario.REASON,
-                        Scenario.EVIDENCE, null, null, null, null));
-        LedgerException e = Expect.failure(() -> s.bean(BatchService.class).batch(actor, requestId, ops),
+                        Scenario.EVIDENCE, null, null, null));
+        LedgerException e = Expect.failure(() -> s.bean(BatchService.class).batch(actor, operationKey, ops),
                 ConflictCode.VERSION_CONFLICT);
         assertThat(e.details()).containsAllEntriesOf(Map.of("op_index", List.of("2"), "op", List.of("transition")));
         assertThat(s.count("SELECT COUNT(*) FROM defect WHERE project_id = ?", s.projectId())).isEqualTo(1);

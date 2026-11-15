@@ -214,7 +214,7 @@ class SaveTest {
     @MethodSource("keysOfAnotherEntity")
     @DisplayName("SVC-SAV-10: a key that belongs to another entity is refused and named")
     void sav10_keyOfAnotherEntity(String key, Scenario s) {
-        SaveCommand command = new SaveCommand(null, "defect", null, 0L, Fields.of(with(s.defectFields("d"), key, "x")),
+        SaveCommand command = new SaveCommand(Scenario.uuid(), "defect", null, 0L, Fields.of(with(s.defectFields("d"), key, "x")),
                 Scenario.REASON);
         ValidationException e = (ValidationException) Expect.failure(
                 () -> s.bean(SaveService.class).save(Scenario.AUTHOR, command), ValidationCode.VALIDATION_FAILED);
@@ -228,7 +228,7 @@ class SaveTest {
         String ops = "[{\"op\":\"save\",\"entity\":\"defect\",\"fields\":{\"title\":\"t\",\"status\":\"X\"},"
                 + "\"reason\":\"a reason that is long enough\"}]";
         ValidationException e = (ValidationException) Expect.failure(
-                () -> s.bean(BatchService.class).batch(Scenario.AUTHOR, null, ops), ValidationCode.VALIDATION_FAILED);
+                () -> s.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(), ops), ValidationCode.VALIDATION_FAILED);
         assertThat(e.issues().get(0).path()).startsWith("ops[0].fields");
         assertThat(s.count("SELECT COUNT(*) FROM defect WHERE project_id = ?", s.projectId())).isZero();
     }
@@ -292,7 +292,7 @@ class SaveTest {
         String id = Scenario.uuid();
         Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR, new SaveCommand(id, "defect", null, 0L,
                 Fields.of(s.defectFields("d")), "r".repeat(length))), ValidationCode.REASON_INVALID);
-        assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE request_id = ?", id)).isZero();
+        assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ?", id)).isZero();
     }
 
     /** A create with one field too long. */

@@ -44,7 +44,7 @@ import org.pgledger.domain.rule.HistoryOp;
 import org.pgledger.domain.rule.RelationEnd;
 import org.pgledger.domain.value.JsonDocument;
 import org.pgledger.domain.value.ImportedActorId;
-import org.pgledger.domain.value.RequestId;
+import org.pgledger.domain.value.OperationKey;
 
 /** MCR-G01 .. MCR-G07, MCR-D01 .. MCR-D05, MCR-T01, MCR-T02 and the read side of SVC-CAS-12 .. -14, SVC-FIX-11, -12. */
 @LedgerServiceTest
@@ -134,13 +134,13 @@ class ReadDetailTest {
         SaveResult other = s.newDefect("other");
         SaveResult t = s.newTask("t");
         SaveResult c = s.newCondition("1", "r", "c");
-        s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(null, "defect_task", d.id(), t.id(),
+        s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(Scenario.uuid(), "defect_task", d.id(), t.id(),
                 Scenario.REASON, null));
-        s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(null, "condition_defect", c.id(), d.id(),
+        s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(Scenario.uuid(), "condition_defect", c.id(), d.id(),
                 Scenario.REASON, null));
-        s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(null, "blocks", other.id(), d.id(),
+        s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(Scenario.uuid(), "blocks", other.id(), d.id(),
                 Scenario.REASON, null));
-        s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(null, d.id(), "seen",
+        s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(Scenario.uuid(), d.id(), "seen",
                 Scenario.REASON, "log", "quote", "2026-11-05T09:00:00Z"));
         s.fix(Scenario.AUTHOR, d.id(), Scenario.commit('a'));
         DefectDetail detail = s.bean(DetailService.class).defect(d.id());
@@ -168,9 +168,9 @@ class ReadDetailTest {
     void d02_mergedCases(Scenario s) {
         SaveResult d3 = s.newDefect("three");
         SaveResult d4 = s.newDefect("four");
-        s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(null, d3.id(), "on three",
+        s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(Scenario.uuid(), d3.id(), "on three",
                 Scenario.REASON, null, null, "2026-11-05T08:00:00Z"));
-        s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(null, d4.id(), "on four",
+        s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(Scenario.uuid(), d4.id(), "on four",
                 Scenario.REASON, null, null, "2026-11-05T09:00:00Z"));
         MergeFixture.merge(s, d4.id(), 1, d3.id());
         List<CaseView> cases = s.bean(DetailService.class).defect(d3.id()).cases();
@@ -183,8 +183,8 @@ class ReadDetailTest {
     @DisplayName("MCR-D02 / SVC-CAS-13: a merge chain of 50 defects terminates and lists every one")
     void d02_chainOfFifty(Scenario s) {
         List<BatchOpInput> ops = IntStream.rangeClosed(1, 50).mapToObj(i -> (BatchOpInput) new BatchOpInput.Save(
-                "defect", Fields.of(s.defectFields("chain " + i)), Scenario.REASON, null, null, null)).toList();
-        s.bean(BatchService.class).batch(Scenario.AUTHOR, null, ops);
+                "defect", Fields.of(s.defectFields("chain " + i)), Scenario.REASON, null, null)).toList();
+        s.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(), ops);
         IntStream.iterate(50, k -> k >= 2, k -> k - 1).forEach(k -> MergeFixture.merge(s, s.defectId(k), 1,
                 s.defectId(k - 1)));
         List<CaseView> cases = s.bean(DetailService.class).defect(s.defectId(1)).cases();
@@ -199,7 +199,7 @@ class ReadDetailTest {
         SaveResult d3 = s.newDefect("three");
         SaveResult d4 = s.newDefect("four");
         for (SaveResult d : List.of(d2, d3, d4)) {
-            s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(null, d.id(),
+            s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(Scenario.uuid(), d.id(),
                     "on " + d.id(), Scenario.REASON, null, null, null));
         }
         MergeFixture.merge(s, d4.id(), 1, d3.id());
@@ -215,7 +215,7 @@ class ReadDetailTest {
     @DisplayName("SVC-CAS-14: a case keeps evidence, quote and the observed instant, and names its recorder")
     void cas14_caseFields(Scenario s) {
         SaveResult d = s.newDefect("d");
-        s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(null, d.id(), "seen",
+        s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(Scenario.uuid(), d.id(), "seen",
                 Scenario.REASON, "log line", "said so", "2026-11-05T18:00:00+09:00"));
         CaseView c = s.bean(DetailService.class).defect(d.id()).cases().getFirst();
         assertThat(c.evidence()).isEqualTo("log line");
@@ -233,7 +233,7 @@ class ReadDetailTest {
                 Instant.parse("2027-01-01T00:00:00Z"), new ImportedActorId("claude:old"), "ledger_author",
                 ActorAssurance.IMPORTED_LOGIN, HistoryEntity.DEFECT, d.id(), HistoryOp.IMPORT, null, null,
                 JsonDocument.EMPTY_OBJECT, null, "imported by a migration", null, null, null,
-                new RequestId(java.util.UUID.randomUUID()), "import-1")));
+                new OperationKey(Scenario.uuid()), "import-1")));
         DefectDetail detail = s.bean(DetailService.class).defect(d.id());
         assertThat(detail.lastChange().op()).isEqualTo("CREATE");
         assertThat(detail.recentChanges()).extracting(DetailService.ChangeSummary::op).contains("IMPORT");
@@ -275,9 +275,9 @@ class ReadDetailTest {
         SaveResult t = s.bean(SaveService.class).save(Scenario.AUTHOR, s.create("task", null, fields));
         SaveResult d = s.newDefect("d");
         SaveResult c = s.newCondition("1", "r", "c");
-        s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(null, "defect_task", d.id(), t.id(),
+        s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(Scenario.uuid(), "defect_task", d.id(), t.id(),
                 Scenario.REASON, null));
-        s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(null, "condition_task", c.id(), t.id(),
+        s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(Scenario.uuid(), "condition_task", c.id(), t.id(),
                 Scenario.REASON, null));
         s.bean(TransitionService.class).transition(Scenario.AUTHOR, s.move("task", t.id(), 1, "REPORTED_DONE",
                 Scenario.EVIDENCE));

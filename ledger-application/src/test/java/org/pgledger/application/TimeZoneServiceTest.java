@@ -53,7 +53,7 @@ class TimeZoneServiceTest {
             LedgerTestRunners.inZone("Asia/Seoul", seoul -> {
                 Scenario s = new Scenario(seoul);
                 SaveResult d = s.newDefect("d");
-                s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR, new RecordFixCommand(null, d.id(), "repo/e2e",
+                s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR, new RecordFixCommand(Scenario.uuid(), d.id(), "repo/e2e",
                         Scenario.commit('a'), Scenario.REASON, null, "ci", "success", "2026-11-05T19:00:00+09:00",
                         null));
                 assertThat(s.defect(d.id()).createdAt()).isEqualTo(NOON);
@@ -113,14 +113,14 @@ class TimeZoneServiceTest {
         return List.of(
                 new TimedField("observed_at", (s, text) -> {
                     SaveResult d = s.newDefect("d");
-                    s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(null, d.id(),
+                    s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(Scenario.uuid(), d.id(),
                             "seen", Scenario.REASON, null, null, text));
                     return s.bean(DefectCaseRepository.class).findByDefectIdOrderById(DefectId.of(d.id())).getFirst()
                             .observedAt();
                 }),
                 new TimedField("ci_completed_at", (s, text) -> {
                     SaveResult d = s.newDefect("d");
-                    s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR, new RecordFixCommand(null, d.id(),
+                    s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR, new RecordFixCommand(Scenario.uuid(), d.id(),
                             "repo/e2e", Scenario.commit('a'), Scenario.REASON, null, "ci", "success", text, null));
                     return s.bean(DefectFixRepository.class).findByDefectIdAndRepoAndCommitSha(DefectId.of(d.id()),
                             "repo/e2e", CommitSha.of(Scenario.commit('a'))).orElseThrow().ciCompletedAt();

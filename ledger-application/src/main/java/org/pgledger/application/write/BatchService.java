@@ -13,15 +13,15 @@ import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.model.BatchOpKind;
 import org.pgledger.domain.rule.Channel;
-import org.pgledger.domain.value.RequestId;
+import org.pgledger.domain.value.OperationKey;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Up to 200 write operations in one transaction: they all commit or none does. Every operation runs through the
  * same steps as its single tool (gate, grants, reason, receipt, business rules) through the author channel, so a
- * verification cannot be part of a batch. An operation without its own request id gets one derived from the batch
- * request id and its position, so sending the same batch again returns the stored results instead of writing
+ * verification cannot be part of a batch. The batch has one operation key; every operation gets a key derived from the
+ * key of the batch and its position, so sending the same batch again returns the stored results instead of writing
  * twice. A failure names the operation (details {@code op_index}, 1-based, and {@code op}) and rolls everything back.
  */
 @Service
@@ -51,22 +51,22 @@ public class BatchService {
     }
 
     /** Reads the {@code ops} array of a batch from JSON text, then runs {@link #batch}. */
-    public BatchResult batch(String actor, String requestId, String opsJson) {
-        return batch(actor, requestId, json.readInputList("ops", opsJson, BatchOpInput.class));
+    public BatchResult batch(String actor, String operationKey, String opsJson) {
+        return batch(actor, operationKey, json.readInputList("ops", opsJson, BatchOpInput.class));
     }
 
-    public BatchResult batch(String actor, String requestId, List<BatchOpInput> ops) {
+    public BatchResult batch(String actor, String operationKey, List<BatchOpInput> ops) {
         if (ops == null || ops.isEmpty() || ops.size() > BatchOpKind.MAX_OPS_PER_BATCH) {
             throw ValidationException.invalid("ops", ValidationReason.MUST_HOLD_ITEMS, "1", String.valueOf(BatchOpKind.MAX_OPS_PER_BATCH));
         }
-        RequestId batchId = WriteOperation.requestIdOrFresh(requestId);
+        OperationKey batchKey = OperationKey.parse(operationKey);
         List<WriteResult> results = new ArrayList<>();
         for (int i = 0; i < ops.size(); i++) {
             BatchOpInput op = ops.get(i);
-            String opRequestId = op.requestId() != null ? op.requestId() : batchId.derive(i).toString();
+            String opKey = batchKey.derive(i).toString();
             try {
                 requireKeys(op, i);
-                results.add(run(actor, requestId, op, opRequestId));
+                results.add(run(actor, operationKey, op, opKey));
             } catch (LedgerException failure) {
                 throw failure.withDetails(Map.of("op_index", List.of(Integer.toString(i + 1)),
                         "op", List.of(kind(op).token())));
@@ -98,23 +98,23 @@ public class BatchService {
         };
     }
 
-    /** {@code boundRequestId} is the request id of the whole batch as the caller sent it: what the attestation is bound to. */
-    private WriteResult run(String actor, String boundRequestId, BatchOpInput op, String id) {
+    /** {@code boundKey} is the operation key of the whole batch as the caller sent it: what the attestation is bound to. */
+    private WriteResult run(String actor, String boundKey, BatchOpInput op, String id) {
         return switch (op) {
-            case BatchOpInput.Save s -> save.run(actor, boundRequestId, Channel.AUTHOR,
+            case BatchOpInput.Save s -> save.run(actor, boundKey, Channel.AUTHOR,
                     new SaveCommand(id, s.entity(), s.id(), s.expectedVersion(), s.fields(), s.reason()));
-            case BatchOpInput.Transition t -> transition.run(actor, boundRequestId, Channel.AUTHOR,
+            case BatchOpInput.Transition t -> transition.run(actor, boundKey, Channel.AUTHOR,
                     new TransitionCommand(id, t.entity(), t.id(), t.expectedVersion(), t.to(), t.reason(),
                             t.evidenceUri(), t.evidenceSha256(), t.mergedInto(), t.attachmentId()));
-            case BatchOpInput.RecordFix f -> recordFix.run(actor, boundRequestId, Channel.AUTHOR,
+            case BatchOpInput.RecordFix f -> recordFix.run(actor, boundKey, Channel.AUTHOR,
                     new RecordFixCommand(id, f.defectId(), f.repo(), f.commitSha(), f.reason(), f.branch(),
                             f.ciRef(), f.ciConclusion(), f.ciCompletedAt(), f.markSourceFixed(), f.attachmentId()));
-            case BatchOpInput.RecordCase c -> recordCase.run(actor, boundRequestId, Channel.AUTHOR,
+            case BatchOpInput.RecordCase c -> recordCase.run(actor, boundKey, Channel.AUTHOR,
                     new RecordCaseCommand(id, c.defectId(), c.observation(), c.reason(), c.evidence(),
                             c.userQuote(), c.observedAt(), c.attachmentId()));
-            case BatchOpInput.Link l -> link.run(actor, boundRequestId, Channel.AUTHOR,
+            case BatchOpInput.Link l -> link.run(actor, boundKey, Channel.AUTHOR,
                     new LinkCommand(id, l.kind(), l.a(), l.b(), l.reason(), l.remove()));
-            case BatchOpInput.Correct c -> correct.run(actor, boundRequestId, Channel.AUTHOR,
+            case BatchOpInput.Correct c -> correct.run(actor, boundKey, Channel.AUTHOR,
                     new CorrectCommand(id, c.historyId(), c.reason(), c.attachmentId()));
         };
     }

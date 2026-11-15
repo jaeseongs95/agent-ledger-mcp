@@ -49,7 +49,7 @@ import org.springframework.stereotype.Component;
  * is decided by that statement (VERSION_CONFLICT) and the state check and the fix insert see the same defect (no write
  * skew); an OPEN defect moves to SOURCE_FIXED in the same
  * transaction unless told not to, and recording a new fix commit makes the recording session the owner.
- * Recording a fix on a MERGED defect is allowed, as the old function allowed it.
+ * Recording a fix on a MERGED defect is allowed.
  */
 @Component
 public class RecordFixOperation extends WriteOperation<RecordFixCommand, RecordFixResult> {

@@ -57,7 +57,7 @@ import org.pgledger.domain.value.ConditionId;
 import org.pgledger.domain.value.JsonDocument;
 import org.pgledger.domain.value.ImportedActorId;
 import org.pgledger.domain.value.PageCursor;
-import org.pgledger.domain.value.RequestId;
+import org.pgledger.domain.value.OperationKey;
 import org.pgledger.domain.error.ValidationCode;
 
 /**
@@ -76,7 +76,7 @@ class PrinciplesTest {
                 Instant.parse("2027-01-01T00:00:00Z"), new ImportedActorId(IMPORTED_AUTHOR), "ledger_author",
                 ActorAssurance.IMPORTED_LOGIN, HistoryEntity.TASK, taskId, HistoryOp.TRANSITION, from, to,
                 JsonDocument.EMPTY_OBJECT, null, "imported by a migration", null, null, null,
-                new RequestId(UUID.randomUUID()), "import-" + UUID.randomUUID())));
+                new OperationKey(UUID.randomUUID().toString()), "import-" + UUID.randomUUID())));
     }
 
     // --------------------------------------------------------------------------------------------------- F1
@@ -233,7 +233,7 @@ class PrinciplesTest {
     @DisplayName("SVC-PRN-10: a required key that is missing (or JSON null) is REQUIRED on its path in the request, the failure names the operation, and nothing is written")
     void prn10_missingKey(String operation, String path, String op, Scenario s) {
         ValidationException refused = (ValidationException) Expect.failure(() -> s.bean(BatchService.class)
-                .batch(Scenario.AUTHOR, null, "[" + operation + "]"), ValidationCode.VALIDATION_FAILED);
+                .batch(Scenario.AUTHOR, Scenario.uuid(), "[" + operation + "]"), ValidationCode.VALIDATION_FAILED);
 
         assertThat(refused.issues().getFirst().path()).isEqualTo(path);
         assertThat(refused.issues().getFirst().reason()).isEqualTo(ValidationReason.REQUIRED);
@@ -247,7 +247,7 @@ class PrinciplesTest {
     void prn11_receiptIntegrity(Scenario s) {
         ReceiptService receipts = s.bean(ReceiptService.class);
         Expect.failure(() -> s.ctx().tx(() -> {
-            receipts.finish(new RequestId(UUID.randomUUID()), Map.of());
+            receipts.finish(new OperationKey(UUID.randomUUID().toString()), Map.of());
             return null;
         }), InfrastructureCode.INTEGRITY_VIOLATION);
     }

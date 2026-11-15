@@ -8,7 +8,7 @@ import org.pgledger.domain.error.ValidationReason;
  * field values are texts; a key that is written with a null or blank value clears an optional field, a key that is
  * left out is not touched ({@link FieldsInput}).
  */
-public record SaveCommand(String requestId, String entity, String id, Long expectedVersion,
+public record SaveCommand(String operationKey, String entity, String id, Long expectedVersion,
         FieldsInput fields, String reason) implements WriteCommand {
 
     /**

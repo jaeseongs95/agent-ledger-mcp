@@ -76,20 +76,20 @@ class NormTest {
                 }, "SELECT COUNT(*) FROM release_condition WHERE project_id = ? AND goal_label IS NULL"),
                 new Blank("case evidence and user_quote", s -> {
                     SaveResult d = s.newDefect("d");
-                    s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(null, d.id(),
+                    s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(Scenario.uuid(), d.id(),
                             "seen", Scenario.REASON, " ", "", null));
                     return d.id();
                 }, "SELECT COUNT(*) FROM defect_case WHERE defect_id = ? AND evidence IS NULL AND user_quote IS NULL"),
                 new Blank("fix branch and ci_ref", s -> {
                     SaveResult d = s.newDefect("d");
-                    s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR, new RecordFixCommand(null, d.id(),
+                    s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR, new RecordFixCommand(Scenario.uuid(), d.id(),
                             "repo/e2e", Scenario.commit('a'), Scenario.REASON, "  ", "", "", "", null));
                     return d.id();
                 }, "SELECT COUNT(*) FROM defect_fix WHERE defect_id = ? AND branch IS NULL AND ci_ref IS NULL "
                         + "AND ci_conclusion IS NULL"),
                 new Blank("transition evidence_sha256 and merged_into", s -> {
                     SaveResult d = s.newDefect("d");
-                    s.bean(TransitionService.class).transition(Scenario.AUTHOR, new TransitionCommand(null, "defect",
+                    s.bean(TransitionService.class).transition(Scenario.AUTHOR, new TransitionCommand(Scenario.uuid(), "defect",
                             d.id(), 1L, "DISPUTED", Scenario.REASON, Scenario.EVIDENCE, " ", " "));
                     return d.id();
                 }, "SELECT COUNT(*) FROM history WHERE entity = 'DEFECT' AND entity_id = ? AND op = 'TRANSITION' "
@@ -115,7 +115,7 @@ class NormTest {
     void norm01_conclusionNeedsAReference(Scenario s) {
         SaveResult d = s.newDefect("d");
         ValidationException e = (ValidationException) Expect.failure(() -> s.bean(RecordFixService.class).recordFix(
-                Scenario.AUTHOR, new RecordFixCommand(null, d.id(), "repo/e2e", Scenario.commit('a'), Scenario.REASON,
+                Scenario.AUTHOR, new RecordFixCommand(Scenario.uuid(), d.id(), "repo/e2e", Scenario.commit('a'), Scenario.REASON,
                         null, "   ", "success", null, null)), ValidationCode.VALIDATION_FAILED);
         assertThat(e.issues().get(0).path()).isEqualTo("ci_ref");
     }
@@ -147,13 +147,13 @@ class NormTest {
                         s.create("condition", s.conditionId("1"), with(s.conditionFields("r", "c"), "code", " "))),
                         ValidationCode.VALIDATION_FAILED, "condition_code"),
                 new Required("case observation", s -> s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR,
-                        new RecordCaseCommand(null, s.newDefect("d").id(), "   ", Scenario.REASON, null, null, null)),
+                        new RecordCaseCommand(Scenario.uuid(), s.newDefect("d").id(), "   ", Scenario.REASON, null, null, null)),
                         ValidationCode.VALIDATION_FAILED, "observation"),
                 new Required("fix repo", s -> s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR,
-                        new RecordFixCommand(null, s.newDefect("d").id(), " ", Scenario.commit('a'), Scenario.REASON,
+                        new RecordFixCommand(Scenario.uuid(), s.newDefect("d").id(), " ", Scenario.commit('a'), Scenario.REASON,
                                 null, null, null, null, null)), ValidationCode.VALIDATION_FAILED, "repo"),
                 new Required("reason", s -> s.bean(SaveService.class).save(Scenario.AUTHOR,
-                        new SaveCommand(null, "defect", null, 0L, Fields.of(s.defectFields("d")), "          ")),
+                        new SaveCommand(Scenario.uuid(), "defect", null, 0L, Fields.of(s.defectFields("d")), "          ")),
                         ValidationCode.REASON_INVALID, "reason"));
     }
 
@@ -171,7 +171,7 @@ class NormTest {
     @DisplayName("SVC-NORM-03: a blank evidence_uri equals none")
     void norm03_blankEvidence(Scenario s) {
         SaveResult d = s.sourceFixedDefect("d");
-        Expect.failure(() -> s.bean(ReviewService.class).review(Scenario.REVIEWER, new TransitionCommand(null,
+        Expect.failure(() -> s.bean(ReviewService.class).review(Scenario.REVIEWER, new TransitionCommand(Scenario.uuid(),
                 "defect", d.id(), 2L, "VERIFIED", Scenario.REASON, "   ", null, null)),
                 TransitionCode.EVIDENCE_REQUIRED);
     }

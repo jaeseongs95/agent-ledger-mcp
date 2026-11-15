@@ -1,6 +1,5 @@
 package org.pgledger.application.write;
 
-import java.util.UUID;
 import java.util.function.Function;
 import org.pgledger.application.gate.GateSession;
 import org.pgledger.application.gate.Lookup;
@@ -10,7 +9,7 @@ import org.pgledger.domain.model.ReceiptOperation;
 import org.pgledger.domain.rule.Channel;
 import org.pgledger.domain.value.CanonicalPayload;
 import org.pgledger.domain.value.Reason;
-import org.pgledger.domain.value.RequestId;
+import org.pgledger.domain.value.OperationKey;
 import org.pgledger.domain.value.Sha256;
 
 /**
@@ -50,39 +49,32 @@ public abstract class WriteOperation<C extends WriteCommand, R extends WriteResu
      * called inside a transaction.
      */
     public final R run(String actor, Channel channel, C command) {
-        return run(actor, command.requestId(), channel, command);
+        return run(actor, command.operationKey(), channel, command);
     }
 
     /**
      * As {@link #run(String, Channel, WriteCommand)}, for an operation of a batch: the attestation of the call is bound
-     * to {@code boundRequestId}, the request id of the whole batch, while the operation has a request id of its own.
+     * to {@code boundOperationKey}, the operation key of the whole batch, while the operation has a key of its own
+     * (derived from the key of the batch and its position).
      */
-    public final R run(String actor, String boundRequestId, Channel channel, C command) {
-        GateSession session = gate.open(actor, boundRequestId, channel, resolve(command));
+    public final R run(String actor, String boundOperationKey, Channel channel, C command) {
+        GateSession session = gate.open(actor, boundOperationKey, channel, resolve(command));
         return session.bind(() -> {
             Reason reason = Reason.of(command.reason());
-            RequestId requestId = requestIdOrFresh(command.requestId());
+            OperationKey operationKey = OperationKey.parse(command.operationKey());
             Prepared<R> prepared = prepare(command);
             Sha256 digest = CanonicalPayload.digest(operation.name(),
                     prepared.payload().text("reason", reason.text()));
             // a replay returns the stored response; the first call writes and stores its response in the receipt
-            return switch (receipts.reserve(requestId, operation, digest, session.author(), session.channel(),
+            return switch (receipts.reserve(operationKey, operation, digest, session.author(), session.channel(),
                     resultType)) {
                 case ReceiptService.Reservation.Replayed<R> replayed -> replayed.response();
                 case ReceiptService.Reservation.Reserved<R> reserved -> {
-                    R result = prepared.execute().apply(new WriteContext(session, reason, requestId));
-                    receipts.finish(requestId, result);
+                    R result = prepared.execute().apply(new WriteContext(session, reason, operationKey));
+                    receipts.finish(operationKey, result);
                     yield result;
                 }
             };
         });
-    }
-
-    /**
-     * The request id of a request: the one the caller sent, or a fresh one when it sent none (a blind retry is then a
-     * new write). The one place in this module that issues an id.
-     */
-    static RequestId requestIdOrFresh(String text) {
-        return text == null || text.isBlank() ? new RequestId(UUID.randomUUID()) : RequestId.parse(text);
     }
 }

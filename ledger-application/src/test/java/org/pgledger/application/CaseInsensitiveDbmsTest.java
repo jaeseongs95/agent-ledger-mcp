@@ -92,9 +92,9 @@ class CaseInsensitiveDbmsTest {
             assertThat(history.history(new HistoryQuery(null, null, null, "task", task, null, null, null, null, null,
                     false, 50, null)).items()).hasSize(1);
 
-            Expect.failure(() -> s.bean(TransitionService.class).transition(Scenario.AUTHOR, new TransitionCommand(null,
+            Expect.failure(() -> s.bean(TransitionService.class).transition(Scenario.AUTHOR, new TransitionCommand(Scenario.uuid(),
                     "task", lowerTask, 1L, "ACTIVE", Scenario.REASON, null, null, null)), LookupCode.NOT_FOUND);
-            Expect.failure(() -> s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(null, "condition_task",
+            Expect.failure(() -> s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(Scenario.uuid(), "condition_task",
                     condition, lowerTask, Scenario.REASON, null)), LookupCode.NOT_FOUND);
             Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR, s.create("task", lowerTask,
                     s.taskFields("sibling"))), ConflictCode.DUPLICATE_KEY);

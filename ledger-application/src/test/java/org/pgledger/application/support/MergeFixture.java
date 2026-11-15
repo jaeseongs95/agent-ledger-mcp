@@ -12,7 +12,7 @@ public final class MergeFixture {
 
     /** Moves {@code source} (at {@code version}) to MERGED with {@code target} as the merge target. */
     public static TransitionResult merge(Scenario s, String source, long version, String target) {
-        return s.bean(TransitionService.class).transition(Scenario.AUTHOR, new TransitionCommand(null, "defect",
+        return s.bean(TransitionService.class).transition(Scenario.AUTHOR, new TransitionCommand(Scenario.uuid(), "defect",
                 source, version, "MERGED", Scenario.REASON, null, null, target));
     }
 }

@@ -19,13 +19,14 @@ import org.pgledger.application.write.BatchOpInput;
 import org.pgledger.application.write.BatchService;
 import org.pgledger.application.write.SaveCommand;
 import org.pgledger.application.write.SaveService;
+import org.pgledger.domain.value.OperationKey;
 import org.pgledger.testing.TestOwners;
 
 /**
  * SVC-DIG-01: the receipt digest of representative saves, pinned. The expected digests were computed on the code before
  * the save input became a record of patches (the input was a map of texts); the same request has to give the same digest
  * after it, because a stored receipt is compared with the digest of a retried request. The project, the ids and the
- * request ids are fixed, so a digest does not depend on the order of the tests or on the project counter.
+ * operation keys are fixed, so a digest does not depend on the order of the tests or on the project counter.
  */
 @LedgerServiceTest
 class SaveDigestTest {
@@ -33,7 +34,7 @@ class SaveDigestTest {
     private static final String PROJECT = "digpin";
     private static final String CODE = "DIGP";
 
-    /** The expected digest by request id: what the code before the input records computed. */
+    /** The expected digest by operation key: what the code before the input records computed. */
     private static final Map<String, String> PINNED = new LinkedHashMap<>();
 
     private static final String CREATE_DEFECT = "00000000-0000-4000-8000-0000000000a1";
@@ -45,7 +46,9 @@ class SaveDigestTest {
     private static final String CLEAR_OWNER_BLANK = "00000000-0000-4000-8000-0000000000a6";
     private static final String EDIT_TASK_PROJECT = "00000000-0000-4000-8000-0000000000a7";
     private static final String CLEAR_ORIGIN = "00000000-0000-4000-8000-0000000000a8";
-    private static final String BATCH_SAVE = "00000000-0000-4000-8000-0000000000a9";
+    private static final String BATCH_KEY = "00000000-0000-4000-8000-0000000000ff";
+    /** An operation of a batch has no key of its own: its key is derived from the key of the batch and its position. */
+    private static final String BATCH_SAVE = OperationKey.parse(BATCH_KEY).derive(0).toString();
 
     static {
         PINNED.put(CREATE_DEFECT, "06406bad7cc83a3702801fd9c5c3f55e4e80de7b86110e683acd052c433f48d0");
@@ -68,9 +71,9 @@ class SaveDigestTest {
         return fields;
     }
 
-    private static SaveCommand save(String requestId, String entity, String id, Long version,
+    private static SaveCommand save(String operationKey, String entity, String id, Long version,
             Map<String, String> fields) {
-        return new SaveCommand(requestId, entity, id, version, Fields.of(fields), Scenario.REASON);
+        return new SaveCommand(operationKey,entity, id, version, Fields.of(fields), Scenario.REASON);
     }
 
     @Test
@@ -102,20 +105,20 @@ class SaveDigestTest {
         saves.save(Scenario.AUTHOR, save(EDIT_TASK_PROJECT, "task", CODE + "-T-0001", 1L,
                 fields("project_id", PROJECT, "purpose", "edited purpose")));
         saves.save(Scenario.AUTHOR, save(CLEAR_ORIGIN, "task", CODE + "-T-0001", 2L, fields("origin_ref", null)));
-        s.bean(BatchService.class).batch(Scenario.AUTHOR, "00000000-0000-4000-8000-0000000000ff",
+        s.bean(BatchService.class).batch(Scenario.AUTHOR, BATCH_KEY,
                 List.of(new BatchOpInput.Save("defect", Fields.of(fields("project_id", PROJECT, "title", "batch defect",
                         "category", "ARC", "severity", "P2", "behavior", "b", "root_cause", "c")), Scenario.REASON,
-                        CODE + "-D-0002", 0L, BATCH_SAVE)));
+                        CODE + "-D-0002", 0L)));
 
         SoftAssertions digests = new SoftAssertions();
-        PINNED.forEach((requestId, expected) -> digests.assertThat(digest(s, requestId)).as(requestId)
+        PINNED.forEach((operationKey, expected) -> digests.assertThat(digest(s, operationKey)).as(operationKey)
                 .isEqualTo(expected));
         digests.assertAll();
         assertThat(PINNED).hasSize(10);
     }
 
-    private static String digest(Scenario s, String requestId) {
-        return s.ctx().jdbc().sql("SELECT payload_sha256 FROM request_receipt WHERE request_id = :id")
-                .param("id", requestId).query(String.class).single();
+    private static String digest(Scenario s, String operationKey) {
+        return s.ctx().jdbc().sql("SELECT payload_sha256 FROM request_receipt WHERE operation_key = :id")
+                .param("id", operationKey).query(String.class).single();
     }
 }

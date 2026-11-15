@@ -24,37 +24,33 @@ public sealed interface BatchOpInput {
     /** The message template of every required key: the reason REQUIRED. */
     String REQUIRED = "{reason.REQUIRED}";
 
-    /** The operation's own request id, or null (the batch derives one). */
-    String requestId();
-
     record Save(@NotNull(message = REQUIRED) String entity, @NotNull(message = REQUIRED) FieldsInput fields,
-            @NotNull(message = REQUIRED) String reason, String id, Long expectedVersion, String requestId)
-            implements BatchOpInput {
+            @NotNull(message = REQUIRED) String reason, String id, Long expectedVersion) implements BatchOpInput {
     }
 
     record Transition(@NotNull(message = REQUIRED) String entity, @NotNull(message = REQUIRED) String id,
             @NotNull(message = REQUIRED) Long expectedVersion, @NotNull(message = REQUIRED) String to,
             @NotNull(message = REQUIRED) String reason, String evidenceUri, String evidenceSha256, String mergedInto,
-            String attachmentId, String requestId) implements BatchOpInput {
+            String attachmentId) implements BatchOpInput {
     }
 
     record RecordFix(@NotNull(message = REQUIRED) String defectId, @NotNull(message = REQUIRED) String repo,
             @NotNull(message = REQUIRED) String commitSha, @NotNull(message = REQUIRED) String reason, String branch,
-            String ciRef, String ciConclusion, String ciCompletedAt, Boolean markSourceFixed, String attachmentId,
-            String requestId) implements BatchOpInput {
+            String ciRef, String ciConclusion, String ciCompletedAt, Boolean markSourceFixed, String attachmentId)
+            implements BatchOpInput {
     }
 
     record RecordCase(@NotNull(message = REQUIRED) String defectId, @NotNull(message = REQUIRED) String observation,
             @NotNull(message = REQUIRED) String reason, String evidence, String userQuote, String observedAt,
-            String attachmentId, String requestId) implements BatchOpInput {
+            String attachmentId) implements BatchOpInput {
     }
 
     record Link(@NotNull(message = REQUIRED) String kind, @NotNull(message = REQUIRED) String a,
-            @NotNull(message = REQUIRED) String b, @NotNull(message = REQUIRED) String reason, Boolean remove,
-            String requestId) implements BatchOpInput {
+            @NotNull(message = REQUIRED) String b, @NotNull(message = REQUIRED) String reason, Boolean remove)
+            implements BatchOpInput {
     }
 
     record Correct(@NotNull(message = REQUIRED) Long historyId, @NotNull(message = REQUIRED) String reason,
-            String attachmentId, String requestId) implements BatchOpInput {
+            String attachmentId) implements BatchOpInput {
     }
 }

@@ -247,12 +247,12 @@ class FreeTextIdsTest {
         String defect = s.newDefect("d").id();
         String ci2000 = "r".repeat(2000);
         s.bean(org.pgledger.application.write.RecordFixService.class).recordFix(Scenario.AUTHOR,
-                new org.pgledger.application.write.RecordFixCommand(null, defect, "repo/e2e", Scenario.commit('a'),
+                new org.pgledger.application.write.RecordFixCommand(Scenario.uuid(), defect, "repo/e2e", Scenario.commit('a'),
                         Scenario.REASON, null, ci2000, "success", null, null));
         assertThat(s.count("SELECT COUNT(*) FROM defect_fix WHERE defect_id = ? AND ci_ref = ?", defect, ci2000))
                 .isEqualTo(1);
         LedgerException ciTooLong = Expect.failure(() -> s.bean(org.pgledger.application.write.RecordFixService.class)
-                .recordFix(Scenario.AUTHOR, new org.pgledger.application.write.RecordFixCommand(null, defect, "repo/e2e",
+                .recordFix(Scenario.AUTHOR, new org.pgledger.application.write.RecordFixCommand(Scenario.uuid(), defect, "repo/e2e",
                         Scenario.commit('b'), Scenario.REASON, null, "r".repeat(2001), "success", null, null)),
                 ValidationCode.VALIDATION_FAILED);
         assertThat(((ValidationException) ciTooLong).issues().getFirst().reasonArgs()).containsExactly("2000");

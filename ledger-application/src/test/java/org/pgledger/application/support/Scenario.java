@@ -133,20 +133,22 @@ public final class Scenario {
 
     // ------------------------------------------------------------------ commands
 
+    // Every command built here carries a fresh operation key: the server never makes one up (a write needs a key).
+
     public SaveCommand create(String entity, String id, Map<String, String> fields) {
-        return new SaveCommand(null, entity, id, 0L, Fields.of(fields), REASON);
+        return new SaveCommand(uuid(), entity, id, 0L, Fields.of(fields), REASON);
     }
 
     public SaveCommand edit(String entity, String id, long version, Map<String, String> fields) {
-        return new SaveCommand(null, entity, id, version, Fields.of(fields), REASON);
+        return new SaveCommand(uuid(), entity, id, version, Fields.of(fields), REASON);
     }
 
     public TransitionCommand move(String entity, String id, long version, String to, String evidence) {
-        return new TransitionCommand(null, entity, id, version, to, REASON, evidence, null, null);
+        return new TransitionCommand(uuid(), entity, id, version, to, REASON, evidence, null, null);
     }
 
     public RecordFixCommand fixCommand(String defectId, String commit) {
-        return new RecordFixCommand(null, defectId, "repo/e2e", commit, REASON, null, null, null, null, null);
+        return new RecordFixCommand(uuid(), defectId, "repo/e2e", commit, REASON, null, null, null, null, null);
     }
 
     // --------------------------------------------------------------- shortcuts

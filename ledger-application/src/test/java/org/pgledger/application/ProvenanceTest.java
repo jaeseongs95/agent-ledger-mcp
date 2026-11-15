@@ -51,14 +51,14 @@ class ProvenanceTest {
     @DisplayName("SVC-PRV-01: a batch of the first host author stamps every row it creates with that author")
     void prv01_batchProvenance(Created created, Scenario s) {
         SaveResult d1 = s.newDefect("seed one");
-        s.bean(BatchService.class).batch(Scenario.AUTHOR, null, List.of(
-                new BatchOpInput.Save("task", Fields.of(s.taskFields("t")), Scenario.REASON, s.taskId(1), null, null),
+        s.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(), List.of(
+                new BatchOpInput.Save("task", Fields.of(s.taskFields("t")), Scenario.REASON, s.taskId(1), null),
                 new BatchOpInput.Save("condition", Fields.of(s.conditionFields("r", "c")), Scenario.REASON, s.conditionId("1"),
-                        null, null),
-                new BatchOpInput.Save("defect", Fields.of(s.defectFields("second")), Scenario.REASON, null, null, null),
-                new BatchOpInput.Link("defect_task", d1.id(), s.taskId(1), Scenario.REASON, null, null),
-                new BatchOpInput.Link("blocks", d1.id(), s.defectId(2), Scenario.REASON, null, null),
-                new BatchOpInput.Link("condition_task", s.conditionId("1"), s.taskId(1), Scenario.REASON, null,
+                        null),
+                new BatchOpInput.Save("defect", Fields.of(s.defectFields("second")), Scenario.REASON, null, null),
+                new BatchOpInput.Link("defect_task", d1.id(), s.taskId(1), Scenario.REASON, null),
+                new BatchOpInput.Link("blocks", d1.id(), s.defectId(2), Scenario.REASON, null),
+                new BatchOpInput.Link("condition_task", s.conditionId("1"), s.taskId(1), Scenario.REASON,
                         null)));
         assertThat(s.count(created.sql(), s.projectId(), Scenario.AUTHOR)).isPositive();
         assertThat(s.count(created.sql().replace("created_by = ?", "created_by <> ?"), s.projectId(),

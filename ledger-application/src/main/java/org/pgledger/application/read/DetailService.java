@@ -29,7 +29,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * The detail of one defect (what the old defect view showed: fixes, tasks, conditions, the cases of the defect and
+ * The detail of one defect (fixes, tasks, conditions, the cases of the defect and
  * of every defect merged into it, relations, the last change and the recent changes) and of one task.
  */
 @Service

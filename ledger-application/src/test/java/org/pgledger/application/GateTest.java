@@ -119,9 +119,9 @@ class GateTest {
                 }),
                 Named.of("a batch operation", s -> {
                     SaveResult d = s.sourceFixedDefect("d");
-                    s.bean(BatchService.class).batch(Scenario.AUTHOR, null, List.of(new BatchOpInput.Transition(
+                    s.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(), List.of(new BatchOpInput.Transition(
                             "defect", d.id(), 2L, "VERIFIED", Scenario.REASON, Scenario.EVIDENCE, null, null,
-                            null, null)));
+                            null)));
                 }));
     }
 
@@ -192,47 +192,47 @@ class GateTest {
                 new Op("record_case", Scope.DEFECT, s -> {
                     SaveResult d = s.newDefect("g");
                     return a -> s.bean(RecordCaseService.class).recordCase(a,
-                            new RecordCaseCommand(null, d.id(), "seen", Scenario.REASON, null, null, null));
+                            new RecordCaseCommand(Scenario.uuid(), d.id(), "seen", Scenario.REASON, null, null, null));
                 }),
                 new Op("link defect_task", Scope.DEFECT, s -> {
                     SaveResult d = s.newDefect("g");
                     SaveResult t = s.newTask("g");
                     return a -> s.bean(LinkService.class).link(a,
-                            new LinkCommand(null, "defect_task", d.id(), t.id(), Scenario.REASON, null));
+                            new LinkCommand(Scenario.uuid(), "defect_task", d.id(), t.id(), Scenario.REASON, null));
                 }),
                 new Op("link relation", Scope.DEFECT, s -> {
                     SaveResult d1 = s.newDefect("g1");
                     SaveResult d2 = s.newDefect("g2");
                     return a -> s.bean(LinkService.class).link(a,
-                            new LinkCommand(null, "same_site", d1.id(), d2.id(), Scenario.REASON, null));
+                            new LinkCommand(Scenario.uuid(), "same_site", d1.id(), d2.id(), Scenario.REASON, null));
                 }),
                 new Op("link condition_task", Scope.TASK, s -> {
                     SaveResult c = s.newCondition("L1", "r", "c");
                     SaveResult t = s.newTask("g");
                     return a -> s.bean(LinkService.class).link(a,
-                            new LinkCommand(null, "condition_task", c.id(), t.id(), Scenario.REASON, null));
+                            new LinkCommand(Scenario.uuid(), "condition_task", c.id(), t.id(), Scenario.REASON, null));
                 }),
                 new Op("link condition_defect", Scope.TASK, s -> {
                     SaveResult c = s.newCondition("L2", "r", "c");
                     SaveResult d = s.newDefect("g");
                     return a -> s.bean(LinkService.class).link(a,
-                            new LinkCommand(null, "condition_defect", c.id(), d.id(), Scenario.REASON, null));
+                            new LinkCommand(Scenario.uuid(), "condition_defect", c.id(), d.id(), Scenario.REASON, null));
                 }),
                 new Op("correct a defect row", Scope.DEFECT, s -> {
                     SaveResult d = s.newDefect("g");
                     return a -> s.bean(CorrectService.class).correct(a,
-                            new CorrectCommand(null, d.historyId(), Scenario.REASON));
+                            new CorrectCommand(Scenario.uuid(), d.historyId(), Scenario.REASON));
                 }),
                 new Op("correct a fix row", Scope.FIX, s -> {
                     SaveResult d = s.newDefect("g");
                     long fixHistory = s.fix(Scenario.AUTHOR, d.id(), Scenario.commit('c')).historyId();
                     return a -> s.bean(CorrectService.class).correct(a,
-                            new CorrectCommand(null, fixHistory, Scenario.REASON));
+                            new CorrectCommand(Scenario.uuid(), fixHistory, Scenario.REASON));
                 }),
                 new Op("correct a task row", Scope.TASK, s -> {
                     SaveResult t = s.newTask("g");
                     return a -> s.bean(CorrectService.class).correct(a,
-                            new CorrectCommand(null, t.historyId(), Scenario.REASON));
+                            new CorrectCommand(Scenario.uuid(), t.historyId(), Scenario.REASON));
                 }),
                 new Op("correct a verification row", Scope.VERIFY, s -> {
                     SaveResult d = s.verifiedDefect("g");
@@ -240,7 +240,7 @@ class GateTest {
                             .filter(h -> h.op() == HistoryOp.TRANSITION && "VERIFIED".equals(h.toState()))
                             .findFirst().orElseThrow().id();
                     return a -> s.bean(ReviewService.class).reviewCorrect(a,
-                            new CorrectCommand(null, verification, Scenario.REASON));
+                            new CorrectCommand(Scenario.uuid(), verification, Scenario.REASON));
                 }));
     }
 
@@ -325,7 +325,7 @@ class GateTest {
         var projects = java.util.Map.of("source", s.projectId(), "target", other);
         grants.on().forEach(label -> s.grant(actor, projects.get(label), "defect"));
         assertThat(Expect.outcome(() -> s.bean(LinkService.class).link(actor,
-                new LinkCommand(null, "same_site", d1.id(), d2.id(), Scenario.REASON, null))))
+                new LinkCommand(Scenario.uuid(), "same_site", d1.id(), d2.id(), Scenario.REASON, null))))
                 .isEqualTo(Optional.ofNullable(grants.expected()));
     }
 
@@ -400,7 +400,7 @@ class GateTest {
     void gate13_lastUsedAt(Scenario s) {
         String actor = s.actorWith("defect");
         assertThat(defectGrant(s, actor).lastUsedAt()).isNull();
-        SaveCommand tooShort = new SaveCommand(null, "defect", null, 0L, Fields.of(s.defectFields("t")), "short");
+        SaveCommand tooShort = new SaveCommand(Scenario.uuid(), "defect", null, 0L, Fields.of(s.defectFields("t")), "short");
         Expect.failure(() -> s.bean(SaveService.class).save(actor, tooShort), ValidationCode.REASON_INVALID);
         assertThat(defectGrant(s, actor).lastUsedAt()).as("rolled back with the failed write").isNull();
         s.ctx().clock().set(java.time.Instant.parse("2026-11-05T12:34:56Z"));
@@ -481,9 +481,9 @@ class GateTest {
                 Scenario.EVIDENCE)), TrustCode.HOST_ATTESTATION_REQUIRED);
         Expect.failure(() -> s.bean(TransitionService.class).transition("claude", s.move("defect", "no-such-id", 1,
                 "DISPUTED", Scenario.EVIDENCE)), TrustCode.AUTHOR_ID_FORMAT);
-        Expect.failure(() -> s.bean(CorrectService.class).correct(null, new CorrectCommand(null, null,
+        Expect.failure(() -> s.bean(CorrectService.class).correct(null, new CorrectCommand(Scenario.uuid(), null,
                 Scenario.REASON)), TrustCode.HOST_ATTESTATION_REQUIRED);
-        Expect.failure(() -> s.bean(ReviewService.class).reviewCorrect(null, new CorrectCommand(null, null,
+        Expect.failure(() -> s.bean(ReviewService.class).reviewCorrect(null, new CorrectCommand(Scenario.uuid(), null,
                 Scenario.REASON)), TrustCode.HOST_ATTESTATION_REQUIRED);
         // with an attested actor the same inputs are refused for their format
         Expect.failure(() -> s.bean(TransitionService.class).transition(Scenario.AUTHOR, s.move("defect",
@@ -500,7 +500,7 @@ class GateTest {
     @Test
     @DisplayName("SVC-GATE-17: a missing grant beats a short reason")
     void gate17_grantBeforeReason(Scenario s) {
-        Expect.failure(() -> s.bean(SaveService.class).save(Scenario.NOGRANT, new SaveCommand(null, "defect", null,
+        Expect.failure(() -> s.bean(SaveService.class).save(Scenario.NOGRANT, new SaveCommand(Scenario.uuid(), "defect", null,
                 0L, Fields.of(s.defectFields("t")), "short")), TrustCode.SESSION_NOT_GRANTED);
     }
 
@@ -508,7 +508,7 @@ class GateTest {
     @DisplayName("SVC-GATE-17: a short reason beats a stale version")
     void gate17_reasonBeforeVersion(Scenario s) {
         SaveResult d = s.newDefect("d");
-        Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR, new SaveCommand(null, "defect", d.id(),
+        Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR, new SaveCommand(Scenario.uuid(), "defect", d.id(),
                 99L, Fields.of("title", "x"), "short")), ValidationCode.REASON_INVALID);
     }
 

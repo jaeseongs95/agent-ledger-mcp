@@ -27,7 +27,7 @@ import org.springframework.stereotype.Component;
  * signature under the live registered key of the author (a missing key and a wrong signature are one and the same
  * answer, {@link TrustCode#ATTESTATION_SIGNATURE_INVALID} without any argument, so a caller that cannot sign cannot find
  * out which authors have a key; the precise reason is logged here and nowhere else), the binding to the tool, the
- * request id and the arguments of the call, the time window. The time is the injected {@link Clock}.
+ * operation key and the arguments of the call, the time window. The time is the injected {@link Clock}.
  */
 @Component
 public class SignedAttestationVerifier implements AttestationVerifier {
@@ -60,8 +60,8 @@ public class SignedAttestationVerifier implements AttestationVerifier {
     }
 
     @Override
-    public Proof prove(String presented, ToolCall call, String requestId) {
-        return check(presented, call, requestId);
+    public Proof prove(String presented, ToolCall call, String operationKey) {
+        return check(presented, call, operationKey);
     }
 
     /**
@@ -73,11 +73,11 @@ public class SignedAttestationVerifier implements AttestationVerifier {
      * ({@code ATTESTATION_SIGNATURE_INVALID}).
      */
     @Override
-    public AuthorId verifyForWrite(String presented, ToolCall call, String requestId) {
-        return check(presented, call, requestId).requireAuthor();
+    public AuthorId verifyForWrite(String presented, ToolCall call, String operationKey) {
+        return check(presented, call, operationKey).requireAuthor();
     }
 
-    private Proof check(String presented, ToolCall call, String requestId) {
+    private Proof check(String presented, ToolCall call, String operationKey) {
         requireTokenForm(presented);
         if (!presented.startsWith(AttestationToken.PREFIX + ".")) {
             // not a token and not a bare author (requireTokenForm refused that): a malformed author
@@ -90,7 +90,7 @@ public class SignedAttestationVerifier implements AttestationVerifier {
         }
         AuthorId author = AuthorId.of(claims.author());
         provenKey(token, author);
-        verifyBinding(claims, call, requestId);
+        verifyBinding(claims, call, operationKey);
         verifyWindow(claims);
         return new Proof.Proven(author);
     }
@@ -149,12 +149,12 @@ public class SignedAttestationVerifier implements AttestationVerifier {
         return new TrustException(TrustCode.ATTESTATION_SIGNATURE_INVALID, List.of());
     }
 
-    private static void verifyBinding(AttestationClaims claims, ToolCall call, String requestId) {
+    private static void verifyBinding(AttestationClaims claims, ToolCall call, String operationKey) {
         if (!call.isTool(claims.tool())) {
             throw mismatch("tool");
         }
-        if (!Objects.equals(requestId == null ? "" : requestId, claims.requestId())) {
-            throw mismatch("request_id");
+        if (!Objects.equals(operationKey == null ? "" : operationKey, claims.operationKey())) {
+            throw mismatch(AttestationClaims.Field.OPERATION_KEY.token());
         }
         if (!call.carries(claims.argumentsDigest())) {
             throw mismatch("arguments");

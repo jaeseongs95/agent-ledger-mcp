@@ -98,7 +98,7 @@ class RaceTest {
                 release);
         assertThat(merged.await(60, TimeUnit.SECONDS)).isTrue();
         Future<Optional<ErrorCode>> recording = Parallel.start(() -> Expect.outcome(() -> s.bean(
-                RecordCaseService.class).recordCase(caseAuthor, new RecordCaseCommand(null, source.id(), "seen",
+                RecordCaseService.class).recordCase(caseAuthor, new RecordCaseCommand(Scenario.uuid(), source.id(), "seen",
                 Scenario.REASON, null, null, null))));
         assertThatThrownBy(() -> recording.get(400, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
         release.countDown();
@@ -117,7 +117,7 @@ class RaceTest {
         CountDownLatch recorded = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         Future<WriteResult> recording = holdingTransaction(s, () -> s.bean(RecordCaseService.class).recordCase(
-                caseAuthor, new RecordCaseCommand(null, source.id(), "seen", Scenario.REASON, null, null, null)),
+                caseAuthor, new RecordCaseCommand(Scenario.uuid(), source.id(), "seen", Scenario.REASON, null, null, null)),
                 recorded, release);
         assertThat(recorded.await(60, TimeUnit.SECONDS)).isTrue();
         Future<WriteResult> merging = Parallel.start(() -> MergeFixture.merge(s, source.id(), 1, target.id()));
@@ -144,13 +144,13 @@ class RaceTest {
         long defectHistory = s.history(HistoryEntity.DEFECT, d.id()).size();
         String actor = s.actorWith("defect");
         IntStream.range(0, 20).forEach(i -> s.bean(RecordCaseService.class).recordCase(actor, new RecordCaseCommand(
-                null, d.id(), "seq " + i, Scenario.REASON, null, null, null)));
+                Scenario.uuid(), d.id(), "seq " + i, Scenario.REASON, null, null, null)));
         assertThat(s.defect(d.id()).caseSeq()).isEqualTo(20);
         assertThat(s.defect(d.id()).version()).isEqualTo(3);
         List<Callable<WriteResult>> calls = new ArrayList<>();
         for (int i = 0; i < 20; i++) {
             int n = i;
-            calls.add(() -> s.bean(RecordCaseService.class).recordCase(actor, new RecordCaseCommand(null, d.id(),
+            calls.add(() -> s.bean(RecordCaseService.class).recordCase(actor, new RecordCaseCommand(Scenario.uuid(), d.id(),
                     "par " + n, Scenario.REASON, null, null, null)));
         }
         calls.add(() -> s.bean(SaveService.class).save(Scenario.DEFECT_ONLY, s.edit("defect", d.id(), 3,
@@ -252,9 +252,9 @@ class RaceTest {
         SaveResult d = s.newDefect("d");
         SaveResult t = s.newTask("t");
         List<Callable<WriteResult>> calls = List.of(
-                () -> s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(null, "defect_task", d.id(),
+                () -> s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(Scenario.uuid(), "defect_task", d.id(),
                         t.id(), Scenario.REASON, null)),
-                () -> s.bean(LinkService.class).link(Scenario.DEFECT_ONLY, new LinkCommand(null, "defect_task",
+                () -> s.bean(LinkService.class).link(Scenario.DEFECT_ONLY, new LinkCommand(Scenario.uuid(), "defect_task",
                         d.id(), t.id(), Scenario.REASON, null)));
         List<Outcome<WriteResult>> outcomes = Parallel.all(calls);
         assertThat(codes(outcomes)).containsExactlyInAnyOrder(Optional.empty(),
