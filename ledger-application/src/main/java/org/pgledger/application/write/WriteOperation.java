@@ -66,12 +66,15 @@ public abstract class WriteOperation<C extends WriteCommand, R extends WriteResu
             Sha256 digest = CanonicalPayload.digest(operation.name(),
                     prepared.payload().text("reason", reason.text()));
             // a replay returns the stored response; the first call writes and stores its response in the receipt
-            return receipts.reserve(requestId, operation, digest, session.author(), session.channel(), resultType)
-                    .orElseGet(() -> {
-                        R result = prepared.execute().apply(new WriteContext(session, reason, requestId));
-                        receipts.finish(requestId, result);
-                        return result;
-                    });
+            return switch (receipts.reserve(requestId, operation, digest, session.author(), session.channel(),
+                    resultType)) {
+                case ReceiptService.Reservation.Replayed<R> replayed -> replayed.response();
+                case ReceiptService.Reservation.Reserved<R> reserved -> {
+                    R result = prepared.execute().apply(new WriteContext(session, reason, requestId));
+                    receipts.finish(requestId, result);
+                    yield result;
+                }
+            };
         });
     }
 

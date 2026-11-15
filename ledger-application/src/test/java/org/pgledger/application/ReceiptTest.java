@@ -51,9 +51,23 @@ import org.pgledger.domain.value.JsonDocument;
 import org.pgledger.domain.value.RequestId;
 import org.pgledger.domain.value.Sha256;
 
-/** SVC-RCP-01 .. SVC-RCP-08, -12 .. -15: idempotency of the write services. */
+/** SVC-RCP-01 .. SVC-RCP-08, -12 .. -16: idempotency of the write services. */
 @LedgerServiceTest
 class ReceiptTest {
+
+    @Test
+    @DisplayName("SVC-RCP-16 (TXA-04): reserve answers one of two kinds that differ in shape, not an Optional: its answer is a sealed type with exactly the records Reserved (the caller is the first and writes) and Replayed (the stored response)")
+    void rcp16_reserveAnswersASealedResult() {
+        java.lang.reflect.Method reserve = java.util.Arrays.stream(
+                org.pgledger.application.receipt.ReceiptService.class.getDeclaredMethods())
+                .filter(method -> "reserve".equals(method.getName())).findFirst().orElseThrow();
+        Class<?> answer = reserve.getReturnType();
+
+        assertThat(answer).as("two states are not one Optional (principle 3.3)").isNotEqualTo(java.util.Optional.class);
+        assertThat(answer.isSealed()).isTrue();
+        assertThat(java.util.Arrays.stream(answer.getPermittedSubclasses())).allMatch(Class::isRecord)
+                .extracting(Class::getSimpleName).containsExactlyInAnyOrder("Reserved", "Replayed");
+    }
 
     private static SaveCommand create(Scenario s, String requestId, String title) {
         return new SaveCommand(requestId, "defect", null, 0L, Fields.of(s.defectFields(title)), Scenario.REASON);
