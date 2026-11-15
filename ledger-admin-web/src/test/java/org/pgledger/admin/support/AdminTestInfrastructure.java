@@ -46,11 +46,11 @@ public class AdminTestInfrastructure {
         return new MutableClock();
     }
 
-    /** The monotonic time source of the lock after failed attempts: it moves with the test clock, not with the system. */
+    /** The monotonic time source of the budget of credential checks: it moves with the test clock, not with the system. */
     @Bean
     @Primary
     @ConditionalOnProperty(name = "admin.test.moving-ticker", havingValue = "true", matchIfMissing = true)
-    com.github.benmanes.caffeine.cache.Ticker testTicker(MutableClock clock) {
+    java.util.function.LongSupplier testTicker(MutableClock clock) {
         return clock.ticker();
     }
 

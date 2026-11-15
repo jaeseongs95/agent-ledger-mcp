@@ -824,6 +824,21 @@ class DocsTest {
 
     @ParameterizedTest
     @EnumSource(Language.class)
+    @DisplayName("LGN-014 the upgrade guide of each README tells to generate the admin token again after import-secrets-1x, and the security text ties the 256 bits to a token that token-generate made")
+    void lgn014_theAdminTokenIsGeneratedAgain(Language language) {
+        String readme = language.readme().text();
+
+        assertThat(language.readme().codeSpans()).contains("token-generate ledger.admin.token --print", "pg-ledger-mcp-admin", "token-generate",
+                "SecureRandom");
+        assertThat(readme).contains(language == Language.EN ? "Generate the admin token again" : "관리 토큰을 다시 만듭니다");
+        assertThat(readme.indexOf(language == Language.EN ? "Generate the admin token again" : "관리 토큰을 다시 만듭니다"))
+                .as("after the step of import-secrets-1x").isGreaterThan(readme.indexOf(language == Language.EN
+                        ? "Move the secrets of 1.x with" : "로 1.x의 비밀을 옮깁니다"));
+        assertThat(readme).doesNotContain(language == Language.EN ? "the admin token is 256 bits from" : "관리 토큰은 `SecureRandom` 256비트");
+    }
+
+    @ParameterizedTest
+    @EnumSource(Language.class)
     @DisplayName("PCS-050 the README defines the personal edition (one person, their own computer or server, the whole installation target trusted, loopback only, the network exposure the operator's) and names no reverse proxy, certificate authority, nginx, ACME, tls-issue, tls-renew or seal-host")
     void theReadmeDefinesThePersonalEditionAndNamesNoProxyProduct(Language language) {
         String readme = language.readme().text();

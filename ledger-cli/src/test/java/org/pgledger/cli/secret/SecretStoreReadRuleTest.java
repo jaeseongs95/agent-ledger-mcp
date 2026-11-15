@@ -30,7 +30,7 @@ class SecretStoreReadRuleTest {
     Path tmp;
 
     private static SecretStore store(Path directory) {
-        return new SecretStore(new SecretsProperties("pg-ledger-mcp", directory), new SystemProcessUser());
+        return new SecretStore(directory, directory.getParent(), new SystemProcessUser());
     }
 
     private static void assumeProtectable(Path path) {

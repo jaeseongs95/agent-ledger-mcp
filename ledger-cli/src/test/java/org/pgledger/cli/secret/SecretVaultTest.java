@@ -107,6 +107,26 @@ class SecretVaultTest {
 
     @Test
     @RequiresPosixPermissions
+    @DisplayName("SPL-011 a file where the secret directory belongs is UNEXPECTED_FILE_TYPE from check and from store, before anything is made or written")
+    void spl011_aFileInsteadOfTheSecretDirectoryIsRefused() throws IOException {
+        Files.createDirectories(etc());
+        Files.writeString(secrets(), "not a directory");
+        SecretVault vault = vault();
+        SecretName token = new SecretName("ledger.mcp.token");
+
+        for (Runnable operation : List.<Runnable>of(() -> vault.check(token), () -> vault.exists(token),
+                () -> vault.store(token, "x".toCharArray()))) {
+            assertThatThrownBy(operation::run).isInstanceOfSatisfying(FailureException.class, failure -> {
+                assertThat(failure.code()).isEqualTo(ErrorCode.UNEXPECTED_FILE_TYPE);
+                assertThat(failure.arguments()).containsExactly(secrets().toString());
+            });
+        }
+        assertThat(Files.readString(secrets())).isEqualTo("not a directory");
+        assertThat(names(etc())).containsExactly("secrets");
+    }
+
+    @Test
+    @RequiresPosixPermissions
     @DisplayName("SPL-002 the settings folder belongs to the installation: without it nothing is made (PARENT_MISSING), as for the secret directory before")
     void spl002_theSettingsFolderMustExist() {
         SecretVault vault = vault();

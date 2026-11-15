@@ -1,9 +1,9 @@
 package org.pgledger.admin.app;
 
-import com.github.benmanes.caffeine.cache.Ticker;
 import java.time.Clock;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.LongSupplier;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
@@ -26,13 +26,13 @@ public class AdminBeansConfiguration {
     }
 
     /**
-     * The time source of the lock after failed attempts: the monotonic clock of the JVM ({@code System.nanoTime}), not
-     * the UTC {@link Clock}, so setting the system time back or forward cannot end or extend a lock. A {@code @Bean}
-     * method because {@link Ticker} is the interface of the cache library; a test replaces it.
+     * The time source of the budget of credential checks: the monotonic clock of the JVM ({@code System.nanoTime}), not the
+     * UTC {@link Clock}, so setting the system time back or forward cannot end or extend a window. A {@code @Bean} method
+     * so that a test replaces it.
      */
     @Bean
-    Ticker lockoutTicker() {
-        return Ticker.systemTicker();
+    LongSupplier monotonicNanos() {
+        return System::nanoTime;
     }
 
     /**

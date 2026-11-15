@@ -49,7 +49,7 @@ class SecretStoreTest {
     }
 
     private static SecretStore store(Path directory, ProcessUser user) {
-        return new SecretStore(new SecretsProperties("pg-ledger-mcp", directory), user);
+        return new SecretStore(directory, directory.getParent(), user);
     }
 
     private static List<String> names(Path directory) throws IOException {

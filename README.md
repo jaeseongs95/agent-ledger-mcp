@@ -529,9 +529,10 @@ the service account of the installation and never as root.
   code of `passkey-code`. The agents' token is refused, so an agent that holds the MCP token cannot grant itself
   anything. Credential checks (passkey, one-time code, token) are slowed down once more than a budget of them arrive within a window
   (`ledger.admin.lockout.*`); nothing is ever locked, because a lock that anybody can trigger with wrong credentials locks the owner out as
-  well. There is no limit per client either: both services listen on loopback only and are published by the operator's reverse proxy on the
-  same host, so the address of every request is the proxy. The credentials cannot be guessed (the admin token is 256 bits from
-  `SecureRandom`, the one-time code 100 bits).
+  well. There is no limit per client either: the public reaches the services through the operator's reverse proxy on the same host, and
+  the address that proxy forwards is a record of the request and not an identity (depending on the proxy, every user arrives as one
+  address), so a lock by address would lock the owner with the attacker, and the personal edition, one person, has nobody to tell apart. A token
+  made by `token-generate` (256 bits from `SecureRandom`) and the one-time code (100 bits) cannot be guessed, so a delay is all that is needed.
 - **Approval of every change by a passkey, whichever way you signed in.** Every change you make in the console (grants, session
   keys, common codes, projects, the driver, closing a passkey) is approved with a passkey, with user verification: the page asks the
   server for a challenge made from that very change and your session, the authenticator signs it, and the write goes with the
@@ -679,6 +680,10 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
      browser in only with `ledger.admin.sign-in=token`). A 1.0.0 installation had no admin web and so no `PGLEDGER_ADMIN_TOKEN`: then only
      the two tokens of the agents are replaced, the command says so, and the `ledger.admin.token` of the installer stays. Only the names of the
      secrets are printed, never a value.
+   - **Generate the admin token again.** The admin token of 1.x was chosen by hand and may be weaker than one that `token-generate` makes
+     (256 bits), and the limit on credential checks of 2.0 is a delay that counts on a token that cannot be guessed. After the move, remove
+     the file `ledger.admin.token` in the folder `admin` of the secret directory and run `token-generate ledger.admin.token --print` as the
+     service user (an existing secret is never replaced, so the file has to be removed first), then restart `pg-ledger-mcp-admin`.
    - For an instance with another name the service user is that name (`runuser -u <name>`), and the tool takes `--ledger.secrets.instance=<name>`.
 
    The services read their secrets at start, so restart the two services of 2.0:

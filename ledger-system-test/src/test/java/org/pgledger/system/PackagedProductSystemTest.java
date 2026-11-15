@@ -151,6 +151,11 @@ class PackagedProductSystemTest {
         serverArguments = instance.serverArguments();
         assertThat(serverArguments).contains("-jar");
         assertThat(serverArguments.getLast()).startsWith("--spring.config.import=").contains("optional:configtree:");
+        // SPL-008: the MCP server imports the folders common and mcp of the secrets as trees of their own, not the secret directory
+        // and not the folder of the admin web; the key files of the attachments are beside the secrets, in no tree
+        assertThat(serverArguments.getLast()).contains(slash(etc) + "/secrets/common/,optional:configtree:" + slash(etc) + "/secrets/mcp/")
+                .doesNotContain("/secrets/admin").doesNotContain("/secrets/tool").doesNotEndWith("/secrets/");
+        assertThat(application).contains(slash(etc) + "/attachment-keys").doesNotContain("/secrets/attachment-keys");
     }
 
     @Test

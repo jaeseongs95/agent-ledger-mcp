@@ -200,7 +200,12 @@ class ArchitectureTest {
 
         assertThat(attempts).doesNotContain("Admission").doesNotContain("Counter").doesNotContain("keyOf")
                 .doesNotContain("MAX_CLIENTS").doesNotContain("Cache<").doesNotContain("Inet6Address")
-                .contains("loopback only").contains("reverse proxy").contains("X-Forwarded-For");
+                .contains("reverse proxy").contains("X-Forwarded-For").contains("not an identity")
+                .contains("token-generate").contains("no queue");
+        assertThat(Files.readString(admin.resolve(Path.of("security", "AdminSecurityConfiguration.java"))))
+                .doesNotContain("codeWithClientAddress").doesNotContain("WebAuthenticationDetailsSource");
+        assertThat(Files.readString(Path.of("build.gradle.kts"))).doesNotContainIgnoringCase("caffeine")
+                .doesNotContain("starter-cache");
         for (String caller : List.of("security/AdminTokenProvider.java", "passkey/EnrollmentTokenService.java",
                 "passkey/PasskeyLoginGuard.java")) {
             assertThat(Files.readString(admin.resolve(caller))).as(caller).doesNotContain("Admission")
@@ -208,6 +213,8 @@ class ArchitectureTest {
         }
         try (Stream<Path> sources = Files.walk(MAIN_JAVA)) {
             for (Path source : sources.filter(path -> path.toString().endsWith(".java")).toList()) {
+                assertThat(Files.readString(source)).as(source + ": no Caffeine and no Spring Cache").doesNotContainIgnoringCase("caffeine")
+                        .doesNotContain("org.springframework.cache");
                 for (String line : Files.readAllLines(source)) {
                     if (line.contains("AdminCode.TOO_MANY_AUTH_FAILURES")) {
                         assertThat(line).as(source + ": a limit that refuses does not exist, only an interrupted wait does")

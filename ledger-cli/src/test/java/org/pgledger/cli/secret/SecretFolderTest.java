@@ -26,7 +26,6 @@ class SecretFolderTest {
                 Arguments.of("ledger.mcp.token", SecretFolder.MCP),
                 Arguments.of("ledger.admin.token", SecretFolder.ADMIN),
                 Arguments.of("ledger.admin.agent-token", SecretFolder.ADMIN),
-                Arguments.of("ledger.admin.oidc-secret", SecretFolder.ADMIN),
                 Arguments.of("spring.security.oauth2.client.registration.google.client-secret", SecretFolder.ADMIN),
                 Arguments.of("spring.security.oauth2.client.registration.second.client-secret", SecretFolder.ADMIN),
                 Arguments.of("ledger.import.source.password", SecretFolder.TOOL));
@@ -40,7 +39,8 @@ class SecretFolderTest {
     }
 
     @ParameterizedTest(name = "[{index}] {0}")
-    @ValueSource(strings = {"cloudflare-api-token", "ledger.mcp", "ledger.administrator", "ledger.admin.", "ledger.jdbc.passwords",
+    @ValueSource(strings = {"cloudflare-api-token", "ledger.mcp", "ledger.administrator", "ledger.admin.", "ledger.admin.oidc-secret",
+        "ledger.admin.tokens", "ledger.admin.agent-token.x", "ledger.jdbc.passwords",
         "ledger.mcp.token.x", "ledger.import.source.username", "spring.security.oauth2.client.registration.google.client-id",
         "spring.security.oauth2.client.registration..client-secret", "common", "tool"})
     @DisplayName("SPL-001 a name that is no secret of the product is UNKNOWN_SECRET_NAME, and the name is not echoed")

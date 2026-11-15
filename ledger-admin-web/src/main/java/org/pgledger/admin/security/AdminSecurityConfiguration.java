@@ -30,15 +30,10 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestCustomizers;
-import org.springframework.security.authentication.AbstractAuthenticationToken;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.web.DefaultRedirectStrategy;
 import org.springframework.security.web.RedirectStrategy;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.AuthenticationConverter;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
-import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
-import org.springframework.security.web.authentication.ott.OneTimeTokenAuthenticationConverter;
 import org.springframework.security.web.authentication.logout.LogoutFilter;
 import org.springframework.security.web.firewall.HttpFirewall;
 import org.springframework.security.web.firewall.RequestRejectedHandler;
@@ -59,7 +54,7 @@ import org.springframework.web.servlet.HandlerExceptionResolver;
  * ({@code ledger.admin.sign-in}: the admin token with {@code formLogin} of the application's own page, OpenID Connect
  * {@code oauth2Login} for the one e-mail address of the owner, or a passkey with {@code webAuthn}), the one-time code of the owner's shell ({@code oneTimeTokenLogin}) that reaches the registration of a
  * passkey, the admin token as the bearer of the read-only JSON endpoints, the CSRF token with the session cookie of Spring
- * Boot ({@code SameSite=Strict}), a new session id after the sign-in (fixation protection), the lock after failed attempts and
+ * Boot ({@code SameSite=Strict}), a new session id after the sign-in (fixation protection), the delay after many failed attempts and
  * the headers (CSP and the rest). The approval of every owner write by a passkey is checked by the interceptor
  * {@code ApprovalInterceptor}, whichever sign-in was used.
  *
@@ -168,7 +163,7 @@ public class AdminSecurityConfiguration {
             passkeys(http, failures, parties.getObject(), guards.getObject(), codes.getObject());
         }
         if (console && properties.effectiveSignIn() == SignInMethod.TOKEN) {
-            // the admin token as the password of the application's own page (the personal edition): the lock per client address
+            // the admin token as the password of the application's own page (the personal edition): the budget of checks
             // is in AdminTokenProvider, CSRF and the new session id after the sign-in are the defaults of this chain
             http.formLogin(form -> form.loginPage("/login").passwordParameter("token").defaultSuccessUrl("/")
                     .failureHandler(failures));
@@ -203,26 +198,9 @@ public class AdminSecurityConfiguration {
     }
 
     /**
-     * The converter of the one-time code of Spring Security, plus the details of the request (the client address) that it
-     * leaves out: the lock after failed attempts ({@link EnrollmentTokenService}) counts per client address, like the one of
-     * the admin token.
-     */
-    private static AuthenticationConverter codeWithClientAddress() {
-        AuthenticationConverter codes = new OneTimeTokenAuthenticationConverter();
-        WebAuthenticationDetailsSource details = new WebAuthenticationDetailsSource();
-        return request -> {
-            Authentication code = codes.convert(request);
-            if (code instanceof AbstractAuthenticationToken token) {
-                token.setDetails(details.buildDetails(request));
-            }
-            return code;
-        };
-    }
-
-    /**
      * The passkeys, on the WebAuthn support of Spring Security: the passkey sign-in and the registration endpoints (the default
      * registration page is off: it has an inline script, which the content security policy forbids, so the passkey page of the
-     * application drives the endpoints), the lock after failed attempts in front of the sign-in, and the one-time code of the
+     * application drives the endpoints), the delay after many failed attempts in front of the sign-in, and the one-time code of the
      * owner's shell as the way to reach the registration (the enrolment sign-in, which lasts a quarter of an hour and may do
      * nothing but register a passkey).
      */
@@ -235,7 +213,6 @@ public class AdminSecurityConfiguration {
                 // loginPage: the application's own page, so Spring Security generates no default login page (which would also
                 // take over GET /login and add its own passkey script, forbidden by the content security policy)
                 .oneTimeTokenLogin(ott -> ott.tokenService(codes).loginPage("/login").loginProcessingUrl("/login/ott")
-                        .authenticationConverter(codeWithClientAddress())
                         .showDefaultSubmitPage(false).tokenGenerationSuccessHandler((request, response, token) -> { })
                         .failureHandler(failures)
                         .successHandler((request, response, authentication) -> {

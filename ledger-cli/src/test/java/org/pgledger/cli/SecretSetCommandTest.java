@@ -162,6 +162,21 @@ class SecretSetCommandTest {
     }
 
     @Test
+    @RequiresPosixPermissions
+    @DisplayName("SPL-011 a file where the secret directory belongs is refused (exit 1, UNEXPECTED_FILE_TYPE) before any prompt")
+    void spl011_aFileInsteadOfTheSecretDirectoryIsRefusedBeforePrompt(Cli cli) throws IOException {
+        Files.createDirectories(tmp);
+        Files.writeString(directory(), "not a directory");
+        ScriptedSecretInput input = new ScriptedSecretInput(VALUE.toCharArray());
+
+        Outcome result = cli.run(directory(), input, new RecordingOutput(), "secret-set", NAME);
+
+        assertThat(result.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
+        assertThat(result.code()).contains(ErrorCode.UNEXPECTED_FILE_TYPE);
+        assertThat(input.reads()).isZero();
+    }
+
+    @Test
     @DisplayName("SPL-002 a name that is no secret of the product is refused (exit 1, UNKNOWN_SECRET_NAME) before any prompt, nothing is made and the name is not echoed")
     void spl002_unknownNameIsRefusedBeforePrompt(Cli cli, CapturedOutput captured) {
         ScriptedSecretInput input = new ScriptedSecretInput(VALUE.toCharArray());

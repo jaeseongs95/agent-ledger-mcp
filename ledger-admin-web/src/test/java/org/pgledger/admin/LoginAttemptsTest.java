@@ -2,7 +2,6 @@ package org.pgledger.admin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.github.benmanes.caffeine.cache.Ticker;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -12,6 +11,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.pgledger.admin.app.LedgerAdminProperties;
@@ -32,7 +32,7 @@ class LoginAttemptsTest {
     private static final long SECOND = 1_000_000_000L;
 
     private final AtomicLong nanos = new AtomicLong();
-    private final Ticker ticker = nanos::get;
+    private final LongSupplier ticker = nanos::get;
 
     private LoginAttempts attempts(int budget) {
         return new LoginAttempts(new LedgerAdminProperties("a-token-of-sixteen-chars", "an-agent-token-of-sixteen",

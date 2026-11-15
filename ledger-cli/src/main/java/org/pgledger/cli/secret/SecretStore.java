@@ -44,15 +44,11 @@ public class SecretStore {
     private final Path floor;
     private final ProcessUser processUser;
 
-    /** A store of the secret directory itself: only the directory is made, its parent belongs to the installation. */
-    SecretStore(SecretsProperties properties, ProcessUser processUser) {
-        this(properties.directory(), properties.directory().getParent(), processUser);
-    }
-
     /**
-     * A store of one directory below {@code floor}: {@code floor} has to exist (it belongs to the installation) and the
-     * directories between it and {@code directory} are made as the secret directory is (the folder of a use,
-     * {@link SecretVault}, below the secret directory).
+     * A store of one directory below {@code floor}: {@code floor} has to exist (it belongs to the installation, for example
+     * {@code /etc/pg-ledger-mcp}) and the directories between it and {@code directory} are made as the secret directory is
+     * (the folder of a use, {@link SecretVault}, below the secret directory). {@code floor} is the parent of {@code directory}
+     * for a store of one directory only.
      */
     SecretStore(Path directory, Path floor, ProcessUser processUser) {
         this.processUser = processUser;
@@ -133,10 +129,24 @@ public class SecretStore {
         }
     }
 
-    /** The floor (for example /etc/pg-ledger-mcp) belongs to the installation; only what is below it is created here. */
-    private void requireParent() {
-        if (floor != null && !Files.isDirectory(floor)) {
+    /**
+     * The floor (for example /etc/pg-ledger-mcp) belongs to the installation; only what is below it is created here. A path
+     * between the floor and the directory that exists has to be a directory (a file where the secret directory belongs is
+     * refused with UNEXPECTED_FILE_TYPE here, before anything is asked, not as a failure to make the folder after the input).
+     */
+    private void requireParent() throws IOException {
+        if (floor == null) {
+            return;
+        }
+        if (!Files.isDirectory(floor)) {
             throw new FailureException(ErrorCode.PARENT_MISSING, floor.toString());
+        }
+        Path next = floor;
+        for (Path segment : floor.relativize(directory)) {
+            next = next.resolve(segment);
+            if (Files.exists(next)) {
+                requireKind(next, true);
+            }
         }
     }
 

@@ -3,10 +3,10 @@ package org.pgledger.admin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.github.benmanes.caffeine.cache.Ticker;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.pgledger.admin.support.AdminTestInfrastructure;
@@ -52,7 +52,7 @@ class NegativeTickerThrottleTest {
     private static final Duration DELAY = Duration.ofMillis(300);
 
     /** A ticker that the test sets. */
-    static final class SettableTicker implements Ticker {
+    static final class SettableTicker implements LongSupplier {
 
         private final AtomicLong nanos = new AtomicLong();
 
@@ -65,7 +65,7 @@ class NegativeTickerThrottleTest {
         }
 
         @Override
-        public long read() {
+        public long getAsLong() {
             return nanos.get();
         }
     }

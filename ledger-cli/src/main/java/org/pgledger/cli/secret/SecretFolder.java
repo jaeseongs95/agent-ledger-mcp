@@ -17,8 +17,8 @@ import org.pgledger.cli.FailureException;
  * <ul>
  * <li>{@link #COMMON}: {@code ledger.jdbc.password}, read by the MCP server, the admin web, {@code ledger-cli} and
  *     {@code ledger-migrate-1x}.
- * <li>{@link #ADMIN}: {@code ledger.admin.*} (the admin token and the token of the agents that the admin web refuses) and the
- *     client secret of an OpenID Connect registration ({@code spring.security.oauth2.client.registration.<id>.client-secret}),
+ * <li>{@link #ADMIN}: {@code ledger.admin.token} and {@code ledger.admin.agent-token} (the admin token and the token of the
+ *     agents that the admin web refuses) and the client secret of an OpenID Connect registration ({@code spring.security.oauth2.client.registration.<id>.client-secret}),
  *     read by the admin web only.
  * <li>{@link #MCP}: {@code ledger.mcp.token}, read by the MCP server and by {@code ledger-cli mcp-check}.
  * <li>{@link #TOOL}: {@code ledger.import.source.password} (the 1.x database), read by {@code ledger-migrate-1x} only; no
@@ -75,7 +75,7 @@ public enum SecretFolder {
         if (value.equals("ledger.import.source.password")) {
             return TOOL;
         }
-        if (value.startsWith("ledger.admin.") && value.length() > "ledger.admin.".length()) {
+        if (value.equals("ledger.admin.token") || value.equals("ledger.admin.agent-token")) {
             return ADMIN;
         }
         if (value.startsWith(OIDC_PREFIX) && value.endsWith(OIDC_SUFFIX)
