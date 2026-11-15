@@ -29,10 +29,13 @@ AI 에이전트가 수행한 작업을 기록하는 장부이며, 하나의 MCP 
   모델은 이 키를 넣지 않아야 합니다. 작성자는 `<vendor>:<session-id>` 형식이며 예를 들어 `claude:1f2e3d4c` 또는 `codex:9a8b7c6d`입니다. 장부의 소유자는 `user:owner`입니다.
   작성자는 증명으로만 정해지며, 도구에는 `author_id` 인자가 없습니다.
 - **쓰기에는 유효한 부여가 필요합니다.** 소유자는 `ledger-cli grant`(또는 관리 웹의 부여 화면)로 작성자에게 프로젝트의 범위를 부여합니다.
-  범위는 `defect`, `task`, `fix`, `verify`입니다. 해당 부여가 없는 쓰기는 거절됩니다.
+  범위는 `defect`, `task`, `fix`, `verify`입니다. 해당 부여가 없는 쓰기는 거절됩니다. 두 프로젝트의 행에 걸치는 쓰기(작업을 다른 프로젝트로 옮기기, 연결,
+  다른 프로젝트의 결함으로의 병합)는 두 프로젝트 모두에서 해당하는 부여를 요구합니다.
 - **검증은 분리되어 있습니다.** `VERIFIED`, `MET`, `NOT_MET`은 검토자 도구 `ledger_review`와 `ledger_review_correct`로만 설정할 수 있으며, 이 도구들은 `verify` 범위를 요구합니다.
-  결함은 증거 링크와, 검증자와 다른 세션이 기록한 수정이 하나 이상 있어야 검증됩니다. 검증 결과와 재작업 요청은 결함을 등록한 세션(`created_by`)이 아니라
-  수정을 기록한 세션(`fixed_by`)에게 보냅니다. CI 결과는 선택 메타데이터입니다.
+  결함은 증거 링크와 수정이 하나 이상 있어야 하고, 그 결함을 등록하지 않았고 사례를 기록하지 않았고 수정도 기록하지 않은 세션만 검증할 수 있습니다.
+  작업은 그것을 등록하지 않았고, 소유하지 않으며, 완료를 보고한 적이 없는 세션만 검증할 수 있습니다(그렇지 않으면 `SAME_SESSION`). 검증 결과와 재작업 요청은 결함을 등록한
+  세션(`created_by`)이 아니라 수정을 기록한 세션(`fixed_by`)에게 보냅니다. CI 결과는 선택 메타데이터입니다. `VERIFIED` 결함에는 `ledger_record_fix`도 `ledger_save`의
+  수정도 허용되지 않으며(`VERIFIED_DEFECT`), 검토자가 먼저 `ledger_review`로 다시 열어야 합니다.
 - **이력은 추가만 가능합니다.** 쓰기마다 이력 행이 추가되며, 시각, 작성자, 채널, 연산, 상태 변화, 사유를 담습니다. 애플리케이션에는 이력 행을 수정하거나 삭제하는 경로가 없고,
   데이터베이스 모듈의 부여 템플릿(`migrate`가 앱 계정에 적용합니다)은 그 계정에 이력의 `UPDATE`와 `DELETE`를 주지 않습니다. 잘못된 기록은 `CORRECT` 행으로 표시합니다.
   기존 행을 바꾸는 연산은 바꾸기 전의 전체 행도 함께 저장합니다(`before_data`, `ledger_history`에서 `include_before`를 주면 반환됩니다).
@@ -43,7 +46,8 @@ AI 에이전트가 수행한 작업을 기록하는 장부이며, 하나의 MCP 
 - **낙관적 잠금.** 수정과 전이는 `expected_version`을 가지며, 오래된 판은 `VERSION_CONFLICT`입니다.
 - **프로젝트와 ID.** 결함은 프로젝트에 속하며 `<CODE>-D-0001`, `<CODE>-D-0002`와 같은 ID를 받습니다. ID 없이 만든 작업은 `<CODE>-T-0001`과 같은 ID를 받습니다.
   ID는 서버가 부여합니다. 작업이나 조건에 호출자가 정하는 ID는 공백이 없는 1자 이상 120자 이하이며 대소문자와 문자 종류(`:`, `/`, `#`, `.`, `_`, `-` 등)를 가리지 않습니다.
-  이미 있는 ID와 대소문자만 다르면 `DUPLICATE_KEY`로 거부하며, ID는 언제나 정확히 비교합니다.
+  이미 있는 ID와 대소문자만 다르면 `DUPLICATE_KEY`로 거부하며, ID는 언제나 정확히 비교합니다. 호출자가 정하는 결함 ID와 `<CODE>-T-0001` 형식의 작업 ID는 번호가 프로젝트의
+  다음 번호를 넘지 않아야 합니다. 그보다 작은 빈 번호는 받아들이고, 넘는 번호는 다음 ID를 알려 주는 `ID_NUMBER_AHEAD`로 거절하므로 ID 하나가 서버의 번호 부여를 멈추게 할 수 없습니다.
 - **결함 하나는 근본 원인 하나이고, 관찰된 사례는 여러 개입니다.** 결함에 대한 각 관찰(증상, 로그, 사용자 보고)은 그 아래의 사례입니다(`ledger_record_case`).
   병합된 결함(`MERGED`, `merged_into`)은 사례를 그대로 유지하며, `ledger_defect`는 병합 대상 결함 아래에 그 사례를 보여 줍니다. `MERGED` 결함에는 새 사례를 추가할 수 없습니다.
 - **공통코드.** 결함 분류, 결함 심각도, 관계 종류는 세 그룹 `DEFECT_CATEGORY`, `DEFECT_SEVERITY`, `RELATION_KIND`이며 한국어와 영어 이름을 가집니다.
@@ -78,14 +82,14 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | 도구 | 채널 | 내용 |
 |---|---|---|
 | `ledger_whoami` | author | 이 작성자 형식이 올바른지, 어떤 부여를 가졌는지 확인합니다(읽기 전용) |
-| `ledger_save` | author | 결함, 작업, 조건을 만들거나 수정합니다 |
+| `ledger_save` | author | 결함, 작업, 조건을 만들거나 수정합니다(`VERIFIED` 결함은 수정하지 않습니다) |
 | `ledger_transition` | author | 상태를 바꿉니다(`OPEN`, `SOURCE_FIXED`, `MERGED`, `ACTIVE`, `REPORTED_DONE` 등) |
-| `ledger_record_fix` | author | 수정 커밋과 선택적 CI 메타데이터를 기록합니다. 수정한 세션이 `fixed_by`가 되고 `OPEN` 결함은 `SOURCE_FIXED`가 됩니다 |
+| `ledger_record_fix` | author | 수정 커밋과 선택적 CI 메타데이터를 기록합니다. 수정한 세션이 `fixed_by`가 되고 `OPEN` 결함은 `SOURCE_FIXED`가 됩니다. `VERIFIED` 결함은 검토자가 다시 열기 전에는 거절됩니다 |
 | `ledger_record_case` | author | 결함 아래에 관찰된 사례를 추가합니다(`MERGED` 결함은 거절되며 병합 대상을 알려 줍니다) |
 | `ledger_link` | author | 결함, 작업, 조건을 연결하거나 연결을 제거합니다. 관계 종류 `caused_by`와 `blocks`는 방향이 있습니다(`a`가 주어이며, 연결 해제는 연결한 순서대로 양 끝을 적습니다) |
 | `ledger_correct` | author | 이력 행이 잘못되었음을 표시합니다 |
 | `ledger_batch` | author | 위 연산을 한 트랜잭션에서 최대 200개까지 처리합니다. 모두 반영되거나 모두 반영되지 않습니다. 배치에 `operationKey` 하나를 주며 연산에는 키가 없습니다 |
-| `ledger_review` | reviewer | `VERIFIED`, `MET`, `NOT_MET`과 그 재개를 처리합니다. 증거 링크가 필수입니다 |
+| `ledger_review` | reviewer | `VERIFIED`, `MET`, `NOT_MET`과 그 재개를 처리합니다(다시 연 `VERIFIED` 결함은 다시 수정하고 편집할 수 있습니다). 증거 링크가 필수입니다 |
 | `ledger_review_correct` | reviewer | 검증 행이 잘못되었음을 표시합니다 |
 
 첨부 도구(로그인, 증명, 작성자의 유효한 부여 하나 이상이 필요합니다. 아래 첨부 절을 보십시오).
