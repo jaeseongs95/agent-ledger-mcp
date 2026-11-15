@@ -29,36 +29,19 @@ public record DeployLayout(Platform platform,
         String logs) {
 
     /**
-     * The operating system families an installation is rendered for; the one thing a render option decides. What each family
-     * does (its service definitions, the host preparation) is its {@code ServicePlatform}; this holds what is plain data of it.
+     * The operating system families an installation is rendered for; the one thing a render option decides, and only its name.
+     * What each family does and what it accepts (its service definitions, the form of its paths, whether it has the nginx site,
+     * the host preparation) is its {@code ServicePlatform}, found by this constant in one place.
      */
     public enum Platform {
         /** A Linux server: systemd units; may have the nginx site. */
-        LINUX(DeployForms.POSIX_PATH, true),
+        LINUX,
         /** A personal PC or a Windows server: WinSW services; nginx is not part of it. */
-        WINDOWS(DeployForms.WINDOWS_JAVA, false);
-
-        private final String javaPathForm;
-        private final boolean servesNginx;
-
-        Platform(String javaPathForm, boolean servesNginx) {
-            this.javaPathForm = javaPathForm;
-            this.servesNginx = servesNginx;
-        }
+        WINDOWS;
 
         /** The value of {@code --platform} that names it. */
         public String option() {
             return name().toLowerCase(Locale.ROOT);
-        }
-
-        /** The form of the path of the Java runtime on this platform (a regular expression). */
-        String javaPathForm() {
-            return javaPathForm;
-        }
-
-        /** Whether an installation may have the nginx site. */
-        boolean servesNginx() {
-            return servesNginx;
         }
     }
 

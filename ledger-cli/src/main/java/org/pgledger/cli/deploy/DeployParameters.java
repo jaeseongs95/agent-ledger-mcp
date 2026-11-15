@@ -26,6 +26,10 @@ import org.pgledger.database.schema.GrantApplier;
  * {@code --platform=windows} (the server adds host names, and puts a reverse proxy of its own in front when it is reached
  * from outside), a Linux server is {@code --platform=linux} and can ask for the nginx site.
  *
+ * <p>The constraints here are those of every platform. What only a platform can judge (the form of the path of the Java runtime
+ * and of the files of the nginx site, whether there is a site at all) is its {@link ServicePlatform#refusedOptions}: this record
+ * does not know the platforms.
+ *
  * @param layout       where the files go (valid: the name of the instance)
  * @param java         absolute path of the {@code java} executable of the Java 25 runtime
  * @param jdbcUrl      JDBC URL of the ledger database; it never holds a password (the passwords are secrets of the secret store)
@@ -74,15 +78,9 @@ public record DeployParameters(
      * @param acme the automatic certificate, or null for the operator's own
      */
     public record Nginx(
-            @NotNull(message = DeployOptions.NGINX_CONF)
-            @Size(max = DeployForms.MAX_PATH, message = DeployOptions.NGINX_CONF)
-            @Pattern(regexp = DeployForms.POSIX_PATH, message = DeployOptions.NGINX_CONF) String conf,
-            @NotNull(message = DeployOptions.TLS_CERTIFICATE)
-            @Size(max = DeployForms.MAX_PATH, message = DeployOptions.TLS_CERTIFICATE)
-            @Pattern(regexp = DeployForms.POSIX_PATH, message = DeployOptions.TLS_CERTIFICATE) String certificate,
-            @NotNull(message = DeployOptions.TLS_KEY)
-            @Size(max = DeployForms.MAX_PATH, message = DeployOptions.TLS_KEY)
-            @Pattern(regexp = DeployForms.POSIX_PATH, message = DeployOptions.TLS_KEY) String key,
+            @NotNull(message = DeployOptions.NGINX_CONF) String conf,
+            @NotNull(message = DeployOptions.TLS_CERTIFICATE) String certificate,
+            @NotNull(message = DeployOptions.TLS_KEY) String key,
             @Valid Acme acme) {
 
         /** The nginx site with the operator's own certificate. */
@@ -116,12 +114,6 @@ public record DeployParameters(
                 adminHosts, site);
     }
 
-    /** The Java runtime is a plain path of the form of the platform. */
-    @AssertTrue(message = DeployOptions.JAVA)
-    public boolean isJavaPlain() {
-        return layout != null && DeployForms.isPath(java, layout.platform().javaPathForm());
-    }
-
     @AssertTrue(message = DeployOptions.APP_ACCOUNT)
     public boolean isAppAccountPlain() {
         return GrantApplier.isAccountName(appAccount);
@@ -148,27 +140,5 @@ public record DeployParameters(
     @AssertTrue(message = DeployOptions.ADMIN_HOST)
     public boolean isAdminHostApart() {
         return Collections.disjoint(mcpHosts, adminHosts);
-    }
-
-    /**
-     * nginx is not part of a Windows installation (see {@code deploy/install.cmd}): a Windows server that is reached from
-     * outside is put behind a reverse proxy the operator has prepared.
-     */
-    @AssertTrue(message = DeployOptions.NGINX_CONF)
-    public boolean isNginxForThePlatform() {
-        return nginx == null || layout == null || layout.platform().servesNginx();
-    }
-
-    /**
-     * The site serves the public host names of the MCP server: without one there is nothing to serve. The admin web has a block
-     * only when it has a public name; without one it is reached on loopback.
-     */
-    @AssertTrue(message = DeployOptions.MCP_HOST)
-    public boolean isMcpHostForTheSite() {
-        return nginx == null || !servesNginx() || !mcpHosts.isEmpty();
-    }
-
-    private boolean servesNginx() {
-        return layout == null || layout.platform().servesNginx();
     }
 }

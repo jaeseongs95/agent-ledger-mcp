@@ -3,21 +3,20 @@ package org.pgledger.cli.deploy;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
-import org.pgledger.cli.ErrorCode;
-import org.pgledger.cli.UsageException;
 import org.pgledger.cli.deploy.DeployLayout.Platform;
-import org.springframework.boot.ApplicationArguments;
 
 /**
  * What differs between the operating system families an installation is made for: how its two services are defined, what
- * the layout of the instance is, and what is done to the files of the host before the secrets exist and after the services
- * are registered. One implementation per {@link Platform}, each a component, found by the enum in one place
+ * the layout of the instance is, what its paths look like in the files it renders, which options it cannot use, and what is done
+ * to the files of the host before the secrets exist. One implementation per {@link Platform}, each a component, found by the enum in one place
  * ({@link ServicePlatforms}); a platform without its component stops the start of the tool. The commands and the renderer
  * ask the platform and branch on none.
  *
  * <p>The family is closed (Linux and Windows; macOS is no target), but it is the one axis along which the installer varies,
  * and every place that used to branch on it (the renderer, {@code prepare-host}, {@code seal-host}, the validation of the
- * options) is now a method here.
+ * options) is now a method here. This interface holds what every platform does. What only some platforms do is a capability of
+ * its own that only those platforms implement ({@link ServiceWrappers}, {@link TlsHosting}, {@link HostSealing}), found with
+ * {@link ServicePlatforms#capability}, so no platform has a method it cannot use.
  */
 interface ServicePlatform extends HostPaths {
 
@@ -32,41 +31,22 @@ interface ServicePlatform extends HostPaths {
      */
     DeployLayout layout(String name, String home);
 
+    /**
+     * The options of the parameters that this platform cannot use, by name ({@link DeployOptions}): a path of the form of another
+     * platform, a site that the platform has none of. The Jakarta constraints of {@link DeployParameters} hold what is the same on every
+     * platform; the reader of the options joins both and names the first of them in the order of the options.
+     */
+    List<String> refusedOptions(DeployParameters parameters);
+
     /** The files that define the two services (the MCP server and the admin web) for the service manager of the platform. */
     List<RenderedFile> serviceDefinitions(DeployParameters parameters);
-
-    /**
-     * The files {@code prepare-host} copies besides the jars and the driver (the executable of the service wrapper), read from
-     * its options.
-     *
-     * @throws org.pgledger.cli.UsageException for an option this platform has no use for, or a required one that is absent
-     */
-    List<Path> wrappers(ApplicationArguments arguments);
 
     /**
      * Prepares the files of the host ({@code prepare-host}): the folders with their owner and mode, or their ACLs, and the
      * copies of the jars, the driver and the wrappers. Everything is looked up that can refuse before the first change.
      *
      * @param root the directory to put everything below, or null for the real paths
-     * @param wrappers what {@link #wrappers} found
+     * @param wrappers what {@link ServiceWrappers#wrappers} found, none for a platform that has no wrapper
      */
     void prepare(DeployLayout layout, Path root, Path jars, Path driver, List<Path> wrappers) throws IOException;
-
-    /**
-     * The directories of the automatic certificate ({@code --tls-acme}): the TLS directory (the keys; the service account's
-     * alone) and the web root of the HTTP-01 proof (the service account writes it, the web server reads it). Only a platform
-     * that has the nginx site has them.
-     *
-     * @throws org.pgledger.cli.UsageException INVALID_DEPLOY_VALUE naming {@code tls-acme} on a platform without the site
-     */
-    default void prepareTls(DeployLayout layout, Path root) throws IOException {
-        throw new UsageException(ErrorCode.INVALID_DEPLOY_VALUE, DeployOptions.TLS_ACME);
-    }
-
-    /**
-     * The last step of an installation ({@code seal-host}).
-     *
-     * @throws org.pgledger.cli.UsageException INVALID_DEPLOY_VALUE naming {@code platform} when there is nothing to seal
-     */
-    void seal(DeployLayout layout, Path root) throws IOException;
 }

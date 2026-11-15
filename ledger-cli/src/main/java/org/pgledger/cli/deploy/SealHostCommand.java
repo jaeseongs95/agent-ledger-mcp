@@ -15,8 +15,9 @@ import org.springframework.stereotype.Component;
 /**
  * {@code seal-host <the options of render-deploy>}: the last file step of an installation on Windows, run after the secrets
  * are stored and the services are registered (what {@code icacls} did in {@code install.cmd}). The platform does it
- * ({@link ServicePlatform#seal}; {@link WindowsPlatform} describes what the service account gets and how the secrets are
- * handed over). On Linux nothing is left to do (the secrets are the service user's from the start), and the command refuses.
+ * ({@link HostSealing#seal}; {@link WindowsPlatform} describes what the service account gets and how the secrets are
+ * handed over). On Linux nothing is left to do (the secrets are the service user's from the start, so it has no
+ * {@link HostSealing}), and the command refuses.
  */
 @Component
 public class SealHostCommand implements Command {
@@ -57,8 +58,11 @@ public class SealHostCommand implements Command {
         DeployLayout layout = input.parameters().layout();
         ServicePlatform platform = platforms.of(layout.platform());
         files.requireReachable(platform, input.root(), layout);
+        // a platform whose secrets are the service user's from the start has nothing to seal
+        HostSealing sealing = platforms.capability(layout.platform(), HostSealing.class)
+                .orElseThrow(() -> new UsageException(ErrorCode.INVALID_DEPLOY_VALUE, DeployOptions.PLATFORM));
         try {
-            platform.seal(layout, input.root());
+            sealing.seal(layout, input.root());
         } catch (IOException e) {
             throw HostFiles.failure(e);
         }

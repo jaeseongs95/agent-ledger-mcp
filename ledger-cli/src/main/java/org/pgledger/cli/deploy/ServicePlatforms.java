@@ -35,6 +35,14 @@ final class ServicePlatforms {
         return platforms.get(platform);
     }
 
+    /**
+     * What only some platforms do ({@link ServiceWrappers}, {@link TlsHosting}, {@link HostSealing}): the platform as that
+     * capability, empty when it does not implement it. The command that needs it says what it refuses then.
+     */
+    <T> Optional<T> capability(Platform platform, Class<T> capability) {
+        return Optional.of(of(platform)).filter(capability::isInstance).map(capability::cast);
+    }
+
     /** The platform that the value of {@code --platform} names, empty for any other text (the match is exact). */
     Optional<Platform> named(String option) {
         return platforms.keySet().stream().filter(platform -> Objects.equals(platform.option(), option)).findFirst();

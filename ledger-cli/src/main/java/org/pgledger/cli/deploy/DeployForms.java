@@ -23,12 +23,12 @@ public final class DeployForms {
     public static final int MAX_HOSTS = 10;
     static final int MAX_URL = 600;
 
-    /** A path segment of plain characters; {@code .} and {@code ..} are no segment (they would leave the directory). */
+    /**
+     * A path segment of plain characters (letters, digits and {@code . _ + -}); {@code .} and {@code ..} are no segment (they would
+     * leave the directory). The form of a whole path, with its slashes and its drive, is the platform's that writes it
+     * ({@link ServicePlatform}); this is what the platforms share.
+     */
     static final String SEGMENT = "(?!\\.{1,2}(?:/|$))[A-Za-z0-9._+-]+";
-    /** Plain path segments only: letters, digits and {@code . _ + -}. */
-    public static final String POSIX_PATH = "(?:/" + SEGMENT + ")+";
-    /** The Java runtime of Windows lives in a directory with a space ({@code Program Files}); it is only ever an XML element. */
-    static final String WINDOWS_JAVA = "[A-Za-z]:(?:/(?!\\.{1,2}(?:/|$))[A-Za-z0-9._+ -]+)+";
     static final String HOST = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*";
     /**
      * The characters of a URI without quotes, backslash, {@code $}, braces and white space, and no password word anywhere:
