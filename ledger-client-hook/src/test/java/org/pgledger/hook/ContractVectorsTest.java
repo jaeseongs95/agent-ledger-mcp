@@ -175,6 +175,34 @@ class ContractVectorsTest {
     }
 
     @Test
+    @DisplayName("OPK-022 the vector lists operationKeyClaim and operationKeyArgument: carriesOperationKey() is true exactly for operationKeyClaim; operationKeyArgument is operationKeyClaim plus artifact-begin; both only name write or attachment tools")
+    void theOperationKeyListsMatchTheHook() {
+        JsonNode tools = vectors(ContractVectors.WRITE_TOOLS);
+        List<String> claim = texts(tools.path("operationKeyClaim"));
+        List<String> argument = texts(tools.path("operationKeyArgument"));
+        List<String> known = new ArrayList<>(texts(tools.path("write")));
+        known.addAll(texts(tools.path("attachment")));
+
+        assertThat(claim).as("operationKeyClaim is in the file").hasSize(9).doesNotHaveDuplicates();
+        assertThat(argument).as("operationKeyArgument is in the file").hasSize(10).doesNotHaveDuplicates();
+        assertThat(known).containsAll(claim).containsAll(argument);
+        assertThat(claim).doesNotContain("ledger_whoami", "artifact-begin", "artifact-chunk", "artifact-finish",
+                "artifact-status", "artifact-read");
+
+        assertThat(Arrays.stream(WriteTool.values()).filter(WriteTool::carriesOperationKey).map(WriteTool::canonicalName))
+                .containsExactlyInAnyOrderElementsOf(claim);
+        for (String name : known) {
+            assertThat(WriteTool.ofName(name).orElseThrow().carriesOperationKey()).as(name).isEqualTo(claim.contains(name));
+        }
+
+        List<String> expectedArgument = new ArrayList<>(claim);
+        expectedArgument.add("artifact-begin");
+        assertThat(argument).containsExactlyInAnyOrderElementsOf(expectedArgument);
+        // the one tool that takes the argument without having it in its claim is artifact-begin
+        assertThat(argument.stream().filter(name -> !claim.contains(name))).containsExactly("artifact-begin");
+    }
+
+    @Test
     @DisplayName("HK-043 no read tool vector is a write tool of the hook: the hook never signs for a read tool")
     void readToolsAreNotWriteTools() {
         for (String read : texts(vectors(ContractVectors.WRITE_TOOLS).path("read"))) {

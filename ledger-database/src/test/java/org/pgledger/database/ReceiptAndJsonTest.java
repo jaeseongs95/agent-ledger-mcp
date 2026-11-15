@@ -127,16 +127,56 @@ class ReceiptAndJsonTest {
                 ActorId.ofStored("claude:1"), "ledger_author", JsonDocument.of(json(new Response("COMMITTED"))),
                 LedgerTestContext.START);
         ctx.tx(() -> receipts.insert(stored));
-        assertThat(receipts.findById(reservedId).orElseThrow().response()).isNull();
-        assertThat(receipts.findById(storedId)).hasValue(stored);
+        // OPK-020 change: a receipt is read and finished by the pair (author, operation key), not by the key alone
+        assertThat(receipts.findByAuthorIdAndOperationKey(Seed.ALICE, reservedId).orElseThrow().response()).isNull();
+        assertThat(receipts.findByAuthorIdAndOperationKey(stored.authorId(), storedId)).hasValue(stored);
 
         ReceiptCompletionRepository completion = ctx.bean(ReceiptCompletionRepository.class);
         JsonDocument response = JsonDocument.of(json(new Response("COMMITTED")));
-        assertThat(ctx.tx(() -> completion.finish(reservedId, response))).isTrue();
-        assertThat(ctx.tx(() -> completion.finish(reservedId, response))).as("only once").isFalse();
-        assertThat(receipts.findById(reservedId).orElseThrow().response()).isEqualTo(response);
-        assertThat(ctx.tx(() -> completion.finish(storedId, response))).as("a stored response is never replaced")
-                .isFalse();
+        assertThat(ctx.tx(() -> completion.finish(Seed.ALICE, reservedId, response))).isTrue();
+        assertThat(ctx.tx(() -> completion.finish(Seed.ALICE, reservedId, response))).as("only once").isFalse();
+        assertThat(receipts.findByAuthorIdAndOperationKey(Seed.ALICE, reservedId).orElseThrow().response())
+                .isEqualTo(response);
+        assertThat(ctx.tx(() -> completion.finish(stored.authorId(), storedId, response)))
+                .as("a stored response is never replaced").isFalse();
+    }
+
+    /**
+     * OPK-013 (changed for the key per author): the primary key of request_receipt is the pair (author_id,
+     * operation_key). Two authors may hold one key, the same pair twice is a duplicate key, the lookup by the pair
+     * finds the receipt of the right author only, and finish touches only the receipt of its author.
+     */
+    @Test
+    void opk013_theReceiptKeyIsAuthorAndOperationKey() {
+        OperationKey key = new OperationKey(UUID.randomUUID().toString());
+        ActorId alice = Seed.ALICE;
+        ActorId other = ActorId.ofStored("claude:other-author");
+        Receipt first = ctx.tx(() -> receipts.insert(reserve(key)));
+        Receipt second = ctx.tx(() -> receipts.insert(Receipt.reserve(key, ReceiptOperation.TRANSITION,
+                Sha256.of("e".repeat(64)), other, Channel.AUTHOR, LedgerTestContext.START)));
+        assertThat(first.authorId()).isEqualTo(alice);
+        assertThat(second.authorId()).isEqualTo(other);
+
+        assertThatThrownBy(() -> ctx.tx(() -> receipts.insert(reserve(key)))).as("the same pair twice")
+                .isInstanceOf(DuplicateKeyException.class);
+        assertThatThrownBy(() -> ctx.tx(() -> receipts.insert(Receipt.reserve(key, ReceiptOperation.LINK,
+                Sha256.of("f".repeat(64)), other, Channel.AUTHOR, LedgerTestContext.START))))
+                .as("the same pair twice, other content").isInstanceOf(DuplicateKeyException.class);
+
+        assertThat(receipts.findByAuthorIdAndOperationKey(alice, key).orElseThrow().operation())
+                .isEqualTo(ReceiptOperation.SAVE);
+        assertThat(receipts.findByAuthorIdAndOperationKey(other, key).orElseThrow().operation())
+                .isEqualTo(ReceiptOperation.TRANSITION);
+        assertThat(receipts.findByAuthorIdAndOperationKey(ActorId.ofStored("claude:nobody"), key)).isEmpty();
+        assertThat(receipts.findByAuthorIdAndOperationKey(alice, key.derive(0))).isEmpty();
+
+        ReceiptCompletionRepository completion = ctx.bean(ReceiptCompletionRepository.class);
+        JsonDocument response = JsonDocument.of(json(new Response("COMMITTED")));
+        assertThat(ctx.tx(() -> completion.finish(other, key, response))).isTrue();
+        assertThat(receipts.findByAuthorIdAndOperationKey(alice, key).orElseThrow().response())
+                .as("the receipt of the other author is untouched").isNull();
+        assertThat(receipts.findByAuthorIdAndOperationKey(other, key).orElseThrow().response()).isEqualTo(response);
+        assertThat(ctx.tx(() -> completion.finish(ActorId.ofStored("claude:nobody"), key, response))).isFalse();
     }
 
     /** OPK-013: an operation key of the full 128 characters round-trips through the receipt and the history row. */
@@ -146,8 +186,9 @@ class ReceiptAndJsonTest {
         assertThat(key.value()).hasSize(128);
         Receipt stored = ctx.tx(() -> receipts.insert(reserve(key)));
         assertThat(stored.operationKey()).isEqualTo(key);
-        assertThat(receipts.findById(key).orElseThrow().operationKey()).isEqualTo(key);
-        assertThat(receipts.findById(new OperationKey("not-" + key.value().substring(4)))).isEmpty();
+        assertThat(receipts.findByAuthorIdAndOperationKey(Seed.ALICE, key).orElseThrow().operationKey()).isEqualTo(key);
+        assertThat(receipts.findByAuthorIdAndOperationKey(Seed.ALICE,
+                new OperationKey("not-" + key.value().substring(4)))).isEmpty();
 
         Seed seed = new Seed(ctx);
         Defect defect = seed.defect(seed.project(), 1, "key host", LedgerTestContext.START);

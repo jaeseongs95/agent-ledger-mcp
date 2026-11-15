@@ -11,6 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.pgledger.attestation.ArgumentsDigest;
 import org.pgledger.hook.AntigravityHost.Envelope;
 import tools.jackson.databind.JsonNode;
 
@@ -164,6 +165,54 @@ class SigningTest {
         assertThat(stamp.claims().operationKey()).isEmpty();
         assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token()));
         assertThat(host.stampedPart(run).has("request_id")).as("no request_id is added").isFalse();
+    }
+
+    /** A call whose arguments hold nulls, and the same call without them (what the digest covers). */
+    private record NullCase(String sent, String signed) {
+        @Override
+        public String toString() {
+            return sent;
+        }
+    }
+
+    private static final List<NullCase> NULL_MEMBER_CASES = List.of(
+            new NullCase("{\"operationKey\":\"k1\",\"entity\":\"defect\",\"fields\":{\"owner_actor_id\":null,\"title\":\"x\"}}",
+                    "{\"operationKey\":\"k1\",\"entity\":\"defect\",\"fields\":{\"title\":\"x\"}}"),
+            new NullCase("{\"operationKey\":\"k1\",\"fields\":{\"owner_actor_id\":null},\"reason\":null}",
+                    "{\"operationKey\":\"k1\",\"fields\":{}}"),
+            new NullCase("{\"operationKey\":\"k1\",\"note\":null,\"fields\":{\"a\":{\"b\":null,\"c\":1}}}",
+                    "{\"operationKey\":\"k1\",\"fields\":{\"a\":{\"c\":1}}}"),
+            new NullCase("{\"operationKey\":null,\"note\":null,\"fields\":{\"title\":null}}",
+                    "{\"fields\":{}}"));
+
+    static Stream<Arguments> nullMemberCases() {
+        return Hosts.cross(NULL_MEMBER_CASES);
+    }
+
+    @ParameterizedTest
+    @MethodSource("nullMemberCases")
+    @DisplayName("OPK-021 a call with null members (top level and inside fields) is signed with the digest of the arguments without the nulls; the arguments are handed on unchanged but for _hostAttestation, the nulls stay in what the host gets")
+    void nullMembersAreNotSignedButStayInTheArguments(HostScenario host, NullCase call, HookFixture fixture) {
+        JsonNode input = Json.of(call.sent());
+        Run run = fixture.runClean(host, host.event(host.toolName("save"), input));
+        Attestations.Stamp stamp = fixture.stamp(host, "save", input, run);
+        // the same value the server computes from what it receives (it never sees the null members)
+        Map<?, ?> received = (Map<?, ?>) Json.MAPPER.treeToValue(Json.of(call.signed()), Object.class);
+        assertThat(stamp.claims().argumentsDigest()).isEqualTo(ArgumentsDigest.of(received));
+        // the nulls are handed on: the document is the input plus the token, nothing dropped
+        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token()));
+        JsonNode handed = host.stampedPart(run);
+        assertThat(handed.has("note")).isEqualTo(input.has("note"));
+        if (input.has("note")) {
+            assertThat(handed.get("note").isNull()).as("note stays null").isTrue();
+        }
+        if (input.path("fields").has("owner_actor_id")) {
+            assertThat(handed.path("fields").has("owner_actor_id")).isTrue();
+            assertThat(handed.path("fields").get("owner_actor_id").isNull()).as("owner_actor_id stays null").isTrue();
+        }
+        // the claim's key: the operationKey text, empty when it was null
+        assertThat(stamp.claims().operationKey()).isEqualTo(input.path("operationKey").isString()
+                ? input.path("operationKey").stringValue() : "");
     }
 
     /** Operation keys the model chose: kept exactly as they are, blanks, case, length and non-ASCII included. */

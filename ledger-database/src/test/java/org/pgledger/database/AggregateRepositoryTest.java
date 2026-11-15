@@ -208,7 +208,7 @@ class AggregateRepositoryTest {
 
         Receipt receipt = receipts.insert(Receipt.reserve(request, ReceiptOperation.SAVE, Sha256.of("d".repeat(64)),
                 Seed.ALICE, Channel.AUTHOR, LedgerTestContext.START));
-        assertThat(receipts.findById(request)).hasValue(receipt);
+        assertThat(receipts.findByAuthorIdAndOperationKey(Seed.ALICE, request)).hasValue(receipt);
         assertThat(receipt.response()).isNull();
 
         SessionGrant grant = grants.insert(SessionGrant.issue(

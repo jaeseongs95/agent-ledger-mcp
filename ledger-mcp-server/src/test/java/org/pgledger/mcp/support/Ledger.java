@@ -1,7 +1,6 @@
 package org.pgledger.mcp.support;
 
 import java.util.List;
-import org.pgledger.domain.value.OperationKey;
 import org.pgledger.mcp.tool.ReadOutputs;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
@@ -24,15 +23,27 @@ public final class Ledger {
                 .param(operationKey).query(Long.class).single();
     }
 
+    /** How many write receipts this author holds under exactly this operation key (the key is per author: 0 or 1). */
+    public static long receipts(Scenario scenario, String author, String operationKey) {
+        return scenario.bean(JdbcClient.class)
+                .sql("SELECT COUNT(*) FROM request_receipt WHERE author_id = ? AND operation_key = ?")
+                .param(author).param(operationKey).query(Long.class).single();
+    }
+
+    /** The operations ({@code SAVE}, {@code BATCH}, ...) of the receipts that hold exactly this operation key, in any order. */
+    public static List<String> receiptOperations(Scenario scenario, String operationKey) {
+        return scenario.bean(JdbcClient.class).sql("SELECT operation FROM request_receipt WHERE operation_key = ?")
+                .param(operationKey).query(String.class).list();
+    }
+
     /**
-     * How many writes were made with this operation key as the caller sent it: 1 when a receipt is held under the key itself
-     * (a single write) or under the first derived key of a batch ({@code derive(0)}: the receipts of the operations of a batch are
-     * kept under the keys derived from the batch key, not under the batch key), otherwise 0.
+     * How many writes were made with this operation key as the caller sent it: 1 when a receipt is held under the key itself,
+     * otherwise 0. A single write holds its receipt under its key, and so does a batch (operation {@code BATCH}, next to the
+     * receipts of its operations under the keys derived from the batch key), so a receipt under the key itself is the mark of
+     * a write for every write tool.
      */
     public static long writes(Scenario scenario, String operationKey) {
-        boolean wrote = receipts(scenario, operationKey) > 0
-                || receipts(scenario, OperationKey.parse(operationKey).derive(0).value()) > 0;
-        return wrote ? 1 : 0;
+        return receipts(scenario, operationKey) > 0 ? 1 : 0;
     }
 
     /** How many write receipts the author holds, for a call that has no key of its own to look for (it must change nothing). */

@@ -249,6 +249,18 @@ class SchemaCatalogTest {
                 .contains("operation_key").doesNotContain("request_id");
     }
 
+    /** OPK-013: the primary key pk_request_receipt covers author_id and operation_key, in this order (a key per author). */
+    @Test
+    void opk013_theReceiptPrimaryKeyCoversAuthorAndOperationKey() {
+        assertThat(jdbc.sql("SELECT kcu.column_name FROM information_schema.table_constraints tc "
+                + "JOIN information_schema.key_column_usage kcu ON kcu.constraint_name = tc.constraint_name "
+                + "AND kcu.constraint_schema = tc.constraint_schema AND kcu.table_name = tc.table_name "
+                + "WHERE tc.table_schema = CURRENT_SCHEMA AND tc.table_name = 'request_receipt' "
+                + "AND tc.constraint_type = 'PRIMARY KEY' AND tc.constraint_name = 'pk_request_receipt' "
+                + "ORDER BY kcu.ordinal_position").query(String.class).list())
+                .containsExactly("author_id", "operation_key");
+    }
+
     /** RUN-010, RUN-016: the key is (version, attempt); the outcome is SUCCEEDED or FAILED and nothing else. */
     @Test
     void run016_theHistoryKeyAndTheOutcomeCheck() {

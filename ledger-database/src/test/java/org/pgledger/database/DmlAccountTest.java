@@ -234,7 +234,7 @@ class DmlAccountTest {
                         Seed.ALICE, Channel.AUTHOR.login(), ActorAssurance.DECLARED, HistoryEntity.DEFECT,
                         defect.id().value(), HistoryOp.CREATE, null, null, JsonDocument.EMPTY_OBJECT, null,
                         "a reason of enough length", null, null, null, request, null));
-                return ctx.bean(ReceiptCompletionRepository.class).finish(request, JsonDocument.EMPTY_OBJECT);
+                return ctx.bean(ReceiptCompletionRepository.class).finish(Seed.ALICE, request, JsonDocument.EMPTY_OBJECT);
             });
             // grants, links (the only deletes), common codes with their revision
             SessionGrant grant = ctx.tx(() -> ctx.bean(SessionGrantRepository.class).insert(SessionGrant.issue(

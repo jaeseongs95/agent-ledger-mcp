@@ -3,6 +3,7 @@ package org.pgledger.mcp;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.BiFunction;
@@ -20,19 +21,24 @@ import org.pgledger.mcp.support.Ledger;
 import org.pgledger.mcp.support.McpServerTest;
 import org.pgledger.mcp.support.McpSession;
 import org.pgledger.mcp.support.Scenario;
+import org.pgledger.mcp.support.SchemaView;
 import org.pgledger.mcp.support.Seed;
 import org.pgledger.mcp.support.WriteCase;
 import org.pgledger.mcp.tool.ReadOutputs;
 import org.pgledger.mcp.tool.WriteOutputs;
+import org.pgledger.testing.ContractVectors;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * OPK cases of the MCP tools (section 44 of the test cases): every write tool takes a required {@code operationKey}, the
  * idempotency key of the call, and the server never makes one up. Without one, with one outside 1..128 characters, with
  * the removed arguments of the 1.x contract ({@code request_id}, {@code batch_request_id}, {@code author_id}), with an
  * object or an array sent as text, nothing is written: no history row and no receipt. The batch has one key for the whole
- * batch and its operations carry none. The cases of the attestation (OPK-010) are in {@link AttestationWireTest}, those of
- * the schemas of the upload tools (OPK-011) in {@link AttachmentCatalogTest}.
+ * batch and its operations carry none; the batch holds a receipt of its own (operation BATCH) under its key, so the same key
+ * with other operations or under another tool is OPERATION_CONFLICT (OPK-019), and the receipts are kept per author (OPK-020).
+ * The published schemas follow the contract vectors (OPK-022). The cases of the attestation (OPK-010) are in
+ * {@link AttestationWireTest}, those of the schemas of the upload tools (OPK-011) in {@link AttachmentCatalogTest}.
  */
 @McpServerTest
 class OperationKeyTest {
@@ -173,7 +179,8 @@ class OperationKeyTest {
 
     @Test
     @DisplayName("OPK-005: one operationKey for the batch: the same key with the same operations returns the stored "
-            + "results and writes once; the same key with other operations is OPERATION_CONFLICT and writes nothing more")
+            + "results and writes once; the same key with other operations is OPERATION_CONFLICT and writes nothing more "
+            + "(changed by opkey round 2: the batch holds a receipt of its own under its key, operation BATCH)")
     void theBatchKeyIsReplayed(McpSession session, Scenario scenario) {
         String batchKey = Calls.freshKey();
         List<Calls.Op> ops = List.of(Calls.Op.save("defect", Fields.defect(scenario.projectId(), "first operation")),
@@ -191,8 +198,185 @@ class OperationKeyTest {
         assertThat(again).isEqualTo(first);
         assertThat(other.code()).isEqualTo("OPERATION_CONFLICT");
         assertThat(Ledger.history(session, scenario.projectId())).hasSize(2);
-        // the receipts of the operations are kept under the keys derived from the batch key
+        // the batch has a receipt of its own under its key (operation BATCH); the receipts of its operations are kept
+        // under the keys derived from the batch key, which are not the batch key
         assertThat(Ledger.writes(scenario, batchKey)).isOne();
+        assertThat(Ledger.receiptOperations(scenario, batchKey)).containsExactly("BATCH");
+        assertThat(Ledger.receipts(scenario, Scenario.AUTHOR, batchKey)).isOne();
+    }
+
+    // ---------------------------------------------------------------------------------------------- OPK-019 (wire)
+
+    private static Calls.Op defectA(Scenario scenario) {
+        return Calls.Op.save("defect", Fields.defect(scenario.projectId(), "operation A"));
+    }
+
+    private static Calls.Op taskB(Scenario scenario) {
+        return Calls.Op.save("task", Fields.task(scenario.projectId(), "operation B"));
+    }
+
+    @Test
+    @DisplayName("OPK-019 (wire): ledger_batch with a key that was used by [A]: [A] again replays the stored results, [A, B] "
+            + "is OPERATION_CONFLICT and B is not written; with a key that was used by [A, B]: [A] and [B, A] are "
+            + "OPERATION_CONFLICT; nothing more is written, and the key holds one BATCH receipt")
+    void aBatchKeyIsBoundToItsOperations(McpSession session, Scenario scenario) {
+        String project = scenario.projectId();
+        Calls.Op a = defectA(scenario);
+        Calls.Op b = taskB(scenario);
+        String single = Calls.freshKey();
+        String pair = Calls.freshKey();
+
+        BatchResults first = session.ok("ledger_batch", new Calls.Batch(List.of(a), single, Scenario.AUTHOR),
+                BatchResults.class);
+        BatchResults again = session.ok("ledger_batch", new Calls.Batch(List.of(a), single, Scenario.AUTHOR),
+                BatchResults.class);
+        ToolError added = session.failed("ledger_batch", new Calls.Batch(List.of(a, b), single, Scenario.AUTHOR));
+
+        assertThat(first.count()).isOne();
+        assertThat(again).isEqualTo(first);
+        assertThat(added.code()).isEqualTo("OPERATION_CONFLICT");
+        assertThat(Ledger.history(session, project)).as("A once, B not written").hasSize(1);
+
+        session.ok("ledger_batch", new Calls.Batch(List.of(a, b), pair, Scenario.AUTHOR), BatchResults.class);
+        ToolError removed = session.failed("ledger_batch", new Calls.Batch(List.of(a), pair, Scenario.AUTHOR));
+        ToolError moved = session.failed("ledger_batch", new Calls.Batch(List.of(b, a), pair, Scenario.AUTHOR));
+
+        assertThat(removed.code()).isEqualTo("OPERATION_CONFLICT");
+        assertThat(moved.code()).isEqualTo("OPERATION_CONFLICT");
+        assertThat(Ledger.history(session, project)).hasSize(3);
+        assertThat(Ledger.receiptOperations(scenario, single)).containsExactly("BATCH");
+        assertThat(Ledger.receiptOperations(scenario, pair)).containsExactly("BATCH");
+    }
+
+    @Test
+    @DisplayName("OPK-019 (wire): one operation key is one operation: a ledger_save with the key of a batch, and a ledger_batch "
+            + "with the key of a ledger_save, is OPERATION_CONFLICT and writes nothing more")
+    void aBatchKeyAndASaveKeyDoNotMeet(McpSession session, Scenario scenario) {
+        String project = scenario.projectId();
+        String batchKey = Calls.freshKey();
+        String saveKey = Calls.freshKey();
+        session.ok("ledger_batch", new Calls.Batch(List.of(defectA(scenario)), batchKey, Scenario.AUTHOR),
+                BatchResults.class);
+        session.ok("ledger_save", Calls.Save.create("defect", Fields.defect(project, "saved"), Scenario.AUTHOR)
+                .withOperationKey(saveKey), WriteOutputs.Saved.class);
+
+        ToolError saveUnderBatchKey = session.failed("ledger_save", Calls.Save
+                .create("defect", Fields.defect(project, "saved under the key of a batch"), Scenario.AUTHOR)
+                .withOperationKey(batchKey));
+        ToolError batchUnderSaveKey = session.failed("ledger_batch",
+                new Calls.Batch(List.of(defectA(scenario)), saveKey, Scenario.AUTHOR));
+
+        assertThat(saveUnderBatchKey.code()).isEqualTo("OPERATION_CONFLICT");
+        assertThat(batchUnderSaveKey.code()).isEqualTo("OPERATION_CONFLICT");
+        assertThat(Ledger.history(session, project)).hasSize(2);
+        assertThat(Ledger.receiptOperations(scenario, batchKey)).containsExactly("BATCH");
+        assertThat(Ledger.receiptOperations(scenario, saveKey)).containsExactly("SAVE");
+    }
+
+    // ---------------------------------------------------------------------------------------------- OPK-020 (wire)
+
+    @Test
+    @DisplayName("OPK-020 (wire): a second author with a grant who uses the operationKey that the first author used writes its "
+            + "own write (no conflict), each holds a receipt under its own author; the same author with other content under "
+            + "the key is OPERATION_CONFLICT, and the second author's own replay returns its stored answer")
+    void eachAuthorHasItsOwnKeys(McpSession session, Scenario scenario) {
+        String project = scenario.projectId();
+        String second = scenario.actorWith("second", "defect");
+        String key = Calls.freshKey();
+
+        WriteOutputs.Saved byFirst = session.ok("ledger_save", Calls.Save
+                .create("defect", Fields.defect(project, "first author"), Scenario.AUTHOR).withOperationKey(key),
+                WriteOutputs.Saved.class);
+        WriteOutputs.Saved bySecond = session.ok("ledger_save", Calls.Save
+                .create("defect", Fields.defect(project, "second author"), second).withOperationKey(key),
+                WriteOutputs.Saved.class);
+        WriteOutputs.Saved replayed = session.ok("ledger_save", Calls.Save
+                .create("defect", Fields.defect(project, "second author"), second).withOperationKey(key),
+                WriteOutputs.Saved.class);
+        ToolError otherContent = session.failed("ledger_save", Calls.Save
+                .create("defect", Fields.defect(project, "second author, other content"), second)
+                .withOperationKey(key));
+
+        assertThat(byFirst.author()).isEqualTo(Scenario.AUTHOR);
+        assertThat(bySecond.author()).isEqualTo(second);
+        assertThat(bySecond.id()).isNotEqualTo(byFirst.id());
+        assertThat(replayed).isEqualTo(bySecond);
+        assertThat(otherContent.code()).isEqualTo("OPERATION_CONFLICT");
+        assertThat(Ledger.history(session, project)).hasSize(2);
+        assertThat(Ledger.receipts(scenario, Scenario.AUTHOR, key)).isOne();
+        assertThat(Ledger.receipts(scenario, second, key)).isOne();
+        assertThat(Ledger.receipts(scenario, key)).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("OPK-020 (wire): the same holds for the key of a batch: the second author's batch under the first author's "
+            + "batch key writes its own operations and holds its own BATCH receipt; other operations under the key are "
+            + "OPERATION_CONFLICT for the same author")
+    void eachAuthorHasItsOwnBatchKeys(McpSession session, Scenario scenario) {
+        String project = scenario.projectId();
+        String second = scenario.actorWith("secondbatch", "defect");
+        String key = Calls.freshKey();
+        List<Calls.Op> ops = List.of(defectA(scenario));
+
+        BatchResults byFirst = session.ok("ledger_batch", new Calls.Batch(ops, key, Scenario.AUTHOR), BatchResults.class);
+        BatchResults bySecond = session.ok("ledger_batch", new Calls.Batch(ops, key, second), BatchResults.class);
+        ToolError otherOperations = session.failed("ledger_batch",
+                new Calls.Batch(List.of(defectA(scenario), defectA(scenario)), key, second));
+
+        assertThat(byFirst.count()).isOne();
+        assertThat(bySecond.count()).isOne();
+        assertThat(otherOperations.code()).isEqualTo("OPERATION_CONFLICT");
+        assertThat(Ledger.history(session, project)).extracting(ReadOutputs.History::authorId)
+                .containsExactlyInAnyOrder(Scenario.AUTHOR, second);
+        assertThat(Ledger.receipts(scenario, Scenario.AUTHOR, key)).isOne();
+        assertThat(Ledger.receipts(scenario, second, key)).isOne();
+        assertThat(Ledger.receiptOperations(scenario, key)).containsExactly("BATCH", "BATCH");
+    }
+
+    // ---------------------------------------------------------------------------------------------- OPK-022 (server)
+
+    private static final JsonMapper VECTORS = JsonMapper.builder().build();
+
+    /** One list of the contract vectors that the hook and the server share (the tool names of {@code write-tool-vectors.json}). */
+    private static List<String> vector(String list) {
+        List<String> names = new ArrayList<>();
+        VECTORS.readTree(ContractVectors.read(ContractVectors.WRITE_TOOLS)).get(list)
+                .forEach(name -> names.add(name.asString()));
+        return names;
+    }
+
+    static Stream<String> writeAndAttachmentTools() {
+        return Stream.concat(vector("write").stream(), vector("attachment").stream());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("writeAndAttachmentTools")
+    @DisplayName("OPK-022 (server): the published input schema of a write or attachment tool has operationKey among its "
+            + "properties and among its required ones exactly when the tool is in operationKeyArgument of the contract vectors")
+    void thePublishedSchemaFollowsTheVectors(String tool, McpSession session) {
+        boolean takesKey = vector("operationKeyArgument").contains(tool);
+
+        SchemaView input = SchemaView.of(session.mapper(), session.tool(tool).inputSchema());
+
+        assertThat(input.properties().containsKey(KEY)).as("operationKey is a property of %s", tool).isEqualTo(takesKey);
+        assertThat(input.required().contains(KEY)).as("operationKey is required by %s", tool).isEqualTo(takesKey);
+    }
+
+    @Test
+    @DisplayName("OPK-022 (server): the vectors name the nine ledger write tools and artifact-begin as the tools with an "
+            + "operationKey argument, and ledger_whoami, artifact-chunk, artifact-finish, artifact-status and "
+            + "artifact-read as the ones without; the claim list is the nine without artifact-begin")
+    void theVectorListsNameTheTools() {
+        List<String> argument = vector("operationKeyArgument");
+        List<String> without = writeAndAttachmentTools().filter(tool -> !argument.contains(tool)).toList();
+
+        assertThat(argument).containsExactlyInAnyOrder("ledger_save", "ledger_transition", "ledger_record_fix",
+                "ledger_record_case", "ledger_link", "ledger_correct", "ledger_batch", "ledger_review",
+                "ledger_review_correct", "artifact-begin");
+        assertThat(without).containsExactlyInAnyOrder("ledger_whoami", "artifact-chunk", "artifact-finish",
+                "artifact-status", "artifact-read");
+        assertThat(vector("operationKeyClaim")).containsExactlyInAnyOrderElementsOf(
+                argument.stream().filter(tool -> !"artifact-begin".equals(tool)).toList());
     }
 
     // ---------------------------------------------------------------------------------------------- OPK-006
