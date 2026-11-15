@@ -10,7 +10,10 @@ dependencies {
     implementation(project(":ledger-attestation"))
 
     testFixturesImplementation(platform(libs.spring.boot.bom))
-    testFixturesApi(libs.archunit)
+    // The shared rules (ArchitectureRules, PrincipleRules, SourceRules, CodingScan) live in the attestation test fixtures,
+    // not here: a test dependency of ledger-attestation on this module would close a project cycle with the main
+    // dependency above. These fixtures keep what needs a domain class (TestOwners, OwnerOnlyFiles) and hand the rules on.
+    testFixturesApi(testFixtures(project(":ledger-attestation")))
     testFixturesApi("org.assertj:assertj-core")
     testFixturesApi("org.junit.jupiter:junit-jupiter")
 

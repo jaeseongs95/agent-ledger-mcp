@@ -26,7 +26,7 @@ import org.pgledger.testing.SourceRules;
 import java.util.Map;
 
 /**
- * The ARC rules that apply to the MCP server module (the shared rules come from the domain test fixtures), and the
+ * The ARC rules that apply to the MCP server module (the shared rules come from the attestation test fixtures), and the
  * rules of the MCP server itself: reflection only in the binding package, tools call services only, the token is
  * compared in constant time.
  */

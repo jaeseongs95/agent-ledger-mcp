@@ -33,7 +33,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 /**
- * The ARC rules that apply to the admin web (the shared rules come from the domain test fixtures) and the rules of the
+ * The ARC rules that apply to the admin web (the shared rules come from the attestation test fixtures) and the rules of the
  * admin itself: no ledger workflow service, no repository in a controller, one error advice, filters registered (not
  * components) and never writing a body, no custom Sec-Fetch-Site or Origin check, secrets compared in constant time.
  */

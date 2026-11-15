@@ -26,7 +26,7 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** The ARC rules that apply to the application module (the shared rules come from the domain test fixtures). */
+/** The ARC rules that apply to the application module (the shared rules come from the attestation test fixtures). */
 class ArchitectureTest {
 
     private static final JavaClasses MAIN = ArchitectureRules.productionClasses("org.pgledger.application");
