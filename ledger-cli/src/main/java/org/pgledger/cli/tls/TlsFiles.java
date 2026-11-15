@@ -35,6 +35,8 @@ import java.util.regex.Pattern;
 import org.pgledger.cli.deploy.DeployLayout;
 import org.pgledger.cli.secret.ProcessUser;
 import org.pgledger.cli.secret.SecretProtection;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /**
@@ -50,7 +52,9 @@ import org.springframework.stereotype.Component;
 @Component
 class TlsFiles {
 
-    private static final Pattern BLOCK = Pattern.compile("-----BEGIN ([A-Z ]+)-----([A-Za-z0-9+/=\\s]*)-----END \\1-----");
+    private static final Logger LOG = LoggerFactory.getLogger(TlsFiles.class);
+
+    private static final Pattern BLOCK =Pattern.compile("-----BEGIN ([A-Z ]+)-----([A-Za-z0-9+/=\\s]*)-----END \\1-----");
     private static final Pattern TOKEN = Pattern.compile("[A-Za-z0-9_-]{1,128}");
     private static final FileAttribute<?> WEB_DIRECTORY = PosixFilePermissions
             .asFileAttribute(PosixFilePermissions.fromString("rwxr-xr-x"));
@@ -138,31 +142,35 @@ class TlsFiles {
         }
     }
 
-    /** The first certificate of {@code fullchain.pem} (the one of the host names), or empty when there is none or it cannot be read. */
-    Optional<X509Certificate> readCertificate(Path directory) throws IOException {
+    /**
+     * The first certificate of {@code fullchain.pem} (the one of the host names), or empty when there is no such file.
+     *
+     * @throws CertificateException when the file holds no certificate or cannot be parsed (the parser's exception is the cause)
+     */
+    Optional<X509Certificate> readCertificate(Path directory) throws IOException, CertificateException {
         Path file = chain(directory);
         if (!Files.isRegularFile(file)) {
             return Optional.empty();
         }
         try (InputStream in = Files.newInputStream(file)) {
-            return firstCertificate(in);
+            return Optional.of(firstCertificate(in));
         }
     }
 
-    /** The first certificate of a PEM chain as the authority sent it, or empty when the text holds none. */
-    Optional<X509Certificate> firstCertificate(String chainPem) throws IOException {
+    /**
+     * The first certificate of a PEM chain as the authority sent it.
+     *
+     * @throws CertificateException when the text holds no certificate or cannot be parsed (the parser's exception is the cause)
+     */
+    X509Certificate firstCertificate(String chainPem) throws CertificateException {
         return firstCertificate(new ByteArrayInputStream(chainPem.getBytes(StandardCharsets.US_ASCII)));
     }
 
-    private static Optional<X509Certificate> firstCertificate(InputStream in) throws IOException {
-        try {
-            Collection<? extends java.security.cert.Certificate> found = CertificateFactory.getInstance("X.509")
-                    .generateCertificates(in);
-            return found.stream().filter(X509Certificate.class::isInstance).map(X509Certificate.class::cast).findFirst();
-        } catch (CertificateException e) {
-            // a text that is not a certificate is no certificate: a file of it is replaced, an answer of it is refused
-            return Optional.empty();
-        }
+    private static X509Certificate firstCertificate(InputStream in) throws CertificateException {
+        Collection<? extends java.security.cert.Certificate> found = CertificateFactory.getInstance("X.509")
+                .generateCertificates(in);
+        return found.stream().filter(X509Certificate.class::isInstance).map(X509Certificate.class::cast).findFirst()
+                .orElseThrow(() -> new CertificateException("the text holds no X.509 certificate"));
     }
 
     /** The DNS names of the certificate, lower case. */
@@ -178,7 +186,9 @@ class TlsFiles {
                 }
             }
         } catch (CertificateException e) {
-            // an unreadable name list names nothing: the certificate does not cover the hosts and is renewed
+            // an unreadable name list names nothing: the certificate does not cover the hosts and is renewed; the reason is
+            // logged with its cause, so that the renewal is explained
+            LOG.warn("the subject alternative names of the certificate cannot be read; it is taken to name no host", e);
             return Set.of();
         }
         return names;
