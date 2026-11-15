@@ -251,7 +251,7 @@ The options of `deploy/install.sh` are given as `--name=value`; the ones it does
 | `--admin-port=<n>` | the loopback port of the admin web, default 8865 |
 | `--mcp-host=<host>[,<host>...]` | the public host name of the MCP server, or a comma list of several (each once, at most 10, lower case, no port); every name is allowed in its `Host` check and served by the nginx site. It can be given without `--admin-host` |
 | `--admin-host=<host>[,<host>...]` | the public host names of the admin web, in the same form; optional: without it the admin web is reached on loopback only (its `Host` check allows `127.0.0.1` and `localhost`), and the nginx site has no block for it |
-| `--nginx-conf=<path>` | Linux: write the nginx site to this file; needs `--mcp-host` and either `--tls-certificate=<path>` and `--tls-key=<path>` or `--tls-acme` |
+| `--nginx-conf=<path>` | Linux: write the nginx site to this file. The path must be one that the nginx of the host already includes in its `http` context (for example `/etc/nginx/conf.d/<name>.conf`, which the Debian, Ubuntu and RHEL-family packages include): the installer writes the site at that path and only runs `nginx -t` and a reload, and it links nothing into `sites-enabled`; needs `--mcp-host` and either `--tls-certificate=<path>` and `--tls-key=<path>` or `--tls-acme` |
 | `--tls-certificate=<path>` | the TLS certificate of the operator; nothing issues or renews one |
 | `--tls-key=<path>` | the TLS key of the operator |
 | `--tls-acme` | a flag, instead of the certificate and the key of the operator: the certificate is made and renewed by `ledger-cli` (see Automatic certificate) |

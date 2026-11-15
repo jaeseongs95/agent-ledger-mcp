@@ -89,6 +89,17 @@ class UsageTest {
         }
     }
 
+    @Test
+    @DisplayName("FIX-DOC-02 no Korean usage line runs a closing bracket of the options into the first word of its text")
+    void koreanUsageLinesHaveASpaceAfterTheClosingBracket() throws IOException {
+        Properties korean = bundle("messages_ko.properties");
+        for (String key : korean.stringPropertyNames()) {
+            if (key.startsWith("usage.")) {
+                assertThat(korean.getProperty(key)).as(key).doesNotContainPattern("\\]\\p{L}");
+            }
+        }
+    }
+
     /** FUP-USG-01/02: the output has the header and the usage line of this command, and the line of no other command. */
     private static void assertUsageOfOnly(String output, CliCommand failed, Properties messages) {
         assertThat(output).as("header").contains(messages.getProperty("usage.header"));
