@@ -237,12 +237,23 @@ public final class ArchitectureRules {
 
     /** ARC-022 / DOM-035: aggregates are records, enums or interfaces. */
     public static ArchRule modelTypesAreRecordsEnumsOrInterfaces() {
+        return modelTypesAreRecordsEnumsOrInterfaces("org.pgledger.domain.model");
+    }
+
+    /**
+     * The same rule for another package (the negative control points it at a fixture package). Classes the compiler generates
+     * (synthetic, such as the switch map {@code X$1} of a {@code switch} over an enum, or anonymous) are not hand-written
+     * model types and are skipped; a hand-written plain class is still refused.
+     */
+    public static ArchRule modelTypesAreRecordsEnumsOrInterfaces(String packageName) {
         return com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes().that()
-                .resideInAPackage("org.pgledger.domain.model")
+                .resideInAPackage(packageName)
                 .should(new com.tngtech.archunit.lang.ArchCondition<JavaClass>("be a record, an enum or an interface") {
                     @Override
                     public void check(JavaClass item, com.tngtech.archunit.lang.ConditionEvents events) {
-                        boolean ok = item.isRecord() || item.isEnum() || item.isInterface();
+                        boolean generated = item.getModifiers().contains(com.tngtech.archunit.core.domain.JavaModifier.SYNTHETIC)
+                                || item.isAnonymousClass();
+                        boolean ok = generated || item.isRecord() || item.isEnum() || item.isInterface();
                         events.add(new com.tngtech.archunit.lang.SimpleConditionEvent(item, ok,
                                 item.getName() + (ok ? " is fine" : " is not a record, enum or interface")));
                     }
