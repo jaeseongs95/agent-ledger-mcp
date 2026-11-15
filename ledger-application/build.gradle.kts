@@ -25,9 +25,10 @@ dependencies {
 // The test support of this module (the application context of the service tests, the scenario helpers, the key ring) is offered
 // to the tests of ledger-migrate-1x, whose import runs in a context of the real services: the compiled test classes as one jar,
 // consumed through the configuration testSupport only. No main code of any module depends on it.
+val testClassesOutput = project.extensions.getByType<org.gradle.api.tasks.SourceSetContainer>()["test"].output
 val testSupportJar = tasks.register<Jar>("testSupportJar") {
     archiveClassifier = "test-support"
-    from(the<org.gradle.api.tasks.SourceSetContainer>()["test"].output)
+    from(testClassesOutput)
 }
 val testSupport = configurations.create("testSupport") {
     isCanBeConsumed = true

@@ -5,7 +5,7 @@ package org.pgledger.cli;
  * reasons of {@code ledger-cli}; another program that is built on this module has an enum of its own that implements this
  * interface.
  */
-public interface ErrorKey {
+public interface ErrorKey extends java.io.Serializable {
 
     /** The name of the reason (an enum constant name). */
     String name();

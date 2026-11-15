@@ -5,7 +5,7 @@ package org.pgledger.cli;
  * the usage report). {@link CliCommand} is the set of the commands of {@code ledger-cli}; another program (the migration tool) has
  * a set of its own, an enum that implements this interface, and runs on the same machinery.
  */
-public interface CommandName {
+public interface CommandName extends java.io.Serializable {
 
     /** The word on the command line. */
     String cliName();
