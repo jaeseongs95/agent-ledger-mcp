@@ -1,7 +1,6 @@
 package org.pgledger.cli.support;
 
 import java.time.Clock;
-import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
@@ -38,8 +37,8 @@ public final class TestLedgerDatabase implements AutoCloseable {
         boolean ready = false;
         try {
             TestSchemaServices.migrator(database.dataSource,
-                    new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, longTextType(), true, database.schemaName(),
-                            Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT)), Clock.systemUTC()).migrate();
+                    new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, true, database.schemaName()),
+                    Clock.systemUTC()).migrate();
             ready = true;
         } finally {
             if (!ready) {
@@ -47,11 +46,6 @@ public final class TestLedgerDatabase implements AutoCloseable {
             }
         }
         return database;
-    }
-
-    /** The long text type of the schema files: the default of the product, the setting {@code ledger.schema.long-text-type}. */
-    public static String longTextType() {
-        return SchemaProperties.DEFAULT_LONG_TEXT_TYPE;
     }
 
     /** A new, empty schema (no table; the schema files are not migrated). */

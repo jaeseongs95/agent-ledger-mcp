@@ -44,7 +44,7 @@ public final class TestSchemaServices {
 
     public static SchemaMigrator migrator(DataSource dataSource, SchemaProperties properties, Clock clock) {
         SchemaHistoryRepository history = history(dataSource);
-        ProxyFactory proxy = new ProxyFactory(new SchemaFileApplier(dataSource, history, properties));
+        ProxyFactory proxy = new ProxyFactory(new SchemaFileApplier(dataSource, history));
         proxy.setProxyTargetClass(true);
         // typed as TransactionManager on purpose: the overload for a PlatformTransactionManager is the deprecated one
         TransactionManager transactions = new DataSourceTransactionManager(dataSource);

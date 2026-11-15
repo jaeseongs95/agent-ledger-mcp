@@ -77,8 +77,7 @@ class AttachmentSetupTest {
     }
 
     private Outcome run(Cli cli, RecordingOutput output, String... settings) {
-        List<String> arguments = new ArrayList<>(List.of("--ledger.schema.long-text-type=" + TestLedgerDatabase.longTextType(),
-                "--ledger.secrets.home=" + etc()));
+        List<String> arguments = new ArrayList<>(List.of("--ledger.secrets.home=" + etc()));
         arguments.addAll(List.of(settings));
         return cli.withDatabase(database.dataSource()).withApplicationAccount(database.applicationDataSource(true))
                 .asProcessUser("alice").withArguments(arguments.toArray(String[]::new))

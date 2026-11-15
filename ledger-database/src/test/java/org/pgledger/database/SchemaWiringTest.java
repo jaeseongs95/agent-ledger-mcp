@@ -42,8 +42,7 @@ class SchemaWiringTest {
                 .withConfiguration(AutoConfigurations.of(DataSourceTransactionManagerAutoConfiguration.class,
                         TransactionAutoConfiguration.class))
                 .withBean(Clock.class, Clock::systemUTC)
-                .withPropertyValues("ledger.schema.long-text-type=" + Databases.LONG_TEXT,
-                        "ledger.schema.require-utc=false");
+                .withPropertyValues("ledger.schema.require-utc=false");
     }
 
     @Test

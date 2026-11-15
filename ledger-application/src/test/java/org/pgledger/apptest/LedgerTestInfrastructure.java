@@ -1,7 +1,6 @@
 package org.pgledger.apptest;
 
 import java.time.Clock;
-import java.time.Duration;
 import java.util.List;
 import javax.sql.DataSource;
 import org.pgledger.database.repository.IdAllocator;
@@ -80,8 +79,7 @@ public class LedgerTestInfrastructure {
     @Bean
     SchemaMigrated schemaMigrated(DataSource dataSource, Clock clock, Environment environment) {
         return new SchemaMigrated(TestSchemaServices.migrator(dataSource,
-                new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, SchemaProperties.DEFAULT_LONG_TEXT_TYPE, true,
-                        environment.getRequiredProperty(TestSchemaInitializer.SCHEMA_PROPERTY),
-                        Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT)), clock).migrate());
+                new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, true,
+                        environment.getRequiredProperty(TestSchemaInitializer.SCHEMA_PROPERTY)), clock).migrate());
     }
 }

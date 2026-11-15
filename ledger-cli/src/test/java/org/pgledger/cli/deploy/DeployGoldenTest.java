@@ -33,7 +33,6 @@ class DeployGoldenTest {
         values.put(DeployOptions.JDBC_URL, "jdbc:postgresql://db.example.org:5432/ledger");
         values.put(DeployOptions.APP_ACCOUNT, "ledger_app");
         values.put(DeployOptions.SCHEMA, "ledger");
-        values.put(DeployOptions.LONG_TEXT_TYPE, "TEXT");
         values.put(DeployOptions.MCP_HOST, "mcp.example.org");
         values.put(DeployOptions.ADMIN_HOST, "admin.example.org");
         values.put(DeployOptions.NGINX_CONF, "/etc/nginx/conf.d/pg-ledger-mcp.conf");
@@ -90,12 +89,25 @@ class DeployGoldenTest {
                 .replaceAll("(?m)^ReadWritePaths=/var/lib/[^\\n]*/attachments\\n", "");
     }
 
+    /**
+     * RUN-006: the setting of the long text type (and the option of the installer that wrote it) is gone, the long text type is read
+     * from the driver. The one target that gave the option, "linux with site" (it passed {@code TEXT}), rendered one line of the
+     * setting below the schema name; the digests below are those with that line. So the line is put back here, at the place it had,
+     * before the content is hashed: the digests keep their values exactly when the files differ from the old ones by that one line and
+     * by nothing else (the way PSK-INS-01 proved its block by cutting it, in the other direction).
+     */
+    private static String withRemovedLongTextLine(String content) {
+        String removedKey = "long-text" + "-type";
+        return content.replaceAll("(?m)^(  schema:\\n    name: .*\\n)", "$1    " + removedKey + ": 'TEXT'\n");
+    }
+
     /** The SHA-256 of path and content of every rendered file, in the order the renderer gives them. */
     private static String digest(List<RenderedFile> files) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             for (RenderedFile file : files) {
-                digest.update((file.path() + "\u0000" + withoutAttachments(file.content()) + "\u0000").getBytes(StandardCharsets.UTF_8));
+                digest.update((file.path() + "\u0000" + withRemovedLongTextLine(withoutAttachments(file.content())) + "\u0000")
+                        .getBytes(StandardCharsets.UTF_8));
             }
             return HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException e) {

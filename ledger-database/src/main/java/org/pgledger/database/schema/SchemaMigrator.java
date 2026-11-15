@@ -5,7 +5,6 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import org.pgledger.database.repository.SchemaHistoryRepository;
 import org.pgledger.database.repository.SchemaHistoryRepository.Outcome;
 import org.pgledger.database.repository.SchemaHistoryRepository.Row;
@@ -15,26 +14,40 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.support.ResourcePatternResolver;
 import org.springframework.dao.DataAccessException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.TransactionException;
 
 /**
- * Applies the ANSI schema files {@code V{n}__*.sql} in order and records every attempt as a row of {@code schema_history}
- * (rows are only appended). It is the run of the operator's {@code migrate} command; the applications only verify (see
- * {@link SchemaVerifier}). The run itself opens no transaction: it loops over the files and calls the service
- * {@link SchemaFileApplier} once per file, whose method is one transaction (principle 4.4); the history rows that are written
- * outside such a transaction (a FAILED attempt, the table itself) are single statements of the repository.
+ * Applies the ANSI schema files {@code V{n}__*.sql} in order and records every attempt as a row of {@code schema_history}, in the
+ * form that the three products share (the common migration applier, edition 2). It is the run of the operator's {@code migrate}
+ * command; the applications only verify (see {@link SchemaVerifier}) and refuse to start on a schema that is not up to date,
+ * naming {@code ledger-cli migrate}. The run itself opens no transaction: it loops over the files and calls the service
+ * {@link SchemaFileApplier} once per file, whose method is one attempt and one transaction (principle 4.4); the history rows that
+ * are written outside such a transaction (a FAILED attempt, the table itself) are single statements of the repository.
  *
  * <ul>
- * <li>A version is applied once. Its file's SHA-256 is recorded; if the file changes afterwards, the digest
- *     mismatch is recorded as a FAILED attempt and migration stops.
- * <li>A file that fails is recorded as FAILED and migration stops; the next run retries that version and appends
- *     another row. The latest outcome of every version must be SUCCESS before the next version is applied. On a
- *     DBMS with transactional DDL a failed file is rolled back as a whole; on others the part that ran stays and
- *     the operator repairs it before retrying.
- * <li>Gaps, files applied out of order and files that are missing are refused.
+ * <li>A version is applied once. Its attempt inserts its own row {@code (version, attempt)} as FAILED first and turns that one row
+ *     to SUCCEEDED last; the file's SHA-256 is recorded. If the file changes afterwards the run stops before it applies anything
+ *     and adds no row (a changed file is no attempt).
+ * <li>A file that fails is rolled back and recorded as a FAILED row of its attempt, unless the claim row of the attempt was kept
+ *     (a DBMS that commits every DDL statement at once); migration stops. The next run retries that version as the next attempt
+ *     and keeps the earlier rows: no row is updated but the own row of an attempt, none is deleted.
+ * <li>Two runners that apply the same version at once claim the same {@code (version, attempt)}: the second waits for the first in
+ *     the database and then gets the duplicate key. It reads the history once: the version SUCCEEDED with the digest of its
+ *     file means the other runner did it, so it goes on; otherwise it stops with {@code SCHEMA_MIGRATION_FAILED} and the next run
+ *     tries again. The runners themselves never wait, poll or retry.
+ * <li>Gaps, files applied out of order and files that are missing are refused. The encoding of the database has to be UTF-8, and
+ *     the long text type of the files comes from the driver ({@link LongTextType}).
  * </ul>
+ *
+ * <p>Why this applier and why the explicit command. The ledger does not use Flyway: a Flyway release from 10 on needs a module for
+ * every DBMS it supports and answers "Unsupported Database" for one it has none for, while the ledger asks for ANSI SQL on any
+ * database whose JDBC driver the owner registers (the one difference, the long text type, is read from the driver). And the ledger
+ * migrates by the explicit command {@code ledger-cli migrate} and not when the server starts, because the server never holds the
+ * password of the DDL account: the schema is changed by the DDL account of the operator, the servers run on the application account
+ * that can read and write the tables and cannot change them, so a server that is taken over cannot change the schema.
  *
  * <p>What the history says about a file is {@link SchemaHistory}, the same judgement the verifier uses. Failures are an
  * {@link InfrastructureException} with a {@code SCHEMA_*} code.
@@ -43,13 +56,6 @@ import org.springframework.transaction.TransactionException;
 public class SchemaMigrator {
 
     private static final Logger LOG = LoggerFactory.getLogger(SchemaMigrator.class);
-    /**
-     * How often the history is looked at while waiting for another migration process (see
-     * {@link #appliedByAnotherProcess}). There is no event to wait for: the other process is a separate program, and the
-     * only thing it leaves behind that this one can see is its row in {@code schema_history}. So the row is polled, at
-     * this interval, until {@code ledger.schema.peer-wait} is over.
-     */
-    private static final long PEER_POLL_MILLIS = 50;
 
     private final SchemaHistoryRepository repository;
     private final SchemaFileApplier applier;
@@ -67,7 +73,8 @@ public class SchemaMigrator {
     }
 
     /**
-     * Applies every pending version and returns the versions applied by this call (empty when up to date).
+     * Applies every pending version and returns the versions applied by this call (empty when up to date, and for a version that
+     * another runner applied at the same time).
      *
      * @throws InfrastructureException one of the schema codes ({@code SCHEMA_*}) when the files and the history disagree,
      *         a file failed or the database cannot be reached
@@ -76,16 +83,19 @@ public class SchemaMigrator {
         List<MigrationFile> files = MigrationFile.load(resolver, properties.location());
         MigrationFile.requireContiguous(files);
         try {
+            DatabaseEncoding.requireUtf8(repository.characterSets());
             if (properties.name() != null) {
                 // the data source of the application already names this schema for every connection (DriverDataSources)
-                repository.createSchemaIfMissing(properties.name());
+                ensureSchema(properties.name());
             }
             ensureTable();
+            // what the placeholder of the files stands for on this database, asked once (LongTextType: from the driver, no setting)
+            String longTextType = LongTextType.choose(repository.typeInfo());
             List<Integer> applied = new ArrayList<>();
             for (MigrationFile file : files) {
                 SchemaHistory history = new SchemaHistory(repository.rows());
                 history.requireFileForEveryVersion(files);
-                if (!settle(history, file) && apply(file)) {
+                if (!settle(history, file) && apply(file, history.nextAttemptOf(file.version()), longTextType)) {
                     applied.add(file.version());
                 }
             }
@@ -96,6 +106,22 @@ public class SchemaMigrator {
         }
     }
 
+    /**
+     * Creates the schema when it is missing. A second runner may create it first: when the creation fails the schema is looked for
+     * once, and found means go on (the other runner made it), not found means the failure is thrown as it is.
+     */
+    private void ensureSchema(String schema) {
+        try {
+            repository.createSchemaIfMissing(schema);
+        } catch (DataAccessException e) {
+            if (!repository.schemaExists(schema)) {
+                throw e;
+            }
+            LOG.info("the schema {} was created by another migration process at the same time", schema, e);
+        }
+    }
+
+    /** The same for the history table: when the creation fails it is looked for once; found means go on, else the failure. */
     private void ensureTable() {
         if (repository.tableExists()) {
             return;
@@ -112,7 +138,8 @@ public class SchemaMigrator {
 
     /**
      * Looks at the history of one version. Returns true when it is applied and intact; false when it must be
-     * applied (never succeeded, or only failed attempts so far); throws when it must stop.
+     * applied (never succeeded, or only failed attempts so far); throws when it must stop. A changed file stops the run and
+     * records nothing.
      */
     private boolean settle(SchemaHistory history, MigrationFile file) {
         return switch (history.verdictOf(file)) {
@@ -120,43 +147,48 @@ public class SchemaMigrator {
                 history.requireNothingLaterApplied(file);
                 yield false;
             }
-            case DIGEST_CHANGED -> {
-                if (!history.latestFailureIsOf(file)) {
-                    repository.append(new Row(file.version(), file.fileName(), file.digest(),
-                            nextTime(history.attemptsOf(file.version())), Outcome.FAILED));
-                }
-                throw history.digestMismatch(file);
-            }
+            case DIGEST_CHANGED -> throw history.digestMismatch(file);
             case LATEST_FAILED -> throw SchemaHistory.recordedFailed(file);
             case INTACT -> true;
         };
     }
 
     /**
-     * Has the service run one file and its SUCCESS row (one transaction); true when applied by this call. A failure rolls the
-     * transaction back; the FAILED row is written afterwards, outside it.
+     * Has the service run one attempt of one file, claim and SUCCEEDED row included (one transaction); true when applied by this
+     * call. A failure rolls the transaction back; the FAILED row is written afterwards, outside it.
      */
-    private boolean apply(MigrationFile file) {
-        List<Row> before = new SchemaHistory(repository.rows()).attemptsOf(file.version());
+    private boolean apply(MigrationFile file, int attempt, String longTextType) {
         try {
-            applier.apply(file, nextTime(before));
-            LOG.info("applied V{} {}", file.version(), file.fileName());
+            applier.apply(file, attempt, now(), longTextType);
+            LOG.info("applied V{} {} (attempt {})", file.version(), file.fileName(), attempt);
             return true;
         } catch (DataAccessException | TransactionException e) {
-            return failed(file, before, e);
+            return failed(file, attempt, e);
         }
     }
 
-    private boolean failed(MigrationFile file, List<Row> before, RuntimeException cause) {
+    /**
+     * The attempt did not end. The history is read once. The duplicate key of the claim means that another runner has this
+     * attempt: when it is the same version with the digest of this file, SUCCEEDED, it is applied and this runner goes on (false: not
+     * applied by this call). Otherwise the attempt is recorded as FAILED unless its row is there already (the claim that a DBMS with
+     * committing DDL kept, or the row of the runner that has the attempt) and the failure is thrown; the next run tries again.
+     *
+     * <p>Catching the duplicate key here is not what principle 4.4 forbids: this is the migration runner, not a use case, the catch
+     * is outside the transaction of the attempt (which is rolled back), and it only reads the history once and then skips or stops,
+     * as the common format (edition 2, section 3) prescribes.
+     */
+    private boolean failed(MigrationFile file, int attempt, RuntimeException cause) {
         InfrastructureException failure = new InfrastructureException(InfrastructureCode.SCHEMA_MIGRATION_FAILED,
                 List.of(String.valueOf(file.version()), file.fileName()), cause);
         try {
-            if (appliedByAnotherProcess(file, before)) {
+            SchemaHistory now = new SchemaHistory(repository.rows());
+            if (cause instanceof DuplicateKeyException && now.isAppliedWithDigestOf(file)) {
                 LOG.info("V{} was applied by another migration process", file.version(), cause);
                 return false;
             }
-            List<Row> now = new SchemaHistory(repository.rows()).attemptsOf(file.version());
-            repository.append(new Row(file.version(), file.fileName(), file.digest(), nextTime(now), Outcome.FAILED));
+            if (now.attemptsOf(file.version()).stream().noneMatch(row -> row.attempt() == attempt)) {
+                repository.append(new Row(file.version(), attempt, file.fileName(), file.digest(), now(), Outcome.FAILED));
+            }
         } catch (DataAccessException recording) {
             // the history cannot be read or written either: the failure of the file is still what the caller must learn,
             // so it stays the cause, and the failure of recording it is attached, not thrown in its place
@@ -165,39 +197,8 @@ public class SchemaMigrator {
         throw failure;
     }
 
-    /**
-     * A file that fails may only have met another migration process that is applying the same version (a DBMS
-     * that commits every DDL statement at once shows its half-done file as an error). The history decides: this
-     * waits up to {@code peerWait} for a SUCCESS row of the same digest that was not there before. The wait is a
-     * poll of the history ({@link #PEER_POLL_MILLIS}) because the other process is another program and gives no event.
-     */
-    private boolean appliedByAnotherProcess(MigrationFile file, List<Row> before) {
-        long deadline = System.nanoTime() + properties.peerWait().toNanos();
-        while (true) {
-            List<Row> now = new SchemaHistory(repository.rows()).attemptsOf(file.version());
-            if (now.size() > before.size() && now.stream()
-                    .anyMatch(r -> r.outcome() == Outcome.SUCCESS && Objects.equals(r.sha256(), file.digest()))) {
-                return true;
-            }
-            if (System.nanoTime() - deadline >= 0) {
-                return false;
-            }
-            try {
-                Thread.sleep(PEER_POLL_MILLIS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new InfrastructureException(InfrastructureCode.SCHEMA_MIGRATION_INTERRUPTED, List.of(), e);
-            }
-        }
-    }
-
-    /** Now (microseconds), but strictly after the previous attempt of the same version, which the key needs. */
-    private Instant nextTime(List<Row> rowsOfVersion) {
-        Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
-        if (rowsOfVersion.isEmpty()) {
-            return now;
-        }
-        Instant last = rowsOfVersion.getLast().appliedAt();
-        return now.isAfter(last) ? now : last.plus(1, ChronoUnit.MICROS);
+    /** Now, to the microsecond (what the column holds). */
+    private Instant now() {
+        return clock.instant().truncatedTo(ChronoUnit.MICROS);
     }
 }

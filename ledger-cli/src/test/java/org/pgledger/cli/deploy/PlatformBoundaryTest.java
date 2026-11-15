@@ -42,7 +42,7 @@ class PlatformBoundaryTest {
     private final DeployLayout windows = DeployLayout.windows("x", "C:/ProgramData/x");
 
     private static DeployParameters parameters(DeployLayout layout, String java, DeployParameters.Nginx site, List<String> mcpHosts) {
-        return new DeployParameters(layout, java, "jdbc:postgresql://db.example.org:5432/ledger", "ledger_app", null, null, 8765,
+        return new DeployParameters(layout, java, "jdbc:postgresql://db.example.org:5432/ledger", "ledger_app", null, 8765,
                 8865, mcpHosts, List.of(), site);
     }
 

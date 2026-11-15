@@ -105,8 +105,8 @@ class DmlAccountTest {
         TestSchema schema = database.newSchema();
         String account = database.settings().appUser();
         schema.allowUsage(account);
-        SchemaProperties properties = new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, Databases.LONG_TEXT, true,
-                schema.name(), java.time.Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT));
+        SchemaProperties properties = new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, true,
+                schema.name());
         // the owner's connections in the schema of the test: the one data source of the product names the schema itself
         DataSource owner = schema.dataSource();
         if (migrate) {
@@ -266,8 +266,8 @@ class DmlAccountTest {
     void sch014_theMigrationIsRefusedForTheApplicationAccountButItCanReadTheHistory() throws Exception {
         try (Env fresh = environment(false, false)) {
             assertThatThrownBy(() -> TestSchemaServices.migrator(fresh.app(),
-                    new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, Databases.LONG_TEXT, true, null,
-                            java.time.Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT)), Clock.systemUTC())
+                    new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, true, null),
+                    Clock.systemUTC())
                     .migrate())
                     .isInstanceOf(InfrastructureException.class);
         }

@@ -120,7 +120,7 @@ final class DeployInputReader {
         }
         DeployParameters parameters = new DeployParameters(layout, require(values.get(DeployOptions.JAVA)),
                 require(values.get(DeployOptions.JDBC_URL)), require(values.get(DeployOptions.APP_ACCOUNT)),
-                values.get(DeployOptions.SCHEMA), values.get(DeployOptions.LONG_TEXT_TYPE),
+                values.get(DeployOptions.SCHEMA),
                 number(values.get(DeployOptions.MCP_PORT), defaults.mcpPort(), DeployOptions.MCP_PORT),
                 number(values.get(DeployOptions.ADMIN_PORT), defaults.adminPort(), DeployOptions.ADMIN_PORT),
                 DeployForms.splitHosts(values.get(DeployOptions.MCP_HOST)),

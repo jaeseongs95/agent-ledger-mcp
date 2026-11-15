@@ -21,7 +21,8 @@ import org.pgledger.domain.value.Sha256;
 
 /**
  * SCH-030 (SchemaHistory): the one judgement of a schema file against {@code schema_history} that the migrator and the
- * verifier share. No database: the history is a value, so every state is a list of rows.
+ * verifier share. No database: the history is a value, so every state is a list of rows. A row is one attempt of a version
+ * (the key is the version and the attempt, the common form of the three products).
  */
 class SchemaHistoryTest {
 
@@ -33,8 +34,8 @@ class SchemaHistoryTest {
         return new MigrationFile(version, "V" + version + "__x.sql", text, Sha256.ofText(text));
     }
 
-    private static Row row(MigrationFile file, int second, Outcome outcome) {
-        return new Row(file.version(), file.fileName(), file.digest(), T0.plusSeconds(second), outcome);
+    private static Row row(MigrationFile file, int attempt, Outcome outcome) {
+        return new Row(file.version(), attempt, file.fileName(), file.digest(), T0.plusSeconds(attempt), outcome);
     }
 
     /** A history, the file it is asked about, and what it must say. */
@@ -47,19 +48,21 @@ class SchemaHistoryTest {
 
     static Stream<Case> cases() {
         return Stream.of(
-                new Case("never attempted", List.of(row(file(1, "one"), 0, Outcome.SUCCESS)), TWO, Verdict.PENDING),
-                new Case("only failed attempts", List.of(row(TWO, 0, Outcome.FAILED), row(TWO, 1, Outcome.FAILED)), TWO,
+                new Case("never attempted", List.of(row(file(1, "one"), 1, Outcome.SUCCEEDED)), TWO, Verdict.PENDING),
+                new Case("only failed attempts", List.of(row(TWO, 1, Outcome.FAILED), row(TWO, 2, Outcome.FAILED)), TWO,
                         Verdict.FAILED_ONLY),
-                new Case("applied and intact", List.of(row(TWO, 0, Outcome.SUCCESS)), TWO, Verdict.INTACT),
-                new Case("failed once, then applied", List.of(row(TWO, 0, Outcome.FAILED), row(TWO, 1, Outcome.SUCCESS)),
+                new Case("applied and intact", List.of(row(TWO, 1, Outcome.SUCCEEDED)), TWO, Verdict.INTACT),
+                new Case("failed once, then applied", List.of(row(TWO, 1, Outcome.FAILED), row(TWO, 2, Outcome.SUCCEEDED)),
                         TWO, Verdict.INTACT),
-                new Case("the applied file was edited", List.of(row(TWO, 0, Outcome.SUCCESS)), EDITED_TWO,
+                new Case("the applied file was edited", List.of(row(TWO, 1, Outcome.SUCCEEDED)), EDITED_TWO,
                         Verdict.DIGEST_CHANGED),
-                new Case("edited, and the edit was recorded as failed",
-                        List.of(row(TWO, 0, Outcome.SUCCESS), row(EDITED_TWO, 1, Outcome.FAILED)), EDITED_TWO,
+                new Case("failed with the old text, applied, then the file was edited",
+                        List.of(row(file(2, "old"), 1, Outcome.FAILED), row(TWO, 2, Outcome.SUCCEEDED)), EDITED_TWO,
                         Verdict.DIGEST_CHANGED),
-                new Case("applied, then the latest attempt failed",
-                        List.of(row(TWO, 0, Outcome.SUCCESS), row(TWO, 1, Outcome.FAILED)), TWO, Verdict.LATEST_FAILED));
+                new Case("failed with the old text, the file was edited since: it is tried again",
+                        List.of(row(TWO, 1, Outcome.FAILED)), EDITED_TWO, Verdict.FAILED_ONLY),
+                new Case("applied, then a later attempt failed",
+                        List.of(row(TWO, 1, Outcome.SUCCEEDED), row(TWO, 2, Outcome.FAILED)), TWO, Verdict.LATEST_FAILED));
     }
 
     @ParameterizedTest
@@ -72,18 +75,42 @@ class SchemaHistoryTest {
     @Test
     @DisplayName("SCH-030 only the attempts of the version of the file count")
     void otherVersionsAreNotLookedAt() {
-        SchemaHistory history = new SchemaHistory(List.of(row(file(1, "one"), 0, Outcome.FAILED),
-                row(TWO, 1, Outcome.SUCCESS)));
+        SchemaHistory history = new SchemaHistory(List.of(row(file(1, "one"), 1, Outcome.FAILED),
+                row(TWO, 1, Outcome.SUCCEEDED)));
         assertThat(history.verdictOf(TWO)).isEqualTo(Verdict.INTACT);
         assertThat(history.verdictOf(file(1, "one"))).isEqualTo(Verdict.FAILED_ONLY);
         assertThat(history.attemptsOf(2)).hasSize(1);
     }
 
     @Test
+    @DisplayName("RUN-015 the next attempt of a version is the highest attempt recorded plus one, counted from 1 for a version never attempted")
+    void theNextAttempt() {
+        SchemaHistory history = new SchemaHistory(List.of(row(file(1, "one"), 1, Outcome.SUCCEEDED),
+                row(TWO, 1, Outcome.FAILED), row(TWO, 2, Outcome.FAILED), row(TWO, 3, Outcome.FAILED)));
+
+        assertThat(history.nextAttemptOf(2)).isEqualTo(4);
+        assertThat(history.nextAttemptOf(1)).isEqualTo(2);
+        assertThat(history.nextAttemptOf(3)).isEqualTo(1);
+        assertThat(new SchemaHistory(List.of()).nextAttemptOf(1)).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("RUN-012 a version counts as applied by a peer only when a SUCCEEDED attempt of it has the digest of the file")
+    void appliedWithTheSameDigest() {
+        SchemaHistory history = new SchemaHistory(List.of(row(TWO, 1, Outcome.FAILED), row(TWO, 2, Outcome.SUCCEEDED)));
+
+        assertThat(history.isAppliedWithDigestOf(TWO)).isTrue();
+        assertThat(history.isAppliedWithDigestOf(EDITED_TWO)).as("another digest").isFalse();
+        assertThat(new SchemaHistory(List.of(row(TWO, 1, Outcome.FAILED))).isAppliedWithDigestOf(TWO)).as("only a failure")
+                .isFalse();
+        assertThat(new SchemaHistory(List.of()).isAppliedWithDigestOf(TWO)).isFalse();
+    }
+
+    @Test
     @DisplayName("SCH-030 a version of the history without a file is SCHEMA_APPLIED_FILE_MISSING; a later success with the version not applied is SCHEMA_OUT_OF_ORDER")
     void theRefusalsThatDoNotDependOnOneFile() {
-        SchemaHistory history = new SchemaHistory(List.of(row(file(1, "one"), 0, Outcome.SUCCESS),
-                row(file(3, "three"), 1, Outcome.SUCCESS)));
+        SchemaHistory history = new SchemaHistory(List.of(row(file(1, "one"), 1, Outcome.SUCCEEDED),
+                row(file(3, "three"), 1, Outcome.SUCCEEDED)));
 
         InfrastructureException missing = catchThrowableOfType(InfrastructureException.class,
                 () -> history.requireFileForEveryVersion(List.of(file(1, "one"))));
@@ -99,17 +126,12 @@ class SchemaHistoryTest {
     }
 
     @Test
-    @DisplayName("SCH-030 a digest mismatch names both digests; a failure is only recorded again when it is not recorded yet")
-    void theMismatchAndTheRecordedFailure() {
-        SchemaHistory applied = new SchemaHistory(List.of(row(TWO, 0, Outcome.SUCCESS)));
+    @DisplayName("RUN-013 a digest mismatch names both digests")
+    void theMismatch() {
+        SchemaHistory applied = new SchemaHistory(List.of(row(TWO, 1, Outcome.SUCCEEDED)));
+
         assertThat(applied.digestMismatch(EDITED_TWO).args()).containsExactly("2", "V2__x.sql", TWO.digest().hex(),
                 EDITED_TWO.digest().hex());
-        assertThat(applied.latestFailureIsOf(EDITED_TWO)).isFalse();
-
-        SchemaHistory recorded = new SchemaHistory(List.of(row(TWO, 0, Outcome.SUCCESS),
-                row(EDITED_TWO, 1, Outcome.FAILED)));
-        assertThat(recorded.latestFailureIsOf(EDITED_TWO)).isTrue();
-        assertThat(recorded.latestFailureIsOf(TWO)).as("a failure of another digest").isFalse();
-        assertThat(new SchemaHistory(List.of()).latestFailureIsOf(TWO)).isFalse();
+        assertThat(applied.digestMismatch(EDITED_TWO).code()).isEqualTo(InfrastructureCode.SCHEMA_DIGEST_MISMATCH);
     }
 }

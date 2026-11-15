@@ -165,7 +165,6 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | `ledger.jdbc.pool-size` | 전체 | 연결 풀 크기, 기본 10 |
 | `ledger.jdbc.driver` | 전체 | `driver-register`가 기록한 등록된 드라이버(jar, 클래스, SHA-256)이며 시작할 때 읽습니다 |
 | `ledger.schema.name` | 전체 | 표를 담는 스키마. 없으면 `migrate`가 만들고, 지정하지 않으면 계정의 기본 스키마입니다 |
-| `ledger.schema.long-text-type` | 전체 | 스키마 파일의 긴 텍스트 타입이며 DDL에서 데이터베이스마다 다른 유일한 부분입니다. 기본 `TEXT` |
 | `ledger.schema.require-utc` | 서버, CLI | JVM이나 데이터베이스 세션이 UTC가 아니면 시작을 거부합니다. 기본 true |
 | `ledger.attestation.window` | 서버 | 증명의 시각이 서버 시각과 벌어질 수 있는 한도, 기본 `PT5M` |
 | `ledger.mcp.token` | MCP 서버, `mcp-check` | 에이전트의 bearer 토큰, 16자 이상(비밀) |
@@ -269,7 +268,6 @@ cp ledger-cli/build/libs/ledger-cli.jar ledger-mcp-server/build/libs/ledger-mcp-
 | `--app-account=<account>` | 앱 계정 |
 | `--jdbc-url=<url>` | 장부 데이터베이스의 JDBC URL(비밀번호를 넣지 않습니다) |
 | `--schema=<name>` | `ledger.schema.name`, 선택 |
-| `--long-text-type=<type>` | `ledger.schema.long-text-type`, 선택 |
 | `--mcp-port=<n>` | MCP 서버의 루프백 포트, 기본값 8765 |
 | `--admin-port=<n>` | 관리 웹의 루프백 포트, 기본값 8865 |
 | `--mcp-host=<host>[,<host>...]` | MCP 서버의 공개 호스트 이름 하나, 또는 쉼표로 구분한 여러 개(이름마다 한 번, 최대 10개, 소문자, 포트 없음). 모든 이름이 그 `Host` 검사에서 허용되고 nginx 사이트에서 서비스됩니다. `--admin-host` 없이 줄 수 있습니다 |
@@ -437,8 +435,17 @@ OpenID Connect로 로그인하고, 첫 패스키는 `passkey-code`로 등록합�
    `ledger-cli`를 서비스 사용자로 실행합니다. 예: `sudo -u <name> java -jar /opt/<name>/ledger-cli.jar --ledger.secrets.instance=<name> project-add ...`.
 3. 클라이언트 훅을 설치하고(클라이언트 훅 참조), 세션마다 `key-register`로 키를 등록한 뒤 `grant`로 부여합니다.
 
-`migrate`는 파일 `V{n}__*.sql`을 순서대로 적용하고, 시도마다 파일의 SHA-256과 함께 `schema_history` 표에 기록합니다. 적용한 뒤에 바뀐 파일이 있으면 모든
-프로세스가 시작할 때 멈춥니다.
+`migrate`는 파일 `V{n}__*.sql`을 순서대로 적용하고, 시도마다 파일의 SHA-256과 함께 `schema_history` 표에 기록합니다. 표는 버전의 시도마다 한 행을
+가지며 열은 `version`, `attempt`, `script`, `digest`, `applied_at`, `outcome`(`SUCCEEDED` 또는 `FAILED`)입니다. 시도 하나는 트랜잭션 하나입니다. 시도는
+자기 행을 `FAILED`로 먼저 넣고 마지막에 그 한 행을 `SUCCEEDED`로 바꿉니다. 파일이 실패하면 시도를 되돌리고 행은 `FAILED`로 남으며, 다음 실행은
+이전 행을 바꾸거나 지우지 않고 그 버전을 다음 시도로 다시 적용합니다. `migrate`를 동시에 두 번 실행해도 안전합니다. 두 번째는 데이터베이스에서 첫 번째를
+기다린 뒤 첫 번째가 적용한 것을 건너뜁니다. 적용한 뒤에 바뀐 파일이 있으면 `migrate`는 아무것도 적용하기 전에 멈추고 모든 프로세스도 시작할 때 멈추며,
+그 일로 행을 더하지 않습니다. 데이터베이스의 인코딩은 UTF-8이어야 하고, 스키마 파일의 긴 텍스트 타입은 JDBC 드라이버에서 가져옵니다(그에 대한 설정은 없습니다).
+
+장부는 Flyway를 쓰지 않습니다. 최신 Flyway는 DBMS마다 모듈이 있어야 하고 모듈이 없는 데이터베이스는 거부하지만, 장부는 사용자가 드라이버를 등록하는 어떤
+데이터베이스에도 ANSI SQL을 요구하기 때문입니다. 또 서버가 시작할 때가 아니라 이 명시적인 명령으로 마이그레이션하는 까닭은 서버가 DDL 계정의 비밀번호를
+갖지 않기 때문입니다. 서버는 시작할 때 스키마를 확인만 하고, 적용하지 않은 파일이 있으면 시작을 거부하며 `ledger-cli migrate`를 알려 줍니다. 그래서
+서버가 침해되어도 스키마는 바뀌지 않습니다.
 
 ## ledger-cli
 
@@ -468,9 +475,9 @@ OpenID Connect로 로그인하고, 첫 패스키는 `passkey-code`로 등록합�
 | `attachments-rekey` | `attachments-rekey --from=<keyId>` | 키 `<keyId>`로 쓴 첨부 파일을 활성 키 `ledger.attachments.active-key-id`(다른 키여야 합니다)로 다시 씁니다. 옛 파일은 `ledger.attachments.orphan-grace`가 지난 뒤 `attachments-check`가 `orphans/`로 옮깁니다 |
 | `attachments-key-create` | `attachments-key-create` | 키 디렉터리에 새 256비트 키 파일을 만들고(서비스 계정만 읽을 수 있습니다) 키 ID를 출력합니다. 키 자체는 출력하지 않으며, 새 업로드를 그 키로 쓰려면 `ledger.attachments.active-key-id`를 그 값으로 설정합니다 |
 | `mcp-check` | `mcp-check [--url=<url>] [--ledger.mcp.token=<token>]` | 실행 중인 MCP 서버에 연결해 도구를 확인합니다 |
-| `render-deploy` | `render-deploy --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--long-text-type=<type>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--from-1x-env=<file>] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>] [--check]` | 서비스 정의(systemd 유닛, Windows에서는 WinSW 설정)와 설정, 선택적 nginx 사이트를 씁니다. 설치기가 호출합니다 |
-| `prepare-host` | `prepare-host --jars=<dir> --driver-jar=<file> [--winsw=<file>] --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--long-text-type=<type>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--from-1x-env=<file>] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>]` | 호스트의 파일을 준비합니다(root로, Windows에서는 관리자 권한으로 실행). 폴더를 소유자·모드 또는 ACL과 함께 만들고, jar와 드라이버(Windows에서는 WinSW도)를 복사하고, `render-deploy`가 쓰는 것을 씁니다. 설치기가 호출합니다 |
-| `seal-host` | `seal-host --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--long-text-type=<type>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--from-1x-env=<file>] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>]` | Windows, 마지막 단계: LocalService에 필요한 접근을 주고 비밀을 넘깁니다. 설치기가 호출합니다 |
+| `render-deploy` | `render-deploy --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--from-1x-env=<file>] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>] [--check]` | 서비스 정의(systemd 유닛, Windows에서는 WinSW 설정)와 설정, 선택적 nginx 사이트를 씁니다. 설치기가 호출합니다 |
+| `prepare-host` | `prepare-host --jars=<dir> --driver-jar=<file> [--winsw=<file>] --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--from-1x-env=<file>] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>]` | 호스트의 파일을 준비합니다(root로, Windows에서는 관리자 권한으로 실행). 폴더를 소유자·모드 또는 ACL과 함께 만들고, jar와 드라이버(Windows에서는 WinSW도)를 복사하고, `render-deploy`가 쓰는 것을 씁니다. 설치기가 호출합니다 |
+| `seal-host` | `seal-host --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--from-1x-env=<file>] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>]` | Windows, 마지막 단계: LocalService에 필요한 접근을 주고 비밀을 넘깁니다. 설치기가 호출합니다 |
 | `install-default` | `install-default <name>` | 시드 번들에서 설치 기본값 하나(`instance-name`, `mcp-port`, `admin-port`)를 출력합니다. 설치기가 기본값을 이것으로 받습니다 |
 | `tls-issue` | `tls-issue --mcp-host=<host>[,<host>...] [--admin-host=<host>[,<host>...]] [--name=<name>] [--webroot=<dir>] [--tls-dir=<dir>] [--acme-directory=<url>] [--acme-email=<address>] [--agree-tos]` | ACME를 쓰는 인증 기관에서 준 호스트 이름의 인증서를 발급받아 `fullchain.pem`과 `privkey.pem`을 씁니다. 첫 실행은 계정을 만들며 `--agree-tos`가 필요합니다. 자동 인증서 참조 |
 | `tls-renew` | `tls-renew --mcp-host=<host>[,<host>...] [--admin-host=<host>[,<host>...]] [--name=<name>] [--webroot=<dir>] [--tls-dir=<dir>] [--acme-directory=<url>] [--renew-before-days=<n>]` | 현재 인증서가 `--renew-before-days`(기본 30일) 안에 만료되거나 준 호스트 이름과 정확히 일치하지 않을 때 새 인증서를 발급받고, 그렇지 않으면 아무것도 하지 않습니다. `--tls-acme`의 타이머가 실행합니다 |

@@ -215,7 +215,7 @@ class PackagedProductSystemTest {
                 "session_grant", "schema_history");
         schemaHistoryAfterMigrate = schemaHistory(schema);
         assertThat(schemaHistoryAfterMigrate).hasSize(ShippedMigrations.count()).allSatisfy(row -> assertThat(row.get("outcome"))
-                .isEqualTo("SUCCESS"));
+                .isEqualTo("SUCCEEDED"));
         assertThat(privileges("history")).containsExactlyInAnyOrder("SELECT", "INSERT");
         assertThat(privileges("defect")).contains("SELECT", "INSERT", "UPDATE").doesNotContain("DELETE");
         // the step of the DBMS that the grant template leaves to the operator: the account may look into the schema
@@ -539,8 +539,8 @@ class PackagedProductSystemTest {
     }
 
     private List<Map<String, String>> schemaHistory(String name) {
-        return owner.rows("SELECT version, file_name, sha256, applied_at, outcome FROM " + name
-                + ".schema_history ORDER BY version, applied_at");
+        return owner.rows("SELECT version, attempt, script, digest, applied_at, outcome FROM " + name
+                + ".schema_history ORDER BY version, attempt");
     }
 
     /** The privileges the application account holds on a table of the schema (information_schema, ANSI). */

@@ -57,7 +57,6 @@ class ImportAfterSetupTest {
     private Outcome run(Cli cli, RecordingOutput output, String... args) {
         return cli.withDatabase(database.dataSource()).withApplicationAccount(database.applicationDataSource(true))
                 .withLegacySource(legacy.reader(), legacy.schema()).asProcessUser(USER)
-                .withArguments("--ledger.schema.long-text-type=" + TestLedgerDatabase.longTextType())
                 .run(tmp.resolve("secrets"), null, output, args);
     }
 
@@ -122,7 +121,7 @@ class ImportAfterSetupTest {
 
         try (TestLedgerDatabase other = TestLedgerDatabase.empty()) {
             Outcome ready = cli.withDatabase(other.dataSource()).withApplicationAccount(other.applicationDataSource(true))
-                    .asProcessUser(USER).withArguments("--ledger.schema.long-text-type=" + TestLedgerDatabase.longTextType())
+                    .asProcessUser(USER)
                     .run(tmp.resolve("secrets"), null, new RecordingOutput(), "setup", "--app-account=" + other.appAccount());
             assertThat(ready.exitCode()).isZero();
             other.update("INSERT INTO project (id, code, title, version, created_by) VALUES ('own', 'OWN', 'a project of its own', 1, 'owner')");
