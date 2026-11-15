@@ -49,7 +49,7 @@ class RetireLegacyCommandTest {
     private static final String FUNCTIONS = "SELECT COUNT(*) AS n FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n "
             + "ON n.oid = p.pronamespace WHERE n.nspname = ?";
     private static final String TRIGGERS = "SELECT COUNT(*) AS n FROM pg_catalog.pg_trigger t JOIN pg_catalog.pg_class c "
-            + "ON c.oid = t.tgrelid JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = ?";
+            + "ON c.oid = t.tgrelid JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = ? AND NOT t.tgisinternal";
 
     @TempDir
     Path tmp;
@@ -93,7 +93,8 @@ class RetireLegacyCommandTest {
         return ((Number) rows.getFirst().get("n")).longValue();
     }
 
-    /** Nothing was dropped: the schema, its tables, the view, the three functions and the trigger are there. */
+    /** Nothing was dropped: the schema, its tables, the view, the three functions and the trigger are there.
+     * Internal triggers (the ones PostgreSQL makes for foreign keys) are not counted. */
     private void assertLegacyIntact() {
         assertThat(TestDatabase.shared().exists(legacy.schema())).isTrue();
         assertThat(legacy.objects()).containsAll(LegacyLedger.TABLES).contains("v_defect");
