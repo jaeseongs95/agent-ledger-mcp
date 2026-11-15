@@ -110,9 +110,10 @@ class BatchAndErrorsTest {
         List<ErrorCode> codes = allCodes();
         // 62, the 8 passkey codes (PSK-DOM-01) and the 15 codes of the attachments (ATA-001 ..; common table 3.2):
         // ARTIFACT_UNSUPPORTED_PURPOSE (validation), ARTIFACT_NOT_FOUND (lookup), nine conflicts (with ARTIFACT_STORAGE_FULL),
-        // four infrastructure codes, the code of the long text type of the schema files (RUN-003) and the code of the encoding of the database (RUN-017), and no
-        // code for an interrupted wait for another runner any more (the database waits, RUN-012)
-        assertThat(codes).hasSize(86);
+        // four infrastructure codes and the code of the encoding of the database (RUN-017), and no code for the long text type
+        // of the schema files (the dialect of SqlBuilder decides, RUN-003 retired) and none for an interrupted wait for another
+        // runner (the database waits, RUN-012)
+        assertThat(codes).hasSize(85);
         assertThat(codes.stream().map(ErrorCode::token)).doesNotHaveDuplicates();
         assertThat(codes.stream().map(ErrorCode::token)).contains("AUTHOR_ID_FORMAT", "SESSION_NOT_GRANTED",
                 "HOST_ATTESTATION_REQUIRED", "VERSION_CONFLICT", "SAME_SESSION", "MERGED_DEFECT", "CODE_REQUIRED",
