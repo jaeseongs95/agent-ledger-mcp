@@ -187,18 +187,20 @@ class SecretSetCommandTest {
 
     @Test
     @RequiresPosixPermissions
-    @DisplayName("SEC-006 secret-set refuses a loose existing directory (exit 1) naming path and mode, before any prompt")
-    void sec006_looseDirectoryIsRefusedBeforePrompt(Cli cli, CapturedOutput captured) throws IOException {
+    @DisplayName("SEC-006 (changed by SFR-010) secret-set uses a loose existing directory as it is (exit 0): the secret is asked for once and stored, the directory keeps its mode")
+    void sec006_looseDirectoryIsUsed(Cli cli, CapturedOutput captured) throws IOException {
         Files.createDirectory(directory());
         Files.setPosixFilePermissions(directory(), PosixFilePermissions.fromString("rwxr-xr-x"));
         ScriptedSecretInput input = new ScriptedSecretInput(VALUE.toCharArray());
 
         Outcome result = cli.run(directory(), input, new RecordingOutput(), "secret-set", NAME);
 
-        assertThat(result.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
-        assertThat(result.code()).contains(ErrorCode.LOOSE_PERMISSIONS);
-        assertThat(input.reads()).isZero();
-        assertThat(captured.getAll()).contains(directory().toString()).contains("rwxr-xr-x");
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.failure()).isNull();
+        assertThat(input.reads()).isEqualTo(1);
+        assertThat(Files.readString(directory().resolve(NAME))).isEqualTo(VALUE);
+        assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(directory()))).isEqualTo("rwxr-xr-x");
+        assertThat(captured.getAll()).doesNotContain(VALUE);
     }
 
     @ParameterizedTest(name = "[{index}] {0}")

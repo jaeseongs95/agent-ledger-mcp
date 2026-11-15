@@ -10,25 +10,28 @@ import java.nio.charset.CoderResult;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.nio.file.attribute.UserPrincipal;
 import java.util.Arrays;
-import java.util.Objects;
 
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.FailureException;
 import org.springframework.stereotype.Component;
 
 /**
- * Stores one secret per file in an owner-only directory owned by the current process user. The protection is given at
- * creation and chosen by the file system, never by the name of the operating system ({@link SecretProtection}): POSIX
- * permissions 0700 (directory) and 0600 (file), or on a file system with ACLs an ACL with one entry for the owner and
- * nothing inherited. An existing directory or file with wider access, a link, or another owner is refused, not repaired.
- * A file system with neither is refused (NON_POSIX_FILESYSTEM): nothing is stored with the default protection.
+ * Stores one secret per file in a directory that is created owner-only. The protection is given at creation and chosen by
+ * the file system, never by the name of the operating system ({@link SecretProtection}): POSIX permissions 0700 (directory)
+ * and 0600 (file), or on a file system with ACLs an ACL with one entry for the owner and nothing inherited. A file system
+ * with neither is refused for a creation (NON_POSIX_FILESYSTEM): nothing is stored with the default protection.
+ *
+ * <p>Reading and replacing what exists does not look at who may reach it. The personal edition trusts the whole PC: an
+ * existing directory or file with wider access (an ACL entry for Users or Authenticated Users, which a folder on a data
+ * volume inherits by default on Windows; group or other bits), another owner, or a link (it is followed) is used as it is.
+ * Only a path of the wrong kind is refused: a file where the directory belongs, or a directory or another type where the
+ * secret file belongs (UNEXPECTED_FILE_TYPE), and a stored secret whose file is empty (EMPTY_SECRET_FILE). There is no setting
+ * that turns a check on.
  */
 @Component
 public class SecretStore {
@@ -45,16 +48,15 @@ public class SecretStore {
         this.directory = properties.directory();
     }
 
-    /** Refuses early (before the user types anything) when the store cannot be used; creates nothing. */
+    /**
+     * Refuses early (before the user types anything) when a secret cannot be stored: a file system that cannot hold an
+     * owner-only file, a missing parent, a path of the wrong kind; creates nothing.
+     */
     public void check(SecretName name) {
-        SecretProtection protection = protection();
+        protection();
         try {
-            if (Files.exists(directory, LinkOption.NOFOLLOW_LINKS)) {
-                requireOwnerOnly(directory, true, protection);
-                Path target = directory.resolve(name.value());
-                if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
-                    requireOwnerOnly(target, false, protection);
-                }
+            if (Files.exists(directory)) {
+                requireKinds(name);
             } else {
                 requireParent();
             }
@@ -63,24 +65,26 @@ public class SecretStore {
         }
     }
 
-    /**
-     * Whether the secret is stored already. Refuses like {@link #check} when the directory or the file cannot be used (a
-     * secret of the wrong owner or with wider access is never reported as present and never used).
-     */
+    /** Whether the secret is stored already. Refuses like {@link #check} when the store cannot be used for a secret. */
     public boolean exists(SecretName name) {
         check(name);
-        return Files.exists(directory.resolve(name.value()), LinkOption.NOFOLLOW_LINKS);
+        return Files.exists(directory.resolve(name.value()));
     }
 
     /**
      * The stored value, to store it under a second name ({@code token-generate --copy-to}); the caller wipes it. It is read
-     * only from a file that passed the checks of {@link #check} (owner, owner-only access), and never printed.
+     * from a regular file (a link is followed) whoever may reach it, never printed.
+     *
+     * @throws FailureException EMPTY_SECRET_FILE when the file is empty; UNEXPECTED_FILE_TYPE when the path is not a regular file
      */
     public char[] load(SecretName name) {
-        check(name);
         try {
+            requireKinds(name);
             byte[] bytes = Files.readAllBytes(directory.resolve(name.value()));
             try {
+                if (bytes.length == 0) {
+                    throw new FailureException(ErrorCode.EMPTY_SECRET_FILE, name.value());
+                }
                 CharBuffer chars = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                         .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes));
                 char[] value = new char[chars.remaining()];
@@ -102,16 +106,13 @@ public class SecretStore {
         SecretProtection protection = protection();
         ByteBuffer bytes = encode(value);
         try {
-            if (!Files.exists(directory, LinkOption.NOFOLLOW_LINKS)) {
+            if (!Files.exists(directory)) {
                 requireParent();
                 Files.createDirectory(directory, protection.directoryAttributes());
                 protection.settle(directory);
             }
-            requireOwnerOnly(directory, true, protection);
+            requireKinds(name);
             Path target = directory.resolve(name.value());
-            if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
-                requireOwnerOnly(target, false, protection);
-            }
             replace(target, bytes, protection);
             return target;
         } catch (IOException e) {
@@ -138,18 +139,26 @@ public class SecretStore {
         }
     }
 
-    private void requireOwnerOnly(Path path, boolean expectDirectory, SecretProtection protection) throws IOException {
-        BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+    /**
+     * The directory (when it exists) has to be a directory, and the file of the secret (when it exists) a regular file; a link
+     * is followed to what it points at. Nothing else is asked of an existing path: not its owner, not who may reach it.
+     */
+    private void requireKinds(SecretName name) throws IOException {
+        if (!Files.exists(directory)) {
+            return;
+        }
+        requireKind(directory, true);
+        Path target = directory.resolve(name.value());
+        if (Files.exists(target)) {
+            requireKind(target, false);
+        }
+    }
+
+    private static void requireKind(Path path, boolean expectDirectory) throws IOException {
+        BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class);
         if (expectDirectory ? !attributes.isDirectory() : !attributes.isRegularFile()) {
             throw new FailureException(ErrorCode.UNEXPECTED_FILE_TYPE, path.toString());
         }
-        // The service reads the secrets with its own account: a path owned by anyone else (for example root) is useless.
-        UserPrincipal actual = Files.getOwner(path, LinkOption.NOFOLLOW_LINKS);
-        UserPrincipal current = processUser.current(path.getFileSystem());
-        if (!Objects.equals(actual, current)) {
-            throw new FailureException(ErrorCode.FOREIGN_OWNER, path.toString(), actual.getName(), current.getName());
-        }
-        protection.requireOwnerOnlyAccess(path);
     }
 
     /** Temporary owner-only file in the same directory, flushed to disk, then an atomic move over the target. */
