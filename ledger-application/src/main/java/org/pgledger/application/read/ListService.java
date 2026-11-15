@@ -115,11 +115,13 @@ public class ListService {
         MaxRows maxRows = cursors.maxRows(q.maxRows());
         Object criteria = List.of(project, filter);
         // the cursor holds the position of the last row: its creation time and its id
-        DefectQueryRepository.Position after = cursors.decode(q.cursor(), PageCursor.Kind.DEFECTS, criteria)
+        // without a cursor the page is the first one (null is the first page to the repository)
+        var page = cursors.decode(q.cursor(), PageCursor.Kind.DEFECTS, criteria)
                 .map(position -> new DefectQueryRepository.Position(
                         UtcInstant.parse("cursor", position.sortKey()).value(), DefectId.of(position.id())))
-                .orElse(null);
-        var page = defects.page(project, filter, maxRows, DefectQueryRepository.Order.NEWEST_FIRST, after);
+                .map(after -> defects.page(project, filter, maxRows, DefectQueryRepository.Order.NEWEST_FIRST, after))
+                .orElseGet(() -> defects.page(project, filter, maxRows, DefectQueryRepository.Order.NEWEST_FIRST,
+                        null));
         return cursors.page(page, PageCursor.Kind.DEFECTS, criteria, ListService::item,
                 s -> new UtcInstant(s.createdAt()).toString(), s -> s.id().value());
     }
@@ -138,11 +140,11 @@ public class ListService {
                 q.attention() == null ? null : Tokens.parseName("attention", q.attention(), TASK_KINDS));
         MaxRows maxRows = cursors.maxRows(q.maxRows());
         Object criteria = List.of(project, filter);
-        TaskQueryRepository.Position after = cursors.decode(q.cursor(), PageCursor.Kind.TASKS, criteria)
+        var page = cursors.decode(q.cursor(), PageCursor.Kind.TASKS, criteria)
                 .map(position -> new TaskQueryRepository.Position(
                         UtcInstant.parse("cursor", position.sortKey()).value(), TaskId.of(position.id())))
-                .orElse(null);
-        var page = tasks.page(project, filter, maxRows, after);
+                .map(after -> tasks.page(project, filter, maxRows, after))
+                .orElseGet(() -> tasks.page(project, filter, maxRows, null));
         return cursors.page(page, PageCursor.Kind.TASKS, criteria,
                 t -> new TaskItem(t.id().value(), t.title(), t.state().name(), t.ownerActorId(), t.version(),
                         t.createdAt(), t.updatedAt()),
@@ -156,9 +158,10 @@ public class ListService {
                 q.release());
         MaxRows maxRows = cursors.maxRows(q.maxRows());
         Object criteria = List.of(project, filter);
-        ConditionId after = cursors.decode(q.cursor(), PageCursor.Kind.CONDITIONS, criteria)
-                .map(position -> ConditionId.of(position.id())).orElse(null);
-        var page = conditions.page(project, filter, maxRows, after);
+        var page = cursors.decode(q.cursor(), PageCursor.Kind.CONDITIONS, criteria)
+                .map(position -> ConditionId.of(position.id()))
+                .map(after -> conditions.page(project, filter, maxRows, after))
+                .orElseGet(() -> conditions.page(project, filter, maxRows, null));
         return cursors.page(page, PageCursor.Kind.CONDITIONS, criteria,
                 c -> new ConditionItem(c.id().value(), c.release(), c.goalLabel(), c.code(),
                         Texts.orEmpty(c.conditionText()),

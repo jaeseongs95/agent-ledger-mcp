@@ -60,16 +60,16 @@ public class SignedAttestationVerifier implements AttestationVerifier {
     }
 
     @Override
-    public Proof prove(String presented, String tool, String requestId, String argumentsDigest) {
-        return check(presented, tool, requestId, argumentsDigest, false);
+    public Proof prove(String presented, ToolCall call, String requestId) {
+        return check(presented, call, requestId, false);
     }
 
     @Override
-    public AuthorId verifyForWrite(String presented, String tool, String requestId, String argumentsDigest) {
-        return check(presented, tool, requestId, argumentsDigest, true).requireAuthor();
+    public AuthorId verifyForWrite(String presented, ToolCall call, String requestId) {
+        return check(presented, call, requestId, true).requireAuthor();
     }
 
-    private Proof check(String presented, String tool, String requestId, String argumentsDigest, boolean hold) {
+    private Proof check(String presented, ToolCall call, String requestId, boolean hold) {
         requireTokenForm(presented);
         if (!presented.startsWith(AttestationToken.PREFIX + ".")) {
             // not a token and not a bare author (requireTokenForm refused that): a malformed author
@@ -87,7 +87,7 @@ public class SignedAttestationVerifier implements AttestationVerifier {
             LOG.info("attestation of {} refused: its key was closed meanwhile", author.value());
             throw signatureInvalid();
         }
-        verifyBinding(claims, tool, requestId, argumentsDigest);
+        verifyBinding(claims, call, requestId);
         verifyWindow(claims);
         return new Proof.Proven(author);
     }
@@ -146,14 +146,14 @@ public class SignedAttestationVerifier implements AttestationVerifier {
         return new TrustException(TrustCode.ATTESTATION_SIGNATURE_INVALID, List.of());
     }
 
-    private static void verifyBinding(AttestationClaims claims, String tool, String requestId, String argumentsDigest) {
-        if (!Objects.equals(tool, claims.tool())) {
+    private static void verifyBinding(AttestationClaims claims, ToolCall call, String requestId) {
+        if (!call.isTool(claims.tool())) {
             throw mismatch("tool");
         }
         if (!Objects.equals(requestId == null ? "" : requestId, claims.requestId())) {
             throw mismatch("request_id");
         }
-        if (!Objects.equals(argumentsDigest, claims.argumentsDigest())) {
+        if (!call.carries(claims.argumentsDigest())) {
             throw mismatch("arguments");
         }
     }

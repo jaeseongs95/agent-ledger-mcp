@@ -12,7 +12,6 @@ import org.pgledger.application.admin.GrantService.GrantCommand;
 import org.pgledger.application.admin.GrantService.RevokeCommand;
 import org.pgledger.application.admin.SessionKeyService;
 import org.pgledger.application.admin.SessionKeyService.PresentedKey;
-import org.pgledger.application.admin.SessionKeyService.RegisterCommand;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.model.SessionPublicKey;
@@ -31,11 +30,11 @@ import org.springframework.web.bind.annotation.PostMapping;
  * <p>A grant is issued together with the public key of the session it is for, because the server accepts a write only
  * when it is signed with the key registered for its author. The owner pastes the key the session printed (hook command
  * {@code session-key}), the preview shows the key's fingerprint so that the owner can compare it with the one the session
- * printed, and only the confirmation that repeats this fingerprint registers the key and issues the grants. The key is
- * registered first and the grants are issued second, each as the service defines its transaction (the services retry and
- * commit by themselves); a refused grant after a registered key leaves the key registered, which grants nothing. An author
- * that already has another live key is not changed silently: the owner has to confirm the replacement of that exact key,
- * which the preview shows with its registration time. Every operation is recorded with the signed-in owner.
+ * printed, and only the confirmation that repeats this fingerprint registers the key and issues the grants. The key and
+ * the grants are one service method and one transaction ({@link GrantService#grantWithKey}): a refused grant leaves no
+ * key registered, a refused key issues no grant. An author that already has another live key is not changed silently:
+ * the owner has to confirm the replacement of that exact key, which the preview shows with its registration time. Every
+ * operation is recorded with the signed-in owner.
  *
  * <p>The checks of the forms that need no knowledge of the ledger are the constraints of the form records ({@link FormErrors}
  * turns a violation into the one failure of invalid input). What needs a computed value stays here: whether the fingerprint
@@ -117,14 +116,14 @@ public class GrantsController {
         PresentedKey presented = keys.present(form.author(), form.publicKey());
         forms.raiseIfAny(confirmationErrors);
         requireTheKeysFingerprint(confirmation, presented.fingerprint());
-        RegisterCommand key = new RegisterCommand(form.author(), presented.publicKey(), null);
+        GrantCommand command = new GrantCommand(form.author(), form.project(), form.scopes(), form.expiresAt(),
+                form.note());
+        // one use case, one service method, one transaction: the key and the grants commit or roll back together
         if (confirmation.replace() == null) {
-            keys.register(key, actor);
+            grants.grantWithKey(command, presented.publicKey(), actor);
         } else {
-            keys.registerReplacing(key, actor, confirmation.replaceFingerprint());
+            grants.grantReplacingKey(command, presented.publicKey(), confirmation.replaceFingerprint(), actor);
         }
-        grants.grant(new GrantCommand(form.author(), form.project(), form.scopes(), form.expiresAt(), form.note()),
-                actor);
         return "redirect:/grants";
     }
 

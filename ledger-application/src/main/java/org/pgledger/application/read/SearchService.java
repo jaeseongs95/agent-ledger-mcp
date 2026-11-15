@@ -142,9 +142,10 @@ public class SearchService {
         Object criteria = List.of(String.valueOf(project), kinds.stream().sorted().toList(), keywords, match,
                 excluded.stream().sorted().toList(), String.valueOf(filter.createdFrom()),
                 String.valueOf(filter.createdTo()));
-        SearchQueryRepository.Position after = cursors.decode(q.cursor(), PageCursor.Kind.SEARCH, criteria)
-                .map(SearchService::position).orElse(null);
-        var page = search.page(filter, maxRows, after);
+        var page = cursors.decode(q.cursor(), PageCursor.Kind.SEARCH, criteria)
+                .map(SearchService::position)
+                .map(after -> search.page(filter, maxRows, after))
+                .orElseGet(() -> search.page(filter, maxRows, null));
         return cursors.page(page, PageCursor.Kind.SEARCH, criteria,
                 h -> new Hit(KindToken.of(h.kind()).token(), h.id(), h.projectId(), h.title(), h.state(),
                         h.createdAt()),

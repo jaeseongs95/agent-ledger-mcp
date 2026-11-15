@@ -8,7 +8,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import org.pgledger.database.repository.GrantStateRepository;
-import org.pgledger.domain.context.ToolScope;
 import org.pgledger.domain.error.TrustCode;
 import org.pgledger.domain.error.TrustException;
 import org.pgledger.domain.rule.Channel;
@@ -55,9 +54,8 @@ public class WriteGate {
                 requireReviewerForVerification(channel, resolved.targets());
             }
         });
-        // outside a tool call there is no tool and no digest: the contract of AttestationVerifier says null for that
-        AuthorId author = attestation.verifyForWrite(actor, ToolScope.current().orElse(null), requestId,
-                ToolScope.argumentsDigest().orElse(null));
+        // outside a tool call there is no tool and no digest: that is the call ToolCall.Outside, which matches nothing signed
+        AuthorId author = attestation.verifyForWrite(actor, ToolCall.current(), requestId);
         Resolution resolution = early.orElseGet(lookup.find());
         return switch (resolution) {
             case Resolution.Unresolved unresolved -> throw unresolved.failure();

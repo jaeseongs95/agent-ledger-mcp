@@ -3,7 +3,6 @@ package org.pgledger.application.receipt;
 import java.time.Clock;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import org.pgledger.application.json.LedgerJson;
 import org.pgledger.database.repository.ReceiptCompletionRepository;
 import org.pgledger.database.repository.ReceiptRepository;
@@ -51,25 +50,41 @@ public class ReceiptService {
     }
 
     /**
-     * Reserves the request id. Empty: the caller is the first and writes. Present: the same request was answered
-     * before, here is its stored response.
+     * What {@link #reserve} found: the caller is the first, or the same request was answered before. The two differ in
+     * shape (the second carries the stored response), so the answer is a type of two variants and the caller decides
+     * with a switch that has to name both.
+     */
+    public sealed interface Reservation<R> {
+
+        /** The request id is the caller's: it writes and then {@link ReceiptService#finish finishes} the receipt. */
+        record Reserved<R>() implements Reservation<R> {
+        }
+
+        /** The same request was answered before: its stored response. */
+        record Replayed<R>(R response) implements Reservation<R> {
+        }
+    }
+
+    /**
+     * Reserves the request id: {@link Reservation.Reserved} when the caller is the first and writes,
+     * {@link Reservation.Replayed} with the stored response when the same request was answered before.
      *
      * @throws ConflictException REQUEST_CONFLICT when the id belongs to another operation, payload, author or
      *         channel; REQUEST_ID_LEGACY when it belongs to an imported receipt
      */
-    public <R> Optional<R> reserve(RequestId id, ReceiptOperation operation, Sha256 digest, AuthorId author,
+    public <R> Reservation<R> reserve(RequestId id, ReceiptOperation operation, Sha256 digest, AuthorId author,
             Channel channel, Class<R> responseType) {
         TransactionStatus transaction = TransactionAspectSupport.currentTransactionStatus();
         Object savepoint = transaction.createSavepoint();
         try {
             receipts.insert(Receipt.reserve(id, operation, digest, author, channel, clock.instant()));
             transaction.releaseSavepoint(savepoint);
-            return Optional.empty();
+            return new Reservation.Reserved<>();
         } catch (DuplicateKeyException duplicate) {
             LOG.debug("request id {} is already reserved; the stored receipt decides", id, duplicate);
             transaction.rollbackToSavepoint(savepoint);
             transaction.releaseSavepoint(savepoint);
-            return Optional.of(storedResponse(id, operation, digest, author, channel, responseType));
+            return new Reservation.Replayed<>(storedResponse(id, operation, digest, author, channel, responseType));
         }
     }
 

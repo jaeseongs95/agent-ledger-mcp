@@ -33,24 +33,8 @@ class ArchitectureTest {
     private static final Path MAIN_JAVA = Path.of("src", "main", "java");
 
     /** ARC-PRN-01 .. 06 (TEST_CASES.md section 25): what this module allows of each rule (key to reason). */
-    private static final String KEYSET_POSITION = "the position of a keyset query is a nullable argument of the repository method, "
-            + "null being the first page: an Optional parameter is not allowed (ARC-PRN-02), and an overload per method would "
-            + "only hold the same null one level down";
-    private static final String OUTSIDE_A_TOOL_CALL = "ToolScope answers an Optional, and the contract of AttestationVerifier "
-            + "(a parameter may not be an Optional, ARC-PRN-02, and the attestation module and its test doubles read null as "
-            + "'outside a tool call') takes the tool and the digest as text, null when there is none";
-    private static final String NULLABLE_COMPONENT = "the value goes into a component of a response record that is nullable on the "
-            + "wire; a record component may not be an Optional (ARC-PRN-02), so the Optional of the lookup ends here";
-
     private static final Map<String, Map<String, String>> PRINCIPLE_ALLOWED = Map.of(
             PrincipleRules.OR_ELSE_NULL, Map.of(
-                    "AttentionService.java", KEYSET_POSITION,
-                    "ListService.java", KEYSET_POSITION,
-                    "SearchService.java", KEYSET_POSITION,
-                    "WriteGate.java", OUTSIDE_A_TOOL_CALL,
-                    "WhoamiService.java", OUTSIDE_A_TOOL_CALL,
-                    "DetailService.java", NULLABLE_COMPONENT + " (TaskDetail.completedBy)",
-                    "HistoryService.java", NULLABLE_COMPONENT + " (HistoryView.vendor)",
                     "LegacyRowMapper.java", "a mapped row of a legacy table is a map from column to value in which SQL NULL is the "
                             + "value null (the link key of a link without a valid condition, a token column that holds no constant "
                             + "of the new schema): the row is written to a nullable column"));
@@ -106,6 +90,10 @@ class ArchitectureTest {
                                 "org.springframework.jdbc.core.JdbcTemplate")
                         .orShould().dependOnClassesThat().haveFullyQualifiedName(
                                 "org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate")),
+                new Rule("ARC-039 no retry of a transaction method (principle 4.4: a lost race is decided by the affected "
+                        + "rows of a conditional statement, never by running the transaction again)", noClasses().should()
+                        .dependOnClassesThat().resideInAnyPackage("org.springframework.resilience..",
+                                "org.springframework.retry..")),
                 new Rule("ARC-013 no TransactionTemplate", noClasses().should().dependOnClassesThat()
                         .haveFullyQualifiedName("org.springframework.transaction.support.TransactionTemplate")),
                 new Rule("ARC-013 @Transactional only on services", noClasses().that().areNotAnnotatedWith(
@@ -161,7 +149,8 @@ class ArchitectureTest {
     @DisplayName("ARC-038: every owner operation of the services names its actor; no main code has an actor-less path or "
             + "the system actor")
     void arc038_ownerOperationsNameTheirActor() throws java.io.IOException {
-        Set<String> operations = Set.of("grant", "revoke", "set", "register", "registerReplacing");
+        Set<String> operations = Set.of("grant", "revoke", "set", "register", "registerReplacing", "grantWithKey",
+                "grantReplacingKey");
         for (Class<?> service : List.of(org.pgledger.application.admin.GrantService.class,
                 org.pgledger.application.admin.CommonCodeService.class,
                 org.pgledger.application.admin.SessionKeyService.class)) {

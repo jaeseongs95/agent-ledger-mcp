@@ -7,6 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.pgledger.application.admin.SessionKeyService;
 import org.pgledger.application.gate.AttestationVerifier;
 import org.pgledger.application.gate.SignedAttestationVerifier;
+import org.pgledger.application.gate.ToolCall;
 import org.pgledger.attestation.AttestationToken;
 import org.pgledger.attestation.PublicKeys;
 import org.pgledger.database.repository.Counter;
@@ -59,33 +60,37 @@ public final class SigningAttestationVerifier implements AttestationVerifier {
     }
 
     @Override
-    public Proof prove(String presented, String tool, String requestId, String argumentsDigest) {
-        return check(presented, tool, requestId, argumentsDigest, false);
+    public Proof prove(String presented, ToolCall call, String requestId) {
+        return check(presented, call, requestId, false);
     }
 
     @Override
-    public AuthorId verifyForWrite(String presented, String tool, String requestId, String argumentsDigest) {
-        return check(presented, tool, requestId, argumentsDigest, true).requireAuthor();
+    public AuthorId verifyForWrite(String presented, ToolCall call, String requestId) {
+        return check(presented, call, requestId, true).requireAuthor();
     }
 
-    private Proof check(String presented, String tool, String requestId, String argumentsDigest, boolean write) {
+    private Proof check(String presented, ToolCall call, String requestId, boolean write) {
         if (presented == null || presented.startsWith(AttestationToken.PREFIX + ".")
                 || presented.startsWith(AttestationToken.RETIRED_PREFIX + ".")) {
-            return call(presented, tool, requestId, argumentsDigest, write);
+            return verifyWith(presented, call, requestId, write);
         }
         if (AuthorId.matches(presented)) {
             enroll(presented);
         }
-        String signedTool = tool == null ? DIRECT_TOOL : tool;
-        String signedDigest = argumentsDigest == null ? TestKeyRing.DIRECT_DIGEST : argumentsDigest;
-        String token = keys.token(presented, signedTool, requestId == null ? "" : requestId, signedDigest,
-                clock.instant());
-        return call(token, signedTool, requestId, signedDigest, write);
+        // a call that is not made through a tool binding is signed for the tool and the digest of the direct calls
+        ToolCall.Digested signed = switch (call) {
+            case ToolCall.Outside outside -> new ToolCall.Digested(DIRECT_TOOL, TestKeyRing.DIRECT_DIGEST);
+            case ToolCall.Named named -> new ToolCall.Digested(named.tool(), TestKeyRing.DIRECT_DIGEST);
+            case ToolCall.Digested digested -> digested;
+        };
+        String token = keys.token(presented, signed.tool(), requestId == null ? "" : requestId,
+                signed.argumentsDigest(), clock.instant());
+        return verifyWith(token, signed, requestId, write);
     }
 
-    private Proof call(String token, String tool, String requestId, String argumentsDigest, boolean write) {
-        return write ? new Proof.Proven(real.verifyForWrite(token, tool, requestId, argumentsDigest))
-                : real.prove(token, tool, requestId, argumentsDigest);
+    private Proof verifyWith(String token, ToolCall call, String requestId, boolean write) {
+        return write ? new Proof.Proven(real.verifyForWrite(token, call, requestId))
+                : real.prove(token, call, requestId);
     }
 
     /**

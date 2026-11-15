@@ -102,6 +102,9 @@ class TransitionTest {
     @DisplayName("SVC-TRN-05: VERIFIED without a recorded fix is refused by the service itself")
     void trn05_fixGuard(Scenario s) {
         SaveResult d = s.newDefect("d");
+        // SQL, because no service can make this state: the rule of the domain lets a defect enter SOURCE_FIXED only with a
+        // recorded fix (DefectStatus.requireTransitionTo), and a fix is never removed. A row of this kind exists only in imported data,
+        // and this case is about how the service answers it.
         s.ctx().jdbc().sql("UPDATE defect SET status = 'SOURCE_FIXED' WHERE id = ?").param(d.id()).update();
         Expect.failure(() -> review(s, Scenario.REVIEWER, "defect", d.id(), 1, "VERIFIED", Scenario.EVIDENCE),
                 TransitionCode.FIX_REQUIRED);

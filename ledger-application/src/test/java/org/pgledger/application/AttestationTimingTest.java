@@ -16,6 +16,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.pgledger.application.gate.AttestationProperties;
 import org.pgledger.application.gate.SignedAttestationVerifier;
+import org.pgledger.application.gate.ToolCall;
 import org.pgledger.apptest.TestKeyRing;
 import org.pgledger.attestation.PublicKeys;
 import org.pgledger.database.repository.SessionKeyStateRepository;
@@ -94,7 +95,7 @@ class AttestationTimingTest {
     private static long answer(SignedAttestationVerifier verifier, String token, List<Object> codes) {
         long start = System.nanoTime();
         try {
-            verifier.verify(token, TOOL, "r1", TestKeyRing.DIRECT_DIGEST);
+            verifier.verify(token, new ToolCall.Digested(TOOL, TestKeyRing.DIRECT_DIGEST), "r1");
         } catch (LedgerException refused) {
             long took = System.nanoTime() - start;
             codes.add(refused.code());

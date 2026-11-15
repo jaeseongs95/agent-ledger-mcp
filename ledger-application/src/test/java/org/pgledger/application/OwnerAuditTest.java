@@ -197,7 +197,8 @@ class OwnerAuditTest {
         for (Class<?> service : List.of(GrantService.class, CommonCodeService.class, SessionKeyService.class)) {
             for (java.lang.reflect.Method method : service.getDeclaredMethods()) {
                 if (java.lang.reflect.Modifier.isPublic(method.getModifiers()) && java.util.Set.of("grant", "revoke",
-                        "set", "register", "registerReplacing").contains(method.getName())) {
+                        "set", "register", "registerReplacing", "grantWithKey", "grantReplacingKey")
+                        .contains(method.getName())) {
                     assertThat(method.getParameterTypes()).as(method.toString()).contains(OwnerIdentity.class);
                 }
             }

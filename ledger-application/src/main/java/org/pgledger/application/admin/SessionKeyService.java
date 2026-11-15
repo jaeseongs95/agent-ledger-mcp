@@ -24,10 +24,13 @@ import org.pgledger.domain.model.SessionPublicKey;
 import org.pgledger.domain.rule.OwnerAction;
 import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.OwnerIdentity;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.resilience.annotation.Retryable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.interceptor.TransactionAspectSupport;
 
 /**
  * The public keys that authors sign their writes with. Used by the admin web and the CLI, never by the MCP tools: only
@@ -41,6 +44,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Transactional
 public class SessionKeyService {
+
+    private static final Logger LOG = LoggerFactory.getLogger(SessionKeyService.class);
 
     /** The author and its public key (X.509 DER in base64, as the hook prints it) with an optional note. */
     public record RegisterCommand(String author, String publicKey, String note) {
@@ -72,10 +77,10 @@ public class SessionKeyService {
      * (KEY_REPLACEMENT_NOT_CONFIRMED, naming the fingerprint and the registration time of the live key): a key is never
      * replaced silently, because whoever gets the owner to register a key under a known author name would otherwise
      * inherit that author's grants. Another registration of the same author or key that commits first makes the insert a
-     * duplicate key; the whole call is then retried in a new transaction (the retry is the outer advice, the transaction
-     * the inner one).
+     * duplicate key (or the conditional close of the replaced key affect no row): this call is the loser, it does not run
+     * again, it reads what the winner left and answers with that (the repeated registration of the same key answers with its
+     * row).
      */
-    @Retryable(includes = DuplicateKeyException.class, maxRetries = 3, delay = 10)
     public Registered register(RegisterCommand command, OwnerIdentity actor) {
         return bind(command, actor, null);
     }
@@ -87,7 +92,6 @@ public class SessionKeyService {
      * fingerprint (the live key changed meanwhile) is refused like no confirmation at all. The replaced key stays on
      * record as a closed row; the audit trail says that it was a replacement.
      */
-    @Retryable(includes = DuplicateKeyException.class, maxRetries = 3, delay = 10)
     public Registered registerReplacing(RegisterCommand command, OwnerIdentity actor, String replacedFingerprint) {
         if (replacedFingerprint == null || replacedFingerprint.isBlank()) {
             throw ValidationException.invalid("replace", ValidationReason.REQUIRED);
@@ -125,27 +129,60 @@ public class SessionKeyService {
         Optional<SessionPublicKey> current = state.findLive(author);
         // another registration of this very key for this author became live after the lookup by fingerprint found
         // nothing: the same answer as for any repeated registration (no row, no audit, nothing closed)
-        return current.filter(open -> Objects.equals(open.fingerprint(), fingerprint))
-                .map(SessionKeyService::registered)
-                .orElseGet(() -> {
-                    current.ifPresent(open -> replace(open, author, replacedFingerprint, now));
-                    long id = ids.next(Counter.SESSION_KEY);
-                    SessionPublicKey row = keys.insert(SessionPublicKey.register(id, author, text, fingerprint,
-                            AuthorId.OWNER, now, command.note()));
-                    audit.record(actor, current.isPresent() ? OwnerAction.KEY_REPLACED : OwnerAction.KEY_REGISTERED,
-                            author.value(), "key=" + fingerprint
-                                    + current.map(open -> " replaced=" + open.fingerprint()).orElse(""));
-                    return registered(row);
-                });
+        if (current.isPresent() && Objects.equals(current.get().fingerprint(), fingerprint)) {
+            return registered(current.get());
+        }
+        current.ifPresent(open -> requireConfirmed(open, author, replacedFingerprint));
+        // The close and the insert are the writes that other registrations race for. Whoever loses is decided by the
+        // database, not by running this method again: the conditional close affects no row, or the insert breaks a
+        // unique key. The savepoint takes back what the loser wrote (the closed key, the number of the counter) and
+        // keeps the transaction usable on every DBMS, as in ReceiptService.
+        TransactionStatus transaction = TransactionAspectSupport.currentTransactionStatus();
+        Object savepoint = transaction.createSavepoint();
+        SessionPublicKey row;
+        try {
+            if (current.isPresent() && !state.close(current.get().id(), now)) {
+                transaction.rollbackToSavepoint(savepoint);
+                transaction.releaseSavepoint(savepoint);
+                return lostRace(author, fingerprint);
+            }
+            row = keys.insert(SessionPublicKey.register(ids.next(Counter.SESSION_KEY), author, text, fingerprint,
+                    AuthorId.OWNER, now, command.note()));
+            transaction.releaseSavepoint(savepoint);
+        } catch (DuplicateKeyException duplicate) {
+            LOG.debug("the key of {} was registered by another call first; its row decides", author.value(), duplicate);
+            transaction.rollbackToSavepoint(savepoint);
+            transaction.releaseSavepoint(savepoint);
+            return lostRace(author, fingerprint);
+        }
+        audit.record(actor, current.isPresent() ? OwnerAction.KEY_REPLACED : OwnerAction.KEY_REGISTERED,
+                author.value(), "key=" + fingerprint + current.map(open -> " replaced=" + open.fingerprint()).orElse(""));
+        return registered(row);
     }
 
-    /** Closes the key that the author has, when the owner confirmed that very key; otherwise it is refused. */
-    private void replace(SessionPublicKey open, AuthorId author, String replacedFingerprint, Instant now) {
+    /** The owner confirmed the very key the author has now; otherwise the replacement is refused. */
+    private static void requireConfirmed(SessionPublicKey open, AuthorId author, String replacedFingerprint) {
         if (!Objects.equals(open.fingerprint(), replacedFingerprint)) {
             throw new ConflictException(ConflictCode.KEY_REPLACEMENT_NOT_CONFIRMED,
                     List.of(author.value(), open.fingerprint(), open.registeredAt().toString()));
         }
-        state.close(open.id(), now);
+    }
+
+    /**
+     * The answer of a registration that lost the race, from what the winner committed (nothing is decided again): the
+     * key is live now for this author (the same registration: its row), for another author (DUPLICATE_KEY), or the
+     * author has another live key (KEY_REPLACEMENT_NOT_CONFIRMED, as for any key that is not the confirmed one); an author
+     * whose key was closed meanwhile with nothing registered in its place has no live key (NOT_FOUND).
+     */
+    private Registered lostRace(AuthorId author, String fingerprint) {
+        Optional<SessionPublicKey> holder = state.findLiveByFingerprint(fingerprint);
+        if (holder.isPresent()) {
+            return sameAuthor(holder.get(), author, fingerprint);
+        }
+        SessionPublicKey live = state.findLive(author)
+                .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND, List.of("session key", author.value())));
+        throw new ConflictException(ConflictCode.KEY_REPLACEMENT_NOT_CONFIRMED,
+                List.of(author.value(), live.fingerprint(), live.registeredAt().toString()));
     }
 
     /** Closes the live key of the author and records who did it; true when there was one. */

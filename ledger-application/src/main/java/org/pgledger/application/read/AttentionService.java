@@ -42,11 +42,12 @@ public class AttentionService {
         AttentionKind kind = q.kind() == null ? null : Tokens.parseName("kind", q.kind(), AttentionKind.values());
         MaxRows maxRows = cursors.maxRows(q.maxRows());
         Object criteria = List.of(String.valueOf(project), String.valueOf(kind));
-        AttentionQueryRepository.Position after = cursors.decode(q.cursor(), PageCursor.Kind.ATTENTION, criteria)
+        // a cursor holds the position of the last row; without one the page is the first (null is the first page to the repository)
+        var page = cursors.decode(q.cursor(), PageCursor.Kind.ATTENTION, criteria)
                 .map(position -> new AttentionQueryRepository.Position(
                         Tokens.parseName("cursor", position.sortKey(), AttentionKind.values()), position.id()))
-                .orElse(null);
-        var page = attention.page(project, kind, maxRows, after);
+                .map(after -> attention.page(project, kind, maxRows, after))
+                .orElseGet(() -> attention.page(project, kind, maxRows, null));
         // the kind of item says which kind of row it is about; its token is the name of that kind in the responses
         return cursors.page(page, PageCursor.Kind.ATTENTION, criteria,
                 i -> new Item(i.kind().name(), i.kind().entity().token(), i.id(), i.projectId()),

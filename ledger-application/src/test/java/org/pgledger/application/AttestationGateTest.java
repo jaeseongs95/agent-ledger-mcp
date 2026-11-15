@@ -17,6 +17,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.pgledger.application.admin.SessionKeyService;
 import org.pgledger.application.gate.AttestationProperties;
 import org.pgledger.application.gate.SignedAttestationVerifier;
+import org.pgledger.application.gate.ToolCall;
 import org.pgledger.application.support.Expect;
 import org.pgledger.application.support.Fields;
 import org.pgledger.application.support.LedgerServiceTest;
@@ -50,6 +51,9 @@ class AttestationGateTest {
 
     /** The arguments digest of the calls of these tests unless a test binds another (see {@link TestKeyRing}). */
     private static final String DIGEST = TestKeyRing.DIRECT_DIGEST;
+
+    /** The call of the tool {@link #SAVE} with the digest {@link #DIGEST}, as the verifier is asked directly. */
+    private static final ToolCall CALL = new ToolCall.Digested(SAVE, DIGEST);
 
     /** The digest of other arguments: what a captured token meets when the call carries other content. */
     private static final String OTHER_DIGEST = org.pgledger.attestation.ArgumentsDigest.of(Map.of("other", "content"));
@@ -106,14 +110,14 @@ class AttestationGateTest {
     void gate21_unsignedOldFormat(Scenario s) {
         SignedAttestationVerifier verifier = s.bean(SignedAttestationVerifier.class);
         String author = s.actorWith("defect");
-        assertThat(Expect.failure(() -> verifier.verify(author, SAVE, "", DIGEST), TrustCode.ATTESTATION_UNSIGNED).args())
+        assertThat(Expect.failure(() -> verifier.verify(author, CALL, ""), TrustCode.ATTESTATION_UNSIGNED).args())
                 .isEmpty();
-        assertThat(Expect.failure(() -> verifier.verify("user:owner", SAVE, "", DIGEST), TrustCode.ATTESTATION_UNSIGNED)
+        assertThat(Expect.failure(() -> verifier.verify("user:owner", CALL, ""), TrustCode.ATTESTATION_UNSIGNED)
                 .args()).isEmpty();
         for (String text : List.of("", "claude", "user:someone", "claude:bad id", "PGLA2.x")) {
-            Expect.failure(() -> verifier.verify(text, SAVE, "", DIGEST), TrustCode.AUTHOR_ID_FORMAT);
+            Expect.failure(() -> verifier.verify(text, CALL, ""), TrustCode.AUTHOR_ID_FORMAT);
         }
-        Expect.failure(() -> verifier.verify(null, SAVE, "", DIGEST), TrustCode.HOST_ATTESTATION_REQUIRED);
+        Expect.failure(() -> verifier.verify(null, CALL, ""), TrustCode.HOST_ATTESTATION_REQUIRED);
     }
 
     @ParameterizedTest
@@ -124,7 +128,7 @@ class AttestationGateTest {
     @DisplayName("SVC-GATE-22: text with the prefix of a token that is not a canonical token is ATTESTATION_MALFORMED")
     void gate22_malformedToken(String text, Scenario s) {
         SignedAttestationVerifier verifier = s.bean(SignedAttestationVerifier.class);
-        Expect.failure(() -> verifier.verify(text, SAVE, "", DIGEST), TrustCode.ATTESTATION_MALFORMED);
+        Expect.failure(() -> verifier.verify(text, CALL, ""), TrustCode.ATTESTATION_MALFORMED);
     }
 
     @Test

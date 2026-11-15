@@ -155,9 +155,14 @@ public class DetailService {
         Task t = tasks.findById(id).orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND,
                 List.of(HistoryEntity.TASK.token(), rawId)));
         // the latest report of the task is the rule of the domain; a legacy transition with a state of no task is not one.
-        // The detail's component is a nullable JSON string, so the absence of a report ends here as null.
-        String completedBy = new TaskHistory(historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.TASK, rawId))
-                .reports().latestReport().map(report -> report.author().value()).orElse(null);
+        // The detail's component is a nullable JSON string: the task without a report is one with no completedBy.
+        return new TaskHistory(historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.TASK, rawId))
+                .reports().latestReport()
+                .map(report -> taskDetail(t, id, rawId, report.author().value()))
+                .orElseGet(() -> taskDetail(t, id, rawId, null));
+    }
+
+    private TaskDetail taskDetail(Task t, TaskId id, String rawId, String completedBy) {
         return new TaskDetail(rawId, t.projectId().value(), t.title(), Texts.orEmpty(t.purpose()),
                 Texts.orEmpty(t.successCondition()),
                 t.originRef(), t.originQuote(), t.state().name(), t.ownerActorId() == null ? null

@@ -13,7 +13,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.pgledger.application.admin.CommonCodeService;
+import org.pgledger.application.admin.CommonCodeService.CodeCommand;
 import org.pgledger.application.history.Change;
+import org.pgledger.testing.TestOwners;
 import org.pgledger.application.support.Expect;
 import org.pgledger.application.support.Fields;
 import org.pgledger.application.support.LedgerServiceTest;
@@ -120,11 +123,19 @@ class SaveTest {
     @Test
     @DisplayName("SVC-SAV-04: an unrelated edit of a row that holds a retired category is allowed")
     void sav04_retiredCategoryStaysOnUnrelatedEdits(Scenario s) {
-        SaveResult d = s.newDefect("d");
-        s.ctx().jdbc().sql("UPDATE defect SET category = 'RETIRED' WHERE id = ?").param(d.id()).update();
+        // the state is made by the services, as it arises: a defect is saved with a category that is active, and the owner
+        // retires the category afterwards
+        CommonCodeService codes = s.bean(CommonCodeService.class);
+        String category = "RET_" + s.code();
+        codes.set(new CodeCommand("DEFECT_CATEGORY", category, "나중에 폐기", "Retired later", null, null, 8, "ACTIVE"),
+                TestOwners.OWNER);
+        SaveResult d = s.bean(SaveService.class).save(Scenario.AUTHOR,
+                s.create("defect", null, with(s.defectFields("d"), "category", category)));
+        codes.set(new CodeCommand("DEFECT_CATEGORY", category, "나중에 폐기", "Retired later", null, null, 8, "INACTIVE"),
+                TestOwners.OWNER);
         assertThat(s.bean(SaveService.class).save(Scenario.AUTHOR, s.edit("defect", d.id(), 1,
                 Map.of("title", "new title"))).version()).isEqualTo(2);
-        assertThat(s.defect(d.id()).category().value()).isEqualTo("RETIRED");
+        assertThat(s.defect(d.id()).category().value()).isEqualTo(category);
     }
 
     @Test
