@@ -148,6 +148,9 @@ class DeployRendererTest {
         EnumerablePropertySource<?> admin = yaml(file(files, "/etc/pg-ledger-mcp/admin.yaml"));
         assertThat(admin.getProperty("server.port")).isEqualTo(8865);
         assertThat(admin.getProperty("ledger.admin.allowed-hosts[2]")).isEqualTo("admin.example.org");
+        assertThat(admin.getProperty("ledger.admin.passkey.rp-id")).isEqualTo("admin.example.org");
+        assertThat(admin.getProperty("ledger.admin.passkey.origins[0]")).isEqualTo("https://admin.example.org");
+        assertThat(admin.getProperty("ledger.admin.passkey.origins[1]")).isNull();
         assertThat(admin.getProperty("ledger.admin.driver-file")).isEqualTo("/etc/pg-ledger-mcp/jdbc-driver.yaml");
         assertThat(admin.getProperty("ledger.admin.driver-directory")).isEqualTo("/etc/pg-ledger-mcp/drivers");
         assertThat(admin.getProperty("ledger.admin.mcp.health-url")).isEqualTo("http://127.0.0.1:8765/healthz");
@@ -165,6 +168,24 @@ class DeployRendererTest {
                 .containsExactlyInAnyOrder("ledger.jdbc.url", "ledger.jdbc.username");
         assertThat(List.of(yaml(file(files, "/etc/pg-ledger-mcp/mcp.yaml")).getPropertyNames())).containsExactlyInAnyOrder(
                 "server.port", "ledger.mcp.allowed-hosts[0]", "ledger.mcp.allowed-hosts[1]");
+        assertThat(List.of(yaml(file(files, "/etc/pg-ledger-mcp/admin.yaml")).getPropertyNames()))
+                .as("no public admin host: the admin web derives localhost for its passkeys").noneMatch(name -> name.contains("passkey"));
+    }
+
+    @Test
+    @DisplayName("INS-016 (PSK-INS-01) the admin host names give the passkey relying party: the rp-id is the first name, the origins are https for each name that is it or below it")
+    void ins016_thePasskeyRelyingParty() throws IOException {
+        Map<String, String> values = values();
+        values.put(DeployOptions.MCP_HOST, "mcp.example.org");
+        values.put(DeployOptions.ADMIN_HOST, "ledger.example.org,a.ledger.example.org,other.example.net");
+
+        EnumerablePropertySource<?> admin = yaml(file(render(values), "/etc/pg-ledger-mcp/admin.yaml"));
+
+        assertThat(admin.getProperty("ledger.admin.passkey.rp-id")).isEqualTo("ledger.example.org");
+        assertThat(admin.getProperty("ledger.admin.passkey.origins[0]")).isEqualTo("https://ledger.example.org");
+        assertThat(admin.getProperty("ledger.admin.passkey.origins[1]")).isEqualTo("https://a.ledger.example.org");
+        assertThat(admin.getProperty("ledger.admin.passkey.origins[2]")).as("not below the rp-id: no origin").isNull();
+        assertThat(admin.getProperty("ledger.admin.allowed-hosts[4]")).isEqualTo("other.example.net");
     }
 
     // ---- INS-017: the nginx site ----
