@@ -239,7 +239,7 @@ cp ledger-cli/build/libs/ledger-cli.jar ledger-mcp-server/build/libs/ledger-mcp-
 | `--mcp-port=<n>` | MCP 서버의 루프백 포트, 기본값 8765 |
 | `--admin-port=<n>` | 관리 웹의 루프백 포트, 기본값 8865 |
 | `--mcp-host=<host>[,<host>...]` | MCP 서버의 공개 호스트 이름 하나, 또는 쉼표로 구분한 여러 개(이름마다 한 번, 최대 10개, 소문자, 포트 없음). 모든 이름이 그 `Host` 검사에서 허용되고 nginx 사이트에서 서비스됩니다. `--admin-host` 없이 줄 수 있습니다 |
-| `--admin-host=<host>[,<host>...]` | 관리 웹의 공개 호스트 이름이며 같은 형식입니다. 선택 옵션입니다. 주지 않으면 관리 웹은 루프백으로만 접근하고(그 `Host` 검사는 `127.0.0.1`과 `localhost`만 허용), nginx 사이트에도 관리 웹 블록이 없습니다. 공개 이름이 있으면 설치기가 `admin.yaml`에 `ledger.admin.passkey.rp-id`(첫 번째 이름)와 `ledger.admin.passkey.origins`(첫 번째 이름과 그 아래 이름마다 `https://<이름>`)도 써서, 원격 설치의 passkey가 직접 고치지 않아도 동작합니다. 첫 번째 이름 아래가 아닌 이름은 접속은 되지만 passkey를 공유하지 않습니다(다른 구성은 `local.yaml`에 `rp-id`와 `origins`를 지정) |
+| `--admin-host=<host>[,<host>...]` | 관리 웹의 공개 호스트 이름이며 같은 형식입니다. 선택 옵션입니다. 주지 않으면 관리 웹은 루프백으로만 접근하고(그 `Host` 검사는 `127.0.0.1`과 `localhost`만 허용), nginx 사이트에도 관리 웹 블록이 없습니다. 공개 이름이 있으면 설치기가 `admin.yaml`에 `ledger.admin.passkey.rp-id`(첫 번째 이름)와 `ledger.admin.passkey.origins`(첫 번째 이름과 그 아래 이름마다 `https://<name>`)도 써서, 원격 설치의 passkey가 직접 고치지 않아도 동작합니다. 첫 번째 이름 아래가 아닌 이름은 접속은 되지만 passkey를 공유하지 않습니다(다른 구성은 `local.yaml`에 `rp-id`와 `origins`를 지정) |
 | `--nginx-conf=<path>` | Linux: 이 파일에 nginx 사이트를 씁니다. 경로는 호스트의 nginx가 `http` 문맥에 이미 포함하는 경로여야 합니다(예: Debian, Ubuntu 및 RHEL 계열 패키지가 포함하는 `/etc/nginx/conf.d/<name>.conf`). 설치기는 그 경로에 사이트를 쓰고 `nginx -t`와 다시 읽기만 실행하며, `sites-enabled`에는 아무것도 연결하지 않습니다. `--mcp-host`와, `--tls-certificate=<path>` 및 `--tls-key=<path>` 또는 `--tls-acme`가 필요합니다 |
 | `--tls-certificate=<path>` | 운영자의 TLS 인증서. 인증서를 발급하거나 갱신하는 것은 없습니다 |
 | `--tls-key=<path>` | 운영자의 TLS 키 |
