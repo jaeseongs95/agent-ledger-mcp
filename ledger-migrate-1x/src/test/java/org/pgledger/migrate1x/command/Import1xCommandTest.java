@@ -15,6 +15,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.pgledger.cli.ErrorCode;
+import org.pgledger.cli.ExitStatus;
 import org.pgledger.migrate1x.database.LegacyTable;
 import org.pgledger.migrate1x.fixture.LegacyFixtures;
 import org.pgledger.migrate1x.fixture.LegacyLedger;
@@ -24,8 +26,7 @@ import org.pgledger.migrate1x.support.TestLedgerDatabase;
 import org.pgledger.migrate1x.support.ToolExtension;
 import org.pgledger.migrate1x.support.ToolExtension.Outcome;
 import org.pgledger.migrate1x.support.ToolExtension.Tool;
-import org.pgledger.migrate1x.tool.ErrorCode;
-import org.pgledger.migrate1x.tool.ExitStatus;
+import org.pgledger.migrate1x.tool.MigrationError;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 
@@ -133,7 +134,7 @@ class Import1xCommandTest {
         Outcome second = run(tool, new RecordingOutput(), "import-1x");
 
         assertThat(second.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
-        assertThat(second.code()).contains(ErrorCode.IMPORT_TARGET_NOT_EMPTY);
+        assertThat(second.code()).contains(MigrationError.IMPORT_TARGET_NOT_EMPTY);
         assertThat(second.refusal().orElseThrow().arguments().getFirst()).contains("project").contains("history");
         assertThat(captured.getAll()).contains("already holds ledger data");
         assertThat(count("history")).isEqualTo(history);
@@ -152,7 +153,7 @@ class Import1xCommandTest {
         Outcome result = run(tool, output, "import-1x");
 
         assertThat(result.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
-        assertThat(result.code()).contains(ErrorCode.IMPORT_DATA_REFUSED);
+        assertThat(result.code()).contains(MigrationError.IMPORT_DATA_REFUSED);
         assertThat(output.info()).contains("task[OLD T SPACE].id: MUST_BE_ID 120")
                 .contains("task[" + LegacyFixtures.TASK_ID_121 + "].id: MUST_BE_ID 120")
                 .contains("release_condition[OLD-C-NORELEASE].release_name: REQUIRED")
@@ -173,7 +174,7 @@ class Import1xCommandTest {
                     .asProcessUser(USER).run(tmp.resolve("secrets"), null, new RecordingOutput(), "import-1x");
 
             assertThat(incomplete.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
-            assertThat(incomplete.code()).contains(ErrorCode.IMPORT_SOURCE_INCOMPLETE);
+            assertThat(incomplete.code()).contains(MigrationError.IMPORT_SOURCE_INCOMPLETE);
             assertThat(incomplete.refusal().orElseThrow().arguments().getFirst()).contains("defect_case")
                     .contains("common_code").contains("created_by");
         }
@@ -181,7 +182,7 @@ class Import1xCommandTest {
                 new RecordingOutput(), "import-1x");
 
         assertThat(unconfigured.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
-        assertThat(unconfigured.code()).contains(ErrorCode.IMPORT_SOURCE_NOT_CONFIGURED);
+        assertThat(unconfigured.code()).contains(MigrationError.IMPORT_SOURCE_NOT_CONFIGURED);
         assertThat(count("project")).isZero();
         assertThat(database.rows(AUDIT)).isEmpty();
     }
@@ -203,7 +204,7 @@ class Import1xCommandTest {
         Outcome tampered = run(tool, failed, "import-1x", "--verify-only");
 
         assertThat(tampered.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
-        assertThat(tampered.code()).contains(ErrorCode.IMPORT_VERIFY_FAILED);
+        assertThat(tampered.code()).contains(MigrationError.IMPORT_VERIFY_FAILED);
         List<String> arguments = tampered.refusal().orElseThrow().arguments();
         assertThat(arguments).hasSize(5);
         assertThat(arguments.get(0)).isEqualTo("defect");

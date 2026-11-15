@@ -9,7 +9,7 @@ public final class OperatorStepException extends CliException {
 
     private static final long serialVersionUID = 1L;
 
-    public OperatorStepException(ErrorCode code, String... arguments) {
+    public OperatorStepException(ErrorKey code, String... arguments) {
         super(code, null, arguments);
     }
 }

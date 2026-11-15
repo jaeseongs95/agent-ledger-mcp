@@ -6,6 +6,14 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Supplier;
+import org.pgledger.cli.CliMessages;
+import org.pgledger.cli.CliOptions;
+import org.pgledger.cli.CliOutput;
+import org.pgledger.cli.Command;
+import org.pgledger.cli.ErrorCode;
+import org.pgledger.cli.FailureException;
+import org.pgledger.cli.UsageException;
+import org.pgledger.cli.database.DatabaseBeans;
 import org.pgledger.database.driver.ApplicationAccountSettings;
 import org.pgledger.database.driver.LedgerJdbcProperties;
 import org.pgledger.domain.error.LedgerException;
@@ -13,15 +21,8 @@ import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.value.Sha256;
 import org.pgledger.migrate1x.service.LegacyRetirePlan;
 import org.pgledger.migrate1x.service.RetireRefusedException;
-import org.pgledger.migrate1x.tool.Command;
-import org.pgledger.migrate1x.tool.ErrorCode;
-import org.pgledger.migrate1x.tool.FailureException;
-import org.pgledger.migrate1x.tool.Messages;
-import org.pgledger.migrate1x.tool.Options;
-import org.pgledger.migrate1x.tool.Output;
+import org.pgledger.migrate1x.tool.MigrationError;
 import org.pgledger.migrate1x.tool.ToolCommand;
-import org.pgledger.migrate1x.tool.UsageException;
-import org.pgledger.migrate1x.wiring.DatabaseBeans;
 import org.pgledger.migrate1x.wiring.Ledger;
 import org.pgledger.migrate1x.wiring.Refusals;
 import org.pgledger.migrate1x.wiring.Refusals.Context;
@@ -54,12 +55,12 @@ public class Retire1xCommand implements Command {
     private final ObjectProvider<Ledger> ledger;
     private final ObjectProvider<LedgerJdbcProperties> ledgerSettings;
     private final ObjectProvider<ApplicationAccountSettings> applicationSettings;
-    private final Output output;
-    private final Messages messages;
+    private final CliOutput output;
+    private final CliMessages messages;
     private final RefusalReport refusalReport;
 
     Retire1xCommand(ObjectProvider<Ledger> ledger, ObjectProvider<LedgerJdbcProperties> ledgerSettings,
-            ObjectProvider<ApplicationAccountSettings> applicationSettings, Output output, Messages messages,
+            ObjectProvider<ApplicationAccountSettings> applicationSettings, CliOutput output, CliMessages messages,
             RefusalReport refusalReport) {
         this.ledger = ledger;
         this.ledgerSettings = ledgerSettings;
@@ -84,19 +85,19 @@ public class Retire1xCommand implements Command {
         if (!operands.isEmpty()) {
             throw new UsageException(ErrorCode.TOO_MANY_ARGUMENTS);
         }
-        Optional<String> confirm = Options.value(arguments, CONFIRM);
-        boolean backupTested = Options.flag(arguments, BACKUP_TESTED);
+        Optional<String> confirm = CliOptions.value(arguments, CONFIRM);
+        boolean backupTested = CliOptions.flag(arguments, BACKUP_TESTED);
         // the acknowledgement belongs to the confirmation: alone it has no use, and the confirmation needs it
         if (backupTested && confirm.isEmpty()) {
             throw new UsageException(ErrorCode.INVALID_OPTION_VALUE);
         }
         if (confirm.isPresent() && !backupTested) {
-            throw new UsageException(ErrorCode.RETIRE_BACKUP_NOT_ACKNOWLEDGED);
+            throw new UsageException(MigrationError.RETIRE_BACKUP_NOT_ACKNOWLEDGED);
         }
         Optional<Sha256> confirmed = confirm.map(Retire1xCommand::digest);
         Ledger target = DatabaseBeans.require(ledger);
         if (!target.importer().sourceConfigured()) {
-            throw new FailureException(ErrorCode.IMPORT_SOURCE_NOT_CONFIGURED);
+            throw new FailureException(MigrationError.IMPORT_SOURCE_NOT_CONFIGURED);
         }
         Set<String> protectedAccounts = protectedAccounts();
         confirmed.ifPresentOrElse(digest -> retire(target, digest, protectedAccounts),
@@ -140,12 +141,12 @@ public class Retire1xCommand implements Command {
     private static FailureException refusal(RetireRefusedException refused) {
         List<String> arguments = refused.arguments();
         return switch (refused.refusal()) {
-            case OWN_SCHEMA -> new FailureException(ErrorCode.RETIRE_OWN_SCHEMA, refused, arguments.getFirst());
-            case SESSIONS_CONNECTED -> new FailureException(ErrorCode.RETIRE_SESSIONS_CONNECTED, refused,
+            case OWN_SCHEMA -> new FailureException(MigrationError.RETIRE_OWN_SCHEMA, refused, arguments.getFirst());
+            case SESSIONS_CONNECTED -> new FailureException(MigrationError.RETIRE_SESSIONS_CONNECTED, refused,
                     names(arguments), String.valueOf(arguments.size()));
-            case NOT_OWNER -> new FailureException(ErrorCode.RETIRE_NOT_OWNER, refused, names(arguments),
+            case NOT_OWNER -> new FailureException(MigrationError.RETIRE_NOT_OWNER, refused, names(arguments),
                     String.valueOf(arguments.size()));
-            case SOURCE_CHANGED -> new FailureException(ErrorCode.RETIRE_SOURCE_CHANGED, refused, arguments.getFirst());
+            case SOURCE_CHANGED -> new FailureException(MigrationError.RETIRE_SOURCE_CHANGED, refused, arguments.getFirst());
         };
     }
 

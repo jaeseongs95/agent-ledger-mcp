@@ -14,14 +14,16 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.pgledger.cli.ErrorCode;
+import org.pgledger.cli.ErrorKey;
+import org.pgledger.cli.ExitStatus;
 import org.pgledger.migrate1x.support.EnglishMessages;
 import org.pgledger.migrate1x.support.RecordingOutput;
 import org.pgledger.migrate1x.support.RequiresOwnerOnlyStorage;
 import org.pgledger.migrate1x.support.ToolExtension;
 import org.pgledger.migrate1x.support.ToolExtension.Outcome;
 import org.pgledger.migrate1x.support.ToolExtension.Tool;
-import org.pgledger.migrate1x.tool.ErrorCode;
-import org.pgledger.migrate1x.tool.ExitStatus;
+import org.pgledger.migrate1x.tool.MigrationError;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 
@@ -243,19 +245,19 @@ class ImportSecrets1xCommandTest {
 
     static Stream<Arguments> refusedValues() {
         return Stream.of(
-                Arguments.of("no agent token", environment(null, ADMIN), ErrorCode.ENV_KEYS_MISSING),
-                Arguments.of("no token at all", environment(null, null), ErrorCode.ENV_KEYS_MISSING),
-                Arguments.of("an empty agent token", environment("", ADMIN), ErrorCode.ENV_KEYS_MISSING),
-                Arguments.of("a short agent token", environment("short-token", ADMIN), ErrorCode.INVALID_1X_VALUE),
-                Arguments.of("a short admin token", environment(AGENT, "short-token"), ErrorCode.INVALID_1X_VALUE),
-                Arguments.of("one value for both tokens", environment(AGENT, AGENT), ErrorCode.INVALID_1X_VALUE));
+                Arguments.of("no agent token", environment(null, ADMIN), MigrationError.ENV_KEYS_MISSING),
+                Arguments.of("no token at all", environment(null, null), MigrationError.ENV_KEYS_MISSING),
+                Arguments.of("an empty agent token", environment("", ADMIN), MigrationError.ENV_KEYS_MISSING),
+                Arguments.of("a short agent token", environment("short-token", ADMIN), MigrationError.INVALID_1X_VALUE),
+                Arguments.of("a short admin token", environment(AGENT, "short-token"), MigrationError.INVALID_1X_VALUE),
+                Arguments.of("one value for both tokens", environment(AGENT, AGENT), MigrationError.INVALID_1X_VALUE));
     }
 
     @ParameterizedTest(name = "[{index}] {0}")
     @MethodSource("refusedValues")
     @RequiresOwnerOnlyStorage
     @DisplayName("SEC-027 a missing or unusable value is refused (exit 1) naming the setting, and nothing is stored, not even the secret that was fine")
-    void sec027_refusesBeforeWriting(String label, String text, ErrorCode code, Tool tool, CapturedOutput captured) {
+    void sec027_refusesBeforeWriting(String label, String text, ErrorKey code, Tool tool, CapturedOutput captured) {
         Outcome result = tool.withStandardInput(text).run(directory(), null, new RecordingOutput(), "import-secrets-1x", "--stdin");
 
         assertThat(result.exitCode()).as(label).isEqualTo(ExitStatus.FAILURE.code());
@@ -274,7 +276,7 @@ class ImportSecrets1xCommandTest {
                 "import-secrets-1x", "--stdin", "--replace");
 
         assertThat(result.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
-        assertThat(result.code()).contains(ErrorCode.INVALID_1X_VALUE);
+        assertThat(result.code()).contains(MigrationError.INVALID_1X_VALUE);
         assertThat(stored("ledger.mcp.token")).isEqualTo(GENERATED_MCP);
         assertThat(stored("ledger.admin.agent-token")).isEqualTo(GENERATED_AGENT);
         assertThat(stored("ledger.admin.token")).isEqualTo(GENERATED_ADMIN);
@@ -306,7 +308,7 @@ class ImportSecrets1xCommandTest {
             Outcome result = tool.run(directory(), null, new RecordingOutput(), "import-secrets-1x", option);
 
             assertThat(result.exitCode()).as(option).isEqualTo(ExitStatus.FAILURE.code());
-            assertThat(result.code()).as(option).contains(ErrorCode.ENV_FILE_FAILED);
+            assertThat(result.code()).as(option).contains(MigrationError.ENV_FILE_FAILED);
         }
         Outcome piped = tool.withStandardInput(environment(AGENT, ADMIN) + "# " + "x".repeat(64 * 1024) + "\n").run(directory(),
                 null, new RecordingOutput(), "import-secrets-1x", "--stdin");
@@ -332,7 +334,7 @@ class ImportSecrets1xCommandTest {
     @ParameterizedTest
     @MethodSource("usageRefusals")
     @DisplayName("SEC-027 a wrong command line is refused (exit 2) and stores nothing; M1X-024 --replace without a source is MISSING_ARGUMENT")
-    void sec027_usageRefusals(String[] line, ErrorCode code, Tool tool) {
+    void sec027_usageRefusals(String[] line, ErrorKey code, Tool tool) {
         Outcome result = tool.withStandardInput(environment(AGENT, ADMIN)).run(directory(), null, new RecordingOutput(), line);
 
         assertThat(result.exitCode()).isEqualTo(ExitStatus.USAGE.code());

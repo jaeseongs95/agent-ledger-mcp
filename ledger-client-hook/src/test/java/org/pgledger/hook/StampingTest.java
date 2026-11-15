@@ -21,7 +21,7 @@ class StampingTest {
 
     record Nested(List<Object> items) {}
 
-    /** Nested data, Korean text, a {@code __proto__} key and a legacy {@code author_id}. */
+    /** Nested data, Korean text, a {@code __proto__} key and a deprecated {@code author_id}. */
     record ModelInput(String project, Nested nested, String note, Sentinel __proto__, String author_id) {}
 
     private static final JsonNode NESTED_INPUT = Json.tree(new ModelInput(

@@ -12,17 +12,18 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
+import org.pgledger.cli.CliMessages;
+import org.pgledger.cli.CliOptions;
+import org.pgledger.cli.CliOutput;
+import org.pgledger.cli.Command;
+import org.pgledger.cli.ErrorCode;
+import org.pgledger.cli.FailureException;
+import org.pgledger.cli.UsageException;
 import org.pgledger.migrate1x.host.Hosts1x;
 import org.pgledger.migrate1x.host.ServiceControl;
 import org.pgledger.migrate1x.host.ServiceControl.Result;
-import org.pgledger.migrate1x.tool.Command;
-import org.pgledger.migrate1x.tool.ErrorCode;
-import org.pgledger.migrate1x.tool.FailureException;
-import org.pgledger.migrate1x.tool.Messages;
-import org.pgledger.migrate1x.tool.Options;
-import org.pgledger.migrate1x.tool.Output;
+import org.pgledger.migrate1x.tool.MigrationError;
 import org.pgledger.migrate1x.tool.ToolCommand;
-import org.pgledger.migrate1x.tool.UsageException;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.stereotype.Component;
 
@@ -78,10 +79,10 @@ public class Stop1xCommand implements Command {
     private static final String DISABLED = "4";
 
     private final ServiceControl control;
-    private final Output output;
-    private final Messages messages;
+    private final CliOutput output;
+    private final CliMessages messages;
 
-    Stop1xCommand(ServiceControl control, Output output, Messages messages) {
+    Stop1xCommand(ServiceControl control, CliOutput output, CliMessages messages) {
         this.control = control;
         this.output = output;
         this.messages = messages;
@@ -112,13 +113,13 @@ public class Stop1xCommand implements Command {
         if (!operands.isEmpty()) {
             throw new UsageException(ErrorCode.TOO_MANY_ARGUMENTS);
         }
-        String name = Options.value(arguments, NAME).orElse(DEFAULT_NAME);
+        String name = CliOptions.value(arguments, NAME).orElse(DEFAULT_NAME);
         if (!INSTANCE_NAME.matcher(name).matches()) {
             throw new UsageException(ErrorCode.INVALID_OPTION_VALUE);
         }
-        boolean windows = platformIsWindows(Options.value(arguments, PLATFORM).orElse(LINUX));
-        Optional<String> unitDir = Options.value(arguments, UNIT_DIR);
-        Optional<String> home = Options.value(arguments, HOME);
+        boolean windows = platformIsWindows(CliOptions.value(arguments, PLATFORM).orElse(LINUX));
+        Optional<String> unitDir = CliOptions.value(arguments, UNIT_DIR);
+        Optional<String> home = CliOptions.value(arguments, HOME);
         if (windows ? unitDir.isPresent() : home.isPresent()) {
             throw new UsageException(ErrorCode.INVALID_OPTION_VALUE);
         }
@@ -143,9 +144,9 @@ public class Stop1xCommand implements Command {
 
     /** The host names of the 1.x environment file against the options the installer of 2.0 will get; before anything is stopped. */
     private void checkHostNames(ApplicationArguments arguments) {
-        Optional<String> env = Options.value(arguments, ENV);
-        List<String> mcpHosts = names(Options.value(arguments, MCP_HOST));
-        List<String> adminHosts = names(Options.value(arguments, ADMIN_HOST));
+        Optional<String> env = CliOptions.value(arguments, ENV);
+        List<String> mcpHosts = names(CliOptions.value(arguments, MCP_HOST));
+        List<String> adminHosts = names(CliOptions.value(arguments, ADMIN_HOST));
         if (env.isEmpty()) {
             // the names have nothing to be compared with: an option that would pass silently is refused
             if (!mcpHosts.isEmpty() || !adminHosts.isEmpty()) {
@@ -178,7 +179,7 @@ public class Stop1xCommand implements Command {
             plan.add(inspect(service, name, unitDir));
         }
         if (plan.stream().allMatch(unit -> unit.state() == State.ABSENT)) {
-            throw new FailureException(ErrorCode.NO_1X_SERVICE, unitDir.toString(), String.join(", ", services));
+            throw new FailureException(MigrationError.NO_1X_SERVICE, unitDir.toString(), String.join(", ", services));
         }
         for (Unit unit : plan) {
             switch (unit.state()) {
@@ -205,10 +206,10 @@ public class Stop1xCommand implements Command {
                 return new Unit(service, unit, backup, Files.exists(backup) ? State.STOPPED : State.ABSENT);
             }
             if (!isOneXUnit(Files.readString(unit, StandardCharsets.UTF_8), name)) {
-                throw new FailureException(ErrorCode.NOT_1X_SERVICE, unit.toString());
+                throw new FailureException(MigrationError.NOT_1X_SERVICE, unit.toString());
             }
             if (Files.exists(backup) && Files.mismatch(unit, backup) != -1) {
-                throw new FailureException(ErrorCode.BACKUP_DIFFERS, unit.toString(), backup.toString());
+                throw new FailureException(MigrationError.BACKUP_DIFFERS, unit.toString(), backup.toString());
             }
             return new Unit(service, unit, backup, State.TO_STOP);
         } catch (IOException e) {
@@ -243,14 +244,14 @@ public class Stop1xCommand implements Command {
                 Files.move(unit.unit(), unit.backup(), StandardCopyOption.ATOMIC_MOVE);
             }
         } catch (IOException e) {
-            throw new FailureException(ErrorCode.STOP_WRITE_FAILED, e, unit.unit().toString(), e.getClass().getSimpleName());
+            throw new FailureException(MigrationError.STOP_WRITE_FAILED, e, unit.unit().toString(), e.getClass().getSimpleName());
         }
     }
 
     private void call(String... command) {
         Result result = control.run(List.of(command));
         if (result.exitCode() != 0) {
-            throw new FailureException(ErrorCode.SERVICE_COMMAND_FAILED, String.join(" ", command),
+            throw new FailureException(MigrationError.SERVICE_COMMAND_FAILED, String.join(" ", command),
                     String.valueOf(result.exitCode()));
         }
     }
@@ -267,7 +268,7 @@ public class Stop1xCommand implements Command {
             plan.add(inspectWindows(service, home));
         }
         if (plan.stream().allMatch(service -> service.state() == State.ABSENT)) {
-            throw new FailureException(ErrorCode.NO_1X_SERVICE, home.toString(), String.join(", ", services));
+            throw new FailureException(MigrationError.NO_1X_SERVICE, home.toString(), String.join(", ", services));
         }
         for (Service service : plan) {
             switch (service.state()) {
@@ -292,13 +293,13 @@ public class Stop1xCommand implements Command {
             return new Service(service, "", backup, State.ABSENT);
         }
         if (result.exitCode() != 0) {
-            throw new FailureException(ErrorCode.SERVICE_COMMAND_FAILED, "sc.exe qc " + service,
+            throw new FailureException(MigrationError.SERVICE_COMMAND_FAILED, "sc.exe qc " + service,
                     String.valueOf(result.exitCode()));
         }
         String definition = result.output();
         // a service of 2.0 (the jars of the services of 2.0 are its binary) is not the 1.x ledger, whatever it is called
         if (definition.contains("ledger-mcp-server.jar") || definition.contains("ledger-admin-web.jar")) {
-            throw new FailureException(ErrorCode.NOT_1X_SERVICE, service);
+            throw new FailureException(MigrationError.NOT_1X_SERVICE, service);
         }
         return new Service(service, definition, backup, startTypeIsDisabled(definition) ? State.STOPPED : State.TO_STOP);
     }
@@ -321,7 +322,7 @@ public class Stop1xCommand implements Command {
                         StandardOpenOption.CREATE_NEW);
             }
         } catch (IOException e) {
-            throw new FailureException(ErrorCode.STOP_WRITE_FAILED, e, service.backup().toString(),
+            throw new FailureException(MigrationError.STOP_WRITE_FAILED, e, service.backup().toString(),
                     e.getClass().getSimpleName());
         }
     }
@@ -330,7 +331,7 @@ public class Stop1xCommand implements Command {
     private void stop(String service) {
         Result result = control.run(List.of("sc.exe", "stop", service));
         if (result.exitCode() != 0 && result.exitCode() != SERVICE_NOT_STARTED) {
-            throw new FailureException(ErrorCode.SERVICE_COMMAND_FAILED, "sc.exe stop " + service,
+            throw new FailureException(MigrationError.SERVICE_COMMAND_FAILED, "sc.exe stop " + service,
                     String.valueOf(result.exitCode()));
         }
     }

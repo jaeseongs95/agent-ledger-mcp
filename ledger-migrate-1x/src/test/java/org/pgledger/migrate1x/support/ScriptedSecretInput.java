@@ -1,6 +1,6 @@
 package org.pgledger.migrate1x.support;
 
-import org.pgledger.migrate1x.secret.SecretInput;
+import org.pgledger.cli.secret.SecretInput;
 
 /** Test double for the input boundary; the product implementation is Console.readPassword only. */
 public final class ScriptedSecretInput implements SecretInput {

@@ -5,11 +5,11 @@ public final class FailureException extends CliException {
 
     private static final long serialVersionUID = 1L;
 
-    public FailureException(ErrorCode code, String... arguments) {
+    public FailureException(ErrorKey code, String... arguments) {
         super(code, null, arguments);
     }
 
-    public FailureException(ErrorCode code, Throwable cause, String... arguments) {
+    public FailureException(ErrorKey code, Throwable cause, String... arguments) {
         super(code, cause, arguments);
     }
 }

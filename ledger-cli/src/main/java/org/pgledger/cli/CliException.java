@@ -10,16 +10,16 @@ public abstract sealed class CliException extends RuntimeException permits Usage
 
     private static final long serialVersionUID = 1L;
 
-    private final ErrorCode code;
+    private final ErrorKey code;
     private final String[] arguments;
 
-    CliException(ErrorCode code, Throwable cause, String[] arguments) {
+    CliException(ErrorKey code, Throwable cause, String[] arguments) {
         super(code.name(), cause);
         this.code = code;
         this.arguments = arguments.clone();
     }
 
-    public ErrorCode code() {
+    public ErrorKey code() {
         return code;
     }
 

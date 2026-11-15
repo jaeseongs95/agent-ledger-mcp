@@ -11,6 +11,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.pgledger.cli.ErrorCode;
+import org.pgledger.cli.ErrorKey;
+import org.pgledger.cli.ExitStatus;
 import org.pgledger.migrate1x.host.ServiceControl.Result;
 import org.pgledger.migrate1x.support.EnglishMessages;
 import org.pgledger.migrate1x.support.RecordingOutput;
@@ -18,8 +21,7 @@ import org.pgledger.migrate1x.support.ScriptedServiceControl;
 import org.pgledger.migrate1x.support.ToolExtension;
 import org.pgledger.migrate1x.support.ToolExtension.Outcome;
 import org.pgledger.migrate1x.support.ToolExtension.Tool;
-import org.pgledger.migrate1x.tool.ErrorCode;
-import org.pgledger.migrate1x.tool.ExitStatus;
+import org.pgledger.migrate1x.tool.MigrationError;
 
 /**
  * M1X-010 .. M1X-018 and M1X-040: {@code stop-1x} composes its calls to the service manager and keeps the definitions, against a
@@ -116,7 +118,7 @@ class Stop1xCommandTest {
 
         Outcome outcome = run(tool.withServiceControl(control), new RecordingOutput(), "stop-1x", "--unit-dir=" + dir);
 
-        assertThat(outcome.code()).contains(ErrorCode.NOT_1X_SERVICE);
+        assertThat(outcome.code()).contains(MigrationError.NOT_1X_SERVICE);
         assertThat(outcome.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
         assertThat(outcome.refusal().orElseThrow().arguments()).containsExactly(admin.toString());
         assertThat(control.calls()).isEmpty();
@@ -143,7 +145,7 @@ class Stop1xCommandTest {
         Path empty = Files.createDirectories(tmp.resolve("empty"));
         ScriptedServiceControl none = new ScriptedServiceControl();
         Outcome refused = run(tool.withServiceControl(none), new RecordingOutput(), "stop-1x", "--unit-dir=" + empty);
-        assertThat(refused.code()).contains(ErrorCode.NO_1X_SERVICE);
+        assertThat(refused.code()).contains(MigrationError.NO_1X_SERVICE);
         assertThat(refused.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
         assertThat(none.calls()).isEmpty();
     }
@@ -168,7 +170,7 @@ class Stop1xCommandTest {
         Files.writeString(unitAgain, ONE_X_UNIT.formatted(NAME, NAME) + "# edited\n");
         ScriptedServiceControl none = new ScriptedServiceControl();
         Outcome differs = run(tool.withServiceControl(none), new RecordingOutput(), "stop-1x", "--unit-dir=" + dir);
-        assertThat(differs.code()).contains(ErrorCode.BACKUP_DIFFERS);
+        assertThat(differs.code()).contains(MigrationError.BACKUP_DIFFERS);
         assertThat(none.calls()).isEmpty();
         assertThat(unitAgain).exists();
 
@@ -178,7 +180,7 @@ class Stop1xCommandTest {
         ScriptedServiceControl failing = new ScriptedServiceControl(
                 command -> new Result(command.contains("disable") ? 5 : 0, ""));
         Outcome failed = run(tool.withServiceControl(failing), new RecordingOutput(), "stop-1x", "--unit-dir=" + other);
-        assertThat(failed.code()).contains(ErrorCode.SERVICE_COMMAND_FAILED);
+        assertThat(failed.code()).contains(MigrationError.SERVICE_COMMAND_FAILED);
         assertThat(failed.refusal().orElseThrow().arguments()).containsExactly("systemctl disable " + NAME, "5");
         assertThat(failed.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
         assertThat(failingUnit).exists();
@@ -219,7 +221,7 @@ class Stop1xCommandTest {
         Path other = Files.createDirectories(tmp.resolve("home2"));
         Outcome refused = run(tool.withServiceControl(current), new RecordingOutput(), "stop-1x", "--platform=windows",
                 "--home=" + other);
-        assertThat(refused.code()).contains(ErrorCode.NOT_1X_SERVICE);
+        assertThat(refused.code()).contains(MigrationError.NOT_1X_SERVICE);
         assertThat(current.calls()).containsExactly("sc.exe qc " + NAME);
         assertThat(other).isEmptyDirectory();
     }
@@ -235,7 +237,7 @@ class Stop1xCommandTest {
 
         Outcome dropped = run(tool.withServiceControl(none), new RecordingOutput(), "stop-1x", "--unit-dir=" + dir,
                 "--env=" + env);
-        assertThat(dropped.code()).contains(ErrorCode.HOSTS_DROPPED);
+        assertThat(dropped.code()).contains(MigrationError.HOSTS_DROPPED);
         assertThat(dropped.exitCode()).isEqualTo(ExitStatus.USAGE.code());
         assertThat(dropped.refusal().orElseThrow().arguments()).containsExactly("ledger.example.org", "mcp-host");
         assertThat(none.calls()).isEmpty();
@@ -250,7 +252,7 @@ class Stop1xCommandTest {
         ScriptedServiceControl missing = new ScriptedServiceControl();
         Outcome unreadable = run(tool.withServiceControl(missing), new RecordingOutput(), "stop-1x", "--unit-dir=" + dir,
                 "--env=" + tmp.resolve("no-such-file"));
-        assertThat(unreadable.code()).contains(ErrorCode.ENV_FILE_FAILED);
+        assertThat(unreadable.code()).contains(MigrationError.ENV_FILE_FAILED);
         assertThat(unreadable.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
         assertThat(missing.calls()).isEmpty();
     }
@@ -261,12 +263,12 @@ class Stop1xCommandTest {
         Path dir = unitDir();
         unit(dir, NAME, NAME);
         Path env = Files.writeString(tmp.resolve("env"), "DBHUB_ALLOWED_HOSTS=ledger.example.org\n");
-        record Case(ErrorCode code, String... args) {
+        record Case(ErrorKey code, String... args) {
         }
         for (Case refused : List.of(
                 new Case(ErrorCode.TOO_MANY_ARGUMENTS, "stop-1x", "extra", "--unit-dir=" + dir),
                 new Case(ErrorCode.UNKNOWN_OPTION, "stop-1x", "--force", "--unit-dir=" + dir),
-                new Case(ErrorCode.HOSTS_DROPPED, "stop-1x", "--unit-dir=" + dir, "--env=" + env),
+                new Case(MigrationError.HOSTS_DROPPED, "stop-1x", "--unit-dir=" + dir, "--env=" + env),
                 new Case(ErrorCode.INVALID_OPTION_VALUE, "stop-1x", "--unit-dir=" + dir, "--mcp-host=a.example.org"))) {
             ScriptedServiceControl none = new ScriptedServiceControl();
             Outcome outcome = run(tool.withServiceControl(none), new RecordingOutput(), refused.args());
@@ -306,7 +308,7 @@ class Stop1xCommandTest {
 
         Outcome failed = run(tool.withServiceControl(failing), new RecordingOutput(), "stop-1x", "--unit-dir=" + dir);
 
-        assertThat(failed.code()).contains(ErrorCode.SERVICE_COMMAND_FAILED);
+        assertThat(failed.code()).contains(MigrationError.SERVICE_COMMAND_FAILED);
         assertThat(failed.refusal().orElseThrow().arguments()).containsExactly("systemctl daemon-reload", "1");
         assertThat(dir.resolve(NAME + ".service")).doesNotExist();
         assertThat(dir.resolve(NAME + ".service.1x-backup")).exists();

@@ -1,5 +1,7 @@
 package org.pgledger.migrate1x.command;
 
+import org.pgledger.cli.CliMessages;
+import org.pgledger.cli.CliOutput;
 import org.pgledger.domain.error.AdminException;
 import org.pgledger.domain.error.ConflictException;
 import org.pgledger.domain.error.InfrastructureCode;
@@ -10,8 +12,6 @@ import org.pgledger.domain.error.TransitionException;
 import org.pgledger.domain.error.TrustException;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationIssue;
-import org.pgledger.migrate1x.tool.Messages;
-import org.pgledger.migrate1x.tool.Output;
 import org.pgledger.migrate1x.wiring.Refusals.TableMismatch;
 import org.springframework.stereotype.Component;
 
@@ -23,10 +23,10 @@ import org.springframework.stereotype.Component;
 @Component
 class RefusalReport {
 
-    private final Output output;
-    private final Messages messages;
+    private final CliOutput output;
+    private final CliMessages messages;
 
-    RefusalReport(Output output, Messages messages) {
+    RefusalReport(CliOutput output, CliMessages messages) {
         this.output = output;
         this.messages = messages;
     }

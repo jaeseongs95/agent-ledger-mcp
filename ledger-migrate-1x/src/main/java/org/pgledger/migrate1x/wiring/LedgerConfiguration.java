@@ -1,6 +1,7 @@
 package org.pgledger.migrate1x.wiring;
 
 import org.pgledger.application.LedgerApplicationConfiguration;
+import org.pgledger.cli.database.SchemaReadiness;
 import org.pgledger.database.schema.LedgerSchemaConfiguration;
 import org.pgledger.migrate1x.database.LegacyTargetRepository;
 import org.pgledger.migrate1x.service.ImportServices;
@@ -14,13 +15,13 @@ import org.springframework.context.annotation.Import;
  *
  * <p>The services and the Spring Data JDBC setup come from {@link LedgerApplicationConfiguration}, the schema checks from
  * {@link LedgerSchemaConfiguration}; the DataSource is in {@link DriverDataSourceConfiguration}. The UTC {@code Clock} is the
- * one of the tool ({@code ClockConfiguration}), which has no condition. The schema is checked per command ({@link Readiness}),
+ * one of the tool ({@code CliClockConfiguration}), which has no condition. The schema is checked per command ({@code SchemaReadiness}),
  * not at startup. The write side of the import ({@link LegacyTargetRepository}) and the services of the import
  * ({@link ImportServices}) are imported here as components, so they exist exactly when the database does.
  */
 @Configuration(proxyBeanMethods = false)
 @Conditional(DatabaseCondition.class)
-@Import({LedgerApplicationConfiguration.class, LedgerSchemaConfiguration.class, Readiness.class, Ledger.class,
+@Import({LedgerApplicationConfiguration.class, LedgerSchemaConfiguration.class, SchemaReadiness.class, Ledger.class,
         LegacyTargetRepository.class, ImportServices.class})
 public class LedgerConfiguration {
 }

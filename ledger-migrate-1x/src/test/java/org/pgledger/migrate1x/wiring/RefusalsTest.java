@@ -23,8 +23,10 @@ import org.pgledger.domain.error.ValidationCode;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationIssue;
 import org.pgledger.domain.error.ValidationReason;
-import org.pgledger.migrate1x.tool.ErrorCode;
-import org.pgledger.migrate1x.tool.FailureException;
+import org.pgledger.cli.ErrorCode;
+import org.pgledger.cli.ErrorKey;
+import org.pgledger.cli.FailureException;
+import org.pgledger.migrate1x.tool.MigrationError;
 import org.pgledger.migrate1x.wiring.Refusals.Context;
 
 /**
@@ -40,7 +42,7 @@ class RefusalsTest {
         return failure;
     }
 
-    private static void assertRefusedAs(LedgerException refused, Context context, ErrorCode code, String... arguments) {
+    private static void assertRefusedAs(LedgerException refused, Context context, ErrorKey code, String... arguments) {
         FailureException failure = translate(refused, context);
 
         assertThat(failure.code()).as("%s in %s", refused.code(), context).isEqualTo(code);
@@ -73,18 +75,18 @@ class RefusalsTest {
     @DisplayName("CLI-PRN-07 import: a duplicate key is IMPORT_TARGET_NOT_EMPTY naming the tables, a 1.x ledger that is not complete is IMPORT_SOURCE_INCOMPLETE naming the missing steps, data that cannot be imported is IMPORT_DATA_REFUSED with the number of issues, a failed comparison is IMPORT_VERIFY_FAILED with its first table; a NOT_FOUND with one argument and an integrity failure that is no comparison are LEDGER_REFUSED")
     void importOneX() {
         assertRefusedAs(new ConflictException(ConflictCode.DUPLICATE_KEY, List.of("defect", "history")), Context.IMPORT,
-                ErrorCode.IMPORT_TARGET_NOT_EMPTY, "defect, history");
+                MigrationError.IMPORT_TARGET_NOT_EMPTY, "defect, history");
         assertRefusedAs(new LookupException(LookupCode.NOT_FOUND, List.of("missing", "step 1, step 2")), Context.IMPORT,
-                ErrorCode.IMPORT_SOURCE_INCOMPLETE, "step 1, step 2");
+                MigrationError.IMPORT_SOURCE_INCOMPLETE, "step 1, step 2");
         assertRefusedAs(new LookupException(LookupCode.NOT_FOUND, List.of("project")), Context.IMPORT,
                 ErrorCode.LEDGER_REFUSED, "NOT_FOUND");
         ValidationException two = new ValidationException(ValidationCode.VALIDATION_FAILED, List.of(), List.of(
                 new ValidationIssue("a[1].x", ValidationReason.REQUIRED, List.of()),
                 new ValidationIssue("a[2].x", ValidationReason.REQUIRED, List.of())), Map.of());
-        assertRefusedAs(two, Context.IMPORT, ErrorCode.IMPORT_DATA_REFUSED, "2");
+        assertRefusedAs(two, Context.IMPORT, MigrationError.IMPORT_DATA_REFUSED, "2");
         assertRefusedAs(new InfrastructureException(InfrastructureCode.INTEGRITY_VIOLATION,
                 List.of("defect", "3", "2", "aaaa", "bbbb", "task", "1", "1", "cccc", "dddd")), Context.IMPORT,
-                ErrorCode.IMPORT_VERIFY_FAILED, "defect", "3", "2", "aaaa", "bbbb");
+                MigrationError.IMPORT_VERIFY_FAILED, "defect", "3", "2", "aaaa", "bbbb");
         assertRefusedAs(new InfrastructureException(InfrastructureCode.INTEGRITY_VIOLATION, List.of("history")), Context.IMPORT,
                 ErrorCode.LEDGER_REFUSED, "INTEGRITY_VIOLATION");
         assertRefusedAs(new InfrastructureException(InfrastructureCode.INTERNAL_ERROR, List.of()), Context.IMPORT,
@@ -98,12 +100,12 @@ class RefusalsTest {
     void retireOneX() {
         assertRefusedAs(new InfrastructureException(InfrastructureCode.INTEGRITY_VIOLATION,
                 List.of("defect", "3", "2", "aaaa", "bbbb", "task", "1", "1", "cccc", "dddd")), Context.RETIRE,
-                ErrorCode.RETIRE_VERIFY_FAILED, "defect", "3", "2", "aaaa", "bbbb");
+                MigrationError.RETIRE_VERIFY_FAILED, "defect", "3", "2", "aaaa", "bbbb");
         assertRefusedAs(new LookupException(LookupCode.NOT_FOUND, List.of("missing", "step 1, step 2")), Context.RETIRE,
-                ErrorCode.IMPORT_SOURCE_INCOMPLETE, "step 1, step 2");
+                MigrationError.IMPORT_SOURCE_INCOMPLETE, "step 1, step 2");
         ValidationException one = new ValidationException(ValidationCode.VALIDATION_FAILED, List.of(), List.of(
                 new ValidationIssue("a[1].x", ValidationReason.REQUIRED, List.of())), Map.of());
-        assertRefusedAs(one, Context.RETIRE, ErrorCode.IMPORT_DATA_REFUSED, "1");
+        assertRefusedAs(one, Context.RETIRE, MigrationError.IMPORT_DATA_REFUSED, "1");
         assertRefusedAs(new InfrastructureException(InfrastructureCode.INTEGRITY_VIOLATION, List.of("history")), Context.RETIRE,
                 ErrorCode.LEDGER_REFUSED, "INTEGRITY_VIOLATION");
     }

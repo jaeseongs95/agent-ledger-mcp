@@ -5,9 +5,9 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import org.pgledger.cli.UsageException;
 import org.pgledger.migrate1x.secret.OneXEnvironment;
-import org.pgledger.migrate1x.tool.ErrorCode;
-import org.pgledger.migrate1x.tool.UsageException;
+import org.pgledger.migrate1x.tool.MigrationError;
 
 /**
  * The public host names of a 1.x installation. The clients of a 1.x server reach it through the names its environment file
@@ -40,7 +40,7 @@ public final class Hosts1x {
      *
      * @param mcpHosts   the names given to the installer with {@code --mcp-host} (empty when the option is not given)
      * @param adminHosts the names given to the installer with {@code --admin-host} (empty when the option is not given)
-     * @throws org.pgledger.migrate1x.tool.FailureException ENV_FILE_FAILED when the file cannot be read
+     * @throws org.pgledger.cli.FailureException ENV_FILE_FAILED when the file cannot be read
      * @throws UsageException HOSTS_DROPPED naming the host names and the option; the names of the MCP server come first
      */
     public static void require(Path file, List<String> mcpHosts, List<String> adminHosts) {
@@ -51,7 +51,7 @@ public final class Hosts1x {
 
     private static void refuseDropped(List<String> dropped, String option) {
         if (!dropped.isEmpty()) {
-            throw new UsageException(ErrorCode.HOSTS_DROPPED, String.join(", ", dropped), option);
+            throw new UsageException(MigrationError.HOSTS_DROPPED, String.join(", ", dropped), option);
         }
     }
 

@@ -14,8 +14,9 @@ import org.pgledger.domain.error.TransitionException;
 import org.pgledger.domain.error.TrustException;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationIssue;
-import org.pgledger.migrate1x.tool.ErrorCode;
-import org.pgledger.migrate1x.tool.FailureException;
+import org.pgledger.cli.ErrorCode;
+import org.pgledger.cli.FailureException;
+import org.pgledger.migrate1x.tool.MigrationError;
 
 /**
  * The one place where a refusal of the ledger becomes the refusal of the tool. The kind of refusal is an exhaustive switch
@@ -81,7 +82,7 @@ public final class Refusals {
 
     private static FailureException conflict(ConflictException refused, Context context) {
         if ((ConflictCode) refused.code() == ConflictCode.DUPLICATE_KEY && context == Context.IMPORT) {
-            return new FailureException(ErrorCode.IMPORT_TARGET_NOT_EMPTY, refused, String.join(", ", refused.args()));
+            return new FailureException(MigrationError.IMPORT_TARGET_NOT_EMPTY, refused, String.join(", ", refused.args()));
         }
         return generic(refused);
     }
@@ -89,7 +90,7 @@ public final class Refusals {
     private static FailureException lookup(LookupException refused, Context context) {
         // the arguments of the 1.x source that is not complete: what was looked for, then the missing steps
         if ((LookupCode) refused.code() == LookupCode.NOT_FOUND && context != Context.GENERIC && refused.args().size() > 1) {
-            return new FailureException(ErrorCode.IMPORT_SOURCE_INCOMPLETE, refused, refused.args().get(1));
+            return new FailureException(MigrationError.IMPORT_SOURCE_INCOMPLETE, refused, refused.args().get(1));
         }
         return generic(refused);
     }
@@ -98,7 +99,7 @@ public final class Refusals {
         if (context == Context.GENERIC) {
             return generic(refused);
         }
-        return new FailureException(ErrorCode.IMPORT_DATA_REFUSED, refused, String.valueOf(refused.issues().size()));
+        return new FailureException(MigrationError.IMPORT_DATA_REFUSED, refused, String.valueOf(refused.issues().size()));
     }
 
     /**
@@ -110,9 +111,9 @@ public final class Refusals {
             List<TableMismatch> groups = TableMismatch.of(refused.args());
             if (!groups.isEmpty()) {
                 return switch (context) {
-                    case IMPORT -> new FailureException(ErrorCode.IMPORT_VERIFY_FAILED, refused,
+                    case IMPORT -> new FailureException(MigrationError.IMPORT_VERIFY_FAILED, refused,
                             groups.getFirst().texts());
-                    case RETIRE -> new FailureException(ErrorCode.RETIRE_VERIFY_FAILED, refused,
+                    case RETIRE -> new FailureException(MigrationError.RETIRE_VERIFY_FAILED, refused,
                             groups.getFirst().texts());
                     case GENERIC -> generic(refused);
                 };

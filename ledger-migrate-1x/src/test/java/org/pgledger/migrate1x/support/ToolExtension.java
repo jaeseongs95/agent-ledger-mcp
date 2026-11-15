@@ -12,16 +12,16 @@ import javax.sql.DataSource;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.ParameterContext;
 import org.junit.jupiter.api.extension.ParameterResolver;
+import org.pgledger.cli.CliException;
+import org.pgledger.cli.CliOutput;
+import org.pgledger.cli.ErrorKey;
+import org.pgledger.cli.secret.ProcessUser;
+import org.pgledger.cli.secret.SecretInput;
+import org.pgledger.cli.secret.StandardInput;
 import org.pgledger.migrate1x.Migrate1xApplication;
 import org.pgledger.migrate1x.database.LegacySourceConfiguration;
 import org.pgledger.migrate1x.database.LegacySourceWiring;
 import org.pgledger.migrate1x.host.ServiceControl;
-import org.pgledger.migrate1x.secret.ProcessUser;
-import org.pgledger.migrate1x.secret.SecretInput;
-import org.pgledger.migrate1x.secret.StandardInput;
-import org.pgledger.migrate1x.tool.ErrorCode;
-import org.pgledger.migrate1x.tool.Output;
-import org.pgledger.migrate1x.tool.ToolException;
 import org.pgledger.testing.database.TestDatabaseScanFilter;
 import org.pgledger.testing.database.TestDriverRegistration;
 import org.springframework.boot.ExitCodeEvent;
@@ -34,9 +34,11 @@ import org.springframework.jdbc.datasource.DelegatingDataSource;
 
 /**
  * JUnit extension that hands a test a {@link Tool} to start the real application the way {@code main} does. Only the input and
- * output boundaries (and the service manager) can be swapped. The exit code is the one Boot publishes as an {@link ExitCodeEvent}
- * after {@code ExitCodeMapper} mapped the failure, or the code of {@link SpringApplication#exit} when the run succeeded; the
- * failure report itself is what Boot logs ({@code FailureAnalyzer}), which a test reads with {@code OutputCaptureExtension}.
+ * output boundaries (and the service manager) can be swapped; they are the beans of {@code ledger-cli} ({@link SecretInput},
+ * {@link StandardInput}, {@link ProcessUser}, {@link CliOutput}) and of the tool ({@link ServiceControl}). The exit code is the one
+ * Boot publishes as an {@link ExitCodeEvent} after {@code CliExitCodeMapper} mapped the failure, or the code of
+ * {@link SpringApplication#exit} when the run succeeded; the failure report itself is what Boot logs
+ * ({@code CliFailureAnalyzer}), which a test reads with {@code OutputCaptureExtension}.
  */
 public final class ToolExtension implements ParameterResolver {
 
@@ -44,18 +46,21 @@ public final class ToolExtension implements ParameterResolver {
     public record Outcome(int exitCode, RuntimeException failure, ConfigurableApplicationContext context) {
 
         /** The refusal in the failure chain, if the run was refused. */
-        public Optional<ToolException> refusal() {
+        public Optional<CliException> refusal() {
             for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
-                if (cause instanceof ToolException refusal) {
+                if (cause instanceof CliException refusal) {
                     return Optional.of(refusal);
                 }
             }
             return Optional.empty();
         }
 
-        /** The error code of the refusal in the failure chain, if the run was refused. */
-        public Optional<ErrorCode> code() {
-            return refusal().map(ToolException::code);
+        /**
+         * The error code of the refusal in the failure chain, if the run was refused: an {@code ErrorCode} of {@code ledger-cli}
+         * or a {@code MigrationError} of the tool.
+         */
+        public Optional<ErrorKey> code() {
+            return refusal().map(CliException::code);
         }
     }
 
@@ -127,7 +132,7 @@ public final class ToolExtension implements ParameterResolver {
         }
 
         /** @param input null keeps the product Console input; @param output null keeps the product stream output */
-        public Outcome run(Path secretsDirectory, SecretInput input, Output output, String... args) {
+        public Outcome run(Path secretsDirectory, SecretInput input, CliOutput output, String... args) {
             List<String> all = new ArrayList<>(List.of(args));
             all.add("--ledger.secrets.directory=" + secretsDirectory);
             all.addAll(extraArguments);
@@ -169,7 +174,7 @@ public final class ToolExtension implements ParameterResolver {
                             generic.registerBean("testSecretInput", SecretInput.class, () -> input, bd -> bd.setPrimary(true));
                         }
                         if (output != null) {
-                            generic.registerBean("testOutput", Output.class, () -> output, bd -> bd.setPrimary(true));
+                            generic.registerBean("testOutput", CliOutput.class, () -> output, bd -> bd.setPrimary(true));
                         }
                     });
             if (legacySource != null) {

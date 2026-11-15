@@ -4,7 +4,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 /** The commands this tool offers; the usage text lists them in this order. */
-public enum CliCommand {
+public enum CliCommand implements CommandName {
 
     SECRET_SET("secret-set"),
     TOKEN_GENERATE("token-generate"),

@@ -2,9 +2,10 @@ package org.pgledger.migrate1x.tool;
 
 import java.util.Objects;
 import java.util.Optional;
+import org.pgledger.cli.CommandName;
 
 /** The commands this tool offers; the usage text lists them in this order, which is the order of an upgrade. */
-public enum ToolCommand {
+public enum ToolCommand implements CommandName {
 
     STOP_1X("stop-1x"),
     IMPORT_SECRETS_1X("import-secrets-1x"),

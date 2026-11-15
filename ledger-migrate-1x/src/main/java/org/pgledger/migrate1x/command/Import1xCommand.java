@@ -3,19 +3,20 @@ package org.pgledger.migrate1x.command;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import org.pgledger.cli.CliMessages;
+import org.pgledger.cli.CliOptions;
+import org.pgledger.cli.CliOutput;
+import org.pgledger.cli.Command;
+import org.pgledger.cli.ErrorCode;
+import org.pgledger.cli.FailureException;
+import org.pgledger.cli.UsageException;
+import org.pgledger.cli.database.DatabaseBeans;
 import org.pgledger.domain.error.LedgerException;
 import org.pgledger.migrate1x.service.ImportReport;
 import org.pgledger.migrate1x.service.LegacyImportService;
 import org.pgledger.migrate1x.service.TableCheck;
-import org.pgledger.migrate1x.tool.Command;
-import org.pgledger.migrate1x.tool.ErrorCode;
-import org.pgledger.migrate1x.tool.FailureException;
-import org.pgledger.migrate1x.tool.Messages;
-import org.pgledger.migrate1x.tool.Options;
-import org.pgledger.migrate1x.tool.Output;
+import org.pgledger.migrate1x.tool.MigrationError;
 import org.pgledger.migrate1x.tool.ToolCommand;
-import org.pgledger.migrate1x.tool.UsageException;
-import org.pgledger.migrate1x.wiring.DatabaseBeans;
 import org.pgledger.migrate1x.wiring.Ledger;
 import org.pgledger.migrate1x.wiring.Refusals;
 import org.pgledger.migrate1x.wiring.Refusals.Context;
@@ -48,11 +49,11 @@ public class Import1xCommand implements Command {
     static final String STDIN = "stdin";
 
     private final ObjectProvider<Ledger> ledger;
-    private final Output output;
-    private final Messages messages;
+    private final CliOutput output;
+    private final CliMessages messages;
     private final RefusalReport refusalReport;
 
-    Import1xCommand(ObjectProvider<Ledger> ledger, Output output, Messages messages, RefusalReport refusalReport) {
+    Import1xCommand(ObjectProvider<Ledger> ledger, CliOutput output, CliMessages messages, RefusalReport refusalReport) {
         this.ledger = ledger;
         this.output = output;
         this.messages = messages;
@@ -74,17 +75,17 @@ public class Import1xCommand implements Command {
         if (!operands.isEmpty()) {
             throw new UsageException(ErrorCode.TOO_MANY_ARGUMENTS);
         }
-        boolean verifyOnly = Options.flag(arguments, VERIFY_ONLY);
+        boolean verifyOnly = CliOptions.flag(arguments, VERIFY_ONLY);
         // the account itself is read before the context starts (OwnerAccountEnvironmentPostProcessor); a blank one is refused here
-        Optional<String> ownerAccount = Options.value(arguments, OWNER_ACCOUNT);
+        Optional<String> ownerAccount = CliOptions.value(arguments, OWNER_ACCOUNT);
         // --stdin gives the password of the owner account: with no such account it has no use
-        if (Options.flag(arguments, STDIN) && ownerAccount.isEmpty()) {
+        if (CliOptions.flag(arguments, STDIN) && ownerAccount.isEmpty()) {
             throw new UsageException(ErrorCode.INVALID_OPTION_VALUE);
         }
         Ledger target = DatabaseBeans.require(ledger);
         LegacyImportService importer = target.importer();
         if (!importer.sourceConfigured()) {
-            throw new FailureException(ErrorCode.IMPORT_SOURCE_NOT_CONFIGURED);
+            throw new FailureException(MigrationError.IMPORT_SOURCE_NOT_CONFIGURED);
         }
         ImportReport report = target.call(() -> execute(target, importer, verifyOnly));
         for (TableCheck check : report.tables()) {

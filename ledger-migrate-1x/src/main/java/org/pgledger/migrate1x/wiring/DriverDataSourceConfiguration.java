@@ -1,5 +1,6 @@
 package org.pgledger.migrate1x.wiring;
 
+import org.pgledger.cli.owner.OwnerAccountPropertySource;
 import org.pgledger.database.driver.ApplicationAccountSettings;
 import org.pgledger.database.driver.LedgerDataSourceConfiguration;
 import org.pgledger.database.driver.LedgerJdbcProperties;
@@ -20,7 +21,7 @@ import org.springframework.core.env.MutablePropertySources;
  * {@code ledger.import.source.url} is set, the 1.x ledger it reads ({@link LegacySourceConfiguration}). Like
  * {@link LedgerConfiguration} it exists only when {@link DatabaseCondition} holds, so a machine without a driver never tries to
  * connect. The schema guard of the server applications is not imported: the tool checks the schema per command
- * ({@link Readiness}).
+ * ({@code SchemaReadiness} of {@code ledger-cli}).
  *
  * <p>The account of the run: a run of {@code import-1x} connects as the owner account (the DDL account,
  * {@link OwnerAccountPropertySource}), which shadows {@code ledger.jdbc.username} and {@code ledger.jdbc.password}. The accounts of

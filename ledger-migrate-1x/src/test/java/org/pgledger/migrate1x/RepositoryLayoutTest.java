@@ -23,9 +23,12 @@ class RepositoryLayoutTest {
 
     private static final Path ROOT = Path.of(System.getProperty("ledger.docs.root"));
     private static final String MODULE = "ledger-migrate-1x";
-    /** The modules of the body that the tool uses (the domain and the database come with the application module). */
+    /**
+     * The modules of the body that the tool uses (the domain and the database come with the application module; ledger-cli is used
+     * for its command line machinery and secret store, without its libraries).
+     */
     private static final Set<String> USED = Set.of(":ledger-application", ":ledger-attestation", ":ledger-domain",
-            ":ledger-database");
+            ":ledger-database", ":ledger-cli");
     private static final Pattern PROJECT = Pattern.compile("project\\((?:path\\s*=\\s*)?\"(:[a-z0-9-]+)\"");
 
     private static String read(Path file) {

@@ -5,8 +5,8 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
-import org.pgledger.migrate1x.tool.ErrorCode;
-import org.pgledger.migrate1x.tool.FailureException;
+import org.pgledger.cli.FailureException;
+import org.pgledger.migrate1x.tool.MigrationError;
 import org.springframework.stereotype.Component;
 
 /**
@@ -34,17 +34,17 @@ class SystemServiceControl implements ServiceControl {
             Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
             if (!process.waitFor(TIMEOUT.toSeconds(), java.util.concurrent.TimeUnit.SECONDS)) {
                 process.destroyForcibly();
-                throw new FailureException(ErrorCode.SERVICE_COMMAND_FAILED, shown, "timeout");
+                throw new FailureException(MigrationError.SERVICE_COMMAND_FAILED, shown, "timeout");
             }
             try (InputStream output = process.getInputStream()) {
                 return new Result(process.exitValue(), new String(output.readNBytes(MAX_OUTPUT), StandardCharsets.UTF_8));
             }
         } catch (IOException e) {
             // only the kind of the failure: the text of an exception may hold more than the operator needs
-            throw new FailureException(ErrorCode.SERVICE_COMMAND_FAILED, e, shown, e.getClass().getSimpleName());
+            throw new FailureException(MigrationError.SERVICE_COMMAND_FAILED, e, shown, e.getClass().getSimpleName());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new FailureException(ErrorCode.SERVICE_COMMAND_FAILED, e, shown, "interrupted");
+            throw new FailureException(MigrationError.SERVICE_COMMAND_FAILED, e, shown, "interrupted");
         }
     }
 }

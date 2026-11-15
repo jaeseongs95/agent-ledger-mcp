@@ -186,15 +186,15 @@ class JarProcessTest {
     }
 
     @Test
-    @DisplayName("HK-021 on a JDK older than 25 the JVM refuses the jar with UnsupportedClassVersionError: 69.0 for the hook classes, 61.0 for the launcher of Spring Boot on a JDK older than 17 (needs LEDGER_HOOK_LEGACY_JAVA)")
+    @DisplayName("HK-021 on a JDK older than 25 the JVM refuses the jar with UnsupportedClassVersionError: 69.0 for the hook classes, 61.0 for the launcher of Spring Boot on a JDK older than 17 (needs LEDGER_HOOK_OLDER_JAVA)")
     void olderJdkFailsClearly(HookJar jar) throws IOException {
         // The path of a JDK older than 25 is a property of the build machine, not of the product: the test reads it
         // from the environment of the machine and is skipped (NOT_RUN) where there is none.
-        String legacy = System.getenv("LEDGER_HOOK_LEGACY_JAVA");
-        Assumptions.assumeTrue(legacy != null && !legacy.isBlank(),
-                "NOT_RUN: no JDK older than 25 on this host (set LEDGER_HOOK_LEGACY_JAVA to its java executable)");
+        String olderJava = System.getenv("LEDGER_HOOK_OLDER_JAVA");
+        Assumptions.assumeTrue(olderJava != null && !olderJava.isBlank(),
+                "NOT_RUN: no JDK older than 25 on this host (set LEDGER_HOOK_OLDER_JAVA to its java executable)");
         CodexHost codex = new CodexHost();
-        Run run = jar.start(Path.of(legacy), List.of(), Map.of(), codex.event(codex.toolName("save"), Json.of("{}")), "codex").run();
+        Run run = jar.start(Path.of(olderJava), List.of(), Map.of(), codex.event(codex.toolName("save"), Json.of("{}")), "codex").run();
         assertThat(run.exit()).isNotZero();
         assertThat(run.stdout()).isEmpty();
         // the launcher is a Java 17 class file: a JDK of 17 to 24 refuses the hook class (69.0), an older one the launcher (61.0)

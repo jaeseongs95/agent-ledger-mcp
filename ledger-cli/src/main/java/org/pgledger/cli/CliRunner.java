@@ -1,8 +1,9 @@
 package org.pgledger.cli;
 
-import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import org.springframework.boot.ApplicationArguments;
@@ -24,15 +25,24 @@ public class CliRunner implements ApplicationRunner {
      */
     private static final Set<String> BOOT_FLAGS = Set.of("debug", "trace");
 
-    private final Map<CliCommand, Command> commands = new EnumMap<>(CliCommand.class);
+    private final Map<String, Command> commands = new HashMap<>();
 
+    /**
+     * The commands of the program by their word on the command line. Every constant of the enum of command names that the commands
+     * are of ({@link CliCommand} here, the enum of the migration tool there) needs its command: one that has none stops the start
+     * and names the command.
+     */
     CliRunner(List<Command> available) {
         for (Command command : available) {
-            commands.put(command.name(), command);
+            commands.put(command.name().cliName(), command);
         }
-        for (CliCommand known : CliCommand.values()) {
-            if (!commands.containsKey(known)) {
-                throw new IllegalStateException("No Command bean for " + known);
+        for (Command command : available) {
+            if (command.name() instanceof Enum<?> name) {
+                for (Object known : name.getDeclaringClass().getEnumConstants()) {
+                    if (!commands.containsKey(((CommandName) known).cliName())) {
+                        throw new IllegalStateException("No Command bean for " + known);
+                    }
+                }
             }
         }
     }
@@ -43,9 +53,9 @@ public class CliRunner implements ApplicationRunner {
         if (operands.isEmpty()) {
             throw new UsageException(ErrorCode.MISSING_COMMAND);
         }
-        CliCommand command = CliCommand.parse(operands.getFirst())
+        Command target = Optional.ofNullable(commands.get(operands.getFirst()))
                 .orElseThrow(() -> new UsageException(ErrorCode.UNKNOWN_COMMAND));
-        Command target = commands.get(command);
+        CommandName command = target.name();
         try {
             for (String option : arguments.getOptionNames()) {
                 if (!option.contains(".") && !BOOT_FLAGS.contains(option) && !target.options().contains(option)) {

@@ -1,7 +1,7 @@
 package org.pgledger.cli;
 
 /** Every reason a command can be refused; each code has a message under {@link #messageKey()} in the message bundles. */
-public enum ErrorCode {
+public enum ErrorCode implements ErrorKey {
 
     MISSING_COMMAND,
     UNKNOWN_COMMAND,

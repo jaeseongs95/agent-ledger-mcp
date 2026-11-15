@@ -10,14 +10,18 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import org.pgledger.migrate1x.tool.Command;
-import org.pgledger.migrate1x.tool.ErrorCode;
-import org.pgledger.migrate1x.tool.FailureException;
-import org.pgledger.migrate1x.tool.Messages;
-import org.pgledger.migrate1x.tool.Options;
-import org.pgledger.migrate1x.tool.Output;
+import org.pgledger.cli.CliMessages;
+import org.pgledger.cli.CliOptions;
+import org.pgledger.cli.CliOutput;
+import org.pgledger.cli.Command;
+import org.pgledger.cli.ErrorCode;
+import org.pgledger.cli.FailureException;
+import org.pgledger.cli.UsageException;
+import org.pgledger.cli.secret.SecretName;
+import org.pgledger.cli.secret.SecretStore;
+import org.pgledger.cli.secret.StandardInput;
+import org.pgledger.migrate1x.tool.MigrationError;
 import org.pgledger.migrate1x.tool.ToolCommand;
-import org.pgledger.migrate1x.tool.UsageException;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.stereotype.Component;
 
@@ -99,10 +103,10 @@ public class ImportSecrets1xCommand implements Command {
 
     private final SecretStore store;
     private final StandardInput standardInput;
-    private final Output output;
-    private final Messages messages;
+    private final CliOutput output;
+    private final CliMessages messages;
 
-    ImportSecrets1xCommand(SecretStore store, StandardInput standardInput, Output output, Messages messages) {
+    ImportSecrets1xCommand(SecretStore store, StandardInput standardInput, CliOutput output, CliMessages messages) {
         this.store = store;
         this.standardInput = standardInput;
         this.output = output;
@@ -124,9 +128,9 @@ public class ImportSecrets1xCommand implements Command {
         if (!operands.isEmpty()) {
             throw new UsageException(ErrorCode.TOO_MANY_ARGUMENTS);
         }
-        Optional<String> file = Options.value(arguments, ENV);
-        boolean fromStandardInput = Options.flag(arguments, STDIN);
-        boolean replace = Options.flag(arguments, REPLACE);
+        Optional<String> file = CliOptions.value(arguments, ENV);
+        boolean fromStandardInput = CliOptions.flag(arguments, STDIN);
+        boolean replace = CliOptions.flag(arguments, REPLACE);
         if (file.isPresent() && fromStandardInput) {
             throw new UsageException(ErrorCode.INVALID_OPTION_VALUE);
         }
@@ -172,7 +176,7 @@ public class ImportSecrets1xCommand implements Command {
     /** The token of the agents is required (its name is the one named, never a value); the admin token is optional. */
     private static void requireAgentToken(Map<OneXKey, String> values) {
         if (!values.containsKey(OneXKey.AGENT)) {
-            throw new FailureException(ErrorCode.ENV_KEYS_MISSING, OneXKey.AGENT.setting());
+            throw new FailureException(MigrationError.ENV_KEYS_MISSING, OneXKey.AGENT.setting());
         }
     }
 
@@ -180,13 +184,13 @@ public class ImportSecrets1xCommand implements Command {
     private static void requireUsable(Map<OneXKey, String> values) {
         String agent = values.get(OneXKey.AGENT);
         if (agent.length() < MINIMUM_LENGTH) {
-            throw new FailureException(ErrorCode.INVALID_1X_VALUE, OneXKey.AGENT.setting());
+            throw new FailureException(MigrationError.INVALID_1X_VALUE, OneXKey.AGENT.setting());
         }
         // absent for a 1.0.0 installation (no admin web); the two tokens guard different things (the agents, the owner's
         // sign-in): one value for both is refused, not carried over
         String admin = values.get(OneXKey.ADMIN);
         if (admin != null && (admin.length() < MINIMUM_LENGTH || Objects.equals(admin, agent))) {
-            throw new FailureException(ErrorCode.INVALID_1X_VALUE, OneXKey.ADMIN.setting());
+            throw new FailureException(MigrationError.INVALID_1X_VALUE, OneXKey.ADMIN.setting());
         }
     }
 

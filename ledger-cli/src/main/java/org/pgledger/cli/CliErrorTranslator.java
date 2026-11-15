@@ -1,6 +1,7 @@
 package org.pgledger.cli;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 import org.springframework.stereotype.Component;
@@ -14,9 +15,13 @@ public class CliErrorTranslator {
     }
 
     private final CliMessages messages;
+    /** The names of the commands of the program, in the order of their enum (the order of the usage text). */
+    private final List<CommandName> commands;
 
-    CliErrorTranslator(CliMessages messages) {
+    CliErrorTranslator(CliMessages messages, List<Command> available) {
         this.messages = messages;
+        this.commands = available.stream().map(Command::name)
+                .sorted(Comparator.comparingInt(name -> name instanceof Enum<?> constant ? constant.ordinal() : 0)).toList();
     }
 
     public Report translate(CliException exception) {
@@ -32,8 +37,8 @@ public class CliErrorTranslator {
     private String usageText(UsageException usage) {
         List<String> lines = new ArrayList<>();
         lines.add(messages.get("usage.header"));
-        List<CliCommand> shown = usage.command().map(List::of).orElseGet(() -> List.of(CliCommand.values()));
-        for (CliCommand command : shown) {
+        List<CommandName> shown = usage.command().map(List::of).orElse(commands);
+        for (CommandName command : shown) {
             lines.add(messages.get(command.usageKey()));
         }
         return String.join("\n", lines);

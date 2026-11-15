@@ -222,7 +222,7 @@ class ManifestTest {
 
     @ParameterizedTest
     @MethodSource("readmes")
-    @DisplayName("FUP-CLI-02 every README describes the 2.0 behaviour (Ed25519 session key, session-key, key-register, LEDGER_HOOK_KEY_DIR) and not the 1.x form (the host session id put into _hostAttestation unsigned)")
+    @DisplayName("FUP-CLI-02 every README describes the 2.0 behaviour (Ed25519 session key, session-key, key-register, LEDGER_HOOK_KEY_DIR) and not a form that put the host session id into _hostAttestation unsigned")
     void readmesDescribeTheSignedAttestation(Client client, String name) throws IOException {
         String readme = Files.readString(CLIENTS.resolve(client.argument() + "/" + name));
         assertThat(readme).contains("Ed25519").contains("session-key").contains("key-register").contains("LEDGER_HOOK_KEY_DIR")

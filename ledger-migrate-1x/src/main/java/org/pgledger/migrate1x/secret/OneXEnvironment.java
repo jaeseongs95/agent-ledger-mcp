@@ -13,8 +13,9 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
-import org.pgledger.migrate1x.tool.ErrorCode;
-import org.pgledger.migrate1x.tool.FailureException;
+import org.pgledger.cli.ErrorKey;
+import org.pgledger.cli.FailureException;
+import org.pgledger.migrate1x.tool.MigrationError;
 
 /**
  * The settings of the environment file of a 1.x installation ({@code /etc/pg-ledger-mcp/env}), as the 1.x
@@ -47,14 +48,14 @@ public final class OneXEnvironment {
      */
     public static OneXEnvironment read(Path file) {
         try (InputStream stream = Files.newInputStream(file)) {
-            return parse(decode(stream.readNBytes(MAXIMUM_BYTES + 1), ErrorCode.ENV_FILE_FAILED));
+            return parse(decode(stream.readNBytes(MAXIMUM_BYTES + 1), MigrationError.ENV_FILE_FAILED));
         } catch (IOException e) {
-            throw new FailureException(ErrorCode.ENV_FILE_FAILED, e.getClass().getSimpleName());
+            throw new FailureException(MigrationError.ENV_FILE_FAILED, e.getClass().getSimpleName());
         }
     }
 
     /** UTF-8, nothing replaced; the bytes are wiped once decoded. A text over the bound is not an environment file of 1.x. */
-    static String decode(byte[] bytes, ErrorCode failure) {
+    static String decode(byte[] bytes, ErrorKey failure) {
         try {
             if (bytes.length > MAXIMUM_BYTES) {
                 throw new FailureException(failure, "TooLarge");

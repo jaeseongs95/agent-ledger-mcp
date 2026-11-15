@@ -11,6 +11,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.pgledger.cli.ExitStatus;
 import org.pgledger.migrate1x.database.LegacyTable;
 import org.pgledger.migrate1x.fixture.LegacyFixtures;
 import org.pgledger.migrate1x.fixture.LegacyFixtures.Category;
@@ -21,8 +22,7 @@ import org.pgledger.migrate1x.support.TestLedgerDatabase;
 import org.pgledger.migrate1x.support.ToolExtension;
 import org.pgledger.migrate1x.support.ToolExtension.Outcome;
 import org.pgledger.migrate1x.support.ToolExtension.Tool;
-import org.pgledger.migrate1x.tool.ErrorCode;
-import org.pgledger.migrate1x.tool.ExitStatus;
+import org.pgledger.migrate1x.tool.MigrationError;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 
@@ -152,7 +152,7 @@ class ImportAfterSetupTest {
         Outcome second = run(tool, new RecordingOutput(), "import-1x");
 
         assertThat(second.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
-        assertThat(second.code()).contains(ErrorCode.IMPORT_TARGET_NOT_EMPTY);
+        assertThat(second.code()).contains(MigrationError.IMPORT_TARGET_NOT_EMPTY);
         assertThat(second.refusal().orElseThrow().arguments().getFirst()).contains("owner_audit").contains("project");
         assertThat(captured.getAll()).contains("already holds ledger data");
         assertThat(count("history")).isEqualTo(history);
@@ -166,7 +166,7 @@ class ImportAfterSetupTest {
                     .run(tmp.resolve("secrets"), null, new RecordingOutput(), "import-1x");
 
             assertThat(refused.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
-            assertThat(refused.code()).contains(ErrorCode.IMPORT_TARGET_NOT_EMPTY);
+            assertThat(refused.code()).contains(MigrationError.IMPORT_TARGET_NOT_EMPTY);
             assertThat(refused.refusal().orElseThrow().arguments().getFirst()).contains("project").doesNotContain("owner_audit");
             assertThat(((Number) other.rows("SELECT COUNT(*) AS n FROM history").getFirst().get("n")).longValue()).isZero();
         }

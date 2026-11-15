@@ -26,7 +26,7 @@ import org.springframework.core.env.PropertySource;
  * {@link EnvironmentPostProcessor}
  * (https://docs.spring.io/spring-boot/how-to/application.html#howto.application.customize-the-environment-or-application-context).
  */
-public final class OwnerAccountEnvironmentPostProcessor implements EnvironmentPostProcessor {
+public class OwnerAccountEnvironmentPostProcessor implements EnvironmentPostProcessor {
 
     /** The option, as the command line property source names it. */
     public static final String OPTION = "owner-account";
@@ -39,6 +39,14 @@ public final class OwnerAccountEnvironmentPostProcessor implements EnvironmentPo
      */
     private static final Set<String> COMMANDS = Set.of(CliCommand.MIGRATE.cliName(), CliCommand.SETUP.cliName());
 
+    /**
+     * The words of the commands that declare the option. Another program that is built on this module (the migration tool) has a
+     * post-processor of its own, a subclass that names its commands; the rest is this class.
+     */
+    protected Set<String> commands() {
+        return COMMANDS;
+    }
+
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
         PropertySource<?> commandLine = environment.getPropertySources()
@@ -49,7 +57,7 @@ public final class OwnerAccountEnvironmentPostProcessor implements EnvironmentPo
         // an option without a value is refused by the command itself (MISSING_OPTION_VALUE); only the two commands that
         // declare the option ask for the password, any other command refuses the option without having prompted
         if (account instanceof String text && !text.isBlank() && operands instanceof String words
-                && COMMANDS.contains(words.split(",")[0])) {
+                && commands().contains(words.split(",")[0])) {
             // --stdin: the password is the next line of standard input (an installation without a terminal), else it is typed
             SecretInput input = commandLine.containsProperty(STDIN) ? new StdinSecretInput(StandardInput.ofProcess())
                     : new ConsoleSecretInput();

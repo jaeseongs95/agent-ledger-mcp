@@ -19,6 +19,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.pgledger.cli.ErrorCode;
+import org.pgledger.cli.ExitStatus;
 import org.pgledger.domain.value.Sha256;
 import org.pgledger.migrate1x.database.LegacyTable;
 import org.pgledger.migrate1x.fixture.LegacyFixtures;
@@ -29,8 +31,7 @@ import org.pgledger.migrate1x.support.TestLedgerDatabase;
 import org.pgledger.migrate1x.support.ToolExtension;
 import org.pgledger.migrate1x.support.ToolExtension.Outcome;
 import org.pgledger.migrate1x.support.ToolExtension.Tool;
-import org.pgledger.migrate1x.tool.ErrorCode;
-import org.pgledger.migrate1x.tool.ExitStatus;
+import org.pgledger.migrate1x.tool.MigrationError;
 import org.pgledger.testing.database.TestDatabase;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
@@ -145,7 +146,7 @@ class Retire1xCommandTest {
         Outcome outcome = run(tool, new RecordingOutput(), "retire-1x", "--confirm=" + "0".repeat(64), "--backup-tested");
 
         assertThat(outcome.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
-        assertThat(outcome.code()).contains(ErrorCode.RETIRE_SOURCE_CHANGED);
+        assertThat(outcome.code()).contains(MigrationError.RETIRE_SOURCE_CHANGED);
         assertThat(outcome.refusal().orElseThrow().arguments()).containsExactly(digestOf(listed));
         assertLegacyIntact();
     }
@@ -156,7 +157,7 @@ class Retire1xCommandTest {
         String digest = "a".repeat(64);
 
         Outcome unacknowledged = run(tool, new RecordingOutput(), "retire-1x", "--confirm=" + digest);
-        assertThat(unacknowledged.code()).contains(ErrorCode.RETIRE_BACKUP_NOT_ACKNOWLEDGED);
+        assertThat(unacknowledged.code()).contains(MigrationError.RETIRE_BACKUP_NOT_ACKNOWLEDGED);
         assertThat(run(tool, new RecordingOutput(), "retire-1x", "--backup-tested").code())
                 .contains(ErrorCode.INVALID_OPTION_VALUE);
         assertThat(run(tool, new RecordingOutput(), "retire-1x", "--confirm=abc", "--backup-tested").code())
@@ -176,7 +177,7 @@ class Retire1xCommandTest {
         Outcome unconfigured = tool.withDatabase(database.dataSource()).asProcessUser(USER).run(tmp.resolve("secrets"), null,
                 new RecordingOutput(), "retire-1x");
         assertThat(unconfigured.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
-        assertThat(unconfigured.code()).contains(ErrorCode.IMPORT_SOURCE_NOT_CONFIGURED);
+        assertThat(unconfigured.code()).contains(MigrationError.IMPORT_SOURCE_NOT_CONFIGURED);
         assertLegacyIntact();
     }
 
@@ -195,7 +196,7 @@ class Retire1xCommandTest {
 
         for (Outcome outcome : List.of(afterwards, confirmed)) {
             assertThat(outcome.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
-            assertThat(outcome.code()).contains(ErrorCode.RETIRE_VERIFY_FAILED);
+            assertThat(outcome.code()).contains(MigrationError.RETIRE_VERIFY_FAILED);
             assertThat(outcome.refusal().orElseThrow().arguments()).hasSize(5).first().isEqualTo("defect");
         }
         assertThat(failed.info()).contains("Table defect: ");
@@ -245,7 +246,7 @@ class Retire1xCommandTest {
 
         Outcome second = run(tool, new RecordingOutput(), "retire-1x");
         assertThat(second.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
-        assertThat(second.code()).contains(ErrorCode.IMPORT_SOURCE_INCOMPLETE);
+        assertThat(second.code()).contains(MigrationError.IMPORT_SOURCE_INCOMPLETE);
     }
 
     @Test
@@ -259,7 +260,7 @@ class Retire1xCommandTest {
                 .run(tmp.resolve("secrets"), null, new RecordingOutput(), "retire-1x");
 
         assertThat(outcome.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
-        assertThat(outcome.code()).contains(ErrorCode.RETIRE_OWN_SCHEMA);
+        assertThat(outcome.code()).contains(MigrationError.RETIRE_OWN_SCHEMA);
         assertThat(outcome.refusal().orElseThrow().arguments()).containsExactly(database.schemaName());
         assertThat(countOf(database.rows("SELECT COUNT(*) AS n FROM schema_history"))).isEqualTo(history);
     }
@@ -278,7 +279,7 @@ class Retire1xCommandTest {
             Outcome outcome = run(tool, new RecordingOutput(), "retire-1x");
 
             assertThat(outcome.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
-            assertThat(outcome.code()).contains(ErrorCode.RETIRE_SESSIONS_CONNECTED);
+            assertThat(outcome.code()).contains(MigrationError.RETIRE_SESSIONS_CONNECTED);
             assertThat(outcome.refusal().orElseThrow().arguments().getFirst())
                     .matches("pid \\d+ uses the schema " + legacy.schema());
             assertLegacyIntact();
@@ -296,7 +297,7 @@ class Retire1xCommandTest {
         Outcome outcome = runAs(tool, legacy.reader(), ABSENT_ROLE, new RecordingOutput(), "retire-1x");
 
         assertThat(outcome.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
-        assertThat(outcome.code()).contains(ErrorCode.RETIRE_NOT_OWNER);
+        assertThat(outcome.code()).contains(MigrationError.RETIRE_NOT_OWNER);
         List<String> arguments = outcome.refusal().orElseThrow().arguments();
         assertThat(arguments.getFirst()).contains("_author_ok");
         assertThat(Integer.parseInt(arguments.get(1))).isGreaterThan(LegacyLedger.TABLES.size());

@@ -16,7 +16,12 @@ public final class ScriptedServiceControl implements ServiceControl {
 
     /** Answers every call with exit code 0 and no output. */
     public ScriptedServiceControl() {
-        this(command -> new Result(0, ""));
+        this(0);
+    }
+
+    /** Answers every call with this exit code and no output. */
+    public ScriptedServiceControl(int exitCode) {
+        this(command -> new Result(exitCode, ""));
     }
 
     public ScriptedServiceControl(Function<List<String>, Result> answers) {

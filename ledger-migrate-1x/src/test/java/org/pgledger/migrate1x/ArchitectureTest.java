@@ -1,37 +1,35 @@
 package org.pgledger.migrate1x;
 
-import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
-import static com.tngtech.archunit.library.GeneralCodingRules.ACCESS_STANDARD_STREAMS;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
-import java.io.FileDescriptor;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.pgledger.migrate1x.secret.ConsoleSecretInput;
-import org.pgledger.migrate1x.secret.SecretInput;
-import org.pgledger.migrate1x.secret.StandardInput;
-import org.pgledger.migrate1x.secret.StdinSecretInput;
 import org.pgledger.testing.ArchitectureRules;
 import org.pgledger.testing.CodingScan;
 import org.pgledger.testing.PrincipleRules;
 import org.pgledger.testing.SourceRules;
 
-/** The architecture and source rules of the migration tool (M1X-007 and the rules every module of the product keeps). */
+/**
+ * The architecture and source rules of the migration tool (M1X-007, M1X-008 and the rules every module of the product keeps). The
+ * rules of the secret classes (the standard input, the console, the implementations of {@code SecretInput}, the one sink of the
+ * output) belong to {@code ledger-cli}, whose classes these are, and are checked by the {@code ArchitectureTest} of that module.
+ */
 class ArchitectureTest {
 
-    /** The one class that starts a process, and the one that prints (package-private classes, so named by their names). */
+    /** The one class that starts a process (a package-private class, so named by its name). */
     private static final String SERVICE_CONTROL = "org.pgledger.migrate1x.host.SystemServiceControl";
-    private static final String STREAM_OUTPUT = "org.pgledger.migrate1x.tool.StreamOutput";
 
     private static final JavaClasses MAIN = new ClassFileImporter()
             .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
@@ -65,25 +63,30 @@ class ArchitectureTest {
     }
 
     @Test
-    @DisplayName("M1X-007 standard input is touched by one class only, StandardInput: --stdin is the one opt-in way to give a secret without a terminal")
-    void m1x007_onlyStandardInputTouchesStandardInput() {
-        noClasses().that().doNotHaveFullyQualifiedName(StandardInput.class.getName()).should()
-                .accessField(System.class, "in").orShould().accessField(FileDescriptor.class, "in")
-                .orShould().callMethod(System.class, "setIn", java.io.InputStream.class)
-                .check(MAIN);
+    @DisplayName("M1X-008 no class of the tool has the simple name of a class of ledger-cli: what the tool needs of the command line machinery and the secret store it uses and does not copy")
+    void m1x008_noClassOfTheToolIsACopyOfAClassOfLedgerCli() {
+        // ledger-cli is on the classpath of the tool as its plain jar (the tool uses its classes, without its libraries)
+        JavaClasses cli = new ClassFileImporter().importPackages("org.pgledger.cli");
+        Set<String> cliNames = simpleNamesOfTopLevelClasses(cli);
+        Set<String> toolNames = simpleNamesOfTopLevelClasses(MAIN);
+
+        assertThat(cliNames).as("the classes of ledger-cli are on the classpath of the tool").contains("CliRunner", "CliOptions");
+        assertThat(toolNames).as("the classes of the tool").contains("ToolCommand", "MigrationError");
+        Set<String> copies = new TreeSet<>(toolNames);
+        copies.retainAll(cliNames);
+        assertThat(copies).as("classes of the tool that have the name of a class of ledger-cli").isEmpty();
     }
 
-    @Test
-    @DisplayName("M1X-007 the console and the standard input are the only SecretInput implementations")
-    void m1x007_consoleAndStdinAreTheOnlyInputs() {
-        classes().that().implement(SecretInput.class).should().haveFullyQualifiedName(ConsoleSecretInput.class.getName())
-                .orShould().haveFullyQualifiedName(StdinSecretInput.class.getName()).check(MAIN);
-    }
-
-    @Test
-    @DisplayName("M1X-007 console output goes through one place only: no System.out/err or printStackTrace elsewhere")
-    void m1x007_consoleOutputHasOneSink() {
-        noClasses().that().doNotHaveFullyQualifiedName(STREAM_OUTPUT).should(ACCESS_STANDARD_STREAMS).check(MAIN);
+    /** The simple names of the classes that are no nested and no anonymous class (and no package or module description). */
+    private static Set<String> simpleNamesOfTopLevelClasses(JavaClasses classes) {
+        Set<String> names = new TreeSet<>();
+        for (JavaClass javaClass : classes) {
+            String name = javaClass.getSimpleName();
+            if (!javaClass.isNestedClass() && !name.equals("package-info") && !name.equals("module-info")) {
+                names.add(name);
+            }
+        }
+        return names;
     }
 
     @Test

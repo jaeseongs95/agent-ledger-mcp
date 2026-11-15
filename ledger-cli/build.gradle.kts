@@ -48,6 +48,13 @@ tasks.named<JavaCompile>("compileJava") {
     options.compilerArgs.add("-Xlint:-classfile")
 }
 
+// The plain jar (the classes of this module with the classifier plain, which the Boot plugin gives it) stays enabled: the migration
+// tool (ledger-migrate-1x) is built on the command line machinery and the secret store of this module and takes its classes from
+// it, so its secret store cannot differ from this one. It takes no library of this module with it (isTransitive = false there).
+tasks.jar {
+    enabled = true
+}
+
 tasks.bootJar {
     archiveFileName = "ledger-cli.jar"
     // WindowsPrivileges calls the Windows API with the foreign function API (java.lang.foreign), which Java 25 restricts. The

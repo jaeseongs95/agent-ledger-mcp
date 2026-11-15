@@ -79,7 +79,7 @@ tasks.test {
     inputs.files(tasks.bootJar).withPropertyName("hookJar").withPathSensitivity(PathSensitivity.NONE)
     inputs.dir(layout.buildDirectory.dir("client-plugins")).withPropertyName("stagedPlugins").withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.dir(rootProject.layout.projectDirectory.dir("clients")).withPropertyName("clients").withPathSensitivity(PathSensitivity.RELATIVE)
-    inputs.property("legacyJava", providers.environmentVariable("LEDGER_HOOK_LEGACY_JAVA").orElse(""))
+    inputs.property("olderJava", providers.environmentVariable("LEDGER_HOOK_OLDER_JAVA").orElse(""))
     // The cold start of the jar is measured and recorded (HK-017): the files are an output of the test task.
     outputs.dir(layout.buildDirectory.dir("hook-metrics")).withPropertyName("hookMetrics")
     // Not cached: the tests start the real jar as processes and measure the wall time of each start (HK-017), and the time of

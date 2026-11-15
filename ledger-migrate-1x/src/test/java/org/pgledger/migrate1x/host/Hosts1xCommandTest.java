@@ -12,14 +12,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
+import org.pgledger.cli.ErrorCode;
+import org.pgledger.cli.ExitStatus;
 import org.pgledger.migrate1x.support.EnglishMessages;
 import org.pgledger.migrate1x.support.RecordingOutput;
-import org.pgledger.migrate1x.support.RecordingServiceControl;
+import org.pgledger.migrate1x.support.ScriptedServiceControl;
 import org.pgledger.migrate1x.support.ToolExtension;
 import org.pgledger.migrate1x.support.ToolExtension.Outcome;
 import org.pgledger.migrate1x.support.ToolExtension.Tool;
-import org.pgledger.migrate1x.tool.ErrorCode;
-import org.pgledger.migrate1x.tool.ExitStatus;
+import org.pgledger.migrate1x.tool.MigrationError;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 
 /**
@@ -62,7 +63,7 @@ class Hosts1xCommandTest {
         return directory;
     }
 
-    private Outcome run(Tool tool, RecordingServiceControl control, RecordingOutput output, Path units, Path file,
+    private Outcome run(Tool tool, ScriptedServiceControl control, RecordingOutput output, Path units, Path file,
             String... more) {
         List<String> args = new ArrayList<>(List.of("stop-1x", "--unit-dir=" + units));
         if (file != null) {
@@ -83,13 +84,13 @@ class Hosts1xCommandTest {
     void host01_aDroppedNameRefusesBeforeAnyChange(Tool tool) throws IOException {
         Path file = environment("DBHUB_ALLOWED_HOSTS=" + PUBLIC_NAME + ",localhost,127.0.0.1");
         Path units = units(false);
-        RecordingServiceControl control = new RecordingServiceControl();
+        ScriptedServiceControl control = new ScriptedServiceControl();
         RecordingOutput output = new RecordingOutput();
 
         Outcome result = run(tool, control, output, units, file);
 
         assertThat(result.exitCode()).isEqualTo(ExitStatus.USAGE.code());
-        assertThat(result.code()).contains(ErrorCode.HOSTS_DROPPED);
+        assertThat(result.code()).contains(MigrationError.HOSTS_DROPPED);
         assertThat(result.refusal().orElseThrow().arguments()).containsExactly(PUBLIC_NAME, "mcp-host");
         assertNoSecret(result, output);
         assertThat(control.calls()).as("no call of the service manager").isEmpty();
@@ -102,14 +103,14 @@ class Hosts1xCommandTest {
     void host02_theOptionCarriesTheName(Tool tool) throws IOException {
         Path file = environment("DBHUB_ALLOWED_HOSTS=" + PUBLIC_NAME + ",localhost,127.0.0.1");
         Path units = units(false);
-        RecordingServiceControl control = new RecordingServiceControl();
+        ScriptedServiceControl control = new ScriptedServiceControl();
 
         Outcome result = run(tool, control, new RecordingOutput(), units, file, "--mcp-host=" + PUBLIC_NAME);
 
         assertThat(result.failure()).isNull();
         assertThat(result.exitCode()).isZero();
-        assertThat(control.calls()).containsExactly(List.of("systemctl", "stop", "pg-ledger-mcp"),
-                List.of("systemctl", "disable", "pg-ledger-mcp"), List.of("systemctl", "daemon-reload"));
+        assertThat(control.calls()).containsExactly("systemctl stop pg-ledger-mcp", "systemctl disable pg-ledger-mcp",
+                "systemctl daemon-reload");
         assertThat(units.resolve("pg-ledger-mcp.service")).doesNotExist();
         assertThat(units.resolve("pg-ledger-mcp.service.1x-backup")).exists();
     }
@@ -119,11 +120,11 @@ class Hosts1xCommandTest {
     void host02_theCheckComesBeforeBothServices(Tool tool) throws IOException {
         Path file = environment("DBHUB_ALLOWED_HOSTS=" + PUBLIC_NAME);
         Path units = units(true);
-        RecordingServiceControl control = new RecordingServiceControl();
+        ScriptedServiceControl control = new ScriptedServiceControl();
 
         Outcome result = run(tool, control, new RecordingOutput(), units, file);
 
-        assertThat(result.code()).contains(ErrorCode.HOSTS_DROPPED);
+        assertThat(result.code()).contains(MigrationError.HOSTS_DROPPED);
         assertThat(result.refusal().orElseThrow().arguments()).containsExactly(PUBLIC_NAME, "mcp-host");
         assertThat(control.calls()).isEmpty();
         assertThat(units.resolve("pg-ledger-mcp.service")).exists();
@@ -136,23 +137,23 @@ class Hosts1xCommandTest {
         Path file = environment("DBHUB_ALLOWED_HOSTS=127.0.0.1", "PGLEDGER_ADMIN_ALLOWED_HOSTS=admin.example.org,127.0.0.1");
 
         for (String option : List.of("--admin-host=other.example.org", "--mcp-host=mcp.example.org")) {
-            RecordingServiceControl control = new RecordingServiceControl();
+            ScriptedServiceControl control = new ScriptedServiceControl();
             Outcome refused = run(tool, control, new RecordingOutput(), units(false), file, option);
             assertThat(refused.exitCode()).as(option).isEqualTo(ExitStatus.USAGE.code());
-            assertThat(refused.refusal().orElseThrow().code()).isEqualTo(ErrorCode.HOSTS_DROPPED);
+            assertThat(refused.refusal().orElseThrow().code()).isEqualTo(MigrationError.HOSTS_DROPPED);
             assertThat(refused.refusal().orElseThrow().arguments()).as(option).containsExactly("admin.example.org",
                     "admin-host");
             assertThat(control.calls()).as(option).isEmpty();
         }
         for (String option : List.of("--admin-host=admin.example.org", "--admin-host=other.example.org,admin.example.org")) {
-            RecordingServiceControl control = new RecordingServiceControl();
+            ScriptedServiceControl control = new ScriptedServiceControl();
             Outcome accepted = run(tool, control, new RecordingOutput(), units(false), file, option);
             assertThat(accepted.failure()).as(option).isNull();
             assertThat(control.calls()).as(option).isNotEmpty();
         }
 
         Path both = environment("DBHUB_ALLOWED_HOSTS=mcp.example.org", "PGLEDGER_ADMIN_ALLOWED_HOSTS=admin.example.org");
-        Outcome first = run(tool, new RecordingServiceControl(), new RecordingOutput(), units(false), both);
+        Outcome first = run(tool, new ScriptedServiceControl(), new RecordingOutput(), units(false), both);
         assertThat(first.refusal().orElseThrow().arguments()).containsExactly("mcp.example.org", "mcp-host");
     }
 
@@ -166,12 +167,12 @@ class Hosts1xCommandTest {
         Path units = units(false);
 
         for (Path file : List.of(tmp.resolve("missing"), tmp, notUtf8, large)) {
-            RecordingServiceControl control = new RecordingServiceControl();
+            ScriptedServiceControl control = new ScriptedServiceControl();
             RecordingOutput output = new RecordingOutput();
             Outcome result = run(tool, control, output, units, file);
 
             assertThat(result.exitCode()).as(file.toString()).isEqualTo(ExitStatus.FAILURE.code());
-            assertThat(result.code()).as(file.toString()).contains(ErrorCode.ENV_FILE_FAILED);
+            assertThat(result.code()).as(file.toString()).contains(MigrationError.ENV_FILE_FAILED);
             assertThat(output.info()).doesNotContain("xxxxxxxx");
             assertThat(control.calls()).as(file.toString()).isEmpty();
         }
@@ -183,16 +184,16 @@ class Hosts1xCommandTest {
     @DisplayName("REH4-HOST-06 loopback names only, a file without the key, and no file: no option is needed and the run goes on")
     void host06_noPublicNameNeedsNoOption(Tool tool) throws IOException {
         Path loopback = environment("DBHUB_ALLOWED_HOSTS=localhost,127.0.0.1");
-        RecordingServiceControl first = new RecordingServiceControl();
+        ScriptedServiceControl first = new ScriptedServiceControl();
         assertThat(run(tool, first, new RecordingOutput(), units(false), loopback).failure()).isNull();
         assertThat(first.calls()).isNotEmpty();
 
         Path without = environment();
-        RecordingServiceControl second = new RecordingServiceControl();
+        ScriptedServiceControl second = new ScriptedServiceControl();
         assertThat(run(tool, second, new RecordingOutput(), units(false), without).failure()).isNull();
         assertThat(second.calls()).isNotEmpty();
 
-        RecordingServiceControl third = new RecordingServiceControl();
+        ScriptedServiceControl third = new ScriptedServiceControl();
         assertThat(run(tool, third, new RecordingOutput(), units(false), null).failure()).isNull();
         assertThat(third.calls()).isNotEmpty();
     }
@@ -202,19 +203,19 @@ class Hosts1xCommandTest {
     void host07_severalNames(Tool tool) throws IOException {
         Path file = environment("DBHUB_ALLOWED_HOSTS=a.example.org,b.example.org,localhost");
 
-        Outcome both = run(tool, new RecordingServiceControl(), new RecordingOutput(), units(false), file,
+        Outcome both = run(tool, new ScriptedServiceControl(), new RecordingOutput(), units(false), file,
                 "--mcp-host=a.example.org,b.example.org");
-        Outcome upper = run(tool, new RecordingServiceControl(), new RecordingOutput(), units(false), file,
+        Outcome upper = run(tool, new ScriptedServiceControl(), new RecordingOutput(), units(false), file,
                 "--mcp-host=A.example.org,b.example.org");
-        RecordingServiceControl refusedControl = new RecordingServiceControl();
+        ScriptedServiceControl refusedControl = new ScriptedServiceControl();
         Outcome one = run(tool, refusedControl, new RecordingOutput(), units(false), file, "--mcp-host=b.example.org");
-        Outcome blank = run(tool, new RecordingServiceControl(), new RecordingOutput(), units(false), file, "--mcp-host=");
-        Outcome noEnv = run(tool, new RecordingServiceControl(), new RecordingOutput(), units(false), null,
+        Outcome blank = run(tool, new ScriptedServiceControl(), new RecordingOutput(), units(false), file, "--mcp-host=");
+        Outcome noEnv = run(tool, new ScriptedServiceControl(), new RecordingOutput(), units(false), null,
                 "--mcp-host=a.example.org");
 
         assertThat(both.failure()).isNull();
         assertThat(upper.failure()).isNull();
-        assertThat(one.code()).contains(ErrorCode.HOSTS_DROPPED);
+        assertThat(one.code()).contains(MigrationError.HOSTS_DROPPED);
         assertThat(one.refusal().orElseThrow().arguments()).containsExactly("a.example.org", "mcp-host");
         assertThat(refusedControl.calls()).isEmpty();
         assertThat(blank.exitCode()).isEqualTo(ExitStatus.USAGE.code());

@@ -17,7 +17,7 @@ public interface ServiceControl {
     /**
      * Runs the program (the first word) with the other words as its arguments; no shell is involved.
      *
-     * @throws org.pgledger.migrate1x.tool.FailureException SERVICE_COMMAND_FAILED when the program cannot be started or does not
+     * @throws org.pgledger.cli.FailureException SERVICE_COMMAND_FAILED when the program cannot be started or does not
      *         end in time
      */
     Result run(List<String> command);

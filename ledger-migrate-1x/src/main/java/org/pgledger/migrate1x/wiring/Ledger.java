@@ -1,12 +1,14 @@
 package org.pgledger.migrate1x.wiring;
 
 import java.util.function.Supplier;
+import org.pgledger.cli.ErrorCode;
+import org.pgledger.cli.FailureException;
+import org.pgledger.cli.database.CliActor;
+import org.pgledger.cli.database.SchemaReadiness;
 import org.pgledger.domain.error.LedgerException;
 import org.pgledger.domain.value.OwnerIdentity;
 import org.pgledger.migrate1x.service.LegacyImportService;
 import org.pgledger.migrate1x.service.LegacyRetireService;
-import org.pgledger.migrate1x.tool.ErrorCode;
-import org.pgledger.migrate1x.tool.FailureException;
 import org.springframework.dao.DataAccessException;
 
 /**
@@ -19,10 +21,10 @@ public final class Ledger {
 
     private final LegacyImportService importer;
     private final LegacyRetireService retirer;
-    private final Actor actor;
-    private final Readiness readiness;
+    private final CliActor actor;
+    private final SchemaReadiness readiness;
 
-    public Ledger(LegacyImportService importer, LegacyRetireService retirer, Actor actor, Readiness readiness) {
+    public Ledger(LegacyImportService importer, LegacyRetireService retirer, CliActor actor, SchemaReadiness readiness) {
         this.importer = importer;
         this.retirer = retirer;
         this.actor = actor;

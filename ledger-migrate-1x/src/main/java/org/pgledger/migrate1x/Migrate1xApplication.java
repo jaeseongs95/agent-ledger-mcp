@@ -2,7 +2,6 @@ package org.pgledger.migrate1x;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
 
 /**
@@ -14,14 +13,15 @@ import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
  * driver is registered (see {@code org.pgledger.migrate1x.wiring}); Spring Boot's {@code DataSourceAutoConfiguration} is
  * excluded because the DataSource comes from the registered driver and must not be guessed when there is none.
  *
- * <p>Only the packages named here are scanned: the command line machinery ({@code tool}), the commands, the secret store, the
- * service commands and the configurations of the database ({@code wiring}). The classes of the 1.x source and of the import
- * ({@code database}, {@code service}) are imported by those configurations, under the conditions of the database.
+ * <p>The command line machinery (the runner, the refusals and their report, the texts, the secret store) is the one of
+ * {@code ledger-cli}, imported class by class in {@code wiring.CommandLineKit}; nothing of it is copied. Only the packages named
+ * here are scanned: the commands, the 1.x environment file, the service commands and the configurations of the database
+ * ({@code wiring}). The classes of the 1.x source and of the import ({@code database}, {@code service}) are imported by those
+ * configurations, under the conditions of the database.
  */
 @SpringBootApplication(exclude = DataSourceAutoConfiguration.class, scanBasePackages = {
-        "org.pgledger.migrate1x.tool", "org.pgledger.migrate1x.command", "org.pgledger.migrate1x.secret",
-        "org.pgledger.migrate1x.host", "org.pgledger.migrate1x.wiring"})
-@ConfigurationPropertiesScan("org.pgledger.migrate1x.secret")
+        "org.pgledger.migrate1x.command", "org.pgledger.migrate1x.secret", "org.pgledger.migrate1x.host",
+        "org.pgledger.migrate1x.wiring"})
 public class Migrate1xApplication {
 
     public static void main(String[] args) {

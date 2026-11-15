@@ -15,7 +15,7 @@ import org.junit.jupiter.api.extension.ParameterContext;
 import org.junit.jupiter.api.extension.ParameterResolver;
 import org.pgledger.cli.CliException;
 import org.pgledger.cli.CliOutput;
-import org.pgledger.cli.ErrorCode;
+import org.pgledger.cli.ErrorKey;
 import org.pgledger.cli.LedgerCliApplication;
 import org.pgledger.cli.deploy.HostAccounts;
 import org.pgledger.cli.key.SessionKeyRegistry;
@@ -57,7 +57,7 @@ public final class CliExtension implements ParameterResolver {
         }
 
         /** The error code of the refusal in the failure chain, if the run was refused. */
-        public Optional<ErrorCode> code() {
+        public Optional<ErrorKey> code() {
             return refusal().map(CliException::code);
         }
     }
