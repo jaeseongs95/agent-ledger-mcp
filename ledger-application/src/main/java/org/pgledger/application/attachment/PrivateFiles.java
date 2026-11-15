@@ -116,12 +116,19 @@ public class PrivateFiles {
     }
 
     /**
-     * Creates the directory (its parent has to exist), private from its first moment, when it is missing, and requires it to be a
-     * directory. An existing folder is used as it is: who else may reach it is not looked at.
+     * Creates the directory, private from its first moment, when it is missing, and requires it to be a directory. A missing
+     * parent (and its missing ancestors) is made first with the default attributes of the file system: the product makes its own
+     * folders, for example the {@code data} folder of a fresh home, and such a folder holds no secret (only the directory of the
+     * attachments or of the keys and what is below it is owner-only). An existing folder is used as it is: who else may reach it
+     * is not looked at.
      */
     public void ensureDirectory(Path directory) {
         try {
             if (!Files.exists(directory)) {
+                Path parent = directory.getParent();
+                if (parent != null) {
+                    Files.createDirectories(parent);
+                }
                 Files.createDirectory(directory, attributesFor(directory, true));
                 settle(directory);
             }

@@ -136,6 +136,28 @@ class PrivateFilesReadTest {
     }
 
     @Test
+    @DisplayName("SFR-006: ensureDirectory on <tmp>/a/b/attachments where a and b do not exist makes both (the product makes its own folders, as the data folder of a fresh home) and the last folder owner-only; the key folder of AttachmentKeys.create does the same")
+    void sfr006_missingAncestorsAreMade() throws Exception {
+        assumeTrue(BroadAccess.supported(fixture.root()), "the file system has neither POSIX permissions nor ACLs");
+        Path last = fixture.root().resolve("a").resolve("b").resolve("attachments");
+        assertThat(fixture.root().resolve("a")).doesNotExist();
+
+        fixture.files().ensureDirectory(last);
+
+        assertThat(fixture.root().resolve("a").resolve("b")).isDirectory();
+        assertThat(last).isDirectory();
+        assertThat(BroadAccess.ownerOnly(last)).as("the last folder is owner-only").isTrue();
+        fixture.files().ensureDirectory(last);
+
+        Path keyDirectory = fixture.root().resolve("c").resolve("d").resolve("keys");
+        AttachmentProperties properties = AttachmentSettings.properties(last, keyDirectory, "to-be-created");
+        String keyId = new AttachmentKeys(properties, fixture.files(), new SecureRandom()).create();
+        assertThat(keyDirectory.resolve(keyId)).isRegularFile();
+        assertThat(BroadAccess.ownerOnly(keyDirectory)).as("the key folder is owner-only").isTrue();
+        assertThat(BroadAccess.ownerOnly(keyDirectory.resolve(keyId))).as("the key file is owner-only").isTrue();
+    }
+
+    @Test
     @DisplayName("SFR-004: what the product creates stays owner-only (POSIX rwx------ / rw-------, or an ACL whose every entry is the owner's): the key folder, a new key file, the storage folder, its sub folder and a stored file, even when the folder above them is open to every account")
     void sfr004_creationIsOwnerOnly() throws Exception {
         Path root = fixture.root();
