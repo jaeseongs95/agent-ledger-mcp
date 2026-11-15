@@ -239,9 +239,10 @@ class PagesTest {
         assertThat(withoutToken(seoul)).isEqualTo(withoutToken(utc)).doesNotContain("Asia/Seoul").doesNotContain("KST");
     }
 
-    /** The CSRF token is masked differently on every render; everything else must be equal. */
+    /** The CSRF token (the hidden field of a form and the meta tag the passkey script reads) is masked differently on every render; everything else must be equal. */
     private static String withoutToken(String html) {
-        return html.replaceAll("name=\"_csrf\" value=\"[^\"]+\"", "name=\"_csrf\"");
+        return html.replaceAll("name=\"_csrf\" value=\"[^\"]+\"", "name=\"_csrf\"")
+                .replaceAll("name=\"_csrf\" content=\"[^\"]+\"", "name=\"_csrf\"");
     }
 
     private static int count(String text, String part) {
