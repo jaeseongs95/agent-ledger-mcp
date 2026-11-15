@@ -63,9 +63,9 @@ public interface AttestationVerifier {
     }
 
     /**
-     * As {@link #verify}, for a call that writes, inside the transaction of the write: the live key of the author is
-     * also locked until the transaction ends (a conditional UPDATE, like the grant check), so closing the key waits for
-     * this write, and a write that verified the key before a close committed cannot commit after it.
+     * As {@link #verify}, for a call that writes, inside the transaction of the write. The live key is read, not locked
+     * (principle 4.4): a write that verified the key before a close of it committed may commit after it (see the ceiling in
+     * {@code SignedAttestationVerifier}); a write that verifies after the close is refused.
      */
     AuthorId verifyForWrite(String presented, ToolCall call, String requestId);
 }
