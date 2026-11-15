@@ -1,6 +1,6 @@
 package org.pgledger.hook;
 
-import org.springframework.boot.context.config.ConfigDataApplicationContextInitializer;
+import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
 /**
