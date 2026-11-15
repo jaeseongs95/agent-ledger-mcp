@@ -34,8 +34,8 @@ import org.pgledger.domain.rule.Channel;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
 import org.pgledger.domain.value.JsonDocument;
+import org.pgledger.domain.value.OperationKey;
 import org.pgledger.domain.value.ProjectCode;
-import org.pgledger.domain.value.RequestId;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 /** REPO-009 .. REPO-014 and REPO-035: counters hand out unique numbers without gaps and without deadlocks. */
@@ -121,7 +121,7 @@ class CounterTest {
         return new HistoryEntry(id, LedgerTestContext.START, Seed.ALICE, Channel.AUTHOR.login(),
                 ActorAssurance.DECLARED, HistoryEntity.DEFECT, defect.id().value(), HistoryOp.CREATE, null, null,
                 JsonDocument.EMPTY_OBJECT, null, "writer " + n + " wrote this", null, null, null,
-                new RequestId(UUID.randomUUID()), null);
+                new OperationKey(UUID.randomUUID().toString()), null);
     }
 
     @Test

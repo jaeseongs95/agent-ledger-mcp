@@ -16,7 +16,7 @@ import org.pgledger.domain.value.DefectId;
 import org.pgledger.domain.value.JsonDocument;
 import org.pgledger.domain.value.ProjectCode;
 import org.pgledger.domain.value.ProjectId;
-import org.pgledger.domain.value.RequestId;
+import org.pgledger.domain.value.OperationKey;
 import org.pgledger.domain.value.Sha256;
 import org.pgledger.domain.value.TaskId;
 import org.springframework.core.convert.converter.Converter;
@@ -45,7 +45,7 @@ final class LedgerConverters {
         pair(converters, CodeValue.class, CodeValue::new, CodeValue::value);
         pair(converters, CommitSha.class, CommitSha::new, CommitSha::value);
         pair(converters, Sha256.class, Sha256::new, Sha256::hex);
-        pair(converters, RequestId.class, RequestId::parse, RequestId::toString);
+        pair(converters, OperationKey.class, OperationKey::parse, OperationKey::toString);
         pair(converters, AuthorId.class, AuthorId::new, AuthorId::value);
         pair(converters, ActorId.class, ActorId::ofStored, ActorId::value);
         pair(converters, JsonDocument.class, JsonDocument::new, JsonDocument::text);

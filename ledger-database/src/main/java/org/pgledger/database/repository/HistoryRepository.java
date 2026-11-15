@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Optional;
 import org.pgledger.domain.model.HistoryEntry;
 import org.pgledger.domain.rule.HistoryEntity;
-import org.pgledger.domain.value.RequestId;
+import org.pgledger.domain.value.OperationKey;
 import org.springframework.data.repository.Repository;
 
 /**
@@ -20,5 +20,5 @@ public interface HistoryRepository extends Repository<HistoryEntry, Long>, Inser
 
     List<HistoryEntry> findByEntityAndEntityIdOrderById(HistoryEntity entity, String entityId);
 
-    List<HistoryEntry> findByRequestIdOrderById(RequestId requestId);
+    List<HistoryEntry> findByOperationKeyOrderById(OperationKey operationKey);
 }

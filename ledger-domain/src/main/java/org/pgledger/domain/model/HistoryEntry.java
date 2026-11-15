@@ -20,19 +20,19 @@ import org.pgledger.domain.value.ActorId;
 import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.JsonDocument;
 import org.pgledger.domain.value.Reason;
-import org.pgledger.domain.value.RequestId;
+import org.pgledger.domain.value.OperationKey;
 import org.pgledger.domain.value.Sha256;
 
 /**
  * One row of the append-only history. {@code changes} is the diff of the changed fields, {@code beforeData} the
  * full row as it was just before an EDIT, TRANSITION or UNLINK (absent for every other operation and for imported
- * rows). The record is immutable and the invariants of the old CHECK constraints are enforced on construction.
+ * rows). The record is immutable and the invariants of the CHECK constraints of the table are enforced on construction.
  */
 @Table("history")
 public record HistoryEntry(@Id Long id, @Column("occurred_at") Instant at, ActorId authorId, String login, ActorAssurance actorAssurance,
         HistoryEntity entity, String entityId, HistoryOp op, String fromState, String toState, JsonDocument changes,
         JsonDocument beforeData, String reason, String evidenceUri, Sha256 evidenceSha256, Long correctsId,
-        RequestId requestId, String sourceRef, String attachmentId) {
+        OperationKey operationKey, String sourceRef, String attachmentId) {
 
     private static final Set<HistoryOp> OPS_WITH_BEFORE_DATA = EnumSet.of(HistoryOp.EDIT, HistoryOp.TRANSITION,
             HistoryOp.UNLINK);
@@ -46,9 +46,9 @@ public record HistoryEntry(@Id Long id, @Column("occurred_at") Instant at, Actor
     public HistoryEntry(Long id, Instant at, ActorId authorId, String login, ActorAssurance actorAssurance,
             HistoryEntity entity, String entityId, HistoryOp op, String fromState, String toState,
             JsonDocument changes, JsonDocument beforeData, String reason, String evidenceUri, Sha256 evidenceSha256,
-            Long correctsId, RequestId requestId, String sourceRef) {
+            Long correctsId, OperationKey operationKey, String sourceRef) {
         this(id, at, authorId, login, actorAssurance, entity, entityId, op, fromState, toState, changes, beforeData,
-                reason, evidenceUri, evidenceSha256, correctsId, requestId, sourceRef, null);
+                reason, evidenceUri, evidenceSha256, correctsId, operationKey, sourceRef, null);
     }
 
     @PersistenceCreator

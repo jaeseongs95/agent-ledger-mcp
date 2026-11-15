@@ -18,7 +18,7 @@ public enum TrustCode implements ErrorCode {
      * proven, a caller must not learn which authors have a key.
      */
     ATTESTATION_SIGNATURE_INVALID,
-    /** The token was signed for another tool, request id or arguments than the call it came with. */
+    /** The token was signed for another tool, operation key or arguments than the call it came with. */
     ATTESTATION_BINDING_MISMATCH,
     /** The issue time of the token is further from the server clock than the accepted window. */
     ATTESTATION_TIME_WINDOW;

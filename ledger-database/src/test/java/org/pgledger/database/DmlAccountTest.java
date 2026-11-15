@@ -65,7 +65,7 @@ import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.CodeValue;
 import org.pgledger.domain.value.CommitSha;
 import org.pgledger.domain.value.JsonDocument;
-import org.pgledger.domain.value.RequestId;
+import org.pgledger.domain.value.OperationKey;
 import org.pgledger.domain.value.Sha256;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 
@@ -137,7 +137,7 @@ class DmlAccountTest {
 
     static Stream<String> statementsTheApplicationAccountMayRun() {
         return Stream.of("INSERT INTO history (id, occurred_at, author_id, login, actor_assurance, entity, entity_id, op, "
-                + "changes, reason, request_id) VALUES (1, TIMESTAMP '2026-11-05 10:00:00', 'claude:a', "
+                + "changes, reason, operation_key) VALUES (1, TIMESTAMP '2026-11-05 10:00:00', 'claude:a', "
                 + "'ledger_author', 'DECLARED', 'DEFECT', 'X', 'CREATE', '{}', 'a reason of length', "
                 + "'11111111-1111-1111-1111-111111111111')",
                 "INSERT INTO owner_audit (id, occurred_at, actor, operation, subject) VALUES (1, TIMESTAMP '2026-11-05 10:00:00', "
@@ -226,7 +226,7 @@ class DmlAccountTest {
                     ids.next(Counter.DEFECT_FIX), defect.id(), "repo", CommitSha.of("a".repeat(40)), null, null, null,
                     null, Seed.ALICE, now)));
             ctx.tx(() -> ctx.bean(DefectFixRepository.class).update(fix.withCi("ref", null, null)));
-            RequestId request = new RequestId(UUID.randomUUID());
+            OperationKey request = new OperationKey(UUID.randomUUID().toString());
             ctx.tx(() -> {
                 ctx.bean(ReceiptRepository.class).insert(Receipt.reserve(request, ReceiptOperation.SAVE,
                         Sha256.of("b".repeat(64)), Seed.ALICE, Channel.AUTHOR, now));

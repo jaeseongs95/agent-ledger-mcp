@@ -5,19 +5,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.pgledger.domain.error.LedgerException;
 import org.pgledger.domain.error.TrustCode;
 import org.pgledger.domain.error.ValidationCode;
 import org.pgledger.domain.error.ValidationException;
+import org.pgledger.domain.error.ValidationIssue;
+import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.value.ActorId;
 import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.ConditionId;
 import org.pgledger.domain.value.DefectId;
 import org.pgledger.domain.value.EntityId;
 import org.pgledger.domain.value.ImportedActorId;
+import org.pgledger.domain.value.OperationKey;
 import org.pgledger.domain.value.ProjectCode;
 import org.pgledger.domain.value.ProjectId;
 import org.pgledger.domain.value.Reason;
-import org.pgledger.domain.value.RequestId;
 import org.pgledger.domain.value.SessionKey;
 import org.pgledger.domain.value.TaskId;
 
@@ -125,15 +128,45 @@ class IdentityTest {
         assertThat(TaskId.of("E2E-T-" + "9".repeat(19)).numberIn(e2e)).isEmpty();
     }
 
+    /**
+     * DOM-007 as revised by OPK-014: the request id (a UUID) is replaced by the operation key, any text of 1 to 128
+     * characters that is not blank; the server never makes one up, so null is refused too. The derived keys of a
+     * batch stay deterministic.
+     */
     @Test
-    void dom007_requestIdsAndDerivedIds() {
-        Expect.invalid(() -> RequestId.parse("not-a-uuid"));
-        Expect.invalid(() -> RequestId.parse("1-1-1-1-1"));
-        RequestId batch = RequestId.parse(UUID.randomUUID().toString());
+    void dom007_opk014_operationKeyRulesAndDerivedKeys() {
+        // null is REQUIRED, empty / blank / 129 characters are MUST_BE_CHARS_RANGE 1..128, all at the path operationKey
+        ValidationIssue required = onlyIssue(Expect.invalid(() -> OperationKey.parse(null)));
+        assertThat(required.path()).isEqualTo("operationKey");
+        assertThat(required.reason()).isEqualTo(ValidationReason.REQUIRED);
+        for (String bad : List.of("", " ", "   ", "\t\n", "k".repeat(129), "k".repeat(1000))) {
+            ValidationIssue issue = onlyIssue(Expect.invalid(() -> OperationKey.parse(bad)));
+            assertThat(issue.path()).as("path of '%s'", bad).isEqualTo("operationKey");
+            assertThat(issue.reason()).isEqualTo(ValidationReason.MUST_BE_CHARS_RANGE);
+            assertThat(issue.reasonArgs()).containsExactly("1", "128");
+            Expect.invalid(() -> new OperationKey(bad));
+        }
+        // 1 and 128 characters are accepted, and the text is not limited to a UUID (the 1.x format is gone)
+        for (String ok : List.of("k", "k".repeat(128), "not-a-uuid", "1-1-1-1-1", "한글 키 01",
+                UUID.randomUUID().toString())) {
+            assertThat(OperationKey.parse(ok).value()).isEqualTo(ok);
+            assertThat(OperationKey.parse(ok)).hasToString(ok);
+        }
+        assertThat(OperationKey.WIRE_NAME).isEqualTo("operationKey");
+        // derived keys: deterministic, different per index and per batch key
+        OperationKey batch = OperationKey.parse(UUID.randomUUID().toString());
         assertThat(batch.derive(0)).isEqualTo(batch.derive(0));
         assertThat(batch.derive(0)).isNotEqualTo(batch.derive(1));
-        RequestId other = RequestId.parse(UUID.randomUUID().toString());
+        OperationKey other = OperationKey.parse(UUID.randomUUID().toString());
         assertThat(batch.derive(0)).isNotEqualTo(other.derive(0));
+        assertThat(OperationKey.parse("k".repeat(128)).derive(3).value()).hasSizeLessThanOrEqualTo(128);
+    }
+
+    private static ValidationIssue onlyIssue(LedgerException e) {
+        assertThat(e).isInstanceOf(ValidationException.class);
+        List<ValidationIssue> issues = ((ValidationException) e).issues();
+        assertThat(issues).hasSize(1);
+        return issues.get(0);
     }
 
     @Test

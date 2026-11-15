@@ -146,7 +146,7 @@ class ArchitectureTest {
     void historyIsInsertAndReadOnly() {
         assertThat(Stream.of(HistoryRepository.class.getMethods()).map(m -> m.getName()).collect(
                 java.util.stream.Collectors.toSet())).containsExactlyInAnyOrder("insert", "findById", "findByIdIn",
-                "findByEntityAndEntityIdOrderById", "findByRequestIdOrderById");
+                "findByEntityAndEntityIdOrderById", "findByOperationKeyOrderById");
         assertThat(HistoryRepository.class.getInterfaces()).extracting(Class::getSimpleName)
                 .containsExactlyInAnyOrder("Repository", "Insertable");
     }

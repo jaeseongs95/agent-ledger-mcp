@@ -21,7 +21,7 @@ import org.pgledger.domain.value.ConditionId;
 import org.pgledger.domain.value.DefectId;
 import org.pgledger.domain.value.JsonDocument;
 import org.pgledger.domain.value.ImportedActorId;
-import org.pgledger.domain.value.RequestId;
+import org.pgledger.domain.value.OperationKey;
 import org.pgledger.domain.value.TaskId;
 
 /** DOM-023 and DOM-024: link canonical forms and the history entry invariants. */
@@ -70,7 +70,7 @@ class LinksAndHistoryTest {
         Expect.invalid(() -> DefectRelation.between(D1, D1, kind, CodeDirection.GIVEN, AuthorId.OWNER));
     }
 
-    private static final RequestId REQUEST = new RequestId(UUID.randomUUID());
+    private static final OperationKey REQUEST = new OperationKey(UUID.randomUUID().toString());
     private static final String REASON = "a reason of enough length";
 
     private static HistoryEntry entry(HistoryOp op, String to, Long corrects, JsonDocument before, String login,

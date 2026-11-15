@@ -9,7 +9,7 @@ import org.springframework.stereotype.Repository;
 
 /**
  * The items that need a look, of one project or of all, optionally of one kind, in keyset pages ordered by kind and
- * id ({@code kind > ? OR (kind = ? AND id > ?)}). The five kinds are the old attention view; a verified fix
+ * id ({@code kind > ? OR (kind = ? AND id > ?)}). There are five kinds; a verified fix
  * without CI data is never one of them.
  */
 @Repository

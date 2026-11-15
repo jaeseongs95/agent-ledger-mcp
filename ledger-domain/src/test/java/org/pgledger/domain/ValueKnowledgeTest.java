@@ -26,9 +26,9 @@ import org.pgledger.domain.value.CodeValue;
 import org.pgledger.domain.value.DefectId;
 import org.pgledger.domain.value.JsonDocument;
 import org.pgledger.domain.value.ImportedActorId;
+import org.pgledger.domain.value.OperationKey;
 import org.pgledger.domain.value.Patch;
 import org.pgledger.domain.value.Reason;
-import org.pgledger.domain.value.RequestId;
 import org.pgledger.domain.value.SessionKey;
 import org.pgledger.domain.value.Tokens;
 
@@ -125,7 +125,8 @@ class ValueKnowledgeTest {
     private static HistoryEntry create(String reason) {
         return new HistoryEntry(null, DomainFixtures.NOW, AuthorId.OWNER, Channel.AUTHOR.login(),
                 ActorAssurance.DECLARED, HistoryEntity.DEFECT, "E2E-D-0001", HistoryOp.CREATE, null, null,
-                JsonDocument.EMPTY_OBJECT, null, reason, null, null, null, new RequestId(UUID.randomUUID()), null);
+                JsonDocument.EMPTY_OBJECT, null, reason, null, null, null, new OperationKey(UUID.randomUUID().toString()), null,
+                null);
     }
 
     @Test
@@ -208,6 +209,6 @@ class ValueKnowledgeTest {
         return new HistoryEntry(null, DomainFixtures.NOW, AuthorId.OWNER, channel.login(), ActorAssurance.DECLARED,
                 HistoryEntity.DEFECT, "E2E-D-0001", HistoryOp.TRANSITION, from, to, JsonDocument.EMPTY_OBJECT,
                 JsonDocument.EMPTY_OBJECT, "a reason of enough length", null, null, null,
-                new RequestId(UUID.randomUUID()), null);
+                new OperationKey(UUID.randomUUID().toString()), null, null);
     }
 }

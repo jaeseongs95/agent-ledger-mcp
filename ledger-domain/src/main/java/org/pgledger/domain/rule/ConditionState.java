@@ -16,7 +16,7 @@ public enum ConditionState implements LifecycleState {
 
     /**
      * Checks a move from this state to {@code to}. Moving to MET or NOT_MET needs evidence; moving back to UNKNOWN
-     * needs none (unchanged from the old ledger by design).
+     * needs none (by design).
      */
     public void requireTransitionTo(ConditionState to, Evidence evidence) {
         if (this == to) {

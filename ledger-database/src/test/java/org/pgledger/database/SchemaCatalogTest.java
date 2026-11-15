@@ -174,7 +174,7 @@ class SchemaCatalogTest {
                         + "TIMESTAMP '2026-11-05 10:00:00', 'NATIVE')",
                 "INSERT INTO defect_fix (id, defect_id, repo, commit_sha, recorded_by, recorded_at, origin) VALUES "
                         + "(900003, :defect, 'r', 'b', 'claude:a', TIMESTAMP '2026-11-05 10:00:00', 'OTHER')",
-                "INSERT INTO request_receipt (request_id, operation, payload_sha256, author_id, login, "
+                "INSERT INTO request_receipt (operation_key, operation, payload_sha256, author_id, login, "
                         + "created_at) VALUES ('22222222-2222-2222-2222-222222222222', 'OTHER', 'aa', 'claude:a', "
                         + "'ledger_author', TIMESTAMP '2026-11-05 10:00:00')",
                 "INSERT INTO session_grant (id, author_id, project_id, grant_scope, granted_by, granted_at, active_key) "
@@ -232,6 +232,21 @@ class SchemaCatalogTest {
                 .single()).isGreaterThanOrEqualTo(3);
         assertThat(jdbc.sql("SELECT COUNT(*) FROM schema_history WHERE outcome <> 'SUCCEEDED'").query(Integer.class)
                 .single()).as("a migrated schema has no failed attempt").isZero();
+    }
+
+    /**
+     * OPK-013: the idempotency key column is operation_key VARCHAR(128) NOT NULL in history and request_receipt
+     * (the table name stays); the column request_id is gone.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"history", "request_receipt"})
+    void opk013_operationKeyIsAVarchar128NotNullAndRequestIdIsGone(String table) {
+        assertThat(jdbc.sql("SELECT data_type, character_maximum_length, is_nullable FROM information_schema.columns "
+                + "WHERE table_schema = CURRENT_SCHEMA AND table_name = :table AND column_name = 'operation_key'")
+                .param("table", table).query((rs, n) -> rs.getString(1) + "/" + rs.getInt(2) + "/"
+                        + rs.getString(3)).list()).containsExactly("character varying/128/NO");
+        assertThat(columns().stream().filter(c -> table.equals(c.table())).map(Column::name))
+                .contains("operation_key").doesNotContain("request_id");
     }
 
     /** RUN-010, RUN-016: the key is (version, attempt); the outcome is SUCCEEDED or FAILED and nothing else. */

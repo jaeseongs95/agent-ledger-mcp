@@ -18,7 +18,7 @@ CREATE TABLE history (
   evidence_uri VARCHAR(2000),
   evidence_sha256 VARCHAR(64),
   corrects_id BIGINT,
-  request_id VARCHAR(36) NOT NULL,
+  operation_key VARCHAR(128) NOT NULL,
   source_ref VARCHAR(200),
   CONSTRAINT pk_history PRIMARY KEY (id),
   CONSTRAINT fk_history_corrects FOREIGN KEY (corrects_id) REFERENCES history (id),
@@ -40,17 +40,17 @@ CREATE TABLE history (
 );
 CREATE INDEX ix_history_entity ON history (entity, entity_id, id);
 CREATE INDEX ix_history_author ON history (author_id, occurred_at);
-CREATE INDEX ix_history_request ON history (request_id);
+CREATE INDEX ix_history_operation_key ON history (operation_key);
 
 CREATE TABLE request_receipt (
-  request_id VARCHAR(36) NOT NULL,
+  operation_key VARCHAR(128) NOT NULL,
   operation VARCHAR(20) NOT NULL,
   payload_sha256 VARCHAR(64) NOT NULL,
   author_id VARCHAR(200) NOT NULL,
   login VARCHAR(63) NOT NULL,
   response ${long_text},
   created_at TIMESTAMP NOT NULL,
-  CONSTRAINT pk_request_receipt PRIMARY KEY (request_id),
+  CONSTRAINT pk_request_receipt PRIMARY KEY (operation_key),
   CONSTRAINT ck_receipt_operation CHECK (operation IN ('SAVE', 'TRANSITION', 'RECORD_FIX', 'RECORD_CASE', 'LINK',
     'CORRECT', 'BATCH'))
 );

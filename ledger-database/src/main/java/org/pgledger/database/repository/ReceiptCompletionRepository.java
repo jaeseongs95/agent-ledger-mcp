@@ -1,7 +1,7 @@
 package org.pgledger.database.repository;
 
 import org.pgledger.domain.value.JsonDocument;
-import org.pgledger.domain.value.RequestId;
+import org.pgledger.domain.value.OperationKey;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -16,10 +16,10 @@ public class ReceiptCompletionRepository {
     }
 
     /** True when the receipt existed without a response and now has one. */
-    public boolean finish(RequestId requestId, JsonDocument response) {
-        return jdbc.sql("UPDATE request_receipt SET response = :response WHERE request_id = :id AND response IS NULL")
+    public boolean finish(OperationKey operationKey, JsonDocument response) {
+        return jdbc.sql("UPDATE request_receipt SET response = :response WHERE operation_key = :key AND response IS NULL")
                 .param("response", response.text())
-                .param("id", requestId.toString())
+                .param("key", operationKey.toString())
                 .update() == 1;
     }
 }

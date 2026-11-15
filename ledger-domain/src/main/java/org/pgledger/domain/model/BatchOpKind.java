@@ -42,12 +42,11 @@ public enum BatchOpKind implements Token {
         return required;
     }
 
-    /** Every key an operation of this kind may carry, including {@code op} and {@code request_id}. */
+    /** Every key an operation of this kind may carry, including {@code op}. The key of an operation is derived from the key of the batch. */
     public Set<String> allowedKeys() {
         Set<String> all = new HashSet<>(required);
         all.addAll(optional);
         all.add("op");
-        all.add("request_id");
         return Set.copyOf(all);
     }
 }

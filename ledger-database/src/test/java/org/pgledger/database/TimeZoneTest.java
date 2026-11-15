@@ -71,7 +71,7 @@ import org.pgledger.domain.rule.Scope;
 import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.CommitSha;
 import org.pgledger.domain.value.JsonDocument;
-import org.pgledger.domain.value.RequestId;
+import org.pgledger.domain.value.OperationKey;
 import org.pgledger.domain.value.Sha256;
 import org.springframework.beans.factory.BeanCreationException;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
@@ -256,9 +256,10 @@ class TimeZoneTest {
         ctx.tx(() -> ctx.bean(HistoryRepository.class).insert(new HistoryEntry(ids.next(Counter.HISTORY), I,
                 Seed.ALICE, Channel.AUTHOR.login(), ActorAssurance.DECLARED, HistoryEntity.DEFECT,
                 defect.id().value(), HistoryOp.CREATE, null, null, JsonDocument.EMPTY_OBJECT, null,
-                "a reason of enough length", null, null, null, new RequestId(java.util.UUID.randomUUID()), null)));
-        ctx.tx(() -> ctx.bean(ReceiptRepository.class).insert(Receipt.reserve(new RequestId(java.util.UUID
-                .randomUUID()), ReceiptOperation.SAVE, Sha256.of("a".repeat(64)), Seed.ALICE, Channel.AUTHOR, I)));
+                "a reason of enough length", null, null, null, new OperationKey(java.util.UUID.randomUUID().toString()),
+                null)));
+        ctx.tx(() -> ctx.bean(ReceiptRepository.class).insert(Receipt.reserve(new OperationKey(java.util.UUID
+                .randomUUID().toString()), ReceiptOperation.SAVE, Sha256.of("a".repeat(64)), Seed.ALICE, Channel.AUTHOR, I)));
         PasskeyRepository passkeys = ctx.bean(PasskeyRepository.class);
         ctx.tx(() -> {
             passkeys.insert(new OwnerPasskey("credential-1", "owner", "public-key", 0, 1, 0, 0, null, "attestation",
