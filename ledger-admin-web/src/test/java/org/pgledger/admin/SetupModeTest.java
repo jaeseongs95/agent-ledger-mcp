@@ -38,6 +38,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.context.ApplicationContext;
 import org.springframework.core.env.StandardEnvironment;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.http.HttpHeaders;
@@ -45,6 +46,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.util.IdGenerator;
 import org.springframework.util.MultiValueMap;
 
 /**
@@ -110,6 +112,15 @@ class SetupModeTest {
 
     private Optional<String> registrationText() throws IOException {
         return Files.exists(REGISTRATION) ? Optional.of(Files.readString(REGISTRATION)) : Optional.empty();
+    }
+
+    @Autowired
+    private ApplicationContext context;
+
+    @Test
+    @DisplayName("ADM-077: the setup mode context holds exactly one IdGenerator (the problem responses need it)")
+    void adm077_setupModeHasTheOneIdGenerator() {
+        assertThat(context.getBeansOfType(IdGenerator.class)).hasSize(1);
     }
 
     @Test

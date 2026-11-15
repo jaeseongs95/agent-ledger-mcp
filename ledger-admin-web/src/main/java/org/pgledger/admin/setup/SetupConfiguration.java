@@ -1,6 +1,7 @@
 package org.pgledger.admin.setup;
 
 import org.pgledger.admin.app.LedgerAdminProperties;
+import org.pgledger.application.LedgerIdConfiguration;
 import org.pgledger.database.driver.DriverLoader;
 import org.pgledger.database.driver.DriverRegistrar;
 import org.pgledger.database.driver.DriverRegistrationFile;
@@ -14,11 +15,14 @@ import org.springframework.context.annotation.Import;
  * What the driver page needs in both modes: the connection settings, the registration file and the checks of a driver. The
  * file is the one bean of the database module ({@link DriverRegistrationFile}, which owns the YAML mapper the command line
  * tool uses for the same file) and the loader is the one that loads a driver class; only where the file is and which jars
- * are allowed come from this application's own settings.
+ * are allowed come from this application's own settings. The one {@code IdGenerator} ({@link LedgerIdConfiguration}) is
+ * imported here because the problem responses ({@code AdminProblems}) need it in setup mode, where the ledger application
+ * beans are not loaded; in console mode the scan of {@code LedgerApplicationConfiguration} reaches the same class, which
+ * Spring registers once.
  */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(LedgerJdbcProperties.class)
-@Import({DriverRegistrationFile.class, DriverLoader.class})
+@Import({DriverRegistrationFile.class, DriverLoader.class, LedgerIdConfiguration.class})
 public class SetupConfiguration {
 
     /** A {@code @Bean} method because the value comes from a setting of this application ({@code ledger.admin.driver-file}). */
