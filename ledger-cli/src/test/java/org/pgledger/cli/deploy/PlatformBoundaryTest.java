@@ -129,7 +129,7 @@ class PlatformBoundaryTest {
     @Test
     @DisplayName("DPL-07 the privileges of the Windows token are an adapter bean behind an interface that WindowsAccess is given: no static call, and a context with another implementation starts WindowsAccess with that one")
     void dpl07_theWindowsPrivilegesAreAnAdapterBean() throws IOException, NoSuchMethodException {
-        assertThat(WindowsPrivileges.class).isAnnotatedWith(Component.class).isAssignableTo(TokenPrivileges.class);
+        assertThat(WindowsPrivileges.class).hasAnnotation(Component.class).isAssignableTo(TokenPrivileges.class);
         assertThat(WindowsPrivileges.class.getDeclaredMethods()).filteredOn(method -> !method.isSynthetic())
                 .filteredOn(method -> Modifier.isStatic(method.getModifiers())).isEmpty();
         assertThat(WindowsAccess.class.getDeclaredConstructor(TokenPrivileges.class)).isNotNull();
