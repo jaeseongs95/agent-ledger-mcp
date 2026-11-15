@@ -78,7 +78,7 @@ class ArchitectureTest {
     }
 
     @Test
-    @DisplayName("HK-037 the key file is opened once without following links and read from that channel: no read of a path (readAllBytes, readString, readAllLines, newInputStream, newBufferedReader)")
+    @DisplayName("HK-037 (changed by SFR-020: a link is followed) the key file is opened once and read from that channel: no read of a path (readAllBytes, readString, readAllLines, newInputStream, newBufferedReader)")
     void keyFileIsNeverReadByPath() {
         noClasses().should().callMethod(java.nio.file.Files.class, "readAllBytes", java.nio.file.Path.class)
                 .orShould().callMethod(java.nio.file.Files.class, "readString", java.nio.file.Path.class)

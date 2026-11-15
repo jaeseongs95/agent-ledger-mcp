@@ -14,9 +14,9 @@ public final class SessionKeyException extends RuntimeException {
         AUTHOR_INVALID,
         /** The key folder is not configured, is not a usable absolute path or is not a directory. */
         FOLDER_UNAVAILABLE,
-        /** Someone other than the owner has access to the folder or the key file (POSIX mode, ACL); it is refused, never repaired. */
+        /** A folder or key file that the hook has just created could not be made owner-only (POSIX mode, ACL). An existing one is never judged. */
         TOO_OPEN,
-        /** The key file is a link, a directory or another special file. */
+        /** The path of the key file is a directory or another special file (a link is followed). */
         NOT_A_REGULAR_FILE,
         /** The key file is not in the stored format (wrong lines, text that is not UTF-8 or not a key). */
         CORRUPT,
@@ -24,9 +24,7 @@ public final class SessionKeyException extends RuntimeException {
         AUTHOR_MISMATCH,
         /** The key file belongs to another MCP server (it was copied from the key of another server). */
         SERVER_MISMATCH,
-        /** The folder or the key file is owned by someone other than the current user. */
-        WRONG_OWNER,
-        /** The current user is not known (no account name was given) where the file system has owners. */
+        /** The current user is not known (no account name was given) where the file system has ACLs (the entry of the key folder names it). */
         OWNER_UNKNOWN,
         /** The private and the public key of the file are not a pair. */
         KEY_MISMATCH,

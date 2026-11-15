@@ -16,8 +16,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param userHome the home folder of the account that runs the hook ({@code user.home}, set in
  *                 {@code application.properties}): the key folder is {@code <home>/.pg-ledger-mcp/session-keys} when
  *                 {@code keyDir} is not set
- * @param userName the account that must own the key folder and the key files ({@code user.name}, set in
- *                 {@code application.properties}), compared with the owner that the file system reports
+ * @param userName the account that the owner-only entry of a new key folder and key file names, on a file system with ACLs
+ *                 ({@code user.name}, set in {@code application.properties}); the owner of an existing one is not looked at
  */
 @ConfigurationProperties("ledger.hook")
 public record KeyStoreProperties(String keyDir, String userHome, String userName) {

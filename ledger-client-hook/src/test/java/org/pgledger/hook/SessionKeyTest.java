@@ -147,8 +147,8 @@ class SessionKeyTest {
 
     @ParameterizedTest
     @MethodSource("widenedModes")
-    @DisplayName("HK-026 POSIX only: a key file or folder that group or others can reach is refused (SESSION_KEY_UNAVAILABLE): nothing signed, mode and file unchanged")
-    void refusesAKeyThatOthersCanReach(HostScenario host, boolean folder, String mode, HookFixture fixture) throws IOException {
+    @DisplayName("HK-026 (changed by SFR-020) POSIX only: a key file or folder that group or others can reach is used as it is: the call signs with the same key, the mode is not repaired and the file is not touched")
+    void usesAKeyThatOthersCanReach(HostScenario host, boolean folder, String mode, HookFixture fixture) throws IOException {
         Assumptions.assumeTrue(posix(), "NOT_RUN: the default file system has no POSIX attribute view");
         fixture.runClean(host, host.event(host.toolName("save"), EMPTY));
         String author = host.author(HookFixture.HOST_ID);
@@ -161,14 +161,14 @@ class SessionKeyTest {
 
         Run run = fixture.runClean(host, host.event(host.toolName("save"), EMPTY));
 
-        assertThat(run.document()).isEqualTo(host.denied(Refusal.SESSION_KEY_UNAVAILABLE));
-        assertThat(run.out()).doesNotContain("pgla2").doesNotContain(privateKey);
+        assertThat(run.document()).isNotEqualTo(host.denied(Refusal.SESSION_KEY_UNAVAILABLE));
+        assertThat(run.out()).contains("pgla2").doesNotContain(privateKey);
         assertThat(Files.getPosixFilePermissions(widened)).as("the mode is not repaired").isEqualTo(wide);
         assertThat(Files.readAllBytes(file)).as("the key file is not touched").isEqualTo(before);
         Run command = fixture.run(new String[] {HookCli.SESSION_KEY_COMMAND, host.server(), author}, new byte[0]);
-        assertThat(command.exit()).isEqualTo(2);
-        assertThat(command.stdout()).isEmpty();
-        assertThat(command.err()).contains("[TOO_OPEN]").doesNotContain(privateKey);
+        assertThat(command.exit()).isZero();
+        assertThat(command.stdout()).contains("public-key: ");
+        assertThat(command.err()).doesNotContain(privateKey);
     }
 
     // ---- HK-027: unusable key files ----

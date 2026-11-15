@@ -216,8 +216,8 @@ class KeyAuditTest {
 
     @ParameterizedTest
     @MethodSource("widenedTargets")
-    @DisplayName("HK-035 ACL view: a key file or folder that grants read or write to another principal is refused and left as it is")
-    void widenedAclIsRefused(boolean folder, AclEntryPermission permission, @TempDir Path temp) throws IOException {
+    @DisplayName("HK-035 (changed by SFR-020) ACL view: a key file or folder that grants read or write to another principal is read as it is: the same key is returned and the ACL and the file are left as they are")
+    void widenedAclIsRead(boolean folder, AclEntryPermission permission, @TempDir Path temp) throws IOException {
         Assumptions.assumeTrue(acl(), "NOT_RUN: the default file system has no ACL attribute view");
         Path directory = temp.resolve("keys");
         SessionKeyStore store = TestStores.open(directory);
@@ -234,31 +234,15 @@ class KeyAuditTest {
                 .setPermissions(Set.of(permission)).build());
         view.setAcl(widened);
         byte[] before = Files.readAllBytes(file);
+        List<AclEntry> aclBefore = view.getAcl();
 
-        assertThatThrownBy(() -> TestStores.load(TestStores.open(directory), SERVER, AUTHOR))
-                .isInstanceOfSatisfying(SessionKeyException.class,
-                        failure -> assertThat(failure.reason()).isEqualTo(SessionKeyException.Reason.TOO_OPEN));
+        assertThat(TestStores.load(TestStores.open(directory), SERVER, AUTHOR)).isNotNull();
         assertThat(Files.readAllBytes(file)).isEqualTo(before);
+        assertThat(view.getAcl()).as("the widened ACL is not repaired").isEqualTo(aclBefore);
     }
 
-    @Test
-    @DisplayName("HK-040 (audit2 S3) ACL view: a key folder whose ACL is empty (no entry at all) is refused as TOO_OPEN, not taken for 'only the owner'")
-    void anEmptyAclIsRefused(@TempDir Path temp) throws IOException {
-        Assumptions.assumeTrue(acl(), "NOT_RUN: the default file system has no ACL attribute view");
-        Path directory = temp.resolve("keys");
-        TestStores.load(TestStores.open(directory), SERVER, AUTHOR);
-        AclFileAttributeView view = Files.getFileAttributeView(directory, AclFileAttributeView.class);
-        List<AclEntry> original = view.getAcl();
-        view.setAcl(List.of());
-        try {
-            assertThat(view.getAcl()).as("the folder now has an empty ACL").isEmpty();
-            assertThatThrownBy(() -> TestStores.load(TestStores.open(directory), SERVER, AUTHOR))
-                    .isInstanceOfSatisfying(SessionKeyException.class,
-                            failure -> assertThat(failure.reason()).isEqualTo(SessionKeyException.Reason.TOO_OPEN));
-        } finally {
-            view.setAcl(original);
-        }
-    }
+    // HK-040 (audit2 S3: a key folder whose ACL has no entry at all is refused as TOO_OPEN) was removed by SFR-020: the ACL of an
+    // existing folder is not looked at any more. An empty ACL of a path the hook has just created is still replaced (Protection.settle).
 
     static Stream<Arguments> widenedTargets() {
         return Stream.of(

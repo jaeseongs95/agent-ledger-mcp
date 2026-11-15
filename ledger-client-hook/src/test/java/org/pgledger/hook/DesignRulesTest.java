@@ -170,17 +170,20 @@ class DesignRulesTest {
     }
 
     @Test
-    @DisplayName("HK-044 the refusal reasons of the key store are exactly the eleven of the contract, in this order")
+    @DisplayName("HK-044 (changed by SFR-020) the refusal reasons of the key store are exactly the ten of the contract, in this order: WRONG_OWNER is gone, the owner of an existing folder or key file is not looked at")
     void reasonsAreKept() {
         assertThat(Stream.of(SessionKeyException.Reason.values()).map(Enum::name).toList()).containsExactly(
                 "AUTHOR_INVALID", "FOLDER_UNAVAILABLE", "TOO_OPEN", "NOT_A_REGULAR_FILE", "CORRUPT", "AUTHOR_MISMATCH",
-                "SERVER_MISMATCH", "WRONG_OWNER", "OWNER_UNKNOWN", "KEY_MISMATCH", "IO_FAILED");
+                "SERVER_MISMATCH", "OWNER_UNKNOWN", "KEY_MISMATCH", "IO_FAILED");
     }
 
     @Test
-    @DisplayName("HK-044 the key file is still opened with NOFOLLOW_LINKS and created with CREATE_NEW, each in its own class")
+    @DisplayName("HK-044 (changed by SFR-020) the key file is opened for reading once and a link is followed (no NOFOLLOW_LINKS in the reader, no owner or permission check in the reader or the store), and it is created with CREATE_NEW, each in its own class")
     void openAndCreateKeepTheirFlags() {
-        assertThat(source("org/pgledger/hook/keys/KeyFileReader.java")).contains("NOFOLLOW_LINKS").doesNotContain("CREATE_NEW");
+        assertThat(source("org/pgledger/hook/keys/KeyFileReader.java")).doesNotContain("NOFOLLOW_LINKS").doesNotContain("CREATE_NEW")
+                .doesNotContain("requireOwnerOnly").doesNotContain("getOwner");
+        assertThat(source("org/pgledger/hook/keys/SessionKeyStore.java")).doesNotContain("NOFOLLOW_LINKS")
+                .doesNotContain("requireOwnerOnly");
         assertThat(source("org/pgledger/hook/keys/KeyFileWriter.java")).contains("CREATE_NEW").doesNotContain("NOFOLLOW_LINKS");
     }
 

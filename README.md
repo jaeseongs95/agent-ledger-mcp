@@ -610,7 +610,8 @@ content, its order and its request id) and the time. A captured token cannot car
   looks at any grant. A missing key and a wrong signature are the same refusal, `ATTESTATION_SIGNATURE_INVALID`; a different
   content is `ATTESTATION_BINDING_MISMATCH`.
 - Limits: another process of the same operating system user can read the key file, so isolation inside one user needs separate
-  accounts; a hook that runs elevated (the key folder then belongs to another owner) is refused.
+  accounts. The hook creates the folder and the key file owner-only and reads an existing one whoever may reach it or owns it (a
+  link is followed): the personal edition trusts the whole PC. A directory where the key file belongs, and an empty key file, are refused.
 
 ## Migrating from 1.x
 
