@@ -281,7 +281,7 @@ final class LegacyRowMapper {
             v.add("condition_id", ValidationReason.MUST_BE_ID, Integer.toString(EntityId.MAX_LENGTH));
         }
         // a row without a valid link has no link key: the column is NULL (and the row is reported above or below)
-        t.put("link_key", conditionId.flatMap(id -> linkKey(id, task, defect, v)).orElse(null));
+        putOrNull(t, "link_key", conditionId.flatMap(id -> linkKey(id, task, defect, v)));
     }
 
     /** The link key of a condition and exactly one of a task and a defect, reporting an id that is none. */
@@ -365,6 +365,14 @@ final class LegacyRowMapper {
         }
     }
 
+    /**
+     * A column whose value is SQL NULL when there is none: the key is in the row either way, because the copy writes every column
+     * of the table (a missing key and a key with the value null are not the same row).
+     */
+    private static void putOrNull(Map<String, Object> row, String column, Optional<String> value) {
+        value.ifPresentOrElse(present -> row.put(column, present), () -> row.put(column, null));
+    }
+
     private static void matches(Violations v, String column, String value, Pattern pattern, ValidationReason reason) {
         if (value != null && !pattern.matcher(value).matches()) {
             v.add(column, reason, pattern.pattern());
@@ -385,8 +393,9 @@ final class LegacyRowMapper {
         Optional<String> name = Tokens.find(raw, values).map(Enum::name);
         if (name.isEmpty()) {
             v.add(column, ValidationReason.UNKNOWN_VALUE, raw);
+            // the column is NULL for a token that is none of the constants (the row is reported)
+            return null;
         }
-        // the column is NULL for a token that is none of the constants (the row is reported)
-        return name.orElse(null);
+        return name.orElseThrow();
     }
 }

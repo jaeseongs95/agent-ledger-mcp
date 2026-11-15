@@ -50,10 +50,7 @@ class ArchitectureTest {
                     "WriteGate.java", OUTSIDE_A_TOOL_CALL,
                     "WhoamiService.java", OUTSIDE_A_TOOL_CALL,
                     "DetailService.java", NULLABLE_COMPONENT + " (TaskDetail.completedBy)",
-                    "HistoryService.java", NULLABLE_COMPONENT + " (HistoryView.vendor)",
-                    "LegacyRowMapper.java", "a mapped row of a legacy table is a map from column to value in which SQL NULL is the "
-                            + "value null (the link key of a link without a valid condition, a token column that holds no constant "
-                            + "of the new schema): the row is written to a nullable column"));
+                    "HistoryService.java", NULLABLE_COMPONENT + " (HistoryView.vendor)"));
 
     static Stream<PrincipleRules.Rule> principleRules() {
         return PrincipleRules.all(MAIN, MAIN_JAVA, PRINCIPLE_ALLOWED).stream();

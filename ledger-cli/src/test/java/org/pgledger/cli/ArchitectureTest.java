@@ -51,13 +51,7 @@ class ArchitectureTest {
                             + "a setting of this tool; the module cannot make it a component",
                     "CliDriverDataSourceConfiguration.applicationAccountAccess",
                     "the settings of the application account are bound from a filtered view of the environment, without the "
-                            + "source of the owner account, which no annotation can say; the class belongs to the database module"),
-            PrincipleRules.OR_ELSE_NULL, Map.of(
-                    "CliOptions.java",
-                    "valueOrNull and integerOrNull are the one place where an option that was not given becomes null, for the "
-                            + "records of the application services (CodeCommand, GrantCommand) and of the TLS request, which say "
-                            + "'not given' with a null component and may not hold an Optional (ARC-PRN-02); every other command "
-                            + "keeps the Optional"));
+                            + "source of the owner account, which no annotation can say; the class belongs to the database module"));
 
     static Stream<PrincipleRules.Rule> principleRules() {
         return PrincipleRules.all(MAIN, Path.of("src", "main", "java"), PRINCIPLE_ALLOWED).stream();
