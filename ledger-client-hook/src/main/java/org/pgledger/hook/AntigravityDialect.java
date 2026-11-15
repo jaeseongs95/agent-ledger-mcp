@@ -7,6 +7,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 
@@ -32,6 +33,7 @@ import tools.jackson.databind.JsonNode;
  * </ul>
  * The operation is one of the ten known ones, exactly.
  */
+@Component
 record AntigravityDialect(JsonCodec codec) implements HostDialect {
 
     // SLF4J at DEBUG, like the rest of the hook: see HookCli for why.
@@ -47,6 +49,11 @@ record AntigravityDialect(JsonCodec codec) implements HostDialect {
      */
     private static final Pattern ENVELOPE_TOOL_NAME = Pattern.compile("^(?:([" + McpToolName.SERVER_CHARACTERS + "]{1,"
             + McpToolName.MAX_SERVER_LENGTH + "})_)?ledger_" + WriteTool.alternation() + "$");
+
+    @Override
+    public Client client() {
+        return Client.ANTIGRAVITY;
+    }
 
     @Override
     public Intake read(byte[] stdin) throws JacksonException {

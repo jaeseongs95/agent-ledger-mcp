@@ -10,6 +10,7 @@ import org.pgledger.hook.keys.SessionKeyException;
 import org.pgledger.hook.keys.SessionKeyStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
@@ -28,19 +29,36 @@ import tools.jackson.databind.node.ObjectNode;
  *
  * <p>The key pair of an author for a server is created in the key folder by the first call of that author for that
  * server.
+ *
+ * <p>This class knows no host: the dialect of the client that the command line named is a bean found by {@link HostDialects},
+ * and the vendor of the authors is the one that {@link Client} pairs with the client.
  */
-record LedgerHook(HostDialect dialect, Vendor vendor, JsonCodec codec, Clock clock, SessionKeyStore keys) {
+@Component
+final class LedgerHook {
 
     // SLF4J at DEBUG, like the rest of the hook: see HookCli for why.
     private static final Logger LOG = LoggerFactory.getLogger(LedgerHook.class);
     private static final String RESERVED_KEY = Intake.RESERVED_KEY;
     private static final String REQUEST_ID_KEY = "request_id";
 
-    /** Turns the raw stdin bytes of one invocation into the answer for the host. */
-    Response handle(byte[] stdin) {
+    private final HostDialects dialects;
+    private final JsonCodec codec;
+    private final Clock clock;
+    private final SessionKeyStore keys;
+
+    LedgerHook(HostDialects dialects, JsonCodec codec, Clock clock, SessionKeyStore keys) {
+        this.dialects = dialects;
+        this.codec = codec;
+        this.clock = clock;
+        this.keys = keys;
+    }
+
+    /** Turns the raw stdin bytes of one invocation for this client into the answer for the host. */
+    Response handle(Client client, byte[] stdin) {
         if (isBlank(stdin)) {
             return new Response.Silent();
         }
+        HostDialect dialect = dialects.of(client);
         Intake intake;
         try {
             intake = dialect.read(stdin);
@@ -52,14 +70,14 @@ record LedgerHook(HostDialect dialect, Vendor vendor, JsonCodec codec, Clock clo
         return switch (intake) {
             case Intake.Skip skip -> dialect.notLedgerCall();
             case Intake.Refuse refuse -> dialect.deny(refuse.reason());
-            case Intake.Attest call -> switch (stamp(call)) {
+            case Intake.Attest call -> switch (stamp(call, client.vendor())) {
                 case Verdict.Stamped stamped -> dialect.allow(call, stamped);
                 case Verdict.Denied denied -> dialect.deny(denied.reason());
             };
         };
     }
 
-    private Verdict stamp(Intake.Attest call) {
+    private Verdict stamp(Intake.Attest call, Vendor vendor) {
         // The arguments are arbitrary JSON of the model: the copy of the tree keeps every value as the host sent it.
         if (!(call.arguments() instanceof ObjectNode arguments)) {
             return new Verdict.Denied(Refusal.ARGUMENTS_NOT_OBJECT);

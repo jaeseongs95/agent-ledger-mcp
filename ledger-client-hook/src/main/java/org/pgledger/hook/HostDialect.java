@@ -6,9 +6,13 @@ import tools.jackson.core.JacksonException;
  * How one host phrases its pre-tool-use event and the answer to it, and how it spells the name of an MCP tool. This is
  * the vendor boundary of the hook: everything that differs between the hosts (event fields, tool name shapes, answer
  * documents) is in the implementation of that host, and the code that signs ({@link LedgerHook}) knows no host. A new
- * host is a new implementation and one more constant of {@link Client}.
+ * host is a new implementation, a {@code @Component} that names its {@link Client}, and one more constant of
+ * {@link Client}; {@link HostDialects} finds the implementation of the client that the command line named.
  */
 sealed interface HostDialect permits ClaudeDialect, CodexDialect, AntigravityDialect {
+
+    /** The client (the first argument of the jar) whose host this dialect speaks. */
+    Client client();
 
     /**
      * Binds the host event and finds out whether it is a ledger write call and where its arguments and host id are.

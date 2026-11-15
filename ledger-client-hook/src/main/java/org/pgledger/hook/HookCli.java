@@ -4,7 +4,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.time.Clock;
 import java.util.List;
 import org.pgledger.hook.keys.KeyInfo;
 import org.pgledger.hook.keys.SessionKeyException;
@@ -23,8 +22,8 @@ import org.springframework.stereotype.Component;
  *       server, the author, the public key and the fingerprint (four lines on {@code out}) for the owner, who registers
  *       the key on that server. A key is kept per server: the owner registers each server's key separately.</li>
  * </ul>
- * The streams are passed in, the codec, the clock and the key store are injected, so the places that touch the process are
- * {@link Main} and {@link ProcessChannels}.
+ * The streams are passed in, the codec, the attestation rule ({@link LedgerHook}) and the key store are injected, so the
+ * places that touch the process are {@link Main} and {@link ProcessChannels}.
  * Every outcome, a failed read of stdin included, is a {@link Response}; the one complete {@code switch} in
  * {@link #render} turns it into the output and the exit code.
  */
@@ -50,12 +49,12 @@ public final class HookCli {
             + "(vendor a-z 0-9 -, starting with a letter; session id 1 to 128 characters of A-Z a-z 0-9 . _ -)";
 
     private final JsonCodec codec;
-    private final Clock clock;
+    private final LedgerHook hook;
     private final SessionKeyStore keys;
 
-    public HookCli(JsonCodec codec, Clock clock, SessionKeyStore keys) {
+    HookCli(JsonCodec codec, LedgerHook hook, SessionKeyStore keys) {
         this.codec = codec;
-        this.clock = clock;
+        this.hook = hook;
         this.keys = keys;
     }
 
@@ -84,9 +83,8 @@ public final class HookCli {
 
     /** The attestation of the host event on {@code in} for the client that the command line named. */
     private Response handle(Client client, InputStream in) {
-        LedgerHook hook = new LedgerHook(client.dialect(codec), client.vendor(), codec, clock, keys);
         try {
-            return hook.handle(in.readAllBytes());
+            return hook.handle(client, in.readAllBytes());
         } catch (IOException e) {
             return new Response.InputFailure(e);
         }

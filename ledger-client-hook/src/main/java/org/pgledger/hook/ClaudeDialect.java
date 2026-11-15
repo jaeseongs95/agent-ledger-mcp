@@ -3,6 +3,7 @@ package org.pgledger.hook;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 
 /**
@@ -18,12 +19,18 @@ import tools.jackson.core.JacksonException;
  * is not signed for. The server segment is made of {@code A-Za-z0-9_-} (the host's own rule: no dot). The operation is
  * one of the ten known ones, exactly. The Codex Apps namespace belongs to Codex alone and is not signed for here.
  */
+@Component
 record ClaudeDialect(JsonCodec codec) implements HostDialect {
 
     private static final String EVENT_NAME = "PreToolUse";
     /** Group 1 is the server, group 2 the operation; compiled once. */
     private static final Pattern TOOL_NAME = Pattern.compile("^mcp__([A-Za-z0-9_-]{1," + McpToolName.MAX_SERVER_LENGTH
             + "}?)__(?:\\1_)?ledger_" + WriteTool.alternation() + "$");
+
+    @Override
+    public Client client() {
+        return Client.CLAUDE;
+    }
 
     @Override
     public Intake read(byte[] stdin) throws JacksonException {
