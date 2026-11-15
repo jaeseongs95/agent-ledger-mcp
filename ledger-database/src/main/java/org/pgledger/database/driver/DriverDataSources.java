@@ -49,6 +49,8 @@ public final class DriverDataSources {
         if (schema != null) {
             config.setSchema(foldedSchema(simple, schema));
         }
+        // principle 3.9: the one place that makes the pool; only the @Bean methods of LedgerDataSourceConfiguration and
+        // LegacySourceConfiguration call this factory, and the container closes what they return (destroyMethod = "close")
         return new HikariDataSource(config);
     }
 
