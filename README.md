@@ -510,7 +510,18 @@ and the ports from it when an option is not given, and the installers ask for th
 3. Install the client hooks (see Client hooks), register the key of each session with `key-register` and issue the grants with `grant`.
 
 `migrate` applies the files `V{n}__*.sql` in order and records every attempt, with the SHA-256 of the file, in the table
-`schema_history`. A file that was changed after it was applied stops every process at start.
+`schema_history`: one row for each attempt of a version, with the columns `version`, `attempt`, `script`, `digest`, `applied_at` and
+`outcome` (`SUCCEEDED` or `FAILED`). An attempt is one transaction. It starts by inserting its own row as `FAILED` and ends by turning that
+one row to `SUCCEEDED`; if the file fails, the attempt is rolled back, the row stays `FAILED`, and the next run tries the version again as
+the next attempt without changing or deleting the earlier rows. Two `migrate` runs at the same time are safe: the second waits in the
+database for the first and then skips what the first has applied. A file that was changed after it was applied stops `migrate` before it
+applies anything, and every process at start; no row is added for it. The database must use the encoding UTF-8, and the long text type of
+the schema files is taken from the JDBC driver (there is no setting for it).
+
+The ledger does not use Flyway: a current Flyway release needs a module for each DBMS and refuses a database it has none for, while the
+ledger asks for ANSI SQL on any database whose driver you register. And the ledger migrates by this explicit command and not when a server
+starts, because the servers never hold the password of the DDL account: a server only checks the schema at start and, when files are
+pending, refuses to start and names `ledger-cli migrate`, so a server that is taken over cannot change the schema.
 
 ## ledger-cli
 
