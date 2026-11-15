@@ -204,6 +204,9 @@ class ReadQueryTest {
     @DisplayName("MCR-H10: imported rows are visible with their legacy reference and assurance")
     void h10_importedRows(Scenario s) {
         SaveResult d = s.newDefect("d");
+        // SQL, because no service writes this row: a history row of the operation IMPORT with the assurance LEGACY_LOGIN and a
+        // legacy reference is made only by the legacy import, from a legacy database that this case does not have (the
+        // import has its own cases, MIG-*); this case is about how the history read shows such a row
         s.ctx().jdbc().sql("INSERT INTO history (id, occurred_at, author_id, login, actor_assurance, entity, entity_id, op, "
                 + "changes, reason, request_id, legacy_ref) VALUES (?, TIMESTAMP '2025-01-01 00:00:00', "
                 + "'agent:claude:old', 'ledger_author', 'LEGACY_LOGIN', 'DEFECT', ?, 'IMPORT', '{}', "
@@ -481,6 +484,8 @@ class ReadQueryTest {
         var p1 = s.defectFields("urgent");
         p1.put("severity", "P1");
         SaveResult urgent = s.bean(SaveService.class).save(Scenario.AUTHOR, s.create("defect", null, p1));
+        // SQL, because no service can make this state: UNRATED is the severity of a row of the old ledger only (its code is
+        // INACTIVE, a save refuses it, CODE_INVALID), so only imported data holds it
         s.ctx().jdbc().sql("UPDATE defect SET severity = 'UNRATED' WHERE id = ?").param(open.id()).update();
         ListService lists = s.bean(ListService.class);
         assertThat(lists.defects(new DefectsQuery(s.projectId(), "SOURCE_FIXED", null, null, null, null, null, null))
@@ -527,6 +532,9 @@ class ReadQueryTest {
                 new org.pgledger.application.write.RecordFixCommand(null, withFix.id(), "repo/e2e",
                         Scenario.commit('a'), Scenario.REASON, null, null, null, null, false));
         SaveResult noCommit = s.newDefect("no commit");
+        // SQL, because no service can make these two states, which only imported data holds: a defect enters SOURCE_FIXED
+        // only with a recorded fix (FIX_REQUIRED otherwise), and no transition leads to the task state UNKNOWN
+        // (TaskState refuses `to == UNKNOWN`); the attention kinds exist to show such rows
         s.ctx().jdbc().sql("UPDATE defect SET status = 'SOURCE_FIXED' WHERE id = ?").param(noCommit.id()).update();
         SaveResult unknownTask = s.newTask("unknown");
         s.ctx().jdbc().sql("UPDATE task SET state = 'UNKNOWN' WHERE id = ?").param(unknownTask.id()).update();
@@ -570,6 +578,8 @@ class ReadQueryTest {
         SaveResult open = s.newDefect("open");
         SaveResult source = s.newDefect("source");
         s.newDefect("rated later");
+        // SQL, because no service can make this state: UNRATED is the severity of a row of the old ledger only (its code is
+        // INACTIVE, a save refuses it); the statistics count what imported data holds as well
         s.ctx().jdbc().sql("UPDATE defect SET severity = 'UNRATED' WHERE id = ?").param(open.id()).update();
         s.newTask("t1");
         s.newCondition("1", "r", "c");
