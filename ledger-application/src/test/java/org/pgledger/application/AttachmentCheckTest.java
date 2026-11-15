@@ -90,7 +90,10 @@ class AttachmentCheckTest {
         StoredFiles.delete(Uploads.fileOf(ctx, Uploads.currentFile(ctx, missing).storageKey()));
         // the restored one: the database was restored to a state before its row, so its file has no row (and is old)
         AttachmentFile restoredRow = Uploads.currentFile(ctx, restored);
+        // (the row of the finished upload names the same file until the reaper removes it, so a restore removes that row too)
         assertThat(ctx.jdbc().sql("DELETE FROM attachment_file WHERE attachment_id = ?").param(restored).update()).isEqualTo(1);
+        assertThat(ctx.jdbc().sql("DELETE FROM upload_staging WHERE storage_key = ?").param(restoredRow.storageKey().hex()).update())
+                .as("the COMPLETED row of the upload names the file too").isEqualTo(1);
         touch(Uploads.fileOf(ctx, restoredRow.storageKey()), now.minus(GRACE).minusSeconds(3600));
         StorageKey oldStray = stray(ctx, now.minus(GRACE).minusSeconds(3600));
         StorageKey youngStray = stray(ctx, now.minus(GRACE).plusSeconds(3600));
