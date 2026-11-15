@@ -1,7 +1,9 @@
 package org.pgledger.attestation;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -11,9 +13,11 @@ import java.util.regex.Pattern;
  * lower-case hex characters. The client hook computes it for the arguments it hands the host (the {@code operationKey}
  * is in them, as the caller sent it), the server for the arguments it received, with this one class, so the two cannot disagree
  * about what "the same arguments" means: the same JSON value, whatever the order of the members and the white space.
- * Nothing else is normalised; in particular the rules that make two requests the same request for idempotency
- * (empty text equals absent, {@code fields} as an object or as JSON text) are not applied, because the signature has to
- * cover exactly what was sent.
+ * One thing is left out: an object member whose value is {@code null} counts as not given, at every depth (the server side
+ * of the MCP SDK drops such a member before the tool binding sees the arguments, so a digest that kept it would never
+ * match the one of the hook). Nothing else is normalised; in particular the rules that make two requests the same request
+ * for idempotency (for example empty text equals absent) are not applied, because the signature has to cover exactly what
+ * was sent.
  *
  * <p>SHA-256 is {@code MessageDigest} of the JDK (FIPS 180-4); the canonical form is RFC 8785
  * (https://www.rfc-editor.org/rfc/rfc8785).
@@ -24,6 +28,8 @@ public final class ArgumentsDigest {
     public static final String ATTESTATION_MEMBER = "_hostAttestation";
 
     private static final Pattern FORMAT = Pattern.compile("[0-9a-f]{64}");
+    /** As deep as {@link JsonCanonicalizer} writes (it refuses deeper values). */
+    private static final int MAX_DEPTH = 256;
 
     private ArgumentsDigest() {
     }
@@ -41,8 +47,33 @@ public final class ArgumentsDigest {
         }
         Map<Object, Object> signed = new LinkedHashMap<>(arguments);
         signed.remove(ATTESTATION_MEMBER);
-        byte[] canonical = JsonCanonicalizer.canonicalize(signed).getBytes(StandardCharsets.UTF_8);
+        byte[] canonical = JsonCanonicalizer.canonicalize(withoutNullMembers(signed, 0)).getBytes(StandardCharsets.UTF_8);
         return Sha256Hex.of(canonical);
+    }
+
+    /** The value with every object member that holds {@code null} removed (an element of an array stays, null or not). */
+    private static Object withoutNullMembers(Object value, int depth) {
+        if (depth > MAX_DEPTH) {
+            // the canonical form refuses such a value too; the copy must not run out of stack before it does
+            throw new IllegalArgumentException("JSON value nested deeper than " + MAX_DEPTH);
+        }
+        if (value instanceof Map<?, ?> map) {
+            Map<Object, Object> kept = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> member : map.entrySet()) {
+                if (member.getValue() != null) {
+                    kept.put(member.getKey(), withoutNullMembers(member.getValue(), depth + 1));
+                }
+            }
+            return kept;
+        }
+        if (value instanceof List<?> list) {
+            List<Object> kept = new ArrayList<>();
+            for (Object element : list) {
+                kept.add(withoutNullMembers(element, depth + 1));
+            }
+            return kept;
+        }
+        return value;
     }
 
     /** Whether the text is a digest in the form {@link #of} writes: 64 lower-case hex characters. */

@@ -73,6 +73,17 @@ public class WriteGate {
     }
 
     /**
+     * Only the attestation of the call, for a write that has to know its author before it looks at a project (the
+     * batch reserves the receipt of its key first; each of its operations then passes {@link #open} with its own grants).
+     * The checks and their order are those of {@link #open} up to the attestation.
+     *
+     * @param operationKey the operation key the attestation must be bound to, as the caller sent it
+     */
+    public AuthorId verifyAuthor(String actor, String operationKey) {
+        return attestation.verifyForWrite(actor, ToolCall.current(), operationKey);
+    }
+
+    /**
      * The gate of a call that touches no project (the upload tools of the attachments): the host attestation is checked like
      * for every write (signed token, live key of the author, bound to the tool and the arguments, inside the time window; the key
      * is held until the transaction ends), and the author needs at least one live grant. Which project the evidence is for is not

@@ -50,7 +50,7 @@ CREATE TABLE request_receipt (
   login VARCHAR(63) NOT NULL,
   response ${long_text},
   created_at TIMESTAMP NOT NULL,
-  CONSTRAINT pk_request_receipt PRIMARY KEY (operation_key),
+  CONSTRAINT pk_request_receipt PRIMARY KEY (author_id, operation_key),
   CONSTRAINT ck_receipt_operation CHECK (operation IN ('SAVE', 'TRANSITION', 'RECORD_FIX', 'RECORD_CASE', 'LINK',
     'CORRECT', 'BATCH'))
 );

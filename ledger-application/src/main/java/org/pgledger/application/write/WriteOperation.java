@@ -71,7 +71,7 @@ public abstract class WriteOperation<C extends WriteCommand, R extends WriteResu
                 case ReceiptService.Reservation.Replayed<R> replayed -> replayed.response();
                 case ReceiptService.Reservation.Reserved<R> reserved -> {
                     R result = prepared.execute().apply(new WriteContext(session, reason, operationKey));
-                    receipts.finish(operationKey, result);
+                    receipts.finish(operationKey, session.author(), result);
                     yield result;
                 }
             };

@@ -20,10 +20,11 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
 
 /**
- * Idempotency. It has no transaction of its own: it joins the one of the write (principle 4.4). The receipt of the
- * operation key is read first: a committed receipt of an earlier call answers with its stored response (a replay) or, for
- * another request under the same key, with OPERATION_CONFLICT. Without one the receipt is inserted, in the transaction of the write.
- * A second call at the very same moment meets the unique key of the operation key (the insert waits until the first call
+ * Idempotency. It has no transaction of its own: it joins the one of the write (principle 4.4). The receipt of the author and
+ * the operation key is read first (each author has the keys of its own, like the uploads of {@code artifact-begin}): a committed
+ * receipt of an earlier call answers with its stored response (a replay) or, for another operation, payload or channel under the
+ * same key, with OPERATION_CONFLICT. Without one the receipt is inserted, in the transaction of the write.
+ * A second call at the very same moment meets the unique key of the author and the operation key (the insert waits until the first call
  * commits) and ends with the translated DUPLICATE_KEY; the caller sends the request again and then gets the replay. A
  * failed write rolls its receipt back with everything else, so a retry with a corrected payload is not a conflict.
  */
@@ -63,14 +64,14 @@ public class ReceiptService {
      * Reserves the operation key: {@link Reservation.Reserved} when the caller is the first and writes,
      * {@link Reservation.Replayed} with the stored response when the same request was answered before.
      *
-     * @throws ConflictException OPERATION_CONFLICT when the key belongs to another operation, payload, author or
-     *         channel; DUPLICATE_KEY when another call reserved the key at the very same moment
+     * @throws ConflictException OPERATION_CONFLICT when the key of this author belongs to another operation, payload or
+     *         channel; DUPLICATE_KEY when another call of this author reserved the key at the very same moment
      */
     public <R> Reservation<R> reserve(OperationKey id, ReceiptOperation operation, Sha256 digest, AuthorId author,
             Channel channel, Class<R> responseType) {
-        return receipts.findById(id)
+        return receipts.findByAuthorIdAndOperationKey(author, id)
                 .<Reservation<R>>map(stored -> new Reservation.Replayed<>(storedResponse(stored, id, operation, digest,
-                        author, channel, responseType)))
+                        channel, responseType)))
                 .orElseGet(() -> insertReservation(id, operation, digest, author, channel));
     }
 
@@ -84,11 +85,10 @@ public class ReceiptService {
         return new Reservation.Reserved<>();
     }
 
-    /** The response stored for an operation key that was reserved before; it must be the same request. */
+    /** The response stored for an operation key that this author reserved before; it must be the same request. */
     private <R> R storedResponse(Receipt stored, OperationKey id, ReceiptOperation operation, Sha256 digest,
-            AuthorId author, Channel channel, Class<R> responseType) {
+            Channel channel, Class<R> responseType) {
         boolean same = stored.operation() == operation && Objects.equals(stored.payloadSha256(), digest)
-                && Objects.equals(stored.authorId().value(), author.value())
                 && Objects.equals(stored.login(), channel.login());
         if (!same) {
             throw new ConflictException(ConflictCode.OPERATION_CONFLICT, List.of(id.toString()));
@@ -101,8 +101,8 @@ public class ReceiptService {
     }
 
     /** Stores the response of the first call, once, before the transaction commits. */
-    public void finish(OperationKey id, Object response) {
-        if (!completion.finish(id, json.write(response))) {
+    public void finish(OperationKey id, AuthorId author, Object response) {
+        if (!completion.finish(author, id, json.write(response))) {
             throw new InfrastructureException(InfrastructureCode.INTEGRITY_VIOLATION,
                     List.of("receipt missing or already finished: " + id));
         }

@@ -17,7 +17,9 @@ public final class ContractVectors {
 
     /**
      * Tool names: {@code write} (the ten ledger tools that carry the attestation, canonical {@code ledger_<op>}),
-     * {@code attachment} (the five that carry it too, canonical {@code artifact-<op>}) and {@code read}.
+     * {@code attachment} (the five that carry it too, canonical {@code artifact-<op>}) and {@code read}; and the lists
+     * {@code operationKeyClaim} (the tools whose claim carries the {@code operationKey} argument) and
+     * {@code operationKeyArgument} (the tools whose input schema has the required argument {@code operationKey}).
      */
     public static final String WRITE_TOOLS = "/contract/write-tool-vectors.json";
 
