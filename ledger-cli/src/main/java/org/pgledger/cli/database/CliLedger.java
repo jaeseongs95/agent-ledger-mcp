@@ -6,6 +6,7 @@ import org.pgledger.application.admin.GrantService;
 import org.pgledger.application.admin.ProjectService;
 import org.pgledger.application.admin.SessionKeyService;
 import org.pgledger.application.legacy.LegacyImportService;
+import org.pgledger.application.legacy.LegacyRetireService;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.FailureException;
 import org.pgledger.domain.error.LedgerException;
@@ -25,16 +26,18 @@ public final class CliLedger {
     private final GrantService grants;
     private final SessionKeyService keys;
     private final LegacyImportService importer;
+    private final LegacyRetireService retirer;
     private final CliActor actor;
     private final SchemaReadiness readiness;
 
     public CliLedger(ProjectService projects, CommonCodeService codes, GrantService grants, SessionKeyService keys,
-            LegacyImportService importer, CliActor actor, SchemaReadiness readiness) {
+            LegacyImportService importer, LegacyRetireService retirer, CliActor actor, SchemaReadiness readiness) {
         this.projects = projects;
         this.codes = codes;
         this.grants = grants;
         this.keys = keys;
         this.importer = importer;
+        this.retirer = retirer;
         this.actor = actor;
         this.readiness = readiness;
     }
@@ -58,6 +61,11 @@ public final class CliLedger {
     /** The legacy import ({@code import-legacy}). */
     public LegacyImportService importer() {
         return importer;
+    }
+
+    /** The removal of the 1.x database objects ({@code retire-legacy}). */
+    public LegacyRetireService retirer() {
+        return retirer;
     }
 
     /** The audit actor {@code cli:<process user>}. */

@@ -41,7 +41,9 @@ public final class LedgerRefusals {
         /** {@code key-revoke}. */
         REVOKE,
         /** {@code import-legacy}. */
-        IMPORT
+        IMPORT,
+        /** {@code retire-legacy}: the verification it runs first fails like the one of the import, with the words of this command. */
+        RETIRE
     }
 
     /** The live key that a registration would replace: the arguments of KEY_REPLACEMENT_NOT_CONFIRMED. */
@@ -101,7 +103,7 @@ public final class LedgerRefusals {
                 case REGISTER, REPLACE -> new FailureException(ErrorCode.KEY_IN_USE, refused);
                 case IMPORT -> new FailureException(ErrorCode.IMPORT_TARGET_NOT_EMPTY, refused,
                         String.join(", ", refused.args()));
-                case GENERIC, REVOKE -> generic(refused);
+                case GENERIC, REVOKE, RETIRE -> generic(refused);
             };
             case KEY_REPLACEMENT_NOT_CONFIRMED -> switch (context) {
                 case REGISTER, REPLACE -> {
@@ -109,7 +111,7 @@ public final class LedgerRefusals {
                     yield new FailureException(context == Context.REPLACE ? ErrorCode.REPLACE_FINGERPRINT_STALE
                             : ErrorCode.KEY_REPLACEMENT_NOT_CONFIRMED, refused, live.fingerprint(), live.registeredAt());
                 }
-                case GENERIC, REVOKE, IMPORT -> generic(refused);
+                case GENERIC, REVOKE, IMPORT, RETIRE -> generic(refused);
             };
             // the one place of the rule is the service; whatever command asked, the owner is told how to register the key
             case SESSION_KEY_REQUIRED -> new FailureException(ErrorCode.NO_SESSION_KEY, refused,
@@ -123,7 +125,7 @@ public final class LedgerRefusals {
             case NOT_FOUND -> switch (context) {
                 case REVOKE -> new FailureException(ErrorCode.NO_LIVE_KEY, refused);
                 // the arguments of the legacy source that is not complete: what was looked for, then the missing steps
-                case IMPORT -> refused.args().size() > 1
+                case IMPORT, RETIRE -> refused.args().size() > 1
                         ? new FailureException(ErrorCode.IMPORT_SOURCE_INCOMPLETE, refused, refused.args().get(1))
                         : generic(refused);
                 case GENERIC, REGISTER, REPLACE -> generic(refused);
@@ -133,7 +135,7 @@ public final class LedgerRefusals {
 
     private static FailureException validation(ValidationException refused, Context context) {
         return switch (context) {
-            case IMPORT -> new FailureException(ErrorCode.IMPORT_DATA_REFUSED, refused,
+            case IMPORT, RETIRE -> new FailureException(ErrorCode.IMPORT_DATA_REFUSED, refused,
                     String.valueOf(refused.issues().size()));
             case REVOKE -> revokeValidation(refused);
             case REGISTER, REPLACE -> namesTheAuthor(refused)
@@ -160,7 +162,7 @@ public final class LedgerRefusals {
         return switch ((TrustCode) refused.code()) {
             case AUTHOR_ID_FORMAT -> switch (context) {
                 case REGISTER, REPLACE, REVOKE -> new FailureException(ErrorCode.INVALID_AUTHOR, refused);
-                case GENERIC, IMPORT -> generic(refused);
+                case GENERIC, IMPORT, RETIRE -> generic(refused);
             };
             case HOST_ATTESTATION_REQUIRED, SESSION_NOT_GRANTED, VERIFY_NEEDS_REVIEWER_LOGIN, ATTESTATION_UNSIGNED,
                     ATTESTATION_MALFORMED, ATTESTATION_VERSION_UNSUPPORTED, ATTESTATION_SIGNATURE_INVALID,
@@ -168,12 +170,21 @@ public final class LedgerRefusals {
         };
     }
 
-    /** Of the infrastructure codes only the failed comparison of the import means anything else to the owner. */
+    /**
+     * Of the infrastructure codes only the failed comparison of the import means anything else to the owner: IMPORT_VERIFY_FAILED
+     * for the import, RETIRE_VERIFY_FAILED for the verification that {@code retire-legacy} runs first.
+     */
     private static FailureException infrastructure(InfrastructureException refused, Context context) {
-        if (context == Context.IMPORT && (InfrastructureCode) refused.code() == InfrastructureCode.INTEGRITY_VIOLATION) {
+        if ((InfrastructureCode) refused.code() == InfrastructureCode.INTEGRITY_VIOLATION) {
             List<TableMismatch> groups = TableMismatch.of(refused.args());
             if (!groups.isEmpty()) {
-                return new FailureException(ErrorCode.IMPORT_VERIFY_FAILED, refused, groups.getFirst().texts());
+                return switch (context) {
+                    case IMPORT -> new FailureException(ErrorCode.IMPORT_VERIFY_FAILED, refused,
+                            groups.getFirst().texts());
+                    case RETIRE -> new FailureException(ErrorCode.RETIRE_VERIFY_FAILED, refused,
+                            groups.getFirst().texts());
+                    case GENERIC, REGISTER, REPLACE, REVOKE -> generic(refused);
+                };
             }
         }
         return generic(refused);

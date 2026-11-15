@@ -2,6 +2,7 @@ package org.pgledger.database.driver;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.validation.annotation.Validated;
@@ -17,16 +18,20 @@ import org.springframework.validation.annotation.Validated;
  * @param username database account (a read-only one)
  * @param password database password
  * @param schema   the legacy schema, {@code ledger} for every installation of the old installer
+ * @param roles    the database roles that the old installer made ({@code retire-legacy} removes them with the schema, unless
+ *                 one is in use elsewhere); the four roles of the installer of 1.x unless another set is given
  */
 @Validated
 @ConfigurationProperties(prefix = "ledger.import.source")
 public record LegacySourceProperties(@NotBlank String url, String username, String password,
-        @DefaultValue("ledger") @Pattern(regexp = "[a-z][a-z0-9_]{0,29}") String schema) {
+        @DefaultValue("ledger") @Pattern(regexp = "[a-z][a-z0-9_]{0,29}") String schema,
+        @DefaultValue({"ledger_owner", "ledger_author", "ledger_reviewer", "ledger_reader"})
+        List<@Pattern(regexp = "[A-Za-z][A-Za-z0-9_]{0,62}") String> roles) {
 
     /** Never prints the password, and not the password of the URL either. */
     @Override
     public String toString() {
         return "LegacySourceProperties[url=" + RegisteredDriver.sanitize(url) + ", username=" + username + ", schema="
-                + schema + "]";
+                + schema + ", roles=" + roles + "]";
     }
 }

@@ -1,6 +1,7 @@
 package org.pgledger.database.driver;
 
 import javax.sql.DataSource;
+import org.pgledger.database.repository.LegacySchemaRepository;
 import org.pgledger.database.repository.LegacySourceRepository;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -33,7 +34,7 @@ import org.springframework.transaction.PlatformTransactionManager;
  */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(LegacySourceProperties.class)
-@Import(LegacySourceRepository.class)
+@Import({LegacySourceRepository.class, LegacySchemaRepository.class})
 public class LegacySourceWiring {
 
     /** A {@code @Bean} method because the type is Spring's and the data source is picked by name. */

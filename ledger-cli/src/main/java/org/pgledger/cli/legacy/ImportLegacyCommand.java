@@ -18,17 +18,7 @@ import org.pgledger.cli.database.CliLedger;
 import org.pgledger.cli.database.DatabaseBeans;
 import org.pgledger.cli.database.LedgerRefusals;
 import org.pgledger.cli.database.LedgerRefusals.Context;
-import org.pgledger.cli.database.LedgerRefusals.TableMismatch;
-import org.pgledger.domain.error.AdminException;
-import org.pgledger.domain.error.ConflictException;
-import org.pgledger.domain.error.InfrastructureCode;
-import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.domain.error.LedgerException;
-import org.pgledger.domain.error.LookupException;
-import org.pgledger.domain.error.TransitionException;
-import org.pgledger.domain.error.TrustException;
-import org.pgledger.domain.error.ValidationException;
-import org.pgledger.domain.error.ValidationIssue;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.stereotype.Component;
@@ -60,11 +50,14 @@ public class ImportLegacyCommand implements Command {
     private final ObjectProvider<CliLedger> ledger;
     private final CliOutput output;
     private final CliMessages messages;
+    private final LegacyRefusalReport refusalReport;
 
-    ImportLegacyCommand(ObjectProvider<CliLedger> ledger, CliOutput output, CliMessages messages) {
+    ImportLegacyCommand(ObjectProvider<CliLedger> ledger, CliOutput output, CliMessages messages,
+            LegacyRefusalReport refusalReport) {
         this.ledger = ledger;
         this.output = output;
         this.messages = messages;
+        this.refusalReport = refusalReport;
     }
 
     @Override
@@ -121,34 +114,8 @@ public class ImportLegacyCommand implements Command {
         try {
             return verifyOnly ? importer.verify() : importer.importLegacy(target.actor());
         } catch (LedgerException refused) {
-            report(refused);
+            refusalReport.print(refused);
             throw LedgerRefusals.translate(refused, Context.IMPORT);
         }
-    }
-
-    private void report(LedgerException refused) {
-        switch (refused) {
-            case ValidationException invalid -> {
-                for (ValidationIssue issue : invalid.issues()) {
-                    output.info(messages.get("import-legacy.violation", issue.path(), reasonText(issue)));
-                }
-            }
-            case InfrastructureException failed -> {
-                if (failed.code() == InfrastructureCode.INTEGRITY_VIOLATION) {
-                    for (TableMismatch mismatch : TableMismatch.of(failed.args())) {
-                        output.info(messages.get("import-legacy.mismatch", mismatch.texts()));
-                    }
-                }
-            }
-            case ConflictException _, LookupException _, TrustException _, TransitionException _, AdminException _ -> {
-                // nothing more to show than the refusal itself
-            }
-        }
-    }
-
-    /** The reason of the issue by name, with its arguments (a limit, a format): enough to find and correct the row. */
-    private static String reasonText(ValidationIssue issue) {
-        return issue.reasonArgs().isEmpty() ? issue.reason().name()
-                : issue.reason().name() + " " + String.join(" ", issue.reasonArgs());
     }
 }
