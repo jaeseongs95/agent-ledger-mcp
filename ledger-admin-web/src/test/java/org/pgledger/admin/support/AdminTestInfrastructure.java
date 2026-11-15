@@ -1,7 +1,6 @@
 package org.pgledger.admin.support;
 
 import java.time.Clock;
-import java.time.Duration;
 import java.util.List;
 import javax.sql.DataSource;
 import org.pgledger.application.admin.CommonCodeService;
@@ -58,9 +57,8 @@ public class AdminTestInfrastructure {
     @Bean
     SchemaMigrated schemaMigrated(DataSource dataSource, Clock clock, Environment environment) {
         return new SchemaMigrated(TestSchemaServices.migrator(dataSource,
-                new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, SchemaProperties.DEFAULT_LONG_TEXT_TYPE, true,
-                        environment.getRequiredProperty(TestSchemaInitializer.SCHEMA_PROPERTY),
-                        Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT)), clock).migrate());
+                new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, true,
+                        environment.getRequiredProperty(TestSchemaInitializer.SCHEMA_PROPERTY)), clock).migrate());
     }
 
     /** Present once the passkey of the owner is registered. */

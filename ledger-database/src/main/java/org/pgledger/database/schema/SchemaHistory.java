@@ -1,5 +1,6 @@
 package org.pgledger.database.schema;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -9,13 +10,13 @@ import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 
 /**
- * What {@code schema_history} says, as a value: the rows of every attempt, oldest first per version, and the one judgement
+ * What {@code schema_history} says, as a value: the rows of every attempt, by version and attempt, and the one judgement
  * of a schema file against them. The migrator (which applies what is pending) and the verifier (which only looks) both ask
  * this value, so they cannot judge the same history differently.
  *
- * <p>The judgement ({@link Verdict}) looks at the attempts of the version of the file: none at all; only failed ones; the
- * latest success applied another digest than the file has; the file is the one applied but the latest attempt failed; or the
- * file is applied and intact.
+ * <p>The judgement ({@link Verdict}) looks at the attempts of the version of the file: none at all; only failed ones; a succeeded
+ * one applied another digest than the file has; the file is the one applied but the latest attempt failed; or the file is applied
+ * and intact.
  */
 public record SchemaHistory(List<Row> rows) {
 
@@ -23,7 +24,7 @@ public record SchemaHistory(List<Row> rows) {
     public enum Verdict {
         /** The version was never attempted. */
         PENDING,
-        /** The version was attempted but never succeeded (the next run retries it). */
+        /** The version was attempted but never succeeded (the next run retries it as the next attempt). */
         FAILED_ONLY,
         /** The version succeeded with another digest than the file has now: the applied file was edited. */
         DIGEST_CHANGED,
@@ -37,9 +38,23 @@ public record SchemaHistory(List<Row> rows) {
         rows = List.copyOf(rows);
     }
 
-    /** The attempts of one version, oldest first. */
+    /** The attempts of one version, by attempt number. */
     public List<Row> attemptsOf(int version) {
-        return rows.stream().filter(row -> row.version() == version).toList();
+        return rows.stream().filter(row -> row.version() == version).sorted(Comparator.comparingInt(Row::attempt)).toList();
+    }
+
+    /** The number of the next attempt of a version: the highest recorded plus one, 1 for a version never attempted. */
+    public int nextAttemptOf(int version) {
+        return attemptsOf(version).stream().mapToInt(Row::attempt).max().orElse(0) + 1;
+    }
+
+    /**
+     * A succeeded attempt of the version of the file has the digest of the file: the version is applied, by this runner or by
+     * another one that applied it at the same time.
+     */
+    public boolean isAppliedWithDigestOf(MigrationFile file) {
+        return attemptsOf(file.version()).stream()
+                .anyMatch(row -> row.outcome() == Outcome.SUCCEEDED && Objects.equals(row.digest(), file.digest()));
     }
 
     /**
@@ -51,7 +66,7 @@ public record SchemaHistory(List<Row> rows) {
         for (Row row : rows) {
             if (files.stream().noneMatch(file -> file.version() == row.version())) {
                 throw new InfrastructureException(InfrastructureCode.SCHEMA_APPLIED_FILE_MISSING,
-                        List.of(String.valueOf(row.version()), row.fileName()));
+                        List.of(String.valueOf(row.version()), row.script()));
             }
         }
     }
@@ -63,7 +78,7 @@ public record SchemaHistory(List<Row> rows) {
      */
     public void requireNothingLaterApplied(MigrationFile file) {
         for (Row row : rows) {
-            if (row.version() > file.version() && row.outcome() == Outcome.SUCCESS) {
+            if (row.version() > file.version() && row.outcome() == Outcome.SUCCEEDED) {
                 throw new InfrastructureException(InfrastructureCode.SCHEMA_OUT_OF_ORDER,
                         List.of(String.valueOf(file.version()), file.fileName(), String.valueOf(row.version())));
             }
@@ -77,22 +92,15 @@ public record SchemaHistory(List<Row> rows) {
             return Verdict.PENDING;
         }
         return lastSuccess(attempts).map(applied -> {
-            if (!Objects.equals(applied.sha256(), file.digest())) {
+            if (!Objects.equals(applied.digest(), file.digest())) {
                 return Verdict.DIGEST_CHANGED;
             }
             return attempts.getLast().outcome() == Outcome.FAILED ? Verdict.LATEST_FAILED : Verdict.INTACT;
         }).orElse(Verdict.FAILED_ONLY);
     }
 
-    /** Whether the latest attempt of the version is a failure that was recorded for exactly this file. */
-    public boolean latestFailureIsOf(MigrationFile file) {
-        List<Row> attempts = attemptsOf(file.version());
-        return !attempts.isEmpty() && attempts.getLast().outcome() == Outcome.FAILED
-                && Objects.equals(attempts.getLast().sha256(), file.digest());
-    }
-
     /**
-     * The failure for a file whose applied digest is not its digest.
+     * The failure for a file whose applied digest is not its digest. Nothing is recorded for it: a changed file is no attempt.
      *
      * @throws IllegalStateException when the version never succeeded (only {@link Verdict#DIGEST_CHANGED} has a digest)
      */
@@ -100,7 +108,7 @@ public record SchemaHistory(List<Row> rows) {
         Row applied = lastSuccess(attemptsOf(file.version()))
                 .orElseThrow(() -> new IllegalStateException("V" + file.version() + " has no applied digest"));
         return new InfrastructureException(InfrastructureCode.SCHEMA_DIGEST_MISMATCH, List.of(
-                String.valueOf(file.version()), file.fileName(), applied.sha256().hex(), file.digest().hex()));
+                String.valueOf(file.version()), file.fileName(), applied.digest().hex(), file.digest().hex()));
     }
 
     /** The failure for a version whose latest recorded attempt is FAILED. */
@@ -116,6 +124,6 @@ public record SchemaHistory(List<Row> rows) {
     }
 
     private static Optional<Row> lastSuccess(List<Row> attempts) {
-        return attempts.reversed().stream().filter(row -> row.outcome() == Outcome.SUCCESS).findFirst();
+        return attempts.reversed().stream().filter(row -> row.outcome() == Outcome.SUCCEEDED).findFirst();
     }
 }

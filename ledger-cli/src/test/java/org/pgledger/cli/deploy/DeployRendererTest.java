@@ -7,6 +7,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -55,7 +56,6 @@ class DeployRendererTest {
     private static Map<String, String> withSite() {
         Map<String, String> values = values();
         values.put(DeployOptions.SCHEMA, "ledger");
-        values.put(DeployOptions.LONG_TEXT_TYPE, "TEXT");
         values.put(DeployOptions.MCP_HOST, "mcp.example.org");
         values.put(DeployOptions.ADMIN_HOST, "admin.example.org");
         values.put(DeployOptions.NGINX_CONF, "/etc/nginx/conf.d/pg-ledger-mcp.conf");
@@ -138,7 +138,9 @@ class DeployRendererTest {
         assertThat(shared.getProperty("ledger.jdbc.url")).isEqualTo("jdbc:postgresql://db.example.org:5432/ledger");
         assertThat(shared.getProperty("ledger.jdbc.username")).isEqualTo("ledger_app");
         assertThat(shared.getProperty("ledger.schema.name")).isEqualTo("ledger");
-        assertThat(shared.getProperty("ledger.schema.long-text-type")).isEqualTo("TEXT");
+        // the long text type of the schema files is read from the driver (LongTextType): there is no setting for it
+        assertThat(Arrays.asList(shared.getPropertyNames())).filteredOn(name -> name.startsWith("ledger.schema."))
+                .containsExactly("ledger.schema.name");
 
         EnumerablePropertySource<?> mcp = yaml(file(files, "/etc/pg-ledger-mcp/mcp.yaml"));
         assertThat(mcp.getProperty("server.port")).isEqualTo(8765);
@@ -255,7 +257,6 @@ class DeployRendererTest {
                 Arguments.of(DeployOptions.APP_ACCOUNT, "a b"), Arguments.of(DeployOptions.APP_ACCOUNT, "a;drop"),
                 Arguments.of(DeployOptions.APP_ACCOUNT, "1abc"),
                 Arguments.of(DeployOptions.SCHEMA, "Ledger"), Arguments.of(DeployOptions.SCHEMA, "led-ger"),
-                Arguments.of(DeployOptions.LONG_TEXT_TYPE, "TEXT\nx"),
                 Arguments.of(DeployOptions.MCP_PORT, "80"), Arguments.of(DeployOptions.MCP_PORT, "70000"),
                 Arguments.of(DeployOptions.MCP_PORT, "abc"), Arguments.of(DeployOptions.ADMIN_PORT, "8765"),
                 Arguments.of(DeployOptions.MCP_HOST, "Mcp.Example.org"), Arguments.of(DeployOptions.MCP_HOST, "mcp_host.example.org"),

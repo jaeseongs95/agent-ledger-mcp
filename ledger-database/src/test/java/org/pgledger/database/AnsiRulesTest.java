@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.pgledger.database.schema.SchemaProperties;
+import org.pgledger.database.schema.LongTextType;
 import org.pgledger.database.support.DdlModel;
 import org.pgledger.database.support.SqlText;
 import org.pgledger.database.support.SqlText.Banned;
@@ -81,7 +81,7 @@ class AnsiRulesTest {
     }
 
     private static SqlText schemaFile(Path file) {
-        return new SqlText(file.getFileName().toString(), read(file).replace("${longtext}", SchemaProperties.DEFAULT_LONG_TEXT_TYPE));
+        return new SqlText(file.getFileName().toString(), read(file).replace(LongTextType.PLACEHOLDER, "TEXT"));
     }
 
     /** All string literals of a Java source file, adjacent literals joined (the way the SQL text is built). */
@@ -237,7 +237,7 @@ class AnsiRulesTest {
     void oneTextForEveryDbms() {
         assertThat(files(SCHEMA, ".*").stream().map(p -> p.getFileName().toString()))
                 .allMatch(name -> MIGRATION_FILE_NAME.matcher(name).matches());
-        assertThat(schemaFiles().map(s -> s.raw().replace("${longtext}", "")))
+        assertThat(schemaFiles().map(s -> s.raw().replace(LongTextType.PLACEHOLDER, "")))
                 .noneMatch(text -> text.contains("${") || text.toLowerCase(Locale.ROOT).contains("dbms:"));
     }
 
@@ -251,10 +251,25 @@ class AnsiRulesTest {
 
     @ParameterizedTest
     @MethodSource("repositorySources")
-    @DisplayName("ARC-011 (text part): no statement updates or deletes history rows or the schema history")
+    @DisplayName("ARC-011 (text part): no statement updates or deletes history rows or the schema history, but the one that turns the own row of an attempt to SUCCEEDED (RUN-011)")
     void noStatementChangesHistory(SqlText sql) {
-        assertThat(sql.raw().toUpperCase(Locale.ROOT)).as(sql.name())
+        // the common form of the migration history: the last statement of an attempt changes its own row (the key of the attempt, the
+        // outcome FAILED it was inserted with) and no other; nothing else may update or delete the history
+        String own = "UPDATE schema_history SET outcome = 'SUCCEEDED' WHERE version = :version AND attempt = :attempt "
+                + "AND outcome = 'FAILED'";
+        assertThat(sql.raw().toUpperCase(Locale.ROOT).replace(own.toUpperCase(Locale.ROOT), "")).as(sql.name())
                 .doesNotContainPattern("(UPDATE|DELETE\\s+FROM|TRUNCATE\\s+TABLE)\\s+(SCHEMA_)?HISTORY\\b");
+    }
+
+    @Test
+    @DisplayName("RUN-011 (text part): the history of the migration is changed by one statement only, the update of the own row of an attempt, and never deleted from")
+    void theHistoryIsChangedByOneStatement() {
+        List<SqlText> all = repositorySources().toList();
+
+        assertThat(all.stream().map(s -> s.raw().toUpperCase(Locale.ROOT)).flatMap(text -> Stream.of(text.split("UPDATE SCHEMA_HISTORY", -1)).skip(1))
+                .toList()).as("the statements that update the schema history").hasSize(1).singleElement().asString()
+                .startsWith(" SET OUTCOME = 'SUCCEEDED' WHERE VERSION = :VERSION AND ATTEMPT = :ATTEMPT AND OUTCOME = 'FAILED'");
+        assertThat(all.stream().map(s -> s.raw().toUpperCase(Locale.ROOT))).noneMatch(text -> text.contains("DELETE FROM SCHEMA_HISTORY"));
     }
 
     @ParameterizedTest

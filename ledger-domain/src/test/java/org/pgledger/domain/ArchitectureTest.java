@@ -108,6 +108,17 @@ class ArchitectureTest {
     }
 
     @Test
+    void negativeControl_theModelRuleSkipsGeneratedClassesButRefusesAHandWrittenPlainClass() {
+        JavaClasses fixture = new ClassFileImporter().importPackages("org.pgledger.archfixture");
+        assertThat(fixture.contain("org.pgledger.archfixture.SwitchOverEnum$1")).as("javac made the switch map").isTrue();
+
+        String report = String.join("\n", ArchitectureRules.modelTypesAreRecordsEnumsOrInterfaces("org.pgledger.archfixture")
+                .evaluate(fixture).getFailureReport().getDetails());
+        assertThat(report).as("the hand-written plain class is refused").contains("org.pgledger.archfixture.BadCode");
+        assertThat(report).as("the generated switch map and the records are not").doesNotContain("SwitchOverEnum");
+    }
+
+    @Test
     void negativeControl_theRulesDetectBadCode() {
         JavaClasses bad = new ClassFileImporter().importPackages("org.pgledger.archfixture");
         assertThat(bad.contain("org.pgledger.archfixture.BadCode")).isTrue();

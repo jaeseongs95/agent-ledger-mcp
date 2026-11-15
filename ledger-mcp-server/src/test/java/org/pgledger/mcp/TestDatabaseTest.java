@@ -33,9 +33,9 @@ class TestDatabaseTest {
     @Test
     @DisplayName("1.4a: the schema was built by the real V files, every attempt succeeded")
     void theSchemaIsBuiltByTheRealFiles(@Autowired DataSource dataSource) {
-        long failed = JdbcClient.create(dataSource).sql("SELECT COUNT(*) FROM schema_history WHERE outcome <> 'SUCCESS'")
+        long failed = JdbcClient.create(dataSource).sql("SELECT COUNT(*) FROM schema_history WHERE outcome <> 'SUCCEEDED'")
                 .query(Long.class).single();
-        long built = JdbcClient.create(dataSource).sql("SELECT COUNT(*) FROM schema_history WHERE outcome = 'SUCCESS'")
+        long built = JdbcClient.create(dataSource).sql("SELECT COUNT(*) FROM schema_history WHERE outcome = 'SUCCEEDED'")
                 .query(Long.class).single();
 
         assertThat(failed).isZero();

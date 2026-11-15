@@ -19,7 +19,7 @@ import org.pgledger.hook.keys.SessionKeyStore;
 import org.pgledger.testing.BroadAccess;
 
 /**
- * SFR-020 to SFR-023 (docs/testing/TEST_CASES.md section 41): the read rule of the session keys in the personal edition. An existing
+ * SFR-020 to SFR-023 (docs/testing/TEST_CASES.md section 42): the read rule of the session keys in the personal edition. An existing
  * key folder and key file that other accounts may reach, or that are reached through a link, are read as they are and are not changed;
  * a directory at the place of the key file and an empty key file are refused; what the hook creates is owner-only even below a
  * folder that is open to everybody. The cases choose by the attribute views of the file system (POSIX bits or an ACL), never by the

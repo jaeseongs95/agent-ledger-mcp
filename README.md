@@ -206,7 +206,6 @@ There is no command that prints a stored secret.
 | `ledger.jdbc.pool-size` | all | connection pool size, default 10 |
 | `ledger.jdbc.driver` | all | the registered driver, written by `driver-register` (jar, class, SHA-256), read at start |
 | `ledger.schema.name` | all | schema that holds the tables; created by `migrate` when missing; absent means the default schema of the account |
-| `ledger.schema.long-text-type` | all | the long text type of the schema files, the only per-database part of the DDL, default `TEXT` |
 | `ledger.schema.require-utc` | servers, CLI | refuse to start when the JVM or the database session is not UTC, default true |
 | `ledger.attestation.window` | servers | how far the time of an attestation may be from the server time, default `PT5M` |
 | `ledger.mcp.token` | MCP server, `mcp-check` | the bearer token of the agents, at least 16 characters (secret) |
@@ -320,7 +319,6 @@ The options of `deploy/install.sh` are given as `--name=value`; the ones it does
 | `--app-account=<account>` | the application account |
 | `--jdbc-url=<url>` | the JDBC URL of the ledger database (no password in it) |
 | `--schema=<name>` | `ledger.schema.name`, optional |
-| `--long-text-type=<type>` | `ledger.schema.long-text-type`, optional |
 | `--mcp-port=<n>` | the loopback port of the MCP server, default 8765 |
 | `--admin-port=<n>` | the loopback port of the admin web, default 8865 |
 | `--mcp-host=<host>[,<host>...]` | the public host name of the MCP server, or a comma list of several (each once, at most 10, lower case, no port); every name is allowed in its `Host` check and served by the nginx site. It can be given without `--admin-host` |
@@ -512,7 +510,18 @@ and the ports from it when an option is not given, and the installers ask for th
 3. Install the client hooks (see Client hooks), register the key of each session with `key-register` and issue the grants with `grant`.
 
 `migrate` applies the files `V{n}__*.sql` in order and records every attempt, with the SHA-256 of the file, in the table
-`schema_history`. A file that was changed after it was applied stops every process at start.
+`schema_history`: one row for each attempt of a version, with the columns `version`, `attempt`, `script`, `digest`, `applied_at` and
+`outcome` (`SUCCEEDED` or `FAILED`). An attempt is one transaction. It starts by inserting its own row as `FAILED` and ends by turning that
+one row to `SUCCEEDED`; if the file fails, the attempt is rolled back, the row stays `FAILED`, and the next run tries the version again as
+the next attempt without changing or deleting the earlier rows. Two `migrate` runs at the same time are safe: the second waits in the
+database for the first and then skips what the first has applied. A file that was changed after it was applied stops `migrate` before it
+applies anything, and every process at start; no row is added for it. The database must use the encoding UTF-8, and the long text type of
+the schema files is taken from the JDBC driver (there is no setting for it).
+
+The ledger does not use Flyway: a current Flyway release needs a module for each DBMS and refuses a database it has none for, while the
+ledger asks for ANSI SQL on any database whose driver you register. And the ledger migrates by this explicit command and not when a server
+starts, because the servers never hold the password of the DDL account: a server only checks the schema at start and, when files are
+pending, refuses to start and names `ledger-cli migrate`, so a server that is taken over cannot change the schema.
 
 ## ledger-cli
 
@@ -543,9 +552,9 @@ service user), and every owner operation is recorded with that user.
 | `attachments-rekey` | `attachments-rekey --from=<keyId>` | write the attachment files of the key `<keyId>` again under the active key `ledger.attachments.active-key-id` (a different key); the old files are moved to `orphans/` by `attachments-check` after `ledger.attachments.orphan-grace` |
 | `attachments-key-create` | `attachments-key-create` | create a new 256-bit key file in the key directory (readable by the service account only) and print its key id, never the key; set `ledger.attachments.active-key-id` to it to write new uploads with it |
 | `mcp-check` | `mcp-check [--url=<url>] [--ledger.mcp.token=<token>]` | connect to a running MCP server and check its tools |
-| `render-deploy` | `render-deploy --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--long-text-type=<type>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--from-1x-env=<file>] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>] [--check]` | write the service definitions (systemd units, or WinSW configurations on Windows), the settings and the optional nginx site; the installers call it |
-| `prepare-host` | `prepare-host --jars=<dir> --driver-jar=<file> [--winsw=<file>] --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--long-text-type=<type>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--from-1x-env=<file>] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>]` | prepare the files of the host (run as root, or elevated on Windows): the folders with owner and mode, or their ACLs, the copies of the jars and the driver (on Windows also of WinSW), and what `render-deploy` writes; the installers call it |
-| `seal-host` | `seal-host --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--long-text-type=<type>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--from-1x-env=<file>] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>]` | Windows, last: give LocalService its access and hand the secrets over to it; the installer calls it |
+| `render-deploy` | `render-deploy --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--from-1x-env=<file>] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>] [--check]` | write the service definitions (systemd units, or WinSW configurations on Windows), the settings and the optional nginx site; the installers call it |
+| `prepare-host` | `prepare-host --jars=<dir> --driver-jar=<file> [--winsw=<file>] --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--from-1x-env=<file>] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>]` | prepare the files of the host (run as root, or elevated on Windows): the folders with owner and mode, or their ACLs, the copies of the jars and the driver (on Windows also of WinSW), and what `render-deploy` writes; the installers call it |
+| `seal-host` | `seal-host --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--from-1x-env=<file>] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>]` | Windows, last: give LocalService its access and hand the secrets over to it; the installer calls it |
 | `install-default` | `install-default <name>` | print one default of the installation from the seed bundle (`instance-name`, `mcp-port` or `admin-port`); the installers ask for their defaults with it |
 | `tls-issue` | `tls-issue --mcp-host=<host>[,<host>...] [--admin-host=<host>[,<host>...]] [--name=<name>] [--webroot=<dir>] [--tls-dir=<dir>] [--acme-directory=<url>] [--acme-email=<address>] [--agree-tos]` | order a certificate for the host names given from a certificate authority that speaks ACME and write `fullchain.pem` and `privkey.pem`; the first run creates the account and needs `--agree-tos`; see Automatic certificate |
 | `tls-renew` | `tls-renew --mcp-host=<host>[,<host>...] [--admin-host=<host>[,<host>...]] [--name=<name>] [--webroot=<dir>] [--tls-dir=<dir>] [--acme-directory=<url>] [--renew-before-days=<n>]` | order a new certificate when the present one expires within `--renew-before-days` (default 30) or does not name exactly the host names given, and otherwise do nothing; the timer of `--tls-acme` runs it |

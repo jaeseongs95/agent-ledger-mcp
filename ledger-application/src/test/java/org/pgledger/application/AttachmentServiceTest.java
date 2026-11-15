@@ -100,6 +100,9 @@ class AttachmentServiceTest {
         assertThat(status.state()).isEqualTo("COMPLETED");
         assertThat(status.size()).isEqualTo(body.length);
         assertThat(status.sha256()).isEqualTo(Uploads.sha(body));
+        assertThat(status.expiresAt()).as("a finished upload is answered in the attachment form: no expiry").isNull();
+        assertThat(status.received()).isEqualTo(body.length);
+        assertThat(status.sequence()).as("the attachment form has no sequence").isNull();
         StorageKey storageKey = Uploads.currentFile(ctx, finished.attachmentId()).storageKey();
         assertThat(status.toString()).as("no storage key and no path").doesNotContain(storageKey.hex())
                 .doesNotContain(s.bean(AttachmentProperties.class).directory().toString());

@@ -66,7 +66,7 @@ class SetupCommandTest {
     /** @param accountMayUseTheSchema whether the operator has done the step that lets the application account into the schema */
     private Outcome run(Cli cli, RecordingOutput output, boolean accountMayUseTheSchema, String... args) {
         return cli.withDatabase(database.dataSource()).withApplicationAccount(database.applicationDataSource(accountMayUseTheSchema))
-                .asProcessUser("alice").withArguments("--ledger.schema.long-text-type=" + TestLedgerDatabase.longTextType())
+                .asProcessUser("alice")
                 .run(tmp.resolve("secrets"), null, output, args);
     }
 

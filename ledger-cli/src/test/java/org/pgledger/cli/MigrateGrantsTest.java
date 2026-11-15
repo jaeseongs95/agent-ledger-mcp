@@ -52,7 +52,6 @@ class MigrateGrantsTest {
 
     private Outcome run(Cli cli, RecordingOutput output, String... args) {
         return cli.withDatabase(database.dataSource()).asProcessUser("alice")
-                .withArguments("--ledger.schema.long-text-type=" + TestLedgerDatabase.longTextType())
                 .run(tmp.resolve("secrets"), null, output, args);
     }
 

@@ -24,14 +24,9 @@ final class ServiceSettings {
         Text.line(yaml, "  jdbc:");
         Text.line(yaml, "    url: " + Text.quoted(p.jdbcUrl()));
         Text.line(yaml, "    username: " + Text.quoted(p.appAccount()));
-        if (p.schema() != null || p.longTextType() != null) {
+        if (p.schema() != null) {
             Text.line(yaml, "  schema:");
-            if (p.schema() != null) {
-                Text.line(yaml, "    name: " + Text.quoted(p.schema()));
-            }
-            if (p.longTextType() != null) {
-                Text.line(yaml, "    long-text-type: " + Text.quoted(p.longTextType()));
-            }
+            Text.line(yaml, "    name: " + Text.quoted(p.schema()));
         }
         // The attachments: where the files are and where the keys are (every key of the ten keeps its default). The key that new
         // uploads are written with, ledger.attachments.active-key-id, is not rendered: the installer cannot know it (setup makes

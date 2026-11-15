@@ -25,7 +25,7 @@ import org.pgledger.domain.value.Sha256;
 import org.pgledger.testing.BroadAccess;
 
 /**
- * SFR-001 to SFR-005 (docs/testing/TEST_CASES.md section 41): the read rule of the secret files of the attachments in the personal
+ * SFR-001 to SFR-005 (docs/testing/TEST_CASES.md section 42): the read rule of the secret files of the attachments in the personal
  * edition. The key folder, the key files, the storage folder and its files are read and used when other accounts may reach them, and
  * when they are reached through a link; a path that is not a regular file (not a folder where a folder belongs) or an empty key file
  * is refused; what the product creates is still owner-only. No database: the storage is built by hand on a temporary folder.

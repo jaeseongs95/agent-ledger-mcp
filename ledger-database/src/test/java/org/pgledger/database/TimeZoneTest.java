@@ -20,6 +20,17 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.pgledger.database.repository.AttachmentFileRepository;
+import org.pgledger.database.repository.AttachmentRepository;
+import org.pgledger.database.repository.PasskeyCodeRepository;
+import org.pgledger.database.repository.PasskeyRepository;
+import org.pgledger.database.repository.UploadStagingRepository;
+import org.pgledger.domain.model.Attachment;
+import org.pgledger.domain.model.AttachmentFile;
+import org.pgledger.domain.model.OwnerPasskey;
+import org.pgledger.domain.model.UploadStaging;
+import org.pgledger.domain.rule.UploadState;
+import org.pgledger.domain.value.StorageKey;
 import org.pgledger.database.repository.Counter;
 import org.pgledger.database.repository.DefectCaseRepository;
 import org.pgledger.database.repository.DefectFixRepository;
@@ -190,6 +201,18 @@ class TimeZoneTest {
             expected.put("history.occurred_at", I);
             expected.put("request_receipt.created_at", I);
             expected.put("schema_history.applied_at", LedgerTestContext.START);
+            expected.put("owner_passkey.registered_at", I);
+            expected.put("owner_passkey_revocation.revoked_at", I.plusSeconds(9));
+            expected.put("owner_passkey_code.issued_at", I);
+            expected.put("owner_passkey_code.expires_at", I.plusSeconds(900));
+            expected.put("owner_passkey_code.used_at", I.plusSeconds(8));
+            expected.put("upload_staging.expires_at", I.plusSeconds(600));
+            expected.put("upload_staging.created_at", I);
+            expected.put("upload_staging.updated_at", I.plusSeconds(10));
+            expected.put("attachment.created_at", I);
+            expected.put("attachment_file.created_at", I.plusSeconds(11));
+            // the list of the columns is SchemaCatalogTest.TIMESTAMP_COLUMNS (the columns of the catalogue); here each one also
+            // has the value it was written with
             assertThat(expected.keySet()).containsExactlyInAnyOrderElementsOf(SchemaCatalogTest.TIMESTAMP_COLUMNS);
             Map<String, LocalDateTime> actual = expected.keySet().stream().collect(Collectors.toMap(
                     column -> column, column -> rawWall(ctx, "SELECT MAX(" + column.substring(column.indexOf('.') + 1)
@@ -236,6 +259,32 @@ class TimeZoneTest {
                 "a reason of enough length", null, null, null, new RequestId(java.util.UUID.randomUUID()), null)));
         ctx.tx(() -> ctx.bean(ReceiptRepository.class).insert(Receipt.reserve(new RequestId(java.util.UUID
                 .randomUUID()), ReceiptOperation.SAVE, Sha256.of("a".repeat(64)), Seed.ALICE, Channel.AUTHOR, I)));
+        PasskeyRepository passkeys = ctx.bean(PasskeyRepository.class);
+        ctx.tx(() -> {
+            passkeys.insert(new OwnerPasskey("credential-1", "owner", "public-key", 0, 1, 0, 0, null, "attestation",
+                    "laptop", "AAAA-BBBB-CCCC-DDDD", "owner", I));
+            passkeys.revoke("credential-1", "owner", I.plusSeconds(9));
+            return null;
+        });
+        PasskeyCodeRepository codes = ctx.bean(PasskeyCodeRepository.class);
+        ctx.tx(() -> {
+            codes.insert("h".repeat(64), "owner", I, I.plusSeconds(900));
+            return codes.spend("h".repeat(64), I.plusSeconds(8));
+        });
+        String uploadId = java.util.UUID.randomUUID().toString();
+        StorageKey uploadKey = StorageKey.of("a".repeat(32));
+        StorageKey fileKey = StorageKey.of("b".repeat(32));
+        Sha256 sha = Sha256.of("c".repeat(64));
+        ctx.tx(() -> {
+            ctx.bean(UploadStagingRepository.class).insert(new UploadStaging(uploadId, Seed.ALICE, "op-tz", "f.txt",
+                    "text/plain", 1, sha, 0, 0, 0, null, uploadKey, "k1", UploadState.STAGING, I.plusSeconds(600), I,
+                    I.plusSeconds(10)));
+            ctx.bean(AttachmentRepository.class).insert(new Attachment(uploadId, "f.txt", "text/plain", 1, sha,
+                    Seed.ALICE, I));
+            ctx.bean(AttachmentFileRepository.class).insert(new AttachmentFile(uploadId, 1, fileKey, "k1",
+                    I.plusSeconds(11)));
+            return null;
+        });
         assertThat(JdbcClient.create(ctx.pool()).sql("SELECT COUNT(*) FROM defect").query(Integer.class).single())
                 .isEqualTo(1);
     }

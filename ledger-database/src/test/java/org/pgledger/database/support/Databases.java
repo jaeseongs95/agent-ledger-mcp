@@ -4,7 +4,6 @@ import com.zaxxer.hikari.HikariDataSource;
 import java.util.ArrayList;
 import java.util.List;
 import javax.sql.DataSource;
-import org.pgledger.database.schema.SchemaProperties;
 import org.pgledger.testing.database.TestDatabase;
 import org.pgledger.testing.database.TestSchema;
 
@@ -15,9 +14,6 @@ import org.pgledger.testing.database.TestSchema;
  * leaves is dropped by the shutdown hook of the test JVM and by the sweep of the next run.
  */
 public final class Databases implements AutoCloseable {
-
-    /** The long text type of the schema files: the default of the product. */
-    public static final String LONG_TEXT = SchemaProperties.DEFAULT_LONG_TEXT_TYPE;
 
     private final List<TestSchema> schemas = new ArrayList<>();
     private final List<String> reserved = new ArrayList<>();

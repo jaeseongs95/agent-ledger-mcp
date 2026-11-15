@@ -60,6 +60,11 @@ class SchemaCatalogTest {
     private LedgerTestContext ctx;
     private JdbcClient jdbc;
 
+    /** A storage key that no other test of the shared test schema uses (32 hex characters; the column is unique). */
+    private static String uniqueKey() {
+        return java.util.UUID.randomUUID().toString().replace("-", "");
+    }
+
     @BeforeEach
     void setUp(LedgerTestContext context) {
         ctx = context;
@@ -177,8 +182,8 @@ class SchemaCatalogTest {
                         + "TIMESTAMP '2026-11-05 10:00:00', 'k900002')",
                 "INSERT INTO owner_audit (id, occurred_at, actor, operation, subject) VALUES (900004, "
                         + "TIMESTAMP '2026-11-05 10:00:00', 'owner', 'OTHER', 'claude:a|p')",
-                "INSERT INTO schema_history (version, file_name, sha256, applied_at, outcome) VALUES (99, 'V99__x.sql', "
-                        + "'aa', TIMESTAMP '2026-11-05 10:00:00', 'MAYBE')");
+                "INSERT INTO schema_history (version, attempt, script, digest, applied_at, outcome) VALUES (99, 1, "
+                        + "'V99__x.sql', '" + "a".repeat(64) + "', TIMESTAMP '2026-11-05 10:00:00', 'MAYBE')");
     }
 
     @ParameterizedTest
@@ -208,12 +213,52 @@ class SchemaCatalogTest {
                 .singleElement().satisfies(c -> assertThat(c.nullable()).isFalse());
     }
 
+    /** RUN-010 (SCH-012): the history table in the common form of the three products (format 2). */
     @Test
-    void sch012_schemaHistoryHasExactlyItsColumns() {
+    void sch012_run010_schemaHistoryHasExactlyTheColumnsOfTheCommonForm() {
         assertThat(columns().stream().filter(c -> "schema_history".equals(c.table())).map(Column::name))
-                .containsExactlyInAnyOrder("version", "file_name", "sha256", "applied_at", "outcome");
-        assertThat(jdbc.sql("SELECT COUNT(*) FROM schema_history WHERE outcome = 'SUCCESS'").query(Integer.class)
+                .containsExactlyInAnyOrder("version", "attempt", "script", "digest", "applied_at", "outcome");
+        record Shape(String name, String type, Integer length, String nullable) {
+        }
+        assertThat(jdbc.sql("SELECT column_name, data_type, character_maximum_length, is_nullable FROM "
+                + "information_schema.columns WHERE table_schema = CURRENT_SCHEMA AND table_name = 'schema_history' "
+                + "ORDER BY column_name").query((rs, n) -> new Shape(rs.getString(1), rs.getString(2),
+                        (Integer) rs.getObject(3), rs.getString(4))).list()).containsExactly(
+                new Shape("applied_at", "timestamp without time zone", null, "NO"),
+                new Shape("attempt", "integer", null, "NO"), new Shape("digest", "character", 64, "NO"),
+                new Shape("outcome", "character varying", 10, "NO"), new Shape("script", "character varying", 255, "NO"),
+                new Shape("version", "bigint", null, "NO"));
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM schema_history WHERE outcome = 'SUCCEEDED'").query(Integer.class)
                 .single()).isGreaterThanOrEqualTo(3);
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM schema_history WHERE outcome <> 'SUCCEEDED'").query(Integer.class)
+                .single()).as("a migrated schema has no failed attempt").isZero();
+    }
+
+    /** RUN-010, RUN-016: the key is (version, attempt); the outcome is SUCCEEDED or FAILED and nothing else. */
+    @Test
+    void run016_theHistoryKeyAndTheOutcomeCheck() {
+        String insert = "INSERT INTO schema_history (version, attempt, script, digest, applied_at, outcome) VALUES "
+                + "(98, :attempt, 'V98__x.sql', :digest, TIMESTAMP '2026-11-05 10:00:00', :outcome)";
+        String digest = "a".repeat(64);
+        try {
+            jdbc.sql(insert).param("attempt", 1).param("digest", digest).param("outcome", "FAILED").update();
+            jdbc.sql(insert).param("attempt", 2).param("digest", digest).param("outcome", "SUCCEEDED").update();
+
+            assertThat(catchThrowable(() -> jdbc.sql(insert).param("attempt", 2).param("digest", digest)
+                    .param("outcome", "FAILED").update())).as("the same (version, attempt)")
+                    .isInstanceOf(org.springframework.dao.DuplicateKeyException.class);
+            for (String outcome : List.of("SUCCESS", "MAYBE", "succeeded", "")) {
+                Throwable refused = catchThrowable(() -> jdbc.sql(insert).param("attempt", 3).param("digest", digest)
+                        .param("outcome", outcome).update());
+                assertThat(refused).as("outcome '%s'", outcome).isInstanceOf(DataIntegrityViolationException.class);
+                assertThat(sqlState(refused)).startsWith("23");
+            }
+            assertThat(jdbc.sql("SELECT attempt FROM schema_history WHERE version = 98 ORDER BY attempt")
+                    .query(Integer.class).list()).containsExactly(1, 2);
+        } finally {
+            // the schema of the class is shared by its tests (SCH-012 counts the failed attempts of a migrated schema): leave it as found
+            jdbc.sql("DELETE FROM schema_history WHERE version = 98").update();
+        }
     }
 
     @Test
@@ -393,12 +438,12 @@ class SchemaCatalogTest {
                 + "TIMESTAMP '2026-11-05 10:00:00')";
         String sha = "a".repeat(64);
         jdbc.sql(insert).param("id", "11111111-1111-1111-1111-111111111111").param("sha", sha)
-                .param("sk", "1".repeat(32)).param("state", "STAGING").update();
+                .param("sk", uniqueKey()).param("state", "STAGING").update();
         Throwable sameOperation = catchThrowable(() -> jdbc.sql(insert).param("id", "22222222-2222-2222-2222-222222222222")
-                .param("sha", sha).param("sk", "2".repeat(32)).param("state", "STAGING").update());
+                .param("sha", sha).param("sk", uniqueKey()).param("state", "STAGING").update());
         assertThat(sameOperation).isInstanceOf(org.springframework.dao.DuplicateKeyException.class);
         Throwable badState = catchThrowable(() -> jdbc.sql(insert.replace("'op-1'", "'op-2'"))
-                .param("id", "33333333-3333-3333-3333-333333333333").param("sha", sha).param("sk", "3".repeat(32))
+                .param("id", "33333333-3333-3333-3333-333333333333").param("sha", sha).param("sk", uniqueKey())
                 .param("state", "DELETING").update());
         assertThat(badState).isInstanceOf(DataIntegrityViolationException.class);
         assertThat(sqlState(badState)).startsWith("23");

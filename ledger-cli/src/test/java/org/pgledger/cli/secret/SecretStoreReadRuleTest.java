@@ -17,7 +17,7 @@ import org.pgledger.cli.FailureException;
 import org.pgledger.testing.BroadAccess;
 
 /**
- * SFR-010 to SFR-013 (docs/testing/TEST_CASES.md section 41): the read rule of the secret store in the personal edition. A secrets
+ * SFR-010 to SFR-013 (docs/testing/TEST_CASES.md section 42): the read rule of the secret store in the personal edition. A secrets
  * directory and a secret file that other accounts may reach, or that are reached through a link, are read and replaced; a path of the
  * wrong kind and an empty secret file are refused; what the store creates is owner-only even below a folder that is open to everybody.
  * The cases choose by the attribute views of the file system (POSIX bits or an ACL), never by the name of the operating system.
