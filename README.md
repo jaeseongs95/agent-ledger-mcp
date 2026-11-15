@@ -513,9 +513,9 @@ the next attempt without changing or deleting the earlier rows. Two `migrate` ru
 database for the first and then skips what the first has applied. A file that was changed after it was applied stops `migrate` before it
 applies anything, and every process at start; no row is added for it. The database must use the encoding UTF-8, and the long text type of
 the schema files is decided by the database dialect of the ledger, which `migrate` takes from the product name of the connection (there is
-no setting for it): `TEXT` on PostgreSQL, `CHARACTER LARGE OBJECT` on H2, `CLOB` on Oracle, `CLOB(100M)` on Db2 (a Db2 `CLOB` without a
-length holds only 1M), `NVARCHAR(MAX)` on SQL Server and `LONGTEXT` on MariaDB and MySQL. Each declaration is taken from the official
-documentation of that database; the type information of the JDBC driver is not used, because a driver may report it in a form that cannot be judged.
+no setting for it). Each declaration is taken from the official documentation of the database it is for, and where a database sets a small
+default limit when the length is left out, the declaration carries a length. The type information of the JDBC driver is not used, because a
+driver may report it in a form that cannot be judged.
 
 The ledger does not use Flyway: a current Flyway release needs a module for each DBMS and refuses a database it has none for, while the
 ledger asks for ANSI SQL on any database whose driver you register. And the ledger migrates by this explicit command and not when a server
