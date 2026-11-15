@@ -1,6 +1,7 @@
 package org.pgledger.application.admin;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import org.pgledger.database.repository.CodeRevisionRepository;
 import org.pgledger.database.repository.CommonCodeRepository;
@@ -166,7 +167,7 @@ public class CommonCodeService {
         CommonCode wanted = new CommonCode(current.group(), current.code(), command.nameKo(), command.nameEn(),
                 command.descriptionKo(), command.descriptionEn(), sort, state,
                 directionOf(command, current.direction()), current.createdBy());
-        if (wanted.equals(current)) {
+        if (Objects.equals(wanted, current)) {
             // the code is what the owner asked for already: nothing to write, no revision, no audit row
             return new CodeResult(wanted, revision.current());
         }

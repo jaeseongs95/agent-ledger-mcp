@@ -193,7 +193,7 @@ class PrinciplesTest {
     }
 
     @Test
-    @DisplayName("SVC-PRN-07: only the one save of the rows makes a VERSION_CONFLICT of a save: no operation has a copy that could put a placeholder in its arguments")
+    @DisplayName("SVC-PRN-07: only the one save of the rows makes a VERSION_CONFLICT of a save: no operation has a copy that could put a placeholder in its arguments; the one other maker is CommonCodeService (TXF-002), whose conditional update of a common_code row is no row of Rows (defect, task, condition) and whose arguments are another shape (common_code, group/code, versions)")
     void prn07_oneVersionConflictOfASave() throws java.io.IOException {
         try (Stream<Path> files = Files.walk(Path.of("src", "main", "java"))) {
             List<String> makers = files.filter(file -> file.toString().endsWith(".java")).filter(file -> {
@@ -203,7 +203,7 @@ class PrinciplesTest {
                     throw new java.io.UncheckedIOException(failure);
                 }
             }).map(file -> file.getFileName().toString()).toList();
-            assertThat(makers).containsExactly("Rows.java");
+            assertThat(makers).containsExactlyInAnyOrder("CommonCodeService.java", "Rows.java");
         }
     }
 

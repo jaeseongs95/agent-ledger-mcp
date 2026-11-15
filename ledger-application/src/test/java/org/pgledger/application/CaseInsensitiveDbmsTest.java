@@ -74,9 +74,11 @@ class CaseInsensitiveDbmsTest {
 
             Rows rows = ctx.bean(Rows.class);
             Expect.failure(() -> rows.task(TaskId.of(lowerTask)), LookupCode.NOT_FOUND);
-            Expect.failure(() -> rows.lockedTask(TaskId.of(lowerTask), null), LookupCode.NOT_FOUND);
-            Expect.failure(() -> rows.lockedCondition(ConditionId.of(lowerCondition), null), LookupCode.NOT_FOUND);
-            assertThat(rows.lockedTask(TaskId.of(task), null).id().value()).isEqualTo(task);
+            // the lock of a row lasts until the transaction ends, so these calls run in the transaction of a caller
+            Expect.failure(() -> ctx.tx(() -> rows.lockedTask(TaskId.of(lowerTask), null)), LookupCode.NOT_FOUND);
+            Expect.failure(() -> ctx.tx(() -> rows.lockedCondition(ConditionId.of(lowerCondition), null)),
+                    LookupCode.NOT_FOUND);
+            assertThat(ctx.tx(() -> rows.lockedTask(TaskId.of(task), null)).id().value()).isEqualTo(task);
 
             Expect.failure(() -> ctx.bean(DetailService.class).task(lowerTask), LookupCode.NOT_FOUND);
             assertThat(ctx.bean(DetailService.class).task(task).id()).isEqualTo(task);
