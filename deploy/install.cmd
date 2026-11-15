@@ -33,7 +33,8 @@ if not defined JAVA echo install.cmd: java is not installed& exit /b 1
 set "JAVA=%JAVA:\=/%"
 rem The default name and the default MCP port are install defaults of the seed bundle, the one place the defaults are written: Java tells them.
 set "NAME=%~8"
-set "CLIJAR=%~1\ledger-cli.jar"
+rem The options of the JVM, written once (the preset of ledger-cli, JvmPreset, writes the same ones into the WinSW configurations; a test compares them).
+set "CLIJAR=%~1\ledger-cli.jar" & set "JVMOPTS=-Duser.timezone=UTC"
 if "%NAME%"=="" call :ask instance-name NAME abcdefghijklmnopqrstuvwxyz0123456789- || exit /b 1
 call :ask mcp-port MCPPORT 0123456789 || exit /b 1
 set "SVC=%NAME%" & set "ADMIN=%NAME%-admin"
@@ -41,13 +42,13 @@ rem prepare-host and seal-host call the Windows API through Java (the privileges
 set "ACCOUNT=NT AUTHORITY\LocalService"
 set "WHOME=C:\ProgramData\%NAME%" & set "HOME=C:/ProgramData/%NAME%"
 set RENDER=--platform=windows "--home=%HOME%" "--name=%NAME%" "--java=%JAVA%" "--jdbc-url=%~7" "--app-account=%~6" %~9
-set JARCMD="%JAVA%" -Duser.timezone=UTC -jar "%WHOME%\lib\ledger-cli.jar"
+set JARCMD="%JAVA%" %JVMOPTS% -jar "%WHOME%\lib\ledger-cli.jar"
 set CLI=%JARCMD% --ledger.secrets.home=%HOME%/etc
 rem The hint at the end names the port of the MCP server: the value after --mcp-port in the render options (cmd splits it at the
 rem equals sign), the install default (above) when there is none. Java validates the option itself before anything is changed.
 for %%P in (%~9) do if defined TAKE (set "MCPPORT=%%~P" & set "TAKE=") else if /i "%%~P"=="--mcp-port" set "TAKE=1"
 rem Every option, the name included, is validated by Java before anything is created (the name is only ever used in quotes until then).
-"%JAVA%" -Duser.timezone=UTC -jar "%~1\ledger-cli.jar" --ledger.secrets.home=C:/nonexistent render-deploy --check %RENDER% || exit /b 1
+"%JAVA%" %JVMOPTS% -jar "%~1\ledger-cli.jar" --ledger.secrets.home=C:/nonexistent render-deploy --check %RENDER% || exit /b 1
 
 rem WinSW: note which services run (the STATE of sc.exe is 4 when one does, in any language) and stop them (the service manager is not
 rem Java's to talk to; the jars of a running service are locked). The steps after this point run in :steps (given the first six arguments, which a routine reads as its own); a failure goes to :fail.
@@ -60,7 +61,7 @@ exit /b 0
 :steps
 rem Folders and their ACLs, the secrets of an earlier run given back for this run (first, and a failure here changes nothing), the jars,
 rem WinSW and the driver copied, the WinSW configurations and the settings rendered: Java (no secret is read: the home of this call has none).
-"%JAVA%" -Duser.timezone=UTC -jar "%~1\ledger-cli.jar" --ledger.secrets.home=C:/nonexistent prepare-host "--jars=%~1" "--winsw=%~2" "--driver-jar=%~3" %RENDER% || exit /b 1
+"%JAVA%" %JVMOPTS% -jar "%~1\ledger-cli.jar" --ledger.secrets.home=C:/nonexistent prepare-host "--jars=%~1" "--winsw=%~2" "--driver-jar=%~3" %RENDER% || exit /b 1
 rem Secrets: typed with hidden input or generated, as the administrator; an existing one is kept. The tokens are shown once.
 %CLI% secret-set ledger.jdbc.password --if-absent %STDIN% || exit /b 1
 %CLI% token-generate ledger.admin.token --print || exit /b 1
@@ -86,7 +87,7 @@ exit /b 1
 rem An install default from Java: %1 its name, %2 the variable that gets it, %3 the characters its form has. A command that fails prints a
 rem "!" after its own output (no default has one), and cmd has no pattern match, so delims= the characters of the form leaves nothing of a good value.
 set "%2="
-for /f "usebackq delims=" %%V in (`""%JAVA%" -Duser.timezone=UTC -jar "%CLIJAR%" --ledger.secrets.home=C:/nonexistent install-default %1 || echo !"`) do set "%2=%%V"
+for /f "usebackq delims=" %%V in (`""%JAVA%" %JVMOPTS% -jar "%CLIJAR%" --ledger.secrets.home=C:/nonexistent install-default %1 || echo !"`) do set "%2=%%V"
 if not defined %2 echo install.cmd: install-default %1 gave no value& exit /b 1
 call set "VALUE=%%%2%%"
 for /f "delims=%~3" %%X in ("%VALUE%") do echo install.cmd: install-default %1 is not of the form its value has& exit /b 1

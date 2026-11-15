@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -22,7 +23,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.stereotype.Component;
 
 /**
- * DPL-02 .. DPL-08: what differs between the operating system families is in the platform adapters ({@link ServicePlatform})
+ * DPL-02 .. DPL-09: what differs between the operating system families is in the platform adapters ({@link ServicePlatform})
  * and nowhere else. The syntax of a path as a platform writes it into its files (a Linux path, a drive path), the form of the
  * path of the Java runtime, whether there is an nginx site, and the steps that only some platforms have are the adapter's; the
  * code that is common to the platforms holds none of it.
@@ -141,6 +142,34 @@ class PlatformBoundaryTest {
                 .run(context -> assertThat(context).hasNotFailed().hasSingleBean(WindowsAccess.class));
         new ApplicationContextRunner().withUserConfiguration(WindowsAccess.class, WindowsPrivileges.class)
                 .run(context -> assertThat(context).hasNotFailed().hasSingleBean(TokenPrivileges.class));
+    }
+
+    @Test
+    @DisplayName("DPL-09 the options of the JVM are written in one place (JvmPreset) for what Java renders, and once in each installer, which starts Java before the preset can speak; the installers' option is the preset's, and every Java command of an installer uses the variable")
+    void dpl09_theJvmOptionsAreAPreset() throws IOException {
+        try (Stream<Path> sources = Files.walk(MAIN)) {
+            for (Path source : sources.filter(path -> path.toString().endsWith(".java")).toList()) {
+                if (!source.getFileName().toString().equals("JvmPreset.java")) {
+                    assertThat(Files.readString(source, StandardCharsets.UTF_8)).as(source.toString()).doesNotContain("-Duser.timezone");
+                }
+            }
+        }
+        assertThat(JvmPreset.OPTIONS).isEqualTo("-Duser.timezone=UTC");
+        assertThat(JvmPreset.jar("/opt/x/y.jar")).isEqualTo("-Duser.timezone=UTC -jar /opt/x/y.jar");
+        assertThat(Service.mcp(linux).arguments(linux)).startsWith(JvmPreset.jar(linux.lib() + "/" + DeployLayout.MCP_JAR) + " ");
+
+        Path root = Path.of(Objects.requireNonNull(System.getProperty("ledger.docs.root"),
+                "ledger.docs.root is set by the test task of ledger-cli"));
+        String shell = Files.readString(root.resolve("deploy/install.sh"), StandardCharsets.UTF_8);
+        String cmd = Files.readString(root.resolve("deploy/install.cmd"), StandardCharsets.UTF_8);
+        assertThat(shell.split("-Duser\\.timezone", -1)).as("install.sh writes the option once").hasSize(2);
+        assertThat(cmd.split("-Duser\\.timezone", -1)).as("install.cmd writes the option once").hasSize(2);
+        assertThat(shell).contains("\nJVM_OPTS=" + JvmPreset.OPTIONS + "\n");
+        assertThat(cmd).contains("set \"JVMOPTS=" + JvmPreset.OPTIONS + "\"");
+        assertThat(shell.lines().filter(line -> line.contains(" -jar ") && line.contains("\"$JAVA\"") && !line.startsWith("echo "))
+                .toList()).isNotEmpty().allSatisfy(line -> assertThat(line).contains("\"$JAVA\" $JVM_OPTS -jar "));
+        assertThat(cmd.lines().filter(line -> line.contains(" -jar ") && !line.strip().toLowerCase(Locale.ROOT).startsWith("rem "))
+                .toList()).isNotEmpty().allSatisfy(line -> assertThat(line).contains("%JVMOPTS% -jar "));
     }
 
     @Test

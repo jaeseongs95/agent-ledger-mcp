@@ -201,7 +201,7 @@ class InstallScriptsTest {
                 "    --acme-email=*) EMAIL=${arg#*=} ;;", "    --agree-tos) AGREE=--agree-tos ;;");
         assertThat(text(SH).toLowerCase(Locale.ROOT)).doesNotContain("certbot", "acme.sh", "cloudflare", "lightsail");
         // the steps of an installation without --tls-acme are in the file as they were, in the same order
-        assertThat(code).containsSubsequence("\"$JAVA\" -Duser.timezone=UTC -jar \"$JARS/ledger-cli.jar\" --ledger.secrets.home=/nonexistent render-deploy --check --java=\"$JAVA\" ${FROM_ENV:+--from-1x-env=\"$FROM_ENV\"} \"$@\"",
+        assertThat(code).containsSubsequence("\"$JAVA\" $JVM_OPTS -jar \"$JARS/ledger-cli.jar\" --ledger.secrets.home=/nonexistent render-deploy --check --java=\"$JAVA\" ${FROM_ENV:+--from-1x-env=\"$FROM_ENV\"} \"$@\"",
                 "useradd --system --user-group --no-create-home --shell /usr/sbin/nologin \"$SVC\" || [ $? = 9 ]",
                 "as_svc setup --owner-account=\"$OWNER\" --app-account=\"$APP_ACCOUNT\" $STDIN", "systemctl daemon-reload",
                 "systemctl enable \"$SVC\" \"$ADMIN\"", "systemctl restart \"$SVC\" \"$ADMIN\"", "if [ -n \"$NGINX\" ]; then", "if [ -n \"$ACME\" ]; then");
@@ -485,7 +485,7 @@ class InstallScriptsTest {
                 .isEqualTo("[ -z \"$FROM_ENV\" ] || as_svc secret-import-1x --stdin < \"$FROM_ENV\"");
         // REH4-INS-01: Java, run by root, compares the host names of the file with the options in the check phase only
         assertThat(code.stream().filter(line -> line.contains("FROM_ENV") && line.contains("render-deploy")).toList()).containsExactly(
-                "\"$JAVA\" -Duser.timezone=UTC -jar \"$JARS/ledger-cli.jar\" --ledger.secrets.home=/nonexistent render-deploy --check --java=\"$JAVA\" ${FROM_ENV:+--from-1x-env=\"$FROM_ENV\"} \"$@\"");
+                "\"$JAVA\" $JVM_OPTS -jar \"$JARS/ledger-cli.jar\" --ledger.secrets.home=/nonexistent render-deploy --check --java=\"$JAVA\" ${FROM_ENV:+--from-1x-env=\"$FROM_ENV\"} \"$@\"");
         assertThat(code.stream().filter(line -> line.contains("prepare-host") || line.contains("tls-issue") || line.contains("tls-renew"))
                 .filter(line -> line.contains("FROM_ENV"))).isEmpty();
     }
