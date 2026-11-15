@@ -37,7 +37,7 @@ import org.pgledger.domain.rule.HistoryOp;
 class LinkTest {
 
     private LinkResult link(Scenario s, String kind, String a, String b, Boolean remove) {
-        return s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(null, kind, a, b, Scenario.REASON,
+        return s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(Scenario.uuid(), kind, a, b, Scenario.REASON,
                 remove));
     }
 
@@ -236,13 +236,13 @@ class LinkTest {
 
     static Stream<Missing> missing() {
         return Stream.of(
-                new Missing("defect", s -> new LinkCommand(null, "defect_task", s.defectId(9), s.taskId(1),
+                new Missing("defect", s -> new LinkCommand(Scenario.uuid(), "defect_task", s.defectId(9), s.taskId(1),
                         Scenario.REASON, null)),
-                new Missing("task of a defect link", s -> new LinkCommand(null, "defect_task",
+                new Missing("task of a defect link", s -> new LinkCommand(Scenario.uuid(), "defect_task",
                         s.defectId(1), s.taskId(9), Scenario.REASON, null)),
-                new Missing("condition", s -> new LinkCommand(null, "condition_task", s.conditionId("9"),
+                new Missing("condition", s -> new LinkCommand(Scenario.uuid(), "condition_task", s.conditionId("9"),
                         s.taskId(1), Scenario.REASON, null)),
-                new Missing("defect of a relation", s -> new LinkCommand(null, "blocks", s.defectId(1),
+                new Missing("defect of a relation", s -> new LinkCommand(Scenario.uuid(), "blocks", s.defectId(1),
                         s.defectId(9), Scenario.REASON, null)));
     }
 

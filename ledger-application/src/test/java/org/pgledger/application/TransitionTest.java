@@ -130,9 +130,9 @@ class TransitionTest {
     @DisplayName("SVC-TRN-08: the reviewer verifies, the history keeps the evidence and the reviewer login")
     void trn08_verify(Scenario s) {
         SaveResult d = s.sourceFixedDefect("d");
-        String requestId = Scenario.uuid();
+        String operationKey = Scenario.uuid();
         TransitionResult result = s.bean(ReviewService.class).review(Scenario.REVIEWER, new TransitionCommand(
-                requestId, "defect", d.id(), 2L, "VERIFIED", Scenario.REASON, Scenario.EVIDENCE, null, null));
+                operationKey, "defect", d.id(), 2L, "VERIFIED", Scenario.REASON, Scenario.EVIDENCE, null, null));
         assertThat(result.from()).isEqualTo("SOURCE_FIXED");
         assertThat(result.to()).isEqualTo("VERIFIED");
         assertThat(result.version()).isEqualTo(3);
@@ -143,7 +143,7 @@ class TransitionTest {
         assertThat(row.fromState()).isEqualTo("SOURCE_FIXED");
         assertThat(row.toState()).isEqualTo("VERIFIED");
         assertThat(row.evidenceUri()).isEqualTo(Scenario.EVIDENCE);
-        assertThat(row.requestId().toString()).isEqualTo(requestId);
+        assertThat(row.operationKey().toString()).isEqualTo(operationKey);
         assertThat(row.login()).isEqualTo("ledger_reviewer");
         assertThat(s.defect(d.id()).status()).isEqualTo(DefectStatus.VERIFIED);
     }
@@ -295,7 +295,7 @@ class TransitionTest {
     @DisplayName("SVC-TRN-18: a malformed evidence_sha256")
     void trn18_sha(Scenario s) {
         SaveResult d = s.newDefect("d");
-        Expect.failure(() -> s.bean(TransitionService.class).transition(Scenario.AUTHOR, new TransitionCommand(null,
+        Expect.failure(() -> s.bean(TransitionService.class).transition(Scenario.AUTHOR, new TransitionCommand(Scenario.uuid(),
                 "defect", d.id(), 1L, "DISPUTED", Scenario.REASON, Scenario.EVIDENCE, "xyz", null)),
                 ValidationCode.VALIDATION_FAILED);
     }

@@ -59,7 +59,7 @@ class ToolSelectionTest {
         Run run = fixture.runClean(AGY, AGY.event(name, EMPTY));
         Attestations.Stamp stamp = fixture.stampCarrier(server, AGY.author(HookFixture.HOST_ID), "save", EMPTY,
                 AGY.stampedPart(run));
-        assertThat(run.document()).isEqualTo(AGY.allowed(EMPTY, stamp.token(), stamp.addedRequestId()));
+        assertThat(run.document()).isEqualTo(AGY.allowed(EMPTY, stamp.token()));
     }
 
     @ParameterizedTest
@@ -135,7 +135,7 @@ class ToolSelectionTest {
             Run run = fixture.runClean(AGY, AGY.wrapperEvent(envelope(toolName, INPUT)));
             Attestations.Stamp stamp = fixture.stampCarrier("t0001sink", AGY.author(ID), op, INPUT, AGY.echoed(run));
             assertThat(stamp.claims().tool()).as(toolName).isEqualTo(op);
-            assertThat(run.document()).as(toolName).isEqualTo(AGY.allowedWrapped(Json.stamped(INPUT, stamp.token(), null)));
+            assertThat(run.document()).as(toolName).isEqualTo(AGY.allowedWrapped(Json.stamped(INPUT, stamp.token())));
         }
     }
 
@@ -162,7 +162,7 @@ class ToolSelectionTest {
         JsonNode input = Json.tree(Map.of("marker", "namespace"));
         Run run = fixture.runClean(CODEX, CODEX.event(codexGateway(op), input));
         Attestations.Stamp stamp = fixture.stamp(CODEX, op, input, run);
-        assertThat(run.document()).isEqualTo(CODEX.allowed(input, stamp.token(), stamp.addedRequestId()));
+        assertThat(run.document()).isEqualTo(CODEX.allowed(input, stamp.token()));
     }
 
     @ParameterizedTest
@@ -183,7 +183,7 @@ class ToolSelectionTest {
         Attestations.Stamp stamp = fixture.stampCarrier(CODEX_APP_SERVER, CODEX.author(ID), op, input,
                 CODEX.stampedPart(run));
         assertThat(stamp.claims().tool()).isEqualTo("ledger_" + op);
-        assertThat(run.document()).isEqualTo(CODEX.allowed(input, stamp.token(), stamp.addedRequestId()));
+        assertThat(run.document()).isEqualTo(CODEX.allowed(input, stamp.token()));
     }
 
     @ParameterizedTest
@@ -235,7 +235,7 @@ class ToolSelectionTest {
     void wrapperObjectArguments(String op, HookFixture fixture) {
         Run run = fixture.runClean(AGY, AGY.wrapperEvent(envelope("t0001sink_ledger_" + op, INPUT)));
         Attestations.Stamp stamp = fixture.stampCarrier("t0001sink", AGY.author(ID), op, INPUT, AGY.echoed(run));
-        assertThat(run.document()).isEqualTo(AGY.allowedWrapped(Json.stamped(INPUT, stamp.token(), stamp.addedRequestId())));
+        assertThat(run.document()).isEqualTo(AGY.allowedWrapped(Json.stamped(INPUT, stamp.token())));
     }
 
     @ParameterizedTest
@@ -247,7 +247,7 @@ class ToolSelectionTest {
         assertThat(text.isString()).as("Arguments stays JSON text").isTrue();
         Attestations.Stamp stamp = fixture.stampCarrier("t0001sink", AGY.author(ID), op, INPUT, Json.of(text.stringValue()));
         assertThat(run.document()).isEqualTo(AGY.allowedWrapped(
-                Json.MAPPER.writeValueAsString(Json.stamped(INPUT, stamp.token(), stamp.addedRequestId()))));
+                Json.MAPPER.writeValueAsString(Json.stamped(INPUT, stamp.token()))));
     }
 
     private static final List<JsonNode> RESERVED_VALUES = List.of(
@@ -344,6 +344,6 @@ class ToolSelectionTest {
         JsonNode input = Json.tree(new UnknownFields(new Unknown(List.of(1, 2, Map.of("b", Json.of("null")))), "한글"));
         Run run = fixture.runClean(AGY, AGY.wrapperEvent(envelope("ledger_batch", input)));
         Attestations.Stamp stamp = fixture.stampCarrier("t0001sink", AGY.author(ID), "batch", input, AGY.echoed(run));
-        assertThat(run.document()).isEqualTo(AGY.allowedWrapped(Json.stamped(input, stamp.token(), stamp.addedRequestId())));
+        assertThat(run.document()).isEqualTo(AGY.allowedWrapped(Json.stamped(input, stamp.token())));
     }
 }

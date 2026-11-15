@@ -60,16 +60,17 @@ public final class KeyRing {
 
     /**
      * The attestation for the call, signed now with the key of the author, for the digest of the arguments of the call
-     * (what the hook signs after it has put the request id in: {@link ArgumentsDigest#of}).
+     * (what the hook signs: {@link ArgumentsDigest#of}, the {@code operationKey} in the arguments as the caller sent it).
+     * {@code operationKey} is the key of the claim: the one of the call, or empty for whoami and the attachment tools.
      */
-    public String token(String author, String tool, String requestId, String argumentsDigest) {
-        return token(pairOf(author), author, tool, requestId, argumentsDigest, clock.instant());
+    public String token(String author, String tool, String operationKey, String argumentsDigest) {
+        return token(pairOf(author), author, tool, operationKey, argumentsDigest, clock.instant());
     }
 
     /** The attestation for {@code author} signed with any key pair at the given time. */
-    public static String token(KeyPair signer, String author, String tool, String requestId, String argumentsDigest,
+    public static String token(KeyPair signer, String author, String tool, String operationKey, String argumentsDigest,
             Instant issuedAt) {
-        return AttestationToken.sign(new AttestationClaims(author, tool, requestId, argumentsDigest,
+        return AttestationToken.sign(new AttestationClaims(author, tool, operationKey, argumentsDigest,
                 issuedAt.getEpochSecond()), signer.getPrivate()).text();
     }
 

@@ -25,6 +25,7 @@ import org.pgledger.application.support.Expect;
 import org.pgledger.application.support.LedgerAppContext;
 import org.pgledger.application.support.LedgerServiceTest;
 import org.pgledger.application.support.Scenario;
+import org.pgledger.application.write.BatchOpInput;
 import org.pgledger.application.write.BatchService;
 import org.pgledger.application.write.Rows;
 import org.pgledger.application.write.SaveService;
@@ -57,7 +58,7 @@ import org.pgledger.domain.value.ConditionId;
 import org.pgledger.domain.value.JsonDocument;
 import org.pgledger.domain.value.ImportedActorId;
 import org.pgledger.domain.value.PageCursor;
-import org.pgledger.domain.value.RequestId;
+import org.pgledger.domain.value.OperationKey;
 import org.pgledger.domain.error.ValidationCode;
 
 /**
@@ -76,7 +77,7 @@ class PrinciplesTest {
                 Instant.parse("2027-01-01T00:00:00Z"), new ImportedActorId(IMPORTED_AUTHOR), "ledger_author",
                 ActorAssurance.IMPORTED_LOGIN, HistoryEntity.TASK, taskId, HistoryOp.TRANSITION, from, to,
                 JsonDocument.EMPTY_OBJECT, null, "imported by a migration", null, null, null,
-                new RequestId(UUID.randomUUID()), "import-" + UUID.randomUUID())));
+                new OperationKey(UUID.randomUUID().toString()), "import-" + UUID.randomUUID())));
     }
 
     // --------------------------------------------------------------------------------------------------- F1
@@ -210,30 +211,29 @@ class PrinciplesTest {
     // ------------------------------------------------------------------------------------------ 2.6 input checks
 
     static Stream<Arguments> batchOperationsWithoutAKey() {
-        String reason = "\"reason\": \"a reason that is long enough\"";
+        String reason = Scenario.REASON;
+        // changed: the operations are the records of the one entry (the text form of ops is gone), and a missing key and a
+        // JSON null are the same null of the record (the former pair of cases of a missing and a null "to" is one case)
         return Stream.of(
-                Arguments.of("{\"op\": \"transition\", \"entity\": \"task\", \"id\": \"X-T-0001\", "
-                        + "\"expected_version\": 1, " + reason + "}", "ops[0].to", "transition"),
-                Arguments.of("{\"op\": \"transition\", \"entity\": \"task\", \"id\": \"X-T-0001\", \"to\": null, "
-                        + "\"expected_version\": 1, " + reason + "}", "ops[0].to", "transition"),
-                Arguments.of("{\"op\": \"transition\", \"entity\": \"task\", \"id\": \"X-T-0001\", "
-                        + "\"to\": \"REPORTED_DONE\", " + reason + "}", "ops[0].expected_version", "transition"),
-                Arguments.of("{\"op\": \"record_fix\", \"defect_id\": \"X-D-0001\", \"repo\": \"r\", " + reason + "}",
-                        "ops[0].commit_sha", "record_fix"),
-                Arguments.of("{\"op\": \"record_case\", \"defect_id\": \"X-D-0001\", " + reason + "}",
+                Arguments.of(new BatchOpInput.Transition("task", "X-T-0001", 1L, null, reason, null, null, null, null),
+                        "ops[0].to", "transition"),
+                Arguments.of(new BatchOpInput.Transition("task", "X-T-0001", null, "REPORTED_DONE", reason, null, null,
+                        null, null), "ops[0].expected_version", "transition"),
+                Arguments.of(new BatchOpInput.RecordFix("X-D-0001", "r", null, reason, null, null, null, null, null,
+                        null), "ops[0].commit_sha", "record_fix"),
+                Arguments.of(new BatchOpInput.RecordCase("X-D-0001", null, reason, null, null, null, null),
                         "ops[0].observation", "record_case"),
-                Arguments.of("{\"op\": \"link\", \"kind\": \"defect_task\", \"a\": \"X-D-0001\", " + reason + "}",
-                        "ops[0].b", "link"),
-                Arguments.of("{\"op\": \"correct\", " + reason + "}", "ops[0].history_id", "correct"),
-                Arguments.of("{\"op\": \"save\", \"entity\": \"defect\", " + reason + "}", "ops[0].fields", "save"));
+                Arguments.of(new BatchOpInput.Link("defect_task", "X-D-0001", null, reason, null), "ops[0].b", "link"),
+                Arguments.of(new BatchOpInput.Correct(null, reason, null), "ops[0].history_id", "correct"),
+                Arguments.of(new BatchOpInput.Save("defect", null, reason, null, null), "ops[0].fields", "save"));
     }
 
     @ParameterizedTest(name = "{1} of a {2}")
     @MethodSource("batchOperationsWithoutAKey")
-    @DisplayName("SVC-PRN-10: a required key that is missing (or JSON null) is REQUIRED on its path in the request, the failure names the operation, and nothing is written")
-    void prn10_missingKey(String operation, String path, String op, Scenario s) {
+    @DisplayName("SVC-PRN-10: a required key that is missing (null) is REQUIRED on its path in the request, the failure names the operation, and nothing is written (changed: the operations are built as records with a null for the missing key)")
+    void prn10_missingKey(BatchOpInput operation, String path, String op, Scenario s) {
         ValidationException refused = (ValidationException) Expect.failure(() -> s.bean(BatchService.class)
-                .batch(Scenario.AUTHOR, null, "[" + operation + "]"), ValidationCode.VALIDATION_FAILED);
+                .batch(Scenario.AUTHOR, Scenario.uuid(), List.of(operation)), ValidationCode.VALIDATION_FAILED);
 
         assertThat(refused.issues().getFirst().path()).isEqualTo(path);
         assertThat(refused.issues().getFirst().reason()).isEqualTo(ValidationReason.REQUIRED);
@@ -247,7 +247,7 @@ class PrinciplesTest {
     void prn11_receiptIntegrity(Scenario s) {
         ReceiptService receipts = s.bean(ReceiptService.class);
         Expect.failure(() -> s.ctx().tx(() -> {
-            receipts.finish(new RequestId(UUID.randomUUID()), Map.of());
+            receipts.finish(new OperationKey(UUID.randomUUID().toString()), AuthorId.of(Scenario.AUTHOR), Map.of());
             return null;
         }), InfrastructureCode.INTEGRITY_VIOLATION);
     }

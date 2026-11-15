@@ -54,7 +54,7 @@ class HookRoundTripTest {
     }
 
     @Test
-    @DisplayName("MCW-040: key made by the hook, registered by the owner, write and whoami signed by the hook jar and sent by the MCP client succeed as that author; a changed request_id or changed content under the signed id is refused")
+    @DisplayName("MCW-040: key made by the hook, registered by the owner, write and whoami signed by the hook jar and sent by the MCP client succeed as that author; a changed operationKey or changed content under the signed key is refused (the hook makes no key up: the operationKey is the one the model sent)")
     void roundTrip(McpSession session, Scenario scenario, @Autowired SessionKeyService owner,
             @Autowired JsonMapper mapper, @TempDir Path work) throws IOException {
         Path keys = work.resolve("keys");
@@ -77,10 +77,14 @@ class HookRoundTripTest {
                 .fingerprint()).isEqualTo(fingerprint);
         scenario.grant(author, "defect");
 
-        // 3. a write call as the model made it (no attestation, no request_id), signed by the hook
+        // 3. a write call as the model made it (an operationKey of the model's own, no attestation), signed by the hook:
+        // the hook adds the attestation and nothing else (it makes no key up and changes no other argument)
         Calls.Save call = Calls.Save.create("defect", Fields.defect(scenario.projectId(), "round trip"), null);
         Args signed = hooked(mapper, work, keys, "ledger_save", hostId, call);
-        assertThat(signed.values()).containsKeys("_hostAttestation", "request_id");
+        assertThat(signed.values()).containsKeys("_hostAttestation", "operationKey");
+        assertThat(signed.values().get("operationKey")).isEqualTo(call.operationKey());
+        assertThat(signed.without("_hostAttestation").values())
+                .isEqualTo(Args.from(mapper, call).values());
         assertThat(String.valueOf(signed.values().get("_hostAttestation"))).startsWith("pgla2.");
 
         WriteOutputs.Saved saved = session.ok("ledger_save", signed, WriteOutputs.Saved.class);
@@ -88,7 +92,7 @@ class HookRoundTripTest {
         assertThat(saved.version()).isEqualTo(1);
         assertThat(Ledger.history(session, scenario.projectId())).hasSize(1);
 
-        // 4. whoami, signed by the hook with the empty request id
+        // 4. whoami, signed by the hook with the empty operation key (it carries none)
         Args whoami = hooked(mapper, work, keys, "ledger_whoami", hostId, Map.of());
         assertThat(whoami.values()).containsOnlyKeys("_hostAttestation");
         WriteOutputs.Whoami who = session.ok("ledger_whoami", whoami, WriteOutputs.Whoami.class);
@@ -97,7 +101,7 @@ class HookRoundTripTest {
 
         // 5. what a bearer-token holder can do with a captured call: the same call is idempotent, nothing else works
         assertThat(session.ok("ledger_save", signed, WriteOutputs.Saved.class)).isEqualTo(saved);
-        assertThat(session.failed("ledger_save", signed.with("request_id", UUID.randomUUID().toString())).code())
+        assertThat(session.failed("ledger_save", signed.with("operationKey", UUID.randomUUID().toString())).code())
                 .isEqualTo("ATTESTATION_BINDING_MISMATCH");
         assertThat(session.failed("ledger_save", signed.with("fields",
                 Fields.defect(scenario.projectId(), "other content"))).code()).isEqualTo("ATTESTATION_BINDING_MISMATCH");

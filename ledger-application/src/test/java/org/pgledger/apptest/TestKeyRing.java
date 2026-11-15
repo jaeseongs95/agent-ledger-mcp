@@ -51,24 +51,24 @@ public final class TestKeyRing {
     }
 
     /** The text of an attestation signed with the key of the author, for {@link #DIRECT_DIGEST}. */
-    public String token(String author, String tool, String requestId, Instant issuedAt) {
-        return token(author, tool, requestId, DIRECT_DIGEST, issuedAt);
+    public String token(String author, String tool, String operationKey, Instant issuedAt) {
+        return token(author, tool, operationKey, DIRECT_DIGEST, issuedAt);
     }
 
     /** The text of an attestation signed with the key of the author for these arguments. */
-    public String token(String author, String tool, String requestId, String argumentsDigest, Instant issuedAt) {
-        return token(pairOf(author), author, tool, requestId, argumentsDigest, issuedAt);
+    public String token(String author, String tool, String operationKey, String argumentsDigest, Instant issuedAt) {
+        return token(pairOf(author), author, tool, operationKey, argumentsDigest, issuedAt);
     }
 
     /** The text of an attestation for {@code author} signed with any key pair, for {@link #DIRECT_DIGEST}. */
-    public static String token(KeyPair signer, String author, String tool, String requestId, Instant issuedAt) {
-        return token(signer, author, tool, requestId, DIRECT_DIGEST, issuedAt);
+    public static String token(KeyPair signer, String author, String tool, String operationKey, Instant issuedAt) {
+        return token(signer, author, tool, operationKey, DIRECT_DIGEST, issuedAt);
     }
 
     /** The text of an attestation for {@code author} signed with any key pair, for these arguments. */
-    public static String token(KeyPair signer, String author, String tool, String requestId, String argumentsDigest,
+    public static String token(KeyPair signer, String author, String tool, String operationKey, String argumentsDigest,
             Instant issuedAt) {
-        return AttestationToken.sign(new AttestationClaims(author, tool, requestId, argumentsDigest,
+        return AttestationToken.sign(new AttestationClaims(author, tool, operationKey, argumentsDigest,
                 issuedAt.getEpochSecond()), signer.getPrivate()).text();
     }
 }

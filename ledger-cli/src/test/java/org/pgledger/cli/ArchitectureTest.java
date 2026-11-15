@@ -212,4 +212,10 @@ class ArchitectureTest {
     void arc1x03_noOneXTextInMainSources() {
         assertThat(NoOneXRules.oneXTextInMainSources()).isEmpty();
     }
+
+    @Test
+    @DisplayName("OPK-017 no main source or resource of the module uses a name of the retired request key (request_id, batch_request_id, RequestId): the key of a write is the operationKey")
+    void opk017_noRetiredRequestKeyName() {
+        assertThat(NoOneXRules.retiredRequestKeyTextInMainSources()).isEmpty();
+    }
 }

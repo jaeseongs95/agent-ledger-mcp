@@ -10,7 +10,6 @@ import java.security.PublicKey;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Map;
-import java.util.UUID;
 import org.pgledger.attestation.ArgumentsDigest;
 import org.pgledger.attestation.AttestationClaims;
 import org.pgledger.attestation.AttestationToken;
@@ -23,8 +22,8 @@ import tools.jackson.databind.node.ObjectNode;
  */
 final class Attestations {
 
-    /** The checked token, and the request id the hook generated (null if the arguments kept their own or have none). */
-    record Stamp(String token, AttestationClaims claims, String addedRequestId) {}
+    /** The checked token and its claims; the hook adds nothing to the arguments but the token (OPK-009). */
+    record Stamp(String token, AttestationClaims claims) {}
 
     /** The accepted values of {@code issuedAt}, in epoch seconds, both ends included. */
     record Window(long from, long to) {
@@ -58,32 +57,20 @@ final class Attestations {
         // throws AttestationException (SIGNATURE_INVALID) if the key of the author did not sign these claims
         parsed.verify(publicKey(keyDirectory, server, author));
 
-        JsonNode given = sent.get("request_id");
-        boolean keeps = given != null && given.isString() && !given.stringValue().isBlank();
-        String added = null;
-        ObjectNode handedToTheHost = ((ObjectNode) sent).deepCopy();
-        boolean hasRequestId = Hosts.hasRequestId(op);
-        if (!hasRequestId) {
-            assertThat(claims.requestId()).as(op + " has no request id").isEmpty();
-            if (!sent.has("request_id")) {
-                assertThat(carrier.has("request_id")).as("no request_id added for " + op).isFalse();
-            }
-        } else {
-            handedToTheHost.put("request_id", claims.requestId());
+        // OPK-009: the hook never makes a key up; the claim's key is the operationKey argument exactly as given (a text,
+        // any content, also blank), and empty where the call has none (absent or JSON null) or the tool carries none
+        JsonNode given = sent.get("operationKey");
+        boolean signsTheArgument = Hosts.carriesOperationKey(op) && given != null && given.isString();
+        assertThat(claims.operationKey()).as("the operation key of the claim for " + op)
+                .isEqualTo(signsTheArgument ? given.stringValue() : "");
+        if (!sent.has("operationKey")) {
+            assertThat(carrier.has("operationKey")).as("no operationKey added for " + op).isFalse();
         }
-        // the digest covers the arguments the host hands the server (the request id in, the attestation out), recomputed
-        // here with the shared class from the tests' own reading of the JSON
-        Map<?, ?> plain = (Map<?, ?>) Json.MAPPER.treeToValue(handedToTheHost, Object.class);
+        // the digest covers the arguments the host hands the server (exactly the model's, the attestation out),
+        // recomputed here with the shared class from the tests' own reading of the JSON
+        Map<?, ?> plain = (Map<?, ?>) Json.MAPPER.treeToValue(((ObjectNode) sent).deepCopy(), Object.class);
         assertThat(claims.argumentsDigest()).as("arguments digest").isEqualTo(ArgumentsDigest.of(plain));
-        if (hasRequestId && keeps) {
-            assertThat(claims.requestId()).as("the request id of the call is signed as it is").isEqualTo(given.stringValue());
-        } else if (hasRequestId) {
-            assertThat(claims.requestId()).as("a generated request id").isNotEmpty();
-            assertThat(UUID.fromString(claims.requestId()).toString()).isEqualTo(claims.requestId());
-            assertThat(carrier.path("request_id").stringValue()).as("request_id in the arguments").isEqualTo(claims.requestId());
-            added = claims.requestId();
-        }
-        return new Stamp(token, claims, added);
+        return new Stamp(token, claims);
     }
 
     /** The public key of the author for the server from the key folder (the key is read, or created if there is none yet). */

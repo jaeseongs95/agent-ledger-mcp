@@ -45,7 +45,7 @@ import tools.jackson.databind.json.JsonMapper;
 class CaseTest {
 
     private static RecordCaseCommand observe(String defect, String observation) {
-        return new RecordCaseCommand(null, defect, observation, Scenario.REASON, null, null, null);
+        return new RecordCaseCommand(Scenario.uuid(), defect, observation, Scenario.REASON, null, null, null);
     }
 
     private RecordCaseResult record(Scenario s, String actor, RecordCaseCommand command) {
@@ -60,7 +60,7 @@ class CaseTest {
     @DisplayName("SVC-CAS-01: a case keeps every field and the result carries the contract keys")
     void cas01_fullCase(Scenario s) {
         SaveResult d = s.newDefect("d");
-        RecordCaseResult result = record(s, Scenario.AUTHOR, new RecordCaseCommand(null, d.id(), "it crashed",
+        RecordCaseResult result = record(s, Scenario.AUTHOR, new RecordCaseCommand(Scenario.uuid(), d.id(), "it crashed",
                 Scenario.REASON, "log line", "the user said so", "2026-11-05T09:30:00+01:00"));
         assertThat(result.entity()).isEqualTo("defect_case");
         assertThat(result.id()).isEqualTo(d.id() + "|" + result.caseId());
@@ -103,7 +103,7 @@ class CaseTest {
     }
 
     @Test
-    @DisplayName("SVC-CAS-06: the same request twice is one case")
+    @DisplayName("SVC-CAS-06: the same operation key twice is one case")
     void cas06_replay(Scenario s) {
         SaveResult d = s.newDefect("d");
         RecordCaseCommand command = new RecordCaseCommand(Scenario.uuid(), d.id(), "seen", Scenario.REASON, null,
@@ -114,13 +114,13 @@ class CaseTest {
     }
 
     @Test
-    @DisplayName("SVC-CAS-07: the same request id with another observation")
+    @DisplayName("SVC-CAS-07: the same operation key with another observation")
     void cas07_conflict(Scenario s) {
         SaveResult d = s.newDefect("d");
         String id = Scenario.uuid();
         record(s, Scenario.AUTHOR, new RecordCaseCommand(id, d.id(), "seen", Scenario.REASON, null, null, null));
         Expect.failure(() -> record(s, Scenario.AUTHOR, new RecordCaseCommand(id, d.id(), "seen differently",
-                Scenario.REASON, null, null, null)), ConflictCode.REQUEST_CONFLICT);
+                Scenario.REASON, null, null, null)), ConflictCode.OPERATION_CONFLICT);
     }
 
     @Test
@@ -139,9 +139,9 @@ class CaseTest {
     @DisplayName("SVC-CAS-10: two cases in one batch")
     void cas10_batch(Scenario s) {
         SaveResult d = s.newDefect("d");
-        var result = s.bean(BatchService.class).batch(Scenario.AUTHOR, null, List.of(
-                new BatchOpInput.RecordCase(d.id(), "one", Scenario.REASON, null, null, null, null, null),
-                new BatchOpInput.RecordCase(d.id(), "two", Scenario.REASON, null, null, null, null, null)));
+        var result = s.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(), List.of(
+                new BatchOpInput.RecordCase(d.id(), "one", Scenario.REASON, null, null, null, null),
+                new BatchOpInput.RecordCase(d.id(), "two", Scenario.REASON, null, null, null, null)));
         assertThat(result.count()).isEqualTo(2);
         assertThat(cases(s, d.id())).extracting(DefectCase::observation).containsExactly("one", "two");
     }
@@ -152,9 +152,9 @@ class CaseTest {
         SaveResult live = s.newDefect("live");
         SaveResult source = s.newDefect("source");
         MergeFixture.merge(s, source.id(), 1, live.id());
-        LedgerException e = Expect.failure(() -> s.bean(BatchService.class).batch(Scenario.AUTHOR, null, List.of(
-                new BatchOpInput.RecordCase(live.id(), "one", Scenario.REASON, null, null, null, null, null),
-                new BatchOpInput.RecordCase(source.id(), "two", Scenario.REASON, null, null, null, null, null))),
+        LedgerException e = Expect.failure(() -> s.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(), List.of(
+                new BatchOpInput.RecordCase(live.id(), "one", Scenario.REASON, null, null, null, null),
+                new BatchOpInput.RecordCase(source.id(), "two", Scenario.REASON, null, null, null, null))),
                 TransitionCode.MERGED_DEFECT);
         assertThat(e.details()).containsEntry("op_index", List.of("2")).containsEntry("op", List.of("record_case"));
         assertThat(cases(s, live.id())).isEmpty();
@@ -165,7 +165,7 @@ class CaseTest {
     void cas15_correct(Scenario s) {
         SaveResult d = s.newDefect("d");
         RecordCaseResult result = record(s, Scenario.AUTHOR, observe(d.id(), "seen"));
-        var corrected = s.bean(CorrectService.class).correct(Scenario.AUTHOR, new CorrectCommand(null,
+        var corrected = s.bean(CorrectService.class).correct(Scenario.AUTHOR, new CorrectCommand(Scenario.uuid(),
                 result.historyId(), Scenario.REASON));
         assertThat(corrected.corrects()).isEqualTo(result.historyId());
         assertThat(s.historyRow(corrected.historyId()).correctsId()).isEqualTo(result.historyId());
@@ -200,7 +200,7 @@ class CaseTest {
     @DisplayName("SVC-CAS-16: field limits of a case")
     void cas16_limits(Limit limit, Scenario s) {
         SaveResult d = s.newDefect("d");
-        assertThat(Expect.outcome(() -> record(s, Scenario.AUTHOR, new RecordCaseCommand(null, d.id(),
+        assertThat(Expect.outcome(() -> record(s, Scenario.AUTHOR, new RecordCaseCommand(Scenario.uuid(), d.id(),
                 limit.observation(), Scenario.REASON, limit.evidence(), limit.quote(), limit.observedAt()))))
                 .isEqualTo(Optional.ofNullable(limit.expected()));
     }

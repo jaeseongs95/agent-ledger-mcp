@@ -43,7 +43,11 @@ class BatchAndErrorsTest {
                 "record_case", "link", "correct");
         assertThat(BatchOpKind.SAVE.requiredKeys()).containsExactlyInAnyOrder("entity", "fields", "reason");
         assertThat(BatchOpKind.SAVE.allowedKeys()).containsExactlyInAnyOrder("entity", "fields", "reason", "id",
-                "expected_version", "op", "request_id");
+                "expected_version", "op");
+        // OPK-005: an operation of a batch carries no key of its own; its key is derived from the batch key
+        for (BatchOpKind kind : BatchOpKind.values()) {
+            assertThat(kind.allowedKeys()).doesNotContain("request_id", "operationKey", "operation_key");
+        }
         assertThat(BatchOpKind.TRANSITION.requiredKeys()).containsExactlyInAnyOrder("entity", "id",
                 "expected_version", "to", "reason");
         assertThat(BatchOpKind.RECORD_FIX.allowedKeys()).contains("branch", "ci_ref", "ci_conclusion",
@@ -52,7 +56,7 @@ class BatchAndErrorsTest {
                 "reason");
         assertThat(BatchOpKind.LINK.allowedKeys()).contains("remove");
         assertThat(BatchOpKind.CORRECT.allowedKeys()).containsExactlyInAnyOrder("history_id", "reason", "op",
-                "request_id", "attachment_id");
+                "attachment_id");
         // ATA-012: the four operations that write a history row of their own entity take an optional attachment_id
         assertThat(List.of(BatchOpKind.TRANSITION, BatchOpKind.RECORD_FIX, BatchOpKind.RECORD_CASE,
                 BatchOpKind.CORRECT)).allSatisfy(kind -> {

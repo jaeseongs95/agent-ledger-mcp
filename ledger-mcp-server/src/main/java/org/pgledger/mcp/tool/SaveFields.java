@@ -14,8 +14,8 @@ import tools.jackson.databind.annotation.JsonDeserialize;
  * fields of a defect, a task or a condition (the kind decides which of them are valid). The component names are the wire
  * keys; the descriptions are message keys that the catalog resolves.
  *
- * <p>Every field is a {@link Patch}, so the binding tells "left out" (absent: not touched), "written as null" (set to
- * nothing: an optional field is cleared) and "written with a text" apart without remembering the keys of the call
+ * <p>Every field is a {@link Patch}, so the binding tells "left out or written as null" (absent: not touched) and "written
+ * with a text" (an empty text clears an optional field) apart without remembering the keys of the call
  * ({@link PatchText}). The schema of the tool still shows each of them as a plain string: {@code @Schema} names the type
  * the model sees.
  */

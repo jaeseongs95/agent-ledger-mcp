@@ -45,7 +45,7 @@ class AttestationTokenTest {
     }
 
     @Test
-    @DisplayName("ATT-001 a signed token has the text pgla2.<author>.<tool>.<request id>.<arguments digest>.<issued at>.<signature> and parses back to the same claims")
+    @DisplayName("ATT-001 a signed token has the text pgla2.<author>.<tool>.<operation key>.<arguments digest>.<issued at>.<signature> and parses back to the same claims (OPK-015: the third part is the operation key)")
     void roundTrip() {
         KeyPair pair = newKeyPair();
         AttestationToken token = AttestationToken.sign(CLAIMS, pair.getPrivate());
@@ -63,6 +63,25 @@ class AttestationTokenTest {
         assertThat(parsed.claims()).isEqualTo(CLAIMS);
         assertThat(parsed.text()).isEqualTo(text);
         parsed.verify(pair.getPublic());
+    }
+
+    @Test
+    @DisplayName("OPK-015 an operation key of any content (dots, spaces, line feeds, non-ASCII, 128 characters) is the third token part, round trips and verifies; the signed bytes carry it length-prefixed")
+    void operationKeyRoundTrip() {
+        KeyPair pair = newKeyPair();
+        for (String key : List.of("a.b.c", "with space", "line\nfeed", "작업-키/1", "k".repeat(128), "")) {
+            AttestationClaims claims = new AttestationClaims("claude:s1", "ledger_save", key, EMPTY_ARGUMENTS, 1_700_000_000L);
+            String text = AttestationToken.sign(claims, pair.getPrivate()).text();
+            String[] parts = text.split("\\.", -1);
+            assertThat(parts).hasSize(7);
+            assertThat(decode(parts[3])).isEqualTo(key);
+            AttestationToken parsed = AttestationToken.parse(text);
+            assertThat(parsed.claims().operationKey()).isEqualTo(key);
+            assertThat(parsed.claims()).isEqualTo(claims);
+            parsed.verify(pair.getPublic());
+            int length = key.getBytes(StandardCharsets.UTF_8).length;
+            assertThat(text(claims.signedBytes())).contains("\n" + length + ":" + key + "\n64:");
+        }
     }
 
     private static String decode(String part) {
@@ -85,22 +104,22 @@ class AttestationTokenTest {
 
     static Stream<AttestationClaims> tampered() {
         return Stream.of(
-                new AttestationClaims("claude:s2", CLAIMS.tool(), CLAIMS.requestId(), EMPTY_ARGUMENTS, CLAIMS.issuedAt()),
-                new AttestationClaims(CLAIMS.author(), "ledger_link", CLAIMS.requestId(), EMPTY_ARGUMENTS, CLAIMS.issuedAt()),
+                new AttestationClaims("claude:s2", CLAIMS.tool(), CLAIMS.operationKey(), EMPTY_ARGUMENTS, CLAIMS.issuedAt()),
+                new AttestationClaims(CLAIMS.author(), "ledger_link", CLAIMS.operationKey(), EMPTY_ARGUMENTS, CLAIMS.issuedAt()),
                 new AttestationClaims(CLAIMS.author(), CLAIMS.tool(), "r2", EMPTY_ARGUMENTS, CLAIMS.issuedAt()),
                 new AttestationClaims(CLAIMS.author(), CLAIMS.tool(), "", EMPTY_ARGUMENTS, CLAIMS.issuedAt()),
-                new AttestationClaims(CLAIMS.author(), CLAIMS.tool(), CLAIMS.requestId(), OTHER_ARGUMENTS, CLAIMS.issuedAt()),
-                new AttestationClaims(CLAIMS.author(), CLAIMS.tool(), CLAIMS.requestId(), EMPTY_ARGUMENTS, CLAIMS.issuedAt() + 1));
+                new AttestationClaims(CLAIMS.author(), CLAIMS.tool(), CLAIMS.operationKey(), OTHER_ARGUMENTS, CLAIMS.issuedAt()),
+                new AttestationClaims(CLAIMS.author(), CLAIMS.tool(), CLAIMS.operationKey(), EMPTY_ARGUMENTS, CLAIMS.issuedAt() + 1));
     }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("tampered")
-    @DisplayName("ATT-003 and ATT-035 a token whose author, tool, request id, arguments digest or time was changed after signing is SIGNATURE_INVALID")
+    @DisplayName("ATT-003 and ATT-035 a token whose author, tool, operation key, arguments digest or time was changed after signing is SIGNATURE_INVALID")
     void changedClaimsInvalidateTheSignature(AttestationClaims changed) {
         KeyPair pair = newKeyPair();
         String signature = AttestationToken.sign(CLAIMS, pair.getPrivate()).text().split("\\.", -1)[6];
         String forged = String.join(".", "pgla2", encode(changed.author()), encode(changed.tool()),
-                encode(changed.requestId()), changed.argumentsDigest(), Long.toString(changed.issuedAt()), signature);
+                encode(changed.operationKey()), changed.argumentsDigest(), Long.toString(changed.issuedAt()), signature);
         AttestationToken token = AttestationToken.parse(forged);
         assertThat(token.claims()).isEqualTo(changed);
         assertThat(reasonOf(() -> token.verify(pair.getPublic()))).isEqualTo(AttestationException.Reason.SIGNATURE_INVALID);
@@ -111,7 +130,7 @@ class AttestationTokenTest {
     }
 
     @Test
-    @DisplayName("ATT-004 the signed bytes are fixed: domain line, length-prefixed author, tool, request id and arguments digest, epoch seconds")
+    @DisplayName("ATT-004 the signed bytes are fixed: domain line, length-prefixed author, tool, operation key and arguments digest, epoch seconds")
     void signedBytesAreFixed() {
         assertThat(text(CLAIMS.signedBytes())).isEqualTo("pg-ledger-mcp/attestation/v2\n9:claude:s1\n11:ledger_save\n2:r1\n64:"
                 + EMPTY_ARGUMENTS + "\n1700000000\n");
@@ -139,7 +158,7 @@ class AttestationTokenTest {
     }
 
     @Test
-    @DisplayName("ATT-006 an empty request id and an empty author are empty parts and round trip; non-ASCII values round trip")
+    @DisplayName("ATT-006 an empty operation key and an empty author are empty parts and round trip; non-ASCII values round trip")
     void emptyAndNonAsciiValues() {
         KeyPair pair = newKeyPair();
         for (AttestationClaims claims : List.of(

@@ -43,7 +43,7 @@ public interface AttestationVerifier {
     /**
      * Checks, in this order: the text is a signed attestation whose author has the ledger format; the signature is
      * valid under the live registered key of the author (no key and a wrong signature are the same refusal,
-     * ATTESTATION_SIGNATURE_INVALID, with no author in it); the tool, the request id and the arguments digest are those
+     * ATTESTATION_SIGNATURE_INVALID, with no author in it); the tool, the operation key and the arguments digest are those
      * of the call; the issue time is inside the window. Reads only: for a call that writes use
      * {@link #verifyForWrite}. An author without the ledger format is the answer {@link Proof.MalformedAuthor} (nothing
      * after the format check is run for it); every other failure is thrown.
@@ -52,14 +52,14 @@ public interface AttestationVerifier {
      * @param call      the call the attestation is checked against: its tool and the digest of its arguments as the
      *                  server received them ({@link org.pgledger.attestation.ArgumentsDigest}), or
      *                  {@link ToolCall.Outside} outside a tool call (which matches no signed tool and no signed digest)
-     * @param requestId the request id of the call as the caller sent it; {@code null} and empty are the same
+     * @param operationKey the operation key of the call as the caller sent it; {@code null} and empty are the same
      * @throws TrustException with the code of the first check that fails
      */
-    Proof prove(String presented, ToolCall call, String requestId);
+    Proof prove(String presented, ToolCall call, String operationKey);
 
     /** As {@link #prove}, with a malformed author refused as AUTHOR_ID_FORMAT: the author the attestation proves. */
-    default AuthorId verify(String presented, ToolCall call, String requestId) {
-        return prove(presented, call, requestId).requireAuthor();
+    default AuthorId verify(String presented, ToolCall call, String operationKey) {
+        return prove(presented, call, operationKey).requireAuthor();
     }
 
     /**
@@ -67,5 +67,5 @@ public interface AttestationVerifier {
      * (principle 4.4): a write that verified the key before a close of it committed may commit after it (see the ceiling in
      * {@code SignedAttestationVerifier}); a write that verifies after the close is refused.
      */
-    AuthorId verifyForWrite(String presented, ToolCall call, String requestId);
+    AuthorId verifyForWrite(String presented, ToolCall call, String operationKey);
 }

@@ -33,7 +33,7 @@ import org.pgledger.domain.rule.HistoryOp;
 import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.JsonDocument;
 import org.pgledger.domain.value.MaxRows;
-import org.pgledger.domain.value.RequestId;
+import org.pgledger.domain.value.OperationKey;
 
 /**
  * SQB-012, SQB-013: every list of the query repositories takes its row limit from {@code SqlBuilder} (the clause of the product
@@ -60,7 +60,8 @@ class SqlBuilderRepositoryTest {
         ctx.tx(() -> ctx.bean(HistoryRepository.class).insert(new HistoryEntry(ids.next(Counter.HISTORY),
                 T0.plusSeconds(second), AuthorId.of("claude:alice"), "ledger_author", ActorAssurance.DECLARED, entity,
                 entityId, HistoryOp.EDIT, null, null, JsonDocument.EMPTY_OBJECT, null, "a reason of enough length",
-                null, null, null, new RequestId(UUID.randomUUID()), null)));
+                null, null, null, new OperationKey(UUID.randomUUID().toString()),
+                null)));
     }
 
     /** A page of three rows asked with a page size of {@code max}: the rows it holds and whether the list continues. */

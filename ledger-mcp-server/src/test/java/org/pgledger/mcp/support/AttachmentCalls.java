@@ -8,7 +8,7 @@ import org.pgledger.domain.value.Sha256;
 /**
  * The arguments of the five attachment tools as the tests send them: one record per tool, its components the camel case wire keys
  * of the common design (section 3), {@code _hostAttestation} as written; a key left null is left out of the call. The attestation of
- * a call is the plain author, which the {@link Attester} signs (the way the hook does, with no request id), or null for a call that
+ * a call is the plain author, which the {@link Attester} signs (the way the hook does, with an empty operation key in the claim), or null for a call that
  * carries none.
  */
 public final class AttachmentCalls {

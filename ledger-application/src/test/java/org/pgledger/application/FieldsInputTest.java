@@ -25,32 +25,36 @@ class FieldsInputTest {
             .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS).build();
 
     @Test
-    @DisplayName("SVC-DIG-02: a text is set, a JSON null is set to nothing (clears), a key that is left out is absent")
+    @DisplayName("SVC-DIG-02 (OPK-021, changed: a JSON null used to be set to nothing and cleared the field, now it counts as not given): a text is set, an empty text is set (the one way to clear), a JSON null and a key that is left out are absent")
     void threeStates() {
-        FieldsInput fields = MAPPER.readValue("{\"title\":\"x\",\"owner_actor_id\":null}", FieldsInput.class);
+        FieldsInput fields = MAPPER.readValue("{\"title\":\"x\",\"owner_actor_id\":null,\"root_cause\":\"\"}",
+                FieldsInput.class);
 
         assertThat(fields.title()).isEqualTo(Patch.set("x"));
-        assertThat(fields.ownerActorId()).isEqualTo(Patch.set(null));
-        assertThat(fields.ownerActorId().mentioned()).isTrue();
+        assertThat(fields.ownerActorId()).isEqualTo(Patch.absent());
+        assertThat(fields.ownerActorId().mentioned()).isFalse();
+        assertThat(fields.rootCause()).isEqualTo(Patch.set(""));
+        assertThat(fields.rootCause().mentioned()).isTrue();
         assertThat(fields.projectId()).isEqualTo(Patch.absent());
         assertThat(fields.behavior()).isEqualTo(Patch.absent());
         assertThat(fields.conditionText()).isEqualTo(Patch.absent());
     }
 
     @Test
-    @DisplayName("SVC-DIG-02: an empty object leaves every key absent; the JSON null and a missing key are never the same")
+    @DisplayName("SVC-DIG-02 (OPK-021, changed: the JSON null and a missing key used to differ, now they are the same): an empty object leaves every key absent; a JSON null is absent too, only an empty text differs from a missing key")
     void emptyObject() {
         FieldsInput fields = MAPPER.readValue("{}", FieldsInput.class);
 
         assertThat(fields).isEqualTo(new FieldsInput(null, null, null, null, null, null, null, null, null, null, null,
                 null, null, null, null));
         assertThat(fields.title().mentioned()).isFalse();
-        assertThat(MAPPER.readValue("{\"title\":null}", FieldsInput.class).title()).isNotEqualTo(fields.title());
+        assertThat(MAPPER.readValue("{\"title\":null}", FieldsInput.class)).isEqualTo(fields);
+        assertThat(MAPPER.readValue("{\"title\":\"\"}", FieldsInput.class).title()).isNotEqualTo(fields.title());
     }
 
     @Test
-    @DisplayName("SVC-DIG-02: the object a tool call carries (a map with null values, converted) binds the same way as "
-            + "its text, and the keys keep their wire names")
+    @DisplayName("SVC-DIG-02 (OPK-021, changed: a null value is absent now, not a clearing patch): the object a tool call carries "
+            + "(a map with null values, converted) binds the same way as its text, and the keys keep their wire names")
     void aMapIsConvertedLikeItsText() {
         Map<String, Object> written = new LinkedHashMap<>();
         written.put("project_id", "p1");
@@ -60,7 +64,7 @@ class FieldsInputTest {
         FieldsInput fields = MAPPER.convertValue(written, FieldsInput.class);
 
         assertThat(fields.projectId()).isEqualTo(Patch.set("p1"));
-        assertThat(fields.successCondition()).isEqualTo(Patch.set(null));
+        assertThat(fields.successCondition()).isEqualTo(Patch.absent());
         assertThat(fields.originQuote()).isEqualTo(Patch.set("the words"));
         assertThat(fields.originRef()).isEqualTo(Patch.absent());
         assertThat(fields).isEqualTo(MAPPER.readValue(

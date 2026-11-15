@@ -10,9 +10,9 @@ import org.pgledger.application.write.WriteResult;
 import org.pgledger.application.write.WriteStatus;
 
 /**
- * The results of the write tools as they go on the wire. The component names are the keys of the old function
- * results ({@code status}, {@code entity}, {@code id}, {@code version}, {@code history_id}, ...), so a client that
- * read those keeps working; there is no wrapper around them.
+ * The results of the write tools as they go on the wire. The component names are the keys of the answer
+ * ({@code status}, {@code entity}, {@code id}, {@code version}, {@code history_id}, ...); there is no wrapper
+ * around them.
  */
 public final class WriteOutputs {
 

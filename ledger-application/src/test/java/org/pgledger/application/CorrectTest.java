@@ -36,7 +36,7 @@ import tools.jackson.databind.json.JsonMapper;
 class CorrectTest {
 
     private CorrectResult correct(Scenario s, long historyId) {
-        return s.bean(CorrectService.class).correct(Scenario.AUTHOR, new CorrectCommand(null, historyId,
+        return s.bean(CorrectService.class).correct(Scenario.AUTHOR, new CorrectCommand(Scenario.uuid(), historyId,
                 Scenario.REASON));
     }
 
@@ -76,18 +76,18 @@ class CorrectTest {
                 new Row(HistoryEntity.DEFECT_FIX, s -> s.fix(Scenario.AUTHOR, s.newDefect("d").id(),
                         Scenario.commit('a')).historyId()),
                 new Row(HistoryEntity.DEFECT_CASE, s -> s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR,
-                        new RecordCaseCommand(null, s.newDefect("d").id(), "seen", Scenario.REASON, null, null, null))
+                        new RecordCaseCommand(Scenario.uuid(), s.newDefect("d").id(), "seen", Scenario.REASON, null, null, null))
                         .historyId()),
                 new Row(HistoryEntity.DEFECT_TASK, s -> s.bean(LinkService.class).link(Scenario.AUTHOR,
-                        new LinkCommand(null, "defect_task", s.newDefect("d").id(), s.newTask("t").id(),
+                        new LinkCommand(Scenario.uuid(), "defect_task", s.newDefect("d").id(), s.newTask("t").id(),
                                 Scenario.REASON, null)).historyId()),
                 new Row(HistoryEntity.DEFECT_RELATION, s -> s.bean(LinkService.class).link(Scenario.AUTHOR,
-                        new LinkCommand(null, "blocks", s.newDefect("a").id(), s.newDefect("b").id(),
+                        new LinkCommand(Scenario.uuid(), "blocks", s.newDefect("a").id(), s.newDefect("b").id(),
                                 Scenario.REASON, null)).historyId()),
                 new Row(HistoryEntity.TASK, s -> s.newTask("t").historyId()),
                 new Row(HistoryEntity.CONDITION, s -> s.newCondition("1", "r", "c").historyId()),
                 new Row(HistoryEntity.CONDITION_LINK, s -> s.bean(LinkService.class).link(Scenario.AUTHOR,
-                        new LinkCommand(null, "condition_task", s.newCondition("1", "r", "c").id(),
+                        new LinkCommand(Scenario.uuid(), "condition_task", s.newCondition("1", "r", "c").id(),
                                 s.newTask("t").id(), Scenario.REASON, null)).historyId()));
     }
 
@@ -111,7 +111,7 @@ class CorrectTest {
                 .filter(h -> h.op() == HistoryOp.TRANSITION && "VERIFIED".equals(h.toState())).findFirst()
                 .orElseThrow().id();
         Expect.failure(() -> correct(s, verification), TrustCode.VERIFY_NEEDS_REVIEWER_LOGIN);
-        CorrectResult result = s.bean(ReviewService.class).reviewCorrect(Scenario.REVIEWER, new CorrectCommand(null,
+        CorrectResult result = s.bean(ReviewService.class).reviewCorrect(Scenario.REVIEWER, new CorrectCommand(Scenario.uuid(),
                 verification, Scenario.REASON));
         assertThat(s.historyRow(result.historyId()).login()).isEqualTo("ledger_reviewer");
     }
@@ -137,7 +137,7 @@ class CorrectTest {
     @DisplayName("SVC-COR-05: a short reason")
     void cor05_shortReason(Scenario s) {
         SaveResult d = s.newDefect("d");
-        Expect.failure(() -> s.bean(CorrectService.class).correct(Scenario.AUTHOR, new CorrectCommand(null,
+        Expect.failure(() -> s.bean(CorrectService.class).correct(Scenario.AUTHOR, new CorrectCommand(Scenario.uuid(),
                 d.historyId(), "short")), ValidationCode.REASON_INVALID);
     }
 }

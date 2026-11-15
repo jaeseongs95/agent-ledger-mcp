@@ -60,9 +60,9 @@ class BeforeDataTest {
         SaveResult d = s.newDefect("d");
         SaveResult t = s.newTask("t");
         SaveResult c = s.newCondition("1", "r", "c");
-        long caseRow = s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(null, d.id(),
+        long caseRow = s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(Scenario.uuid(), d.id(),
                 "seen", Scenario.REASON, null, null, null)).historyId();
-        long linkRow = s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(null, "defect_task", d.id(),
+        long linkRow = s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(Scenario.uuid(), "defect_task", d.id(),
                 t.id(), Scenario.REASON, null)).historyId();
         long fixRow = s.fix(Scenario.AUTHOR, d.id(), Scenario.commit('a')).historyId();
         List<Long> all = List.of(d.historyId(), t.historyId(), c.historyId(), caseRow, linkRow, fixRow);
@@ -149,11 +149,11 @@ class BeforeDataTest {
     @DisplayName("SVC-BEF-05: a CI update keeps the old fix row")
     void bef05_ciUpdate(Scenario s) {
         SaveResult d = s.newDefect("d");
-        s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR, new RecordFixCommand(null, d.id(), "repo/e2e",
+        s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR, new RecordFixCommand(Scenario.uuid(), d.id(), "repo/e2e",
                 Scenario.commit('a'), Scenario.REASON, null, "ci-1", "failure", null, null));
         Snapshot.FixRow old = Snapshot.FixRow.of(s.bean(DefectFixRepository.class).findByDefectIdAndRepoAndCommitSha(
                 DefectId.of(d.id()), "repo/e2e", CommitSha.of(Scenario.commit('a'))).orElseThrow());
-        RecordFixResult update = s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR, new RecordFixCommand(null,
+        RecordFixResult update = s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR, new RecordFixCommand(Scenario.uuid(),
                 d.id(), "repo/e2e", Scenario.commit('a'), Scenario.REASON, null, "ci-1", "success", null, null));
         assertThat(s.before(update.historyId(), Snapshot.FixRow.class)).isEqualTo(old);
     }
@@ -163,7 +163,7 @@ class BeforeDataTest {
     void bef05_noMark(Scenario s) {
         SaveResult d = s.newDefect("d");
         Snapshot.DefectRow open = Snapshot.DefectRow.of(s.defect(d.id()));
-        RecordFixResult fix = s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR, new RecordFixCommand(null,
+        RecordFixResult fix = s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR, new RecordFixCommand(Scenario.uuid(),
                 d.id(), "repo/e2e", Scenario.commit('a'), Scenario.REASON, null, null, null, null, false));
         assertThat(s.before(fix.transitionHistoryId(), Snapshot.DefectRow.class)).isEqualTo(open);
     }
@@ -173,9 +173,9 @@ class BeforeDataTest {
     void bef06_unlink(Scenario s) {
         SaveResult d = s.newDefect("d");
         SaveResult t = s.newTask("t");
-        var linked = s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(null, "defect_task", d.id(),
+        var linked = s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(Scenario.uuid(), "defect_task", d.id(),
                 t.id(), Scenario.REASON, null));
-        var unlinked = s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(null, "defect_task", d.id(),
+        var unlinked = s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(Scenario.uuid(), "defect_task", d.id(),
                 t.id(), Scenario.REASON, true));
         assertThat(row(s, linked.historyId()).beforeData()).isNull();
         assertThat(s.before(unlinked.historyId(), Snapshot.DefectTaskRow.class)).isEqualTo(
@@ -188,9 +188,9 @@ class BeforeDataTest {
         SaveResult d = s.newDefect("d");
         var defect = s.defect(d.id());
         long defectHistory = s.history(HistoryEntity.DEFECT, d.id()).size();
-        var recorded = s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(null,
+        var recorded = s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(Scenario.uuid(),
                 d.id(), "seen", Scenario.REASON, null, null, null));
-        var corrected = s.bean(CorrectService.class).correct(Scenario.AUTHOR, new CorrectCommand(null,
+        var corrected = s.bean(CorrectService.class).correct(Scenario.AUTHOR, new CorrectCommand(Scenario.uuid(),
                 recorded.historyId(), Scenario.REASON));
         assertThat(row(s, recorded.historyId()).beforeData()).isNull();
         assertThat(row(s, corrected.historyId()).beforeData()).isNull();
@@ -208,9 +208,9 @@ class BeforeDataTest {
         long history = s.count("SELECT COUNT(*) FROM history");
         long receipts = s.count("SELECT COUNT(*) FROM request_receipt");
         long counter = s.count("SELECT issued_no FROM id_counter WHERE name = 'HISTORY'");
-        String requestId = Scenario.uuid();
+        String operationKey = Scenario.uuid();
         assertThatThrownBy(() -> s.ctx().tx(() -> {
-            s.bean(SaveService.class).save(Scenario.AUTHOR, new SaveCommand(requestId, "defect", d.id(), 1L,
+            s.bean(SaveService.class).save(Scenario.AUTHOR, new SaveCommand(operationKey, "defect", d.id(), 1L,
                     Fields.of("title", "rolled back"), Scenario.REASON));
             throw new IllegalStateException("after the row update");
         })).isInstanceOf(IllegalStateException.class);

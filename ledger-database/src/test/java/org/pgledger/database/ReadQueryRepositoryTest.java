@@ -46,7 +46,7 @@ import org.pgledger.domain.rule.TaskState;
 import org.pgledger.domain.value.CommitSha;
 import org.pgledger.domain.value.JsonDocument;
 import org.pgledger.domain.value.MaxRows;
-import org.pgledger.domain.value.RequestId;
+import org.pgledger.domain.value.OperationKey;
 
 /**
  * The query repositories behind the read tools (REPO-025 .. REPO-028 for the new lists): lookups, filters, keyset
@@ -71,7 +71,7 @@ class ReadQueryRepositoryTest {
         return ctx.tx(() -> ctx.bean(HistoryRepository.class).insert(new HistoryEntry(ids.next(Counter.HISTORY), at,
                 org.pgledger.domain.value.AuthorId.of(author), "ledger_author", ActorAssurance.DECLARED, entity,
                 entityId, op, null, null, JsonDocument.EMPTY_OBJECT, null, "a reason of enough length", null, null,
-                null, new RequestId(UUID.randomUUID()), null)));
+                null, new OperationKey(UUID.randomUUID().toString()), null)));
     }
 
     // ------------------------------------------------------------------ lookup

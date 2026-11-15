@@ -50,7 +50,7 @@ class JsonFidelityTest {
         assertThat(args.path("esc").stringValue()).isEqualTo("\"\\/\b\f\n\r\tA");
         assertThat(args.path("pair").stringValue()).isEqualTo("😀");
         Attestations.Stamp stamp = fixture.stampCarrier(host.server(), host.author(HookFixture.HOST_ID), "save", Json.of(ESCAPES), args);
-        assertThat(args).isEqualTo(Json.stamped(Json.of(ESCAPES), stamp.token(), stamp.addedRequestId()));
+        assertThat(args).isEqualTo(Json.stamped(Json.of(ESCAPES), stamp.token()));
         assertThat(run.stdout()).contains("한글".getBytes(StandardCharsets.UTF_8));
     }
 
@@ -88,7 +88,7 @@ class JsonFidelityTest {
         long millis = (System.nanoTime() - start) / 1_000_000;
         JsonNode args = host.echoed(run);
         Attestations.Stamp stamp = fixture.stampCarrier(host.server(), host.author(HookFixture.HOST_ID), "save", input, args);
-        assertThat(args).isEqualTo(Json.stamped(input, stamp.token(), stamp.addedRequestId()));
+        assertThat(args).isEqualTo(Json.stamped(input, stamp.token()));
         assertThat(millis).as("in-process milliseconds").isLessThan(3_000);
     }
 

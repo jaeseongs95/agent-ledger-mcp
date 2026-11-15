@@ -26,8 +26,8 @@ import org.pgledger.domain.error.LedgerException;
 @LedgerServiceTest
 class ReceiptConcurrencyTest {
 
-    private static SaveCommand create(Scenario s, String requestId, String title) {
-        return new SaveCommand(requestId, "defect", null, 0L, Fields.of(s.defectFields(title)), Scenario.REASON);
+    private static SaveCommand create(Scenario s, String operationKey, String title) {
+        return new SaveCommand(operationKey,"defect", null, 0L, Fields.of(s.defectFields(title)), Scenario.REASON);
     }
 
     private static Optional<ErrorCode> code(Outcome<?> outcome) {
@@ -35,7 +35,7 @@ class ReceiptConcurrencyTest {
     }
 
     @Test
-    @DisplayName("SVC-RCP-09 (principle 4.4): 16 threads with the same request id commit exactly once: every call that succeeds sees the one response (a replay), every other call ends with the translated DUPLICATE_KEY (it met the unique key of the request id at the same moment), never a raw exception")
+    @DisplayName("SVC-RCP-09 (principle 4.4): 16 threads with the same operation key commit exactly once: every call that succeeds sees the one response (a replay), every other call ends with the translated DUPLICATE_KEY (it met the unique key of the operation key at the same moment), never a raw exception")
     void rcp09_sameRequestSamePayload(Scenario s) {
         String id = Scenario.uuid();
         List<Callable<SaveResult>> calls = IntStream.range(0, 16)
@@ -48,12 +48,12 @@ class ReceiptConcurrencyTest {
         assertThat(outcomes.stream().filter(Outcome::succeeded)).as("at least the call that committed").isNotEmpty();
         assertThat(outcomes.stream().filter(Outcome::succeeded).map(Outcome::value).distinct()).hasSize(1);
         assertThat(s.count("SELECT COUNT(*) FROM defect WHERE project_id = ?", s.projectId())).isEqualTo(1);
-        assertThat(s.count("SELECT COUNT(*) FROM history WHERE request_id = ?", id)).isEqualTo(1);
-        assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE request_id = ?", id)).isEqualTo(1);
+        assertThat(s.count("SELECT COUNT(*) FROM history WHERE operation_key = ?", id)).isEqualTo(1);
+        assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ?", id)).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("SVC-RCP-10 (principle 4.4): 16 threads, 4 payloads: one payload wins; a call with another payload ends with REQUEST_CONFLICT (it read the receipt) or DUPLICATE_KEY (it met the unique key at the same moment); a call with the winning payload answers the stored response or ends with DUPLICATE_KEY")
+    @DisplayName("SVC-RCP-10 (principle 4.4; one author, because the receipts are per author, OPK-020): 16 threads, 4 payloads: one payload wins; a call with another payload ends with OPERATION_CONFLICT (it read the receipt) or DUPLICATE_KEY (it met the unique key at the same moment); a call with the winning payload answers the stored response or ends with DUPLICATE_KEY")
     void rcp10_sameRequestFourPayloads(Scenario s) {
         String id = Scenario.uuid();
         List<String> titles = IntStream.range(0, 16).mapToObj(i -> "payload " + (i % 4)).toList();
@@ -70,7 +70,7 @@ class ReceiptConcurrencyTest {
             if (Objects.equals(titles.get(i), winningTitle)) {
                 assertThat(code).as("payload of the winner").isIn(Optional.empty(), Optional.of(ConflictCode.DUPLICATE_KEY));
             } else {
-                assertThat(code).as("another payload").isIn(Optional.of(ConflictCode.REQUEST_CONFLICT),
+                assertThat(code).as("another payload").isIn(Optional.of(ConflictCode.OPERATION_CONFLICT),
                         Optional.of(ConflictCode.DUPLICATE_KEY));
             }
         }
@@ -90,12 +90,12 @@ class ReceiptConcurrencyTest {
         for (int i = 0; i < 200; i++) {
             int n = i;
             calls.add(() -> n % 2 == 0
-                    ? s.bean(SaveService.class).save(actor, create(s, null, "mixed " + n))
-                    : s.bean(SaveService.class).save(actor, new SaveCommand(null, "task", null, 0L,
+                    ? s.bean(SaveService.class).save(actor, create(s, Scenario.uuid(), "mixed " + n))
+                    : s.bean(SaveService.class).save(actor, new SaveCommand(Scenario.uuid(), "task", null, 0L,
                             Fields.of(s.taskFields("mixed " + n)), Scenario.REASON)));
         }
         List<Outcome<Object>> outcomes = Parallel.all(calls, 12);
-        // a stress write may lose the race of its request id: that is a business failure, anything else is not
+        // a stress write may lose the race of its operation key: that is a business failure, anything else is not
         assertThat(outcomes).allSatisfy(o -> assertThat(o.failure()).satisfiesAnyOf(
                 failure -> assertThat(failure).isNull(),
                 failure -> assertThat(failure).isInstanceOf(LedgerException.class)));

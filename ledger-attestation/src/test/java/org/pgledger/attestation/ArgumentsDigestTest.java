@@ -128,7 +128,7 @@ class ArgumentsDigestTest {
     }
 
     private static Map<String, Object> call() {
-        return map("request_id", "r1", "entity", "defect", "fields", map("title", "t", "project_id", "p"),
+        return map("operationKey", "r1", "entity", "defect", "fields", map("title", "t", "project_id", "p"),
                 "ops", List.of(map("op", "save"), map("op", "link")));
     }
 
@@ -140,7 +140,7 @@ class ArgumentsDigestTest {
         assertThat(ArgumentsDigest.of(Map.of())).isEqualTo("44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a");
 
         Map<String, Object> reordered = map("ops", List.of(map("op", "save"), map("op", "link")),
-                "fields", map("project_id", "p", "title", "t"), "entity", "defect", "request_id", "r1");
+                "fields", map("project_id", "p", "title", "t"), "entity", "defect", "operationKey", "r1");
         assertThat(ArgumentsDigest.of(reordered)).isEqualTo(digest);
         assertThat(ArgumentsDigest.of(map("n", 1))).isEqualTo(ArgumentsDigest.of(map("n", 1.0)))
                 .isEqualTo(ArgumentsDigest.of(map("n", new BigDecimal("1.00"))));
@@ -173,7 +173,7 @@ class ArgumentsDigestTest {
         added.put("note", "x");
         others.add(added);
         Map<String, Object> removed = call();
-        removed.remove("request_id");
+        removed.remove("operationKey");
         others.add(removed);
         Map<String, Object> asText = call();
         asText.put("fields", "{\"title\":\"t\",\"project_id\":\"p\"}");
@@ -181,10 +181,71 @@ class ArgumentsDigestTest {
         for (Map<String, Object> other : others) {
             assertThat(ArgumentsDigest.of(other)).as("%s", other).isNotEqualTo(digest);
         }
-        // empty text, absent and JSON null are three different calls: the signature covers what was sent
-        assertThat(List.of(ArgumentsDigest.of(map("a", "")), ArgumentsDigest.of(map()), ArgumentsDigest.of(map("a", null))))
-                .doesNotHaveDuplicates();
+        // changed by OPK-021: a JSON null member counts as not given, so only empty text and absent (= null) differ;
+        // before, null was a third, different call
+        assertThat(ArgumentsDigest.of(map("a", ""))).isNotEqualTo(ArgumentsDigest.of(map()));
+        assertThat(ArgumentsDigest.of(map("a", null))).isEqualTo(ArgumentsDigest.of(map()));
         assertThat(ArgumentsDigest.of(map("a", "1"))).isNotEqualTo(ArgumentsDigest.of(map("a", 1)));
+    }
+
+    @Test
+    @DisplayName("OPK-021 an object member with the value null is left out at every depth: the digest equals the digest of the arguments without it")
+    void nullMembersAreLeftOut() {
+        String without = ArgumentsDigest.of(map("operationKey", "k", "entity", "defect",
+                "fields", map("title", "t"), "ops", List.of(map("op", "save", "fields", map("title", "t")))));
+        Map<String, Object> with = map("operationKey", "k", "entity", "defect", "note", null,
+                "fields", map("title", "t", "owner_actor_id", null, "deeper", map("x", null)),
+                "ops", List.of(map("op", "save", "reason", null, "fields", map("title", "t", "a", null))));
+        // "deeper" holds only a null member, so it stays as an empty object: not equal to the digest without "deeper"
+        assertThat(ArgumentsDigest.of(with)).isNotEqualTo(without);
+        ((Map<?, ?>) with.get("fields")).remove("deeper");
+        assertThat(ArgumentsDigest.of(with)).isEqualTo(without);
+        assertThat(ArgumentsDigest.of(map("a", null))).isEqualTo(ArgumentsDigest.of(Map.of()))
+                .isEqualTo("44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a");
+        assertThat(ArgumentsDigest.of(map("fields", map("owner_actor_id", null))))
+                .isEqualTo(ArgumentsDigest.of(map("fields", map())));
+        assertThat(ArgumentsDigest.of(map("fields", map("owner_actor_id", null))))
+                .isNotEqualTo(ArgumentsDigest.of(map()));
+    }
+
+    @Test
+    @DisplayName("OPK-021 an element of an array stays, null or not: the list [null] differs from [], and null elements keep their place")
+    void nullArrayElementsAreKept() {
+        assertThat(ArgumentsDigest.of(map("a", Arrays.asList((Object) null))))
+                .isNotEqualTo(ArgumentsDigest.of(map("a", List.of())));
+        assertThat(ArgumentsDigest.of(map("a", Arrays.asList(null, 1)))).isNotEqualTo(ArgumentsDigest.of(map("a", List.of(1))))
+                .isNotEqualTo(ArgumentsDigest.of(map("a", Arrays.asList(1, null))));
+        // a null member inside an object that is an array element is left out, the element stays
+        assertThat(ArgumentsDigest.of(map("a", List.of(map("x", 1, "y", null)))))
+                .isEqualTo(ArgumentsDigest.of(map("a", List.of(map("x", 1)))));
+        assertThat(ArgumentsDigest.of(map("a", List.of(map("y", null)))))
+                .isEqualTo(ArgumentsDigest.of(map("a", List.of(map()))))
+                .isNotEqualTo(ArgumentsDigest.of(map("a", List.of())));
+    }
+
+    @Test
+    @DisplayName("OPK-021 a value nested deeper than 256 is still an IllegalArgumentException (null members left out or not); a null member of the top-level _hostAttestation stays ignored")
+    void depthLimitAndAttestationMemberStay() {
+        assertThatThrownBy(() -> ArgumentsDigest.of(deep(300))).isInstanceOf(IllegalArgumentException.class);
+        Map<String, Object> deepWithNull = deep(300);
+        deepWithNull.put("n", null);
+        assertThatThrownBy(() -> ArgumentsDigest.of(deepWithNull)).isInstanceOf(IllegalArgumentException.class);
+        List<Object> deepList = new ArrayList<>();
+        List<Object> inner = deepList;
+        for (int i = 0; i < 300; i++) {
+            List<Object> next = new ArrayList<>();
+            inner.add(next);
+            inner = next;
+        }
+        assertThatThrownBy(() -> ArgumentsDigest.of(map("a", deepList))).isInstanceOf(IllegalArgumentException.class);
+        assertThat(ArgumentsDigest.of(deep(100))).matches("[0-9a-f]{64}");
+
+        String digest = ArgumentsDigest.of(map("a", 1));
+        assertThat(ArgumentsDigest.of(map("a", 1, "_hostAttestation", "pgla2.x"))).isEqualTo(digest);
+        assertThat(ArgumentsDigest.of(map("a", 1, "_hostAttestation", null))).isEqualTo(digest);
+        assertThat(ArgumentsDigest.of(map("a", 1, "b", null, "_hostAttestation", "pgla2.x"))).isEqualTo(digest);
+        // below the top level the name is content
+        assertThat(ArgumentsDigest.of(map("a", map("_hostAttestation", "x")))).isNotEqualTo(ArgumentsDigest.of(map("a", map())));
     }
 
     static Stream<Arguments> notJson() {

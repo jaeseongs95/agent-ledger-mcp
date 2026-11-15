@@ -27,8 +27,8 @@ final class CodexHost extends FlatHost {
     }
 
     @Override
-    public Optional<JsonNode> allowed(JsonNode sent, String token, String addedRequestId) {
-        return answer(new Specific(EVENT_NAME, "allow", null, Json.stamped(sent, token, addedRequestId)));
+    public Optional<JsonNode> allowed(JsonNode sent, String token) {
+        return answer(new Specific(EVENT_NAME, "allow", null, Json.stamped(sent, token)));
     }
 
     @Override

@@ -44,7 +44,7 @@ class FixTest {
 
     private static RecordFixCommand fix(String defect, String commit, String ciRef, String conclusion,
             String completedAt, Boolean mark) {
-        return new RecordFixCommand(null, defect, "repo/e2e", commit, Scenario.REASON, "main", ciRef, conclusion,
+        return new RecordFixCommand(Scenario.uuid(), defect, "repo/e2e", commit, Scenario.REASON, "main", ciRef, conclusion,
                 completedAt, mark);
     }
 

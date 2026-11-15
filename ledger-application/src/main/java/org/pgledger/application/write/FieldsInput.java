@@ -9,10 +9,10 @@ import tools.jackson.databind.annotation.JsonDeserialize;
 
 /**
  * The {@code fields} of a save as they arrive: one patch per editable key of a defect, a task or a condition (the kind of
- * the save decides which of them are valid). The component names are the wire keys. Reading with Jackson gives the three
- * states of a key: left out is {@link Patch#absent}, written with a JSON {@code null} is a patch set to nothing (clears an
- * optional field), written with a text is a patch set to it; {@code PatchText} does that. A record that is made in code
- * and given {@code null} for a key means the key is left out.
+ * the save decides which of them are valid). The component names are the wire keys. Reading with Jackson gives the
+ * states of a key: left out or written with a JSON {@code null} is {@link Patch#absent} (not given), written with a text is a
+ * patch set to it, and an empty text clears an optional field; {@code PatchText} does that. A record that is made in code
+ * and given {@code null} for a key means the key is left out; {@code Patch.set(null)} in code clears the field.
  */
 public record FieldsInput(
         @JsonProperty("project_id") @JsonDeserialize(using = PatchText.class) Patch<String> projectId,

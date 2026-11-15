@@ -14,7 +14,7 @@ final class Hosts {
 
     /**
      * The five attachment tools (ATA-021), written out here and not taken from the product. Their operation is the whole
-     * canonical name, which is hyphenated and has no {@code ledger_} prefix; they carry no request id, like whoami.
+     * canonical name, which is hyphenated and has no {@code ledger_} prefix; their claim carries no operation key, like whoami.
      */
     static final List<String> ARTIFACT_OPS = List.of(
             "artifact-begin", "artifact-chunk", "artifact-finish", "artifact-status", "artifact-read");
@@ -31,8 +31,8 @@ final class Hosts {
         return op.startsWith("artifact") ? op : "ledger_" + op;
     }
 
-    /** Whether the call of the tool has a request id: all but whoami and the attachment tools. */
-    static boolean hasRequestId(String op) {
+    /** Whether the claim of the tool names the operationKey argument: all but whoami and the attachment tools. */
+    static boolean carriesOperationKey(String op) {
         return !"whoami".equals(op) && !ARTIFACT_OPS.contains(op);
     }
 

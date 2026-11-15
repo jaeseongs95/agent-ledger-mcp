@@ -68,13 +68,13 @@ class ValidationTranslationTest {
     @DisplayName("SVC-PRN-10: an operation of a batch without any key violates exactly the required keys that BatchOpKind lists for it (in snake case), each as REQUIRED")
     void prn10_requiredKeys(BatchOpKind kind) {
         BatchOpInput empty = switch (kind) {
-            case SAVE -> new BatchOpInput.Save(null, null, null, null, null, null);
-            case TRANSITION -> new BatchOpInput.Transition(null, null, null, null, null, null, null, null, null, null);
-            case RECORD_FIX -> new BatchOpInput.RecordFix(null, null, null, null, null, null, null, null, null, null,
+            case SAVE -> new BatchOpInput.Save(null, null, null, null, null);
+            case TRANSITION -> new BatchOpInput.Transition(null, null, null, null, null, null, null, null, null);
+            case RECORD_FIX -> new BatchOpInput.RecordFix(null, null, null, null, null, null, null, null, null,
                     null);
-            case RECORD_CASE -> new BatchOpInput.RecordCase(null, null, null, null, null, null, null, null);
-            case LINK -> new BatchOpInput.Link(null, null, null, null, null, null);
-            case CORRECT -> new BatchOpInput.Correct(null, null, null, null);
+            case RECORD_CASE -> new BatchOpInput.RecordCase(null, null, null, null, null, null, null);
+            case LINK -> new BatchOpInput.Link(null, null, null, null, null);
+            case CORRECT -> new BatchOpInput.Correct(null, null, null);
         };
 
         ValidationException failure = new ViolationTranslator("ops[0]").translate(VALIDATOR.validate(empty));

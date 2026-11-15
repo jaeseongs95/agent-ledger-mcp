@@ -5,8 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Named;
@@ -21,6 +21,8 @@ import org.pgledger.application.support.Scenario;
 import org.pgledger.application.write.BatchOpInput;
 import org.pgledger.application.write.BatchResult;
 import org.pgledger.application.write.BatchService;
+import org.pgledger.application.write.CorrectCommand;
+import org.pgledger.application.write.CorrectService;
 import org.pgledger.application.write.LinkCommand;
 import org.pgledger.application.write.LinkService;
 import org.pgledger.application.support.MergeFixture;
@@ -39,13 +41,17 @@ import org.pgledger.application.write.WriteResult.TransitionResult;
 import org.pgledger.database.repository.ReceiptRepository;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ValidationCode;
+import org.pgledger.domain.error.ValidationReason;
+import org.pgledger.domain.error.LedgerException;
 import org.pgledger.domain.error.LookupCode;
 import org.pgledger.domain.error.TrustCode;
 import org.pgledger.domain.model.Receipt;
 import org.pgledger.domain.model.ReceiptOperation;
 import org.pgledger.domain.rule.Channel;
+import org.pgledger.domain.rule.HistoryEntity;
+import org.pgledger.domain.rule.HistoryOp;
 import org.pgledger.domain.value.AuthorId;
-import org.pgledger.domain.value.RequestId;
+import org.pgledger.domain.value.OperationKey;
 import org.pgledger.domain.value.Sha256;
 
 /** SVC-RCP-01 .. SVC-RCP-08, -12 .. -16: idempotency of the write services. */
@@ -71,23 +77,23 @@ class ReceiptTest {
     }
 
     @Test
-    @DisplayName("SVC-RCP-17 (TXF-001, principle 4.4): a reserve of a request id that has a receipt reads it first and answers Replayed with the stored response: no insert is tried, so no duplicate key, no savepoint and no nested write is involved; the transaction it runs in is the one of the write, and a receipt reserved and finished after it commits")
+    @DisplayName("SVC-RCP-17 (TXF-001, principle 4.4): a reserve of an operation key that has a receipt reads it first and answers Replayed with the stored response: no insert is tried, so no duplicate key, no savepoint and no nested write is involved; the transaction it runs in is the one of the write, and a receipt reserved and finished after it commits")
     void rcp17_aStoredReceiptIsReplayedFromTheRead(Scenario s) {
         org.pgledger.application.receipt.ReceiptService service = s.bean(
                 org.pgledger.application.receipt.ReceiptService.class);
-        RequestId first = RequestId.parse(Scenario.uuid());
-        RequestId next = RequestId.parse(Scenario.uuid());
+        OperationKey first = OperationKey.parse(Scenario.uuid());
+        OperationKey next = OperationKey.parse(Scenario.uuid());
         AuthorId author = AuthorId.of(Scenario.AUTHOR);
         Sha256 digest = Sha256.ofText("payload " + first);
 
         org.pgledger.application.receipt.ReceiptService.Reservation<Answer> again = s.ctx().tx(() -> {
             service.reserve(first, ReceiptOperation.SAVE, digest, author, Channel.AUTHOR, Answer.class);
-            service.finish(first, new Answer("first"));
+            service.finish(first, author, new Answer("first"));
             org.pgledger.application.receipt.ReceiptService.Reservation<Answer> loser = service.reserve(first,
                     ReceiptOperation.SAVE, digest, author, Channel.AUTHOR, Answer.class);
             service.reserve(next, ReceiptOperation.SAVE, Sha256.ofText("payload " + next), author, Channel.AUTHOR,
                     Answer.class);
-            service.finish(next, new Answer("next"));
+            service.finish(next, author, new Answer("next"));
             return loser;
         });
 
@@ -95,7 +101,7 @@ class ReceiptTest {
                 new Answer("first")));
         assertThat(receipts(s, first.toString())).isEqualTo(1);
         assertThat(receipts(s, next.toString())).isEqualTo(1);
-        assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE request_id = ? AND response IS NOT NULL",
+        assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ? AND response IS NOT NULL",
                 next.toString())).isEqualTo(1);
     }
 
@@ -108,14 +114,15 @@ class ReceiptTest {
             }
 
             @Override
-            public java.util.Optional<Receipt> findById(RequestId requestId) {
+            public java.util.Optional<Receipt> findByAuthorIdAndOperationKey(org.pgledger.domain.value.ActorId authorId,
+                    OperationKey operationKey) {
                 return java.util.Optional.empty();
             }
         };
     }
 
     @Test
-    @DisplayName("SVC-RCP-18 (TXF-001, principle 4.4): a reserve whose read missed the receipt of another call (it ran before that call committed) breaks the unique key of the request id and ends with the translated DUPLICATE_KEY: no raw exception, nothing of it stays written, the receipt and the response of the winner are untouched, and nothing is run again")
+    @DisplayName("SVC-RCP-18 (TXF-001, principle 4.4): a reserve whose read missed the receipt of another call (it ran before that call committed) breaks the unique key of the operation key and ends with the translated DUPLICATE_KEY: no raw exception, nothing of it stays written, the receipt and the response of the winner are untouched, and nothing is run again")
     void rcp18_aReserveThatMissedTheReceiptEndsWithDuplicateKey(Scenario s) {
         org.pgledger.application.receipt.ReceiptService real = s.bean(
                 org.pgledger.application.receipt.ReceiptService.class);
@@ -123,12 +130,12 @@ class ReceiptTest {
                 blind(s.bean(ReceiptRepository.class)),
                 s.bean(org.pgledger.database.repository.ReceiptCompletionRepository.class),
                 s.bean(org.pgledger.application.json.LedgerJson.class), s.bean(java.time.Clock.class));
-        RequestId id = RequestId.parse(Scenario.uuid());
+        OperationKey id = OperationKey.parse(Scenario.uuid());
         AuthorId author = AuthorId.of(Scenario.AUTHOR);
         Sha256 digest = Sha256.ofText("payload " + id);
         s.ctx().tx(() -> {
             real.reserve(id, ReceiptOperation.SAVE, digest, author, Channel.AUTHOR, Answer.class);
-            real.finish(id, new Answer("winner"));
+            real.finish(id, author, new Answer("winner"));
             return null;
         });
 
@@ -141,12 +148,12 @@ class ReceiptTest {
                         new org.pgledger.application.receipt.ReceiptService.Reservation.Replayed<>(new Answer("winner")));
     }
 
-    private static SaveCommand create(Scenario s, String requestId, String title) {
-        return new SaveCommand(requestId, "defect", null, 0L, Fields.of(s.defectFields(title)), Scenario.REASON);
+    private static SaveCommand create(Scenario s, String operationKey, String title) {
+        return new SaveCommand(operationKey, "defect", null, 0L, Fields.of(s.defectFields(title)), Scenario.REASON);
     }
 
-    private static long receipts(Scenario s, String requestId) {
-        return s.count("SELECT COUNT(*) FROM request_receipt WHERE request_id = ?", requestId);
+    private static long receipts(Scenario s, String operationKey) {
+        return s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ?", operationKey);
     }
 
     private static long defects(Scenario s) {
@@ -154,7 +161,7 @@ class ReceiptTest {
     }
 
     @Test
-    @DisplayName("SVC-RCP-01: the same request again returns the stored response and writes nothing")
+    @DisplayName("SVC-RCP-01 (OPK-003): the same request again (the same operation key) returns the stored response and writes nothing")
     void rcp01_replay(Scenario s) {
         String id = Scenario.uuid();
         SaveResult first = s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, id, "d"));
@@ -171,19 +178,19 @@ class ReceiptTest {
 
     static Stream<Named<BiFunction<Scenario, SaveCommand, SaveCommand>>> changedSaves() {
         return Stream.of(
-                Named.of("another reason", (s, c) -> new SaveCommand(c.requestId(), c.entity(), c.id(),
+                Named.of("another reason", (s, c) -> new SaveCommand(c.operationKey(), c.entity(), c.id(),
                         c.expectedVersion(), c.fields(), "another reason, long enough")),
-                Named.of("another id", (s, c) -> new SaveCommand(c.requestId(), c.entity(), s.defectId(2),
+                Named.of("another id", (s, c) -> new SaveCommand(c.operationKey(), c.entity(), s.defectId(2),
                         c.expectedVersion(), c.fields(), c.reason())),
-                Named.of("another expected version", (s, c) -> new SaveCommand(c.requestId(), c.entity(), c.id(), 5L,
+                Named.of("another expected version", (s, c) -> new SaveCommand(c.operationKey(), c.entity(), c.id(), 5L,
                         c.fields(), c.reason())),
-                Named.of("another field value", (s, c) -> new SaveCommand(c.requestId(), c.entity(), c.id(),
+                Named.of("another field value", (s, c) -> new SaveCommand(c.operationKey(), c.entity(), c.id(),
                         c.expectedVersion(), Fields.of("title", "other title"), c.reason())));
     }
 
     @ParameterizedTest
     @MethodSource("changedSaves")
-    @DisplayName("SVC-RCP-02: the same request id with another payload is a conflict")
+    @DisplayName("SVC-RCP-02 (OPK-004): the same operation key with another payload is a conflict")
     void rcp02_conflict(BiFunction<Scenario, SaveCommand, SaveCommand> change, Scenario s) {
         s.newDefect("one");
         s.newDefect("two");
@@ -193,35 +200,36 @@ class ReceiptTest {
         s.bean(SaveService.class).save(Scenario.AUTHOR, base);
         long history = s.count("SELECT COUNT(*) FROM history");
         Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR, change.apply(s, base)),
-                ConflictCode.REQUEST_CONFLICT);
+                ConflictCode.OPERATION_CONFLICT);
         assertThat(s.defect(s.defectId(1)).title()).isEqualTo("edited");
         assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
     }
 
     @Test
-    @DisplayName("SVC-RCP-03: the same request id for another operation is a conflict")
+    @DisplayName("SVC-RCP-03 (OPK-004): the same operation key for another operation is a conflict")
     void rcp03_anotherOperation(Scenario s) {
         String id = Scenario.uuid();
         SaveResult d = s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, id, "d"));
         Expect.failure(() -> s.bean(TransitionService.class).transition(Scenario.AUTHOR, new TransitionCommand(id,
                 "defect", d.id(), 1L, "DISPUTED", Scenario.REASON, Scenario.EVIDENCE, null, null)),
-                ConflictCode.REQUEST_CONFLICT);
+                ConflictCode.OPERATION_CONFLICT);
     }
 
     @Test
-    @DisplayName("SVC-RCP-04: the same request id from another author is a conflict")
+    @DisplayName("SVC-RCP-04 (OPK-004, OPK-020): the same operation key from another author is no conflict any more (changed: it used to be one): the receipts are per author, so the other author writes its own write and has its own receipt under the key")
     void rcp04_anotherAuthor(Scenario s) {
         String id = Scenario.uuid();
-        SaveResult d = s.newDefect("d");
-        TransitionCommand dispute = new TransitionCommand(id, "defect", d.id(), 1L, "DISPUTED", Scenario.REASON,
-                Scenario.EVIDENCE, null, null);
-        s.bean(TransitionService.class).transition(Scenario.AUTHOR, dispute);
-        Expect.failure(() -> s.bean(TransitionService.class).transition(Scenario.DEFECT_ONLY, dispute),
-                ConflictCode.REQUEST_CONFLICT);
+        SaveResult mine = s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, id, "d"));
+        SaveResult theirs = s.bean(SaveService.class).save(Scenario.DEFECT_ONLY, create(s, id, "d"));
+        assertThat(theirs.id()).isNotEqualTo(mine.id());
+        assertThat(defects(s)).isEqualTo(2);
+        assertThat(receipts(s, id)).isEqualTo(2);
+        assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ? AND author_id = ?", id,
+                Scenario.DEFECT_ONLY)).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("SVC-RCP-04: the same request id through the other channel is a conflict")
+    @DisplayName("SVC-RCP-04 (OPK-004): the same operation key and payload of the same author through the other channel (reviewer) is still a conflict: the channel is compared, the receipt of the author is found")
     void rcp04_anotherChannel(Scenario s) {
         String id = Scenario.uuid();
         SaveResult d = s.newDefect("d");
@@ -229,29 +237,29 @@ class ReceiptTest {
                 Scenario.EVIDENCE, null, null);
         s.bean(TransitionService.class).transition(Scenario.AUTHOR, dispute);
         Expect.failure(() -> s.bean(ReviewService.class).review(Scenario.AUTHOR, dispute),
-                ConflictCode.REQUEST_CONFLICT);
+                ConflictCode.OPERATION_CONFLICT);
     }
 
     // ---------------------------------------------------------------------- 05
 
     static Stream<Named<BiFunction<Scenario, SaveCommand, SaveCommand>>> samePayloadSpelledDifferently() {
         return Stream.of(
-                Named.of("reason padded with spaces", (s, c) -> new SaveCommand(c.requestId(), c.entity(), c.id(),
+                Named.of("reason padded with spaces", (s, c) -> new SaveCommand(c.operationKey(), c.entity(), c.id(),
                         c.expectedVersion(), c.fields(), "   " + c.reason() + "   ")),
-                Named.of("expected version absent instead of 0", (s, c) -> new SaveCommand(c.requestId(), c.entity(),
+                Named.of("expected version absent instead of 0", (s, c) -> new SaveCommand(c.operationKey(), c.entity(),
                         c.id(), null, c.fields(), c.reason())),
-                Named.of("blank id instead of absent", (s, c) -> new SaveCommand(c.requestId(), c.entity(), "  ",
+                Named.of("blank id instead of absent", (s, c) -> new SaveCommand(c.operationKey(), c.entity(), "  ",
                         c.expectedVersion(), c.fields(), c.reason())),
                 Named.of("an optional field blank instead of absent", (s, c) -> {
                     Map<String, String> fields = new LinkedHashMap<>(s.defectFields("d"));
                     fields.put("owner_actor_id", "   ");
-                    return new SaveCommand(c.requestId(), c.entity(), c.id(), c.expectedVersion(), Fields.of(fields),
+                    return new SaveCommand(c.operationKey(), c.entity(), c.id(), c.expectedVersion(), Fields.of(fields),
                             c.reason());
                 }),
                 Named.of("an optional field null instead of absent", (s, c) -> {
                     Map<String, String> fields = new LinkedHashMap<>(s.defectFields("d"));
                     fields.put("owner_actor_id", null);
-                    return new SaveCommand(c.requestId(), c.entity(), c.id(), c.expectedVersion(), Fields.of(fields),
+                    return new SaveCommand(c.operationKey(), c.entity(), c.id(), c.expectedVersion(), Fields.of(fields),
                             c.reason());
                 }));
     }
@@ -315,7 +323,7 @@ class ReceiptTest {
         TransitionCommand dispute = new TransitionCommand(Scenario.uuid(), "defect", d.id(), 1L, "DISPUTED",
                 Scenario.REASON, Scenario.EVIDENCE, null, null);
         TransitionResult first = s.bean(TransitionService.class).transition(Scenario.AUTHOR, dispute);
-        s.bean(TransitionService.class).transition(Scenario.AUTHOR, new TransitionCommand(null, "defect", d.id(), 2L,
+        s.bean(TransitionService.class).transition(Scenario.AUTHOR, new TransitionCommand(Scenario.uuid(), "defect", d.id(), 2L,
                 "OPEN", Scenario.REASON, Scenario.EVIDENCE, null, null));
         assertThat(s.bean(TransitionService.class).transition(Scenario.AUTHOR, dispute)).isEqualTo(first);
     }
@@ -351,7 +359,7 @@ class ReceiptTest {
         SaveResult t = s.newTask("t");
         LinkCommand link = new LinkCommand(Scenario.uuid(), "defect_task", d.id(), t.id(), Scenario.REASON, null);
         var first = s.bean(LinkService.class).link(Scenario.AUTHOR, link);
-        s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(null, "defect_task", d.id(), t.id(),
+        s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(Scenario.uuid(), "defect_task", d.id(), t.id(),
                 Scenario.REASON, true));
         assertThat(s.bean(LinkService.class).link(Scenario.AUTHOR, link)).isEqualTo(first);
     }
@@ -359,25 +367,58 @@ class ReceiptTest {
     // ---------------------------------------------------------------------- 08
 
     @Test
-    @DisplayName("SVC-RCP-08: without a request id two identical calls are two writes")
-    void rcp08_blindRetry(Scenario s) {
-        long before = s.count("SELECT COUNT(*) FROM request_receipt");
-        SaveResult one = s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, null, "d"));
-        SaveResult two = s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, null, "d"));
-        assertThat(two.id()).isNotEqualTo(one.id());
-        assertThat(defects(s)).isEqualTo(2);
-        assertThat(s.count("SELECT COUNT(*) FROM request_receipt")).isEqualTo(before + 2);
+    @DisplayName("SVC-RCP-08 (OPK-001): without an operation key a call is refused with REQUIRED at operationKey and writes nothing: two identical calls are no longer two writes (changed: the server used to make a fresh key up)")
+    void rcp08_noOperationKey(Scenario s) {
+        long receipts = s.count("SELECT COUNT(*) FROM request_receipt");
+        long history = s.count("SELECT COUNT(*) FROM history");
+        for (int attempt = 0; attempt < 2; attempt++) {
+            var failure = Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, null, "d")),
+                    ValidationCode.VALIDATION_FAILED);
+            assertThat(failure.args()).containsExactly("operationKey");
+            assertThat(Expect.firstIssue(failure).path()).isEqualTo("operationKey");
+            assertThat(Expect.firstIssue(failure).reason()).isEqualTo(ValidationReason.REQUIRED);
+        }
+        assertThat(defects(s)).isZero();
+        assertThat(s.count("SELECT COUNT(*) FROM request_receipt")).isEqualTo(receipts);
+        assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
     }
 
     // ---------------------------------------------------------------------- 12
 
     @ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(strings = {"not-a-uuid", "12345", "0123456789012345678901234567890123456"})
-    @DisplayName("SVC-RCP-12: a request id that is not a UUID")
-    void rcp12_requestIdFormat(String requestId, Scenario s) {
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"", " ", "   ", "\t\n"})
+    @DisplayName("SVC-RCP-12 (OPK-002): an operation key that is empty or blank is refused (MUST_BE_CHARS_RANGE 1..128 at operationKey)")
+    void rcp12_blankOperationKey(String operationKey, Scenario s) {
+        assertRefusedAsLength(s, operationKey);
+    }
+
+    @Test
+    @DisplayName("SVC-RCP-12 (OPK-002): an operation key of 129 characters is refused, one of 128 is written (changed: the key was a UUID of 36 characters before, and any other text was refused)")
+    void rcp12_operationKeyLength(Scenario s) {
+        assertRefusedAsLength(s, "k".repeat(129));
+        assertThat(defects(s)).isZero();
+        String longest = "k".repeat(128);
+        assertThat(s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, longest, "d")).version()).isEqualTo(1);
+        assertThat(receipts(s, longest)).isEqualTo(1);
+    }
+
+    @ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"not-a-uuid", "12345", "0123456789012345678901234567890123456", "k", "ключ-操作 key"})
+    @DisplayName("SVC-RCP-12: any other text of 1 to 128 characters is an operation key, not only a UUID (changed: these used to be refused)")
+    void rcp12_anyTextIsAKey(String operationKey, Scenario s) {
+        assertThat(s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, operationKey, "d")).version()).isEqualTo(1);
+        assertThat(receipts(s, operationKey)).isEqualTo(1);
+    }
+
+    private static void assertRefusedAsLength(Scenario s, String operationKey) {
+        long receipts = s.count("SELECT COUNT(*) FROM request_receipt");
         var failure = Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR,
-                create(s, requestId, "d")), ValidationCode.VALIDATION_FAILED);
-        assertThat(failure.args()).first().isEqualTo("request_id");
+                create(s, operationKey, "d")), ValidationCode.VALIDATION_FAILED);
+        assertThat(failure.args()).containsExactly("operationKey");
+        assertThat(Expect.firstIssue(failure).path()).isEqualTo("operationKey");
+        assertThat(Expect.firstIssue(failure).reason()).isEqualTo(ValidationReason.MUST_BE_CHARS_RANGE);
+        assertThat(Expect.firstIssue(failure).reasonArgs()).containsExactly("1", "128");
+        assertThat(s.count("SELECT COUNT(*) FROM request_receipt")).isEqualTo(receipts);
     }
 
     // ---------------------------------------------------------------------- 13
@@ -401,17 +442,249 @@ class ReceiptTest {
     // ---------------------------------------------------------------------- 14
 
     @Test
-    @DisplayName("SVC-RCP-14: a batch replay returns the stored results, and every operation replays on its own")
+    @DisplayName("SVC-RCP-14 (OPK-005): a batch replay returns the stored results, and every operation replays on its own under its derived key")
     void rcp14_batch(Scenario s) {
         String id = Scenario.uuid();
         List<BatchOpInput> ops = List.of(
-                new BatchOpInput.Save("defect", Fields.of(s.defectFields("one")), Scenario.REASON, null, null, null),
-                new BatchOpInput.Save("task", Fields.of(s.taskFields("two")), Scenario.REASON, null, null, null));
+                new BatchOpInput.Save("defect", Fields.of(s.defectFields("one")), Scenario.REASON, null, null),
+                new BatchOpInput.Save("task", Fields.of(s.taskFields("two")), Scenario.REASON, null, null));
         BatchResult first = s.bean(BatchService.class).batch(Scenario.AUTHOR, id, ops);
         assertThat(s.bean(BatchService.class).batch(Scenario.AUTHOR, id, ops)).isEqualTo(first);
-        RequestId derived = RequestId.parse(id).derive(1);
+        OperationKey derived = OperationKey.parse(id).derive(1);
         assertThat(s.bean(SaveService.class).save(Scenario.AUTHOR, new SaveCommand(derived.toString(), "task", null,
                 0L, Fields.of(s.taskFields("two")), Scenario.REASON))).isEqualTo(first.results().get(1));
         assertThat(defects(s)).isEqualTo(1);
+    }
+
+    // ---------------------------------------------------------------------- OPK: every write service
+
+    /**
+     * One write service as a call that a test can send twice: {@code prepare} makes the rows the call needs (once), and the
+     * call it returns takes the operation key and the reason, so the same key can be sent with the same arguments or with
+     * other ones (the reason is part of the digest of every write).
+     */
+    record KeyedWrite(String name, Function<Scenario, BiFunction<String, String, Object>> prepare) {
+        @Override
+        public String toString() {
+            return name;
+        }
+    }
+
+    static Stream<KeyedWrite> keyedWrites() {
+        return Stream.of(
+                new KeyedWrite("save", s -> (key, reason) -> s.bean(SaveService.class).save(Scenario.AUTHOR,
+                        new SaveCommand(key, "defect", null, 0L, Fields.of(s.defectFields("d")), reason))),
+                new KeyedWrite("transition", s -> {
+                    SaveResult d = s.newDefect("d");
+                    return (key, reason) -> s.bean(TransitionService.class).transition(Scenario.AUTHOR,
+                            new TransitionCommand(key, "defect", d.id(), 1L, "DISPUTED", reason, Scenario.EVIDENCE,
+                                    null, null));
+                }),
+                new KeyedWrite("record_fix", s -> {
+                    SaveResult d = s.newDefect("d");
+                    return (key, reason) -> s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR,
+                            new RecordFixCommand(key, d.id(), "repo/e2e", Scenario.commit('a'), reason, null, null, null,
+                                    null, null));
+                }),
+                new KeyedWrite("record_case", s -> {
+                    SaveResult d = s.newDefect("d");
+                    return (key, reason) -> s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR,
+                            new RecordCaseCommand(key, d.id(), "seen", reason, null, null, null));
+                }),
+                new KeyedWrite("link", s -> {
+                    SaveResult d = s.newDefect("d");
+                    SaveResult t = s.newTask("t");
+                    return (key, reason) -> s.bean(LinkService.class).link(Scenario.AUTHOR,
+                            new LinkCommand(key, "defect_task", d.id(), t.id(), reason, null));
+                }),
+                new KeyedWrite("correct", s -> {
+                    SaveResult d = s.newDefect("d");
+                    return (key, reason) -> s.bean(CorrectService.class).correct(Scenario.AUTHOR,
+                            new CorrectCommand(key, d.historyId(), reason));
+                }),
+                new KeyedWrite("review", s -> {
+                    SaveResult d = s.newDefect("d");
+                    return (key, reason) -> s.bean(ReviewService.class).review(Scenario.AUTHOR,
+                            new TransitionCommand(key, "defect", d.id(), 1L, "DISPUTED", reason, Scenario.EVIDENCE,
+                                    null, null));
+                }),
+                new KeyedWrite("review_correct", s -> {
+                    SaveResult d = s.verifiedDefect("d");
+                    long verification = s.history(HistoryEntity.DEFECT, d.id()).stream()
+                            .filter(h -> h.op() == HistoryOp.TRANSITION && "VERIFIED".equals(h.toState())).findFirst()
+                            .orElseThrow().id();
+                    return (key, reason) -> s.bean(ReviewService.class).reviewCorrect(Scenario.REVIEWER,
+                            new CorrectCommand(key, verification, reason));
+                }),
+                new KeyedWrite("batch", s -> (key, reason) -> s.bean(BatchService.class).batch(Scenario.AUTHOR, key,
+                        List.of(new BatchOpInput.Save("defect", Fields.of(s.defectFields("d")), reason, null, null)))));
+    }
+
+    @ParameterizedTest
+    @MethodSource("keyedWrites")
+    @DisplayName("OPK-003 (service): the same operation key with the same arguments returns the same answer and writes exactly once (receipt replay), for every write service")
+    void opk003_replay(KeyedWrite write, Scenario s) {
+        BiFunction<String, String, Object> call = write.prepare().apply(s);
+        String key = Scenario.uuid();
+        Object first = call.apply(key, Scenario.REASON);
+        long history = s.count("SELECT COUNT(*) FROM history");
+        long receipts = s.count("SELECT COUNT(*) FROM request_receipt");
+
+        assertThat(call.apply(key, Scenario.REASON)).isEqualTo(first);
+
+        assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
+        assertThat(s.count("SELECT COUNT(*) FROM request_receipt")).isEqualTo(receipts);
+    }
+
+    @ParameterizedTest
+    @MethodSource("keyedWrites")
+    @DisplayName("OPK-004 (service): the same operation key with other arguments is OPERATION_CONFLICT and nothing more is written, for every write service")
+    void opk004_otherArguments(KeyedWrite write, Scenario s) {
+        BiFunction<String, String, Object> call = write.prepare().apply(s);
+        String key = Scenario.uuid();
+        call.apply(key, Scenario.REASON);
+        long history = s.count("SELECT COUNT(*) FROM history");
+        long receipts = s.count("SELECT COUNT(*) FROM request_receipt");
+
+        Expect.failure(() -> call.apply(key, "another reason, long enough"), ConflictCode.OPERATION_CONFLICT);
+
+        assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
+        assertThat(s.count("SELECT COUNT(*) FROM request_receipt")).isEqualTo(receipts);
+    }
+
+    @Test
+    @DisplayName("OPK-004 (service): an operation key already bound to one write service is OPERATION_CONFLICT for any other write service")
+    void opk004_anotherServiceWithTheSameKey(Scenario s) {
+        // the ring is of one author (the receipts are per author, so a key of another author is no conflict, see OPK-020):
+        // review_correct is the reviewer's. The batch takes part since it has a receipt of its own under its key (OPK-019)
+        List<BiFunction<String, String, Object>> calls = keyedWrites().filter(write -> !"review_correct".equals(write.name()))
+                .map(write -> write.prepare().apply(s)).toList();
+        for (int i = 0; i < calls.size(); i++) {
+            String key = Scenario.uuid();
+            calls.get(i).apply(key, Scenario.REASON);
+            long history = s.count("SELECT COUNT(*) FROM history");
+            BiFunction<String, String, Object> other = calls.get((i + 1) % calls.size());
+
+            Expect.failure(() -> other.apply(key, Scenario.REASON), ConflictCode.OPERATION_CONFLICT);
+
+            assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
+        }
+    }
+
+    // ---------------------------------------------------------------------- OPK-020: receipts per author
+
+    private static long receiptsOf(Scenario s, String operationKey, String author) {
+        return s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ? AND author_id = ?", operationKey,
+                author);
+    }
+
+    @Test
+    @DisplayName("OPK-020 (service): a key that author A used first is free for author B: B writes its own write (no conflict), each has a receipt under its own author, and each replays its own response")
+    void opk020_anotherAuthorWritesItsOwn(Scenario s) {
+        String other = s.actorWith("defect");
+        String key = Scenario.uuid();
+        SaveResult mine = s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, key, "same content"));
+        SaveResult theirs = s.bean(SaveService.class).save(other, create(s, key, "same content"));
+
+        assertThat(theirs.id()).isNotEqualTo(mine.id());
+        assertThat(theirs.author()).isEqualTo(other);
+        assertThat(defects(s)).isEqualTo(2);
+        assertThat(receiptsOf(s, key, Scenario.AUTHOR)).isEqualTo(1);
+        assertThat(receiptsOf(s, key, other)).isEqualTo(1);
+        assertThat(s.count("SELECT COUNT(*) FROM history WHERE operation_key = ?", key)).isEqualTo(2);
+
+        assertThat(s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, key, "same content"))).isEqualTo(mine);
+        assertThat(s.bean(SaveService.class).save(other, create(s, key, "same content"))).isEqualTo(theirs);
+        assertThat(defects(s)).as("the replays write nothing").isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("OPK-020 (service): the same author with other content under the key is OPERATION_CONFLICT, whichever author it is, and nothing more is written")
+    void opk020_theSameAuthorWithOtherContent(Scenario s) {
+        String other = s.actorWith("defect");
+        String key = Scenario.uuid();
+        s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, key, "first"));
+        s.bean(SaveService.class).save(other, create(s, key, "first"));
+        long history = s.count("SELECT COUNT(*) FROM history");
+
+        Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, key, "other content")),
+                ConflictCode.OPERATION_CONFLICT);
+        Expect.failure(() -> s.bean(SaveService.class).save(other, create(s, key, "other content")),
+                ConflictCode.OPERATION_CONFLICT);
+
+        assertThat(defects(s)).isEqualTo(2);
+        assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
+    }
+
+    @Test
+    @DisplayName("OPK-020 (service): the same holds for the batch key: author B with a batch key that author A used writes its own batch (a receipt of the batch and of its operation under its own author), the same author with other operations is OPERATION_CONFLICT")
+    void opk020_theBatchKey(Scenario s) {
+        String other = s.actorWith("defect");
+        String key = Scenario.uuid();
+        OperationKey derived = OperationKey.parse(key).derive(0);
+        List<BatchOpInput> ops = List.of(new BatchOpInput.Save("defect", Fields.of(s.defectFields("one")),
+                Scenario.REASON, null, null));
+        BatchResult mine = s.bean(BatchService.class).batch(Scenario.AUTHOR, key, ops);
+        BatchResult theirs = s.bean(BatchService.class).batch(other, key, ops);
+
+        assertThat(theirs).isNotEqualTo(mine);
+        assertThat(defects(s)).isEqualTo(2);
+        for (String author : List.of(Scenario.AUTHOR, other)) {
+            assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ? AND author_id = ? "
+                    + "AND operation = 'BATCH'", key, author)).as("batch receipt of %s", author).isEqualTo(1);
+            assertThat(receiptsOf(s, derived.toString(), author)).as("operation receipt of %s", author).isEqualTo(1);
+        }
+        assertThat(s.bean(BatchService.class).batch(other, key, ops)).isEqualTo(theirs);
+        assertThat(defects(s)).as("the replay writes nothing").isEqualTo(2);
+
+        List<BatchOpInput> changed = List.of(new BatchOpInput.Save("defect", Fields.of(s.defectFields("other")),
+                Scenario.REASON, null, null));
+        Expect.failure(() -> s.bean(BatchService.class).batch(other, key, changed), ConflictCode.OPERATION_CONFLICT);
+        Expect.failure(() -> s.bean(BatchService.class).batch(Scenario.AUTHOR, key, changed),
+                ConflictCode.OPERATION_CONFLICT);
+        assertThat(defects(s)).isEqualTo(2);
+    }
+
+    @ParameterizedTest
+    @MethodSource("keyedWrites")
+    @DisplayName("OPK-001 (service): a write service called without an operation key is VALIDATION_FAILED, REQUIRED at operationKey, and writes nothing (no history row, no receipt)")
+    void opk001_noKey(KeyedWrite write, Scenario s) {
+        BiFunction<String, String, Object> call = write.prepare().apply(s);
+        long history = s.count("SELECT COUNT(*) FROM history");
+        long receipts = s.count("SELECT COUNT(*) FROM request_receipt");
+
+        LedgerException failure = Expect.failure(() -> call.apply(null, Scenario.REASON),
+                ValidationCode.VALIDATION_FAILED);
+
+        assertThat(failure.args()).containsExactly("operationKey");
+        assertThat(Expect.firstIssue(failure).path()).isEqualTo("operationKey");
+        assertThat(Expect.firstIssue(failure).reason()).isEqualTo(ValidationReason.REQUIRED);
+        assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
+        assertThat(s.count("SELECT COUNT(*) FROM request_receipt")).isEqualTo(receipts);
+    }
+
+    @ParameterizedTest
+    @MethodSource("keyedWrites")
+    @DisplayName("OPK-002 (service): an operation key that is empty, blank or 129 characters long is VALIDATION_FAILED (MUST_BE_CHARS_RANGE 1..128 at operationKey) and writes nothing; one of 128 characters is accepted")
+    void opk002_keyLength(KeyedWrite write, Scenario s) {
+        BiFunction<String, String, Object> call = write.prepare().apply(s);
+        long history = s.count("SELECT COUNT(*) FROM history");
+        long receipts = s.count("SELECT COUNT(*) FROM request_receipt");
+
+        for (String bad : List.of("", "   ", "k".repeat(129))) {
+            LedgerException failure = Expect.failure(() -> call.apply(bad, Scenario.REASON),
+                    ValidationCode.VALIDATION_FAILED);
+            assertThat(failure.args()).as("key of %d characters", bad.length()).containsExactly("operationKey");
+            assertThat(Expect.firstIssue(failure).reason()).isEqualTo(ValidationReason.MUST_BE_CHARS_RANGE);
+            assertThat(Expect.firstIssue(failure).reasonArgs()).containsExactly("1", "128");
+        }
+        assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
+        assertThat(s.count("SELECT COUNT(*) FROM request_receipt")).isEqualTo(receipts);
+
+        // a key of its own of 128 characters (a fixed one would meet the receipt of another test that uses the longest key)
+        String longest = Scenario.uuid() + "k".repeat(128 - 36);
+        assertThat(longest).hasSize(128);
+        assertThat(call.apply(longest, Scenario.REASON)).isNotNull();
+        assertThat(s.count("SELECT COUNT(*) FROM history")).isGreaterThan(history);
     }
 }

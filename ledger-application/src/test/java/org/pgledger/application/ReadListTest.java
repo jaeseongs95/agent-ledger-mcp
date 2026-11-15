@@ -69,18 +69,18 @@ class ReadListTest {
             Scenario s = new Scenario(ctx);
             List<BatchOpInput> ops = new ArrayList<>();
             IntStream.rangeClosed(1, ROWS).forEach(i -> {
-                ops.add(new BatchOpInput.Save("defect", Fields.of(s.defectFields("row " + i)), Scenario.REASON, null, null,
+                ops.add(new BatchOpInput.Save("defect", Fields.of(s.defectFields("row " + i)), Scenario.REASON, null,
                         null));
-                ops.add(new BatchOpInput.Save("task", Fields.of(s.taskFields("row " + i)), Scenario.REASON, null, null, null));
+                ops.add(new BatchOpInput.Save("task", Fields.of(s.taskFields("row " + i)), Scenario.REASON, null, null));
             });
             for (int from = 0; from < ops.size(); from += 100) {
-                s.bean(BatchService.class).batch(Scenario.AUTHOR, null, ops.subList(from, Math.min(from + 100,
+                s.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(), ops.subList(from, Math.min(from + 100,
                         ops.size())));
             }
             List<BatchOpInput> conditions = IntStream.rangeClosed(1, ROWS).mapToObj(i -> (BatchOpInput)
                     new BatchOpInput.Save("condition", Fields.of(s.conditionFields("r1", "c" + i)), Scenario.REASON,
-                            s.conditionId(String.format("%04d", i)), null, null)).toList();
-            s.bean(BatchService.class).batch(Scenario.AUTHOR, null, conditions);
+                            s.conditionId(String.format("%04d", i)), null)).toList();
+            s.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(), conditions);
             IntStream.rangeClosed(1, ROWS).forEach(i -> s.bean(ProjectService.class).add(new ProjectCommand(
                     "list-" + s.code().toLowerCase() + "-" + i, "L" + s.code() + "X" + i, "list project " + i), TestOwners.OWNER));
             IntStream.rangeClosed(1, ROWS).forEach(i -> s.bean(CommonCodeService.class).set(new CodeCommand(
@@ -176,9 +176,10 @@ class ReadListTest {
     @DisplayName("MCR-006: one row more than the limit is truncated and has a cursor")
     void mcr006_oneMore(Tool tool, LedgerAppContext ctx) {
         Scenario s = fixture(ctx);
-        int total = total(s, tool);
-        Page<?> page = call(s, tool, total - 1, null, false);
-        assertThat(page.items()).hasSize(total - 1);
+        // the schema of the context is shared by the test classes, so the projects may be more than the largest limit (1000)
+        int limit = Math.min(total(s, tool) - 1, 1000);
+        Page<?> page = call(s, tool, limit, null, false);
+        assertThat(page.items()).hasSize(limit);
         assertThat(page.truncated()).isTrue();
         assertThat(page.nextCursor()).isNotBlank();
     }
@@ -209,11 +210,11 @@ class ReadListTest {
             Scenario own = new Scenario(ctx);
             List<BatchOpInput> ops = new ArrayList<>();
             IntStream.rangeClosed(1, 40).forEach(i -> {
-                ops.add(new BatchOpInput.Save("defect", Fields.of(own.defectFields("row " + i)), Scenario.REASON, null, null,
+                ops.add(new BatchOpInput.Save("defect", Fields.of(own.defectFields("row " + i)), Scenario.REASON, null,
                         null));
-                ops.add(new BatchOpInput.Save("task", Fields.of(own.taskFields("row " + i)), Scenario.REASON, null, null, null));
+                ops.add(new BatchOpInput.Save("task", Fields.of(own.taskFields("row " + i)), Scenario.REASON, null, null));
             });
-            own.bean(BatchService.class).batch(Scenario.AUTHOR, null, ops);
+            own.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(), ops);
             return own;
         });
         Page<?> first = call(s, tool, 10, null, false);

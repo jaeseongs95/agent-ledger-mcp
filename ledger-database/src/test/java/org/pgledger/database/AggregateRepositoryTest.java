@@ -47,8 +47,8 @@ import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.CommitSha;
 import org.pgledger.domain.value.DefectId;
 import org.pgledger.domain.value.JsonDocument;
+import org.pgledger.domain.value.OperationKey;
 import org.pgledger.domain.value.Patch;
-import org.pgledger.domain.value.RequestId;
 import org.pgledger.domain.value.Sha256;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
@@ -196,7 +196,7 @@ class AggregateRepositoryTest {
                 Seed.ALICE, LedgerTestContext.START));
         assertThat(cases.findByDefectIdOrderById(defect.id())).containsExactly(observed);
 
-        RequestId request = new RequestId(UUID.randomUUID());
+        OperationKey request = new OperationKey(UUID.randomUUID().toString());
         HistoryEntry entry = history.insert(new HistoryEntry(
                 ids.next(Counter.HISTORY), LedgerTestContext.START, Seed.ALICE, Channel.AUTHOR.login(),
                 ActorAssurance.DECLARED, HistoryEntity.DEFECT, defect.id().value(), HistoryOp.EDIT, null, null,
@@ -208,7 +208,7 @@ class AggregateRepositoryTest {
 
         Receipt receipt = receipts.insert(Receipt.reserve(request, ReceiptOperation.SAVE, Sha256.of("d".repeat(64)),
                 Seed.ALICE, Channel.AUTHOR, LedgerTestContext.START));
-        assertThat(receipts.findById(request)).hasValue(receipt);
+        assertThat(receipts.findByAuthorIdAndOperationKey(Seed.ALICE, request)).hasValue(receipt);
         assertThat(receipt.response()).isNull();
 
         SessionGrant grant = grants.insert(SessionGrant.issue(

@@ -24,8 +24,8 @@ import org.pgledger.domain.rule.OwnerAction;
 import org.pgledger.domain.rule.Scope;
 import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.JsonDocument;
+import org.pgledger.domain.value.OperationKey;
 import org.pgledger.domain.value.ProjectId;
-import org.pgledger.domain.value.RequestId;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jdbc.test.autoconfigure.DataJdbcTest;
@@ -99,7 +99,8 @@ class ReservedWordColumnsDataJdbcTest {
                 WHEN, null, null));
         history.insert(new HistoryEntry(1L, WHEN, AuthorId.of("claude:a"), "ledger_author", ActorAssurance.DECLARED,
                 HistoryEntity.DEFECT, "P1-D-0001", HistoryOp.CREATE, null, null, JsonDocument.EMPTY_OBJECT, null,
-                "a reason of enough length", null, null, null, new RequestId(UUID.randomUUID()), null));
+                "a reason of enough length", null, null, null, new OperationKey(UUID.randomUUID().toString()),
+                null));
         audit.insert(new OwnerAuditEntry(1L, WHEN, "token:owner", OwnerAction.GRANT_ISSUED, "claude:a|P1", null));
 
         assertThat(jdbc.sql("SELECT grant_scope FROM session_grant WHERE id = 1").query(String.class).single())

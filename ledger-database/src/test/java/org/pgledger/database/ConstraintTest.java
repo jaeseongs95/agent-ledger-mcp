@@ -182,7 +182,7 @@ class ConstraintTest {
                         + "VALUES (990002, 'claude:a', 'nope', 'DEFECT', 'user:owner', TIMESTAMP '2026-11-05 "
                         + "10:00:00', 'orphan-key')",
                 "INSERT INTO history (id, occurred_at, author_id, login, actor_assurance, entity, entity_id, op, changes, "
-                        + "reason, corrects_id, request_id) VALUES (990003, TIMESTAMP '2026-11-05 10:00:00', "
+                        + "reason, corrects_id, operation_key) VALUES (990003, TIMESTAMP '2026-11-05 10:00:00', "
                         + "'claude:a', 'ledger_author', 'DECLARED', 'DEFECT', 'X', 'CORRECT', '{}', "
                         + "'a reason of length', 424242, '11111111-1111-1111-1111-111111111111')",
                 "UPDATE defect SET status = 'MERGED' WHERE id = :defect",

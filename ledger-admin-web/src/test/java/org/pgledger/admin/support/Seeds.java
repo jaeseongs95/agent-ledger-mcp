@@ -6,7 +6,9 @@ import java.security.NoSuchAlgorithmException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.Base64;
 import org.springframework.beans.factory.ObjectProvider;
@@ -107,8 +109,8 @@ public class Seeds {
         fields.put("severity", "P2");
         fields.put("behavior", "behavior of " + title);
         fields.put("root_cause", "cause of " + title);
-        return signed("ledger_save", attestation -> saves.save(attestation,
-                new SaveCommand(null, "defect", null, 0L, fieldsOf(fields), REASON))).id();
+        return signedWrite("ledger_save", (attestation, key) -> saves.save(attestation,
+                new SaveCommand(key, "defect", null, 0L, fieldsOf(fields), REASON))).id();
     }
 
     public String task(Seeded seeded, String title) {
@@ -117,8 +119,8 @@ public class Seeds {
         fields.put("title", title);
         fields.put("purpose", "purpose of " + title);
         fields.put("success_condition", "success of " + title);
-        return signed("ledger_save", attestation -> saves.save(attestation,
-                new SaveCommand(null, "task", null, 0L, fieldsOf(fields), REASON))).id();
+        return signedWrite("ledger_save", (attestation, key) -> saves.save(attestation,
+                new SaveCommand(key, "task", null, 0L, fieldsOf(fields), REASON))).id();
     }
 
     /** A task with an id of its own (a free-text id: any case, with characters such as {@code / # ? :}). */
@@ -128,8 +130,8 @@ public class Seeds {
         fields.put("title", title);
         fields.put("purpose", "purpose of " + title);
         fields.put("success_condition", "success of " + title);
-        return signed("ledger_save", attestation -> saves.save(attestation,
-                new SaveCommand(null, "task", id, 0L, fieldsOf(fields), REASON))).id();
+        return signedWrite("ledger_save", (attestation, key) -> saves.save(attestation,
+                new SaveCommand(key, "task", id, 0L, fieldsOf(fields), REASON))).id();
     }
 
     public String condition(Seeded seeded, String suffix, String release, String conditionCode) {
@@ -138,7 +140,7 @@ public class Seeds {
         fields.put("release", release);
         fields.put("code", conditionCode);
         fields.put("condition_text", "condition " + conditionCode);
-        return signed("ledger_save", attestation -> saves.save(attestation, new SaveCommand(null, "condition",
+        return signedWrite("ledger_save", (attestation, key) -> saves.save(attestation, new SaveCommand(key, "condition",
                 seeded.code() + "-C-" + suffix, 0L, fieldsOf(fields), REASON))).id();
     }
 
@@ -157,7 +159,7 @@ public class Seeds {
 
     /** Moves an OPEN defect (version 1) to DISPUTED, with the given evidence text in the history row. */
     public void dispute(String defect, String evidence) {
-        signed("ledger_transition", attestation -> transitions.transition(attestation, new TransitionCommand(null,
+        signedWrite("ledger_transition", (attestation, key) -> transitions.transition(attestation, new TransitionCommand(key,
                 "defect", defect, 1L, "DISPUTED", REASON, evidence, null, null)));
     }
 
@@ -189,27 +191,41 @@ public class Seeds {
      * (DefectStatus): the move carries an evidence URI and digest besides the attachment.
      */
     public void disputeWithAttachment(String defect, String attachmentId) {
-        signed("ledger_transition", attestation -> transitions.transition(attestation, new TransitionCommand(null,
+        signedWrite("ledger_transition", (attestation, key) -> transitions.transition(attestation, new TransitionCommand(key,
                 "defect", defect, 1L, "DISPUTED", REASON, "https://ci.example.org/runs/1", "a".repeat(64), null,
                 attachmentId)));
     }
 
     /** Records an observation of a defect with the given evidence text. */
     public void observe(String defect, String observation, String evidence) {
-        signed("ledger_record_case", attestation -> cases.recordCase(attestation,
-                new RecordCaseCommand(null, defect, observation, REASON, evidence, null, null)));
+        signedWrite("ledger_record_case", (attestation, key) -> cases.recordCase(attestation,
+                new RecordCaseCommand(key, defect, observation, REASON, evidence, null, null)));
     }
 
     /**
      * Runs the write as the hook of the author would: in the scope of the tool named {@code tool} and with a token
-     * signed for that tool, the current time of the test clock and the empty request id (the seeds send none).
+     * signed for that tool, the current time of the test clock and the empty operation key (the attachment tools carry
+     * none in their claim).
      */
     private <R> R signed(String tool, Function<String, R> write) {
+        return signed(tool, "", write);
+    }
+
+    /**
+     * A write tool call: a fresh operation key (the server never makes one up), signed into the claim as the hook does and
+     * handed to the write together with the token.
+     */
+    private <R> R signedWrite(String tool, BiFunction<String, String, R> write) {
+        String key = UUID.randomUUID().toString();
+        return signed(tool, key, token -> write.apply(token, key));
+    }
+
+    private <R> R signed(String tool, String operationKey, Function<String, R> write) {
         enroll();
         // the seeds call the services directly, without the tool binding that digests the raw arguments of a call: they
         // sign and bind the digest of an empty arguments object (token pgla2 covers the arguments digest)
         String digest = ArgumentsDigest.of(Map.of());
-        String token = AttestationToken.sign(new AttestationClaims(AUTHOR, tool, "", digest,
+        String token = AttestationToken.sign(new AttestationClaims(AUTHOR, tool, operationKey, digest,
                 clock.instant().getEpochSecond()), pair.getPrivate()).text();
         return ScopedValue.where(ToolScope.CURRENT, tool).where(ToolScope.ARGUMENTS_DIGEST, digest)
                 .call(() -> write.apply(token));

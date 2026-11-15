@@ -60,19 +60,19 @@ public final class SigningAttestationVerifier implements AttestationVerifier {
     }
 
     @Override
-    public Proof prove(String presented, ToolCall call, String requestId) {
-        return check(presented, call, requestId, false);
+    public Proof prove(String presented, ToolCall call, String operationKey) {
+        return check(presented, call, operationKey, false);
     }
 
     @Override
-    public AuthorId verifyForWrite(String presented, ToolCall call, String requestId) {
-        return check(presented, call, requestId, true).requireAuthor();
+    public AuthorId verifyForWrite(String presented, ToolCall call, String operationKey) {
+        return check(presented, call, operationKey, true).requireAuthor();
     }
 
-    private Proof check(String presented, ToolCall call, String requestId, boolean write) {
+    private Proof check(String presented, ToolCall call, String operationKey, boolean write) {
         if (presented == null || presented.startsWith(AttestationToken.PREFIX + ".")
                 || presented.startsWith(AttestationToken.RETIRED_PREFIX + ".")) {
-            return verifyWith(presented, call, requestId, write);
+            return verifyWith(presented, call, operationKey, write);
         }
         if (AuthorId.matches(presented)) {
             enroll(presented);
@@ -83,14 +83,14 @@ public final class SigningAttestationVerifier implements AttestationVerifier {
             case ToolCall.Named named -> new ToolCall.Digested(named.tool(), TestKeyRing.DIRECT_DIGEST);
             case ToolCall.Digested digested -> digested;
         };
-        String token = keys.token(presented, signed.tool(), requestId == null ? "" : requestId,
+        String token = keys.token(presented, signed.tool(), operationKey == null ? "" : operationKey,
                 signed.argumentsDigest(), clock.instant());
-        return verifyWith(token, signed, requestId, write);
+        return verifyWith(token, signed, operationKey, write);
     }
 
-    private Proof verifyWith(String token, ToolCall call, String requestId, boolean write) {
-        return write ? new Proof.Proven(real.verifyForWrite(token, call, requestId))
-                : real.prove(token, call, requestId);
+    private Proof verifyWith(String token, ToolCall call, String operationKey, boolean write) {
+        return write ? new Proof.Proven(real.verifyForWrite(token, call, operationKey))
+                : real.prove(token, call, operationKey);
     }
 
     /**

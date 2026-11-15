@@ -225,20 +225,20 @@ class RealShapesImportTest {
 
             assertThat(detail.task(id).id()).isEqualTo(id);
             Expect.failure(() -> detail.task(other), LookupCode.NOT_FOUND);
-            SaveResult edited = save.save(author, new SaveCommand(null, "task", id, 1L, Fields.of("title", "edited"),
+            SaveResult edited = save.save(author, new SaveCommand(Scenario.uuid(), "task", id, 1L, Fields.of("title", "edited"),
                     Scenario.REASON));
             assertThat(edited.id()).isEqualTo(id);
             assertThat(edited.version()).isEqualTo(2);
-            Expect.failure(() -> save.save(author, new SaveCommand(null, "task", other, 1L,
+            Expect.failure(() -> save.save(author, new SaveCommand(Scenario.uuid(), "task", other, 1L,
                     Fields.of("title", "edited again"), Scenario.REASON)), LookupCode.NOT_FOUND);
-            assertThat(ctx.bean(TransitionService.class).transition(author, new TransitionCommand(null, "task", id, 2L,
+            assertThat(ctx.bean(TransitionService.class).transition(author, new TransitionCommand(Scenario.uuid(), "task", id, 2L,
                     "ACTIVE", Scenario.REASON, null, null, null)).version()).isEqualTo(3);
-            Expect.failure(() -> ctx.bean(TransitionService.class).transition(author, new TransitionCommand(null, "task",
+            Expect.failure(() -> ctx.bean(TransitionService.class).transition(author, new TransitionCommand(Scenario.uuid(), "task",
                     other, 3L, "BLOCKED", Scenario.REASON, null, null, null)), LookupCode.NOT_FOUND);
             LinkService links = ctx.bean(LinkService.class);
-            assertThat(links.link(author, new LinkCommand(null, "condition_task", LegacyFixtures.REAL_CONDITION_LONG, id,
+            assertThat(links.link(author, new LinkCommand(Scenario.uuid(), "condition_task", LegacyFixtures.REAL_CONDITION_LONG, id,
                     Scenario.REASON, null)).id()).isEqualTo(LegacyFixtures.REAL_CONDITION_LONG + "|" + id);
-            Expect.failure(() -> links.link(author, new LinkCommand(null, "condition_task",
+            Expect.failure(() -> links.link(author, new LinkCommand(Scenario.uuid(), "condition_task",
                     LegacyFixtures.REAL_CONDITION_LONG, other, Scenario.REASON, null)), LookupCode.NOT_FOUND);
 
             assertThat(count(ctx, "SELECT COUNT(*) FROM task WHERE id = ? AND title = 'edited' AND state = 'ACTIVE'", id))

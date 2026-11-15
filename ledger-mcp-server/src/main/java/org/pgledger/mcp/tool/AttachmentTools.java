@@ -14,11 +14,16 @@ import org.springframework.stereotype.Component;
  * into the input of {@link AttachmentFlow}, which is the entry point of the operation (the file work is done there, between its
  * database steps), and the result into its output record; the gate, the validation and the transactions belong to the flow and its
  * service. The host attestation of the call is the actor: it is signed for the tool name below (with a hyphen) and for the exact
- * arguments, with an empty request id, because these tools carry none (an upload is made repeatable by {@code operationKey} and by
- * the numbers of its chunks, not by a request receipt).
+ * arguments, with an empty operation key in the claim (an upload is made repeatable by the {@code operationKey} of the begin, which
+ * the digest of the arguments covers, and by the numbers of its chunks, not by a write receipt).
+ *
+ * <p>{@code artifact-chunk} and {@code artifact-finish} take no {@code operationKey}: they are the one exception to the rule that
+ * every write tool takes one. An upload starts with the {@code operationKey} of {@code artifact-begin}; a chunk is idempotent by
+ * {@code uploadId} + {@code sequence} (+ {@code chunkSha256}: the same content again is idempotent, other content is a conflict), and
+ * finish by {@code uploadId} (the same upload always returns the same attachment).
  *
  * <p>The parameter names are the wire keys of the design ({@code operationKey}, {@code uploadId}, {@code _hostAttestation}, ...), which
- * is why they are camel case here while the keys of the write tools are snake case. The descriptions are message keys that the tool
+ * is why they are camel case here while some keys of the write tools are snake case. The descriptions are message keys that the tool
  * catalog resolves from the message bundle. The tools exist when the attachments are configured, like the flow they call.
  */
 @Component

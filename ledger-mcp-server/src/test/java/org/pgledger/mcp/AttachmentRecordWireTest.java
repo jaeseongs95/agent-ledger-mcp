@@ -26,7 +26,6 @@ import org.pgledger.mcp.support.Scenario;
 import org.pgledger.mcp.support.SchemaView;
 import org.pgledger.mcp.support.Seed;
 import org.pgledger.mcp.tool.ReadOutputs;
-import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.JsonNode;
 
@@ -42,9 +41,9 @@ class AttachmentRecordWireTest {
     private static final String RECORD_TOOLS_WITH_ID = "the six record tools and the four batch operations";
     private static final String NOT_FOUND = "ARTIFACT_NOT_FOUND";
 
-    /** The arguments of a write: the attachment id (null leaves the key out) and the request id (of the batch for an operation). */
+    /** The arguments of a write: the attachment id (null leaves the key out) and the operation key (of the batch for an operation). */
     private interface Build {
-        Args args(McpSession session, Seed seed, String attachmentId, String requestId);
+        Args args(McpSession session, Seed seed, String attachmentId, String operationKey);
     }
 
     /** One write path; {@code actor} attests it, {@code stranger} is another author. {@code entity} and {@code op} name the history row that carries the id. */
@@ -61,13 +60,13 @@ class AttachmentRecordWireTest {
         return attachmentId == null ? args : args.with("attachment_id", attachmentId);
     }
 
-    private static Args single(McpSession session, Object call, String attachmentId, String requestId) {
-        return withAttachment(Args.from(session.mapper(), call), attachmentId).with("request_id", requestId);
+    private static Args single(McpSession session, Object call, String attachmentId, String operationKey) {
+        return withAttachment(Args.from(session.mapper(), call), attachmentId).with("operationKey", operationKey);
     }
 
-    private static Args batch(McpSession session, Args operation, String attachmentId, String requestId) {
+    private static Args batch(McpSession session, Args operation, String attachmentId, String operationKey) {
         return Args.from(session.mapper(), Calls.Batch.of(Scenario.AUTHOR, Calls.Op.recordCase("D", "x")))
-                .with("ops", List.of(withAttachment(operation, attachmentId))).with("request_id", requestId);
+                .with("ops", List.of(withAttachment(operation, attachmentId))).with("operationKey", operationKey);
     }
 
     static Stream<Case> cases() {
@@ -75,36 +74,36 @@ class AttachmentRecordWireTest {
         String reviewer = Scenario.REVIEWER;
         return Stream.of(
                 new Case("ledger_transition", "ledger_transition", author, reviewer, "defect", "TRANSITION",
-                        (session, seed, att, rid) -> single(session, Calls.Transition.of("defect", seed.defect(), 1,
-                                "DISPUTED", author).withEvidence(Scenario.EVIDENCE), att, rid)),
+                        (session, seed, att, key) -> single(session, Calls.Transition.of("defect", seed.defect(), 1,
+                                "DISPUTED", author).withEvidence(Scenario.EVIDENCE), att, key)),
                 new Case("ledger_review", "ledger_review", reviewer, author, "defect", "TRANSITION",
-                        (session, seed, att, rid) -> single(session,
-                                Calls.Review.of("defect", seed.fixed(), 2, "VERIFIED", reviewer), att, rid)),
+                        (session, seed, att, key) -> single(session,
+                                Calls.Review.of("defect", seed.fixed(), 2, "VERIFIED", reviewer), att, key)),
                 new Case("ledger_review_correct", "ledger_review_correct", reviewer, author, "defect", "CORRECT",
-                        (session, seed, att, rid) -> single(session, Calls.Correct.of(seed.verificationRow(), reviewer),
-                                att, rid)),
+                        (session, seed, att, key) -> single(session, Calls.Correct.of(seed.verificationRow(), reviewer),
+                                att, key)),
                 new Case("ledger_correct", "ledger_correct", author, reviewer, "defect", "CORRECT",
-                        (session, seed, att, rid) -> single(session, Calls.Correct.of(seed.defectHistoryId(), author),
-                                att, rid)),
+                        (session, seed, att, key) -> single(session, Calls.Correct.of(seed.defectHistoryId(), author),
+                                att, key)),
                 new Case("ledger_record_fix", "ledger_record_fix", author, reviewer, "defect_fix", "CREATE",
-                        (session, seed, att, rid) -> single(session,
-                                Calls.RecordFix.of(seed.defect(), "c".repeat(40), author), att, rid)),
+                        (session, seed, att, key) -> single(session,
+                                Calls.RecordFix.of(seed.defect(), "c".repeat(40), author), att, key)),
                 new Case("ledger_record_case", "ledger_record_case", author, reviewer, "defect_case", "CREATE",
-                        (session, seed, att, rid) -> single(session, Calls.RecordCase.of(seed.defect(), "seen", author),
-                                att, rid)),
+                        (session, seed, att, key) -> single(session, Calls.RecordCase.of(seed.defect(), "seen", author),
+                                att, key)),
                 new Case("ledger_batch: transition", "ledger_batch", author, reviewer, "defect", "TRANSITION",
-                        (session, seed, att, rid) -> batch(session, Args.from(session.mapper(),
+                        (session, seed, att, key) -> batch(session, Args.from(session.mapper(),
                                 Calls.Op.transition("defect", seed.defect(), 1, "DISPUTED"))
-                                .with("evidence_uri", Scenario.EVIDENCE), att, rid)),
+                                .with("evidence_uri", Scenario.EVIDENCE), att, key)),
                 new Case("ledger_batch: record_fix", "ledger_batch", author, reviewer, "defect_fix", "CREATE",
-                        (session, seed, att, rid) -> batch(session, Args.from(session.mapper(),
-                                Calls.Op.recordFix(seed.defect(), "c".repeat(40))), att, rid)),
+                        (session, seed, att, key) -> batch(session, Args.from(session.mapper(),
+                                Calls.Op.recordFix(seed.defect(), "c".repeat(40))), att, key)),
                 new Case("ledger_batch: record_case", "ledger_batch", author, reviewer, "defect_case", "CREATE",
-                        (session, seed, att, rid) -> batch(session, Args.from(session.mapper(),
-                                Calls.Op.recordCase(seed.defect(), "seen")), att, rid)),
+                        (session, seed, att, key) -> batch(session, Args.from(session.mapper(),
+                                Calls.Op.recordCase(seed.defect(), "seen")), att, key)),
                 new Case("ledger_batch: correct", "ledger_batch", author, reviewer, "defect", "CORRECT",
-                        (session, seed, att, rid) -> batch(session, Args.from(session.mapper(),
-                                Calls.Op.correct(seed.defectHistoryId())), att, rid)));
+                        (session, seed, att, key) -> batch(session, Args.from(session.mapper(),
+                                Calls.Op.correct(seed.defectHistoryId())), att, key)));
     }
 
     // ------------------------------------------------------------------ helpers
@@ -122,11 +121,6 @@ class AttachmentRecordWireTest {
     private static List<ReadOutputs.History> carrying(McpSession session, Seed seed, String attachmentId) {
         return Ledger.history(session, seed.project()).stream()
                 .filter(row -> Objects.equals(row.attachmentId(), attachmentId)).toList();
-    }
-
-    private static long receipts(Scenario scenario, String requestId) {
-        return scenario.bean(JdbcClient.class).sql("SELECT COUNT(*) FROM request_receipt WHERE request_id = ?")
-                .param(requestId).query(Long.class).single();
     }
 
     private static CallToolResult succeeded(McpSession session, Case c, Args call) {
@@ -183,13 +177,13 @@ class AttachmentRecordWireTest {
     void missingAttachment(Case c, McpSession session, Scenario scenario) {
         Seed seed = Seed.create(session, scenario);
         int before = Ledger.history(session, seed.project()).size();
-        String requestId = UUID.randomUUID().toString();
+        String operationKey = UUID.randomUUID().toString();
 
-        ToolError error = session.failed(c.tool(), c.build().args(session, seed, UUID.randomUUID().toString(), requestId));
+        ToolError error = session.failed(c.tool(), c.build().args(session, seed, UUID.randomUUID().toString(), operationKey));
 
         assertThat(error.code()).isEqualTo(NOT_FOUND);
         assertThat(Ledger.history(session, seed.project())).hasSize(before);
-        assertThat(receipts(scenario, requestId)).isZero();
+        assertThat(Ledger.receipts(scenario, operationKey)).isZero();
     }
 
     @ParameterizedTest(name = "{0}")
@@ -199,14 +193,14 @@ class AttachmentRecordWireTest {
         Seed seed = Seed.create(session, scenario);
         String foreign = attachmentOf(scenario, c.stranger());
         int before = Ledger.history(session, seed.project()).size();
-        String requestId = UUID.randomUUID().toString();
+        String operationKey = UUID.randomUUID().toString();
 
-        ToolError error = session.failed(c.tool(), c.build().args(session, seed, foreign, requestId));
+        ToolError error = session.failed(c.tool(), c.build().args(session, seed, foreign, operationKey));
 
         assertThat(error.code()).isEqualTo(NOT_FOUND);
         assertThat(Ledger.history(session, seed.project())).hasSize(before);
         assertThat(carrying(session, seed, foreign)).isEmpty();
-        assertThat(receipts(scenario, requestId)).isZero();
+        assertThat(Ledger.receipts(scenario, operationKey)).isZero();
     }
 
     @ParameterizedTest(name = "{0}")
@@ -227,23 +221,23 @@ class AttachmentRecordWireTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("cases")
-    @DisplayName("ATA-012: the same request id with the same attachment returns the stored response; with another attachment, or without one, it is REQUEST_CONFLICT")
+    @DisplayName("ATA-012: the same operation key with the same attachment returns the stored response; with another attachment, or without one, it is OPERATION_CONFLICT")
     void replay(Case c, McpSession session, Scenario scenario) {
         Seed seed = Seed.create(session, scenario);
         String attachment = attachmentOf(scenario, c.actor());
         String other = attachmentOf(scenario, c.actor());
-        String requestId = UUID.randomUUID().toString();
-        CallToolResult first = succeeded(session, c, c.build().args(session, seed, attachment, requestId));
+        String operationKey = UUID.randomUUID().toString();
+        CallToolResult first = succeeded(session, c, c.build().args(session, seed, attachment, operationKey));
         int rows = Ledger.history(session, seed.project()).size();
 
-        CallToolResult again = succeeded(session, c, c.build().args(session, seed, attachment, requestId));
+        CallToolResult again = succeeded(session, c, c.build().args(session, seed, attachment, operationKey));
 
         assertThat(again.structuredContent()).isEqualTo(first.structuredContent());
         assertThat(Ledger.history(session, seed.project())).as("a replay writes nothing").hasSize(rows);
-        assertThat(session.failed(c.tool(), c.build().args(session, seed, other, requestId)).code())
-                .isEqualTo("REQUEST_CONFLICT");
-        assertThat(session.failed(c.tool(), c.build().args(session, seed, null, requestId)).code())
-                .isEqualTo("REQUEST_CONFLICT");
+        assertThat(session.failed(c.tool(), c.build().args(session, seed, other, operationKey)).code())
+                .isEqualTo("OPERATION_CONFLICT");
+        assertThat(session.failed(c.tool(), c.build().args(session, seed, null, operationKey)).code())
+                .isEqualTo("OPERATION_CONFLICT");
         assertThat(carrying(session, seed, other)).isEmpty();
     }
 

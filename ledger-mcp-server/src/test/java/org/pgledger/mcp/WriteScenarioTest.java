@@ -47,7 +47,7 @@ class WriteScenarioTest {
 
     private McpSession session;
     private Scenario scenario;
-    private String requestId;
+    private String operationKey;
     private long lastHistoryId;
     private String defect;
     private String task;
@@ -63,7 +63,7 @@ class WriteScenarioTest {
         this.task = scenario.taskId(1);
         this.condition = scenario.code() + "-C-REL1-A";
         this.secondDefect = scenario.defectId(2);
-        this.requestId = UUID.randomUUID().toString();
+        this.operationKey = UUID.randomUUID().toString();
     }
 
     /** The history id of a step must be newer than that of the step before. */
@@ -81,7 +81,7 @@ class WriteScenarioTest {
     @DisplayName("MCW-025 step 01 (E-07): the author creates a defect and gets the next id")
     void createDefect() {
         Saved result = session.ok("ledger_save", Calls.Save.create("defect",
-                Fields.defect(scenario.projectId(), "first defect"), Scenario.AUTHOR).withRequestId(requestId),
+                Fields.defect(scenario.projectId(), "first defect"), Scenario.AUTHOR).withOperationKey(operationKey),
                 Saved.class);
 
         assertThat(result).usingRecursiveComparison().ignoringFields("historyId")
@@ -92,10 +92,10 @@ class WriteScenarioTest {
 
     @Test
     @Order(2)
-    @DisplayName("MCW-025 step 02 (E-08): the same request id again is a replay of the same result")
+    @DisplayName("MCW-025 step 02 (E-08): the same operation key again is a replay of the same result")
     void replayTheCreation() {
         Saved replay = session.ok("ledger_save", Calls.Save.create("defect",
-                Fields.defect(scenario.projectId(), "first defect"), Scenario.AUTHOR).withRequestId(requestId),
+                Fields.defect(scenario.projectId(), "first defect"), Scenario.AUTHOR).withOperationKey(operationKey),
                 Saved.class);
 
         assertThat(replay.historyId()).isEqualTo(firstDefectHistoryId);

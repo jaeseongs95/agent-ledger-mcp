@@ -40,9 +40,9 @@ public class WhoamiService {
     }
 
     /**
-     * @param actor the host attestation; null is HOST_ATTESTATION_REQUIRED. A whoami call carries no request id, so
+     * @param actor the host attestation; null is HOST_ATTESTATION_REQUIRED. A whoami call carries no operation key, so
      *        the attestation must have been signed with an empty one. A value whose author has no valid format is
-     *        answered with {@code authorFormatOk=false} and no grants, as the old function did; every other
+     *        answered with {@code authorFormatOk=false} and no grants; every other
      *        failure of the attestation (unsigned, unknown key, bad signature, wrong tool, outside the window) is
      *        the error of the gate, so a session finds out here why it cannot write.
      */

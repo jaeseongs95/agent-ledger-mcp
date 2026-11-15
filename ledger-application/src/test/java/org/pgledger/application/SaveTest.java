@@ -21,6 +21,7 @@ import org.pgledger.application.support.Expect;
 import org.pgledger.application.support.Fields;
 import org.pgledger.application.support.LedgerServiceTest;
 import org.pgledger.application.support.Scenario;
+import org.pgledger.application.write.BatchOpInput;
 import org.pgledger.application.write.BatchService;
 import org.pgledger.application.write.SaveCommand;
 import org.pgledger.application.write.SaveService;
@@ -214,7 +215,7 @@ class SaveTest {
     @MethodSource("keysOfAnotherEntity")
     @DisplayName("SVC-SAV-10: a key that belongs to another entity is refused and named")
     void sav10_keyOfAnotherEntity(String key, Scenario s) {
-        SaveCommand command = new SaveCommand(null, "defect", null, 0L, Fields.of(with(s.defectFields("d"), key, "x")),
+        SaveCommand command = new SaveCommand(Scenario.uuid(), "defect", null, 0L, Fields.of(with(s.defectFields("d"), key, "x")),
                 Scenario.REASON);
         ValidationException e = (ValidationException) Expect.failure(
                 () -> s.bean(SaveService.class).save(Scenario.AUTHOR, command), ValidationCode.VALIDATION_FAILED);
@@ -223,13 +224,14 @@ class SaveTest {
     }
 
     @Test
-    @DisplayName("SVC-SAV-10: a key that is not a field of any entity is refused in a batch given as text")
+    @DisplayName("SVC-SAV-10 (changed: the batch has the one entry with records, so a key that is not a field of any entity cannot be built here, it is refused by the binding of the tool, see SaveInputTest of ledger-mcp-server; what is tested is a key of another entity in a batch): refused with its path fields.<key>, the operation named, nothing written")
     void sav10_unknownKeyInABatchText(Scenario s) {
-        String ops = "[{\"op\":\"save\",\"entity\":\"defect\",\"fields\":{\"title\":\"t\",\"status\":\"X\"},"
-                + "\"reason\":\"a reason that is long enough\"}]";
+        List<BatchOpInput> ops = List.of(new BatchOpInput.Save("defect", Fields.of(with(s.defectFields("t"), "purpose", "x")),
+                Scenario.REASON, null, null));
         ValidationException e = (ValidationException) Expect.failure(
-                () -> s.bean(BatchService.class).batch(Scenario.AUTHOR, null, ops), ValidationCode.VALIDATION_FAILED);
-        assertThat(e.issues().get(0).path()).startsWith("ops[0].fields");
+                () -> s.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(), ops), ValidationCode.VALIDATION_FAILED);
+        assertThat(e.issues().get(0).path()).isEqualTo("fields.purpose");
+        assertThat(e.details()).containsEntry("op_index", List.of("1")).containsEntry("op", List.of("save"));
         assertThat(s.count("SELECT COUNT(*) FROM defect WHERE project_id = ?", s.projectId())).isZero();
     }
 
@@ -292,7 +294,7 @@ class SaveTest {
         String id = Scenario.uuid();
         Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR, new SaveCommand(id, "defect", null, 0L,
                 Fields.of(s.defectFields("d")), "r".repeat(length))), ValidationCode.REASON_INVALID);
-        assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE request_id = ?", id)).isZero();
+        assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ?", id)).isZero();
     }
 
     /** A create with one field too long. */

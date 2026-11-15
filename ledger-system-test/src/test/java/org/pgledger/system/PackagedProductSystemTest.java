@@ -92,7 +92,7 @@ class PackagedProductSystemTest {
     private String hostId;
     private String defectId;
     private String taskId;
-    private final List<String> sentRequestIds = new ArrayList<>();
+    private final List<String> sentOperationKeys = new ArrayList<>();
     private Map<String, String> defectBeforeEdit;
     private Map<String, String> taskBeforeTransition;
     private List<Map<String, String>> schemaHistoryAfterMigrate;
@@ -312,7 +312,7 @@ class PackagedProductSystemTest {
         assertThat(transitioned.path("to").asString()).isEqualTo("ACTIVE");
         assertThat(transitioned.path("version").asLong()).isEqualTo(2);
 
-        // whoami is signed too (an empty request id); it is not a write
+        // whoami is signed too (an empty operation key); it is not a write
         JsonNode who = call("ledger_whoami", hooked("ledger_whoami", Map.of()));
         assertThat(who.path("author").asString()).isEqualTo(author);
         assertThat(who.path("grants").toString()).contains("defect").contains("task").contains(projectId);
@@ -335,10 +335,10 @@ class PackagedProductSystemTest {
         assertThat(rows("SELECT state, version FROM " + schema + ".task")).containsExactly(
                 Map.of("state", "ACTIVE", "version", "2"));
 
-        List<Map<String, String>> history = rows("SELECT op, entity, request_id, before_data FROM " + schema
+        List<Map<String, String>> history = rows("SELECT op, entity, operation_key, before_data FROM " + schema
                 + ".history ORDER BY id");
         assertThat(history).extracting(row -> row.get("op")).containsExactly("CREATE", "EDIT", "CREATE", "TRANSITION");
-        assertThat(history).extracting(row -> row.get("request_id")).containsExactlyElementsOf(sentRequestIds);
+        assertThat(history).extracting(row -> row.get("operation_key")).containsExactlyElementsOf(sentOperationKeys);
         assertThat(history.get(0).get("before_data")).isNull();
         assertThat(history.get(2).get("before_data")).isNull();
         assertThat(beforeValues(history.get(1).get("before_data"), "title", "status", "severity", "category", "version"))
@@ -346,9 +346,9 @@ class PackagedProductSystemTest {
         assertThat(beforeValues(history.get(3).get("before_data"), "title", "state", "version"))
                 .isEqualTo(taskBeforeTransition);
 
-        List<Map<String, String>> receipts = rows("SELECT request_id, operation FROM " + schema
-                + ".request_receipt ORDER BY created_at, request_id");
-        assertThat(receipts).extracting(row -> row.get("request_id")).containsExactlyInAnyOrderElementsOf(sentRequestIds);
+        List<Map<String, String>> receipts = rows("SELECT operation_key, operation FROM " + schema
+                + ".request_receipt ORDER BY created_at, operation_key");
+        assertThat(receipts).extracting(row -> row.get("operation_key")).containsExactlyInAnyOrderElementsOf(sentOperationKeys);
         assertThat(receipts).extracting(row -> row.get("operation")).containsExactlyInAnyOrder("SAVE", "SAVE", "SAVE",
                 "TRANSITION");
         historyRowsAfterWrites = history.size();
@@ -372,14 +372,15 @@ class PackagedProductSystemTest {
     @DisplayName("SYS-010: a write without the attestation of the hook is refused by the packaged server and writes nothing")
     void unsignedWriteIsRefused() throws IOException {
         require(client, "SYS-007");
-        CallToolResult result = send("ledger_save", Map.of("entity", "defect", "reason", REASON, "fields", Map.of(
+        CallToolResult result = send("ledger_save", Map.of("operationKey", UUID.randomUUID().toString(), "entity", "defect",
+                "reason", REASON, "fields", Map.of(
                 "project_id", projectId, "title", "unsigned", "category", "ARC", "severity", "P2", "behavior", "b",
                 "root_cause", "c")));
         assertThat(result.isError()).as("the unsigned write must fail, got %s", result.content()).isTrue();
         assertThat(mapper.valueToTree(result.structuredContent()).path("code").asString())
                 .isEqualTo("HOST_ATTESTATION_REQUIRED");
         assertThat(rows("SELECT id FROM " + schema + ".history")).hasSize(historyRowsAfterWrites);
-        assertThat(rows("SELECT request_id FROM " + schema + ".request_receipt")).hasSize(receiptsAfterWrites);
+        assertThat(rows("SELECT operation_key FROM " + schema + ".request_receipt")).hasSize(receiptsAfterWrites);
     }
 
     // ---- the end -------------------------------------------------------------------------------------------------
@@ -462,10 +463,17 @@ class PackagedProductSystemTest {
         return sent;
     }
 
-    /** A write: signed by the hook, sent, and it must succeed; the request id the hook made is kept. */
+    /**
+     * A write: the test gives a fresh operationKey (the hook makes none and the server never makes one up), the call is signed
+     * by the hook, sent, and it must succeed; the operation key sent is kept.
+     */
     private JsonNode write(String tool, Map<String, Object> input) throws IOException {
-        Map<String, Object> sent = hooked(tool, input);
-        sentRequestIds.add(String.valueOf(sent.get("request_id")));
+        String operationKey = UUID.randomUUID().toString();
+        Map<String, Object> keyed = new LinkedHashMap<>(input);
+        keyed.put("operationKey", operationKey);
+        Map<String, Object> sent = hooked(tool, keyed);
+        assertThat(sent.get("operationKey")).as("the hook leaves the operationKey as given").isEqualTo(operationKey);
+        sentOperationKeys.add(operationKey);
         return call(tool, sent);
     }
 

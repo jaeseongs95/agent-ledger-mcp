@@ -25,7 +25,7 @@ import org.springframework.stereotype.Component;
 /**
  * Points at a wrong history row with a CORRECT row of the same entity. The wrong row itself is never changed.
  * The scope is the one that writes the corrected entity, and verify when the corrected row is a verification.
- * Correcting a CORRECT row is allowed, as the old function allowed it.
+ * Correcting a CORRECT row is allowed.
  */
 @Component
 public class CorrectOperation extends WriteOperation<CorrectCommand, CorrectResult> {

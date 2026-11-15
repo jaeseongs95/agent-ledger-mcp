@@ -5,8 +5,8 @@
 AI 에이전트가 수행한 작업을 기록하는 장부이며, 하나의 MCP 엔드포인트로 제공됩니다. 결함, 작업, 수정과 그 검증을 누가 왜 수행했는지와 함께 기록합니다.
 에이전트는 MCP 도구로 읽고 쓰며, 자신의 데이터베이스 로그인을 받지 않습니다.
 
-2.0.0 버전은 Java 25와 Spring Boot로 다시 작성한 것입니다. 클라이언트가 의존하는 계약(쓰기 도구의 이름과 입력 키, 결과의 키, `_hostAttestation` 키)은 유지하며,
-바뀐 내용은 [릴리스 노트](docs/release-notes/2.0.0.md)에 적습니다. 릴리스 노트의 형식은 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md)에 있습니다.
+2.0.0 버전은 Java 25와 Spring Boot로 다시 작성한 것이며 자체 도구 계약을 가집니다(모든 쓰기 도구는 필수 `operationKey`를 받고, 이전 버전의 인자는 새 인자와 함께 받아들이지 않습니다).
+클라이언트에 바뀐 내용은 [릴리스 노트](docs/release-notes/2.0.0.md)에 적습니다. 릴리스 노트의 형식은 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md)에 있습니다.
 
 ## 목차
 
@@ -27,7 +27,7 @@ AI 에이전트가 수행한 작업을 기록하는 장부이며, 하나의 MCP 
 
 - **작성자 신원은 주장이 아니라 증명으로 확인합니다.** 모든 쓰기와 모든 `ledger_whoami` 호출에는 예약 키 `_hostAttestation`이 붙으며, 이 값은 클라이언트의 호스트 훅이 채웁니다.
   모델은 이 키를 넣지 않아야 합니다. 작성자는 `<vendor>:<session-id>` 형식이며 예를 들어 `claude:1f2e3d4c` 또는 `codex:9a8b7c6d`입니다. 장부의 소유자는 `user:owner`입니다.
-  더 이상 쓰지 않는 `author_id` 키는 받아들이되 무시합니다.
+  작성자는 증명으로만 정해지며, 도구에는 `author_id` 인자가 없습니다.
 - **쓰기에는 유효한 부여가 필요합니다.** 소유자는 `ledger-cli grant`(또는 관리 웹의 부여 화면)로 작성자에게 프로젝트의 범위를 부여합니다.
   범위는 `defect`, `task`, `fix`, `verify`입니다. 해당 부여가 없는 쓰기는 거절됩니다.
 - **검증은 분리되어 있습니다.** `VERIFIED`, `MET`, `NOT_MET`은 검토자 도구 `ledger_review`와 `ledger_review_correct`로만 설정할 수 있으며, 이 도구들은 `verify` 범위를 요구합니다.
@@ -36,8 +36,10 @@ AI 에이전트가 수행한 작업을 기록하는 장부이며, 하나의 MCP 
 - **이력은 추가만 가능합니다.** 쓰기마다 이력 행이 추가되며, 시각, 작성자, 채널, 연산, 상태 변화, 사유를 담습니다. 애플리케이션에는 이력 행을 수정하거나 삭제하는 경로가 없고,
   데이터베이스 모듈의 부여 템플릿(`migrate`가 앱 계정에 적용합니다)은 그 계정에 이력의 `UPDATE`와 `DELETE`를 주지 않습니다. 잘못된 기록은 `CORRECT` 행으로 표시합니다.
   기존 행을 바꾸는 연산은 바꾸기 전의 전체 행도 함께 저장합니다(`before_data`, `ledger_history`에서 `include_before`를 주면 반환됩니다).
-- **재시도는 안전합니다.** UUID인 `request_id`를 전달합니다. 같은 요청을 반복하면 저장된 결과를 돌려주며 두 번 기록하지 않습니다.
-  이미 다른 작업, 내용, 작성자 또는 채널에 묶인 요청 ID는 `REQUEST_CONFLICT`로 거절됩니다.
+- **재시도는 안전합니다.** 모든 쓰기 도구는 필수 인자 `operationKey`(1자 이상 128자 이하, 예를 들어 UUID)를 받습니다. 같은 키로 같은 요청을 반복하면 저장된 결과를 돌려주며 두 번 기록하지 않습니다.
+  키는 작성자에게 속합니다(`artifact-begin`의 키와 같습니다). 다른 작성자는 같은 키로 자기 쓰기를 할 수 있습니다. 작성자의 키가 이미 다른 작업, 내용 또는 채널에 묶여 있으면 `OPERATION_CONFLICT`로 거절됩니다. 서버는 키를 대신 만들지 않으며, 키가 없거나 비어 있으면 `VALIDATION_FAILED`(경로 `operationKey`)로 거절됩니다.
+  `ledger_batch`는 배치 전체에 키 하나를 받으며 배치는 하나의 요청입니다. 같은 키에 같은 연산이면 저장된 결과를 돌려주고, 같은 키에 다른 연산(추가, 삭제, 변경, 순서 바꿈)이거나 다른 도구이면 `OPERATION_CONFLICT`입니다. `artifact-chunk`와 `artifact-finish`는 `operationKey`를 받지 않습니다. 업로드는 `artifact-begin`의 `operationKey`로 시작하고,
+  청크는 `uploadId`, `sequence`, `chunkSha256`으로, finish는 `uploadId`로 멱등입니다.
 - **낙관적 잠금.** 수정과 전이는 `expected_version`을 가지며, 오래된 판은 `VERSION_CONFLICT`입니다.
 - **프로젝트와 ID.** 결함은 프로젝트에 속하며 `<CODE>-D-0001`, `<CODE>-D-0002`와 같은 ID를 받습니다. ID 없이 만든 작업은 `<CODE>-T-0001`과 같은 ID를 받습니다.
   ID는 서버가 부여합니다. 작업이나 조건에 호출자가 정하는 ID는 공백이 없는 1자 이상 120자 이하이며 대소문자와 문자 종류(`:`, `/`, `#`, `.`, `_`, `-` 등)를 가리지 않습니다.
@@ -63,9 +65,10 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 ## MCP 도구
 
 서버는 `/mcp`(기본 `127.0.0.1:8765`)에서 Streamable HTTP로 MCP를 제공하고 `/healthz`에 응답합니다. 호출자는 bearer 토큰 `ledger.mcp.token`을 제시합니다.
-쓰기 도구는 이름과 입력 키를 그대로 유지합니다. 결과는 키를 최상위에 담으며, 1.x의 `rows[0].result` 감싸기는 없어졌습니다. 모든 도구 입력은 닫혀 있어, 알 수 없는 인자는 거절됩니다.
+결과는 키를 최상위에 담습니다. 모든 도구 입력은 닫혀 있어, 알 수 없는 인자는 거절됩니다. 객체나 배열 인자는 그 JSON 값으로 보내야 하며(문자열로 담은 JSON 문서는 거절됩니다),
+텍스트 `null`은 인자가 없다는 뜻이 아니라 하나의 텍스트입니다. `fields`의 키를 JSON `null`로 쓰면 주지 않은 것으로 봅니다(필드를 건드리지 않으며, 증명이 서명하는 다이제스트에서도 빠집니다). 선택 필드는 빈 텍스트로 지웁니다.
 
-쓰기 도구(로그인, 증명, 유효한 부여가 필요합니다).
+쓰기 도구(로그인, 증명, 유효한 부여가 필요합니다). `ledger_whoami`를 뺀 모든 쓰기 도구는 필수 인자 `operationKey`를 받습니다.
 
 | 도구 | 채널 | 내용 |
 |---|---|---|
@@ -76,7 +79,7 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | `ledger_record_case` | author | 결함 아래에 관찰된 사례를 추가합니다(`MERGED` 결함은 거절되며 병합 대상을 알려 줍니다) |
 | `ledger_link` | author | 결함, 작업, 조건을 연결하거나 연결을 제거합니다. 관계 종류 `caused_by`와 `blocks`는 방향이 있습니다(`a`가 주어이며, 연결 해제는 연결한 순서대로 양 끝을 적습니다) |
 | `ledger_correct` | author | 이력 행이 잘못되었음을 표시합니다 |
-| `ledger_batch` | author | 위 연산을 한 트랜잭션에서 최대 200개까지 처리합니다. 모두 반영되거나 모두 반영되지 않습니다 |
+| `ledger_batch` | author | 위 연산을 한 트랜잭션에서 최대 200개까지 처리합니다. 모두 반영되거나 모두 반영되지 않습니다. 배치에 `operationKey` 하나를 주며 연산에는 키가 없습니다 |
 | `ledger_review` | reviewer | `VERIFIED`, `MET`, `NOT_MET`과 그 재개를 처리합니다. 증거 링크가 필수입니다 |
 | `ledger_review_correct` | reviewer | 검증 행이 잘못되었음을 표시합니다 |
 
@@ -85,8 +88,8 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | 도구 | 내용 |
 |---|---|
 | `artifact-begin` | 기록이 가리킬 수 있는 파일의 업로드를 시작합니다. `operationKey`는 필수이며 호출을 되풀이할 수 있게 합니다. `purpose`는 선택이고 `evidence`만 지원합니다 |
-| `artifact-chunk` | 다음 청크(최대 262144바이트, base64)를 SHA-256과 함께 보냅니다. 마지막으로 반영된 청크를 다시 보내면 현재 상태로 답합니다 |
-| `artifact-finish` | 받은 바이트를 선언한 크기와 SHA-256에 대조하고 파일을 첨부로 보관합니다. 같은 업로드 ID로 다시 부르면 같은 첨부 ID를 돌려줍니다 |
+| `artifact-chunk` | 다음 청크(최대 262144바이트, base64)를 SHA-256과 함께 보냅니다. 마지막으로 반영된 청크를 다시 보내면 현재 상태로 답합니다. `operationKey`를 받지 않습니다(유일한 예외입니다. 업로드는 `artifact-begin`의 `operationKey`로 시작했고, 청크는 `uploadId`, `sequence`, `chunkSha256`으로 멱등이며 같은 순서 번호에 다른 내용을 보내면 충돌입니다) |
+| `artifact-finish` | 받은 바이트를 선언한 크기와 SHA-256에 대조하고 파일을 첨부로 보관합니다. 같은 업로드 ID로 다시 부르면 같은 첨부 ID를 돌려줍니다. `operationKey`를 받지 않습니다(`uploadId`로 멱등입니다) |
 | `artifact-status` | 업로드나 첨부의 상태, 크기, SHA-256, 만료, 진행을 보여 줍니다(경로나 저장 키는 절대 보여 주지 않습니다) |
 | `artifact-read` | 보관된 첨부의 한 페이지를 복호화하고 검증해서 읽습니다 |
 
@@ -509,14 +512,14 @@ JDBC 드라이버의 타입 정보는 드라이버가 판단할 수 없는 형�
 
 훅은 쓰기 도구 10종에만 서명하며, 도구 이름은 `mcp__<server>__ledger_<op>` 또는 `mcp__<server>__<server>_ledger_<op>`입니다
 (Codex Apps는 `mcp__codex_apps__app_<app>_ledger_<op>`). `_hostAttestation`의 값은
-`pgla2.<author>.<tool>.<request id>.<arguments digest>.<issued at>.<signature>`이며, 작성자, 도구, 요청 ID, 인자의 RFC 8785 정규형(`_hostAttestation` 제외, 배치는 모든 연산과 그 내용, 순서, 요청 ID)의
-SHA-256, 시각에 대한 Ed25519 서명입니다. 가로챈 토큰으로 다른 내용을 보낼 수 없습니다. `pgla1` 토큰은 `ATTESTATION_VERSION_UNSUPPORTED`로 거절됩니다.
+`pgla2.<author>.<tool>.<operation key>.<arguments digest>.<issued at>.<signature>`이며, 작성자, 도구, 호출의 `operationKey`(`ledger_whoami`와 첨부 도구는 빈 값), 인자의 RFC 8785 정규형(`_hostAttestation` 제외, 배치는 모든 연산과 그 내용, 순서, 배치의 키)의
+SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인자에서 `operationKey`를 읽을 뿐 키를 만들어 넣지 않으며, 키가 없는 호출은 서버가 거절합니다. 가로챈 토큰으로 다른 내용을 보낼 수 없습니다. `pgla1` 토큰은 `ATTESTATION_VERSION_UNSUPPORTED`로 거절됩니다.
 
 - 훅은 MCP 서버 이름과 작성자마다 Ed25519 키 하나를 소유자 전용 폴더에 보관합니다. 기본은 `~/.pg-ledger-mcp/session-keys`이며, `LEDGER_HOOK_KEY_DIR`에 절대 경로를 주어 바꿀 수 있습니다.
   한 서버용 서명은 다른 서버에서 검증되지 않습니다. Codex Apps의 서버 이름은 `codex_apps.<app>`입니다.
 - `java -jar ledger-client-hook.jar session-key <server> <author>`는 서버, 작성자, 공개 키, 지문을 출력합니다.
   소유자는 지문을 대조한 뒤 그 서버에서 `ledger-cli key-register` 또는 부여 화면으로 키를 등록합니다.
-- 서버는 부여를 보기 전에 서명, 도구, 요청 ID, 인자, 시각(`ledger.attestation.window`)을 검증합니다. 키가 없는 경우와 서명이 틀린 경우는 같은 거절인 `ATTESTATION_SIGNATURE_INVALID`이고,
+- 서버는 부여를 보기 전에 서명, 도구, 작업 키, 인자, 시각(`ledger.attestation.window`)을 검증합니다. 키가 없는 경우와 서명이 틀린 경우는 같은 거절인 `ATTESTATION_SIGNATURE_INVALID`이고,
   내용이 다르면 `ATTESTATION_BINDING_MISMATCH`입니다.
 - 한계: 같은 운영체제 사용자의 다른 프로세스는 키 파일을 읽을 수 있으므로 한 사용자 안의 격리에는 별도 계정이 필요합니다. 훅은 폴더와 키 파일을 소유자 전용으로 만들고, 이미 있는 것은 누가 접근할 수 있든 누가 소유하든 그대로 읽습니다(링크는 따라갑니다). 개인판은 PC 전체를 신뢰합니다. 키 파일 자리의 디렉터리와 빈 키 파일은 거절합니다.
 
@@ -524,6 +527,14 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 가로챈 토큰으로 다른
 
 1.x는 PostgreSQL 함수 위에서 동작하던 DBHub와 Node 구현이었고, 2.0.0은 그 전부를 대체합니다. 기존 데이터는 제자리에서 변환하지 않고 옮깁니다.
 1.x 스키마는 그대로 남으므로 되돌릴 때 쓸 수 있습니다. 계약 변경은 [릴리스 노트](docs/release-notes/2.0.0.md)를 참조합니다.
+
+1.x 호출자는 도구 호출을 다음과 같이 바꾸어야 하며, 2.0은 옛 형식을 새 형식과 함께 받아들이지 않습니다.
+
+- `request_id`와 `batch_request_id`는 모든 쓰기 도구의 필수 인자 `operationKey`(1자 이상 128자 이하)로 바뀝니다. 옛 키는 알 수 없는 인자로 거절되고, `operationKey`가 없는 호출도 거절되며,
+  서버는 키를 대신 만들지 않습니다. `ledger_batch` 안의 연산에는 자체 키가 없습니다.
+- `author_id` 인자는 없어졌습니다. 작성자는 호스트 증명입니다.
+- 객체나 배열 인자(`fields`, `ops`)는 문자열에 담은 JSON 문서가 아니라 JSON 객체나 배열로 보내야 합니다.
+- 텍스트 `null`은 인자가 없다는 뜻이 아니라 하나의 텍스트입니다. 값이 없는 인자는 생략합니다.
 
 2.0 자체는 1.x를 전혀 알지 못합니다. 서비스, 설치 프로그램, `ledger-cli`는 1.x의 설정, 파일, 표를 읽지 않습니다. 이전은 별도의 도구인
 `ledger-migrate-1x` 모듈이 맡습니다. 빌드가 `ledger-migrate-1x/build/libs/ledger-migrate-1x.jar`로 만들며, 배포 폴더 `dist`에 다른 jar와 함께 둡니다(설치의 `cp` 단계).
@@ -652,7 +663,8 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 가로챈 토큰으로 다른
 - 1.x는 모든 관계를 작은 ID가 앞에 오도록 저장했고 호출자가 어느 결함을 먼저 적었는지 어디에도 남기지 않았습니다. 그래서 가져오기는 방향이 있는 종류(`caused_by`, `blocks`)의
   관계를 저장된 그대로 복사하고 짐작하지 않으며, 그 관계를 나열합니다(건수와 ID, 감사 행과 `--verify-only`에도 나옵니다). 하나씩 확인하여 방향이 거꾸로인 관계는 제거한 뒤
   `ledger_link`로 올바른 결함을 앞에 두고 다시 연결합니다.
-- 1.x의 부여는 세션 키 없이 복사합니다(7단계). 1.x의 요청 영수증은 가져오지 않습니다. 2.0은 1.x의 요청 ID를 다시 재생하지 않으므로, 그 ID를 반복하는 쓰기는 다른 새 요청과 같이 일반 규칙으로 판단합니다.
+- 1.x의 부여는 세션 키 없이 복사합니다(7단계). 1.x의 요청 영수증은 가져오지 않습니다. 2.0의 모든 쓰기는 `operationKey`를 요구하고 옛 `request_id`는 알 수 없는 인자로 거절하므로, 1.x에서 응답이 유실된 요청이 2.0에서 두 번째 쓰기를 일으킬 수 없습니다.
+  1.x 이력 행의 `request_id`는 `operation_key`로 보존됩니다.
   1.x에서 온 이력 행은 중립적인 이름 `IMPORT`, `IMPORTED_NOTE`, `IMPORTED_CHANGE`, `IMPORTED_LOGIN`, `IMPORTED_SHARED`, `IMPORTED_UNKNOWN`을 쓰며, 1.x의 `legacy_ref` 필드는 읽기 도구에서 `source_ref`입니다.
 
 ### 1.x 원본의 설정

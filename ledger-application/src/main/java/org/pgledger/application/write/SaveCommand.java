@@ -5,10 +5,10 @@ import org.pgledger.domain.error.ValidationReason;
 
 /**
  * Create (expected version absent or 0) or edit (expected version of the row) a defect, task or condition. The
- * field values are texts; a key that is written with a null or blank value clears an optional field, a key that is
- * left out is not touched ({@link FieldsInput}).
+ * field values are texts; a key that is written with a blank text clears an optional field, a key that is left out
+ * (or written as null) is not touched ({@link FieldsInput}).
  */
-public record SaveCommand(String requestId, String entity, String id, Long expectedVersion,
+public record SaveCommand(String operationKey, String entity, String id, Long expectedVersion,
         FieldsInput fields, String reason) implements WriteCommand {
 
     /**

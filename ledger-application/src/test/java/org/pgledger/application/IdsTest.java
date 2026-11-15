@@ -86,11 +86,11 @@ class IdsTest {
     @Test
     @DisplayName("SVC-IDS-05: failed requests consume no number")
     void ids05_failuresConsumeNothing(Scenario s) {
-        Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR, new SaveCommand(null, "defect", null, 0L,
+        Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR, new SaveCommand(Scenario.uuid(), "defect", null, 0L,
                 Fields.of(s.defectFields(" ")), Scenario.REASON)), ValidationCode.VALIDATION_FAILED);
         Expect.failure(() -> s.bean(SaveService.class).save(Scenario.NOGRANT, defect(s, null, "x")),
                 org.pgledger.domain.error.TrustCode.SESSION_NOT_GRANTED);
-        Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR, new SaveCommand(null, "defect", null, 0L,
+        Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR, new SaveCommand(Scenario.uuid(), "defect", null, 0L,
                 Fields.of(s.defectFields("x")), "short")), ValidationCode.REASON_INVALID);
         assertThat(s.newDefect("good").id()).isEqualTo(s.defectId(1));
     }
@@ -166,12 +166,12 @@ class IdsTest {
     @Test
     @DisplayName("SVC-IDS-12: a batch of creates is consecutive, and a failing batch gives its numbers back")
     void ids12_batches(Scenario s) {
-        BatchOpInput create = new BatchOpInput.Save("defect", Fields.of(s.defectFields("b")), Scenario.REASON, null, null, null);
+        BatchOpInput create = new BatchOpInput.Save("defect", Fields.of(s.defectFields("b")), Scenario.REASON, null, null);
         BatchOpInput failing = new BatchOpInput.Transition("defect", s.defectId(99), 1L, "DISPUTED", Scenario.REASON,
-                Scenario.EVIDENCE, null, null, null, null);
-        Expect.failure(() -> s.bean(BatchService.class).batch(Scenario.AUTHOR, null, List.of(create, create, failing)),
+                Scenario.EVIDENCE, null, null, null);
+        Expect.failure(() -> s.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(), List.of(create, create, failing)),
                 org.pgledger.domain.error.LookupCode.NOT_FOUND);
-        BatchResult ok = s.bean(BatchService.class).batch(Scenario.AUTHOR, null, List.of(create, create));
+        BatchResult ok = s.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(), List.of(create, create));
         assertThat(ok.results().stream().map(r -> ((SaveResult) r).id()))
                 .containsExactly(s.defectId(1), s.defectId(2));
     }
@@ -186,7 +186,7 @@ class IdsTest {
             String commit = Scenario.commit((char) ('a' + i % 6));
             calls.add(() -> s.fix(Scenario.AUTHOR, defect, commit));
             String caseOn = defects.get(16 + i).id();
-            calls.add(() -> s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(null,
+            calls.add(() -> s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(Scenario.uuid(),
                     caseOn, "seen", Scenario.REASON, null, null, null)));
             calls.add(() -> s.bean(SaveService.class).save(Scenario.AUTHOR, s.create("task", null,
                     s.taskFields("t"))));

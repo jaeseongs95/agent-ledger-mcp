@@ -146,8 +146,19 @@ class ArchitectureTest {
     void historyIsInsertAndReadOnly() {
         assertThat(Stream.of(HistoryRepository.class.getMethods()).map(m -> m.getName()).collect(
                 java.util.stream.Collectors.toSet())).containsExactlyInAnyOrder("insert", "findById", "findByIdIn",
-                "findByEntityAndEntityIdOrderById", "findByRequestIdOrderById");
+                "findByEntityAndEntityIdOrderById", "findByOperationKeyOrderById");
         assertThat(HistoryRepository.class.getInterfaces()).extracting(Class::getSimpleName)
+                .containsExactlyInAnyOrder("Repository", "Insertable");
+    }
+
+    @Test
+    @DisplayName("OPK-025: the receipt repository inserts and reads by author and operation key, nothing else (the @Id of Receipt "
+            + "names the operation key only, while the primary key of the table is the pair, so no save, findById or deleteById by one key)")
+    void receiptsAreInsertAndReadByTheAuthorAndKeyOnly() {
+        Class<?> receipts = org.pgledger.database.repository.ReceiptRepository.class;
+        assertThat(Stream.of(receipts.getMethods()).map(m -> m.getName()).collect(java.util.stream.Collectors.toSet()))
+                .containsExactlyInAnyOrder("insert", "findByAuthorIdAndOperationKey");
+        assertThat(receipts.getInterfaces()).extracting(Class::getSimpleName)
                 .containsExactlyInAnyOrder("Repository", "Insertable");
     }
 
@@ -222,5 +233,11 @@ class ArchitectureTest {
     @DisplayName("ARC-1X-03 no main source or resource of the module names 1.x")
     void arc1x03_noOneXTextInMainSources() {
         assertThat(NoOneXRules.oneXTextInMainSources()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("OPK-017 no main source or resource of the module uses a name of the retired request key (request_id, batch_request_id, RequestId): the key of a write is the operationKey")
+    void opk017_noRetiredRequestKeyName() {
+        assertThat(NoOneXRules.retiredRequestKeyTextInMainSources()).isEmpty();
     }
 }

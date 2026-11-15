@@ -41,6 +41,7 @@ import org.pgledger.domain.error.ValidationCode;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.model.Attachment;
 import org.pgledger.domain.value.AuthorId;
+import org.pgledger.domain.value.OperationKey;
 import org.pgledger.domain.value.Sha256;
 
 /**
@@ -53,9 +54,9 @@ class AttachmentRecordTest {
 
     private static final Instant WHEN = Instant.parse("2026-11-05T09:00:00Z");
 
-    /** What a case has made ready: the defect it works on and the call (attachment id, request id) that writes. */
+    /** What a case has made ready: the defect it works on and the call (attachment id, operation key) that writes. */
     private interface Call {
-        Object run(String attachmentId, String requestId);
+        Object run(String attachmentId, String operationKey);
     }
 
     private record Prepared(String defectId, Call call) {
@@ -78,18 +79,18 @@ class AttachmentRecordTest {
         return new Case(name, Scenario.REVIEWER, Scenario.AUTHOR, prepare);
     }
 
-    private static TransitionCommand dispute(Scenario s, String defectId, String attachmentId, String requestId) {
-        return new TransitionCommand(requestId, "defect", defectId, 1L, "DISPUTED", Scenario.REASON, Scenario.EVIDENCE,
+    private static TransitionCommand dispute(Scenario s, String defectId, String attachmentId, String operationKey) {
+        return new TransitionCommand(operationKey, "defect", defectId, 1L, "DISPUTED", Scenario.REASON, Scenario.EVIDENCE,
                 null, null, attachmentId);
     }
 
-    private static RecordFixCommand fix(String defectId, String attachmentId, String requestId) {
-        return new RecordFixCommand(requestId, defectId, "repo/e2e", Scenario.commit('a'), Scenario.REASON, null, null,
+    private static RecordFixCommand fix(String defectId, String attachmentId, String operationKey) {
+        return new RecordFixCommand(operationKey, defectId, "repo/e2e", Scenario.commit('a'), Scenario.REASON, null, null,
                 null, null, null, attachmentId);
     }
 
-    private static RecordCaseCommand observe(String defectId, String attachmentId, String requestId) {
-        return new RecordCaseCommand(requestId, defectId, "seen", Scenario.REASON, null, null, null, attachmentId);
+    private static RecordCaseCommand observe(String defectId, String attachmentId, String operationKey) {
+        return new RecordCaseCommand(operationKey, defectId, "seen", Scenario.REASON, null, null, null, attachmentId);
     }
 
     /** The six tools (the reviewer channel's two are review and review_correct) and one batch operation of each kind that a batch holds. */
@@ -130,26 +131,26 @@ class AttachmentRecordTest {
                 }),
                 author("ledger_batch: transition", s -> {
                     SaveResult d = s.newDefect("d");
-                    return new Prepared(d.id(), (att, rid) -> s.bean(BatchService.class).batch(Scenario.AUTHOR, null,
+                    return new Prepared(d.id(), (att, rid) -> s.bean(BatchService.class).batch(Scenario.AUTHOR, rid,
                             List.of(new BatchOpInput.Transition("defect", d.id(), 1L, "DISPUTED", Scenario.REASON,
-                                    Scenario.EVIDENCE, null, null, att, rid))));
+                                    Scenario.EVIDENCE, null, null, att))));
                 }),
                 author("ledger_batch: record_fix", s -> {
                     SaveResult d = s.newDefect("d");
-                    return new Prepared(d.id(), (att, rid) -> s.bean(BatchService.class).batch(Scenario.AUTHOR, null,
+                    return new Prepared(d.id(), (att, rid) -> s.bean(BatchService.class).batch(Scenario.AUTHOR, rid,
                             List.of(new BatchOpInput.RecordFix(d.id(), "repo/e2e", Scenario.commit('a'),
-                                    Scenario.REASON, null, null, null, null, null, att, rid))));
+                                    Scenario.REASON, null, null, null, null, null, att))));
                 }),
                 author("ledger_batch: record_case", s -> {
                     SaveResult d = s.newDefect("d");
-                    return new Prepared(d.id(), (att, rid) -> s.bean(BatchService.class).batch(Scenario.AUTHOR, null,
-                            List.of(new BatchOpInput.RecordCase(d.id(), "seen", Scenario.REASON, null, null, null, att,
-                                    rid))));
+                    return new Prepared(d.id(), (att, rid) -> s.bean(BatchService.class).batch(Scenario.AUTHOR, rid,
+                            List.of(new BatchOpInput.RecordCase(d.id(), "seen", Scenario.REASON, null, null, null,
+                                    att))));
                 }),
                 author("ledger_batch: correct", s -> {
                     SaveResult d = s.newDefect("d");
-                    return new Prepared(d.id(), (att, rid) -> s.bean(BatchService.class).batch(Scenario.AUTHOR, null,
-                            List.of(new BatchOpInput.Correct(d.historyId(), Scenario.REASON, att, rid))));
+                    return new Prepared(d.id(), (att, rid) -> s.bean(BatchService.class).batch(Scenario.AUTHOR, rid,
+                            List.of(new BatchOpInput.Correct(d.historyId(), Scenario.REASON, att))));
                 }));
     }
 
@@ -179,8 +180,23 @@ class AttachmentRecordTest {
         };
     }
 
-    private static long receipts(Scenario s, String requestId) {
-        return s.count("SELECT COUNT(*) FROM request_receipt WHERE request_id = ?", requestId);
+    /** The key of the first operation when the call is a batch of one: derived from the key of the batch. */
+    private static String derived(String operationKey) {
+        return OperationKey.parse(operationKey).derive(0).toString();
+    }
+
+    /**
+     * Receipts bound to the key (a plain write, or the receipt of a batch under its own key) or to the key derived for the
+     * first operation (a batch). Only ever compared with zero here: a refused call leaves neither.
+     */
+    private static long receipts(Scenario s, String operationKey) {
+        return s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key IN (?, ?)", operationKey,
+                derived(operationKey));
+    }
+
+    private static long historyRows(Scenario s, String operationKey) {
+        return s.count("SELECT COUNT(*) FROM history WHERE operation_key IN (?, ?)", operationKey,
+                derived(operationKey));
     }
 
     private static long historyOf(Scenario s, String defectId) {
@@ -233,7 +249,7 @@ class AttachmentRecordTest {
         String attachment = attachmentOf(s, Scenario.AUTHOR);
 
         RecordFixResult result = s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR,
-                fix(d.id(), attachment, null));
+                fix(d.id(), attachment, Scenario.uuid()));
 
         assertThat(result.transitionHistoryId()).as("the defect moved to SOURCE_FIXED").isNotNull();
         assertThat(s.historyRow(result.historyId()).attachmentId()).isEqualTo(attachment);
@@ -260,10 +276,10 @@ class AttachmentRecordTest {
         String first = attachmentOf(s, Scenario.AUTHOR);
         String second = attachmentOf(s, Scenario.AUTHOR);
 
-        BatchResult result = s.bean(BatchService.class).batch(Scenario.AUTHOR, null, List.of(
-                new BatchOpInput.RecordCase(d.id(), "seen", Scenario.REASON, null, null, null, first, null),
-                new BatchOpInput.RecordCase(d.id(), "again", Scenario.REASON, null, null, null, second, null),
-                new BatchOpInput.RecordCase(d.id(), "no file", Scenario.REASON, null, null, null, null, null)));
+        BatchResult result = s.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(), List.of(
+                new BatchOpInput.RecordCase(d.id(), "seen", Scenario.REASON, null, null, null, first),
+                new BatchOpInput.RecordCase(d.id(), "again", Scenario.REASON, null, null, null, second),
+                new BatchOpInput.RecordCase(d.id(), "no file", Scenario.REASON, null, null, null, null)));
 
         assertThat(result.count()).isEqualTo(3);
         assertThat(s.historyRow(historyId(result.results().get(0))).attachmentId()).isEqualTo(first);
@@ -279,16 +295,16 @@ class AttachmentRecordTest {
     void ata012_missingAttachment(Case c, Scenario s) {
         Prepared work = c.prepare().apply(s);
         State before = State.of(s, work.defectId());
-        String requestId = Scenario.uuid();
+        String operationKey = Scenario.uuid();
         String missing = Scenario.uuid();
 
-        LedgerException failure = Expect.failure(() -> work.call().run(missing, requestId),
+        LedgerException failure = Expect.failure(() -> work.call().run(missing, operationKey),
                 LookupCode.ARTIFACT_NOT_FOUND);
 
         assertThat(failure.args()).containsExactly(missing);
         assertThat(State.of(s, work.defectId())).isEqualTo(before);
-        assertThat(receipts(s, requestId)).isZero();
-        assertThat(s.count("SELECT COUNT(*) FROM history WHERE request_id = ?", requestId)).isZero();
+        assertThat(receipts(s, operationKey)).isZero();
+        assertThat(historyRows(s, operationKey)).isZero();
     }
 
     @ParameterizedTest
@@ -298,13 +314,13 @@ class AttachmentRecordTest {
         Prepared work = c.prepare().apply(s);
         String foreign = attachmentOf(s, c.stranger());
         State before = State.of(s, work.defectId());
-        String requestId = Scenario.uuid();
+        String operationKey = Scenario.uuid();
 
-        Expect.failure(() -> work.call().run(foreign, requestId), LookupCode.ARTIFACT_NOT_FOUND);
+        Expect.failure(() -> work.call().run(foreign, operationKey), LookupCode.ARTIFACT_NOT_FOUND);
 
         assertThat(State.of(s, work.defectId())).isEqualTo(before);
-        assertThat(receipts(s, requestId)).isZero();
-        assertThat(s.count("SELECT COUNT(*) FROM history WHERE request_id = ?", requestId)).isZero();
+        assertThat(receipts(s, operationKey)).isZero();
+        assertThat(historyRows(s, operationKey)).isZero();
         assertThat(referencing(s, foreign)).isZero();
     }
 
@@ -314,15 +330,15 @@ class AttachmentRecordTest {
     void ata012_notAUuid(Case c, Scenario s) {
         Prepared work = c.prepare().apply(s);
         State before = State.of(s, work.defectId());
-        String requestId = Scenario.uuid();
+        String operationKey = Scenario.uuid();
 
-        LedgerException failure = Expect.failure(() -> work.call().run("not-a-uuid", requestId),
+        LedgerException failure = Expect.failure(() -> work.call().run("not-a-uuid", operationKey),
                 ValidationCode.VALIDATION_FAILED);
 
         assertThat(failure).isInstanceOf(ValidationException.class);
         assertThat(Expect.firstIssue(failure).path()).isEqualTo("attachment_id");
         assertThat(State.of(s, work.defectId())).isEqualTo(before);
-        assertThat(receipts(s, requestId)).isZero();
+        assertThat(receipts(s, operationKey)).isZero();
     }
 
     @Test
@@ -331,38 +347,38 @@ class AttachmentRecordTest {
         SaveResult d = s.newDefect("d");
         String mine = attachmentOf(s, Scenario.AUTHOR);
         State before = State.of(s, d.id());
-        String firstRequest = Scenario.uuid();
+        String batchKey = Scenario.uuid();
 
-        LedgerException failure = Expect.failure(() -> s.bean(BatchService.class).batch(Scenario.AUTHOR, null, List.of(
-                new BatchOpInput.RecordCase(d.id(), "seen", Scenario.REASON, null, null, null, mine, firstRequest),
-                new BatchOpInput.RecordCase(d.id(), "bad", Scenario.REASON, null, null, null, Scenario.uuid(), null))),
+        LedgerException failure = Expect.failure(() -> s.bean(BatchService.class).batch(Scenario.AUTHOR, batchKey, List.of(
+                new BatchOpInput.RecordCase(d.id(), "seen", Scenario.REASON, null, null, null, mine),
+                new BatchOpInput.RecordCase(d.id(), "bad", Scenario.REASON, null, null, null, Scenario.uuid()))),
                 LookupCode.ARTIFACT_NOT_FOUND);
 
         assertThat(failure.details()).containsEntry("op_index", List.of("2")).containsEntry("op", List.of("record_case"));
         assertThat(State.of(s, d.id())).isEqualTo(before);
         assertThat(referencing(s, mine)).isZero();
-        assertThat(receipts(s, firstRequest)).isZero();
+        assertThat(receipts(s, batchKey)).isZero();
     }
 
     // ------------------------------------------------------------------ receipt digest
 
     @ParameterizedTest
     @MethodSource("cases")
-    @DisplayName("ATA-012: the same request id with the same attachment replays the stored response; with another attachment, or without one, it is REQUEST_CONFLICT")
+    @DisplayName("ATA-012: the same operation key with the same attachment replays the stored response; with another attachment, or without one, it is OPERATION_CONFLICT")
     void ata012_replay(Case c, Scenario s) {
         Prepared work = c.prepare().apply(s);
         String attachment = attachmentOf(s, c.actor());
         String other = attachmentOf(s, c.actor());
-        String requestId = Scenario.uuid();
-        Object first = work.call().run(attachment, requestId);
+        String operationKey = Scenario.uuid();
+        Object first = work.call().run(attachment, operationKey);
         long rows = historyOf(s, work.defectId());
 
-        Object again = work.call().run(attachment, requestId);
+        Object again = work.call().run(attachment, operationKey);
 
         assertThat(again).isEqualTo(first);
         assertThat(historyOf(s, work.defectId())).as("a replay writes nothing").isEqualTo(rows);
-        Expect.failure(() -> work.call().run(other, requestId), ConflictCode.REQUEST_CONFLICT);
-        Expect.failure(() -> work.call().run(null, requestId), ConflictCode.REQUEST_CONFLICT);
+        Expect.failure(() -> work.call().run(other, operationKey), ConflictCode.OPERATION_CONFLICT);
+        Expect.failure(() -> work.call().run(null, operationKey), ConflictCode.OPERATION_CONFLICT);
         assertThat(referencing(s, other)).isZero();
         assertThat(historyOf(s, work.defectId())).isEqualTo(rows);
     }

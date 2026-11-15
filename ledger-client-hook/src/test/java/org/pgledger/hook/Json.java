@@ -39,14 +39,11 @@ final class Json {
     }
 
     /**
-     * The arguments as the hook must forward them: the model's arguments plus the attestation token and, if the hook
-     * generated one, the request id ({@code null}: none was added); nothing else.
+     * The arguments as the hook must forward them: the model's arguments plus the attestation token; nothing else (the
+     * hook makes no operation key up).
      */
-    static ObjectNode stamped(JsonNode arguments, String token, String addedRequestId) {
+    static ObjectNode stamped(JsonNode arguments, String token) {
         ObjectNode copy = ((ObjectNode) arguments).deepCopy();
-        if (addedRequestId != null) {
-            copy.put("request_id", addedRequestId);
-        }
         copy.put(RESERVED_KEY, token);
         return copy;
     }

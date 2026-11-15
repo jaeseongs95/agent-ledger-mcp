@@ -1,14 +1,13 @@
 package org.pgledger.hook;
 
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import tools.jackson.databind.JsonNode;
 
 /**
  * Antigravity: {@code toolCall.name}/{@code toolCall.args}, {@code conversationId}; an {@code overwrite} that is
- * merged into the tool args of the host. A direct call overwrites only {@code _hostAttestation} (and
- * {@code request_id} if the hook generated one); a {@code call_mcp_tool} call overwrites only {@code Arguments}.
+ * merged into the tool args of the host. A direct call overwrites only {@code _hostAttestation}
+ * (the hook generates no key); a {@code call_mcp_tool} call overwrites only {@code Arguments}.
  */
 final class AntigravityHost implements HostScenario {
 
@@ -72,13 +71,9 @@ final class AntigravityHost implements HostScenario {
     }
 
     @Override
-    public Optional<JsonNode> allowed(JsonNode sent, String token, String addedRequestId) {
-        Map<String, String> overwrite = new LinkedHashMap<>();
-        overwrite.put(Json.RESERVED_KEY, token);
-        if (addedRequestId != null) {
-            overwrite.put("request_id", addedRequestId);
-        }
-        return Optional.of(Json.tree(new Answer("allow", null, overwrite)));
+    public Optional<JsonNode> allowed(JsonNode sent, String token) {
+        // OPK-009: a direct call overwrites only _hostAttestation (it used to carry a generated request_id too)
+        return Optional.of(Json.tree(new Answer("allow", null, Map.of(Json.RESERVED_KEY, token))));
     }
 
     /** The answer to a wrapped call whose {@code Arguments} are the given value (an object, or its JSON text). */

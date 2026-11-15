@@ -174,7 +174,7 @@ class ReadQueryTest {
         SaveResult d = s.newDefect("d");
         SaveResult edited = s.bean(SaveService.class).save(Scenario.AUTHOR, s.edit("defect", d.id(), 1,
                 Map.of("title", "two")));
-        var correction = s.bean(CorrectService.class).correct(Scenario.AUTHOR, new CorrectCommand(null,
+        var correction = s.bean(CorrectService.class).correct(Scenario.AUTHOR, new CorrectCommand(Scenario.uuid(),
                 edited.historyId(), Scenario.REASON));
         List<HistoryView> rows = rows(s);
         HistoryView edit = rows.stream().filter(h -> h.id() == edited.historyId()).findFirst().orElseThrow();
@@ -182,21 +182,21 @@ class ReadQueryTest {
         assertThat(s.bean(LedgerJson.class).read(edit.changes(), ChangeSet.class).entries())
                 .containsOnlyKeys("title");
         assertThat(edit.vendor()).isEqualTo("claude");
-        assertThat(edit.requestId()).isNotBlank();
+        assertThat(edit.operationKey()).isNotBlank();
         assertThat(edit.sourceRef()).isNull();
         assertThat(corrected.correctsId()).isEqualTo(edited.historyId());
     }
 
     @Test
-    @DisplayName("MCR-H09: the history row of a write has the request id and author of the call")
+    @DisplayName("MCR-H09: the history row of a write has the operation key and author of the call")
     void h09_historyIsTheReceipt(Scenario s) {
-        String requestId = Scenario.uuid();
+        String operationKey = Scenario.uuid();
         SaveResult d = s.bean(SaveService.class).save(Scenario.AUTHOR, new org.pgledger.application.write
-                .SaveCommand(requestId, "defect", null, 0L, Fields.of(s.defectFields("d")), Scenario.REASON));
+                .SaveCommand(operationKey, "defect", null, 0L, Fields.of(s.defectFields("d")), Scenario.REASON));
         var page = history(s).history(new HistoryQuery(List.of(d.historyId()), null, null, null, null, null, null,
                 null, null, null, null, null, null));
         assertThat(page.items()).hasSize(1);
-        assertThat(page.items().getFirst().requestId()).isEqualTo(requestId);
+        assertThat(page.items().getFirst().operationKey()).isEqualTo(operationKey);
         assertThat(page.items().getFirst().authorId()).isEqualTo(Scenario.AUTHOR);
     }
 
@@ -208,7 +208,7 @@ class ReadQueryTest {
         // source reference is made only by an import (the migration tool), which this case does not have; this case is
         // about how the history read shows such a row
         s.ctx().jdbc().sql("INSERT INTO history (id, occurred_at, author_id, login, actor_assurance, entity, entity_id, op, "
-                + "changes, reason, request_id, source_ref) VALUES (?, TIMESTAMP '2025-01-01 00:00:00', "
+                + "changes, reason, operation_key, source_ref) VALUES (?, TIMESTAMP '2025-01-01 00:00:00', "
                 + "'claude:old', 'ledger_author', 'IMPORTED_LOGIN', 'DEFECT', ?, 'IMPORT', '{}', "
                 + "'imported by a migration', ?, 'import-7')")
                 .param(s.count("SELECT MAX(id) FROM history") + 1).param(d.id()).param(Scenario.uuid()).update();
@@ -229,11 +229,11 @@ class ReadQueryTest {
                 Map.of("title", "two")));
         var transitioned = s.bean(TransitionService.class).transition(Scenario.AUTHOR, s.move("defect", d.id(), 2,
                 "DISPUTED", Scenario.EVIDENCE));
-        s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(null, "defect_task", d.id(), t.id(),
+        s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(Scenario.uuid(), "defect_task", d.id(), t.id(),
                 Scenario.REASON, null));
-        var unlinked = s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(null, "defect_task", d.id(),
+        var unlinked = s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(Scenario.uuid(), "defect_task", d.id(),
                 t.id(), Scenario.REASON, true));
-        var kept = s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(null, d.id(),
+        var kept = s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(Scenario.uuid(), d.id(),
                 "seen", Scenario.REASON, null, null, null));
         assertThat(history(s).history(history(s.projectId(), null)).items()).allSatisfy(h -> assertThat(
                 h.beforeData()).isNull());
@@ -529,7 +529,7 @@ class ReadQueryTest {
     void l04_attentionKinds(Scenario s) {
         SaveResult withFix = s.newDefect("with fix");
         s.bean(org.pgledger.application.write.RecordFixService.class).recordFix(Scenario.AUTHOR,
-                new org.pgledger.application.write.RecordFixCommand(null, withFix.id(), "repo/e2e",
+                new org.pgledger.application.write.RecordFixCommand(Scenario.uuid(), withFix.id(), "repo/e2e",
                         Scenario.commit('a'), Scenario.REASON, null, null, null, null, false));
         SaveResult noCommit = s.newDefect("no commit");
         // SQL, because no service can make these two states, which only imported data holds: a defect enters SOURCE_FIXED
@@ -706,7 +706,7 @@ class ReadQueryTest {
     @DisplayName("MCR-012: every instant of an output ends with Z")
     void mcr012_instantsEndWithZ(Scenario s) {
         SaveResult d = s.sourceFixedDefect("d");
-        s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(null, d.id(), "seen",
+        s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(Scenario.uuid(), d.id(), "seen",
                 Scenario.REASON, null, null, "2026-11-05T09:00:00+01:00"));
         LedgerJson json = s.bean(LedgerJson.class);
         List<String> outputs = List.of(json.write(s.bean(DetailService.class).defect(d.id())).text(),
