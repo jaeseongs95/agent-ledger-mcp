@@ -29,7 +29,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.util.MultiValueMap;
 
 /**
- * PSK-APR-01 .. PSK-APR-09, PSK-SIN-01, PSK-SIN-02, PSK-ENR-04 (TEST_CASES section 37): the approval of every owner write by a
+ * PSK-APR-01 .. PSK-APR-09, PSK-SIN-01, PSK-SIN-02, PSK-ENR-04 (TEST_CASES section 39): the approval of every owner write by a
  * passkey (the challenge is derived from the change and the session, used once, short-lived; user verification and the relying
  * party are checked by Spring Security's WebAuthn support), the passkey sign-in through its endpoints with the lock after failed
  * attempts, and the registration of a passkey in the session of the one-time code. The software authenticator writes what a
