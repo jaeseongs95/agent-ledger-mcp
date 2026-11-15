@@ -238,11 +238,9 @@ There is no command that prints a stored secret.
 | `ledger.admin.oidc.issuer` | admin web | with `ledger.admin.sign-in=oidc`: the issuer (`iss`) the address counts for: an address is only meaningful at the issuer that verified it |
 | `ledger.admin.passkey.rp-id` | admin web | the host name the passkeys are bound to; default: the one non-loopback host of `ledger.admin.allowed-hosts`, else `localhost` |
 | `ledger.admin.passkey.origins` | admin web | the origins the browser shows (scheme, host and port): `https` except `http://localhost`; default `https://<rp-id>`, or `http://localhost:<server.port>` for `localhost` |
-| `ledger.admin.lockout.max-failures` | admin web | failed attempts (admin token, passkey sign-in, one-time code) of one client before it is locked, default 5 |
-| `ledger.admin.lockout.window` | admin web | the period in which failures are counted, default 60s |
-| `ledger.admin.lockout.lock-period` | admin web | how long a client stays locked, default 60s |
-| `ledger.admin.lockout.global-max-failures` | admin web | failed attempts of all clients together within the window before the global delay starts, default 50 |
-| `ledger.admin.lockout.global-delay` | admin web | the wait before a token is compared once the global budget is used, default 1s; it slows down and never locks |
+| `ledger.admin.lockout.window` | admin web | the period in which credential checks (admin token, passkey sign-in, one-time code) are counted, default 60s |
+| `ledger.admin.lockout.global-max-failures` | admin web | credential checks of all callers together within the window before the delay starts, default 50 |
+| `ledger.admin.lockout.global-delay` | admin web | the wait before a credential is compared once the budget is used, default 1s; it slows down and never locks or refuses: the right credential always signs in |
 | `ledger.admin.mcp.health-url` | admin web | the `/healthz` URL of the MCP server shown on the overview; absent means not configured |
 | `ledger.admin.mcp.timeout` | admin web | timeout of that check, default 2s |
 | `ledger.attachments.directory` | servers, CLI | where the files of the attachments are kept (the installer sets it to `<data folder>/attachments`); when it is not set the attachment tools are not registered |
@@ -510,7 +508,11 @@ the service account of the installation and never as root.
   finds no sign-in. The admin token `ledger.admin.token` also stays the bearer of the read-only JSON endpoints. Whichever sign-in
   is chosen, a change is approved by a passkey, so a session opened with the token registers its first passkey with the one-time
   code of `passkey-code`. The agents' token is refused, so an agent that holds the MCP token cannot grant itself
-  anything. Failed attempts (passkey, one-time code, token) lock the client and slow down all clients (`ledger.admin.lockout.*`).
+  anything. Credential checks (passkey, one-time code, token) are slowed down once more than a budget of them arrive within a window
+  (`ledger.admin.lockout.*`); nothing is ever locked, because a lock that anybody can trigger with wrong credentials locks the owner out as
+  well. There is no limit per client either: both services listen on loopback only and are published by the operator's reverse proxy on the
+  same host, so the address of every request is the proxy. The credentials cannot be guessed (the admin token is 256 bits from
+  `SecureRandom`, the one-time code 100 bits).
 - **Approval of every change by a passkey, whichever way you signed in.** Every change you make in the console (grants, session
   keys, common codes, projects, the driver, closing a passkey) is approved with a passkey, with user verification: the page asks the
   server for a challenge made from that very change and your session, the authenticator signs it, and the write goes with the

@@ -15,7 +15,7 @@ server:
   # The reverse proxy on this host tells the original scheme and client address (X-Forwarded-Proto, X-Forwarded-For).
   # Tomcat believes these headers only from its internal proxies, and Boot's default list of them trusts every private
   # network (10/8, 192.168/16, 172.16/12, 100.64/10, 169.254/16, 127/8): a client that reaches the admin from one of them
-  # could choose the address the lock after failed attempts counts. Only the loopback address of the proxy on this host
+  # could choose the client address the application sees (and writes to its audit). Only the loopback address of the proxy on this host
   # (127.0.0.1, ::1) is trusted.
   forward-headers-strategy: native
   tomcat:

@@ -190,11 +190,9 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | `ledger.admin.oidc.issuer` | 관리 웹 | `ledger.admin.sign-in=oidc`일 때 그 주소가 유효한 발급자(`iss`): 주소는 그것을 확인한 발급자 안에서만 의미가 있습니다 |
 | `ledger.admin.passkey.rp-id` | 관리 웹 | 패스키가 묶이는 호스트 이름. 기본값은 `ledger.admin.allowed-hosts`의 루프백이 아닌 호스트 하나이고, 없으면 `localhost`입니다 |
 | `ledger.admin.passkey.origins` | 관리 웹 | 브라우저가 보이는 origin(스킴, 호스트, 포트): `http://localhost`를 뺀 모든 origin은 `https`입니다. 기본값은 `https://<rp-id>`이고 `localhost`는 `http://localhost:<server.port>`입니다 |
-| `ledger.admin.lockout.max-failures` | 관리 웹 | 한 클라이언트가 잠기기 전의 실패 횟수(관리 토큰, 패스키 로그인, 일회용 코드), 기본 5 |
-| `ledger.admin.lockout.window` | 관리 웹 | 실패를 세는 기간, 기본 60s |
-| `ledger.admin.lockout.lock-period` | 관리 웹 | 클라이언트가 잠겨 있는 시간, 기본 60s |
-| `ledger.admin.lockout.global-max-failures` | 관리 웹 | 전체 클라이언트의 실패가 이 횟수를 넘으면 전역 지연이 시작되는 한도, 기본 50 |
-| `ledger.admin.lockout.global-delay` | 관리 웹 | 전역 한도를 넘은 뒤 토큰을 비교하기 전에 기다리는 시간, 기본 1s. 늦출 뿐 잠그지는 않습니다 |
+| `ledger.admin.lockout.window` | 관리 웹 | 자격 증명 확인(관리 토큰, 패스키 로그인, 일회용 코드)을 세는 기간, 기본 60s |
+| `ledger.admin.lockout.global-max-failures` | 관리 웹 | 기간 안에 모든 호출자의 자격 증명 확인이 이 횟수를 넘으면 지연이 시작되는 한도, 기본 50 |
+| `ledger.admin.lockout.global-delay` | 관리 웹 | 한도를 넘은 뒤 자격 증명을 비교하기 전에 기다리는 시간, 기본 1s. 늦출 뿐 잠그거나 거절하지 않으며, 맞는 자격 증명은 언제나 로그인됩니다 |
 | `ledger.admin.mcp.health-url` | 관리 웹 | 개요 화면에 보여 줄 MCP 서버의 `/healthz` URL. 없으면 설정하지 않은 것입니다 |
 | `ledger.admin.mcp.timeout` | 관리 웹 | 그 확인의 제한 시간, 기본 2s |
 | `ledger.attachments.directory` | 서버, CLI | 첨부 파일을 두는 위치입니다(설치 프로그램이 `<data folder>/attachments`로 정합니다). 정하지 않으면 첨부 도구는 등록되지 않습니다 |
@@ -424,7 +422,9 @@ JDBC 드라이버의 타입 정보는 드라이버가 판단할 수 없는 형�
 - **로그인, 셋 중 하나**(`ledger.admin.sign-in`). `passkey`(새 설치의 기본값)이면 소유자는 패스키로 로그인합니다. `token`(개인판: 본인 컴퓨터나 서버의 한 사람)이면 애플리케이션의 로그인 페이지에 관리 토큰 `ledger.admin.token`을 입력합니다. `oidc`이면 OpenID Connect로 로그인하며 소유자는
   **이메일 주소 하나**입니다(`ledger.admin.oidc.owner-email`, `ledger.admin.oidc.issuer`의 공급자가 확인한 주소). 다른 주소나 공급자가 확인하지 않은 주소는 거절합니다.
   셋 중 하나만 제공하며, `oidc`나 `passkey`이면 토큰 입력란이 없고 보낸 토큰은 로그인으로 이어지지 않습니다. 관리 토큰 `ledger.admin.token`은 읽기 전용 JSON 엔드포인트의 bearer로도 남습니다. 어떤 로그인이든 변경은 패스키가 승인하므로, 토큰으로 연 세션도 `passkey-code`의 일회용 코드로 첫 패스키를 등록합니다. 에이전트의 토큰은 거절되므로
-  MCP 토큰을 가진 에이전트가 스스로 부여를 줄 수 없습니다. 실패한 시도(패스키, 일회용 코드, 토큰)는 해당 클라이언트를 잠그고 모든 클라이언트를 늦춥니다(`ledger.admin.lockout.*`).
+  MCP 토큰을 가진 에이전트가 스스로 부여를 줄 수 없습니다. 자격 증명 확인(패스키, 일회용 코드, 토큰)은 기간 안에 한도보다 많이 들어오면 늦춰집니다(`ledger.admin.lockout.*`).
+  아무것도 잠그지 않습니다. 틀린 자격 증명으로 누구나 걸 수 있는 잠금은 소유자도 잠그기 때문입니다. 클라이언트별 제한도 없습니다. 두 서비스는 루프백에서만 수신하고 같은 호스트의
+  운영자 역방향 프록시를 거쳐 공개되므로 모든 요청의 주소는 프록시입니다. 자격 증명은 추측할 수 없는 강도입니다(관리 토큰은 `SecureRandom` 256비트, 일회용 코드는 100비트).
 - **어떻게 로그인했든 모든 변경은 패스키로 승인합니다.** 콘솔에서 하는 모든 변경(부여, 세션 키, 공통코드, 프로젝트, 드라이버, 패스키 닫기)은 사용자 확인을 요구하는 패스키로
   승인합니다. 화면이 서버에 바로 그 변경과 세션으로 만든 challenge를 요청하고, 인증기가 그것에 서명하며, 쓰기는 그 서명과 함께 갑니다. 서명은 그 변경 하나에, 한 번, 2분 동안만
   유효하며 다른 변경이나 다른 세션의 서명은 거절합니다. 읽기에는 승인이 필요 없습니다. 서버의 `ledger-cli` 명령은 소유자의 셸이므로 승인이 필요 없습니다.

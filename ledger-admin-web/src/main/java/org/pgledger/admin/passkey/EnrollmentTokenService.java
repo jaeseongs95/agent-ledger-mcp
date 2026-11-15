@@ -13,7 +13,6 @@ import org.springframework.security.authentication.ott.GenerateOneTimeTokenReque
 import org.springframework.security.authentication.ott.OneTimeToken;
 import org.springframework.security.authentication.ott.OneTimeTokenAuthenticationToken;
 import org.springframework.security.authentication.ott.OneTimeTokenService;
-import org.springframework.security.web.authentication.WebAuthenticationDetails;
 import org.springframework.stereotype.Component;
 
 /**
@@ -24,8 +23,8 @@ import org.springframework.stereotype.Component;
  * passkey page) and nothing else. Generating a token through the web is not offered: {@link #generate} always refuses, because
  * the code is made only by the command on the server (that the owner can run it there is the proof that the owner is the owner).
  *
- * <p>The attempts are counted like every other sign-in attempt ({@link LoginAttempts}): a client that guesses is locked, and a
- * locked client is refused before the code is looked at.
+ * <p>The attempts are counted like every other sign-in attempt ({@link LoginAttempts}): beyond the global budget the check is
+ * delayed, never refused, so the right code always signs in.
  */
 @Component
 public final class EnrollmentTokenService implements OneTimeTokenService {
@@ -54,14 +53,8 @@ public final class EnrollmentTokenService implements OneTimeTokenService {
 
     @Override
     public OneTimeToken consume(OneTimeTokenAuthenticationToken authenticationToken) {
-        String client = authenticationToken.getDetails() instanceof WebAuthenticationDetails details
-                ? details.getRemoteAddress() : null;
-        LoginAttempts.Admission admission = attempts.admit(client);
-        if (!admission.allowed()) {
-            throw new AdminAuthenticationException(AdminCode.TOO_MANY_AUTH_FAILURES);
-        }
         try {
-            delays.await(admission.delay());
+            delays.await(attempts.admit());
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             throw new AdminAuthenticationException(AdminCode.TOO_MANY_AUTH_FAILURES, interrupted);
@@ -71,7 +64,7 @@ public final class EnrollmentTokenService implements OneTimeTokenService {
         } catch (AdminException refused) {
             throw new AdminAuthenticationException(AdminCode.PASSKEY_CODE_INVALID, refused);
         }
-        attempts.succeeded(client);
+        attempts.succeeded();
         return new DefaultOneTimeToken(authenticationToken.getTokenValue(), OwnerAccounts.ENROLL,
                 clock.instant().plus(Duration.ofSeconds(1)));
     }

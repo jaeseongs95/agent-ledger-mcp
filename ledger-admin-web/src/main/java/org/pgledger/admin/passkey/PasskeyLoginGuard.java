@@ -15,10 +15,10 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * The lock after failed attempts for the passkey sign-in ({@code POST /login/webauthn}, whose filter belongs to Spring
- * Security and has no lock of its own): the attempt is counted before the assertion is looked at, a locked client is refused
- * with {@code TOO_MANY_AUTH_FAILURES} (the same {@link LoginAttempts} as the admin token and the enrolment code, so the limits
- * and the global throttle are shared), and a successful sign-in gives the count back. The filter is in the security chain only
+ * The throttle of the passkey sign-in ({@code POST /login/webauthn}, whose filter belongs to Spring Security and has no limit
+ * of its own): the attempt is counted before the assertion is looked at and delayed beyond the global budget, never refused (the
+ * same {@link LoginAttempts} as the admin token and the enrolment code, so the budget is shared), and a successful sign-in
+ * gives the count back. A wait that is interrupted refuses the attempt with {@code TOO_MANY_AUTH_FAILURES}. The filter is in the security chain only
  * (its container registration is switched off in {@link PasskeyConfiguration}), after the CSRF check and before the sign-in
  * filters.
  */
@@ -46,15 +46,8 @@ public final class PasskeyLoginGuard extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        String client = request.getRemoteAddr();
-        LoginAttempts.Admission admission = attempts.admit(client);
-        if (!admission.allowed()) {
-            failures.onAuthenticationFailure(request, response,
-                    new AdminAuthenticationException(AdminCode.TOO_MANY_AUTH_FAILURES));
-            return;
-        }
         try {
-            delays.await(admission.delay());
+            delays.await(attempts.admit());
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             failures.onAuthenticationFailure(request, response,
@@ -63,7 +56,7 @@ public final class PasskeyLoginGuard extends OncePerRequestFilter {
         }
         chain.doFilter(request, response);
         if (response.getStatus() < HttpServletResponse.SC_BAD_REQUEST) {
-            attempts.succeeded(client);
+            attempts.succeeded();
         }
     }
 }

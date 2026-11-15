@@ -248,23 +248,29 @@ class PasskeyTest {
     }
 
     @Test
-    @DisplayName("PSK-SIN-02: a wrong assertion at the sign-in opens no session, and five failures of one client lock it (429 TOO_MANY_AUTH_FAILURES) like every other sign-in")
-    void sin02_failuresLock() throws Exception {
+    @DisplayName("PSK-SIN-02 (changed by LGN-003): a wrong assertion at the sign-in opens no session; ten of them lock nobody (no 429), and the right assertion signs in")
+    void sin02_failuresDoNotLock() throws Exception {
         Browser browser = new Browser(mvc);
         String csrf = browser.csrfOf("/login");
 
-        for (int attempt = 0; attempt < 5; attempt++) {
+        for (int attempt = 0; attempt < 10; attempt++) {
             MvcResult options = browser.perform(post(browser, "/webauthn/authenticate/options", csrf, null)).andReturn();
             String challenge = JsonPath.read(options.getResponse().getContentAsString(), "$.challenge");
             SoftwarePasskey.Assertion wrong = new SoftwarePasskey().assertion(challenge, TestPasskeys.RP_ID,
                     TestPasskeys.ORIGIN);
             assertThat(browser.perform(post(browser, "/login/webauthn", csrf, loginBody(wrong))).andReturn().getResponse()
-                    .getStatus()).isGreaterThanOrEqualTo(400);
+                    .getStatus()).isGreaterThanOrEqualTo(400).isNotEqualTo(429);
         }
-
-        browser.perform(post(browser, "/login/webauthn", csrf, "{}")).andExpect(status().isTooManyRequests())
-                .andExpect(jsonPath("$.code").value("TOO_MANY_AUTH_FAILURES"));
         browser.perform(browser.get("/api/session").accept(MediaType.APPLICATION_JSON)).andExpect(status().isUnauthorized());
+
+        MvcResult options = browser.perform(post(browser, "/webauthn/authenticate/options", csrf, null))
+                .andExpect(status().isOk()).andReturn();
+        String challenge = JsonPath.read(options.getResponse().getContentAsString(), "$.challenge");
+        SoftwarePasskey.Assertion right = TestPasskeys.OWNER.assertion(challenge, TestPasskeys.RP_ID, TestPasskeys.ORIGIN);
+        browser.perform(post(browser, "/login/webauthn", csrf, loginBody(right))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.authenticated").value(true));
+        browser.perform(browser.get("/api/session").accept(MediaType.APPLICATION_JSON)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.signIn").value("PASSKEY"));
     }
 
     private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder post(Browser browser, String path,

@@ -32,7 +32,7 @@ import org.springframework.web.util.UriComponentsBuilder;
  *                        {@code spring.config.import})
  * @param driverDirectory the one directory a driver jar must be in to be registered (after symbolic links are
  *                        resolved); the driver page runs the code of the jar it checks, so it takes no jar from anywhere
- * @param lockout         the lock after failed token attempts
+ * @param lockout         the delay after many failed credential attempts (a budget of all callers, no lock)
  * @param oidc            OpenID Connect sign-in: the one owner (the provider itself is
  *                        {@code spring.security.oauth2.client.*})
  * @param mcp             the MCP server health check of the overview
@@ -101,14 +101,12 @@ public record LedgerAdminProperties(String token, String agentToken,
     }
 
     /**
-     * Token attempts: {@code maxFailures} of one client within {@code window} lock that client for {@code lockPeriod};
-     * and {@code globalMaxFailures} token checks of all clients together within {@code window} are the global budget:
-     * every check beyond it waits {@code globalDelay} before the token is compared, whatever the addresses are (a client
-     * that changes its address, or fills the table of known clients, still meets this throttle). The global limit slows
-     * down and never locks, so wrong tokens from many addresses cannot keep the owner with the right token out.
+     * Credential attempts (token, one-time code, passkey): {@code globalMaxFailures} checks of all callers together within
+     * {@code window} are the budget; every check beyond it waits {@code globalDelay} before the credential is compared. The
+     * limit slows down and never locks, so wrong credentials from anyone cannot keep the owner with the right one out
+     * (there is no limit per client: see {@code LoginAttempts}).
      */
-    public record Lockout(@DefaultValue("5") @Min(1) int maxFailures, @DefaultValue("60s") Duration window,
-            @DefaultValue("60s") Duration lockPeriod, @DefaultValue("50") @Min(1) int globalMaxFailures,
+    public record Lockout(@DefaultValue("60s") Duration window, @DefaultValue("50") @Min(1) int globalMaxFailures,
             @DefaultValue("1s") Duration globalDelay) {
 
         /** The delay is zero or more (a negative delay would not slow anything down). */

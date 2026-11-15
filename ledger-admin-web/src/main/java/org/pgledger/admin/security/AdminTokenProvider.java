@@ -12,17 +12,16 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken;
-import org.springframework.security.web.authentication.WebAuthenticationDetails;
 import org.springframework.stereotype.Component;
 
 /**
  * The one provider of the admin token: the {@code Authorization: Bearer} header of the read-only JSON endpoints and, only when
  * {@code ledger.admin.sign-in=token}, the login form of the application's own page end here. Presented and expected tokens are
  * hashed first (the shared SHA-256 of the domain) and the digests are
- * compared with {@link MessageDigest#isEqual}, which takes the same time whatever the input is. A locked client
- * address is refused before anything is compared (so a right token does not help during the lock); the token of the
+ * compared with {@link MessageDigest#isEqual}, which takes the same time whatever the input is. The token of the
  * MCP agents is refused with its own code. When the global budget of checks is used up the comparison is delayed, never
- * refused (see {@link LoginAttempts}). No token is ever written to a message or a log.
+ * refused: no number of wrong tokens keeps the right one out (see {@link LoginAttempts}). No token is ever written to a
+ * message or a log.
  */
 @Component
 public final class AdminTokenProvider implements AuthenticationProvider {
@@ -72,13 +71,7 @@ public final class AdminTokenProvider implements AuthenticationProvider {
 
     @Override
     public Authentication authenticate(Authentication authentication) {
-        String client = authentication.getDetails() instanceof WebAuthenticationDetails details
-                ? details.getRemoteAddress() : null;
-        LoginAttempts.Admission admission = attempts.admit(client);
-        if (!admission.allowed()) {
-            throw new AdminAuthenticationException(AdminCode.TOO_MANY_AUTH_FAILURES);
-        }
-        slowDown(admission.delay());
+        slowDown(attempts.admit());
         byte[] presented = digest(presentedToken(authentication));
         if (MessageDigest.isEqual(agent, presented)) {
             throw new AdminAuthenticationException(AdminCode.AGENT_TOKEN_FORBIDDEN);
@@ -86,7 +79,7 @@ public final class AdminTokenProvider implements AuthenticationProvider {
         if (!MessageDigest.isEqual(expected, presented)) {
             throw new AdminAuthenticationException(AdminCode.UNAUTHORIZED);
         }
-        attempts.succeeded(client);
+        attempts.succeeded();
         // the header reads the JSON endpoints only; the login form (ledger.admin.sign-in=token) is the owner, whose writes
         // still need the approval of a passkey
         String authority = authentication instanceof BearerTokenAuthenticationToken ? API_READ_AUTHORITY : OWNER_AUTHORITY;
