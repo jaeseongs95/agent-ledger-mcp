@@ -167,8 +167,11 @@ public class UploadStagingRepository {
                 .query(Long.class).single() > 0;
     }
 
-    /** The ids of the key files that the rows need (never the keys). */
+    /**
+     * The ids of the key files that the open uploads need (never the keys). A finished upload (its row waits for the reaper) needs none:
+     * its file belongs to the attachment, and the current file row of the attachment names the key.
+     */
     public List<String> keyIdsInUse() {
-        return jdbc.sql("SELECT DISTINCT key_id FROM upload_staging").query(String.class).list();
+        return jdbc.sql("SELECT DISTINCT key_id FROM upload_staging WHERE state = 'STAGING'").query(String.class).list();
     }
 }
