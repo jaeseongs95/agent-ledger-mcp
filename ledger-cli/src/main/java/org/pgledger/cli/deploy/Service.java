@@ -20,9 +20,9 @@ record Service(String name, String description, String jar, String settingsFile)
         return new Service(layout.adminName(), "the ledger admin web", DeployLayout.ADMIN_JAR, "admin.yaml");
     }
 
-    /** {@code -Duser.timezone=UTC -jar <jar> --spring.config.import=<the sources of this service>}. */
+    /** {@code <the JVM preset> -jar <jar> --spring.config.import=<the sources of this service>} ({@link JvmPreset}). */
     String arguments(DeployLayout layout) {
-        return "-Duser.timezone=UTC -jar " + layout.lib() + "/" + jar + " --spring.config.import="
+        return JvmPreset.jar(layout.lib() + "/" + jar) + " --spring.config.import="
                 + DeployRenderer.configImport(layout, settingsFile);
     }
 }

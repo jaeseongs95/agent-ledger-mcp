@@ -40,7 +40,12 @@ import org.springframework.stereotype.Component;
  * written by the owner.
  */
 @Component
-final class WindowsPlatform implements ServicePlatform {
+final class WindowsPlatform implements ServicePlatform, ServiceWrappers, HostSealing {
+
+    /** A drive and plain segments, with {@code /}: the form every path of a Windows installation is written in. */
+    private static final String PATH = "[A-Za-z]:(?:/" + DeployForms.SEGMENT + ")+";
+    /** The Java runtime of Windows lives in a directory with a space ({@code Program Files}); it is only ever an XML element. */
+    private static final String JAVA = "[A-Za-z]:(?:/(?!\\.{1,2}(?:/|$))[A-Za-z0-9._+ -]+)+";
 
     private final HostAccounts accounts;
     private final ProcessUser processUser;
@@ -62,12 +67,36 @@ final class WindowsPlatform implements ServicePlatform {
         return Platform.WINDOWS;
     }
 
+    /**
+     * A Windows path is written with a drive letter, {@code C:/x}; below a root the drive letter is a directory name, so it is
+     * {@code <root>/C/x}.
+     */
+    @Override
+    public Path hostPath(Path root, String path) {
+        return root == null ? files.ownPath(path)
+                : root.resolve(path.replaceFirst("^([A-Za-z]):", "$1").replaceFirst("^/", ""));
+    }
+
     @Override
     public DeployLayout layout(String name, String home) {
         if (home == null) {
             throw new UsageException(ErrorCode.MISSING_ARGUMENT);
         }
-        return DeployLayout.windows(name, DeployForms.requirePath(home, DeployForms.WINDOWS_PATH, DeployOptions.HOME));
+        return DeployLayout.windows(name, DeployForms.requirePath(home, PATH, DeployOptions.HOME));
+    }
+
+    @Override
+    public List<String> refusedOptions(DeployParameters p) {
+        List<String> refused = new ArrayList<>();
+        if (!DeployForms.isPath(p.java(), JAVA)) {
+            refused.add(DeployOptions.JAVA);
+        }
+        if (p.nginx() != null) {
+            // nginx is not part of a Windows installation (see deploy/install.cmd): a Windows server that is reached from outside
+            // is put behind a reverse proxy the operator has prepared
+            refused.add(DeployOptions.NGINX_CONF);
+        }
+        return refused;
     }
 
     @Override
@@ -88,9 +117,9 @@ final class WindowsPlatform implements ServicePlatform {
     @Override
     public void prepare(DeployLayout layout, Path root, Path jars, Path driver, List<Path> wrappers) throws IOException {
         Path winsw = wrappers.getFirst();
-        Path lib = files.resolve(root, layout.lib());
-        Path etc = files.resolve(root, layout.etc());
-        Path logs = files.resolve(root, layout.logs());
+        Path lib = hostPath(root, layout.lib());
+        Path etc = hostPath(root, layout.etc());
+        Path logs = hostPath(root, layout.logs());
         FileSystem fileSystem = lib.getFileSystem();
         host.requireView(fileSystem, "acl");
         UserPrincipal system = accounts.user(fileSystem, WindowsAccess.SYSTEM);
@@ -167,9 +196,9 @@ final class WindowsPlatform implements ServicePlatform {
 
     @Override
     public void seal(DeployLayout layout, Path root) throws IOException {
-        Path lib = files.resolve(root, layout.lib());
-        Path etc = files.resolve(root, layout.etc());
-        Path logs = files.resolve(root, layout.logs());
+        Path lib = hostPath(root, layout.lib());
+        Path etc = hostPath(root, layout.etc());
+        Path logs = hostPath(root, layout.logs());
         Path secrets = etc.resolve("secrets");
         FileSystem fileSystem = lib.getFileSystem();
         host.requireView(fileSystem, "acl");

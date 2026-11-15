@@ -7,11 +7,9 @@ import java.nio.file.attribute.GroupPrincipal;
 import java.nio.file.attribute.UserPrincipal;
 import java.util.ArrayList;
 import java.util.List;
-import org.pgledger.cli.CliOptions;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.UsageException;
 import org.pgledger.cli.deploy.DeployLayout.Platform;
-import org.springframework.boot.ApplicationArguments;
 import org.springframework.stereotype.Component;
 
 /**
@@ -19,10 +17,16 @@ import org.springframework.stereotype.Component;
  * settings below {@code /etc/<name>}, owned by the system user of the instance. Run as root, {@code prepare-host} makes the
  * directories {@code <lib>} (root, 0755), {@code <etc>} (the service user, 0750), {@code <etc>/drivers} (root, 0755) and
  * {@code <etc>/secrets} (the service user, 0700) and copies the three jars and the JDBC driver jar with mode 0644 ({@code
- * install -d} and {@code install -m} did this). The secrets are the service user's from the start, so there is nothing to seal.
+ * install -d} and {@code install -m} did this). The secrets are the service user's from the start, so there is nothing to seal
+ * (no {@link HostSealing}) and systemd needs no service wrapper (no {@link ServiceWrappers}); the nginx site and the automatic
+ * certificate are Linux's ({@link TlsHosting}). The paths of its files, and of the Java runtime and the nginx site that the
+ * operator names, are the plain paths of a Linux file system.
  */
 @Component
-final class LinuxPlatform implements ServicePlatform {
+final class LinuxPlatform implements ServicePlatform, TlsHosting {
+
+    /** Plain path segments only (letters, digits and {@code . _ + -}), each with its slash: the form of every path of a Linux installation. */
+    private static final String PATH = "(?:/" + DeployForms.SEGMENT + ")+";
 
     private final HostAccounts accounts;
     private final HostFiles host;
@@ -39,6 +43,12 @@ final class LinuxPlatform implements ServicePlatform {
         return Platform.LINUX;
     }
 
+    /** A Linux path starts with {@code /}; below a root the slash is dropped, so {@code /etc/x} is {@code <root>/etc/x}. */
+    @Override
+    public Path hostPath(Path root, String path) {
+        return root == null ? files.ownPath(path) : root.resolve(path.replaceFirst("^/", ""));
+    }
+
     @Override
     public DeployLayout layout(String name, String home) {
         if (home != null) {
@@ -46,6 +56,32 @@ final class LinuxPlatform implements ServicePlatform {
             throw new UsageException(ErrorCode.INVALID_DEPLOY_VALUE, DeployOptions.HOME);
         }
         return DeployLayout.linux(name);
+    }
+
+    @Override
+    public List<String> refusedOptions(DeployParameters p) {
+        List<String> refused = new ArrayList<>();
+        if (!DeployForms.isPath(p.java(), PATH)) {
+            refused.add(DeployOptions.JAVA);
+        }
+        DeployParameters.Nginx site = p.nginx();
+        if (site != null) {
+            if (!DeployForms.isPath(site.conf(), PATH)) {
+                refused.add(DeployOptions.NGINX_CONF);
+            }
+            if (!DeployForms.isPath(site.certificate(), PATH)) {
+                refused.add(DeployOptions.TLS_CERTIFICATE);
+            }
+            if (!DeployForms.isPath(site.key(), PATH)) {
+                refused.add(DeployOptions.TLS_KEY);
+            }
+            // the site serves the public host names of the MCP server: without one there is nothing to serve (the admin web has a
+            // block only when it has a public name; without one it is reached on loopback)
+            if (p.mcpHosts().isEmpty()) {
+                refused.add(DeployOptions.MCP_HOST);
+            }
+        }
+        return refused;
     }
 
     @Override
@@ -69,18 +105,9 @@ final class LinuxPlatform implements ServicePlatform {
     }
 
     @Override
-    public List<Path> wrappers(ApplicationArguments arguments) {
-        if (CliOptions.value(arguments, DeployOptions.WINSW).isPresent()) {
-            // WinSW is the service wrapper of Windows; systemd needs none
-            throw new UsageException(ErrorCode.INVALID_OPTION_VALUE);
-        }
-        return List.of();
-    }
-
-    @Override
     public void prepare(DeployLayout layout, Path root, Path jars, Path driver, List<Path> wrappers) throws IOException {
-        Path lib = files.resolve(root, layout.lib());
-        Path etc = files.resolve(root, layout.etc());
+        Path lib = hostPath(root, layout.lib());
+        Path etc = hostPath(root, layout.etc());
         FileSystem fileSystem = lib.getFileSystem();
         host.requireView(fileSystem, "posix");
         // the accounts are looked up before the first change: a host without the service user is refused with nothing done
@@ -95,8 +122,8 @@ final class LinuxPlatform implements ServicePlatform {
 
     @Override
     public void prepareTls(DeployLayout layout, Path root) throws IOException {
-        Path tls = files.resolve(root, layout.tlsDirectory());
-        Path webroot = files.resolve(root, layout.acmeWebroot());
+        Path tls = hostPath(root, layout.tlsDirectory());
+        Path webroot = hostPath(root, layout.acmeWebroot());
         FileSystem fileSystem = tls.getFileSystem();
         host.requireView(fileSystem, "posix");
         UserPrincipal user = accounts.user(fileSystem, layout.serviceUser());
@@ -104,11 +131,5 @@ final class LinuxPlatform implements ServicePlatform {
         // the keys are the service user's alone; the web root is read by the web server, which runs as another account
         host.directory(tls, "rwx------", user, group);
         host.directory(webroot, "rwxr-xr-x", user, group);
-    }
-
-    @Override
-    public void seal(DeployLayout layout, Path root) {
-        // the secrets are the service user's from the start: seal-host is a Windows step
-        throw new UsageException(ErrorCode.INVALID_DEPLOY_VALUE, DeployOptions.PLATFORM);
     }
 }

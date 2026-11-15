@@ -1,5 +1,6 @@
 package org.pgledger.cli.deploy;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.regex.Pattern;
 import org.pgledger.cli.ErrorCode;
@@ -22,14 +23,12 @@ public final class DeployForms {
     public static final int MAX_HOSTS = 10;
     static final int MAX_URL = 600;
 
-    /** A path segment of plain characters; {@code .} and {@code ..} are no segment (they would leave the directory). */
-    private static final String SEGMENT = "(?!\\.{1,2}(?:/|$))[A-Za-z0-9._+-]+";
-    /** Plain path segments only: letters, digits and {@code . _ + -}. */
-    public static final String POSIX_PATH = "(?:/" + SEGMENT + ")+";
-    /** A drive and plain segments, with {@code /}: the form every path of a Windows installation is written in. */
-    public static final String WINDOWS_PATH = "[A-Za-z]:(?:/" + SEGMENT + ")+";
-    /** The Java runtime of Windows lives in a directory with a space ({@code Program Files}); it is only ever an XML element. */
-    static final String WINDOWS_JAVA = "[A-Za-z]:(?:/(?!\\.{1,2}(?:/|$))[A-Za-z0-9._+ -]+)+";
+    /**
+     * A path segment of plain characters (letters, digits and {@code . _ + -}); {@code .} and {@code ..} are no segment (they would
+     * leave the directory). The form of a whole path, with its slashes and its drive, is the platform's that writes it
+     * ({@link ServicePlatform}); this is what the platforms share.
+     */
+    static final String SEGMENT = "(?!\\.{1,2}(?:/|$))[A-Za-z0-9._+-]+";
     static final String HOST = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*";
     /**
      * The characters of a URI without quotes, backslash, {@code $}, braces and white space, and no password word anywhere:
@@ -102,6 +101,23 @@ public final class DeployForms {
     /** Whether the value has the form and is not longer than a path may be. */
     public static boolean isPath(String value, String form) {
         return value != null && value.length() <= MAX_PATH && Pattern.matches(form, value);
+    }
+
+    /**
+     * Whether the path is an absolute path of this host (the file system says so, {@link Path#isAbsolute}: no form of any
+     * operating system is written here), is not longer than a path may be, and holds at least one name, every name of it a plain
+     * segment (no space, no {@code ..}).
+     */
+    public static boolean isPlainAbsolute(Path path) {
+        if (!path.isAbsolute() || path.getNameCount() == 0 || path.toString().length() > MAX_PATH) {
+            return false;
+        }
+        for (Path name : path) {
+            if (!Pattern.matches(SEGMENT, name.toString())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

@@ -89,11 +89,12 @@ public class PrepareHostCommand implements Command {
         DeployInput input = inputs.read(arguments);
         DeployParameters parameters = input.parameters();
         DeployLayout layout = parameters.layout();
-        files.requireReachable(input.root(), layout);
         ServicePlatform platform = platforms.of(layout.platform());
+        files.requireReachable(platform, input.root(), layout);
         Path jars = Path.of(CliOptions.required(arguments, JARS));
         Path driver = Path.of(CliOptions.required(arguments, DRIVER_JAR));
-        List<Path> wrappers = platform.wrappers(arguments);
+        List<Path> wrappers = platforms.capability(layout.platform(), ServiceWrappers.class)
+                .map(wrapping -> wrapping.wrappers(arguments)).orElseGet(() -> noWrapper(arguments));
         List<Path> sources = new ArrayList<>(List.of(jars.resolve(DeployLayout.CLI_JAR),
                 jars.resolve(DeployLayout.MCP_JAR), jars.resolve(DeployLayout.ADMIN_JAR), driver));
         sources.addAll(wrappers);
@@ -105,9 +106,11 @@ public class PrepareHostCommand implements Command {
             }
             platform.prepare(layout, input.root(), jars, driver, wrappers);
             if (parameters.nginx() != null && parameters.nginx().acme() != null) {
-                platform.prepareTls(layout, input.root());
+                platforms.capability(layout.platform(), TlsHosting.class)
+                        .orElseThrow(() -> new UsageException(ErrorCode.INVALID_DEPLOY_VALUE, DeployOptions.TLS_ACME))
+                        .prepareTls(layout, input.root());
             }
-            for (Path file : files.writeIntoHost(input.root(), renderer.render(parameters),
+            for (Path file : files.writeIntoHost(platform, input.root(), renderer.render(parameters),
                     BackupNotice.told(output, messages))) {
                 output.info(messages.get("render-deploy.written", file.toString()));
             }
@@ -115,5 +118,13 @@ public class PrepareHostCommand implements Command {
             throw HostFiles.failure(e);
         }
         output.info(messages.get("prepare-host.prepared", layout.name()));
+    }
+
+    /** A platform whose service manager needs no wrapper program ({@link ServiceWrappers}) is not given one: the option is refused. */
+    private static List<Path> noWrapper(ApplicationArguments arguments) {
+        if (CliOptions.value(arguments, DeployOptions.WINSW).isPresent()) {
+            throw new UsageException(ErrorCode.INVALID_OPTION_VALUE);
+        }
+        return List.of();
     }
 }

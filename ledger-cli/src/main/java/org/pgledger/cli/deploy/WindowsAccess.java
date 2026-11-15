@@ -57,7 +57,11 @@ final class WindowsAccess {
         MODIFY = Collections.unmodifiableSet(modify);
     }
 
-    WindowsAccess() {
+    /** Enables the privileges that taking a file over needs ({@link #restore}, {@link #reassign}). */
+    private final TokenPrivileges privileges;
+
+    WindowsAccess(TokenPrivileges privileges) {
+        this.privileges = privileges;
     }
 
     /** One ALLOW entry; a directory's entry is inherited by the files and directories created in it. */
@@ -131,8 +135,7 @@ final class WindowsAccess {
         if (sameAcl && sameOwner) {
             return;
         }
-        try (WindowsPrivileges.Enabled privileges = WindowsPrivileges.enable(WindowsPrivileges.TAKE_OWNERSHIP,
-                WindowsPrivileges.RESTORE)) {
+        try (TokenPrivileges.Enabled enabled = privileges.enable(TokenPrivileges.TAKE_OWNERSHIP, TokenPrivileges.RESTORE)) {
             try {
                 if (!sameAcl) {
                     view.setAcl(saved.acl());
@@ -141,7 +144,7 @@ final class WindowsAccess {
                     view.setOwner(saved.owner());
                 }
             } catch (AccessDeniedException e) {
-                throw refused(saved.path(), privileges, e);
+                throw refused(saved.path(), enabled, e);
             }
         }
     }
@@ -153,7 +156,7 @@ final class WindowsAccess {
      * written leaves the installer no right to change the owner: that last step, and the first one for a path that the
      * service account owns and whose ACL gives Administrators nothing but the right to see it, are possible only with
      * {@code SeTakeOwnershipPrivilege} (to take it) and {@code SeRestorePrivilege} (to name another owner), which an elevated
-     * token holds disabled and {@link WindowsPrivileges} enables for this one operation. {@code setAcl} of the JDK enables none,
+     * token holds disabled and {@link TokenPrivileges} enables for this one operation. {@code setAcl} of the JDK enables none,
      * and its {@code setOwner} only the second.
      *
      * @throws PrivilegeNotHeldException when the process does not hold the privileges (it is not elevated) and the file system
@@ -161,8 +164,7 @@ final class WindowsAccess {
      */
     void reassign(Path path, UserPrincipal installer, UserPrincipal owner, List<AclEntry> acl) throws IOException {
         AclFileAttributeView view = view(path);
-        try (WindowsPrivileges.Enabled privileges = WindowsPrivileges.enable(WindowsPrivileges.TAKE_OWNERSHIP,
-                WindowsPrivileges.RESTORE)) {
+        try (TokenPrivileges.Enabled enabled = privileges.enable(TokenPrivileges.TAKE_OWNERSHIP, TokenPrivileges.RESTORE)) {
             try {
                 if (!Objects.equals(installer, view.getOwner())) {
                     view.setOwner(installer);
@@ -172,14 +174,14 @@ final class WindowsAccess {
                     view.setOwner(owner);
                 }
             } catch (AccessDeniedException e) {
-                throw refused(path, privileges, e);
+                throw refused(path, enabled, e);
             }
         }
     }
 
     /** A refusal of the file system is the missing privilege when the token does not hold them, and it is the refusal otherwise. */
-    private static IOException refused(Path path, WindowsPrivileges.Enabled privileges, AccessDeniedException refusal) {
-        return privileges.allHeld() ? refusal : new PrivilegeNotHeldException(path, refusal);
+    private static IOException refused(Path path, TokenPrivileges.Enabled enabled, AccessDeniedException refusal) {
+        return enabled.allHeld() ? refusal : new PrivilegeNotHeldException(path, refusal);
     }
 
     /** Adds the entry of {@code who} to the ACL of the folder and of everything in it, but for the subtree {@code skipped}. */

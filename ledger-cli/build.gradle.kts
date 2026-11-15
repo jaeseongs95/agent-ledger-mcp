@@ -51,6 +51,16 @@ tasks.named<JavaCompile>("compileJava") {
 
 tasks.bootJar {
     archiveFileName = "ledger-cli.jar"
+    // WindowsPrivileges calls the Windows API with the foreign function API (java.lang.foreign), which Java 25 restricts. The
+    // installers start this jar with `java -jar`, so the jar allows it itself with the main attribute of its manifest
+    // `Enable-Native-Access: ALL-UNNAMED` (the only value the attribute supports; it applies to the code of an executable jar).
+    // Sources: JEP 454 (the foreign function and memory API, https://openjdk.org/jeps/454, "Restricted methods"), JEP 472
+    // (Prepare to Restrict the Use of JNI, https://openjdk.org/jeps/472, which names the manifest attribute) and the JAR File
+    // Specification of Java SE 25 ("Main Attributes", https://docs.oracle.com/en/java/javase/25/docs/specs/jar/jar.html).
+    // No --enable-native-access on any command line.
+    manifest {
+        attributes("Enable-Native-Access" to "ALL-UNNAMED")
+    }
 }
 
 // The seed bundle (SETUP): the build writes the H2 file ledger-seed.mv.db from the text files of src/seed with a Java program

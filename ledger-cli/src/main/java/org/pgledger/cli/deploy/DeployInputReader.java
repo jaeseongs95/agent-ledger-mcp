@@ -5,10 +5,11 @@ import jakarta.validation.Validator;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.pgledger.cli.CliOptions;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.UsageException;
@@ -34,14 +35,10 @@ final class DeployInputReader {
     /** The name of the instance and the two ports an option that is not given takes (the seed bundle, the one place they are written). */
     private final InstallDefaults defaults;
 
-    /** Looks at the certificate files of an automatic certificate, below the root of the command. */
-    private final DeployFiles files;
-
-    DeployInputReader(Validator validator, ServicePlatforms platforms, InstallDefaults defaults, DeployFiles files) {
+    DeployInputReader(Validator validator, ServicePlatforms platforms, InstallDefaults defaults) {
         this.validator = validator;
         this.platforms = platforms;
         this.defaults = defaults;
-        this.files = files;
     }
 
     /**
@@ -78,9 +75,10 @@ final class DeployInputReader {
         if (parameters.nginx() == null || parameters.nginx().acme() == null) {
             return parameters;
         }
-        // the files are looked up with the platform of the host the command runs on, and refused before by requireReachable
-        Path certificate = files.resolve(root, parameters.nginx().certificate());
-        Path key = files.resolve(root, parameters.nginx().key());
+        // the files are looked up where the platform of the installation puts them on this host, and refused before by requireReachable
+        ServicePlatform platform = platforms.of(parameters.layout().platform());
+        Path certificate = platform.hostPath(root, parameters.nginx().certificate());
+        Path key = platform.hostPath(root, parameters.nginx().key());
         return parameters.withCertificateIssued(Files.isRegularFile(certificate) && Files.isRegularFile(key));
     }
 
@@ -127,9 +125,14 @@ final class DeployInputReader {
                 number(values.get(DeployOptions.ADMIN_PORT), defaults.adminPort(), DeployOptions.ADMIN_PORT),
                 DeployForms.splitHosts(values.get(DeployOptions.MCP_HOST)),
                 DeployForms.splitHosts(values.get(DeployOptions.ADMIN_HOST)), nginx);
-        Set<ConstraintViolation<DeployParameters>> violations = validator.validate(parameters);
-        if (!violations.isEmpty()) {
-            throw refused(violations);
+        // the constraints of every platform, and what only this platform can judge: both name an option, and the first one is refused
+        List<String> wrong = new ArrayList<>();
+        for (ConstraintViolation<DeployParameters> violation : validator.validate(parameters)) {
+            wrong.add(violation.getMessage());
+        }
+        wrong.addAll(platforms.of(platform).refusedOptions(parameters));
+        if (!wrong.isEmpty()) {
+            throw refused(wrong);
         }
         return parameters;
     }
@@ -162,9 +165,8 @@ final class DeployInputReader {
     }
 
     /** The first wrong option in the order of the options; the message of a constraint is the name of its option. */
-    private static UsageException refused(Set<ConstraintViolation<DeployParameters>> violations) {
-        String option = violations.stream().map(ConstraintViolation::getMessage)
-                .min(Comparator.comparingInt(DeployInputReader::rank)).orElseThrow();
+    private static UsageException refused(List<String> options) {
+        String option = options.stream().min(Comparator.comparingInt(DeployInputReader::rank)).orElseThrow();
         if (rank(option) == Integer.MAX_VALUE) {
             // a constraint without the name of an option is a mistake of the record, and must not put a text of it in a refusal
             throw new IllegalStateException("a constraint of DeployParameters does not name an option");

@@ -93,7 +93,7 @@ class DeployParametersTest {
     }
 
     @Test
-    @DisplayName("CLI-PRN-06 the validator itself: every violation of a record that is wrong in every option has the name of an option as its message, and each such name is among the options; a good record has none")
+    @DisplayName("CLI-PRN-06 the validator itself and the platform: every violation of a record that is wrong in every option has the name of an option as its message, and each such name is among the options; a good record has none")
     void everyConstraintNamesAnOption() {
         DeployParameters good = DeployTestBeans.parameters(good());
         assertThat(VALIDATOR.validate(good)).isEmpty();
@@ -105,6 +105,8 @@ class DeployParametersTest {
         for (ConstraintViolation<DeployParameters> violation : VALIDATOR.validate(wrong)) {
             messages.add(violation.getMessage());
         }
+        // the form of a path and the nginx site are judged by the platform of the layout, which names options in the same way
+        messages.addAll(DeployTestBeans.platforms().of(wrong.layout().platform()).refusedOptions(wrong));
 
         assertThat(messages).isSubsetOf(DeployOptions.ALL);
         assertThat(messages).containsExactlyInAnyOrder(DeployOptions.NAME, DeployOptions.JAVA, DeployOptions.JDBC_URL,

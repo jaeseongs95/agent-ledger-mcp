@@ -9,7 +9,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.pgledger.cli.deploy.DeployLayout.Platform;
 import org.pgledger.cli.secret.ProcessUser;
-import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 /**
@@ -34,6 +33,11 @@ class ServicePlatformTest {
         }
 
         @Override
+        public Path hostPath(Path root, String path) {
+            return root == null ? Path.of(path) : root.resolve(path);
+        }
+
+        @Override
         public DeployLayout layout(String name, String home) {
             return DeployLayout.linux(name);
         }
@@ -44,23 +48,19 @@ class ServicePlatformTest {
         }
 
         @Override
-        public List<Path> wrappers(ApplicationArguments arguments) {
+        public List<String> refusedOptions(DeployParameters parameters) {
             return List.of();
         }
 
         @Override
         public void prepare(DeployLayout layout, Path root, Path jars, Path driver, List<Path> wrappers) throws IOException {
         }
-
-        @Override
-        public void seal(DeployLayout layout, Path root) throws IOException {
-        }
     }
 
     private static ApplicationContextRunner runner() {
         return new ApplicationContextRunner().withBean(ProcessUser.class, () -> fileSystem -> () -> "tester")
                 .withUserConfiguration(ServicePlatforms.class, DeployRenderer.class, DeployFiles.class, HostFiles.class,
-                        WindowsAccess.class, SystemHostAccounts.class);
+                        WindowsAccess.class, WindowsPrivileges.class, SystemHostAccounts.class);
     }
 
     @Test
