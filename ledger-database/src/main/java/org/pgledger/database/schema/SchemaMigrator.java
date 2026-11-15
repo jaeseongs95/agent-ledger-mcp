@@ -5,6 +5,8 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import org.pgledger.database.repository.DatabaseEncodingRepository;
+import org.pgledger.database.repository.DatabaseEncodingRepository.EncodingProbe;
 import org.pgledger.database.repository.SchemaHistoryRepository;
 import org.pgledger.database.repository.SchemaHistoryRepository.Outcome;
 import org.pgledger.database.repository.SchemaHistoryRepository.Row;
@@ -64,10 +66,13 @@ public class SchemaMigrator {
     private final SchemaProperties properties;
     private final Clock clock;
     private final SqlBuilder sqlBuilder;
+    private final DatabaseEncodingRepository encodings;
 
     public SchemaMigrator(SchemaHistoryRepository repository, SchemaFileApplier applier,
-            ResourcePatternResolver resolver, SchemaProperties properties, Clock clock, SqlBuilder sqlBuilder) {
+            ResourcePatternResolver resolver, SchemaProperties properties, Clock clock, SqlBuilder sqlBuilder,
+            DatabaseEncodingRepository encodings) {
         this.sqlBuilder = sqlBuilder;
+        this.encodings = encodings;
         this.repository = repository;
         this.applier = applier;
         this.resolver = resolver;
@@ -90,7 +95,7 @@ public class SchemaMigrator {
             // of the connection) decides, asked once; no setting. It is asked before any statement that changes the database,
             // so a product without a dialect is refused (DATABASE_PRODUCT_UNSUPPORTED) before a schema or a table is made.
             String longTextType = sqlBuilder.longTextType();
-            DatabaseEncoding.requireUtf8(repository.characterSets());
+            requireUtf8Database();
             if (properties.name() != null) {
                 // the data source of the application already names this schema for every connection (DriverDataSources)
                 ensureSchema(properties.name());
@@ -109,6 +114,19 @@ public class SchemaMigrator {
         } catch (CannotGetJdbcConnectionException e) {
             throw new InfrastructureException(InfrastructureCode.SCHEMA_DATABASE_UNREACHABLE, List.of(), e);
         }
+    }
+
+    /**
+     * Proves that the database stores UTF-8 before anything is changed: the probe text goes through the probe query of the dialect and
+     * has to come back whole ({@link DatabaseEncoding#requireUtf8}); a product that also keeps a default character set for its schemas
+     * has that one proved too ({@link DatabaseEncoding#requireUtf8Schema}). The queries are the dialect's ({@link SqlBuilder}); no
+     * name of a character set is compared here.
+     */
+    private void requireUtf8Database() {
+        EncodingProbe probe = encodings.encodingProbe();
+        DatabaseEncoding.requireUtf8(sqlBuilder.countsCodePoints(), probe.length(), probe.value());
+        encodings.schemaCharsets().ifPresent(
+                charsets -> DatabaseEncoding.requireUtf8Schema(charsets.schemaCharset(), charsets.serverCharset(), charsets.verdict()));
     }
 
     /**

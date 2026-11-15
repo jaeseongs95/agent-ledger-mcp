@@ -36,6 +36,8 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.pgledger.database.repository.DatabaseEncodingRepository;
+import org.pgledger.database.repository.DatabaseEncodingRepository.EncodingProbe;
 import org.pgledger.database.repository.SchemaHistoryRepository;
 import org.pgledger.database.repository.SchemaHistoryRepository.Outcome;
 import org.pgledger.database.repository.SchemaHistoryRepository.Row;
@@ -448,13 +450,32 @@ class SchemaMigratorTest {
         assertThat(tableExists("t_two")).isFalse();
     }
 
-    /** RUN-017: the encoding of the database is read from the standard view and has to be UTF-8; the test database is. */
+    /**
+     * RUN-029: the encoding of the test database is proved by the probe query of the dialect of its product: the text of three code
+     * points comes back whole, which the judgement accepts, and PostgreSQL has no probe of the schema character set. The real
+     * database and the real {@code SqlBuilder} (the product name from the connection) answer; nothing is replaced.
+     */
     @Test
-    void run017_theEncodingOfTheDatabaseIsReadWithoutAProductQuery() {
-        List<String> names = TestSchemaServices.history(pool).characterSets();
+    void run029_theTestDatabaseAnswersTheEncodingProbeWithTheTextWhole() {
+        SqlBuilder dialect = new SqlBuilder(pool);
+        DatabaseEncodingRepository encodings = TestSchemaServices.encodings(pool, dialect);
 
-        assertThat(names).as("the standard view lists the character set").isNotEmpty();
-        DatabaseEncoding.requireUtf8(names);
+        EncodingProbe probe = encodings.encodingProbe();
+
+        assertThat(probe.value()).as("the probe text, whole").isEqualTo("한글😀").isEqualTo(SqlBuilder.ENCODING_PROBE_TEXT);
+        assertThat(probe.length()).as("code points").isEqualTo(3);
+        assertThat(dialect.countsCodePoints()).isTrue();
+        DatabaseEncoding.requireUtf8(dialect.countsCodePoints(), probe.length(), probe.value());
+        assertThat(encodings.schemaCharsets()).as("PostgreSQL has no schema character set probe").isEmpty();
+    }
+
+    /** RUN-029: {@code migrate} runs the probe before anything is changed and applies the files on the test database. */
+    @Test
+    void run029_migrateProvesTheEncodingAndApplies() {
+        Path dir = files(Map.of("V1__one.sql", ONE));
+
+        assertThat(migrator(dir).migrate()).containsExactly(1);
+        assertThat(tableExists("t_one")).isTrue();
     }
 
 

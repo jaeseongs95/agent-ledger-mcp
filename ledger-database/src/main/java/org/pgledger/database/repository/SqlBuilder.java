@@ -2,6 +2,7 @@ package org.pgledger.database.repository;
 
 import java.sql.Connection;
 import java.util.List;
+import java.util.Optional;
 import javax.sql.DataSource;
 import org.pgledger.database.driver.DatabaseProductName;
 import org.pgledger.database.driver.RegisteredDriver;
@@ -13,8 +14,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * Builds the SQL that differs by database product, taking the product from the actual database the first time it is
- * needed. The ledger runs on the DBMS the user installs, so the two places that differ by product, the row limit and the
- * declaration of the long text column type, are the text of that product, never one product's text for all and never a
+ * needed. The ledger runs on the DBMS the user installs, so the places that differ by product, the row limit, the
+ * declaration of the long text column type and the probe that proves the encoding of the database (see
+ * {@link #generateEncodingProbe(Database)}), are the text of that product, never one product's text for all and never a
  * driver call that each driver may handle in its own way. Every value stays a bind parameter; the builder only joins fixed
  * fragments.
  *
@@ -133,6 +135,96 @@ public class SqlBuilder {
             case DB2 -> "CLOB(100M)";
             case SQLSERVER -> "NVARCHAR(MAX)";
             case MARIADB, MYSQL -> "LONGTEXT";
+        };
+    }
+
+    /**
+     * The text that the encoding probe sends: two Korean letters (U+D55C, U+AE00) and one emoji outside the Basic Multilingual Plane
+     * (U+1F600), written as escapes so that the encoding of this source file decides nothing. It is three code points, ten bytes in
+     * UTF-8 and four UTF-16 code units. A database that does not store UTF-8 cannot give it back (it answers a replacement character
+     * or a question mark, or a length counted in bytes).
+     */
+    public static final String ENCODING_PROBE_TEXT = "한글😀";
+
+    /** The number of code points of {@link #ENCODING_PROBE_TEXT}, which the probe query has to answer where the database counts code points. */
+    public static final int ENCODING_PROBE_CODE_POINTS = 3;
+
+    /** The encoding probe of the actual database; see {@link #generateEncodingProbe(Database)}. */
+    public String generateEncodingProbe() {
+        return generateEncodingProbe(database());
+    }
+
+    /**
+     * The probe that proves that the database stores UTF-8 (JDBC has no call for the encoding and the standard views differ: one lists
+     * every character set the product supports, another does not exist). The caller binds {@link #ENCODING_PROBE_TEXT} to both
+     * placeholders; the query gives back the length and the value, and the database judges nothing: the caller refuses an answer whose
+     * length is not {@link #ENCODING_PROBE_CODE_POINTS} (where {@link #countsCodePoints(Database)}) or whose value is not the text sent.
+     * Every query casts the bind value to a character type of the database, so the value passes through the character set of the
+     * database and not only through the driver.
+     */
+    public static String generateEncodingProbe(Database database) {
+        // PostgreSQL: CHAR_LENGTH: https://www.postgresql.org/docs/current/functions-string.html
+        // H2: CHAR_LENGTH: https://h2database.com/html/functions.html#char_length
+        // Oracle: LENGTH counts characters, CAST to VARCHAR2: https://docs.oracle.com/en/database/oracle/oracle-database/23/sqlrf/LENGTH.html
+        //         https://docs.oracle.com/en/database/oracle/oracle-database/23/sqlrf/CAST.html (DUAL: a SELECT has a FROM)
+        // Db2: CHARACTER_LENGTH(... USING CODEUNITS32) counts code points: https://www.ibm.com/docs/en/db2/11.5?topic=functions-character-length
+        //      (SYSIBM.SYSDUMMY1: a SELECT has a FROM)
+        // SQL Server: LEN, CAST to VARCHAR (the code page of the collation): https://learn.microsoft.com/en-us/sql/t-sql/functions/len-transact-sql
+        // MariaDB: CHAR_LENGTH, CAST AS CHAR: https://mariadb.com/kb/en/char_length/
+        // MySQL: CHAR_LENGTH, CAST AS CHAR: https://dev.mysql.com/doc/refman/8.4/en/string-functions.html#function_char-length
+        return switch (database) {
+            case POSTGRESQL, H2 -> "SELECT CHAR_LENGTH(CAST(? AS VARCHAR(40))), CAST(? AS VARCHAR(40))";
+            case MARIADB, MYSQL -> "SELECT CHAR_LENGTH(CAST(? AS CHAR(40))), CAST(? AS CHAR(40))";
+            case ORACLE -> "SELECT LENGTH(CAST(? AS VARCHAR2(40))), CAST(? AS VARCHAR2(40)) FROM DUAL";
+            case DB2 -> "SELECT CHARACTER_LENGTH(CAST(? AS VARCHAR(40)) USING CODEUNITS32), CAST(? AS VARCHAR(40)) FROM SYSIBM.SYSDUMMY1";
+            case SQLSERVER -> "SELECT LEN(CAST(? AS VARCHAR(40))), CAST(? AS VARCHAR(40))";
+        };
+    }
+
+    /** Whether the length of the actual database's probe counts code points; see {@link #countsCodePoints(Database)}. */
+    public boolean countsCodePoints() {
+        return countsCodePoints(database());
+    }
+
+    /**
+     * Whether the length that {@link #generateEncodingProbe(Database)} gives is the number of code points, so that the probe text is
+     * 3. It is not for H2, whose CHAR_LENGTH counts UTF-16 code units (the emoji counts 2, the probe text 4): there only the value
+     * proves the encoding. The difference is a property of the product, so it is decided here with the query and not in the caller.
+     */
+    public static boolean countsCodePoints(Database database) {
+        // H2: CHAR_LENGTH counts UTF-16 code units: https://h2database.com/html/functions.html#char_length
+        // every other product: the number of characters, which are code points in a UTF-8 database (see the documentation cited by
+        // generateEncodingProbe)
+        return switch (database) {
+            case H2 -> false;
+            case POSTGRESQL, ORACLE, DB2, SQLSERVER, MARIADB, MYSQL -> true;
+        };
+    }
+
+    /** The probe of the character set of the schema of the actual database, if its product has one; see {@link #generateSchemaCharsetProbe(Database)}. */
+    public Optional<String> generateSchemaCharsetProbe() {
+        return generateSchemaCharsetProbe(database());
+    }
+
+    /**
+     * The second probe, only for the products whose character set is a property of the schema and of the server as well as of the
+     * connection: the character set that a table gets by default (the long text column of the schema files is created with it, and
+     * the probe of {@link #generateEncodingProbe(Database)} passes through the connection, which may convert). It gives the default
+     * character set of the schema, the character set of the server and, as the third column, 1 when both are {@code utf8mb4} and 0
+     * otherwise; the database compares the names (any case), the caller reads the third column only and puts the first two in the
+     * refusal. A product without this probe gives an empty result: the encoding is then proved by the first probe alone.
+     */
+    public static Optional<String> generateSchemaCharsetProbe(Database database) {
+        // MariaDB, MySQL: the schema (SCHEMATA) and the server variable report the character set by name, and a name may come in any
+        //   case, so the database compares LOWER(name) and the caller does not compare strings:
+        //   https://dev.mysql.com/doc/refman/8.4/en/case-sensitivity.html
+        //   https://dev.mysql.com/doc/refman/8.4/en/charset-collation-coercibility.html
+        // PostgreSQL, H2, Oracle, Db2, SQL Server: the character set is one property of the database that the first probe proves.
+        return switch (database) {
+            case MARIADB, MYSQL -> Optional.of("SELECT DEFAULT_CHARACTER_SET_NAME, @@character_set_server, "
+                    + "CASE WHEN LOWER(DEFAULT_CHARACTER_SET_NAME) = 'utf8mb4' AND LOWER(@@character_set_server) = 'utf8mb4' "
+                    + "THEN 1 ELSE 0 END FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = DATABASE()");
+            case POSTGRESQL, H2, ORACLE, DB2, SQLSERVER -> Optional.empty();
         };
     }
 
