@@ -3,6 +3,7 @@ package org.pgledger.cli.database;
 import java.util.function.Supplier;
 import org.pgledger.application.admin.CommonCodeService;
 import org.pgledger.application.admin.GrantService;
+import org.pgledger.application.admin.PasskeyService;
 import org.pgledger.application.admin.ProjectService;
 import org.pgledger.application.admin.SessionKeyService;
 import org.pgledger.application.legacy.LegacyImportService;
@@ -24,16 +25,18 @@ public final class CliLedger {
     private final CommonCodeService codes;
     private final GrantService grants;
     private final SessionKeyService keys;
+    private final PasskeyService passkeys;
     private final LegacyImportService importer;
     private final CliActor actor;
     private final SchemaReadiness readiness;
 
     public CliLedger(ProjectService projects, CommonCodeService codes, GrantService grants, SessionKeyService keys,
-            LegacyImportService importer, CliActor actor, SchemaReadiness readiness) {
+            PasskeyService passkeys, LegacyImportService importer, CliActor actor, SchemaReadiness readiness) {
         this.projects = projects;
         this.codes = codes;
         this.grants = grants;
         this.keys = keys;
+        this.passkeys = passkeys;
         this.importer = importer;
         this.actor = actor;
         this.readiness = readiness;
@@ -53,6 +56,11 @@ public final class CliLedger {
 
     public SessionKeyService keys() {
         return keys;
+    }
+
+    /** The passkeys of the owner ({@code passkey-code}). */
+    public PasskeyService passkeys() {
+        return passkeys;
     }
 
     /** The legacy import ({@code import-legacy}). */

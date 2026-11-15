@@ -414,6 +414,7 @@ deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <a
 | `import-legacy` | `import-legacy [--verify-only] [--owner-account=<account>] [--stdin]` | 1.x 장부를 새 스키마로 복사하고 모든 표를 대조합니다. 장부 전체를 쓰므로 DDL 계정으로 실행합니다 |
 | `key-register` | `key-register <author> <public-key-or-block> <fingerprint> [--replace=<current-fingerprint>]` | 세션이 출력한 공개 키를 작성자에 묶습니다. 유효한 키는 `--replace`가 있어야 교체합니다 |
 | `key-revoke` | `key-revoke <author> --fingerprint=<fingerprint>` | 작성자의 유효한 키를 닫습니다 |
+| `passkey-code` | `passkey-code [--remove-existing]` | 관리 웹에 소유자의 패스키를 등록하는 일회용 코드를 발급합니다(한 번만 보여 주고, 15분간 유효하며, 해시로만 저장합니다. 새 코드는 쓰지 않은 이전 코드를 끝냅니다). `--remove-existing`은 패스키를 모두 잃은 소유자를 위해 유효한 패스키를 먼저 모두 닫습니다 |
 | `project-add` | `project-add <id> <code> <title>` | 프로젝트를 추가합니다 |
 | `code-set` | `code-set <group> <code> <name-ko> [<description-ko>] [--name-en=<text>] [--description-en=<text>] [--sort=<n>] [--inactive] [--direction=<direction>]` | 공통코드를 추가하거나 수정합니다. `--direction`(`GIVEN` 또는 `CANONICAL`)은 `RELATION_KIND` 그룹용입니다(`ledger_link` 도구 참고) |
 | `codes` | `codes [<group>]` | 공통코드를 나열합니다 |
