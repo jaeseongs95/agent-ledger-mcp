@@ -221,7 +221,7 @@ class AttachmentRecordWireTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("cases")
-    @DisplayName("ATA-012: the same operation key with the same attachment returns the stored response; with another attachment, or without one, it is REQUEST_CONFLICT")
+    @DisplayName("ATA-012: the same operation key with the same attachment returns the stored response; with another attachment, or without one, it is OPERATION_CONFLICT")
     void replay(Case c, McpSession session, Scenario scenario) {
         Seed seed = Seed.create(session, scenario);
         String attachment = attachmentOf(scenario, c.actor());
@@ -235,9 +235,9 @@ class AttachmentRecordWireTest {
         assertThat(again.structuredContent()).isEqualTo(first.structuredContent());
         assertThat(Ledger.history(session, seed.project())).as("a replay writes nothing").hasSize(rows);
         assertThat(session.failed(c.tool(), c.build().args(session, seed, other, operationKey)).code())
-                .isEqualTo("REQUEST_CONFLICT");
+                .isEqualTo("OPERATION_CONFLICT");
         assertThat(session.failed(c.tool(), c.build().args(session, seed, null, operationKey)).code())
-                .isEqualTo("REQUEST_CONFLICT");
+                .isEqualTo("OPERATION_CONFLICT");
         assertThat(carrying(session, seed, other)).isEmpty();
     }
 

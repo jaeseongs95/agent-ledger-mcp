@@ -42,7 +42,7 @@ class NoOneXRulesTest {
     }
 
     @Test
-    @DisplayName("OPK-017 request_id, batch_request_id, RequestId, requestId and REQUEST_ID in a Java, SQL, properties, YAML or HTML file are found with file and line; the words 'request id', operationKey, REQUEST_CONFLICT and request_receipt, other file types and the migration tool's own roots (never scanned) are not")
+    @DisplayName("OPK-017 request_id, batch_request_id, RequestId, requestId and REQUEST_ID in a Java, SQL, properties, YAML or HTML file are found with file and line; the words 'request id', operationKey, OPERATION_CONFLICT and request_receipt, other file types and the migration tool's own roots (never scanned) are not")
     void retiredRequestKeyNamesAreFound() throws IOException {
         Files.writeString(tmp.resolve("A.java"), "class A {\n    String request_id;\n}\n");
         Files.writeString(tmp.resolve("b.sql"), "-- ok\nCREATE TABLE t (batch_request_id VARCHAR(36));\n");
@@ -50,7 +50,7 @@ class NoOneXRulesTest {
         Files.writeString(tmp.resolve("E.java"), "record E(String requestId) {}\nenum F { REQUEST_ID }\n");
         Files.writeString(tmp.resolve("g.txt"), "request_id\n");
         Files.writeString(tmp.resolve("H.java"),
-                "class H {\n    String operationKey = \"REQUEST_CONFLICT request_receipt\";\n}\n");
+                "class H {\n    String operationKey = \"OPERATION_CONFLICT request_receipt\";\n}\n");
 
         assertThat(NoOneXRules.retiredRequestKeyText(tmp)).hasSize(5)
                 .anyMatch(problem -> problem.contains("A.java:2") && problem.contains("'request_id'"))

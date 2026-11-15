@@ -80,7 +80,7 @@ public final class LedgerRefusals {
             // the one place of the rule is the service; whatever command asked, the owner is told how to register the key
             case SESSION_KEY_REQUIRED -> new FailureException(ErrorCode.NO_SESSION_KEY, refused,
                     refused.args().getFirst());
-            case VERSION_CONFLICT, REQUEST_CONFLICT, ARTIFACT_CHUNK_CONFLICT, ARTIFACT_BUSY, ARTIFACT_INCOMPLETE,
+            case VERSION_CONFLICT, OPERATION_CONFLICT, ARTIFACT_CHUNK_CONFLICT, ARTIFACT_BUSY, ARTIFACT_INCOMPLETE,
                 ARTIFACT_OPERATION_CONFLICT, ARTIFACT_LIMIT, ARTIFACT_HASH_MISMATCH, CHUNK_HASH_MISMATCH,
                 ARTIFACT_EXPIRED, ARTIFACT_STORAGE_FULL -> generic(refused);
         };

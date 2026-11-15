@@ -183,7 +183,7 @@ class BatchTest {
         // with other content it is a conflict
         Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR, new SaveCommand(
                 batchKey.derive(0).toString(), "defect", null, 0L, Fields.of(s.defectFields("other")), Scenario.REASON)),
-                ConflictCode.REQUEST_CONFLICT);
+                ConflictCode.OPERATION_CONFLICT);
         assertThat(s.count("SELECT COUNT(*) FROM defect WHERE project_id = ?", s.projectId())).isEqualTo(2);
     }
 
@@ -268,7 +268,7 @@ class BatchTest {
         String id = Scenario.uuid();
         batch(s, Scenario.AUTHOR, id, List.of(saveDefect(s, "one")));
         Expect.failure(() -> batch(s, Scenario.AUTHOR, id, List.of(saveDefect(s, "something else"))),
-                ConflictCode.REQUEST_CONFLICT);
+                ConflictCode.OPERATION_CONFLICT);
     }
 
     // ---------------------------------------------------------------------- 12

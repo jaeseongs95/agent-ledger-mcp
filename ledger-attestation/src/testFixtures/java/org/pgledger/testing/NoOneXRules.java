@@ -34,7 +34,7 @@ public final class NoOneXRules {
     /** The text that names 1.x in a source or resource file (the one expression of the inventory of 1.x mentions). */
     private static final Pattern ONE_X_TEXT = Pattern.compile("LEGACY|[Ll]egacy|\\b1\\.x\\b|[^0-9a-z]1x|OneX|ONE_X|one-x");
 
-    /** The names of the retired request key (OPK-017); case-sensitive, so the words "request id" and "REQUEST_CONFLICT" stay free. */
+    /** The names of the retired request key (OPK-017); case-sensitive, so the words "request id" and "OPERATION_CONFLICT" stay free. */
     private static final Pattern RETIRED_REQUEST_KEY = Pattern.compile("request_id|[Rr]equestId|REQUEST_ID");
 
     private static final Set<String> TEXT_FILE_TYPES = Set.of("java", "sql", "properties", "yaml", "yml", "html");
@@ -73,7 +73,7 @@ public final class NoOneXRules {
      * retired request key: {@code request_id} (also in {@code batch_request_id}), {@code RequestId} / {@code requestId} or
      * {@code REQUEST_ID}. The key of a write is the {@code operationKey} (D14); the 1.x names live only in the migration
      * tool, which does not call this rule. The ordinary words "request id" (a space) are not matched, nor is the kept
-     * error code {@code REQUEST_CONFLICT} or the table name {@code request_receipt}. A root that does not exist is a
+     * error code {@code OPERATION_CONFLICT} or the table name {@code request_receipt}. A root that does not exist is a
      * problem too.
      */
     public static List<String> retiredRequestKeyText(Path... roots) {

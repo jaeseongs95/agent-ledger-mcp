@@ -37,7 +37,7 @@ AI 에이전트가 수행한 작업을 기록하는 장부이며, 하나의 MCP 
   데이터베이스 모듈의 부여 템플릿(`migrate`가 앱 계정에 적용합니다)은 그 계정에 이력의 `UPDATE`와 `DELETE`를 주지 않습니다. 잘못된 기록은 `CORRECT` 행으로 표시합니다.
   기존 행을 바꾸는 연산은 바꾸기 전의 전체 행도 함께 저장합니다(`before_data`, `ledger_history`에서 `include_before`를 주면 반환됩니다).
 - **재시도는 안전합니다.** 모든 쓰기 도구는 필수 인자 `operationKey`(1자 이상 128자 이하, 예를 들어 UUID)를 받습니다. 같은 키로 같은 요청을 반복하면 저장된 결과를 돌려주며 두 번 기록하지 않습니다.
-  이미 다른 작업, 내용, 작성자 또는 채널에 묶인 키는 `REQUEST_CONFLICT`로 거절됩니다. 서버는 키를 대신 만들지 않으며, 키가 없거나 비어 있으면 `VALIDATION_FAILED`(경로 `operationKey`)로 거절됩니다.
+  이미 다른 작업, 내용, 작성자 또는 채널에 묶인 키는 `OPERATION_CONFLICT`로 거절됩니다. 서버는 키를 대신 만들지 않으며, 키가 없거나 비어 있으면 `VALIDATION_FAILED`(경로 `operationKey`)로 거절됩니다.
   `ledger_batch`는 배치 전체에 키 하나를 받습니다. `artifact-chunk`와 `artifact-finish`는 `operationKey`를 받지 않습니다. 업로드는 `artifact-begin`의 `operationKey`로 시작하고,
   청크는 `uploadId`, `sequence`, `chunkSha256`으로, finish는 `uploadId`로 멱등입니다.
 - **낙관적 잠금.** 수정과 전이는 `expected_version`을 가지며, 오래된 판은 `VERSION_CONFLICT`입니다.

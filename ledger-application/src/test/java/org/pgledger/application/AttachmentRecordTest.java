@@ -361,7 +361,7 @@ class AttachmentRecordTest {
 
     @ParameterizedTest
     @MethodSource("cases")
-    @DisplayName("ATA-012: the same operation key with the same attachment replays the stored response; with another attachment, or without one, it is REQUEST_CONFLICT")
+    @DisplayName("ATA-012: the same operation key with the same attachment replays the stored response; with another attachment, or without one, it is OPERATION_CONFLICT")
     void ata012_replay(Case c, Scenario s) {
         Prepared work = c.prepare().apply(s);
         String attachment = attachmentOf(s, c.actor());
@@ -374,8 +374,8 @@ class AttachmentRecordTest {
 
         assertThat(again).isEqualTo(first);
         assertThat(historyOf(s, work.defectId())).as("a replay writes nothing").isEqualTo(rows);
-        Expect.failure(() -> work.call().run(other, operationKey), ConflictCode.REQUEST_CONFLICT);
-        Expect.failure(() -> work.call().run(null, operationKey), ConflictCode.REQUEST_CONFLICT);
+        Expect.failure(() -> work.call().run(other, operationKey), ConflictCode.OPERATION_CONFLICT);
+        Expect.failure(() -> work.call().run(null, operationKey), ConflictCode.OPERATION_CONFLICT);
         assertThat(referencing(s, other)).isZero();
         assertThat(historyOf(s, work.defectId())).isEqualTo(rows);
     }

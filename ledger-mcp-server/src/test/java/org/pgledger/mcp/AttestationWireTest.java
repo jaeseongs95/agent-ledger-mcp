@@ -292,7 +292,7 @@ class AttestationWireTest {
     }
 
     @Test
-    @DisplayName("MCW-037: a signed call that is captured and sent again returns the stored response; with other content under the same operationKey it is ATTESTATION_BINDING_MISMATCH (arguments; was REQUEST_CONFLICT before the signature covered the content); the same token for another operationKey is a binding mismatch (operationKey)")
+    @DisplayName("MCW-037: a signed call that is captured and sent again returns the stored response; with other content under the same operationKey it is ATTESTATION_BINDING_MISMATCH (arguments; was OPERATION_CONFLICT before the signature covered the content); the same token for another operationKey is a binding mismatch (operationKey)")
     void replayOfASignedCall(McpSession session, Scenario scenario, @Autowired KeyRing keys) {
         WriteCase save = WriteCase.all().getFirst();
         String author = scenario.actorWith("rp", "defect");

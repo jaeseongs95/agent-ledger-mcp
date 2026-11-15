@@ -53,7 +53,7 @@ class ReceiptConcurrencyTest {
     }
 
     @Test
-    @DisplayName("SVC-RCP-10 (principle 4.4): 16 threads, 4 payloads: one payload wins; a call with another payload ends with REQUEST_CONFLICT (it read the receipt) or DUPLICATE_KEY (it met the unique key at the same moment); a call with the winning payload answers the stored response or ends with DUPLICATE_KEY")
+    @DisplayName("SVC-RCP-10 (principle 4.4): 16 threads, 4 payloads: one payload wins; a call with another payload ends with OPERATION_CONFLICT (it read the receipt) or DUPLICATE_KEY (it met the unique key at the same moment); a call with the winning payload answers the stored response or ends with DUPLICATE_KEY")
     void rcp10_sameRequestFourPayloads(Scenario s) {
         String id = Scenario.uuid();
         List<String> titles = IntStream.range(0, 16).mapToObj(i -> "payload " + (i % 4)).toList();
@@ -70,7 +70,7 @@ class ReceiptConcurrencyTest {
             if (Objects.equals(titles.get(i), winningTitle)) {
                 assertThat(code).as("payload of the winner").isIn(Optional.empty(), Optional.of(ConflictCode.DUPLICATE_KEY));
             } else {
-                assertThat(code).as("another payload").isIn(Optional.of(ConflictCode.REQUEST_CONFLICT),
+                assertThat(code).as("another payload").isIn(Optional.of(ConflictCode.OPERATION_CONFLICT),
                         Optional.of(ConflictCode.DUPLICATE_KEY));
             }
         }

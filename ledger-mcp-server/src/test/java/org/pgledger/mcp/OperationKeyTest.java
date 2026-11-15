@@ -173,7 +173,7 @@ class OperationKeyTest {
 
     @Test
     @DisplayName("OPK-005: one operationKey for the batch: the same key with the same operations returns the stored "
-            + "results and writes once; the same key with other operations is REQUEST_CONFLICT and writes nothing more")
+            + "results and writes once; the same key with other operations is OPERATION_CONFLICT and writes nothing more")
     void theBatchKeyIsReplayed(McpSession session, Scenario scenario) {
         String batchKey = Calls.freshKey();
         List<Calls.Op> ops = List.of(Calls.Op.save("defect", Fields.defect(scenario.projectId(), "first operation")),
@@ -189,7 +189,7 @@ class OperationKeyTest {
 
         assertThat(first.count()).isEqualTo(2);
         assertThat(again).isEqualTo(first);
-        assertThat(other.code()).isEqualTo("REQUEST_CONFLICT");
+        assertThat(other.code()).isEqualTo("OPERATION_CONFLICT");
         assertThat(Ledger.history(session, scenario.projectId())).hasSize(2);
         assertThat(Ledger.receipts(scenario, batchKey)).isOne();
     }

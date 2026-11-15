@@ -120,7 +120,7 @@ class CaseTest {
         String id = Scenario.uuid();
         record(s, Scenario.AUTHOR, new RecordCaseCommand(id, d.id(), "seen", Scenario.REASON, null, null, null));
         Expect.failure(() -> record(s, Scenario.AUTHOR, new RecordCaseCommand(id, d.id(), "seen differently",
-                Scenario.REASON, null, null, null)), ConflictCode.REQUEST_CONFLICT);
+                Scenario.REASON, null, null, null)), ConflictCode.OPERATION_CONFLICT);
     }
 
     @Test

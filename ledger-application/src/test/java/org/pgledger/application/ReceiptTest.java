@@ -199,7 +199,7 @@ class ReceiptTest {
         s.bean(SaveService.class).save(Scenario.AUTHOR, base);
         long history = s.count("SELECT COUNT(*) FROM history");
         Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR, change.apply(s, base)),
-                ConflictCode.REQUEST_CONFLICT);
+                ConflictCode.OPERATION_CONFLICT);
         assertThat(s.defect(s.defectId(1)).title()).isEqualTo("edited");
         assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
     }
@@ -211,7 +211,7 @@ class ReceiptTest {
         SaveResult d = s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, id, "d"));
         Expect.failure(() -> s.bean(TransitionService.class).transition(Scenario.AUTHOR, new TransitionCommand(id,
                 "defect", d.id(), 1L, "DISPUTED", Scenario.REASON, Scenario.EVIDENCE, null, null)),
-                ConflictCode.REQUEST_CONFLICT);
+                ConflictCode.OPERATION_CONFLICT);
     }
 
     @Test
@@ -223,7 +223,7 @@ class ReceiptTest {
                 Scenario.EVIDENCE, null, null);
         s.bean(TransitionService.class).transition(Scenario.AUTHOR, dispute);
         Expect.failure(() -> s.bean(TransitionService.class).transition(Scenario.DEFECT_ONLY, dispute),
-                ConflictCode.REQUEST_CONFLICT);
+                ConflictCode.OPERATION_CONFLICT);
     }
 
     @Test
@@ -235,7 +235,7 @@ class ReceiptTest {
                 Scenario.EVIDENCE, null, null);
         s.bean(TransitionService.class).transition(Scenario.AUTHOR, dispute);
         Expect.failure(() -> s.bean(ReviewService.class).review(Scenario.AUTHOR, dispute),
-                ConflictCode.REQUEST_CONFLICT);
+                ConflictCode.OPERATION_CONFLICT);
     }
 
     // ---------------------------------------------------------------------- 05
@@ -536,7 +536,7 @@ class ReceiptTest {
 
     @ParameterizedTest
     @MethodSource("keyedWrites")
-    @DisplayName("OPK-004 (service): the same operation key with other arguments is REQUEST_CONFLICT and nothing more is written, for every write service")
+    @DisplayName("OPK-004 (service): the same operation key with other arguments is OPERATION_CONFLICT and nothing more is written, for every write service")
     void opk004_otherArguments(KeyedWrite write, Scenario s) {
         BiFunction<String, String, Object> call = write.prepare().apply(s);
         String key = Scenario.uuid();
@@ -544,14 +544,14 @@ class ReceiptTest {
         long history = s.count("SELECT COUNT(*) FROM history");
         long receipts = s.count("SELECT COUNT(*) FROM request_receipt");
 
-        Expect.failure(() -> call.apply(key, "another reason, long enough"), ConflictCode.REQUEST_CONFLICT);
+        Expect.failure(() -> call.apply(key, "another reason, long enough"), ConflictCode.OPERATION_CONFLICT);
 
         assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
         assertThat(s.count("SELECT COUNT(*) FROM request_receipt")).isEqualTo(receipts);
     }
 
     @Test
-    @DisplayName("OPK-004 (service): an operation key already bound to one write service is REQUEST_CONFLICT for any other write service")
+    @DisplayName("OPK-004 (service): an operation key already bound to one write service is OPERATION_CONFLICT for any other write service")
     void opk004_anotherServiceWithTheSameKey(Scenario s) {
         // the batch keeps its receipts under the keys derived from its own key, so it takes no part in this ring
         List<BiFunction<String, String, Object>> calls = keyedWrites().filter(write -> !"batch".equals(write.name()))
@@ -562,7 +562,7 @@ class ReceiptTest {
             long history = s.count("SELECT COUNT(*) FROM history");
             BiFunction<String, String, Object> other = calls.get((i + 1) % calls.size());
 
-            Expect.failure(() -> other.apply(key, Scenario.REASON), ConflictCode.REQUEST_CONFLICT);
+            Expect.failure(() -> other.apply(key, Scenario.REASON), ConflictCode.OPERATION_CONFLICT);
 
             assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
         }

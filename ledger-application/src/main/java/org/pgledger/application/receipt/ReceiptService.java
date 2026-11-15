@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component;
 /**
  * Idempotency. It has no transaction of its own: it joins the one of the write (principle 4.4). The receipt of the
  * operation key is read first: a committed receipt of an earlier call answers with its stored response (a replay) or, for
- * another request under the same key, with REQUEST_CONFLICT. Without one the receipt is inserted, in the transaction of the write.
+ * another request under the same key, with OPERATION_CONFLICT. Without one the receipt is inserted, in the transaction of the write.
  * A second call at the very same moment meets the unique key of the operation key (the insert waits until the first call
  * commits) and ends with the translated DUPLICATE_KEY; the caller sends the request again and then gets the replay. A
  * failed write rolls its receipt back with everything else, so a retry with a corrected payload is not a conflict.
@@ -63,7 +63,7 @@ public class ReceiptService {
      * Reserves the operation key: {@link Reservation.Reserved} when the caller is the first and writes,
      * {@link Reservation.Replayed} with the stored response when the same request was answered before.
      *
-     * @throws ConflictException REQUEST_CONFLICT when the key belongs to another operation, payload, author or
+     * @throws ConflictException OPERATION_CONFLICT when the key belongs to another operation, payload, author or
      *         channel; DUPLICATE_KEY when another call reserved the key at the very same moment
      */
     public <R> Reservation<R> reserve(OperationKey id, ReceiptOperation operation, Sha256 digest, AuthorId author,
@@ -91,7 +91,7 @@ public class ReceiptService {
                 && Objects.equals(stored.authorId().value(), author.value())
                 && Objects.equals(stored.login(), channel.login());
         if (!same) {
-            throw new ConflictException(ConflictCode.REQUEST_CONFLICT, List.of(id.toString()));
+            throw new ConflictException(ConflictCode.OPERATION_CONFLICT, List.of(id.toString()));
         }
         if (stored.response() == null) {
             throw new InfrastructureException(InfrastructureCode.INTEGRITY_VIOLATION,

@@ -42,7 +42,7 @@ of the write tools, the keys of the results, the `_hostAttestation` key) and cha
   `include_before`).
 - **Retries are safe.** Every write tool takes a required `operationKey` (1 to 128 characters, for example a UUID). Repeating the same
   request with the same key returns the stored result and writes nothing twice. A key that is already bound to another operation,
-  payload, author or channel is refused with `REQUEST_CONFLICT`. The server never makes a key up: a missing or empty key is refused
+  payload, author or channel is refused with `OPERATION_CONFLICT`. The server never makes a key up: a missing or empty key is refused
   with `VALIDATION_FAILED` (path `operationKey`). `ledger_batch` takes one key for the whole batch. `artifact-chunk` and
   `artifact-finish` take no `operationKey`: an upload starts with the `operationKey` of `artifact-begin`, a chunk is idempotent by its
   `uploadId`, `sequence` and `chunkSha256`, and finish by its `uploadId`.

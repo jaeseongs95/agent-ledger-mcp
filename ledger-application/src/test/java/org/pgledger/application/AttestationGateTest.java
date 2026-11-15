@@ -313,14 +313,14 @@ class AttestationGateTest {
     }
 
     @Test
-    @DisplayName("SVC-GATE-30: the same signed call sent again returns the stored response; the same operation key with other content is REQUEST_CONFLICT; the same token for another operation key is ATTESTATION_BINDING_MISMATCH")
+    @DisplayName("SVC-GATE-30: the same signed call sent again returns the stored response; the same operation key with other content is OPERATION_CONFLICT; the same token for another operation key is ATTESTATION_BINDING_MISMATCH")
     void gate30_reuseOfASignature(Scenario s) {
         String author = s.actorWith("defect");
         String operationKey = newOperationKey();
         String token = now(s, author, SAVE, operationKey);
         SaveResult first = save(s, token, create(s, operationKey, "original"));
         assertThat(save(s, token, create(s, operationKey, "original"))).isEqualTo(first);
-        Expect.failure(() -> save(s, token, create(s, operationKey, "different content")), ConflictCode.REQUEST_CONFLICT);
+        Expect.failure(() -> save(s, token, create(s, operationKey, "different content")), ConflictCode.OPERATION_CONFLICT);
         Expect.failure(() -> save(s, token, create(s, newOperationKey(), "different content")),
                 TrustCode.ATTESTATION_BINDING_MISMATCH);
         assertThat(s.count("SELECT COUNT(*) FROM defect WHERE project_id = ?", s.projectId())).isEqualTo(1);
