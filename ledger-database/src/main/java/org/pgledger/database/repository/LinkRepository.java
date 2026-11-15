@@ -66,6 +66,12 @@ public class LinkRepository {
                 .param("kind", relation.relation().value()).update() == 1;
     }
 
+    /** How many stored relations have this kind: the direction of a kind cannot change while there are some. */
+    public long countRelations(CodeValue kind) {
+        return jdbc.sql("SELECT COUNT(*) FROM defect_relation WHERE kind = :kind").param("kind", kind.value())
+                .query(Long.class).single();
+    }
+
     public List<DefectRelation> relationsOf(DefectId defect) {
         return jdbc.sql("SELECT a, b, kind, created_by FROM defect_relation WHERE a = :d OR b = :d "
                 + "ORDER BY a, b, kind").param("d", defect.value())

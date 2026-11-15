@@ -14,6 +14,7 @@ import org.pgledger.domain.model.HistoryEntry;
 import org.pgledger.domain.rule.ActorAssurance;
 import org.pgledger.domain.rule.AttentionKind;
 import org.pgledger.domain.rule.Channel;
+import org.pgledger.domain.rule.CodeDirection;
 import org.pgledger.domain.rule.DefectStatus;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
@@ -128,19 +129,32 @@ class ValueKnowledgeTest {
     }
 
     @Test
-    @DisplayName("DOM-042 the canonical order of a relation pair is one rule, used by the relation and by callers that need the pair")
+    @DisplayName("DOM-042 the order of the two ends of a relation is one rule, decided by the direction of the kind, used by the relation and by callers that need the pair")
     void relationPairOrder() {
         DefectId one = DefectId.of("E2E-D-0001");
         DefectId two = DefectId.of("E2E-D-0002");
-        assertThat(DefectRelation.Pair.ordered(two, one)).isEqualTo(new DefectRelation.Pair(one, two));
-        assertThat(DefectRelation.Pair.ordered(one, two)).isEqualTo(new DefectRelation.Pair(one, two));
-        Expect.invalid(() -> DefectRelation.Pair.ordered(one, one));
-        DefectRelation relation = new DefectRelation(two, one, CodeValue.of("same_site"), AuthorId.OWNER);
+        assertThat(DefectRelation.Pair.of(two, one, CodeDirection.CANONICAL)).isEqualTo(new DefectRelation.Pair(one, two));
+        assertThat(DefectRelation.Pair.of(one, two, CodeDirection.CANONICAL)).isEqualTo(new DefectRelation.Pair(one, two));
+        // a directed kind keeps the order of the caller
+        assertThat(DefectRelation.Pair.of(two, one, CodeDirection.GIVEN)).isEqualTo(new DefectRelation.Pair(two, one));
+        assertThat(DefectRelation.Pair.of(one, two, CodeDirection.GIVEN)).isEqualTo(new DefectRelation.Pair(one, two));
+        for (CodeDirection direction : CodeDirection.values()) {
+            Expect.invalid(() -> DefectRelation.Pair.of(one, one, direction));
+            Expect.invalid(() -> DefectRelation.between(one, one, CodeValue.of("same_site"), direction, AuthorId.OWNER));
+        }
+        DefectRelation relation = DefectRelation.between(two, one, CodeValue.of("same_site"), CodeDirection.CANONICAL,
+                AuthorId.OWNER);
         assertThat(relation.a()).isEqualTo(one);
         assertThat(relation.b()).isEqualTo(two);
+        DefectRelation directed = DefectRelation.between(two, one, CodeValue.of("caused_by"), CodeDirection.GIVEN,
+                AuthorId.OWNER);
+        assertThat(directed.a()).isEqualTo(two);
+        assertThat(directed.b()).isEqualTo(one);
         // ids of different width order as text, as the stored pair always did
-        assertThat(DefectRelation.Pair.ordered(DefectId.of("E2E-D-10000"), DefectId.of("E2E-D-9999")).first().value())
-                .isEqualTo("E2E-D-10000");
+        assertThat(DefectRelation.Pair.of(DefectId.of("E2E-D-10000"), DefectId.of("E2E-D-9999"), CodeDirection.CANONICAL)
+                .first().value()).isEqualTo("E2E-D-10000");
+        assertThat(DefectRelation.Pair.of(DefectId.of("E2E-D-9999"), DefectId.of("E2E-D-10000"), CodeDirection.GIVEN)
+                .first().value()).isEqualTo("E2E-D-9999");
     }
 
     private enum Plain {

@@ -11,6 +11,7 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Predicate;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
@@ -26,7 +27,7 @@ import org.pgledger.database.support.SqlText.Group;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** ANSI-001 .. ANSI-014, REPO-004 and ARC-012 (text part): static checks of every SQL file and SQL string. */
+/** ANSI-001 .. ANSI-015, REPO-004 and ARC-012 (text part): static checks of every SQL file and SQL string. */
 class AnsiRulesTest {
 
     private static final Logger LOG = LoggerFactory.getLogger(AnsiRulesTest.class);
@@ -51,7 +52,14 @@ class AnsiRulesTest {
     private static final Pattern MIGRATION_FILE_NAME = Pattern.compile("V[1-9][0-9]*__[a-z0-9_]+\\.sql");
     private static final Pattern FUNCTION_CALL = Pattern.compile(
             "(?i)\\b(?!AND\\b|OR\\b|NOT\\b|IN\\b|CHECK\\b)\\w+\\s*\\(");
-    private static final Pattern SQL_LITERAL = Pattern.compile("\"((?:[^\"\\\\\\n]|\\\\.)*)\"");
+    /** {@code ALTER TABLE <table> ADD COLUMN | ADD CONSTRAINT | DROP CONSTRAINT <name> <rest>} (ANSI-015). */
+    private static final Pattern ALTER_TABLE = Pattern.compile("(?is)ALTER\\s+TABLE\\s+(?<table>\\w+)\\s+"
+            + "(?<action>ADD\\s+COLUMN|ADD\\s+CONSTRAINT|DROP\\s+CONSTRAINT)\\s+(?<name>\\w+)\\s*(?<rest>.*)");
+    /** A plain column type, then the options (default, NOT NULL) of the column. */
+    private static final Pattern COLUMN_DEFINITION = Pattern.compile(
+            "(?is)(VARCHAR\\(\\d+\\)|TEXT|INTEGER|BIGINT|TIMESTAMP|DECIMAL(\\(\\d+,\\d+\\))?)(\\s.*)?");
+    private static final Pattern CHECK_DEFINITION = Pattern.compile("(?is)CHECK\\s*\\(.*\\)");
+    private static final Pattern SQL_LITERAL =Pattern.compile("\"((?:[^\"\\\\\\n]|\\\\.)*)\"");
 
     private static String read(Path file) {
         try {
@@ -117,15 +125,40 @@ class AnsiRulesTest {
 
     @ParameterizedTest
     @MethodSource("schemaAndTemplateFiles")
-    @DisplayName("ANSI-003/012: schema files hold only tables, indexes, rows and grants")
+    @DisplayName("ANSI-003/012: schema files hold only tables, indexes, rows (insert, update), changes of a table and grants")
     void onlyWhitelistedStatements(SqlText sql) {
         assertThat(sql.findings(Group.DDL_OBJECT, Group.SESSION_STATEMENT)).as(sql.name()).isEmpty();
         assertThat(Stream.of(sql.stripped().split(";")).map(String::strip).filter(s -> !s.isEmpty())
                 .map(s -> WHITESPACE.split(s)[0].toUpperCase(Locale.ROOT)).collect(java.util.stream.Collectors.toSet()))
-                .isSubsetOf("CREATE", "INSERT", "GRANT");
+                .isSubsetOf("CREATE", "INSERT", "UPDATE", "ALTER", "GRANT");
         assertThat(Stream.of(sql.stripped().split(";")).map(String::strip).filter(s -> s.toUpperCase(Locale.ROOT)
                 .startsWith("CREATE")).map(s -> WHITESPACE.split(s)[1].toUpperCase(Locale.ROOT)).toList())
                 .allMatch(kind -> "TABLE".equals(kind) || "INDEX".equals(kind) || "UNIQUE".equals(kind));
+    }
+
+    @ParameterizedTest
+    @MethodSource("schemaFiles")
+    @DisplayName("ANSI-015: ALTER TABLE only adds a column of a plain type, adds a CHECK constraint of plain clauses or drops a constraint, under plain names")
+    void alterStatements(SqlText sql) {
+        List<String> alters = Stream.of(sql.stripped().split(";")).map(String::strip)
+                .filter(s -> s.toUpperCase(Locale.ROOT).startsWith("ALTER")).toList();
+        for (String alter : alters) {
+            Matcher statement = ALTER_TABLE.matcher(alter);
+            assertThat(statement.matches()).as(sql.name() + ": " + alter).isTrue();
+            assertThat(Stream.of(statement.group("table"), statement.group("name")))
+                    .as(sql.name() + ": the names of " + alter)
+                    .allMatch(n -> IDENTIFIER.matcher(n).matches() && n.length() <= 30 && !RESERVED.contains(n));
+            String action = WHITESPACE.matcher(statement.group("action")).replaceAll(" ").toUpperCase(Locale.ROOT);
+            String rest = statement.group("rest");
+            if ("ADD COLUMN".equals(action)) {
+                assertThat(rest).as(alter).matches(COLUMN_DEFINITION);
+            } else if ("ADD CONSTRAINT".equals(action)) {
+                assertThat(rest).as(alter).matches(CHECK_DEFINITION);
+                assertThat(FUNCTION_CALL.matcher(rest).find() || rest.contains("~")).as(alter).isFalse();
+            } else {
+                assertThat(rest).as(alter).isEmpty();
+            }
+        }
     }
 
     @ParameterizedTest

@@ -12,6 +12,7 @@ import org.pgledger.domain.model.CodeCatalog;
 import org.pgledger.domain.model.CommonCode;
 import org.pgledger.domain.rule.Channel;
 import org.pgledger.domain.rule.CiConclusion;
+import org.pgledger.domain.rule.CodeDirection;
 import org.pgledger.domain.rule.CodeGroup;
 import org.pgledger.domain.rule.CodeState;
 import org.pgledger.domain.rule.ConditionState;
@@ -62,7 +63,33 @@ class EnumsAndCodesTest {
     }
 
     private static CommonCode code(CodeGroup group, String code, int order, CodeState state) {
-        return new CommonCode(group, CodeValue.of(code), code, code, null, null, order, state, AuthorId.OWNER);
+        return new CommonCode(group, CodeValue.of(code), code, code, null, null, order, state, null, AuthorId.OWNER);
+    }
+
+    private static CommonCode relationKind(String code, int order, CodeState state, CodeDirection direction) {
+        return new CommonCode(CodeGroup.RELATION_KIND, CodeValue.of(code), code, code, null, null, order, state,
+                direction, AuthorId.OWNER);
+    }
+
+    @Test
+    void ldir01_theDirectionIsAPropertyOfTheRelationKindCode() {
+        CodeCatalog kinds = new CodeCatalog(CodeGroup.RELATION_KIND, List.of(
+                relationKind("caused_by", 2, CodeState.ACTIVE, CodeDirection.GIVEN),
+                relationKind("same_site", 1, CodeState.ACTIVE, null),
+                relationKind("retired_directed", 3, CodeState.INACTIVE, CodeDirection.GIVEN)));
+        assertThat(kinds.directionOf(CodeValue.of("caused_by"))).contains(CodeDirection.GIVEN);
+        assertThat(kinds.directionOf(CodeValue.of("same_site"))).as("no direction is the canonical order")
+                .contains(CodeDirection.CANONICAL);
+        assertThat(kinds.directionOf(CodeValue.of("retired_directed"))).as("a retired kind keeps its direction")
+                .contains(CodeDirection.GIVEN);
+        assertThat(kinds.directionOf(CodeValue.of("unknown_kind"))).isEmpty();
+        assertThat(Tokens.allowed(CodeDirection.values())).containsExactly("GIVEN", "CANONICAL");
+        // a code of another group has no relation, so it cannot be directed
+        Expect.invalid(() -> new CommonCode(CodeGroup.DEFECT_CATEGORY, CodeValue.of("UI"), "ui", null, null, null, 1,
+                CodeState.ACTIVE, CodeDirection.GIVEN, AuthorId.OWNER));
+        assertThat(new CommonCode(CodeGroup.DEFECT_CATEGORY, CodeValue.of("UI"), "ui", null, null, null, 1,
+                CodeState.ACTIVE, CodeDirection.CANONICAL, AuthorId.OWNER).direction())
+                .isEqualTo(CodeDirection.CANONICAL);
     }
 
     private static CodeCatalog severity() {

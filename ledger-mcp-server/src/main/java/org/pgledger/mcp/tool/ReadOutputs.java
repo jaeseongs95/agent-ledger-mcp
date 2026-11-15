@@ -81,7 +81,8 @@ public final class ReadOutputs {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
-    public record Relation(@JsonProperty("kind") String kind, @JsonProperty("other") String other) {
+    public record Relation(@JsonProperty("kind") String kind, @JsonProperty("other") String other,
+            @JsonProperty("end") String end) {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
@@ -217,7 +218,7 @@ public final class ReadOutputs {
                 d.tasks().stream().map(t -> new TaskRef(t.task(), t.state(), t.owner())).toList(), d.conditions(),
                 d.cases().stream().map(c -> new Case(c.source(), c.defect(), c.caseId(), c.observation(),
                         c.evidence(), c.userQuote(), c.observedAt(), c.by(), c.at())).toList(),
-                d.relations().stream().map(r -> new Relation(r.kind(), r.other())).toList(),
+                d.relations().stream().map(r -> new Relation(r.kind(), r.other(), r.end().token())).toList(),
                 d.recentChanges().stream().map(c -> new ChangeSummary(c.id(), c.at(), c.author(), c.op(),
                         c.reason())).toList());
     }

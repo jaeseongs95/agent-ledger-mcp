@@ -41,6 +41,7 @@ import org.pgledger.domain.rule.ActorAssurance;
 import org.pgledger.domain.rule.AttentionKind;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
+import org.pgledger.domain.rule.RelationEnd;
 import org.pgledger.domain.value.JsonDocument;
 import org.pgledger.domain.value.LegacyActorId;
 import org.pgledger.domain.value.RequestId;
@@ -137,7 +138,7 @@ class ReadDetailTest {
                 Scenario.REASON, null));
         s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(null, "condition_defect", c.id(), d.id(),
                 Scenario.REASON, null));
-        s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(null, "blocks", d.id(), other.id(),
+        s.bean(LinkService.class).link(Scenario.AUTHOR, new LinkCommand(null, "blocks", other.id(), d.id(),
                 Scenario.REASON, null));
         s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(null, d.id(), "seen",
                 Scenario.REASON, "log", "quote", "2026-11-05T09:00:00Z"));
@@ -151,6 +152,10 @@ class ReadDetailTest {
         assertThat(detail.conditions()).containsExactly(c.id());
         assertThat(detail.relations()).extracting(DetailService.RelationView::kind).containsExactly("blocks");
         assertThat(detail.relations()).extracting(DetailService.RelationView::other).containsExactly(other.id());
+        // LDIR-08: "other blocks d" was given with the later id first: other is the end a of the relation, d is b
+        assertThat(detail.relations()).extracting(DetailService.RelationView::end).containsExactly(RelationEnd.B);
+        assertThat(s.bean(DetailService.class).defect(other.id()).relations())
+                .extracting(DetailService.RelationView::end).containsExactly(RelationEnd.A);
         assertThat(detail.cases()).extracting(CaseView::observation).containsExactly("seen");
         assertThat(detail.lastChange().op()).isEqualTo("TRANSITION");
         assertThat(detail.lastChange().login()).isEqualTo("ledger_author");

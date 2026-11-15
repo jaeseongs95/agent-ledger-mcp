@@ -62,7 +62,7 @@ class SeedTest {
             // the constructors of the ledger check the format of the code and the length of the texts
             CommonCode ledgerCode = new CommonCode(CodeGroup.valueOf(code.group()), CodeValue.of(code.code()), code.nameKo(),
                     code.nameEn(), code.descriptionKo(), code.descriptionEn(), code.sortOrder(), CodeState.valueOf(code.state()),
-                    AuthorId.OWNER);
+                    null, AuthorId.OWNER);
             assertThat(ledgerCode.nameKo()).isEqualTo(code.nameKo());
             assertThat(ledgerCode.descriptionEn()).isEqualTo(code.descriptionEn());
             assertThat(code.nameKo()).isNotBlank();
