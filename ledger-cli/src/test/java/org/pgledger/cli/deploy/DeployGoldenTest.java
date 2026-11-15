@@ -92,8 +92,10 @@ class DeployGoldenTest {
         }
     }
 
+    // FUP-NGX-03 changed the digest of "linux with site" on purpose (it renders the operator's certificate site, whose 443 blocks now
+    // have `server_tokens off;`); the other three targets are unchanged.
     private static final Map<String, String> BEFORE_SETUP = Map.of(
-            "linux with site", "205c5052792b4f2c4c9681cb54dba77c52ea7c9a8f1c455c2cb86d6ca1bf1931",
+            "linux with site", "f18fa93fa4d9b32392fdf1fe40559110fc48154d641fd59daf393b292279a865",
             "linux plain", "a7cc4e0a5d1ff750a4044e9f07bd99bad4bd6b897f8c9fa4779d1bd5ddfbb8e9",
             "personal pc", "09d2be30498adb057b386356b338b0c6be703833cabd16f4f80e0bf5bb595ef1",
             "windows server", "4e1ec84da3f6a9af42fa0b8eeedbec939f80b85458866e8cd8788da2e729ffdf");
