@@ -91,12 +91,13 @@ public class WriteTools implements ToolAdapter {
             @McpToolParam(description = "param.evidence_uri", required = false) String evidence_uri,
             @McpToolParam(description = "param.evidence_sha256", required = false) String evidence_sha256,
             @McpToolParam(description = "param.merged_into", required = false) String merged_into,
+            @McpToolParam(description = "param.attachment_id", required = false) String attachment_id,
             @McpToolParam(description = "param.request_id", required = false) String request_id,
             @McpToolParam(description = "param.host_attestation", required = false) String _hostAttestation,
             @McpToolParam(description = "param.author_id", required = false) String author_id) {
         return WriteOutputs.transitioned(transition.transition(_hostAttestation,
                 new TransitionCommand(request_id, entity, id, expected_version, to, reason, evidence_uri,
-                        evidence_sha256, merged_into)));
+                        evidence_sha256, merged_into, attachment_id)));
     }
 
     @McpTool(name = "ledger_record_fix", description = "tool.ledger_record_fix", generateOutputSchema = true)
@@ -111,12 +112,13 @@ public class WriteTools implements ToolAdapter {
             @Choice(from = CiConclusion.class) String ci_conclusion,
             @McpToolParam(description = "param.ci_completed_at", required = false) String ci_completed_at,
             @McpToolParam(description = "param.mark_source_fixed", required = false) Boolean mark_source_fixed,
+            @McpToolParam(description = "param.attachment_id", required = false) String attachment_id,
             @McpToolParam(description = "param.request_id", required = false) String request_id,
             @McpToolParam(description = "param.host_attestation", required = false) String _hostAttestation,
             @McpToolParam(description = "param.author_id", required = false) String author_id) {
         return WriteOutputs.fixRecorded(recordFix.recordFix(_hostAttestation,
                 new RecordFixCommand(request_id, defect_id, repo, commit_sha, reason, branch, ci_ref,
-                        ci_conclusion, ci_completed_at, mark_source_fixed)));
+                        ci_conclusion, ci_completed_at, mark_source_fixed, attachment_id)));
     }
 
     @McpTool(name = "ledger_record_case", description = "tool.ledger_record_case", generateOutputSchema = true)
@@ -127,12 +129,13 @@ public class WriteTools implements ToolAdapter {
             @McpToolParam(description = "param.case_evidence", required = false) String evidence,
             @McpToolParam(description = "param.user_quote", required = false) String user_quote,
             @McpToolParam(description = "param.observed_at", required = false) String observed_at,
+            @McpToolParam(description = "param.attachment_id", required = false) String attachment_id,
             @McpToolParam(description = "param.request_id", required = false) String request_id,
             @McpToolParam(description = "param.host_attestation", required = false) String _hostAttestation,
             @McpToolParam(description = "param.author_id", required = false) String author_id) {
         return WriteOutputs.caseRecorded(recordCase.recordCase(_hostAttestation,
                 new RecordCaseCommand(request_id, defect_id, observation, reason, evidence, user_quote,
-                        observed_at)));
+                        observed_at, attachment_id)));
     }
 
     @McpTool(name = "ledger_link", description = "tool.ledger_link", generateOutputSchema = true)
@@ -155,11 +158,12 @@ public class WriteTools implements ToolAdapter {
     public WriteOutputs.Corrected correct(
             @McpToolParam(description = "param.history_id", required = true) Long history_id,
             @McpToolParam(description = "param.correct_reason", required = true) String reason,
+            @McpToolParam(description = "param.attachment_id", required = false) String attachment_id,
             @McpToolParam(description = "param.request_id", required = false) String request_id,
             @McpToolParam(description = "param.host_attestation", required = false) String _hostAttestation,
             @McpToolParam(description = "param.author_id", required = false) String author_id) {
         return WriteOutputs.corrected(correct.correct(_hostAttestation,
-                new CorrectCommand(request_id, history_id, reason)));
+                new CorrectCommand(request_id, history_id, reason, attachment_id)));
     }
 
     @McpTool(name = "ledger_batch", description = "tool.ledger_batch", generateOutputSchema = true)
@@ -183,12 +187,13 @@ public class WriteTools implements ToolAdapter {
             @McpToolParam(description = "param.reason", required = true) String reason,
             @McpToolParam(description = "param.review_evidence_uri", required = true) String evidence_uri,
             @McpToolParam(description = "param.evidence_sha256", required = false) String evidence_sha256,
+            @McpToolParam(description = "param.attachment_id", required = false) String attachment_id,
             @McpToolParam(description = "param.request_id", required = false) String request_id,
             @McpToolParam(description = "param.host_attestation", required = false) String _hostAttestation,
             @McpToolParam(description = "param.author_id", required = false) String author_id) {
         return WriteOutputs.transitioned(review.review(_hostAttestation,
                 new TransitionCommand(request_id, entity, id, expected_version, to, reason, evidence_uri,
-                        evidence_sha256, null)));
+                        evidence_sha256, null, attachment_id)));
     }
 
     @McpTool(name = "ledger_review_correct", description = "tool.ledger_review_correct",
@@ -196,11 +201,12 @@ public class WriteTools implements ToolAdapter {
     public WriteOutputs.Corrected reviewCorrect(
             @McpToolParam(description = "param.history_id", required = true) Long history_id,
             @McpToolParam(description = "param.correct_reason", required = true) String reason,
+            @McpToolParam(description = "param.attachment_id", required = false) String attachment_id,
             @McpToolParam(description = "param.request_id", required = false) String request_id,
             @McpToolParam(description = "param.host_attestation", required = false) String _hostAttestation,
             @McpToolParam(description = "param.author_id", required = false) String author_id) {
         return WriteOutputs.corrected(review.reviewCorrect(_hostAttestation,
-                new CorrectCommand(request_id, history_id, reason)));
+                new CorrectCommand(request_id, history_id, reason, attachment_id)));
     }
 
     @McpTool(name = "ledger_whoami", description = "tool.ledger_whoami", generateOutputSchema = true)
