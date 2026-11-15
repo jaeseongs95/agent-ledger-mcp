@@ -80,7 +80,7 @@ class Stop1xCommandTest {
     }
 
     @Test
-    @DisplayName("M1X-011 --name=other touches only the services other and other-admin; a name that is no instance name is exit 2 and makes no call")
+    @DisplayName("M1X-011 --name=other touches only the services other and other-admin; the name has the form 1.x accepted (a letter, then up to 40 letters, digits or hyphens, a hyphen last allowed); another is exit 2 and makes no call")
     void m1x011_onlyTheNamedInstance(Tool tool) throws IOException {
         Path dir = unitDir();
         unit(dir, "other", "other");
@@ -97,7 +97,17 @@ class Stop1xCommandTest {
         assertThat(dir.resolve(NAME + ".service")).exists();
         assertThat(dir.resolve(NAME + ".service.1x-backup")).doesNotExist();
 
-        for (String bad : List.of("Other", "has space", "a/b", "-x", "x-", "a".repeat(24))) {
+        // what the installer of 1.x took (install.sh: ^[a-z][a-z0-9-]{0,40}$): a long name and a name that ends in a hyphen
+        for (String accepted : List.of("a".repeat(41), "x-", "ledger-production-instance-of-company-1")) {
+            Path other = Files.createDirectories(tmp.resolve("accepted-" + accepted.length() + accepted.hashCode()));
+            unit(other, accepted, accepted);
+            ScriptedServiceControl calls = new ScriptedServiceControl();
+            Outcome ok = run(tool.withServiceControl(calls), new RecordingOutput(), "stop-1x", "--unit-dir=" + other,
+                    "--name=" + accepted);
+            assertThat(ok.exitCode()).as(accepted).isEqualTo(ExitStatus.SUCCESS.code());
+            assertThat(calls.calls()).as(accepted).startsWith("systemctl stop " + accepted);
+        }
+        for (String bad : List.of("Other", "has space", "a/b", "-x", "1abc", "a".repeat(42))) {
             ScriptedServiceControl none = new ScriptedServiceControl();
             Outcome refused = run(tool.withServiceControl(none), new RecordingOutput(), "stop-1x", "--unit-dir=" + dir,
                     "--name=" + bad);

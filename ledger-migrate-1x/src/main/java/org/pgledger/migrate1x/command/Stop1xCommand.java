@@ -70,8 +70,12 @@ public class Stop1xCommand implements Command {
     /** What the definition of a 1.x service is kept as: {@code <definition>.1x-backup}. */
     static final String BACKUP_SUFFIX = ".1x-backup";
 
-    /** The form of an instance name: a letter first, letters, digits and hyphens, no hyphen last, at most 23 characters. */
-    private static final Pattern INSTANCE_NAME = Pattern.compile("[a-z]([a-z0-9-]{0,21}[a-z0-9])?");
+    /**
+     * The form of an instance name that the installer of 1.x accepted ({@code ^[a-z][a-z0-9-]{0,40}$} in its install.sh): a lower-case
+     * letter first, then up to 40 lower-case letters, digits or hyphens (a hyphen may be last). This tool takes the names 1.x took; the
+     * installer of 2.0 has its own, narrower rule for the names it makes.
+     */
+    private static final Pattern INSTANCE_NAME = Pattern.compile("[a-z][a-z0-9-]{0,40}");
     private final ServiceControl control;
     private final CliOutput output;
     private final CliMessages messages;
