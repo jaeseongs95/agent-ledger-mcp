@@ -6,7 +6,7 @@
 
 ## 동작
 
-`plugin.json`의 `extensions.com.openai.hooks`가 `hooks/hooks.json`을 가리킵니다. 이 파일의 `PreToolUse` 훅은 장부 쓰기 도구를 호출하기 전에 `java -jar "${PLUGIN_ROOT}/lib/ledger-client-hook.jar" codex`를 실행합니다(Windows에서는 `cmd.exe /d /c java -jar "%PLUGIN_ROOT%/lib/ledger-client-hook.jar" codex`). 훅은 쓰기 도구 10종(`save`, `transition`, `record_fix`, `record_case`, `link`, `correct`, `batch`, `review`, `review_correct`, `whoami`)과 첨부 도구 5종(`artifact-begin`, `artifact-chunk`, `artifact-finish`, `artifact-status`, `artifact-read`. `whoami`와 같이 요청 ID가 없습니다)만 처리하며, 도구 이름이 다음 형식 중 하나일 때 서명합니다. `<tool>`은 `ledger_<op>` 또는 `artifact-<op>`입니다.
+`plugin.json`의 `extensions.com.openai.hooks`가 `hooks/hooks.json`을 가리킵니다. 이 파일의 `PreToolUse` 훅은 장부 쓰기 도구를 호출하기 전에 `java -jar "${PLUGIN_ROOT}/lib/ledger-client-hook.jar" codex`를 실행합니다(Windows에서는 `cmd.exe /d /c java -jar "%PLUGIN_ROOT%/lib/ledger-client-hook.jar" codex`). 훅은 쓰기 도구 10종(`save`, `transition`, `record_fix`, `record_case`, `link`, `correct`, `batch`, `review`, `review_correct`, `whoami`)과 첨부 도구 5종(`artifact-begin`, `artifact-chunk`, `artifact-finish`, `artifact-status`, `artifact-read`. `whoami`와 같이 증명에 `operationKey`가 없습니다)만 처리하며, 도구 이름이 다음 형식 중 하나일 때 서명합니다. `<tool>`은 `ledger_<op>` 또는 `artifact-<op>`입니다.
 
 - `mcp__<server>__<tool>`
 - `mcp__<server>__<server>_<tool>`: 접두어는 서버 이름과 정확히 같아야 합니다
@@ -36,7 +36,7 @@ jar는 저장소에 커밋하지 않습니다. `./gradlew :ledger-client-hook:as
 2. `java -jar lib/ledger-client-hook.jar session-key <server> <author>`는 서버, 작성자, 공개 키, 지문을 출력합니다. `<server>`는 Codex가 도구 이름에 보여 주는 MCP 서버의 이름이며, 예를 들어 `mcp__ledger__ledger_save`의 서버는 `ledger`이고 Codex Apps에서는 `codex_apps.<app>`입니다.
 3. 소유자는 지문을 세션이 보여 준 지문과 대조한 뒤, `ledger-cli`의 `key-register`로 또는 관리 웹의 권한 부여 화면에서 공개 키를 등록합니다. 그 뒤에야 작성자의 권한 부여가 동작합니다.
 
-키는 서버 하나와 작성자 하나에 속합니다. 시험 서버나 이름이 비슷한 서버를 위해 만든 서명은 운영 서버에서 검증되지 않으므로 서버마다 따로 등록합니다. 서버는 권한 부여를 보기 전에 서명, 도구, 요청 ID, 인자, 시각을 검증합니다.
+키는 서버 하나와 작성자 하나에 속합니다. 시험 서버나 이름이 비슷한 서버를 위해 만든 서명은 운영 서버에서 검증되지 않으므로 서버마다 따로 등록합니다. 서버는 권한 부여를 보기 전에 서명, 도구, `operationKey`, 인자, 시각을 검증합니다.
 
 ## 한계
 

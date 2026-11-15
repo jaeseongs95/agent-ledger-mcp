@@ -6,7 +6,7 @@ This directory is a Codex plugin. It proves the author of the ledger write calls
 
 ## How it works
 
-`extensions.com.openai.hooks` of `plugin.json` points to `hooks/hooks.json`. Its `PreToolUse` hook runs `java -jar "${PLUGIN_ROOT}/lib/ledger-client-hook.jar" codex` before each call of a ledger write tool (on Windows: `cmd.exe /d /c java -jar "%PLUGIN_ROOT%/lib/ledger-client-hook.jar" codex`). The hook handles only the ten write tools (`save`, `transition`, `record_fix`, `record_case`, `link`, `correct`, `batch`, `review`, `review_correct` and `whoami`) and the five attachment tools (`artifact-begin`, `artifact-chunk`, `artifact-finish`, `artifact-status` and `artifact-read`, which carry no request id, like `whoami`). It signs a call whose tool name is one of these forms, with `<tool>` being `ledger_<op>` or `artifact-<op>`:
+`extensions.com.openai.hooks` of `plugin.json` points to `hooks/hooks.json`. Its `PreToolUse` hook runs `java -jar "${PLUGIN_ROOT}/lib/ledger-client-hook.jar" codex` before each call of a ledger write tool (on Windows: `cmd.exe /d /c java -jar "%PLUGIN_ROOT%/lib/ledger-client-hook.jar" codex`). The hook handles only the ten write tools (`save`, `transition`, `record_fix`, `record_case`, `link`, `correct`, `batch`, `review`, `review_correct` and `whoami`) and the five attachment tools (`artifact-begin`, `artifact-chunk`, `artifact-finish`, `artifact-status` and `artifact-read`, which carry no `operationKey` in the claim, like `whoami`). It signs a call whose tool name is one of these forms, with `<tool>` being `ledger_<op>` or `artifact-<op>`:
 
 - `mcp__<server>__<tool>`
 - `mcp__<server>__<server>_<tool>`, where the prefix must equal the server name exactly
@@ -36,7 +36,7 @@ To use the hook as a project hook, merge the same entry into `<repo>/.codex/hook
 2. `java -jar lib/ledger-client-hook.jar session-key <server> <author>` prints the server, the author, the public key and its fingerprint. `<server>` is the name of the MCP server as Codex shows it in the tool name, for example `ledger` for `mcp__ledger__ledger_save`; for Codex Apps it is `codex_apps.<app>`.
 3. The owner compares the fingerprint with the one the session showed and registers the public key with `key-register` of `ledger-cli`, or on the grants page of the admin web. Only then do the grants of the author work.
 
-The key belongs to one server and one author. A signature made for a test server, or for a server with a similar name, never verifies on the production server; each server gets its own registration. The server checks the signature, the tool, the request id, the arguments and the time before it looks at any grant.
+The key belongs to one server and one author. A signature made for a test server, or for a server with a similar name, never verifies on the production server; each server gets its own registration. The server checks the signature, the tool, the `operationKey`, the arguments and the time before it looks at any grant.
 
 ## Limits
 

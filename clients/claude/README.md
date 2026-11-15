@@ -24,7 +24,7 @@ The jar is not committed to the repository. `./gradlew :ledger-client-hook:assem
 2. `java -jar lib/ledger-client-hook.jar session-key <server> <author>` prints the server, the author, the public key and its fingerprint. `<server>` is the name of the MCP server as the host shows it in the tool name, for example `ledger` for `mcp__ledger__ledger_save`.
 3. The owner compares the fingerprint with the one the session showed and registers the public key with `key-register` of `ledger-cli`, or on the grants page of the admin web. Only then do the grants of the author work.
 
-The key belongs to one server and one author. A signature made for a test server, or for a server with a similar name, never verifies on the production server; each server gets its own registration. The server checks the signature, the tool, the request id, the arguments and the time before it looks at any grant.
+The key belongs to one server and one author. A signature made for a test server, or for a server with a similar name, never verifies on the production server; each server gets its own registration. The server checks the signature, the tool, the `operationKey`, the arguments and the time before it looks at any grant.
 
 ## Limits
 
