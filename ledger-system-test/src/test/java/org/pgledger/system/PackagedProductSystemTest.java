@@ -155,7 +155,8 @@ class PackagedProductSystemTest {
         // and not the folder of the admin web; the key files of the attachments are beside the secrets, in no tree
         assertThat(serverArguments.getLast()).contains(slash(etc) + "/secrets/common/,optional:configtree:" + slash(etc) + "/secrets/mcp/")
                 .doesNotContain("/secrets/admin").doesNotContain("/secrets/tool").doesNotEndWith("/secrets/");
-        assertThat(application).contains(slash(etc) + "/attachment-keys").doesNotContain("/secrets/attachment-keys");
+        // the file names the path of a real installation on Linux (the files are below a root), not the path of this host
+        assertThat(application).contains(instance.renderedEtc() + "/attachment-keys").doesNotContain("/secrets/attachment-keys");
     }
 
     @Test

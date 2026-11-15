@@ -95,10 +95,11 @@ class MigrationToolJarTest {
                 "import-secrets-1x", "--stdin");
         assertThat(secrets.exit()).as(secrets.streams()).isZero();
         assertThat(secrets.out()).contains("ledger.mcp.token").contains("ledger.admin.agent-token").contains("ledger.admin.token")
-                .doesNotContain(TOKEN);
+                .contains("was not imported").doesNotContain(TOKEN).doesNotContain(TOKEN.replace('0', 'f'));
         assertThat(secrets.err()).doesNotContain(TOKEN);
         assertThat(Files.readString(home.resolve("secrets").resolve("mcp").resolve("ledger.mcp.token"))).isEqualTo(TOKEN);
         assertThat(Files.readString(home.resolve("secrets").resolve("admin").resolve("ledger.admin.agent-token"))).isEqualTo(TOKEN);
-        assertThat(home.resolve("secrets").resolve("admin").resolve("ledger.admin.token")).isNotEmptyFile();
+        // LGN-015: the admin token of 1.x is not imported (no installer ran here, so the file does not exist at all)
+        assertThat(home.resolve("secrets").resolve("admin").resolve("ledger.admin.token")).doesNotExist();
     }
 }

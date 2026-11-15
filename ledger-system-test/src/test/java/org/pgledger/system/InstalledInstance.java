@@ -74,6 +74,14 @@ final class InstalledInstance {
         return platform == Platform.LINUX ? directory.resolve("etc").resolve(LINUX_NAME) : directory.resolve("etc");
     }
 
+    /**
+     * The settings directory as the rendered files write it: on Linux the path of a real installation ({@code /etc/<name>}, the
+     * files themselves are below the root), on Windows the directory of this host. {@link #etc()} is where the files are.
+     */
+    String renderedEtc() {
+        return platform == Platform.LINUX ? "/etc/" + LINUX_NAME : slash(etc());
+    }
+
     /** The directory of the jars of the instance on this host. */
     Path lib() {
         return platform == Platform.LINUX ? directory.resolve("opt").resolve(LINUX_NAME) : directory.resolve("lib");

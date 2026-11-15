@@ -672,18 +672,15 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
    ```
 
    - **What it reads.** The 1.x environment file, given with `--stdin` (as above) or with `--env=<file>` for an operator who can read the file as the
-     service user; exactly one of the two. Only the two tokens are read, and all values are checked before anything is written (at least 16 characters, and the admin token
-     differs from the agent token). It uses no database.
+     service user; exactly one of the two. Only the token of the agents is read, and its value is checked before anything is written (at least
+     16 characters). It uses no database.
    - **What it changes.** The installer has generated tokens of its own already, so without `--replace` a secret that exists is kept. With `--replace`
-     the three secrets take the 1.x values: `DBHUB_AUTH_TOKEN` of 1.x becomes `ledger.mcp.token` and `ledger.admin.agent-token`, and `PGLEDGER_ADMIN_TOKEN` of 1.x becomes
-     `ledger.admin.token`. The clients of 1.x keep working, and the admin token stays the bearer of the read-only endpoints (it signs a
-     browser in only with `ledger.admin.sign-in=token`). A 1.0.0 installation had no admin web and so no `PGLEDGER_ADMIN_TOKEN`: then only
-     the two tokens of the agents are replaced, the command says so, and the `ledger.admin.token` of the installer stays. Only the names of the
-     secrets are printed, never a value.
-   - **Generate the admin token again.** The admin token of 1.x was chosen by hand and may be weaker than one that `token-generate` makes
-     (256 bits), and the limit on credential checks of 2.0 is a delay that counts on a token that cannot be guessed. After the move, remove
-     the file `ledger.admin.token` in the folder `admin` of the secret directory and run `token-generate ledger.admin.token --print` as the
-     service user (an existing secret is never replaced, so the file has to be removed first), then restart `pg-ledger-mcp-admin`.
+     the two secrets of the agents take the 1.x value: `DBHUB_AUTH_TOKEN` of 1.x becomes `ledger.mcp.token` and `ledger.admin.agent-token`.
+     The clients of 1.x keep working. Only the names of the secrets are printed, never a value.
+   - **The admin token is not imported.** `PGLEDGER_ADMIN_TOKEN` of 1.x is not carried over (when the 1.x environment has it, the command says so): the
+     admin token of 2.0 is the `ledger.admin.token` that the installer made with `token-generate` (256 bits from `SecureRandom`, shown once), because
+     a token chosen by hand may be weaker and the limit on credential checks of 2.0 is a delay that counts on a token that cannot be guessed. It stays
+     the bearer of the read-only endpoints (it signs a browser in only with `ledger.admin.sign-in=token`).
    - For an instance with another name the service user is that name (`runuser -u <name>`), and the tool takes `--ledger.secrets.instance=<name>`.
 
    The services read their secrets at start, so restart the two services of 2.0:
@@ -706,7 +703,7 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
 7. **Register the session keys.** The grants of 1.x are copied without a session key. Every author registers a session key with
    `ledger-cli key-register`; then its grants work.
 8. **Check.** Run `ledger-cli mcp-check --url=<its public URL>` and `import-1x --verify-only` (it needs the settings of the 1.x source and
-   changes nothing), and run `ledger-cli passkey-code` and register your first passkey in the admin web (the admin token of 1.x signs a
+   changes nothing), and run `ledger-cli passkey-code` and register your first passkey in the admin web (the admin token of the installer signs a
    browser in only with `ledger.admin.sign-in=token`; the default is `passkey`). Clients: the tools `execute_sql_reader` and `search_objects_reader` were removed; the read tools replace them. The results of the write
    tools keep their keys without the `rows[0].result` wrapping. Install the hook jar (a Java 25 runtime) on every client host before the server is switched.
    When the checks have passed, the read-only account of the 1.x database that was made for the import may be dropped.

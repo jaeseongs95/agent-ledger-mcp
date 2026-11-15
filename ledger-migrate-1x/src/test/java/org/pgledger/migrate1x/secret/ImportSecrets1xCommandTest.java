@@ -29,11 +29,12 @@ import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 
 /**
- * SEC-027: {@code import-secrets-1x (--env=<file> | --stdin) [--replace]} moves the two secrets of a 1.x installation into the
- * secret store ({@code DBHUB_AUTH_TOKEN} to {@code ledger.mcp.token} and {@code ledger.admin.agent-token},
- * {@code PGLEDGER_ADMIN_TOKEN} to {@code ledger.admin.token}). M1X-024: the secrets of the installer of 2.0 are stored already;
- * without {@code --replace} they are kept, with it the 1.x values replace them. No test registers a driver or a database: the
- * command does not use one. The values are made up.
+ * SEC-027 (changed by LGN-015): {@code import-secrets-1x (--env=<file> | --stdin) [--replace]} moves the token of the agents of a
+ * 1.x installation into the secret store ({@code DBHUB_AUTH_TOKEN} to {@code ledger.mcp.token} and
+ * {@code ledger.admin.agent-token}). {@code PGLEDGER_ADMIN_TOKEN} is not imported: the {@code ledger.admin.token} of the installer
+ * stays, and a line says so when the 1.x environment has the setting. M1X-024: the secrets of the installer of 2.0 are stored
+ * already; without {@code --replace} they are kept, with it the 1.x value replaces the two of the agents. No test registers a
+ * driver or a database: the command does not use one. The values are made up.
  */
 @ExtendWith({ OutputCaptureExtension.class, ToolExtension.class, EnglishMessages.class })
 class ImportSecrets1xCommandTest {
@@ -41,7 +42,7 @@ class ImportSecrets1xCommandTest {
     private static final String AGENT = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90";
     private static final String ADMIN = "0f9e8d7c6b5a49382716051a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e";
     private static final String DATABASE_PASSWORD = "db-password-of-the-1x-installation";
-    /** What the installer of 2.0 generated (M1X-024): its tokens are stored before the 1.x ones are imported. */
+    /** What the installer of 2.0 generated (M1X-024): its tokens are stored before the 1.x one is imported. */
     private static final String GENERATED_MCP = "generated-by-the-installer-mcp-0123456789";
     private static final String GENERATED_AGENT = "generated-by-the-installer-agent-0123456789";
     private static final String GENERATED_ADMIN = "generated-by-the-installer-admin-0123456789";
@@ -93,9 +94,14 @@ class ImportSecrets1xCommandTest {
         preStore("ledger.admin.token", GENERATED_ADMIN);
     }
 
+    /** The lines of the output that name the 1.x admin token. */
+    private static List<String> adminLines(RecordingOutput output) {
+        return output.info().lines().filter(line -> line.contains("PGLEDGER_ADMIN_TOKEN")).toList();
+    }
+
     @Test
     @RequiresOwnerOnlyStorage
-    @DisplayName("SEC-027 --env: the agent token becomes ledger.mcp.token and ledger.admin.agent-token, the admin token ledger.admin.token; the other settings are not carried over; only names are printed")
+    @DisplayName("SEC-027 / LGN-015 --env: the agent token becomes ledger.mcp.token and ledger.admin.agent-token; the admin token of 1.x is not imported and one line says so; the other settings are not carried over; only names are printed")
     void sec027_importsFromAFile(Tool tool, CapturedOutput captured) throws IOException {
         RecordingOutput output = new RecordingOutput();
 
@@ -105,14 +111,14 @@ class ImportSecrets1xCommandTest {
         assertThat(result.failure()).isNull();
         assertThat(stored("ledger.mcp.token")).isEqualTo(AGENT);
         assertThat(stored("ledger.admin.agent-token")).isEqualTo(AGENT);
-        assertThat(stored("ledger.admin.token")).isEqualTo(ADMIN);
-        assertThat(storedNames()).containsExactlyInAnyOrder("ledger.mcp.token", "ledger.admin.agent-token", "ledger.admin.token");
+        assertThat(storedNames()).containsExactlyInAnyOrder("ledger.mcp.token", "ledger.admin.agent-token");
         assertThat(directory().resolve("mcp").toFile().list()).as("the MCP server's folder holds its token only")
                 .containsExactly("ledger.mcp.token");
-        assertThat(directory().resolve("admin").toFile().list()).as("the admin web's folder holds the admin secrets")
-                .containsExactlyInAnyOrder("ledger.admin.agent-token", "ledger.admin.token");
-        assertThat(output.info()).contains("ledger.mcp.token", "ledger.admin.agent-token", "ledger.admin.token",
-                "DBHUB_AUTH_TOKEN", "PGLEDGER_ADMIN_TOKEN");
+        assertThat(directory().resolve("admin").toFile().list()).as("the admin web's folder holds the token of the agents only")
+                .containsExactly("ledger.admin.agent-token");
+        assertThat(output.info()).contains("ledger.mcp.token", "ledger.admin.agent-token", "DBHUB_AUTH_TOKEN");
+        assertThat(adminLines(output)).singleElement().asString().contains("was not imported").contains("ledger.admin.token")
+                .contains("installer generated");
         assertThat(output.info() + captured.getAll()).doesNotContain(AGENT).doesNotContain(ADMIN).doesNotContain(DATABASE_PASSWORD);
     }
 
@@ -128,7 +134,7 @@ class ImportSecrets1xCommandTest {
         assertThat(result.exitCode()).isZero();
         assertThat(stored("ledger.mcp.token")).isEqualTo(AGENT);
         assertThat(stored("ledger.admin.agent-token")).isEqualTo(AGENT);
-        assertThat(stored("ledger.admin.token")).isEqualTo(ADMIN);
+        assertThat(storedNames()).containsExactlyInAnyOrder("ledger.mcp.token", "ledger.admin.agent-token");
         assertThat(output.info() + captured.getAll()).doesNotContain(AGENT).doesNotContain(ADMIN).doesNotContain(DATABASE_PASSWORD);
     }
 
@@ -146,21 +152,20 @@ class ImportSecrets1xCommandTest {
         assertThat(result.exitCode()).isZero();
         assertThat(stored("ledger.mcp.token")).as("kept").isEqualTo(chosen);
         assertThat(stored("ledger.admin.agent-token")).isEqualTo(AGENT);
-        assertThat(stored("ledger.admin.token")).isEqualTo(ADMIN);
         assertThat(output.info()).contains("The secret ledger.mcp.token already exists and was kept");
 
         RecordingOutput again = new RecordingOutput();
         assertThat(tool.withStandardInput(environment("another-agent-token-0123456789", "another-admin-token-0123456789"))
                 .run(directory(), null, again, "import-secrets-1x", "--stdin").exitCode()).isZero();
-        assertThat(stored("ledger.admin.token")).as("a second run replaces nothing").isEqualTo(ADMIN);
-        assertThat(again.info().lines().filter(line -> line.contains("already exists"))).hasSize(3);
+        assertThat(stored("ledger.admin.agent-token")).as("a second run replaces nothing").isEqualTo(AGENT);
+        assertThat(again.info().lines().filter(line -> line.contains("already exists"))).hasSize(2);
         assertThat(captured.getAll()).doesNotContain(chosen).doesNotContain(AGENT).doesNotContain("another-");
     }
 
     @Test
     @RequiresOwnerOnlyStorage
-    @DisplayName("W7-SEC-01 a 1.0.0 environment (DBHUB_AUTH_TOKEN, no PGLEDGER_ADMIN_TOKEN): the two secrets of the agents are stored, the admin one is not, one line says so (no value), exit 0, and a second run changes nothing")
-    void w7sec01_aOneZeroEnvironmentHasNoAdminToken(Tool tool, CapturedOutput captured) throws IOException {
+    @DisplayName("LGN-015 an environment without PGLEDGER_ADMIN_TOKEN (a 1.0.0 installation) is no special case: the two secrets of the agents are stored, no line is about the admin token, exit 0, and a second run changes nothing")
+    void lgn015_noAdminTokenNoLine(Tool tool, CapturedOutput captured) throws IOException {
         RecordingOutput output = new RecordingOutput();
 
         Outcome result = tool.withStandardInput(environment(AGENT, null)).run(directory(), null, output, "import-secrets-1x",
@@ -171,8 +176,7 @@ class ImportSecrets1xCommandTest {
         assertThat(stored("ledger.mcp.token")).isEqualTo(AGENT);
         assertThat(stored("ledger.admin.agent-token")).isEqualTo(AGENT);
         assertThat(storedNames()).containsExactlyInAnyOrder("ledger.mcp.token", "ledger.admin.agent-token");
-        assertThat(output.info().lines().filter(line -> line.contains("PGLEDGER_ADMIN_TOKEN"))).singleElement().asString()
-                .contains("1.0.0").contains("ledger.admin.token").contains("installer of 2.0");
+        assertThat(adminLines(output)).isEmpty();
         assertThat(output.info() + captured.getAll()).doesNotContain(AGENT).doesNotContain(DATABASE_PASSWORD);
 
         RecordingOutput again = new RecordingOutput();
@@ -184,7 +188,7 @@ class ImportSecrets1xCommandTest {
 
     @Test
     @RequiresOwnerOnlyStorage
-    @DisplayName("M1X-024 the three secrets of the installer of 2.0 are stored: without --replace all three are kept (import-secrets-1x.kept for each); with --replace the files hold the 1.x values (the agent token twice, the admin token once) and the output names the secrets as replaced, never a value")
+    @DisplayName("M1X-024 / LGN-015 the secrets of the installer of 2.0 are stored: without --replace both secrets of the agents are kept; with --replace they hold the 1.x value, ledger.admin.token stays as the installer made it, and the output names the secrets as replaced, never a value")
     void m1x024_replaceOverwritesWhatTheInstallerStored(Tool tool, CapturedOutput captured) throws IOException {
         preStoreGenerated();
         RecordingOutput kept = new RecordingOutput();
@@ -196,7 +200,7 @@ class ImportSecrets1xCommandTest {
         assertThat(stored("ledger.mcp.token")).isEqualTo(GENERATED_MCP);
         assertThat(stored("ledger.admin.agent-token")).isEqualTo(GENERATED_AGENT);
         assertThat(stored("ledger.admin.token")).isEqualTo(GENERATED_ADMIN);
-        assertThat(kept.info().lines().filter(line -> line.contains("already exists and was kept"))).hasSize(3);
+        assertThat(kept.info().lines().filter(line -> line.contains("already exists and was kept"))).hasSize(2);
         assertThat(kept.info()).doesNotContain("Replaced").doesNotContain("Stored");
 
         RecordingOutput replaced = new RecordingOutput();
@@ -207,12 +211,12 @@ class ImportSecrets1xCommandTest {
         assertThat(withReplace.failure()).isNull();
         assertThat(stored("ledger.mcp.token")).isEqualTo(AGENT);
         assertThat(stored("ledger.admin.agent-token")).isEqualTo(AGENT);
-        assertThat(stored("ledger.admin.token")).isEqualTo(ADMIN);
-        assertThat(replaced.info().lines().filter(line -> line.startsWith("Replaced the secret"))).hasSize(3);
+        assertThat(stored("ledger.admin.token")).as("never replaced, also with --replace").isEqualTo(GENERATED_ADMIN);
+        assertThat(replaced.info().lines().filter(line -> line.startsWith("Replaced the secret"))).hasSize(2);
         assertThat(replaced.info()).contains("Replaced the secret ledger.mcp.token with the value of the 1.x setting DBHUB_AUTH_TOKEN",
-                "Replaced the secret ledger.admin.agent-token with the value of the 1.x setting DBHUB_AUTH_TOKEN",
-                "Replaced the secret ledger.admin.token with the value of the 1.x setting PGLEDGER_ADMIN_TOKEN")
+                "Replaced the secret ledger.admin.agent-token with the value of the 1.x setting DBHUB_AUTH_TOKEN")
                 .doesNotContain("already exists");
+        assertThat(adminLines(replaced)).singleElement().asString().contains("was not imported");
         assertThat(storedNames()).containsExactlyInAnyOrder("ledger.mcp.token", "ledger.admin.agent-token", "ledger.admin.token");
         assertThat(kept.info() + replaced.info() + captured.getAll()).doesNotContain(AGENT).doesNotContain(ADMIN)
                 .doesNotContain(GENERATED_MCP).doesNotContain(GENERATED_AGENT).doesNotContain(GENERATED_ADMIN)
@@ -221,7 +225,7 @@ class ImportSecrets1xCommandTest {
 
     @Test
     @RequiresOwnerOnlyStorage
-    @DisplayName("M1X-024 --replace with --env does the same; a secret that does not exist yet is stored (not replaced) by it")
+    @DisplayName("M1X-024 --replace with --env does the same; a secret that does not exist yet is stored (not replaced) by it, and no ledger.admin.token is made")
     void m1x024_replaceFromAFile(Tool tool, CapturedOutput captured) throws IOException {
         preStore("ledger.mcp.token", GENERATED_MCP);
         RecordingOutput output = new RecordingOutput();
@@ -232,30 +236,36 @@ class ImportSecrets1xCommandTest {
         assertThat(result.exitCode()).isZero();
         assertThat(stored("ledger.mcp.token")).isEqualTo(AGENT);
         assertThat(stored("ledger.admin.agent-token")).isEqualTo(AGENT);
-        assertThat(stored("ledger.admin.token")).isEqualTo(ADMIN);
-        assertThat(output.info()).contains("Replaced the secret ledger.mcp.token",
-                "Stored the secret ledger.admin.agent-token", "Stored the secret ledger.admin.token");
+        assertThat(Files.exists(file("ledger.admin.token"))).isFalse();
+        assertThat(output.info()).contains("Replaced the secret ledger.mcp.token", "Stored the secret ledger.admin.agent-token")
+                .doesNotContain("Stored the secret ledger.admin.token");
         assertThat(output.info() + captured.getAll()).doesNotContain(AGENT).doesNotContain(ADMIN).doesNotContain(GENERATED_MCP);
     }
 
-    @Test
+    static Stream<Arguments> adminTokens() {
+        return Stream.of(
+                Arguments.of("a short admin token", "short-token"),
+                Arguments.of("the agent token as the admin token", AGENT),
+                Arguments.of("an empty admin token", ""),
+                Arguments.of("an admin token of 1.x that is a proper one", ADMIN));
+    }
+
+    @ParameterizedTest(name = "[{index}] {0}")
+    @MethodSource("adminTokens")
     @RequiresOwnerOnlyStorage
-    @DisplayName("M1X-024 a 1.0.0 environment without the admin token with --replace: the agent secrets are replaced, ledger.admin.token stays as the installer made it, and one line says so")
-    void m1x024_replaceKeepsTheAdminTokenWhenOneXHasNone(Tool tool, CapturedOutput captured) throws IOException {
+    @DisplayName("LGN-015 the admin token of 1.x is not looked at: whatever its value is, the import succeeds, imports nothing of it and says that it was not imported")
+    void lgn015_theAdminTokenIsNotChecked(String label, String admin, Tool tool, CapturedOutput captured) throws IOException {
         preStoreGenerated();
         RecordingOutput output = new RecordingOutput();
 
-        Outcome result = tool.withStandardInput(environment(AGENT, null)).run(directory(), null, output, "import-secrets-1x",
+        Outcome result = tool.withStandardInput(environment(AGENT, admin)).run(directory(), null, output, "import-secrets-1x",
                 "--stdin", "--replace");
 
-        assertThat(result.exitCode()).isZero();
-        assertThat(stored("ledger.mcp.token")).isEqualTo(AGENT);
-        assertThat(stored("ledger.admin.agent-token")).isEqualTo(AGENT);
-        assertThat(stored("ledger.admin.token")).as("absent in 1.x: the one of the installer stays").isEqualTo(GENERATED_ADMIN);
-        assertThat(output.info().lines().filter(line -> line.contains("PGLEDGER_ADMIN_TOKEN"))).singleElement().asString()
-                .contains("1.0.0").contains("ledger.admin.token").contains("installer of 2.0");
-        assertThat(output.info().lines().filter(line -> line.startsWith("Replaced the secret"))).hasSize(2);
-        assertThat(output.info() + captured.getAll()).doesNotContain(AGENT).doesNotContain(GENERATED_ADMIN);
+        assertThat(result.exitCode()).as(label).isZero();
+        assertThat(stored("ledger.admin.token")).as(label).isEqualTo(GENERATED_ADMIN);
+        assertThat(stored("ledger.mcp.token")).as(label).isEqualTo(AGENT);
+        assertThat(adminLines(output)).as(label).singleElement().asString().contains("was not imported");
+        assertThat(output.info() + captured.getAll()).doesNotContain(ADMIN).doesNotContain("short-token");
     }
 
     static Stream<Arguments> refusedValues() {
@@ -263,15 +273,13 @@ class ImportSecrets1xCommandTest {
                 Arguments.of("no agent token", environment(null, ADMIN), MigrationError.ENV_KEYS_MISSING),
                 Arguments.of("no token at all", environment(null, null), MigrationError.ENV_KEYS_MISSING),
                 Arguments.of("an empty agent token", environment("", ADMIN), MigrationError.ENV_KEYS_MISSING),
-                Arguments.of("a short agent token", environment("short-token", ADMIN), MigrationError.INVALID_1X_VALUE),
-                Arguments.of("a short admin token", environment(AGENT, "short-token"), MigrationError.INVALID_1X_VALUE),
-                Arguments.of("one value for both tokens", environment(AGENT, AGENT), MigrationError.INVALID_1X_VALUE));
+                Arguments.of("a short agent token", environment("short-token", ADMIN), MigrationError.INVALID_1X_VALUE));
     }
 
     @ParameterizedTest(name = "[{index}] {0}")
     @MethodSource("refusedValues")
     @RequiresOwnerOnlyStorage
-    @DisplayName("SEC-027 a missing or unusable value is refused (exit 1) naming the setting, and nothing is stored, not even the secret that was fine")
+    @DisplayName("SEC-027 a missing or unusable token of the agents is refused (exit 1) naming the setting, and nothing is stored")
     void sec027_refusesBeforeWriting(String label, String text, ErrorKey code, Tool tool, CapturedOutput captured) {
         Outcome result = tool.withStandardInput(text).run(directory(), null, new RecordingOutput(), "import-secrets-1x", "--stdin");
 
@@ -283,11 +291,11 @@ class ImportSecrets1xCommandTest {
 
     @Test
     @RequiresOwnerOnlyStorage
-    @DisplayName("M1X-024 --replace does not weaken the checks: an unusable value refuses with nothing replaced")
+    @DisplayName("M1X-024 --replace does not weaken the checks: an unusable token of the agents refuses with nothing replaced")
     void m1x024_replaceStillRefusesBeforeWriting(Tool tool) throws IOException {
         preStoreGenerated();
 
-        Outcome result = tool.withStandardInput(environment(AGENT, "short-token")).run(directory(), null, new RecordingOutput(),
+        Outcome result = tool.withStandardInput(environment("short-token", ADMIN)).run(directory(), null, new RecordingOutput(),
                 "import-secrets-1x", "--stdin", "--replace");
 
         assertThat(result.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
@@ -299,16 +307,15 @@ class ImportSecrets1xCommandTest {
 
     @Test
     @RequiresOwnerOnlyStorage
-    @DisplayName("SEC-027 the refusal names the missing settings and the unusable one, never a value")
+    @DisplayName("SEC-027 the refusal names the missing or the unusable setting, never a value: only DBHUB_AUTH_TOKEN can be named now")
     void sec027_refusalNamesTheSetting(Tool tool) {
         Outcome missing = tool.withStandardInput(environment(null, null)).run(directory(), null, new RecordingOutput(),
                 "import-secrets-1x", "--stdin");
-        Outcome unusable = tool.withStandardInput(environment(AGENT, "short-token")).run(directory(), null, new RecordingOutput(),
+        Outcome unusable = tool.withStandardInput(environment("short-token", ADMIN)).run(directory(), null, new RecordingOutput(),
                 "import-secrets-1x", "--stdin");
 
-        // the admin token is optional (W7-SEC-01): only the one that is required is named
         assertThat(missing.refusal().orElseThrow().arguments()).containsExactly("DBHUB_AUTH_TOKEN");
-        assertThat(unusable.refusal().orElseThrow().arguments()).containsExactly("PGLEDGER_ADMIN_TOKEN");
+        assertThat(unusable.refusal().orElseThrow().arguments()).containsExactly("DBHUB_AUTH_TOKEN");
     }
 
     @Test

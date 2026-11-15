@@ -550,15 +550,13 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인�
    ```
 
    - **읽는 것.** 1.x 환경 파일이며, 위처럼 `--stdin`으로 주거나 서비스 사용자로 파일을 읽을 수 있는 운영자는 `--env=<file>`로 줍니다. 둘 중 정확히 하나를 줍니다.
-     토큰 두 개만 읽고, 무엇이든 쓰기 전에 모든 값을 확인합니다(16자 이상이며 관리 토큰이 에이전트 토큰과 달라야 합니다). 데이터베이스는 쓰지 않습니다.
-   - **바꾸는 것.** 설치 프로그램이 이미 자체 토큰을 생성했으므로, `--replace`가 없으면 이미 있는 비밀은 그대로 둡니다. `--replace`를 주면 세 비밀이 1.x의 값을 갖습니다.
-     1.x의 `DBHUB_AUTH_TOKEN`은 `ledger.mcp.token`과 `ledger.admin.agent-token`이 되고, 1.x의 `PGLEDGER_ADMIN_TOKEN`은 `ledger.admin.token`이 됩니다.
-     1.x의 클라이언트가 그대로 동작하고 관리 토큰은 읽기 전용 엔드포인트의 bearer로 남습니다(브라우저는 `ledger.admin.sign-in=token`일 때만 로그인시킵니다).
-     1.0.0 설치에는 관리 웹이 없어 `PGLEDGER_ADMIN_TOKEN`도 없습니다. 이 경우 에이전트용 토큰 두 개만 대체하고 명령이 그 사실을 알리며, 설치 프로그램이 만든 `ledger.admin.token`은 그대로 남습니다.
-     비밀의 이름만 출력하고 값은 출력하지 않습니다.
-   - **관리 토큰을 다시 만듭니다.** 1.x의 관리 토큰은 사람이 정한 값이라 `token-generate`가 만드는 토큰(256비트)보다 약할 수 있고, 2.0의 자격 증명 확인 제한은 추측할 수 없는 토큰을 전제로 한 지연입니다.
-     옮긴 뒤 비밀 디렉터리의 폴더 `admin`에 있는 파일 `ledger.admin.token`을 지우고 서비스 사용자로 `token-generate ledger.admin.token --print`를 실행한 다음(이미 있는 비밀은 대체하지 않으므로 파일을 먼저 지워야 합니다)
-     `pg-ledger-mcp-admin`을 재시작합니다.
+     에이전트 토큰만 읽고, 무엇이든 쓰기 전에 그 값을 확인합니다(16자 이상). 데이터베이스는 쓰지 않습니다.
+   - **바꾸는 것.** 설치 프로그램이 이미 자체 토큰을 생성했으므로, `--replace`가 없으면 이미 있는 비밀은 그대로 둡니다. `--replace`를 주면 에이전트용 두 비밀이 1.x의 값을 갖습니다.
+     1.x의 `DBHUB_AUTH_TOKEN`은 `ledger.mcp.token`과 `ledger.admin.agent-token`이 됩니다.
+     1.x의 클라이언트가 그대로 동작합니다. 비밀의 이름만 출력하고 값은 출력하지 않습니다.
+   - **관리 토큰은 가져오지 않습니다.** 1.x의 `PGLEDGER_ADMIN_TOKEN`은 옮기지 않으며(1.x 환경에 있으면 명령이 그 사실을 알립니다), 2.0의 관리 토큰은 설치 프로그램이 `token-generate`로 만든
+     `ledger.admin.token`입니다(`SecureRandom` 256비트, 한 번만 표시). 사람이 정한 토큰은 더 약할 수 있고, 2.0의 자격 증명 확인 제한은 추측할 수 없는 토큰을 전제로 한 지연이기 때문입니다.
+     이 토큰은 읽기 전용 엔드포인트의 bearer로 남습니다(브라우저는 `ledger.admin.sign-in=token`일 때만 로그인시킵니다).
    - 이름이 다른 인스턴스에서는 서비스 사용자가 그 이름이며(`runuser -u <name>`), 도구에는 `--ledger.secrets.instance=<name>`을 줍니다.
 
    서비스는 시작할 때 비밀을 읽으므로 2.0의 두 서비스를 재시작합니다.
@@ -578,7 +576,7 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인�
    가져오기는 장부 전체를 쓰는데 두 앱 계정은 이를 할 수 없으므로, `--owner-account=<account>`가 DDL 계정으로 실행합니다. 그 비밀번호는 숨김 입력으로 받으며 저장하지 않습니다
    (`--stdin`은 대신 표준 입력의 첫 줄에서 받으며 `--owner-account`가 필요합니다). 1.x 스키마는 읽기 전용으로 읽고 새 스키마는 하나의 트랜잭션으로 씁니다. 아래 가져오기가 하는 일을 참조합니다.
 7. **세션 키를 등록합니다.** 1.x의 부여는 세션 키 없이 복사됩니다. 모든 작성자는 `ledger-cli key-register`로 세션 키를 등록해야 하며, 그 뒤에 부여가 동작합니다.
-8. **확인.** `ledger-cli mcp-check --url=<its public URL>`와 `import-1x --verify-only`(1.x 원본의 설정이 필요하며 아무것도 바꾸지 않습니다)를 실행하고, `ledger-cli passkey-code`를 실행해 관리 웹에서 첫 패스키를 등록합니다(1.x의 관리 토큰은
+8. **확인.** `ledger-cli mcp-check --url=<its public URL>`와 `import-1x --verify-only`(1.x 원본의 설정이 필요하며 아무것도 바꾸지 않습니다)를 실행하고, `ledger-cli passkey-code`를 실행해 관리 웹에서 첫 패스키를 등록합니다(설치 프로그램이 만든 관리 토큰은
    `ledger.admin.sign-in=token`일 때만 브라우저를 로그인시키며, 기본값은 `passkey`입니다). 클라이언트: `execute_sql_reader`와 `search_objects_reader` 도구는 제거되었으며 읽기 도구가 대체합니다. 쓰기 도구의 결과는 `rows[0].result` 감싸기 없이 키를 그대로 유지합니다.
    서버를 전환하기 전에 모든 클라이언트 호스트에 훅 jar(Java 25 런타임)를 설치합니다. 확인을 마치면, 가져오기를 위해 1.x 데이터베이스에 만든 읽기 전용 계정은 삭제해도 됩니다.
 9. **되돌리기.** 확인이 실패하면 2.0 서비스를 멈추고, 각 `<unit>.1x-backup`을 2.0 유닛 자리에 원래 이름으로 되돌립니다(백업이 남도록 복사합니다). `sudo systemctl daemon-reload`를 실행한 뒤

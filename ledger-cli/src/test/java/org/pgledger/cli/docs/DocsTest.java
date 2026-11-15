@@ -607,10 +607,10 @@ class DocsTest {
 
     @ParameterizedTest
     @EnumSource(Language.class)
-    @DisplayName("W7-SEC-01 (changed by M1X) the guide of each README says that a 1.0.0 installation has no admin token (import-secrets-1x keeps the one of the installer), and each part of the note names 1.0.0")
-    void oneZeroHasNoAdminToken(Language language) {
-        assertThat(upgradeGuide(language)).contains("1.0.0").contains("`PGLEDGER_ADMIN_TOKEN`").contains("`ledger.admin.token`");
-        assertThat(note().part(language.partHeading()).text()).contains("1.0.0");
+    @DisplayName("W7-SEC-01 (changed by M1X and PSEC, LGN-015) the guide of each README says that the admin token of 1.x is not imported, whatever the 1.x installation is (import-secrets-1x keeps the one of the installer)")
+    void theAdminTokenOfOneXIsNotImported(Language language) {
+        assertThat(upgradeGuide(language)).contains("`PGLEDGER_ADMIN_TOKEN`").contains("`ledger.admin.token`")
+                .contains(language == Language.EN ? "is not imported" : "가져오지 않습니다");
     }
 
     @ParameterizedTest
@@ -824,17 +824,20 @@ class DocsTest {
 
     @ParameterizedTest
     @EnumSource(Language.class)
-    @DisplayName("LGN-014 the upgrade guide of each README tells to generate the admin token again after import-secrets-1x, and the security text ties the 256 bits to a token that token-generate made")
-    void lgn014_theAdminTokenIsGeneratedAgain(Language language) {
+    @DisplayName("LGN-014 the upgrade guide of each README and the 2.0.0 note say that the admin token of 1.x is not imported (the installer's token is the one of 2.0), none tells to remove and make it again, and the security text ties the 256 bits to a token that token-generate made")
+    void lgn014_theAdminTokenIsNotImported(Language language) {
         String readme = language.readme().text();
+        String heading = language == Language.EN ? "The admin token is not imported" : "관리 토큰은 가져오지 않습니다";
 
-        assertThat(language.readme().codeSpans()).contains("token-generate ledger.admin.token --print", "pg-ledger-mcp-admin", "token-generate",
-                "SecureRandom");
-        assertThat(readme).contains(language == Language.EN ? "Generate the admin token again" : "관리 토큰을 다시 만듭니다");
-        assertThat(readme.indexOf(language == Language.EN ? "Generate the admin token again" : "관리 토큰을 다시 만듭니다"))
-                .as("after the step of import-secrets-1x").isGreaterThan(readme.indexOf(language == Language.EN
-                        ? "Move the secrets of 1.x with" : "로 1.x의 비밀을 옮깁니다"));
+        assertThat(language.readme().codeSpans()).contains("PGLEDGER_ADMIN_TOKEN", "token-generate", "SecureRandom", "ledger.admin.token");
+        assertThat(readme).contains(heading);
+        assertThat(readme.indexOf(heading)).as("in the step of import-secrets-1x").isGreaterThan(readme.indexOf(language == Language.EN
+                ? "Move the secrets of 1.x with" : "로 1.x의 비밀을 옮깁니다"));
+        assertThat(readme).doesNotContain("token-generate ledger.admin.token --print").doesNotContain(language == Language.EN
+                ? "Generate the admin token again" : "관리 토큰을 다시 만듭니다");
         assertThat(readme).doesNotContain(language == Language.EN ? "the admin token is 256 bits from" : "관리 토큰은 `SecureRandom` 256비트");
+        String note = note().part(language.partHeading()).text();
+        assertThat(note).contains("PGLEDGER_ADMIN_TOKEN").contains(language == Language.EN ? "not imported" : "가져오지 않습니다");
     }
 
     @ParameterizedTest
