@@ -2,35 +2,25 @@ package org.pgledger.mcp;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.pgledger.attestation.ArgumentsDigest;
 import org.pgledger.mcp.error.ToolError;
 import org.pgledger.mcp.support.Args;
 import org.pgledger.mcp.support.Calls;
 import org.pgledger.mcp.support.Calls.Fields;
-import org.pgledger.mcp.support.KeyRing;
 import org.pgledger.mcp.support.Ledger;
 import org.pgledger.mcp.support.McpServerTest;
 import org.pgledger.mcp.support.McpSession;
-import org.pgledger.mcp.support.McpTestSettings;
-import org.pgledger.mcp.support.RawHttp;
-import org.pgledger.mcp.support.RawHttp.Header;
 import org.pgledger.mcp.support.Scenario;
 import org.pgledger.mcp.tool.ReadOutputs;
 import org.pgledger.mcp.tool.WriteOutputs;
-import org.springframework.beans.factory.annotation.Autowired;
-import tools.jackson.core.type.TypeReference;
-import tools.jackson.databind.json.JsonMapper;
-import tools.jackson.databind.node.ObjectNode;
 
 /**
  * MCW-PRN-01: the {@code fields} of {@code ledger_save} and of a {@code save} operation of {@code ledger_batch} are one
- * input record whose fields are patches. A key written with {@code null} clears an optional field, a key left out is not
+ * input record whose fields are patches. A key written blank (or with {@code null} at the service level) clears an optional field, a key left out is not
  * touched, and the receipts, the history and the error paths are those of the map this record replaced.
  */
 @McpServerTest
@@ -59,47 +49,10 @@ class SaveInputTest {
         return fields;
     }
 
-    /**
-     * {@code ledger_save} of the defect with {@code fields} that holds one key written as JSON null, signed like the hook
-     * signs it. The test client drops a null of a map when it writes the call (its mapper omits nulls) and the text form of
-     * {@code fields} is no longer read, so the message is written here as a JSON tree, key by key, and sent as it is.
-     */
-    private static WriteOutputs.Saved saveWithNull(RawHttp http, McpSession session, KeyRing keys, JsonMapper mapper,
-            String id, long version, String nullKey) {
-        ObjectNode fields = mapper.createObjectNode();
-        fields.putNull(nullKey);
-        ObjectNode arguments = mapper.createObjectNode();
-        String operationKey = Calls.freshKey();
-        arguments.put("entity", "defect").put("id", id).put("expected_version", version)
-                .put("reason", Scenario.REASON).put("operationKey", operationKey);
-        arguments.set("fields", fields);
-        keys.enroll(Scenario.AUTHOR);
-        // the digest of the arguments exactly as the text that is sent holds them (the null of fields included)
-        String digest = ArgumentsDigest.of(mapper.readValue(mapper.writeValueAsString(arguments),
-                new TypeReference<LinkedHashMap<String, Object>>() {
-                }));
-        arguments.put("_hostAttestation", keys.token(Scenario.AUTHOR, "ledger_save", operationKey, digest));
-        ObjectNode params = mapper.createObjectNode();
-        params.put("name", "ledger_save");
-        params.set("arguments", arguments);
-        ObjectNode message = mapper.createObjectNode();
-        message.put("jsonrpc", "2.0").put("id", 2).put("method", "tools/call");
-        message.set("params", params);
-        Header bearer = Header.bearer(McpTestSettings.TOKEN);
-
-        RawHttp.Reply reply = http.postText("/mcp", mapper.writeValueAsString(message), bearer,
-                Header.session(http.openSession(bearer)));
-
-        CallToolResult result = http.toolResult(reply);
-        assertThat(result.isError()).as("the save with a null failed: %s", result.content()).isFalse();
-        return session.read(result, WriteOutputs.Saved.class);
-    }
-
     @Test
-    @DisplayName("MCW-PRN-01: a key left out is not touched, a key written with null clears the optional field, and the "
-            + "history of the clearing says so")
-    void leavingOutAndClearing(McpSession session, RawHttp http, Scenario scenario, @Autowired KeyRing keys,
-            @Autowired JsonMapper mapper) {
+    @DisplayName("MCW-PRN-01: a key left out is not touched, a key written blank clears the optional field (changed by opkey: "
+            + "was a key written with null, which the text form of fields carried), and the history of the clearing says so")
+    void leavingOutAndClearing(McpSession session, Scenario scenario) {
         WriteOutputs.Saved created = createWithOwner(session, scenario);
         assertThat(defect(session, created.id()).ownerActorId()).isEqualTo(Scenario.AUTHOR);
 
@@ -108,11 +61,14 @@ class SaveInputTest {
         assertThat(defect(session, created.id()).ownerActorId()).as("a key left out is not touched")
                 .isEqualTo(Scenario.AUTHOR);
 
-        WriteOutputs.Saved cleared = saveWithNull(http, session, keys, mapper, created.id(), retitled.version(),
-                "owner_actor_id");
+        // a null inside the object does not reach the tool binding: the server side of the MCP SDK drops a null of a map of the
+        // arguments (found by the unit opkey, which removed the text form of an object, the one form that kept it), so the
+        // request that clears a field says it with a blank text, which the same rule clears
+        WriteOutputs.Saved cleared = session.ok("ledger_save",
+                edit(session, created.id(), retitled.version(), one("owner_actor_id", "")), WriteOutputs.Saved.class);
 
         ReadOutputs.Defect read = defect(session, created.id());
-        assertThat(read.ownerActorId()).as("a key written as null clears the field").isNull();
+        assertThat(read.ownerActorId()).as("a key written blank clears the field").isNull();
         assertThat(read.title()).isEqualTo("retitled");
         assertThat(cleared.version()).isEqualTo(3);
         assertThat(Ledger.history(session, scenario.projectId())).extracting(ReadOutputs.History::op)
