@@ -2036,7 +2036,7 @@ Written before the code of the unit. Source: the user, 2026-11-15, 「dbms에 �
 
 ## 38. DBN: the ANSI SQL boundary of the personal edition (task PG_LEDGER_MCP-T-0008, unit dbneutral)
 
-Written before the code of each item. Scope (user decisions 「ANSI SQL만 유지」, 2026-11-15, and 「SqlBuilder 방언이 정함」, 2026-11-16): the SQL is ANSI and uses the JDBC standard; the dialect points are two, the row limit and the long text declaration, both chosen by `SqlBuilder` from the product of the connection; PostgreSQL is the DBMS that is tested and guaranteed; no tailoring per product is done outside these two places. Only defects that exist on every DBMS, PostgreSQL included, are cases. One item is one commit.
+Written before the code of each item. Scope (user decisions 「ANSI SQL만 유지」, 2026-11-15, and 「SqlBuilder 방언이 정함」, 2026-11-16): the SQL is ANSI and uses the JDBC standard; the dialect points are three, the row limit, the long text declaration and the encoding probe (D-0047, RUN-023 .. RUN-031), all chosen by `SqlBuilder` from the product of the connection; PostgreSQL is the DBMS that is tested and guaranteed; no tailoring per product is done outside these three places. Only defects that exist on every DBMS, PostgreSQL included, are cases. One item is one commit.
 
 | ID | Level | Given | When | Then | Source | DBMS |
 |---|---|---|---|---|---|---|
