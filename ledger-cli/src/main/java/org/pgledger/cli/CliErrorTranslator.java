@@ -21,7 +21,8 @@ public class CliErrorTranslator {
     CliErrorTranslator(CliMessages messages, List<Command> available) {
         this.messages = messages;
         this.commands = available.stream().map(Command::name)
-                .sorted(Comparator.comparingInt(name -> name instanceof Enum<?> constant ? constant.ordinal() : 0)).toList();
+                .sorted(Comparator.comparingInt((CommandName name) -> name instanceof Enum<?> constant ? constant.ordinal() : 0))
+                .toList();
     }
 
     public Report translate(CliException exception) {
