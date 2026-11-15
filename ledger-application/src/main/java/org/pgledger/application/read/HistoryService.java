@@ -97,9 +97,15 @@ public class HistoryService {
     /** One row as a view, optionally with its {@code before_data}. */
     public HistoryView view(HistoryEntry row, boolean withBefore) {
         JsonDocument before = withBefore ? row.beforeData() : null;
-        // the vendor is the one the session key of the author names; a row of an imported actor may have none
-        return new HistoryView(row.id(), row.at(), row.authorId().value(),
-                row.authorId().sessionKey().vendor().orElse(null),
+        // the vendor is the one the session key of the author names; a row of an imported actor may have none (the
+        // component of the view is nullable on the wire)
+        return row.authorId().sessionKey().vendor()
+                .map(vendor -> view(row, vendor, before))
+                .orElseGet(() -> view(row, null, before));
+    }
+
+    private static HistoryView view(HistoryEntry row, String vendor, JsonDocument before) {
+        return new HistoryView(row.id(), row.at(), row.authorId().value(), vendor,
                 row.login(), row.actorAssurance().name(), row.entity().token(), row.entityId(), row.op().name(),
                 row.fromState(), row.toState(), row.changes(), before, row.reason(),
                 row.evidenceUri(), row.correctsId(), row.requestId().toString(), row.legacyRef());
