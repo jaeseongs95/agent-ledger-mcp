@@ -3,14 +3,11 @@ package org.pgledger.database.jdbc;
 import java.util.List;
 import java.util.Optional;
 import org.pgledger.database.repository.DefectRepository;
-import org.pgledger.database.repository.LegacySchemaRepository;
-import org.pgledger.database.repository.LegacySourceRepository;
 import org.pgledger.domain.context.ActorScope;
 import org.pgledger.domain.value.ActorId;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.FilterType;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.data.jdbc.core.convert.JdbcCustomConversions;
 import org.springframework.data.jdbc.core.mapping.JdbcMappingContext;
@@ -27,10 +24,7 @@ import org.springframework.data.relational.core.mapping.NamingStrategy;
 @Configuration(proxyBeanMethods = false)
 @EnableJdbcRepositories(basePackageClasses = DefectRepository.class)
 @EnableJdbcAuditing(auditorAwareRef = "ledgerAuditorAware")
-// The two legacy repositories are components of this package too, but only exist with the settings of the legacy
-// source (LegacySourceWiring imports them), so the scan leaves them out.
-@ComponentScan(basePackageClasses = DefectRepository.class, excludeFilters = @ComponentScan.Filter(
-        type = FilterType.ASSIGNABLE_TYPE, classes = {LegacySourceRepository.class, LegacySchemaRepository.class}))
+@ComponentScan(basePackageClasses = DefectRepository.class)
 public class LedgerJdbcConfiguration extends AbstractJdbcConfiguration {
 
     /**

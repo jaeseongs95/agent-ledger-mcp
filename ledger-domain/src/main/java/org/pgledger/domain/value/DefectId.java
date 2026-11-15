@@ -18,7 +18,7 @@ public record DefectId(String value) {
     /** The highest number an id can hold. */
     static final long MAX_NUMBER = 999_999_999_999_999_999L;
 
-    /** The format the constructor enforces (the legacy import checks it without throwing). */
+    /** The format the constructor enforces (an import checks it without throwing). */
     public static final Pattern FORMAT = Pattern.compile("([A-Z][A-Z0-9_]{0,31})-D-([0-9]{4," + MAX_DIGITS + "})");
 
     public DefectId {

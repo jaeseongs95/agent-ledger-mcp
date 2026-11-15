@@ -23,7 +23,7 @@ public class Links {
     /**
      * The page of an item of the attention list, as the link base the page gives the {@code id} to: the defect page
      * ({@code /defects/{id}}, the id is a path segment) for a defect and the task page ({@code /tasks/detail}, the id is a query
-     * parameter: the ids of 1.x may contain a slash) for a task. The kind of the item is decided as the {@link HistoryEntity} that its text
+     * parameter: ids are free text and may contain a slash) for a task. The kind of the item is decided as the {@link HistoryEntity} that its text
      * names, not by comparing the text in the page.
      *
      * @throws org.pgledger.domain.error.ValidationException when the text names no kind of row

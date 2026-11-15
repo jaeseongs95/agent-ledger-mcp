@@ -17,7 +17,7 @@ public record DefectFields(Patch<ProjectId> projectId, Patch<String> title, Patc
 
     /**
      * Normalises raw boundary values: required texts are validated, optional ones blank to null; behavior and root cause have
-     * to be given and may be empty (REH3, the {@code save()} of 1.x).
+     * to be given and may be empty (REH3: an empty text is the value NULL in the row).
      */
     public static DefectFields of(Patch<String> projectId, Patch<String> title, Patch<String> category,
             Patch<String> severity, Patch<String> behavior, Patch<String> rootCause, Patch<String> ownerActorId) {

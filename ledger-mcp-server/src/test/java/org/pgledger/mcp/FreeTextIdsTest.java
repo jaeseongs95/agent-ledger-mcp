@@ -15,9 +15,9 @@ import org.pgledger.mcp.support.Scenario;
 import org.pgledger.mcp.tool.ReadOutputs;
 import org.pgledger.mcp.tool.WriteOutputs;
 
-/** REH3-MCP-01: the tools and the ids of 1.x (a task with a lower-case id, the schemas of the tools). */
+/** REH3-MCP-01: the tools and free-text ids (a task with a lower-case id, the schemas of the tools). */
 @McpServerTest
-class IdsOfOneXTest {
+class FreeTextIdsTest {
 
     @Test
     @DisplayName("REH3-MCP-01 no input schema of any tool has a pattern for an id (the id arguments are plain strings, so the contract of the tools is unchanged)")
@@ -29,12 +29,12 @@ class IdsOfOneXTest {
 
     @Test
     @DisplayName("REH3-MCP-01 a task with the id AGS:A07-a is created, read and edited by that id through the tools; the same id in the other case is NOT_FOUND")
-    void anIdOfOneXWorksThroughTheTools(McpSession session, Scenario scenario) {
+    void aFreeTextIdWorksThroughTheTools(McpSession session, Scenario scenario) {
         String id = scenario.code() + ":A07-a";
         String other = id.toLowerCase(Locale.ROOT);
 
         WriteOutputs.Saved created = session.ok("ledger_save",
-                Calls.Save.create("task", Fields.task(scenario.projectId(), "an id of 1.x"), Scenario.AUTHOR).withId(id),
+                Calls.Save.create("task", Fields.task(scenario.projectId(), "a free-text id"), Scenario.AUTHOR).withId(id),
                 WriteOutputs.Saved.class);
 
         assertThat(created.id()).isEqualTo(id);

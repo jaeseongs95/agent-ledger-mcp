@@ -90,7 +90,7 @@ public class TokenGenerateCommand implements Command {
         }
     }
 
-    /** The same value under a second name, once: a copy that exists is never replaced (a re-run, or a token of 1.x carried over). */
+    /** The same value under a second name, once: a copy that exists is never replaced (a re-run, or a token that is already in use elsewhere). */
     private void copyTo(SecretName source, SecretName target) {
         char[] value = store.load(source);
         try {

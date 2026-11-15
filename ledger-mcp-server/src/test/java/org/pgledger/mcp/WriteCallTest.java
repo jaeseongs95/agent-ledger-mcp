@@ -52,8 +52,8 @@ class WriteCallTest {
     }
 
     @Test
-    @DisplayName("MCW-004: whoami accepts the legacy author_id and ignores it: the author is the attestation")
-    void whoamiIgnoresTheLegacyAuthorId(McpSession session, Scenario scenario) {
+    @DisplayName("MCW-004: whoami accepts the deprecated author_id and ignores it: the author is the attestation")
+    void whoamiIgnoresTheDeprecatedAuthorId(McpSession session, Scenario scenario) {
         String author = scenario.actorWith("whoami", "defect", "task", "fix", "verify");
 
         Whoami who = session.ok("ledger_whoami", new Calls.Whoami(author, Scenario.NOGRANT), Whoami.class);
@@ -65,8 +65,8 @@ class WriteCallTest {
     }
 
     @Test
-    @DisplayName("MCW-005: save with only the legacy author_id is HOST_ATTESTATION_REQUIRED")
-    void theLegacyAuthorIdAloneAuthorisesNothing(McpSession session, Scenario scenario) {
+    @DisplayName("MCW-005: save with only the deprecated author_id is HOST_ATTESTATION_REQUIRED")
+    void theDeprecatedAuthorIdAloneAuthorisesNothing(McpSession session, Scenario scenario) {
         ToolError error = session.failed("ledger_save",
                 Calls.Save.create("defect", Fields.defect(scenario.projectId(), "t"), null)
                         .withAuthorId(Scenario.AUTHOR));
@@ -184,15 +184,15 @@ class WriteCallTest {
     // ------------------------------------------------------------------------------------- MCW-007 .. MCW-009
 
     @Test
-    @DisplayName("MCW-007: fields as an object and as the legacy JSON text with the same request id are one write "
+    @DisplayName("MCW-007: fields as an object and as the JSON text form with the same request id are one write "
             + "and a receipt replay")
     void fieldsAsObjectAndAsTextAreTheSameRequest(McpSession session, Scenario scenario) {
         String request = UUID.randomUUID().toString();
-        Fields fields = Fields.defect(scenario.projectId(), "legacy form");
+        Fields fields = Fields.defect(scenario.projectId(), "text form");
 
         WriteOutputs.Saved first = session.ok("ledger_save",
                 Calls.Save.create("defect", fields, Scenario.AUTHOR).withRequestId(request), WriteOutputs.Saved.class);
-        WriteOutputs.Saved replay = session.ok("ledger_save", new Calls.LegacySave("defect",
+        WriteOutputs.Saved replay = session.ok("ledger_save", new Calls.TextSave("defect",
                 session.mapper().writeValueAsString(fields), Scenario.REASON, request, Scenario.AUTHOR),
                 WriteOutputs.Saved.class);
 
@@ -201,14 +201,14 @@ class WriteCallTest {
     }
 
     @Test
-    @DisplayName("MCW-008: ops as an array and as the legacy JSON text give identical results")
+    @DisplayName("MCW-008: ops as an array and as the JSON text form give identical results")
     void opsAsArrayAndAsTextGiveIdenticalResults(McpSession session, Scenario scenario) {
         String request = UUID.randomUUID().toString();
         List<Calls.Op> ops = List.of(Calls.Op.save("defect", Fields.defect(scenario.projectId(), "batched")));
 
         BatchResults first = session.ok("ledger_batch",
                 new Calls.Batch(ops, request, Scenario.AUTHOR), BatchResults.class);
-        BatchResults replay = session.ok("ledger_batch", new Calls.LegacyBatch(
+        BatchResults replay = session.ok("ledger_batch", new Calls.TextBatch(
                 session.mapper().writeValueAsString(ops), request, Scenario.AUTHOR), BatchResults.class);
 
         assertThat(replay).isEqualTo(first);

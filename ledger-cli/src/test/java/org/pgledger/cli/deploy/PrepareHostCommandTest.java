@@ -127,7 +127,7 @@ class PrepareHostCommandTest {
 
     @Test
     @RequiresPosixPermissions
-    @DisplayName("INS-044 Linux: a re-run is an upgrade: a directory with the wrong mode gets the right one, a jar is replaced, a file of 1.x is kept as <file>.1x-backup")
+    @DisplayName("INS-044 Linux: a re-run is an upgrade: a directory with the wrong mode gets the right one, a jar is replaced, a file that this command did not render is kept as <file>.backup")
     void ins044_aRerunRepairsAndReplaces(Cli cli) throws IOException {
         Path etc = tmp.resolve("root/etc/pg-ledger-mcp");
         Files.createDirectories(etc);
@@ -141,7 +141,7 @@ class PrepareHostCommandTest {
         Files.writeString(lib.resolve(DeployLayout.CLI_JAR), "an old jar");
         Path unit = tmp.resolve("root/etc/systemd/system/pg-ledger-mcp.service");
         Files.createDirectories(unit.getParent());
-        Files.writeString(unit, "[Unit]\nDescription=1.x\n");
+        Files.writeString(unit, FOREIGN_UNIT);
 
         RecordingOutput output = new RecordingOutput();
 
@@ -153,20 +153,21 @@ class PrepareHostCommandTest {
         assertThat(mode(etc)).isEqualTo("rwxr-x---");
         assertThat(mode(attachments)).isEqualTo("rwx------");
         assertThat(Files.readString(lib.resolve(DeployLayout.CLI_JAR))).isEqualTo("content of ledger-cli.jar");
-        assertThat(Files.readString(unit.resolveSibling("pg-ledger-mcp.service.1x-backup"))).isEqualTo("[Unit]\nDescription=1.x\n");
+        assertThat(Files.readString(unit.resolveSibling("pg-ledger-mcp.service.backup"))).isEqualTo(FOREIGN_UNIT);
     }
 
-    private static final String ONE_X_UNIT = "[Unit]\nDescription=1.x\n";
+    /** A unit that this command did not render (it has no marker of the renderer). */
+    private static final String FOREIGN_UNIT = "[Unit]\nDescription=hand-written\n";
 
     @Test
     @RequiresPosixPermissions
-    @DisplayName("REH2-INS-01 Linux: after the README rollback the unit of 1.x is in place again and its backup <unit>.1x-backup is still there with the same bytes: prepare-host goes on, the backup is kept as it is and the unit of 2.0 is written")
+    @DisplayName("REH2-INS-01 Linux: after a rollback the foreign unit is in place again and its backup <unit>.backup is still there with the same bytes: prepare-host goes on, the backup is kept as it is and the rendered unit is written")
     void reh2Ins01_aBackupOfTheSameBytesIsKept(Cli cli) throws IOException {
         Path unit = tmp.resolve("root/etc/systemd/system/pg-ledger-mcp.service");
-        Path backup = unit.resolveSibling("pg-ledger-mcp.service.1x-backup");
+        Path backup = unit.resolveSibling("pg-ledger-mcp.service.backup");
         Files.createDirectories(unit.getParent());
-        Files.writeString(unit, ONE_X_UNIT);
-        Files.writeString(backup, ONE_X_UNIT);
+        Files.writeString(unit, FOREIGN_UNIT);
+        Files.writeString(backup, FOREIGN_UNIT);
         RecordingOutput output = new RecordingOutput();
 
         Outcome result = run(cli.withHostAccounts(testUser()), output);
@@ -174,8 +175,8 @@ class PrepareHostCommandTest {
         assertThat(result.failure()).isNull();
         assertThat(result.code()).isEmpty();
         assertThat(result.exitCode()).isZero();
-        assertThat(Files.readString(backup)).isEqualTo(ONE_X_UNIT);
-        assertThat(Files.readString(unit)).contains("Rendered by `ledger-cli render-deploy`").doesNotContain("Description=1.x");
+        assertThat(Files.readString(backup)).isEqualTo(FOREIGN_UNIT);
+        assertThat(Files.readString(unit)).contains("Rendered by `ledger-cli render-deploy`").doesNotContain("Description=hand-written");
         assertThat(output.info()).contains(backup.toString()).contains("Prepared the host for the instance pg-ledger-mcp");
         // REH3-INS-02: the backup was there already; the first-run sentence ("Kept the previous file") is not printed
         assertThat(output.info()).contains("already holds the same bytes").doesNotContain("Kept the previous file");
@@ -183,13 +184,13 @@ class PrepareHostCommandTest {
 
     @Test
     @RequiresPosixPermissions
-    @DisplayName("REH2-INS-02 Linux: the unit of 1.x and a backup with other bytes: HOST_FAILED (exit 1) naming both files and no raw FileAlreadyExistsException; the unit and the backup are unchanged")
+    @DisplayName("REH2-INS-02 Linux: a foreign unit and a backup with other bytes: HOST_FAILED (exit 1) naming both files and no raw FileAlreadyExistsException; the unit and the backup are unchanged")
     void reh2Ins02_aBackupOfOtherBytesIsRefused(Cli cli) throws IOException {
         Path unit = tmp.resolve("root/etc/systemd/system/pg-ledger-mcp.service");
-        Path backup = unit.resolveSibling("pg-ledger-mcp.service.1x-backup");
+        Path backup = unit.resolveSibling("pg-ledger-mcp.service.backup");
         Files.createDirectories(unit.getParent());
-        Files.writeString(unit, ONE_X_UNIT + "# changed since\n");
-        Files.writeString(backup, ONE_X_UNIT);
+        Files.writeString(unit, FOREIGN_UNIT + "# changed since\n");
+        Files.writeString(backup, FOREIGN_UNIT);
 
         Outcome result = run(cli.withHostAccounts(testUser()), new RecordingOutput());
 
@@ -198,8 +199,8 @@ class PrepareHostCommandTest {
         List<String> arguments = result.refusal().orElseThrow().arguments();
         assertThat(arguments.getFirst()).contains(unit.toString()).contains(backup.toString());
         assertThat(String.join(" ", arguments)).doesNotContain("FileAlreadyExistsException");
-        assertThat(Files.readString(unit)).isEqualTo(ONE_X_UNIT + "# changed since\n");
-        assertThat(Files.readString(backup)).isEqualTo(ONE_X_UNIT);
+        assertThat(Files.readString(unit)).isEqualTo(FOREIGN_UNIT + "# changed since\n");
+        assertThat(Files.readString(backup)).isEqualTo(FOREIGN_UNIT);
     }
 
     static Stream<Arguments> refusals() {

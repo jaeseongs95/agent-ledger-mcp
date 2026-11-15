@@ -119,8 +119,8 @@ final class LinuxPlatform implements ServicePlatform, TlsHosting {
         host.directory(etc.resolve("drivers"), "rwxr-xr-x", null, null);
         host.directory(etc.resolve("secrets"), "rwx------", user, group);
         // the attachments: the key folder inside the secrets, the data folder and the attachment folder below it, all the service user's
-        // alone (a folder that exists gets the same owner and mode as a new one); the data of the installation is not the 1.x
-        // installation's, so nothing of it exists before
+        // alone (a folder that exists gets the same owner and mode as a new one); the data of the installation is new with
+        // this version, so nothing of it exists before
         host.directory(hostPath(root, layout.attachmentKeyDirectory()), "rwx------", user, group);
         host.directory(hostPath(root, layout.data()), "rwx------", user, group);
         host.directory(hostPath(root, layout.attachmentDirectory()), "rwx------", user, group);

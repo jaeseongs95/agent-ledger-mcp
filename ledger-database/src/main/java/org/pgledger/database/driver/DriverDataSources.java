@@ -53,13 +53,14 @@ public final class DriverDataSources {
         config.setMaximumPoolSize(properties.poolSize());
         // The row-lock and conditional-update logic of the services is written for READ_COMMITTED, so it is asked for by the
         // JDBC standard name instead of left to the default of the DBMS, which a server or a driver setting can change.
-        // A service that needs another level (the legacy snapshot) declares it on its @Transactional method.
+        // A service that needs another isolation level declares it on its @Transactional method.
         config.setTransactionIsolation("TRANSACTION_READ_COMMITTED");
         if (schema != null) {
             config.setSchema(foldedSchema(simple, schema));
         }
-        // principle 3.9: the one place that makes the pool; only the @Bean methods of LedgerDataSourceConfiguration and
-        // LegacySourceConfiguration call this factory, and the container closes what they return (destroyMethod = "close")
+        // principle 3.9: the one place that makes the pool; only @Bean methods call this factory (the one of
+        // LedgerDataSourceConfiguration, and the one of a command line tool that has a second data source), and the
+        // container closes what they return (destroyMethod = "close")
         HikariDataSource pool = new HikariDataSource(config);
         boolean ready = false;
         try {

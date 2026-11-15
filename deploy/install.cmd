@@ -23,7 +23,8 @@ rem so two instances can live on one host with their own ports; the Java validat
 rem A re-run is an upgrade: jars, driver jar and files are replaced and the services are recreated; secrets, tokens and
 rem data are never replaced. A step that fails after the services were stopped starts again the ones that ran (:fail). The Java 25 check is the JVM's: the jars are compiled for it and no other runtime loads them.
 rem A personal PC gives no host names (loopback only); a Windows server that is reached from outside gives them and puts a
-rem reverse proxy of its own in front. Migration from 1.x: see the README (the 1.x service is stopped by the operator).
+rem reverse proxy of its own in front.
+rem An installation of an earlier major version is moved with the separate tool ledger-migrate-1x (see the README, Upgrading); this script does not know it.
 setlocal EnableExtensions
 set "STDIN="
 if /i "%~1"=="--stdin" set "STDIN=--stdin" & shift

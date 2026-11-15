@@ -13,7 +13,7 @@ import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.ConditionId;
 import org.pgledger.domain.value.DefectId;
 import org.pgledger.domain.value.EntityId;
-import org.pgledger.domain.value.LegacyActorId;
+import org.pgledger.domain.value.ImportedActorId;
 import org.pgledger.domain.value.ProjectCode;
 import org.pgledger.domain.value.ProjectId;
 import org.pgledger.domain.value.Reason;
@@ -42,11 +42,11 @@ class IdentityTest {
     }
 
     @Test
-    void dom003_sessionKeyStripsTheLegacyPrefixAndKeepsTheVendor() {
-        assertThat(new SessionKey("agent:claude:1")).isEqualTo(new SessionKey("claude:1"));
+    void dom003_sessionKeyKeepsTheVendor() {
+        assertThat(new SessionKey("agent:claude:1")).isNotEqualTo(new SessionKey("claude:1"));
         assertThat(new SessionKey("claude:1")).isNotEqualTo(new SessionKey("codex:1"));
-        assertThat(ActorId.ofStored("agent:claude:1")).isInstanceOf(LegacyActorId.class);
-        assertThat(ActorId.ofStored("agent:claude:1").sessionKey()).isEqualTo(AuthorId.of("claude:1").sessionKey());
+        assertThat(ActorId.ofStored("agent:claude:1")).isInstanceOf(ImportedActorId.class);
+        assertThat(ActorId.ofStored("agent:claude:1").sessionKey()).isNotEqualTo(AuthorId.of("claude:1").sessionKey());
         assertThat(ActorId.ofStored("claude:1")).isInstanceOf(AuthorId.class);
     }
 
@@ -146,9 +146,9 @@ class IdentityTest {
         Expect.failsWith(ValidationCode.REASON_INVALID, () -> Reason.of(null));
     }
 
-    /** DOM-036 as revised by REH3: the ids of a task and a condition keep the domain of 1.x. */
+    /** DOM-036 as revised by REH3: the ids of a task and a condition are free text in any case, kept as given. */
     @Test
-    void dom036_reh3Id01_theIdsOfOneXAreKept() {
+    void dom036_reh3Id01_freeTextIdsAreKept() {
         for (String ok : List.of("E2E-D-0001", "E2E-T-1", "E2E-T|PIPE", "OLD-PIPE-C|A", "OLD-C-1", "E2E-t-1", "Abc",
                 "AGS:A01", "AGS:A07-a", "USER_BACKLOG:revision58:task:ledger-storage-reliability-design",
                 "AGS:condition:critical-local-fixes-once-cutoff-9254f21a-20261026-r01:actual-load-verification",

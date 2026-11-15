@@ -18,7 +18,7 @@ import org.springframework.core.env.PropertySource;
  * Puts {@link OwnerAccountPropertySource} in front of the other sources when the command line has
  * {@code --owner-account=<account>} (registered in {@code META-INF/spring.factories}; Boot calls it while it prepares the
  * environment, before any bean is made). Only the command line is read for the option: an environment variable of the
- * same name changes nothing. The option is declared by the commands that use it ({@code migrate}, {@code import-legacy});
+ * same name changes nothing. The option is declared by the commands that use it ({@code migrate}, {@code setup});
  * every other command refuses it as an unknown option.
  *
  * <p>Why an environment post-processor (principle 2.1): the DataSource is made from {@code ledger.jdbc.*} when the context
@@ -34,11 +34,10 @@ public final class OwnerAccountEnvironmentPostProcessor implements EnvironmentPo
     public static final String STDIN = "stdin";
 
     /**
-     * The commands that declare the option: the schema migration, the first setup (which migrates) and the legacy import
+     * The commands that declare the option: the schema migration and the first setup (which migrates)
      * ({@code CliCommand.cliName}).
      */
-    private static final Set<String> COMMANDS = Set.of(CliCommand.MIGRATE.cliName(), CliCommand.SETUP.cliName(),
-            CliCommand.IMPORT_LEGACY.cliName());
+    private static final Set<String> COMMANDS = Set.of(CliCommand.MIGRATE.cliName(), CliCommand.SETUP.cliName());
 
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {

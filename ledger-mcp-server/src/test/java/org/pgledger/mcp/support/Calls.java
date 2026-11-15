@@ -71,8 +71,8 @@ public final class Calls {
             return new Save(entity, fields, reason, id, expectedVersion, requestId, author, authorId);
         }
 
-        public Save withAuthorId(String legacy) {
-            return new Save(entity, fields, reason, id, expectedVersion, requestId, hostAttestation, legacy);
+        public Save withAuthorId(String authorId) {
+            return new Save(entity, fields, reason, id, expectedVersion, requestId, hostAttestation, authorId);
         }
 
         public Save withId(String newId) {
@@ -80,10 +80,10 @@ public final class Calls {
         }
     }
 
-    /** {@code ledger_save} with {@code fields} written as a JSON text, the old form of the contract. */
+    /** {@code ledger_save} with {@code fields} written as a JSON text. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record LegacySave(String entity, String fields, String reason, String requestId,
+    public record TextSave(String entity, String fields, String reason, String requestId,
             @JsonProperty("_hostAttestation") String hostAttestation) {
     }
 
@@ -229,10 +229,10 @@ public final class Calls {
         }
     }
 
-    /** {@code ledger_batch} with {@code ops} written as a JSON text, the old form of the contract. */
+    /** {@code ledger_batch} with {@code ops} written as a JSON text. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record LegacyBatch(String ops, String requestId,
+    public record TextBatch(String ops, String requestId,
             @JsonProperty("_hostAttestation") String hostAttestation) {
     }
 
@@ -257,7 +257,7 @@ public final class Calls {
         }
     }
 
-    /** {@code ledger_whoami}: the only key besides the legacy author id is the attestation. */
+    /** {@code ledger_whoami}: the only key besides the deprecated author id is the attestation. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record Whoami(@JsonProperty("_hostAttestation") String hostAttestation, String authorId) {

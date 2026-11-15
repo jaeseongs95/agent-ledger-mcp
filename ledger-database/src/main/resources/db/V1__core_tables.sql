@@ -46,12 +46,12 @@ CREATE TABLE id_counter (
     'OWNER_AUDIT'))
 );
 
--- The id of a task and of a condition is a text of 1.x (any case, 1 to 120 characters). id_key is that id in upper case, filled
+-- The id of a task and of a condition is free text (any case, 1 to 120 characters). id_key is that id in upper case, filled
 -- by the application, and is UNIQUE, so that two ids that differ only in case are one id on every DBMS whatever its collation
--- is (no trigger, no function index: a unique key on a column is portable). The columns that were NOT NULL in 1.x with
--- '' allowed (purpose, success_condition, behavior, root_cause, condition_text) are nullable: no column holds '' (an
--- Oracle-type DBMS cannot), the application stores NULL for an empty text and returns an empty text as 1.x did. origin_ref is a
--- long text as well (text without a limit in 1.x, 9408 characters in production).
+-- is (no trigger, no function index: a unique key on a column is portable). The fields that may be empty (purpose,
+-- success_condition, behavior, root_cause, condition_text) are nullable: no column holds '' (an Oracle-type DBMS
+-- cannot), the application stores NULL for an empty text and returns an empty text again. origin_ref is a long text
+-- as well (room for a long imported value).
 CREATE TABLE task (
   id VARCHAR(120) NOT NULL,
   id_key VARCHAR(360) NOT NULL,

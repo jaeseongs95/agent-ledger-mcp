@@ -108,15 +108,15 @@ class BatchAndErrorsTest {
     @Test
     void dom026_everyCodeMapsToOneExceptionSubtypeOfItsCategory() {
         List<ErrorCode> codes = allCodes();
-        // 63, the 8 passkey codes (PSK-DOM-01) and the 15 codes of the attachments (ATA-001 ..; common table 3.2):
+        // 62, the 8 passkey codes (PSK-DOM-01) and the 15 codes of the attachments (ATA-001 ..; common table 3.2):
         // ARTIFACT_UNSUPPORTED_PURPOSE (validation), ARTIFACT_NOT_FOUND (lookup), nine conflicts (with ARTIFACT_STORAGE_FULL),
         // four infrastructure codes, the code of the long text type of the schema files (RUN-003) and the code of the encoding of the database (RUN-017), and no
         // code for an interrupted wait for another runner any more (the database waits, RUN-012)
-        assertThat(codes).hasSize(87);
+        assertThat(codes).hasSize(86);
         assertThat(codes.stream().map(ErrorCode::token)).doesNotHaveDuplicates();
         assertThat(codes.stream().map(ErrorCode::token)).contains("AUTHOR_ID_FORMAT", "SESSION_NOT_GRANTED",
                 "HOST_ATTESTATION_REQUIRED", "VERSION_CONFLICT", "SAME_SESSION", "MERGED_DEFECT", "CODE_REQUIRED",
-                "CODE_INVALID", "REQUEST_ID_LEGACY", "ATTESTATION_UNSIGNED", "ATTESTATION_MALFORMED",
+                "CODE_INVALID", "ATTESTATION_UNSIGNED", "ATTESTATION_MALFORMED",
                 "ATTESTATION_VERSION_UNSUPPORTED", "ATTESTATION_SIGNATURE_INVALID", "ATTESTATION_BINDING_MISMATCH",
                 "ATTESTATION_TIME_WINDOW", "KEY_REPLACEMENT_NOT_CONFIRMED", "SESSION_KEY_REQUIRED", "ARTIFACT_UNSUPPORTED_PURPOSE", "ARTIFACT_CHUNK_CONFLICT",
                 "ARTIFACT_BUSY", "ARTIFACT_INCOMPLETE", "ARTIFACT_OPERATION_CONFLICT", "ARTIFACT_LIMIT",

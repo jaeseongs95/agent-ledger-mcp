@@ -21,6 +21,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.pgledger.mcp.archfixture.LeakyTokenCheck;
 import org.pgledger.testing.ArchitectureRules;
 import org.pgledger.testing.CodingScan;
+import org.pgledger.testing.NoOneXRules;
 import org.pgledger.testing.PrincipleRules;
 import org.pgledger.testing.SourceRules;
 import java.util.Map;
@@ -201,5 +202,23 @@ class ArchitectureTest {
         JavaClasses tests = new ClassFileImporter().importPackages("org.pgledger.mcp");
 
         ArchitectureRules.noOperatingSystemDetection().check(tests);
+    }
+
+    @Test
+    @DisplayName("ARC-1X-01 no class or package of the module is named after 1.x")
+    void arc1x01_noClassNamedAfterOneX() {
+        NoOneXRules.noClassNamedAfterOneX().check(MAIN);
+    }
+
+    @Test
+    @DisplayName("ARC-1X-02 no class of the module depends on the migration tool")
+    void arc1x02_noDependencyOnTheMigrationTool() {
+        NoOneXRules.noDependencyOnTheMigrationTool().check(MAIN);
+    }
+
+    @Test
+    @DisplayName("ARC-1X-03 no main source or resource of the module names 1.x")
+    void arc1x03_noOneXTextInMainSources() {
+        assertThat(NoOneXRules.oneXTextInMainSources()).isEmpty();
     }
 }

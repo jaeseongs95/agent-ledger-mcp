@@ -56,11 +56,11 @@ public record CodeCatalog(CodeGroup group, List<CommonCode> entries) {
         boolean retired = entry.filter(e -> !e.active()).isPresent();
         boolean unchanged = Objects.equals(candidate, current);
         if (!known || (retired && (group.alwaysActive() || current == null || !unchanged))) {
-            boolean holdsLegacyValue = group.alwaysActive() && known;
+            boolean holdsRetiredValue = group.alwaysActive() && known;
             throw new ValidationException(ValidationCode.CODE_INVALID,
                     List.of(column, candidate.value(), group.name(), validText),
                     List.of(new ValidationIssue(column, ValidationReason.NOT_ACTIVE_CODE, List.of(), valid)),
-                    Map.of("valid", valid, "holdsLegacyValue", List.of(Boolean.toString(holdsLegacyValue))));
+                    Map.of("valid", valid, "holdsRetiredValue", List.of(Boolean.toString(holdsRetiredValue))));
         }
     }
 }

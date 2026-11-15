@@ -61,7 +61,7 @@ final class HostFiles {
     }
 
     /**
-     * The path (or the account) and the kind of the failure; never the text of the exception. A backup of 1.x that holds other
+     * The path (or the account) and the kind of the failure; never the text of the exception. A backup that holds other
      * bytes than its file names both files.
      */
     static FailureException failure(IOException e) {

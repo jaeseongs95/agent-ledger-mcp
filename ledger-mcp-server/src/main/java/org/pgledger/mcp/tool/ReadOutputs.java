@@ -133,7 +133,7 @@ public final class ReadOutputs {
             @JsonInclude(JsonInclude.Include.NON_NULL) @JsonRawValue @JsonProperty("before_data") Object beforeData,
             @JsonProperty("reason") String reason,
             @JsonProperty("evidence_uri") String evidenceUri, @JsonProperty("corrects_id") Long correctsId,
-            @JsonProperty("request_id") String requestId, @JsonProperty("legacy_ref") String legacyRef,
+            @JsonProperty("request_id") String requestId, @JsonProperty("source_ref") String sourceRef,
             @JsonProperty("attachment_id") String attachmentId) {
     }
 
@@ -235,7 +235,7 @@ public final class ReadOutputs {
         return new History(h.id(), h.at(), h.authorId(), h.vendor(), h.login(), h.actorAssurance(), h.entity(),
                 h.entityId(), h.op(), h.fromState(), h.toState(), h.changes().text(),
                 beforeData(h, includeBefore), h.reason(), h.evidenceUri(),
-                h.correctsId(), h.requestId(), h.legacyRef(), h.attachmentId());
+                h.correctsId(), h.requestId(), h.sourceRef(), h.attachmentId());
     }
 
     /**

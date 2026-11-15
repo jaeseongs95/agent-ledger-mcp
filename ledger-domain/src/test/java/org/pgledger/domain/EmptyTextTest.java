@@ -19,9 +19,9 @@ import org.pgledger.domain.value.TextRule;
 
 /**
  * REH3-TXT-01 .. 04 at the level of the domain: {@code purpose}, {@code success_condition}, {@code behavior},
- * {@code root_cause} and {@code condition_text} were NOT NULL columns that allowed {@code ''} in 1.x. In 2.0 they follow the
- * {@code save()} of 1.x: the field has to be given, and may be empty; an empty text is the value NULL in the row (no column
- * holds {@code ''}), and the lengths of the code of a condition (200) and of a CI reference (2000) hold the data of 1.x.
+ * {@code root_cause} and {@code condition_text} are fields that may be empty: the field has to be given, and may be
+ * empty; an empty text is the value NULL in the row (no column holds {@code ''}), and the lengths of the code of a
+ * condition (200) and of a CI reference (2000) leave room for imported values.
  */
 class EmptyTextTest {
 
@@ -45,7 +45,7 @@ class EmptyTextTest {
 
     @Test
     void reh3Txt02_theFieldHasToBeGiven() {
-        // null is not empty: the column had no default in 1.x
+        // null is not empty: the column has no default
         Expect.invalid(() -> TaskFields.of(Patch.set("p1"), Patch.set("title"), Patch.set(null), Patch.set("s"),
                 Patch.absent(), Patch.absent(), Patch.absent()));
         TaskFields withoutPurpose = TaskFields.of(Patch.set("p1"), Patch.set("title"), Patch.absent(), Patch.set("s"),
@@ -77,7 +77,7 @@ class EmptyTextTest {
     }
 
     @Test
-    void reh3Len02_theOriginReferenceHoldsWhatOneXHeld() {
+    void reh3Len02_theOriginReferenceHoldsALongImportedValue() {
         assertThat(TextRule.ORIGIN_REF.max()).isEqualTo(20000);
         assertThat(TextRule.ORIGIN_REF.optional("o".repeat(9408))).hasSize(9408);
         assertThat(TextRule.ORIGIN_REF.optional("o".repeat(20000))).hasSize(20000);
@@ -85,7 +85,7 @@ class EmptyTextTest {
     }
 
     @Test
-    void reh3Len01_theLimitsHoldTheDataOfOneX() {
+    void reh3Len01_theLimitsLeaveRoomForImportedValues() {
         assertThat(TextRule.CONDITION_CODE.max()).isEqualTo(200);
         assertThat(TextRule.CI_REF.max()).isEqualTo(2000);
         assertThat(TextRule.CONDITION_CODE.required("c".repeat(200))).hasSize(200);

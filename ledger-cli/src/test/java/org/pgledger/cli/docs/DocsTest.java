@@ -46,7 +46,7 @@ class DocsTest {
     private static final String FORMAT = "docs/RELEASE_NOTES_FORMAT.md";
     private static final List<String> REMOVED_TOOLS = List.of("execute_sql_reader", "search_objects_reader");
     private static final String INSTALL_SCRIPT = "deploy/install.sh";
-    /** An option of the loop of install.sh: {@code --name=*)} (with a value) or {@code --stdin)} (a flag); a digit is allowed ({@code --from-1x-env}). */
+    /** An option of the loop of install.sh: {@code --name=*)} (with a value) or {@code --stdin)} (a flag); a digit is allowed. */
     private static final Pattern SCRIPT_OPTION = Pattern.compile("--([a-z][a-z0-9-]*)(?:=\\*)?\\)");
     private static final List<String> INSTALL_NOTE_TERMS = List.of("deploy/install.sh", "deploy\\install.cmd", "render-deploy",
             "token-generate", "dml-grants.sql", "ledger.secrets.home");
@@ -59,8 +59,8 @@ class DocsTest {
             "ledger.admin.passkey.rp-id", "ledger.admin.passkey.origins",
             "ledger.admin.lockout.global-delay", "ledger.jdbc.url", "ledger.schema.name");
     private static final List<String> NOTE_TERMS = List.of("pgla2", "pgla1", "ATTESTATION_VERSION_UNSUPPORTED",
-            "REQUEST_ID_LEGACY", "execute_sql_reader", "search_objects_reader", "rows[0].result",
-            "notifications/tools/list_changed", "key-register", "import-legacy", "migrate", "secret-set", "D-0012",
+            "execute_sql_reader", "search_objects_reader", "rows[0].result",
+            "notifications/tools/list_changed", "key-register", "import-1x", "migrate", "secret-set", "D-0012",
             "ledger.admin.agent-token", "ledger.admin.driver-directory", "ledger.admin.sign-in",
             "ledger.admin.oidc.owner-email", "ledger.admin.oidc.owners", "passkey-code",
             "ledger.admin.lockout.global-delay");
@@ -341,19 +341,10 @@ class DocsTest {
         assertThat(documented).as("a code span of the README for %s", name).isTrue();
     }
 
-    private static final List<String> HOST_NAME_TERMS = List.of("DBHUB_ALLOWED_HOSTS", "PGLEDGER_ADMIN_ALLOWED_HOSTS", "--from-1x-env",
-            "--mcp-host=<name>[,<name>...]");
-
-    static Stream<Arguments> hostNameCases() {
-        return languageAnd(HOST_NAME_TERMS);
-    }
-
     @ParameterizedTest
-    @MethodSource("hostNameCases")
-    @DisplayName("REH4-DOC-01 the README (Migrating from 1.x) and each part of the 2.0.0 note say what the installer does with the public host names of 1.x, and the README option table shows the comma list of --mcp-host and --admin-host")
-    void readmeAndNoteSayWhatTheInstallerDoesWithThe1xHostNames(Language language, String term) {
-        assertThat(language.readme().text()).contains(term);
-        assertThat(note().part(language.partHeading()).text()).contains(term);
+    @EnumSource(Language.class)
+    @DisplayName("REH4-DOC-01 the README option table shows the comma list of --mcp-host and --admin-host")
+    void readmeShowsTheCommaListOfThePublicHostNames(Language language) {
         assertThat(language.readme().codeSpans()).anyMatch(span -> span.startsWith("--mcp-host=<host>[,<host>...]"))
                 .anyMatch(span -> span.startsWith("--admin-host=<host>[,<host>...]"));
     }
@@ -474,59 +465,30 @@ class DocsTest {
         assertThat(note().part(language.partHeading()).text()).contains("`ledger.source.url`");
     }
 
-    // ---- the 1.x environment file and the build instruction (DOC-034) ----
+    // ---- the upgrade from an earlier major version and the build instruction (DOC-034) ----
 
-    /** The file the 1.x installer wrote and its units read (EnvironmentFile=@ETC@/env, ETC=/etc/$NAME; tags v1.0.0 and v1.1.0). */
-    private static final String ONE_X_ENVIRONMENT_FILE = "/etc/pg-ledger-mcp/env";
+    /** The commands and the jar of the separate tool that moves an installation of an earlier major version. */
+    private static final List<String> UPGRADE_TOOL_TERMS = List.of("stop-1x", "import-secrets-1x", "import-1x", "retire-1x",
+            "ledger-migrate-1x.jar");
+
+    static Stream<Arguments> upgradeToolCases() {
+        return languageAnd(UPGRADE_TOOL_TERMS);
+    }
+
+    @ParameterizedTest
+    @MethodSource("upgradeToolCases")
+    @DisplayName("UPG-DOC-01 the README and each part of the 2.0.0 note name the four commands of the separate upgrade tool (stop-1x, import-secrets-1x, import-1x, retire-1x) and its jar ledger-migrate-1x.jar")
+    void theUpgradeToolIsNamed(Language language, String term) {
+        assertThat(language.readme().text()).contains(term);
+        assertThat(note().part(language.partHeading()).text()).contains(term);
+    }
 
     @ParameterizedTest
     @EnumSource(Language.class)
-    @DisplayName("DOC-034 the migration command of the README and of each part of the 2.0.0 note names the 1.x environment file /etc/pg-ledger-mcp/env, and no text of the docs names pg-ledger-mcp.env")
-    void migrationNamesTheOneXEnvironmentFile(Language language) {
-        String readme = language.readme().part(language == Language.EN ? "Migrating from 1.x" : "1.x에서 이전").text();
-        String part = note().part(language.partHeading()).text();
-
-        assertThat(readme).contains("--from-1x-env=" + ONE_X_ENVIRONMENT_FILE);
-        assertThat(part).contains("--from-1x-env=" + ONE_X_ENVIRONMENT_FILE);
+    @DisplayName("DOC-034 no text of the docs names pg-ledger-mcp.env")
+    void noTextNamesTheOldEnvironmentFileName(Language language) {
         assertThat(language.readme().text()).doesNotContain("pg-ledger-mcp.env");
-        assertThat(part).doesNotContain("pg-ledger-mcp.env");
-    }
-
-    @ParameterizedTest
-    @EnumSource(Language.class)
-    @DisplayName("REH2-DOC-01 the migration of the README and of each part of the 2.0.0 note says that the import runs once on the schema that migrate and setup made (the state after the installer), and that the rollback copies the backup of the unit back (it stays) and what a later run of the installer does with it; none says the schema is freshly migrated")
-    void migrationSaysWhatTheImportAndTheRollbackLeave(Language language) {
-        boolean english = language == Language.EN;
-        String readme = language.readme().part(english ? "Migrating from 1.x" : "1.x에서 이전").text();
-        String part = note().part(language.partHeading()).text();
-
-        for (String text : List.of(readme, part)) {
-            assertThat(text).contains(english ? "`migrate` and `setup`" : "`migrate`와 `setup`").contains("HOST_FAILED")
-                    .contains(english ? "copy the `<file>.1x-backup`" : "`<file>.1x-backup` 유닛 파일을 복사해 되돌리고")
-                    .contains(english ? "backup stays)" : "(백업은 그대로 남습니다)")
-                    .doesNotContain(english ? "freshly migrated" : "방금 `migrate`한");
-        }
-    }
-
-    @ParameterizedTest
-    @EnumSource(Language.class)
-    @DisplayName("REH3-DOC-01 the migration of the README and of each part of the 2.0.0 note say that the ids of 1.x are kept (1 to 120 characters, any case), that ids that differ only in case are refused, that an empty text of 1.x reads as an empty string, and which columns are longer (code 200, ci_ref 2000)")
-    void migrationSaysWhatHappensToIdsAndTexts(Language language) {
-        boolean english = language == Language.EN;
-        String readme = language.readme().part(english ? "Migrating from 1.x" : "1.x에서 이전").text();
-        String part = note().part(language.partHeading()).text();
-
-        for (String text : List.of(readme, part)) {
-            if (english) {
-                assertThat(text).contains("ids of 1.x are kept as they are").contains("1 to 120 characters")
-                        .contains("differ only in case").contains("empty text").contains("`code` of a condition (200")
-                        .contains("`ci_ref` (2000");
-            } else {
-                assertThat(text).contains("1.x의 ID는 그대로 유지").contains("1자 이상 120자 이하")
-                        .contains("대소문자만 다른").contains("빈 문자열").contains("조건의 `code`(200자")
-                        .contains("`ci_ref`(2000자");
-            }
-        }
+        assertThat(note().part(language.partHeading()).text()).doesNotContain("pg-ledger-mcp.env");
     }
 
     @ParameterizedTest
@@ -537,17 +499,6 @@ class DocsTest {
 
         assertThat(installation).contains("| `--java=<path>` |").contains("`/home`");
         assertThat(note().part(language.partHeading()).text()).contains("`--java=<path>`").contains("`/home`");
-    }
-
-    @ParameterizedTest
-    @EnumSource(Language.class)
-    @DisplayName("W7-SEC-01 the migration text of both READMEs and of each part of the note says that a 1.0.0 installation has no admin token and that a new one is generated and shown once")
-    void oneZeroHasNoAdminToken(Language language) {
-        String readme = language.readme().part(language == Language.EN ? "Migrating from 1.x" : "1.x에서 이전").text();
-        String part = note().part(language.partHeading()).text();
-
-        assertThat(readme).contains("1.0.0").contains("`PGLEDGER_ADMIN_TOKEN`").contains("`ledger.admin.token`");
-        assertThat(part).contains("1.0.0");
     }
 
     @ParameterizedTest
@@ -716,18 +667,5 @@ class DocsTest {
         assertThat(language.readme().fences()).anySatisfy(block -> assertThat(block).containsExactly("server {",
                 "    listen 80 default_server;", "    listen [::]:80 default_server;", "    server_name _;", "    return 444;", "}"));
         assertThat(section).contains(language == Language.EN ? "The product does not create it." : "제품은 이 설정을 만들지 않습니다.");
-    }
-
-    @ParameterizedTest
-    @EnumSource(Language.class)
-    @DisplayName("FUP-DOC-03step 5 of the migration says that the read-only account of the 1.x database may be dropped when the import and its verification are done")
-    void theReadOnlyAccountOfOneXMayBeDropped(Language language) {
-        String phrase = language == Language.EN ? "read-only account of the 1.x database that was made for the import may be dropped"
-                : "읽기 전용 계정은 삭제해도 됩니다";
-        List<String> lines = language.readme().prose();
-        int step5 = lines.indexOf(lines.stream().filter(line -> line.startsWith("5. ")).findFirst().orElseThrow());
-        int step6 = lines.indexOf(lines.stream().filter(line -> line.startsWith("6. ")).findFirst().orElseThrow());
-
-        assertThat(lines.subList(step5, step6)).anyMatch(line -> line.contains(phrase));
     }
 }

@@ -156,7 +156,7 @@ public class DetailService {
         TaskId id = TaskId.of(rawId);
         Task t = tasks.findById(id).orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND,
                 List.of(HistoryEntity.TASK.token(), rawId)));
-        // the latest report of the task is the rule of the domain; a legacy transition with a state of no task is not one.
+        // the latest report of the task is the rule of the domain; an imported transition with a state of no task is not one.
         // The detail's component is a nullable JSON string: the task without a report is one with no completedBy.
         return new TaskHistory(historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.TASK, rawId))
                 .reports().latestReport()

@@ -21,7 +21,7 @@ public class TestDataSourceConfiguration {
     /** The time zone of the database sessions of a context; UTC when absent. */
     public static final String ZONE_PROPERTY = "ledger.test.session-zone";
 
-    /** {@code @Primary}, as the ledger data source of the product is: a test that adds a second data source (the legacy ledger) keeps this one the default. */
+    /** {@code @Primary}, as the ledger data source of the product is: a test that adds a second data source keeps this one the default. */
     @Bean
     @Primary
     DataSource dataSource(Environment environment) {

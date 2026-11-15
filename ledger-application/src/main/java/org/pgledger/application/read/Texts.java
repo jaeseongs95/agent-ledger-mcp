@@ -8,7 +8,7 @@ final class Texts {
 
     /**
      * The text of a field that may be empty: the row holds NULL for it (no column holds {@code ''}), and the tools show
-     * {@code ""} as 1.x did (a pure function of its argument).
+     * {@code ""} again (a pure function of its argument).
      */
     static String orEmpty(String text) {
         return text == null ? "" : text;

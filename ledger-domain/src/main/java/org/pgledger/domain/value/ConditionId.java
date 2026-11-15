@@ -3,7 +3,7 @@ package org.pgledger.domain.value;
 import java.util.Optional;
 import org.pgledger.domain.error.ValidationException;
 
-/** Id of a release condition: free text ({@link EntityId#PATTERN}, the ids of 1.x in any case), always given by the caller. */
+/** Id of a release condition: free text ({@link EntityId#PATTERN}, any case), always given by the caller. */
 public record ConditionId(String value) {
 
     public ConditionId {

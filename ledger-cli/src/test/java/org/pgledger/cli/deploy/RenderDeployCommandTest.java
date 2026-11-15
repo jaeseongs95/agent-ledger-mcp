@@ -164,26 +164,26 @@ class RenderDeployCommandTest {
         assertThat(Files.exists(root)).as("--check writes nothing").isFalse();
     }
 
-    private static final String ONE_X_UNIT = "[Unit]\nDescription=pg-ledger-mcp 1.x (DBHub)\n[Service]\nEnvironmentFile=/etc/pg-ledger-mcp/env\n";
+    private static final String FOREIGN_UNIT = "[Unit]\nDescription=pg-ledger-mcp (hand-written)\n[Service]\nEnvironmentFile=/etc/pg-ledger-mcp/env\n";
 
     @Test
-    @DisplayName("INS-042 a file of that name that this command did not render (the unit of 1.x) is kept as <file>.1x-backup before it is replaced, once, and the output says so")
+    @DisplayName("INS-042 a file of that name that this command did not render (a hand-written unit) is kept as <file>.backup before it is replaced, once, and the output says so")
     void ins042_aForeignFileIsKept(Cli cli) throws IOException {
         Path root = tmp.resolve("root");
         Path unit = root.resolve("etc/systemd/system/pg-ledger-mcp.service");
         Files.createDirectories(unit.getParent());
-        Files.writeString(unit, ONE_X_UNIT, StandardCharsets.UTF_8);
+        Files.writeString(unit, FOREIGN_UNIT, StandardCharsets.UTF_8);
         RecordingOutput output = new RecordingOutput();
 
         Outcome result = run(cli, output, root, LINUX);
 
-        Path backup = unit.resolveSibling("pg-ledger-mcp.service.1x-backup");
+        Path backup = unit.resolveSibling("pg-ledger-mcp.service.backup");
         assertThat(result.code()).isEmpty();
-        assertThat(Files.readString(backup, StandardCharsets.UTF_8)).as("the old unit is kept as it was").isEqualTo(ONE_X_UNIT);
-        assertThat(Files.readString(unit, StandardCharsets.UTF_8)).as("the unit of 2.0 is in its place")
-                .contains("Rendered by `ledger-cli render-deploy`").doesNotContain("DBHub");
+        assertThat(Files.readString(backup, StandardCharsets.UTF_8)).as("the old unit is kept as it was").isEqualTo(FOREIGN_UNIT);
+        assertThat(Files.readString(unit, StandardCharsets.UTF_8)).as("the rendered unit is in its place")
+                .contains("Rendered by `ledger-cli render-deploy`").doesNotContain("hand-written");
         assertThat(output.info()).contains(backup.toString());
-        assertThat(files(root).stream().filter(p -> p.getFileName().toString().endsWith(".1x-backup"))).as("only the one that existed")
+        assertThat(files(root).stream().filter(p -> p.getFileName().toString().endsWith(".backup"))).as("only the one that existed")
                 .hasSize(1);
     }
 
@@ -193,21 +193,21 @@ class RenderDeployCommandTest {
         Path root = tmp.resolve("root");
         Path unit = root.resolve("etc/systemd/system/pg-ledger-mcp.service");
         Files.createDirectories(unit.getParent());
-        Files.writeString(unit, ONE_X_UNIT, StandardCharsets.UTF_8);
+        Files.writeString(unit, FOREIGN_UNIT, StandardCharsets.UTF_8);
         run(cli, new RecordingOutput(), root, LINUX);
 
         Outcome again = run(cli, new RecordingOutput(), root, LINUX);
 
         assertThat(again.code()).isEmpty();
-        assertThat(Files.readString(unit.resolveSibling("pg-ledger-mcp.service.1x-backup"), StandardCharsets.UTF_8))
-                .isEqualTo(ONE_X_UNIT);
-        assertThat(files(root).stream().filter(p -> p.getFileName().toString().endsWith(".1x-backup"))).hasSize(1);
+        assertThat(Files.readString(unit.resolveSibling("pg-ledger-mcp.service.backup"), StandardCharsets.UTF_8))
+                .isEqualTo(FOREIGN_UNIT);
+        assertThat(files(root).stream().filter(p -> p.getFileName().toString().endsWith(".backup"))).hasSize(1);
 
         // every kind of file the command renders carries the marker: the WinSW configurations and the settings of Windows as well
         Path windows = tmp.resolve("windows");
         run(cli, new RecordingOutput(), windows, WINDOWS);
         run(cli, new RecordingOutput(), windows, WINDOWS);
-        assertThat(files(windows).stream().filter(p -> p.getFileName().toString().endsWith(".1x-backup"))).isEmpty();
+        assertThat(files(windows).stream().filter(p -> p.getFileName().toString().endsWith(".backup"))).isEmpty();
     }
 
     @Test
@@ -216,36 +216,36 @@ class RenderDeployCommandTest {
         Path root = tmp.resolve("root");
         Path unit = root.resolve("etc/systemd/system/pg-ledger-mcp.service");
         Files.createDirectories(unit.getParent());
-        Files.writeString(unit, ONE_X_UNIT + "# second\n", StandardCharsets.UTF_8);
-        Path backup = unit.resolveSibling("pg-ledger-mcp.service.1x-backup");
-        Files.writeString(backup, ONE_X_UNIT, StandardCharsets.UTF_8);
+        Files.writeString(unit, FOREIGN_UNIT + "# second\n", StandardCharsets.UTF_8);
+        Path backup = unit.resolveSibling("pg-ledger-mcp.service.backup");
+        Files.writeString(backup, FOREIGN_UNIT, StandardCharsets.UTF_8);
 
         Outcome result = run(cli, new RecordingOutput(), root, LINUX);
 
         assertThat(result.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
         assertThat(result.code()).contains(ErrorCode.DEPLOY_WRITE_FAILED);
-        assertThat(Files.readString(unit, StandardCharsets.UTF_8)).isEqualTo(ONE_X_UNIT + "# second\n");
-        assertThat(Files.readString(backup, StandardCharsets.UTF_8)).isEqualTo(ONE_X_UNIT);
+        assertThat(Files.readString(unit, StandardCharsets.UTF_8)).isEqualTo(FOREIGN_UNIT + "# second\n");
+        assertThat(Files.readString(backup, StandardCharsets.UTF_8)).isEqualTo(FOREIGN_UNIT);
     }
 
     @Test
-    @DisplayName("REH2-INS-03 a foreign file and a backup of the same bytes (the README rollback copied the backup back): the run goes on, the backup is as it was, the file is the rendered one and the output names the backup")
+    @DisplayName("REH2-INS-03 a foreign file and a backup of the same bytes (a rollback copied the backup back): the run goes on, the backup is as it was, the file is the rendered one and the output names the backup")
     void reh2Ins03_aBackupOfTheSameBytesIsKept(Cli cli) throws IOException {
         Path root = tmp.resolve("root");
         Path unit = root.resolve("etc/systemd/system/pg-ledger-mcp.service");
         Files.createDirectories(unit.getParent());
-        Files.writeString(unit, ONE_X_UNIT, StandardCharsets.UTF_8);
-        Path backup = unit.resolveSibling("pg-ledger-mcp.service.1x-backup");
-        Files.writeString(backup, ONE_X_UNIT, StandardCharsets.UTF_8);
+        Files.writeString(unit, FOREIGN_UNIT, StandardCharsets.UTF_8);
+        Path backup = unit.resolveSibling("pg-ledger-mcp.service.backup");
+        Files.writeString(backup, FOREIGN_UNIT, StandardCharsets.UTF_8);
         RecordingOutput output = new RecordingOutput();
 
         Outcome result = run(cli, output, root, LINUX);
 
         assertThat(result.failure()).isNull();
         assertThat(result.code()).isEmpty();
-        assertThat(Files.readString(backup, StandardCharsets.UTF_8)).isEqualTo(ONE_X_UNIT);
+        assertThat(Files.readString(backup, StandardCharsets.UTF_8)).isEqualTo(FOREIGN_UNIT);
         assertThat(Files.readString(unit, StandardCharsets.UTF_8)).contains("Rendered by `ledger-cli render-deploy`")
-                .doesNotContain("DBHub");
+                .doesNotContain("hand-written");
         assertThat(output.info()).contains(backup.toString());
         // REH3-INS-02: told as left alone, not as made now
         assertThat(output.info()).contains("already holds the same bytes").doesNotContain("Kept the previous file");
@@ -257,9 +257,9 @@ class RenderDeployCommandTest {
         Path root = tmp.resolve("root");
         Path unit = root.resolve("etc/systemd/system/pg-ledger-mcp.service");
         Files.createDirectories(unit.getParent());
-        Files.writeString(unit, ONE_X_UNIT + "# second\n", StandardCharsets.UTF_8);
-        Path backup = unit.resolveSibling("pg-ledger-mcp.service.1x-backup");
-        Files.writeString(backup, ONE_X_UNIT, StandardCharsets.UTF_8);
+        Files.writeString(unit, FOREIGN_UNIT + "# second\n", StandardCharsets.UTF_8);
+        Path backup = unit.resolveSibling("pg-ledger-mcp.service.backup");
+        Files.writeString(backup, FOREIGN_UNIT, StandardCharsets.UTF_8);
 
         Outcome result = run(cli, new RecordingOutput(), root, LINUX);
 
@@ -267,8 +267,8 @@ class RenderDeployCommandTest {
         assertThat(result.code()).contains(ErrorCode.DEPLOY_WRITE_FAILED);
         assertThat(result.refusal().orElseThrow().arguments().getFirst()).contains(unit.toString()).contains(backup.toString());
         assertThat(String.join(" ", result.refusal().orElseThrow().arguments())).doesNotContain("FileAlreadyExistsException");
-        assertThat(Files.readString(unit, StandardCharsets.UTF_8)).isEqualTo(ONE_X_UNIT + "# second\n");
-        assertThat(Files.readString(backup, StandardCharsets.UTF_8)).isEqualTo(ONE_X_UNIT);
+        assertThat(Files.readString(unit, StandardCharsets.UTF_8)).isEqualTo(FOREIGN_UNIT + "# second\n");
+        assertThat(Files.readString(backup, StandardCharsets.UTF_8)).isEqualTo(FOREIGN_UNIT);
     }
 
     private static final String JAVA = "--java=/usr/bin/java";

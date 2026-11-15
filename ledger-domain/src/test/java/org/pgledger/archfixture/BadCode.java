@@ -41,7 +41,7 @@ public final class BadCode {
         return TimeZone.getDefault();
     }
 
-    Date legacyDate() {
+    Date oldDate() {
         return new Date();
     }
 

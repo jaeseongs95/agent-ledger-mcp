@@ -22,3 +22,16 @@ dependencies {
     // ArchUnit 1.5.1: not in the Boot BOM, see gradle/libs.versions.toml
     testImplementation(libs.archunit)
 }
+
+// The test support of this module (the application context of the service tests, the scenario helpers, the key ring) is offered
+// to the tests of ledger-migrate-1x, whose import runs in a context of the real services: the compiled test classes as one jar,
+// consumed through the configuration testSupport only. No main code of any module depends on it.
+val testSupportJar = tasks.register<Jar>("testSupportJar") {
+    archiveClassifier = "test-support"
+    from(the<org.gradle.api.tasks.SourceSetContainer>()["test"].output)
+}
+val testSupport = configurations.create("testSupport") {
+    isCanBeConsumed = true
+    isCanBeResolved = false
+}
+artifacts.add(testSupport.name, testSupportJar)

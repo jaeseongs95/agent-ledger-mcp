@@ -10,7 +10,7 @@ import org.pgledger.domain.value.Tokens;
 
 /**
  * The history rows of one task, oldest first, as the transitions the rules of the task look at. A history row keeps
- * its states as text, and an imported (legacy) row may hold a state that is none of ours or none at all; such a
+ * its states as text, and an imported row may hold a state that is none of ours or none at all; such a
  * transition is not a report, like {@link org.pgledger.domain.rule.LifecycleState#of} says of an unknown state, so it
  * is left out here at the boundary and never reaches the rules.
  */

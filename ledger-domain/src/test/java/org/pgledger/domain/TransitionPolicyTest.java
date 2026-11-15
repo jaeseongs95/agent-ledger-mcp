@@ -166,9 +166,9 @@ class TransitionPolicyTest {
                 OTHER.sessionKey(), none)).doesNotThrowAnyException();
         Expect.failsWith(TransitionCode.SAME_SESSION, () -> TaskState.REPORTED_DONE
                 .requireTransitionTo(TaskState.VERIFIED, EVIDENCE, OTHER.sessionKey(), OTHER.sessionKey(), none));
-        // the same person under the legacy prefix is the same session
+        // the same session key is the same session
         Expect.failsWith(TransitionCode.SAME_SESSION, () -> TaskState.REPORTED_DONE.requireTransitionTo(
-                TaskState.VERIFIED, EVIDENCE, OTHER.sessionKey(), new SessionKey("agent:" + OTHER.value()), none));
+                TaskState.VERIFIED, EVIDENCE, OTHER.sessionKey(), new SessionKey(OTHER.value()), none));
     }
 
     @Test

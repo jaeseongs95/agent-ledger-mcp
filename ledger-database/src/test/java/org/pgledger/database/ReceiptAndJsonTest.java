@@ -32,7 +32,6 @@ import org.pgledger.domain.rule.ActorAssurance;
 import org.pgledger.domain.rule.Channel;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
-import org.pgledger.domain.rule.ReceiptOrigin;
 import org.pgledger.domain.value.ActorId;
 import org.pgledger.domain.value.JsonDocument;
 import org.pgledger.domain.value.RequestId;
@@ -120,23 +119,23 @@ class ReceiptAndJsonTest {
     }
 
     @Test
-    void repo041_originRoundTripsAndTheResponseIsFilledInOnce() {
-        RequestId nativeId = new RequestId(UUID.randomUUID());
-        RequestId legacyId = new RequestId(UUID.randomUUID());
-        ctx.tx(() -> receipts.insert(reserve(nativeId)));
-        Receipt legacy = new Receipt(legacyId, ReceiptOperation.TRANSITION, Sha256.of("b".repeat(64)),
-                ActorId.ofStored("agent:claude:1"), "ledger_author", JsonDocument.of(json(new Response("COMMITTED"))),
-                ReceiptOrigin.LEGACY, LedgerTestContext.START);
-        ctx.tx(() -> receipts.insert(legacy));
-        assertThat(receipts.findById(nativeId).orElseThrow().origin()).isEqualTo(ReceiptOrigin.NATIVE);
-        assertThat(receipts.findById(legacyId)).hasValue(legacy);
+    void repo041_aReceiptRoundTripsAndTheResponseIsFilledInOnce() {
+        RequestId reservedId = new RequestId(UUID.randomUUID());
+        RequestId storedId = new RequestId(UUID.randomUUID());
+        ctx.tx(() -> receipts.insert(reserve(reservedId)));
+        Receipt stored = new Receipt(storedId, ReceiptOperation.TRANSITION, Sha256.of("b".repeat(64)),
+                ActorId.ofStored("claude:1"), "ledger_author", JsonDocument.of(json(new Response("COMMITTED"))),
+                LedgerTestContext.START);
+        ctx.tx(() -> receipts.insert(stored));
+        assertThat(receipts.findById(reservedId).orElseThrow().response()).isNull();
+        assertThat(receipts.findById(storedId)).hasValue(stored);
 
         ReceiptCompletionRepository completion = ctx.bean(ReceiptCompletionRepository.class);
         JsonDocument response = JsonDocument.of(json(new Response("COMMITTED")));
-        assertThat(ctx.tx(() -> completion.finish(nativeId, response))).isTrue();
-        assertThat(ctx.tx(() -> completion.finish(nativeId, response))).as("only once").isFalse();
-        assertThat(receipts.findById(nativeId).orElseThrow().response()).isEqualTo(response);
-        assertThat(ctx.tx(() -> completion.finish(legacyId, response))).as("a stored response is never replaced")
+        assertThat(ctx.tx(() -> completion.finish(reservedId, response))).isTrue();
+        assertThat(ctx.tx(() -> completion.finish(reservedId, response))).as("only once").isFalse();
+        assertThat(receipts.findById(reservedId).orElseThrow().response()).isEqualTo(response);
+        assertThat(ctx.tx(() -> completion.finish(storedId, response))).as("a stored response is never replaced")
                 .isFalse();
     }
 

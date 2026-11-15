@@ -2,7 +2,7 @@
 # deploy/install.sh: the installer of pg-ledger-mcp 2.x for a Linux host (a Linux server). It is thin on purpose: it starts
 # only what Java cannot do (create the operating system user, switch to it, enable and restart the units, reload nginx) and
 # everything else is `java -jar ledger-cli.jar <command>`: render-deploy --check (every option, validated first), prepare-host
-# (directories with owner and mode, the jars and the driver copied, units, settings, nginx site), secret-import-1x,
+# (directories with owner and mode, the jars and the driver copied, units, settings, nginx site),
 # secret-set, token-generate, driver-register and setup (schema, ANSI GRANTs and the seed codes of the new ledger).
 # Documentation it follows: Spring Boot, "Installing Spring Boot Applications" (a systemd unit in /etc/systemd/system,
 # `systemctl enable`): https://docs.spring.io/spring-boot/how-to/deployment/installing.html ; systemd.exec(5) (User=, the
@@ -18,13 +18,7 @@
 # Both accounts are created beforehand with the DBMS's own tools. It installs no package and no database. A re-run is an
 # upgrade: jars, driver jar and files are replaced, the schema and the grants are applied again, the services are restarted;
 # secrets, tokens and data are never replaced. The Java 25 check is the JVM's: the jars are compiled for it and no other runtime loads them.
-# Migration from 1.x (the operator stops the 1.x services first, see the README: this script never stops, disables or removes a
-# service of another installation): --from-1x-env=<file> takes the two tokens of the 1.x environment file over as secrets before
-# any token is generated, so the clients and the admin sign-in keep working; the file belongs to root, so this script opens it
-# and Java reads it from standard input. The same file is given to the check of the options (render-deploy --check, which root runs):
-# a public host name that 1.x allowed (DBHUB_ALLOWED_HOSTS, PGLEDGER_ADMIN_ALLOWED_HOSTS) and that --mcp-host or --admin-host (one name
-# or a comma list) does not carry stops the installation before anything is changed. A unit file of 1.x that a new unit replaces is kept
-# as <file>.1x-backup by prepare-host.
+# An installation of an earlier major version is moved with the separate tool ledger-migrate-1x (see the README, Upgrading); this script does not know it.
 # --stdin gives the passwords on standard input instead of the terminal (an installation without one), as docker login
 # --password-stdin does: first the password of the application account (read only while it is not stored), then the DDL one.
 # Automatic certificate: --tls-acme (with --nginx-conf, --mcp-host and --admin-host) orders the certificate with tls-issue (ACME, HTTP-01)
@@ -43,7 +37,6 @@ DRIVER_CLASS=
 OWNER=
 APP_ACCOUNT=
 NGINX=
-FROM_ENV=
 STDIN=
 MCP_HOST=
 ADMIN_HOST=
@@ -68,7 +61,6 @@ for arg in "$@"; do
     --owner-account=*) OWNER=${arg#*=} ;;
     --app-account=*) APP_ACCOUNT=${arg#*=}; set -- "$@" "$arg" ;;
     --nginx-conf=*) NGINX=1; set -- "$@" "$arg" ;;
-    --from-1x-env=*) FROM_ENV=${arg#*=} ;;
     --stdin) STDIN=--stdin ;;
     --mcp-host=*) MCP_HOST=${arg#*=}; set -- "$@" "$arg" ;;
     --admin-host=*) ADMIN_HOST=${arg#*=}; set -- "$@" "$arg" ;;
@@ -80,7 +72,6 @@ for arg in "$@"; do
   esac
 done
 for v in "$JARS" "$DRIVER_JAR" "$DRIVER_CLASS" "$OWNER" "$APP_ACCOUNT"; do [ -n "$v" ] || die "an option is missing: see the header of this file"; done
-[ -z "$FROM_ENV" ] || [ -r "$FROM_ENV" ] || die "the 1.x environment file cannot be read: $FROM_ENV"
 # The Java runtime is --java=<path> (kept out of the options that go on: prepare-host and render-deploy get it once, below), else the
 # one on the PATH of root. The service user runs it too (the units and the commands below), so it must not be under a home directory.
 [ -n "$JAVA" ] || JAVA=$(command -v java) || die "java is not installed: give --java=<path> of a Java 25 runtime"
@@ -98,7 +89,7 @@ ADMIN=$NAME-admin
 LIB=/opt/$NAME
 ETC=/etc/$NAME
 # Every option, the name included, is validated by Java before anything is created.
-"$JAVA" $JVM_OPTS -jar "$JARS/ledger-cli.jar" --ledger.secrets.home=/nonexistent render-deploy --check --java="$JAVA" ${FROM_ENV:+--from-1x-env="$FROM_ENV"} "$@"
+"$JAVA" $JVM_OPTS -jar "$JARS/ledger-cli.jar" --ledger.secrets.home=/nonexistent render-deploy --check --java="$JAVA" "$@"
 
 # useradd: Java has no API to create an operating system user. Status 9 is "name in use": the user of an earlier run stays.
 useradd --system --user-group --no-create-home --shell /usr/sbin/nologin "$SVC" || [ $? = 9 ]
@@ -108,8 +99,6 @@ runuser -u "$SVC" -- "$JAVA" -version >/dev/null 2>&1 || die "the service user $
 "$JAVA" $JVM_OPTS -jar "$JARS/ledger-cli.jar" --ledger.secrets.home=/nonexistent prepare-host --jars="$JARS" --driver-jar="$DRIVER_JAR" --java="$JAVA" "$@"
 
 # Secrets: typed with hidden input or generated, as the service user; an existing one is kept. The tokens are shown once.
-# The tokens of 1.x come first, so that they are kept and not generated (the file is root's: root opens it, Java reads it).
-[ -z "$FROM_ENV" ] || as_svc secret-import-1x --stdin < "$FROM_ENV"
 as_svc secret-set ledger.jdbc.password --if-absent $STDIN
 as_svc token-generate ledger.admin.token --print
 # The admin web must know the agents' token to refuse it: the same token under a second name.

@@ -37,12 +37,6 @@ public final class DeployOptions {
      * can live on one host (each with its own ports).
      */
     public static final String NAME = "name";
-    /**
-     * Not rendered into any file: the environment file of a 1.x installation ({@code deploy/install.sh --from-1x-env}). The public host
-     * names it allows must be carried by {@link #MCP_HOST} and {@link #ADMIN_HOST}, or the command is refused before anything is
-     * changed ({@link LegacyHosts}).
-     */
-    public static final String FROM_1X_ENV = "from-1x-env";
     /** Not rendered into any file: a directory the files are written below instead of at their own paths. */
     public static final String ROOT = "root";
     /** {@code prepare-host} on Windows: the WinSW executable, copied once for each of the two services; no value on Linux. */
@@ -51,7 +45,7 @@ public final class DeployOptions {
     public static final String CHECK = "check";
 
     /** The options that take a value, in the order of their usage text. */
-    public static final List<String> ALL = List.of(NAME, PLATFORM, HOME, JAVA, JDBC_URL, APP_ACCOUNT, SCHEMA, MCP_PORT, ADMIN_PORT, MCP_HOST, ADMIN_HOST, NGINX_CONF, TLS_CERTIFICATE, TLS_KEY, ACME_DIRECTORY, FROM_1X_ENV, ROOT);
+    public static final List<String> ALL = List.of(NAME, PLATFORM, HOME, JAVA, JDBC_URL, APP_ACCOUNT, SCHEMA, MCP_PORT, ADMIN_PORT, MCP_HOST, ADMIN_HOST, NGINX_CONF, TLS_CERTIFICATE, TLS_KEY, ACME_DIRECTORY, ROOT);
 
     /** Every option of the command, as the set the runner checks the command line against. */
     public static final Set<String> NAMES = Stream.concat(ALL.stream(), Stream.of(CHECK, TLS_ACME))

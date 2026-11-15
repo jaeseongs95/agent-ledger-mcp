@@ -7,11 +7,8 @@ import java.util.function.Consumer;
 import javax.sql.DataSource;
 import org.pgledger.application.support.LedgerAppContext;
 import org.pgledger.application.support.TestApplication;
-import org.pgledger.database.driver.LegacySourceConfiguration;
-import org.pgledger.database.driver.LegacySourceWiring;
 import org.pgledger.testing.database.TestDataSourceConfiguration;
 import org.pgledger.testing.database.TestSchemaInitializer;
-import org.pgledger.testing.legacy.LegacyLedger;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.env.Environment;
@@ -56,29 +53,6 @@ public final class LedgerTestRunners {
     /** A fresh installation: a new, migrated schema whose category list is still empty. */
     public static void withoutCategories(Consumer<LedgerAppContext> test) {
         run(freshSchema().withUserConfiguration(LedgerTestInfrastructure.class), test);
-    }
-
-    /**
-     * A fresh installation (a new, migrated schema, no categories: the state the import needs) whose legacy source is
-     * read through {@code source} (the read-only account of {@code legacy}, or a wrapper of it) in the schema of
-     * {@code legacy}. The extra configurations replace beans of the context (a test that injects a failure into the write
-     * side of the import).
-     */
-    public static void importing(LegacyLedger legacy, DataSource source, Consumer<LedgerAppContext> test,
-            Class<?>... configurations) {
-        run(freshSchema()
-                .withUserConfiguration(LedgerTestInfrastructure.class)
-                .withUserConfiguration(configurations)
-                // the import service exists only in the command line tool, which sets this in its application.properties
-                .withPropertyValues("ledger.cli.enabled=true",
-                        // the settings the wiring reads; the connection is the bean below, so the url is never opened
-                        "ledger.import.source.url=jdbc:unused:test", "ledger.import.source.schema=" + legacy.schema())
-                // the legacy data source is a bean of the context, as the pool is in production (LegacySourceConfiguration); the
-                // test owns it, so the context does not close it. The legacy JdbcClient, its transaction manager and the
-                // repository are the production ones (LegacySourceWiring).
-                .withBean(LegacySourceConfiguration.DATA_SOURCE, DataSource.class, () -> source,
-                        definition -> definition.setDestroyMethodName(""))
-                .withUserConfiguration(LegacySourceWiring.class), test);
     }
 
     /**

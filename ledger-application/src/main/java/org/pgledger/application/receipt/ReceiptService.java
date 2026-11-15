@@ -13,7 +13,6 @@ import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.domain.model.Receipt;
 import org.pgledger.domain.model.ReceiptOperation;
 import org.pgledger.domain.rule.Channel;
-import org.pgledger.domain.rule.ReceiptOrigin;
 import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.RequestId;
 import org.pgledger.domain.value.Sha256;
@@ -65,8 +64,7 @@ public class ReceiptService {
      * {@link Reservation.Replayed} with the stored response when the same request was answered before.
      *
      * @throws ConflictException REQUEST_CONFLICT when the id belongs to another operation, payload, author or
-     *         channel; REQUEST_ID_LEGACY when it belongs to an imported receipt; DUPLICATE_KEY when another call reserved
-     *         the id at the very same moment
+     *         channel; DUPLICATE_KEY when another call reserved the id at the very same moment
      */
     public <R> Reservation<R> reserve(RequestId id, ReceiptOperation operation, Sha256 digest, AuthorId author,
             Channel channel, Class<R> responseType) {
@@ -89,9 +87,6 @@ public class ReceiptService {
     /** The response stored for a request id that was reserved before; it must be the same request. */
     private <R> R storedResponse(Receipt stored, RequestId id, ReceiptOperation operation, Sha256 digest,
             AuthorId author, Channel channel, Class<R> responseType) {
-        if (stored.origin() == ReceiptOrigin.LEGACY) {
-            throw new ConflictException(ConflictCode.REQUEST_ID_LEGACY, List.of(id.toString()));
-        }
         boolean same = stored.operation() == operation && Objects.equals(stored.payloadSha256(), digest)
                 && Objects.equals(stored.authorId().value(), author.value())
                 && Objects.equals(stored.login(), channel.login());

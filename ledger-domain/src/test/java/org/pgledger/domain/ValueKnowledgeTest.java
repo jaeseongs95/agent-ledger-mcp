@@ -25,7 +25,7 @@ import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.CodeValue;
 import org.pgledger.domain.value.DefectId;
 import org.pgledger.domain.value.JsonDocument;
-import org.pgledger.domain.value.LegacyActorId;
+import org.pgledger.domain.value.ImportedActorId;
 import org.pgledger.domain.value.Patch;
 import org.pgledger.domain.value.Reason;
 import org.pgledger.domain.value.RequestId;
@@ -56,11 +56,11 @@ class ValueKnowledgeTest {
     @DisplayName("DOM-037 the session key of a stored actor answers the vendor as the history view showed it, and none for text without one")
     void sessionKeyVendor() {
         assertThat(new SessionKey("claude:1").vendor()).hasValue("claude");
-        assertThat(new SessionKey("agent:codex:7").vendor()).hasValue("codex");
-        assertThat(ActorId.ofStored("agent:claude:1").sessionKey().vendor()).hasValue("claude");
-        assertThat(new LegacyActorId("someone").sessionKey().vendor()).isEmpty();
-        assertThat(new LegacyActorId(":x").sessionKey().vendor()).isEmpty();
-        assertThat(new LegacyActorId("has space:x").sessionKey().vendor()).isEmpty();
+        assertThat(new SessionKey("codex:7").vendor()).hasValue("codex");
+        assertThat(ActorId.ofStored("claude:1").sessionKey().vendor()).hasValue("claude");
+        assertThat(new ImportedActorId("someone").sessionKey().vendor()).isEmpty();
+        assertThat(new ImportedActorId(":x").sessionKey().vendor()).isEmpty();
+        assertThat(new ImportedActorId("has space:x").sessionKey().vendor()).isEmpty();
     }
 
     @Test

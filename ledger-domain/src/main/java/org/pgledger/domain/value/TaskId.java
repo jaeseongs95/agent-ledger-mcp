@@ -7,7 +7,7 @@ import java.util.regex.Pattern;
 import org.pgledger.domain.error.ValidationException;
 
 /**
- * Id of a task: free text ({@link EntityId#PATTERN}, the ids of 1.x in any case); the server issues {@code <CODE>-T-NNNN}. The number of
+ * Id of a task: free text ({@link EntityId#PATTERN}, any case); the server issues {@code <CODE>-T-NNNN}. The number of
  * an issued id has at most 18 digits (as in {@link DefectId}), so it fits a {@code long}; a free id that does not have
  * that form has no number.
  */

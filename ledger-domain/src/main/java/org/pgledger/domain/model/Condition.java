@@ -23,7 +23,7 @@ public record Condition(@Id ConditionId id, ProjectId projectId, @Column("releas
         @CreatedBy @InsertOnlyProperty ActorId createdBy, @InsertOnlyProperty String idKey) {
 
     /**
-     * {@code conditionText} may be empty: the row holds NULL then (the 1.x column allowed {@code ''}) and the tools show
+     * {@code conditionText} may be empty: the row holds NULL then (no column of this schema holds {@code ''}) and the tools show
      * {@code ""}. {@code idKey} is the id in upper case, the column under the UNIQUE constraint that refuses ids that differ
      * only in case; it is derived from the id, whatever is passed.
      */

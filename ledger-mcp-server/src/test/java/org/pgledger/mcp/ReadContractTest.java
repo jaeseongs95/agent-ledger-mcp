@@ -61,7 +61,7 @@ class ReadContractTest {
 
     @Test
     @DisplayName("MCR-001: author_id is declared by ledger_history only, as the filter of MCR-H05 and not as the "
-            + "ignored legacy key of the write tools")
+            + "ignored deprecated key of the write tools")
     void authorIdIsOnlyTheHistoryFilter(McpSession session) {
         List<String> declaring = ToolNames.READ.stream()
                 .filter(tool -> SchemaView.of(session.mapper(), session.tool(tool).inputSchema()).properties()

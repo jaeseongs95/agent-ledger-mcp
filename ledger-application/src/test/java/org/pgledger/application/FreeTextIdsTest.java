@@ -29,11 +29,12 @@ import org.pgledger.domain.error.ValidationCode;
 import org.pgledger.domain.error.ValidationException;
 
 /**
- * REH3-ID-04, REH3-ID-05, REH3-ID-07, REH3-TXT-01 .. 04 and REH3-LEN-01 (PostgreSQL of the test PC): the ids of 1.x in
- * any case, the refusal of ids that differ only in case, the texts that may be empty, and the longer columns.
+ * REH3-ID-04, REH3-ID-05, REH3-ID-07, REH3-TXT-01 .. 04 and REH3-LEN-01 (PostgreSQL of the test PC): the ids of a task or
+ * condition: free text in any case, the refusal of ids that differ only in case, the texts that may be empty, and the
+ * longer columns.
  */
 @LedgerServiceTest
-class OneXIdsTest {
+class FreeTextIdsTest {
 
     private static String create(Scenario s, String entity, String id, Map<String, String> fields) {
         return s.bean(SaveService.class).save(Scenario.AUTHOR, s.create(entity, id, fields)).id();
@@ -217,7 +218,7 @@ class OneXIdsTest {
     }
 
     @Test
-    @DisplayName("REH3-LEN-02 a task is saved with an origin_ref of 9408 characters (the longest of the 1.x ledger) and edited by it again; 20001 is MUST_BE_AT_MOST_CHARS (20000)")
+    @DisplayName("REH3-LEN-02 a task is saved with an origin_ref of 9408 characters (a long imported value) and edited by it again; 20001 is MUST_BE_AT_MOST_CHARS (20000)")
     void len02_originReference(Scenario s) {
         Map<String, String> fields = s.taskFields("t");
         fields.put("origin_ref", "o".repeat(9408));
