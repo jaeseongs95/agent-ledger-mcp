@@ -72,6 +72,10 @@ import org.springframework.stereotype.Component;
  * the origin of a fix ({@code imported} true is IMPORTED), the state of a common code ({@code active} true is ACTIVE),
  * the counters of a project are the highest numbers the legacy ledger used, the version of a
  * project is 1, and {@code before_data} and {@code last_used_at} stay NULL.</li>
+ * <li>An actor id (the columns {@code author_id}, {@code recorded_by}, {@code owner_actor_id}, {@code created_by},
+ * {@code granted_by}) loses the prefix {@code agent:} that 1.x put before a session id: {@code agent:claude:s1} is the session
+ * {@code claude:s1} of 2.0, so the checks of one session (VERIFIED, owner and reporter) hold across the import (M1X-050). Nothing
+ * else of the id changes; the text of the JSON columns {@code changes} is copied as it is.</li>
  * <li>The request receipts of 1.x are not mapped: they are not copied (M1X-003).</li>
  * </ul>
  */
@@ -170,7 +174,17 @@ final class LegacyRowMapper {
                 .collect(Collectors.joining("|"));
     }
 
-    /** The row with every empty text as NULL and every time cut to microseconds. */
+    /**
+     * The columns of the 1.x schema that hold who acted. 1.x wrote a session as {@code agent:<vendor>:<session>}; 2.0 knows it as
+     * {@code <vendor>:<session>} (the same session as the one that signs a write now), so the prefix is taken off here and nowhere
+     * else (M1X-050): the checks that two actions are of one session (VERIFIED needs a fix of another session, the owner and the
+     * reporter of a task) would otherwise see two sessions.
+     */
+    private static final Set<String> ACTOR_COLUMNS = Set.of("author_id", "recorded_by", "owner_actor_id", "created_by",
+            "granted_by");
+    private static final String AGENT_PREFIX = "agent:";
+
+    /** The row with every empty text as NULL, every time cut to microseconds and every actor id in its 2.0 form. */
     private static LegacyRow normalised(LegacyRow source) {
         Map<String, Object> values = new LinkedHashMap<>();
         for (Map.Entry<String, Object> entry : source.values().entrySet()) {
@@ -179,6 +193,9 @@ final class LegacyRowMapper {
                 value = null;
             } else if (value instanceof Instant instant) {
                 value = instant.truncatedTo(ChronoUnit.MICROS);
+            } else if (value instanceof String text && ACTOR_COLUMNS.contains(entry.getKey())
+                    && text.startsWith(AGENT_PREFIX) && text.length() > AGENT_PREFIX.length()) {
+                value = text.substring(AGENT_PREFIX.length());
             }
             values.put(entry.getKey(), value);
         }

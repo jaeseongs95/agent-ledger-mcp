@@ -483,6 +483,143 @@ class DocsTest {
         assertThat(note().part(language.partHeading()).text()).contains(term);
     }
 
+    /** The guide of the upgrade tool: the section of the README of the language. */
+    private static String upgradeGuide(Language language) {
+        return language.readme().part(language == Language.EN ? "Upgrading from 1.x" : "1.x에서 업그레이드").text();
+    }
+
+    /** The places in the text where the steps of an upgrade are written, in the order the tool is run (M1X-031, M1X-032). */
+    private static final List<String> UPGRADE_ORDER = List.of("ledger-migrate-1x.jar stop-1x", "deploy/install.sh",
+            "import-secrets-1x --replace --stdin", "ledger-migrate-1x.jar import-1x --owner-account", "mcp-check",
+            "ledger-migrate-1x.jar retire-1x");
+
+    private static void assertInOrder(String text, List<String> markers, String what) {
+        int from = 0;
+        for (String marker : markers) {
+            int found = text.indexOf(marker, from);
+            assertThat(found).as("%s: '%s' after position %d", what, marker, from).isGreaterThanOrEqualTo(0);
+            from = found;
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(Language.class)
+    @DisplayName("M1X-031 the upgrade guide of each README is in the order stop-1x, the installer, import-secrets-1x, import-1x, the check, retire-1x; it says that the rollback copies the kept unit (the backup stays), that the units and the 1.x database are not deleted before retire-1x, and that Windows has nothing of 1.x to stop")
+    void theUpgradeGuideIsInTheOrderOfTheTool(Language language) {
+        boolean english = language == Language.EN;
+        String guide = upgradeGuide(language);
+
+        assertInOrder(guide, UPGRADE_ORDER, "README " + language);
+        assertThat(guide).contains("<unit>.1x-backup").contains("systemctl daemon-reload").contains("enable --now")
+                .contains(english ? "so that the backup stays" : "백업이 남도록 복사합니다")
+                .contains("NO_1X_SERVICE_WINDOWS").doesNotContain("sc.exe");
+        assertNoWindowsRollback(guide, "README " + language);
+        // the same commands in the same order in both languages: the fenced commands of the guide are equal
+        assertThat(Markdown.of(guide).fences()).isEqualTo(Markdown.of(upgradeGuide(Language.EN)).fences());
+    }
+
+    @ParameterizedTest
+    @EnumSource(Language.class)
+    @DisplayName("M1X-032 each part of the 2.0.0 note says the upgrade in the same order, that the rollback copies the kept unit, and that 1.x request receipts are not carried over")
+    void theNoteSaysTheUpgradeInTheOrderOfTheTool(Language language) {
+        boolean english = language == Language.EN;
+        String part = note().part(language.partHeading()).text();
+
+        assertInOrder(part, List.of("`stop-1x`", "`import-secrets-1x`", "`import-1x`", "`retire-1x`"), "2.0.0 note " + language);
+        assertThat(part).contains(english ? "so that the backup stays" : "백업이 남도록 복사합니다")
+                .contains("NO_1X_SERVICE_WINDOWS");
+        // the 2.0.0 installer text of the part names sc.exe for 2.0 (the service managers), so the steps of the upgrade are
+        // checked where they are: the section on the migration, and the rollback step wherever it is written
+        String migration = note().part(language.partHeading()).subsections().stream()
+                .filter(section -> language.sections().get(2).equals(section.heading())).findFirst().orElseThrow().body()
+                .stream().reduce("", (left, right) -> left + "\n" + right);
+        assertThat(migration).as("migration section of the 2.0.0 note " + language).contains("<unit>.1x-backup")
+                .doesNotContain("sc.exe");
+        assertNoWindowsRollback(part, "2.0.0 note " + language);
+    }
+
+    /**
+     * 1.x ran on Linux with systemd only: no line that says how to start the kept 1.x services again (the line holds
+     * {@code enable --now}) names Windows or {@code sc.exe}. The earlier check looked for {@code sc.exe qc} in the whole part,
+     * which names {@code sc.exe} for the 2.0 installer, so it let "on Windows sc.exe config ..." of the rollback step pass.
+     */
+    private static void assertNoWindowsRollback(String text, String what) {
+        List<String> rollback = text.lines().filter(line -> line.contains("enable --now")).toList();
+
+        assertThat(rollback).as("lines of the rollback in " + what).isNotEmpty();
+        assertThat(rollback).as("rollback of 1.x in " + what).noneMatch(line -> line.contains("sc.exe")
+                || line.toLowerCase(Locale.ROOT).contains("windows"));
+    }
+
+    @ParameterizedTest
+    @EnumSource(Language.class)
+    @DisplayName("M1X-033 the module table of each README names every module that ledger-migrate-1x uses (the project dependencies of its build file)")
+    void theModuleRowOfTheToolNamesWhatItUses(Language language) {
+        Matcher dependency = Pattern.compile("implementation\\(project\\(\":(ledger-[a-z0-9-]+)\"\\)").matcher(
+                Repository.read("ledger-migrate-1x/build.gradle.kts"));
+        List<String> used = new ArrayList<>();
+        while (dependency.find()) {
+            used.add(dependency.group(1));
+        }
+        String row = language.readme().lines().stream().filter(line -> line.startsWith("| `ledger-migrate-1x` |")).findFirst()
+                .orElseThrow();
+
+        assertThat(used).contains("ledger-application", "ledger-cli");
+        for (String module : used) {
+            assertThat(row).as("row of ledger-migrate-1x in the README, module %s", module).contains("`" + module + "`");
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(Language.class)
+    @DisplayName("REH2-DOC-01 (changed by M1X) the guide of the README and each part of the 2.0.0 note say that the import runs once on the schema that migrate and setup made (the state after the installer), and that the rollback copies the kept unit back (the backup stays); none says the schema is freshly migrated")
+    void theGuideSaysWhatTheImportAndTheRollbackLeave(Language language) {
+        boolean english = language == Language.EN;
+
+        for (String text : List.of(upgradeGuide(language), note().part(language.partHeading()).text())) {
+            assertThat(text).contains(english ? "`migrate` and `setup`" : "`migrate`와 `setup`")
+                    .contains(english ? "so that the backup stays" : "백업이 남도록 복사합니다")
+                    .doesNotContain(english ? "freshly migrated" : "방금 `migrate`한");
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(Language.class)
+    @DisplayName("REH3-DOC-01 (changed by M1X) the guide of the README and each part of the 2.0.0 note say that the ids of 1.x are kept (1 to 120 characters, any case), that ids that differ only in case are refused, that an empty text of 1.x reads as an empty string, and which columns are longer (code 200, ci_ref 2000)")
+    void theGuideSaysWhatHappensToIdsAndTexts(Language language) {
+        boolean english = language == Language.EN;
+
+        for (String text : List.of(upgradeGuide(language), note().part(language.partHeading()).text())) {
+            if (english) {
+                assertThat(text).contains("ids of 1.x are kept as they are").contains("1 to 120 characters")
+                        .contains("differ only in case").contains("empty text").contains("`code` of a condition (200")
+                        .contains("`ci_ref` (2000");
+            } else {
+                assertThat(text).contains("1.x의 ID는 그대로 유지").contains("1자 이상 120자 이하")
+                        .contains("대소문자만 다른").contains("빈 문자열").contains("조건의 `code`(200자")
+                        .contains("`ci_ref`(2000자");
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(Language.class)
+    @DisplayName("W7-SEC-01 (changed by M1X) the guide of each README says that a 1.0.0 installation has no admin token (import-secrets-1x keeps the one of the installer), and each part of the note names 1.0.0")
+    void oneZeroHasNoAdminToken(Language language) {
+        assertThat(upgradeGuide(language)).contains("1.0.0").contains("`PGLEDGER_ADMIN_TOKEN`").contains("`ledger.admin.token`");
+        assertThat(note().part(language.partHeading()).text()).contains("1.0.0");
+    }
+
+    @ParameterizedTest
+    @EnumSource(Language.class)
+    @DisplayName("FUP-DOC-03 (changed by M1X) the guide says that the read-only account of the 1.x database may be dropped when the checks are done")
+    void theReadOnlyAccountOfOneXMayBeDropped(Language language) {
+        String phrase = language == Language.EN ? "read-only account of the 1.x database that was made for the import may be dropped"
+                : "읽기 전용 계정은 삭제해도 됩니다";
+
+        assertThat(upgradeGuide(language)).contains(phrase);
+    }
+
     @ParameterizedTest
     @EnumSource(Language.class)
     @DisplayName("DOC-034 no text of the docs names pg-ledger-mcp.env")

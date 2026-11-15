@@ -149,7 +149,7 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | `ledger-cli` | 소유자용 명령줄 도구(`ledger-cli.jar`) |
 | `ledger-seed` | 새 설치의 시드 번들(기본 결함 분류와 설치 기본값을 담은 H2 파일 하나)과 그 읽기 코드. `ledger-cli`만 사용합니다 |
 | `ledger-client-hook` | 모든 클라이언트가 함께 쓰는 훅 jar(`ledger-client-hook.jar`) |
-| `ledger-migrate-1x` | 1.x 설치를 2.0으로 옮기는 별도의 도구(`ledger-migrate-1x.jar`, 1.x에서 업그레이드 참조). `ledger-domain`, `ledger-database`, `ledger-application`을 사용하며 다른 모듈은 이 모듈을 사용하지 않습니다 |
+| `ledger-migrate-1x` | 1.x 설치를 2.0으로 옮기는 별도의 도구(`ledger-migrate-1x.jar`, 1.x에서 업그레이드 참조). `ledger-domain`, `ledger-database`, `ledger-application`을 사용하고, 명령줄 기반과 비밀 저장소를 위해 `ledger-cli`의 클래스(plain jar이며 그 모듈의 라이브러리는 가져오지 않습니다)도 사용하므로 비밀 저장소는 서비스의 것과 같습니다. 다른 모듈은 이 모듈을 사용하지 않습니다 |
 | `ledger-system-test` | 시험 코드만 있는 모듈: 빌드한 jar를 그 컴퓨터의 PostgreSQL에 대해 실행하는, 패키지된 제품의 시스템 시험 |
 
 ## 설정
@@ -554,14 +554,14 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 가로챈 토큰으로 다른
    ```
 
    - **바꾸는 것.** 1.x의 서비스 둘, `<name>`(MCP 서버)과 `<name>-admin`(관리 웹이며 1.0.0에는 없었습니다)을 멈추고 비활성화합니다. `<name>`은 `--name=<instance>`이며 기본값은
-     `pg-ledger-mcp`입니다. 각 정의는 옆에 백업으로 보관합니다. Linux(`--platform=linux`, 기본값)에서는 유닛 파일 `<unit-dir>/<service>.service`를
-     `<service>.service.1x-backup`으로 옮기며, 디렉터리는 `--unit-dir=<dir>`이고 기본값은 `/etc/systemd/system`입니다. Windows(`--platform=windows`)에서는
-     `sc.exe qc <service>`의 출력을 `<home>/<service>.1x-backup`으로 저장하고(`--home=<dir>`, 기본값 `C:/ProgramData/<name>`) 서비스를 비활성화합니다.
-     `--unit-dir`은 Linux용이고 `--home`은 Windows용이며, 다른 쪽을 주면 거절합니다. 1.x 데이터베이스와 1.x 환경 파일은 건드리지 않습니다.
+     `pg-ledger-mcp`입니다. 각 정의는 옆에 백업으로 보관합니다. 유닛 파일 `<unit-dir>/<service>.service`를
+     `<service>.service.1x-backup`으로 옮기며, 디렉터리는 `--unit-dir=<dir>`이고 기본값은 `/etc/systemd/system`입니다. 1.x에는 Linux(systemd) 설치만 있었으므로
+     Windows에서 멈출 것은 없습니다. `--platform=windows`는 `NO_1X_SERVICE_WINDOWS`로 거절하며, 그곳의 같은 이름 서비스는 2.0 또는 시스템의 것이므로 도구는 절대 건드리지 않습니다.
+     1.x 데이터베이스와 1.x 환경 파일은 건드리지 않습니다.
    - **읽는 것.** 두 서비스의 정의와, `--env=<file>`을 주면 1.x 환경 파일이 허용하는 호스트 이름입니다.
-   - **프로세스를 시작하는 이유.** Java에는 호스트의 서비스 관리자를 다루는 API가 없으므로, 명령은 고정된 인자(`stop`, `disable`, `daemon-reload` 또는 `qc`, `stop`, `config`)와
-     검증한 이름으로 `systemctl`(Linux) 또는 `sc.exe`(Windows)를 코드의 한 곳에서 실행합니다. 이름이 `<name>` 또는 `<name>-admin`이고 정의가 1.x의 것인 서비스만 건드립니다.
-     Linux 유닛에는 `/etc/<name>/env`를 가리키는 `EnvironmentFile=` 줄이 있고, 바이너리가 `ledger-mcp-server.jar` 또는 `ledger-admin-web.jar`인 Windows 서비스는 2.0의 것입니다.
+   - **프로세스를 시작하는 이유.** Java에는 호스트의 서비스 관리자를 다루는 API가 없으므로, 명령은 고정된 인자(`stop`, `disable`, `daemon-reload`)와
+     검증한 이름으로 `systemctl`을 코드의 한 곳에서 실행합니다. 이름이 `<name>` 또는 `<name>-admin`이고 정의가 1.x의 것인 서비스만 건드립니다.
+     1.x의 유닛에는 `/etc/<name>/env`를 가리키는 `EnvironmentFile=` 줄이 있습니다.
      첫 변경 전에 모든 서비스를 확인하며, 그렇지 않으면 `NOT_1X_SERVICE`로 멈추고 아무것도 바꾸지 않은 상태로 남습니다.
    - **1.x의 공개 호스트 이름.** 1.x의 클라이언트는 1.x 설정 `DBHUB_ALLOWED_HOSTS`(1.1.0의 관리 웹은 `PGLEDGER_ADMIN_ALLOWED_HOSTS`)가 허용하는
      호스트 이름, 예를 들어 리버스 프록시의 이름으로 1.x 서버에 접속합니다. 2.0의 `Host` 검사는 `127.0.0.1`, `localhost`와 `--mcp-host`, `--admin-host`의 이름만
@@ -619,8 +619,7 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 가로챈 토큰으로 다른
    `ledger.admin.sign-in=token`일 때만 브라우저를 로그인시키며, 기본값은 `passkey`입니다). 클라이언트: `execute_sql_reader`와 `search_objects_reader` 도구는 제거되었으며 읽기 도구가 대체합니다. 쓰기 도구의 결과는 `rows[0].result` 감싸기 없이 키를 그대로 유지합니다.
    서버를 전환하기 전에 모든 클라이언트 호스트에 훅 jar(Java 25 런타임)를 설치합니다. 확인을 마치면, 가져오기를 위해 1.x 데이터베이스에 만든 읽기 전용 계정은 삭제해도 됩니다.
 9. **되돌리기.** 확인이 실패하면 2.0 서비스를 멈추고, 각 `<unit>.1x-backup`을 2.0 유닛 자리에 원래 이름으로 되돌립니다(백업이 남도록 복사합니다). `sudo systemctl daemon-reload`를 실행한 뒤
-   `sudo systemctl enable --now <name>`과 `<name>-admin`에 대한 같은 명령으로 1.x 서비스를 이전 설정으로 시작합니다. Windows에서는 `sc.exe config <name> start= auto`(`stop-1x` 이전의 시작 유형은 백업 파일에 있습니다)와
-   `sc.exe start <name>`, 그리고 `<name>-admin`에 대한 같은 명령을 실행합니다. `stop-1x`가 이 절차를 출력합니다. 1.x 데이터베이스는 읽기만 했으므로 1.x는 그대로 이어집니다.
+   `sudo systemctl enable --now <name>`과 `<name>-admin`에 대한 같은 명령으로 1.x 서비스를 이전 설정으로 시작합니다. `stop-1x`가 이 절차를 출력합니다. 1.x 데이터베이스는 읽기만 했으므로 1.x는 그대로 이어집니다.
 10. **2.0을 받아들인 뒤 `retire-1x`로 1.x 데이터베이스 객체를 제거합니다.** 그때까지는 보관한 유닛(`<unit>.1x-backup`)과 1.x 데이터베이스가 되돌아갈 길이며, 어느 것도 그 전에 삭제하지 않습니다.
     1.x 설치기는 데이터베이스에 함수, 트리거, 뷰, 표, 스키마 하나와 데이터베이스 역할 네 개를 만들었고, `import-1x`는 그것을 읽기만 합니다. 1.x 데이터베이스를 `pg_dump`로 백업하고
     그 1.x 백업의 복원을 시험합니다. 다음 단계를 마치면 그 백업이 되돌아갈 유일한 길입니다. 1.x 서비스를 멈추고(`stop-1x`), 1.x 객체를 소유한 계정(1.x 설치기의 소유자 역할 또는 그 권한을 가진 역할)의

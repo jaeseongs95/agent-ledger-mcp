@@ -106,7 +106,7 @@ class LinksAndHistoryTest {
         }
         Expect.invalid(() -> author(HistoryOp.CORRECT, null, 7L, before));
         // imported operations need a source reference; imported rows carry no before_data
-        ActorId imported = new ImportedActorId("agent:claude:1");
+        ActorId imported = new ImportedActorId("someone-imported");
         entry(HistoryOp.IMPORT, null, null, null, "postgres", imported, ActorAssurance.IMPORTED_LOGIN, "import:42");
         Expect.invalid(() -> entry(HistoryOp.IMPORT, null, null, null, "postgres", imported,
                 ActorAssurance.IMPORTED_LOGIN, null));

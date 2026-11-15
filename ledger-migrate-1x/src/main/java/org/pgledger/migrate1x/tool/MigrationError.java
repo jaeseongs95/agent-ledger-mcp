@@ -13,11 +13,13 @@ public enum MigrationError implements ErrorKey {
     ENV_FILE_FAILED,
     ENV_KEYS_MISSING,
     INVALID_1X_VALUE,
+    SECRETS_PARTIAL,
     HOSTS_DROPPED,
 
     // stop-1x
     NOT_1X_SERVICE,
     NO_1X_SERVICE,
+    NO_1X_SERVICE_WINDOWS,
     BACKUP_DIFFERS,
     SERVICE_COMMAND_FAILED,
     STOP_WRITE_FAILED,

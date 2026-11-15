@@ -2,6 +2,7 @@ package org.pgledger.cli.owner;
 
 import java.util.Set;
 import org.pgledger.cli.CliCommand;
+import org.pgledger.cli.LedgerCliApplication;
 import org.pgledger.cli.secret.ConsoleSecretInput;
 import org.pgledger.cli.secret.SecretInput;
 import org.pgledger.cli.secret.StandardInput;
@@ -47,8 +48,21 @@ public class OwnerAccountEnvironmentPostProcessor implements EnvironmentPostProc
         return COMMANDS;
     }
 
+    /**
+     * Whether this post-processor acts for the program that starts. It is registered in the {@code spring.factories} of this module, so
+     * it is on the class path of every program built on the module and Boot calls it for each: it acts only for the command line tool
+     * itself (the program the module is), and a program that has its own owner commands has a subclass that says so. Without an
+     * application (a test that calls it directly) it acts.
+     */
+    protected boolean appliesTo(SpringApplication application) {
+        return application == null || application.getAllSources().contains(LedgerCliApplication.class);
+    }
+
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
+        if (!appliesTo(application)) {
+            return;
+        }
         PropertySource<?> commandLine = environment.getPropertySources()
                 .get(CommandLinePropertySource.COMMAND_LINE_PROPERTY_SOURCE_NAME);
         Object account = commandLine == null ? null : commandLine.getProperty(OPTION);

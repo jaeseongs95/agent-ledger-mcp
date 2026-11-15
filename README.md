@@ -187,7 +187,7 @@ The build is a Gradle multi-module project.
 | `ledger-admin-web` | the Spring Boot admin web for the owner (`ledger-admin-web.jar`) |
 | `ledger-cli` | the owner command line tool (`ledger-cli.jar`) |
 | `ledger-seed` | the seed bundle of a new installation, the default defect categories and the install defaults in one H2 file, and its reader; only `ledger-cli` uses it |
-| `ledger-migrate-1x` | the separate tool that moves a 1.x installation to 2.0 (`ledger-migrate-1x.jar`, see Upgrading from 1.x); it uses `ledger-domain`, `ledger-database` and `ledger-application`, and no other module uses it |
+| `ledger-migrate-1x` | the separate tool that moves a 1.x installation to 2.0 (`ledger-migrate-1x.jar`, see Upgrading from 1.x); it uses `ledger-domain`, `ledger-database` and `ledger-application`, and the classes (the plain jar, none of its libraries) of `ledger-cli` for its command line machinery and secret store, so that the secret store is the one of the services; no other module uses it |
 | `ledger-client-hook` | the one hook jar of all clients (`ledger-client-hook.jar`) |
 | `ledger-system-test` | test code only: the system test of the packaged product, which starts the built jars against the local PostgreSQL |
 
@@ -654,16 +654,16 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
    ```
 
    - **What it changes.** It stops and disables the two services of 1.x, `<name>` (the MCP server) and `<name>-admin` (the admin web, which
-     1.0.0 did not have); `<name>` is `--name=<instance>`, default `pg-ledger-mcp`. It keeps the definition of each next to it as a backup. On
-     Linux (`--platform=linux`, the default) the unit file `<unit-dir>/<service>.service` is moved to `<service>.service.1x-backup`; the
-     directory is `--unit-dir=<dir>`, default `/etc/systemd/system`. On Windows (`--platform=windows`) the output of `sc.exe qc <service>`
-     is saved as `<home>/<service>.1x-backup` (`--home=<dir>`, default `C:/ProgramData/<name>`) and the service is set to disabled.
-     `--unit-dir` belongs to Linux and `--home` to Windows, and the other one is refused. The 1.x database and the 1.x environment file are not touched.
+     1.0.0 did not have); `<name>` is `--name=<instance>`, default `pg-ledger-mcp`. It keeps the definition of each next to it as a backup: the
+     unit file `<unit-dir>/<service>.service` is moved to `<service>.service.1x-backup`; the directory is `--unit-dir=<dir>`, default
+     `/etc/systemd/system`. 1.x had Linux (systemd) installations only, so there is nothing to stop on Windows: `--platform=windows` is refused
+     with `NO_1X_SERVICE_WINDOWS`, and a Windows service of that name is a service of 2.0 or of the system, which the tool never touches.
+     The 1.x database and the 1.x environment file are not touched.
    - **What it reads.** The definitions of the two services and, with `--env=<file>`, the host names that the 1.x environment file allows.
-   - **Why it starts a process.** Java has no API for the service manager of the host, so the command runs `systemctl` (Linux) or `sc.exe`
-     (Windows) with fixed arguments (`stop`, `disable` and `daemon-reload`, or `qc`, `stop` and `config`) and the validated name, in one place of its code.
-     It touches only a service called `<name>` or `<name>-admin` whose definition is the one of 1.x: a Linux unit has an `EnvironmentFile=`
-     line that names `/etc/<name>/env`, and a Windows service whose binary is `ledger-mcp-server.jar` or `ledger-admin-web.jar` is one of 2.0.
+   - **Why it starts a process.** Java has no API for the service manager of the host, so the command runs `systemctl`
+     with fixed arguments (`stop`, `disable` and `daemon-reload`) and the validated name, in one place of its code.
+     It touches only a service called `<name>` or `<name>-admin` whose definition is the one of 1.x: a unit of 1.x has an `EnvironmentFile=`
+     line that names `/etc/<name>/env`.
      Every service is checked before the first change; otherwise the command stops with `NOT_1X_SERVICE` and has changed nothing.
    - **The public host names of 1.x.** The clients reach the 1.x server through the host names that the 1.x setting `DBHUB_ALLOWED_HOSTS`
      allows (the admin web of 1.1.0: `PGLEDGER_ADMIN_ALLOWED_HOSTS`), for example the name of your reverse proxy. The `Host` check of 2.0 allows
@@ -734,8 +734,7 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
    When the checks have passed, the read-only account of the 1.x database that was made for the import may be dropped.
 9. **Roll back** if the check fails: stop the services of 2.0, put each `<unit>.1x-backup` back under its own name in place of the unit of 2.0
    (copy it, so that the backup stays), run `sudo systemctl daemon-reload`, and run `sudo systemctl enable --now <name>` and the same for
-   `<name>-admin` to start the 1.x services with their previous configuration. On Windows run `sc.exe config <name> start= auto` (the start type
-   before `stop-1x` is in the backup file) and `sc.exe start <name>`, and the same for `<name>-admin`. `stop-1x` prints these steps. The 1.x database
+   `<name>-admin` to start the 1.x services with their previous configuration. `stop-1x` prints these steps. The 1.x database
    was only read, so 1.x continues as it was.
 10. **Retire the 1.x database objects with `retire-1x`, after you accept 2.0.** The kept units (`<unit>.1x-backup`) and the 1.x database are the way
     back until then, and nothing deletes them before. The 1.x installer made functions, triggers, views, tables, a schema and
