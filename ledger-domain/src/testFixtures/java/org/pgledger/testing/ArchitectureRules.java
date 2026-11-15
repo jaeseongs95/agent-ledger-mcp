@@ -7,6 +7,7 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 
 import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.core.domain.JavaConstructorCall;
 import com.tngtech.archunit.core.domain.JavaMethodCall;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
@@ -110,6 +111,21 @@ public final class ArchitectureRules {
     /** ARC-018, second half. */
     public static ArchRule staticFieldsAreFinal() {
         return fields().that().areStatic().should().beFinal();
+    }
+
+    private static final String JSON_MAPPER = "tools.jackson.databind.json.JsonMapper";
+
+    /**
+     * TXD-007 (principle 3.7 and 2.2 category 2): a Spring module makes no {@code JsonMapper} of its own, no
+     * {@code JsonMapper.builder()} and no {@code new JsonMapper()}: the Spring Boot bean is injected, so that every JSON is
+     * written and read with the same settings.
+     */
+    public static ArchRule noOwnJsonMapper() {
+        DescribedPredicate<JavaMethodCall> builder = DescribedPredicate.describe("calls JsonMapper.builder(..)",
+                call -> JSON_MAPPER.equals(call.getTargetOwner().getName()) && "builder".equals(call.getTarget().getName()));
+        DescribedPredicate<JavaConstructorCall> constructor = DescribedPredicate.describe("calls a constructor of JsonMapper",
+                call -> JSON_MAPPER.equals(call.getTargetOwner().getName()));
+        return noClasses().should().callMethodWhere(builder).orShould().callConstructorWhere(constructor);
     }
 
     private static final String TRANSACTIONAL = "org.springframework.transaction.annotation.Transactional";

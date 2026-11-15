@@ -160,6 +160,12 @@ class ArchitectureTest {
     }
 
     @Test
+    @DisplayName("TXD-007 (principle 3.7) the CLI makes no JsonMapper of its own: the Spring Boot bean is injected")
+    void txd007_noOwnJsonMapper() {
+        ArchitectureRules.noOwnJsonMapper().check(MAIN);
+    }
+
+    @Test
     @DisplayName("Configuration comes from ConfigurationProperties records, never @Value")
     void noValueAnnotation() {
         noFields().should().beAnnotatedWith(Value.class).check(MAIN);

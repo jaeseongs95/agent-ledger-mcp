@@ -112,6 +112,7 @@ class ArchitectureTest {
                                 "org.springframework.jdbc.core.JdbcTemplate")
                         .orShould().dependOnClassesThat().haveFullyQualifiedName(
                                 "org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate")),
+                new Rule("TXD-007 no JsonMapper of its own in the MCP server", ArchitectureRules.noOwnJsonMapper()),
                 new Rule("TXD-005 no TransactionTemplate in the MCP server", ArchitectureRules.noTransactionTemplate()),
                 new Rule("TXD-005 @Transactional on no class of the MCP server but a @Service",
                         ArchitectureRules.transactionalOnlyOnServiceClasses()),
