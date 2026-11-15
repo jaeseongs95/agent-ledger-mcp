@@ -3,7 +3,6 @@ package org.pgledger.admin.app;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -34,9 +33,13 @@ import org.springframework.web.util.UriComponentsBuilder;
  * @param driverDirectory the one directory a driver jar must be in to be registered (after symbolic links are
  *                        resolved); the driver page runs the code of the jar it checks, so it takes no jar from anywhere
  * @param lockout         the lock after failed token attempts
- * @param oidc            OpenID Connect sign-in: who may sign in (the provider itself is
+ * @param oidc            OpenID Connect sign-in: the one owner (the provider itself is
  *                        {@code spring.security.oauth2.client.*})
  * @param mcp             the MCP server health check of the overview
+ * @param signIn          how the owner signs in, {@code oidc} or {@code passkey}; absent means {@code passkey} for a new
+ *                        installation, and an installation that has OpenID Connect settings but no choice is refused at start
+ *                        (nothing is guessed)
+ * @param passkey         the relying party of the passkeys (sign-in, registration and the approval of every owner write)
  */
 @Validated
 @ConfigurationProperties(prefix = "ledger.admin")
@@ -45,7 +48,8 @@ public record LedgerAdminProperties(String token, String agentToken,
         @DefaultValue("64KB") DataSize maxRequestSize,
         @DefaultValue("/etc/pg-ledger-mcp/jdbc-driver.yaml") Path driverFile,
         @DefaultValue("/etc/pg-ledger-mcp/drivers") Path driverDirectory,
-        @DefaultValue @Valid Lockout lockout, @DefaultValue @Valid Oidc oidc, @DefaultValue @Valid Mcp mcp) {
+        @DefaultValue @Valid Lockout lockout, @DefaultValue @Valid Oidc oidc, @DefaultValue @Valid Mcp mcp,
+        SignInMethod signIn, @DefaultValue @Valid Passkey passkey) {
 
     /** The shortest token that is accepted as a secret. */
     public static final int MIN_TOKEN_LENGTH = 16;
@@ -59,7 +63,30 @@ public record LedgerAdminProperties(String token, String agentToken,
     public String toString() {
         return "LedgerAdminProperties[token=<hidden>, agentToken=<hidden>, allowedHosts=" + allowedHosts
                 + ", maxRequestSize=" + maxRequestSize + ", driverFile=" + driverFile + ", driverDirectory="
-                + driverDirectory + ", lockout=" + lockout + ", oidc=" + oidc + ", mcp=" + mcp + "]";
+                + driverDirectory + ", lockout=" + lockout + ", oidc=" + oidc + ", mcp=" + mcp + ", signIn=" + signIn
+                + ", passkey=" + passkey + "]";
+    }
+
+    /** The sign-in that is in force: the chosen one, {@code passkey} when none was chosen. */
+    public SignInMethod effectiveSignIn() {
+        return signIn == null ? SignInMethod.PASSKEY : signIn;
+    }
+
+    /**
+     * An installation that has OpenID Connect settings must say that it means to sign in with them: nothing is guessed from
+     * the presence of settings, so an upgrade from a version that signed in with OpenID Connect stops at start with this
+     * message until {@code ledger.admin.sign-in=oidc} is written (or {@code passkey}, to give them up).
+     */
+    @AssertTrue(message = "ledger.admin.sign-in must be set to oidc or passkey, because ledger.admin.oidc.* is set")
+    public boolean isSignInChosenWhenOidcIsSet() {
+        return signIn != null || (!StringUtils.hasText(oidc.issuer()) && !StringUtils.hasText(oidc.ownerEmail()));
+    }
+
+    /** Signing in with OpenID Connect needs the one e-mail address of the owner and the issuer it counts for. */
+    @AssertTrue(message = "ledger.admin.sign-in=oidc needs ledger.admin.oidc.owner-email and ledger.admin.oidc.issuer")
+    public boolean isOidcComplete() {
+        return signIn != SignInMethod.OIDC
+                || (StringUtils.hasText(oidc.issuer()) && StringUtils.hasText(oidc.ownerEmail()));
     }
 
     /**
@@ -92,29 +119,48 @@ public record LedgerAdminProperties(String token, String agentToken,
     }
 
     /**
-     * Who may sign in with OpenID Connect: each entry names the issuer it counts for; a subject or an e-mail address of
-     * the list is accepted from that issuer only.
+     * Who may sign in with OpenID Connect: the owner is one e-mail address, which the provider verified, at one issuer (an
+     * address is only meaningful inside the issuer that verified it: another provider can hand out the same address to
+     * somebody else). The earlier list of owners ({@code owners}) is no longer supported and is refused when it is not empty:
+     * the product never picks one of several people silently.
+     *
+     * @param issuer     the {@code iss} of the ID token as the provider publishes it
+     * @param ownerEmail the e-mail address of the owner (case ignored; the provider must have verified it)
+     * @param owners     the earlier list (issuer with subject or e-mail): kept only so that its presence is refused with a
+     *                   message that names the setting
      */
-    public record Oidc(@DefaultValue List<@Valid Owner> owners) {
+    public record Oidc(String issuer, String ownerEmail, @DefaultValue List<@Valid Owner> owners) {
 
         public Oidc {
             owners = List.copyOf(owners);
         }
 
-        /**
-         * One person of the allow list.
-         *
-         * @param issuer  the {@code iss} of the ID token (as the provider publishes it)
-         * @param subject the {@code sub} of the person at that issuer (optional when the e-mail is given)
-         * @param email   the e-mail address the issuer verified (optional when the subject is given; case ignored)
-         */
-        public record Owner(@NotBlank String issuer, String subject, String email) {
+        /** The one e-mail address replaces the list. */
+        @AssertTrue(message = "ledger.admin.oidc.owners is no longer supported: the owner is one e-mail address, set "
+                + "ledger.admin.oidc.owner-email (and ledger.admin.oidc.issuer) and remove the list")
+        public boolean isListGone() {
+            return owners.isEmpty();
+        }
 
-            /** At least one of the subject and the e-mail address names the person. */
-            @AssertTrue(message = "an entry of ledger.admin.oidc.owners needs a subject or an email")
-            public boolean isIdentified() {
-                return StringUtils.hasText(subject) || StringUtils.hasText(email);
-            }
+        /** One entry of the earlier list. */
+        public record Owner(String issuer, String subject, String email) {
+        }
+    }
+
+    /**
+     * The relying party of the passkeys. A passkey is bound to a host name and to the origin the browser shows: both default to
+     * the one public host of the admin web (the one host of {@code allowed-hosts} that is not a loopback name, with
+     * {@code https}), or to {@code localhost} and {@code http://localhost:<server.port>} when there is none. With several
+     * public hosts, say which one in {@code rp-id} and list the origins. HTTPS is required for every origin but a loopback one.
+     *
+     * @param rpId   the relying party id (a host name, never an address)
+     * @param origins the origins the browser may show (scheme, host and port as the address bar writes them)
+     * @param rpName the name an authenticator shows
+     */
+    public record Passkey(String rpId, @DefaultValue List<String> origins, @DefaultValue("Ledger admin") String rpName) {
+
+        public Passkey {
+            origins = List.copyOf(origins);
         }
     }
 

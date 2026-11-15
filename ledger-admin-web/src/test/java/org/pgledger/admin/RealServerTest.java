@@ -23,6 +23,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.pgledger.admin.support.AdminTestInfrastructure;
 import org.pgledger.admin.support.AdminTestSettings;
+import org.pgledger.testing.TestOwners;
 import org.pgledger.testing.database.TestSchemaInitializer;
 import org.springframework.test.context.ContextConfiguration;
 import org.pgledger.admin.support.RealHttp;
@@ -92,6 +93,9 @@ class RealServerTest {
     @Autowired
     private Sessions.Catcher catcher;
 
+    @Autowired
+    private org.pgledger.application.admin.PasskeyService passkeys;
+
     private RealHttp http() {
         return new RealHttp(port);
     }
@@ -108,8 +112,8 @@ class RealServerTest {
                 .contains("Path=/").doesNotContain("Secure");
 
         String before = page.sessionId().orElseThrow();
-        Reply login = http.postForm("/login", "username=owner&token=" + AdminTestSettings.TOKEN + "&_csrf=" + page.csrf(),
-                "Cookie", RealHttp.cookie(before));
+        Reply login = http.postForm("/login/ott", "token=" + passkeys.issueCode(TestOwners.OWNER, false).code() + "&_csrf="
+                + page.csrf(), "Cookie", RealHttp.cookie(before));
         String after = login.sessionId().orElseThrow();
 
         assertThat(login.status()).isEqualTo(302);
@@ -122,13 +126,13 @@ class RealServerTest {
     }
 
     @Test
-    @DisplayName("ADM-012: a session lives 12 hours by configuration and is rejected once its lifetime has passed")
+    @DisplayName("ADM-012/PSK-ENR-03: the session of the sign-in with a code lives a quarter of an hour (the time to register a passkey) and is rejected once its lifetime has passed")
     void adm012_sessionLifetime() throws InterruptedException {
         RealHttp http = http();
-        String session = http.signIn(AdminTestSettings.TOKEN);
+        String session = http.signIn(passkeys.issueCode(TestOwners.OWNER, false).code());
         HttpSession held = catcher.session(session);
 
-        assertThat(held.getMaxInactiveInterval()).isEqualTo(12 * 60 * 60);
+        assertThat(held.getMaxInactiveInterval()).isEqualTo(15 * 60);
         assertThat(http.get("/api/session", "Cookie", RealHttp.cookie(session), "Accept", "application/json").status())
                 .isEqualTo(200);
 

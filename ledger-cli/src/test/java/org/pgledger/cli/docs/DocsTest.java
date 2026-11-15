@@ -54,12 +54,15 @@ class DocsTest {
     private static final List<String> OLD_LIMITATIONS = List.of("An installer is not part of this release",
             "use one database account", "설치기는 이번 릴리스에 포함되지 않으며", "데이터베이스 계정 하나를 씁니다");
     private static final List<String> REQUIRED_KEYS = List.of("ledger.mcp.token", "ledger.admin.token",
-            "ledger.admin.agent-token", "ledger.admin.driver-directory", "ledger.admin.oidc.owners",
+            "ledger.admin.agent-token", "ledger.admin.driver-directory", "ledger.admin.sign-in",
+            "ledger.admin.oidc.owner-email", "ledger.admin.oidc.issuer", "ledger.admin.oidc.owners",
+            "ledger.admin.passkey.rp-id", "ledger.admin.passkey.origins",
             "ledger.admin.lockout.global-delay", "ledger.jdbc.url", "ledger.schema.name");
     private static final List<String> NOTE_TERMS = List.of("pgla2", "pgla1", "ATTESTATION_VERSION_UNSUPPORTED",
             "REQUEST_ID_LEGACY", "execute_sql_reader", "search_objects_reader", "rows[0].result",
             "notifications/tools/list_changed", "key-register", "import-legacy", "migrate", "secret-set", "D-0012",
-            "ledger.admin.agent-token", "ledger.admin.driver-directory", "ledger.admin.oidc.owners",
+            "ledger.admin.agent-token", "ledger.admin.driver-directory", "ledger.admin.sign-in",
+            "ledger.admin.oidc.owner-email", "ledger.admin.oidc.owners", "passkey-code",
             "ledger.admin.lockout.global-delay");
 
     private static final Pattern KEY = Pattern.compile("ledger(\\.[a-z0-9-]+)+");

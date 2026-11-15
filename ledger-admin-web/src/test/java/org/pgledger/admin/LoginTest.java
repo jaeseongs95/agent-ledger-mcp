@@ -13,6 +13,7 @@ import org.pgledger.admin.support.AdminTest;
 import org.pgledger.admin.support.AdminTestSettings;
 import org.pgledger.admin.support.Browser;
 import org.pgledger.admin.support.Browser.Form;
+import org.pgledger.testing.TestOwners;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -24,6 +25,9 @@ class LoginTest {
 
     @Autowired
     private MockMvc mvc;
+
+    @Autowired
+    private org.pgledger.application.admin.PasskeyService passkeys;
 
     @Test
     @DisplayName("ADM-007: a page of an anonymous browser redirects to the login; a JSON endpoint answers 401 UNAUTHORIZED")
@@ -38,44 +42,80 @@ class LoginTest {
     }
 
     @Test
-    @DisplayName("ADM-008: the agent token is refused with AGENT_TOKEN_FORBIDDEN as bearer and as login password; no session")
+    @DisplayName("ADM-008: the agent token is refused with AGENT_TOKEN_FORBIDDEN as bearer; no session; the login page has no token form any more")
     void adm008_agentTokenIsRefused() throws Exception {
         Browser bearer = new Browser(mvc);
         bearer.perform(bearer.get("/api/session").accept(MediaType.APPLICATION_JSON)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + AdminTestSettings.AGENT_TOKEN))
                 .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("AGENT_TOKEN_FORBIDDEN"));
-
-        Browser form = new Browser(mvc);
-        String csrf = form.csrfOf("/login");
-        form.perform(form.form("/login", Form.of("username", "owner", "token", AdminTestSettings.AGENT_TOKEN), csrf)
-                .accept(MediaType.APPLICATION_JSON))
-                .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("AGENT_TOKEN_FORBIDDEN"));
-        form.perform(form.get("/api/session").accept(MediaType.APPLICATION_JSON)).andExpect(status().isUnauthorized());
+        bearer.perform(bearer.get("/api/session").accept(MediaType.APPLICATION_JSON)).andExpect(status().isUnauthorized());
+        assertThat(bearer.perform(bearer.get("/login")).andReturn().getResponse().getContentAsString())
+                .doesNotContain("type=\"password\"").doesNotContain("name=\"username\"");
     }
 
     @Test
-    @DisplayName("ADM-009: the admin token signs in through the form and opens a session (the cookie and the session id: RealServerTest)")
-    void adm009_loginOpensASession() throws Exception {
+    @DisplayName("ADM-009/PSK-ENR-01: the admin token no longer signs a browser in: a post of the token to /login finds no sign-in (no session)")
+    void adm009_tokenFormIsGone() throws Exception {
         Browser browser = new Browser(mvc);
         String csrf = browser.csrfOf("/login");
 
-        browser.perform(browser.form("/login", Form.of("username", "owner", "token", AdminTestSettings.TOKEN), csrf))
-                .andExpect(status().is3xxRedirection()).andExpect(header().string(HttpHeaders.LOCATION, endsWith("/")));
+        browser.perform(browser.form("/login", Form.of("username", "owner", "token", AdminTestSettings.TOKEN), csrf)
+                .accept(MediaType.APPLICATION_JSON)).andExpect(status().is4xxClientError());
+
+        browser.perform(browser.get("/api/session").accept(MediaType.APPLICATION_JSON)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("ADM-009/PSK-ENR-01: the one-time code of the owner's shell opens the enrolment session (a new session id), once")
+    void adm009_codeOpensAnEnrollmentSession() throws Exception {
+        String code = passkeys.issueCode(TestOwners.OWNER, false).code();
+        Browser browser = new Browser(mvc);
+
+        browser.signInWithCode(code).andExpect(status().is3xxRedirection())
+                .andExpect(header().string(HttpHeaders.LOCATION, endsWith("/passkeys")));
 
         browser.perform(browser.get("/api/session").accept(MediaType.APPLICATION_JSON)).andExpect(status().isOk())
-                .andExpect(jsonPath("$.authenticated").value(true)).andExpect(jsonPath("$.signIn").value("TOKEN"));
+                .andExpect(jsonPath("$.authenticated").value(true)).andExpect(jsonPath("$.signIn").value("CODE"));
+        browser.perform(browser.get("/passkeys")).andExpect(status().isOk());
+        Browser again = new Browser(mvc);
+        again.signInWithCode(code).andExpect(status().is3xxRedirection())
+                .andExpect(header().string(HttpHeaders.LOCATION, containsString("/login?error=PASSKEY_CODE_INVALID")));
+        again.perform(again.get("/api/session").accept(MediaType.APPLICATION_JSON)).andExpect(status().isUnauthorized());
     }
 
     @Test
-    @DisplayName("ADM-009: a wrong token sends a browser back to the login with the code; no session")
-    void adm009_wrongTokenFromABrowser() throws Exception {
+    @DisplayName("PSK-ENR-02: the enrolment session may register a passkey and nothing else: the console is refused, the passkey page is open")
+    void psk_enrollmentSessionIsNarrow() throws Exception {
+        Browser browser = new Browser(mvc);
+        browser.signInWithCode(passkeys.issueCode(TestOwners.OWNER, false).code()).andExpect(status().is3xxRedirection());
+
+        browser.perform(browser.get("/grants").accept(MediaType.APPLICATION_JSON)).andExpect(status().isForbidden());
+        browser.perform(browser.get("/projects").accept(MediaType.APPLICATION_JSON)).andExpect(status().isForbidden());
+        browser.perform(browser.get("/api/overview").accept(MediaType.APPLICATION_JSON)).andExpect(status().isForbidden());
+        browser.perform(browser.get("/passkeys")).andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("ADM-009/PSK-ENR-01: a wrong, empty or made-up code sends a browser back to the login with the code PASSKEY_CODE_INVALID; no session")
+    void adm009_wrongCodeFromABrowser() throws Exception {
+        Browser browser = new Browser(mvc);
+
+        browser.signInWithCode("AAAA-AAAA-AAAA-AAAA-AAAA").andExpect(status().is3xxRedirection())
+                .andExpect(header().string(HttpHeaders.LOCATION, containsString("/login?error=PASSKEY_CODE_INVALID")));
+        browser.perform(browser.get("/api/session").accept(MediaType.APPLICATION_JSON)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @DisplayName("PSK-ENR-01: the web makes no code: asking /ott/generate for one stores none, so no code of it signs in")
+    void psk_webMakesNoCode() throws Exception {
         Browser browser = new Browser(mvc);
         String csrf = browser.csrfOf("/login");
 
-        browser.perform(browser.form("/login", Form.of("username", "owner", "token", "wrong-wrong-wrong-wrong"), csrf)
-                .accept(MediaType.TEXT_HTML)).andExpect(status().is3xxRedirection())
-                .andExpect(header().string(HttpHeaders.LOCATION, containsString("/login?error=UNAUTHORIZED")));
-        browser.perform(browser.get("/api/session").accept(MediaType.APPLICATION_JSON)).andExpect(status().isUnauthorized());
+        browser.perform(browser.form("/ott/generate", Form.of("username", "enroll"), csrf).accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().is2xxSuccessful());
+
+        browser.signInWithCode("unused").andExpect(status().is3xxRedirection())
+                .andExpect(header().string(HttpHeaders.LOCATION, containsString("/login?error=PASSKEY_CODE_INVALID")));
     }
 
     @Test

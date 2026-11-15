@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title th:text="${title} + ' - ' + #{app.name}">Ledger admin</title>
   <link rel="stylesheet" th:href="@{/css/admin.css}">
+  <meta th:if="${_csrf != null}" name="_csrf" th:content="${_csrf.token}">
+  <meta th:if="${_csrf != null}" name="_csrf_header" th:content="${_csrf.headerName}">
 </head>
 <body>
 <th:block th:fragment="header(active)">
@@ -22,6 +24,7 @@
         <li><a th:href="@{/grants}" th:attr="aria-current=${active == 'grants'} ? 'page'" th:text="#{nav.grants}">Grants</a></li>
         <li><a th:href="@{/codes}" th:attr="aria-current=${active == 'codes'} ? 'page'" th:text="#{nav.codes}">Codes</a></li>
         <li><a th:href="@{/driver}" th:attr="aria-current=${active == 'driver'} ? 'page'" th:text="#{nav.driver}">JDBC driver</a></li>
+        <li><a th:href="@{/passkeys}" th:attr="aria-current=${active == 'passkeys'} ? 'page'" th:text="#{nav.passkeys}">Passkeys</a></li>
       </ul>
     </nav>
     <form th:if="${active != 'login'}" method="post" th:action="@{/logout}" class="logout">
@@ -35,7 +38,9 @@
   <footer class="site-footer" th:with="source=${@ui.sourceUrl()}">
     <a th:href="${source}" rel="noopener noreferrer" th:text="#{footer.source}">Source code</a>
   </footer>
+  <p id="passkey-status" class="error" role="alert" hidden th:attr="data-failed=#{passkey.failed}"></p>
   <script th:src="@{/js/local-time.js}" defer></script>
+  <script th:src="@{/js/passkey.js}" defer></script>
 </th:block>
 
 <!-- an instant: UTC in the markup (ISO-8601 with Z), shown in the zone of the browser by the script -->

@@ -14,7 +14,7 @@
 
   <section>
     <h2 th:text="#{projects.add}">Add a project</h2>
-    <form method="post" th:action="@{/projects}">
+    <form method="post" th:action="@{/projects}" data-approve>
       <label for="id" th:text="#{projects.id.label}">Project id</label>
       <input id="id" name="id" type="text" required autocomplete="off">
       <label for="code" th:text="#{projects.code.label}">Code (upper case, the prefix of defect and task ids)</label>

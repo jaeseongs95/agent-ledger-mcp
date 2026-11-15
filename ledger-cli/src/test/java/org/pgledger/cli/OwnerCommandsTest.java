@@ -469,4 +469,49 @@ class OwnerCommandsTest {
                 "CODE_SET", "GRANT_ISSUED", "GRANT_REVOKED");
         assertThat(audit).allSatisfy(row -> assertThat(row.get("actor")).isEqualTo("cli:" + USER));
     }
+
+    // PSK-CLI -----------------------------------------------------------------------------------------------------
+
+    private static final String PASSKEY_CODES = "SELECT code_hash, issued_by, used_at FROM owner_passkey_code ORDER BY issued_at, code_hash";
+
+    @Test
+    @DisplayName("PSK-CLI-01 passkey-code prints one code in five groups of four (only now), stores only its hash and records PASSKEY_CODE_ISSUED with the actor cli:<user>; a second request ends the first code")
+    void issuesAPasskeyCode(Cli cli) {
+        RecordingOutput first = new RecordingOutput();
+        RecordingOutput second = new RecordingOutput();
+
+        assertThat(run(cli, first, "passkey-code").exitCode()).isZero();
+        assertThat(run(cli, second, "passkey-code").exitCode()).isZero();
+
+        assertThat(first.info()).containsPattern("[A-HJ-NP-Z2-9]{4}(-[A-HJ-NP-Z2-9]{4}){4}");
+        assertThat(second.info()).doesNotContain("closed");
+        List<Map<String, Object>> codes = database.rows(PASSKEY_CODES);
+        assertThat(codes).hasSize(2).allSatisfy(row -> assertThat(row.get("issued_by")).isEqualTo("cli:" + USER));
+        assertThat(codes).allSatisfy(row -> assertThat(row.get("code_hash").toString()).hasSize(64));
+        assertThat(database.rows(AUDIT)).extracting(row -> row.get("operation"))
+                .containsExactly("PASSKEY_CODE_ISSUED", "PASSKEY_CODE_ISSUED");
+        assertThat(database.rows(AUDIT)).allSatisfy(row -> assertThat(row.get("actor")).isEqualTo("cli:" + USER));
+    }
+
+    @Test
+    @DisplayName("PSK-CLI-02 --remove-existing closes the live passkeys (the count is printed, PASSKEY_RESET is recorded, the credential rows stay); without the flag nothing is closed; an operand or an unknown option is refused")
+    void resettingNeedsTheFlag(Cli cli) {
+        database.update("INSERT INTO owner_passkey (credential_id, user_id, public_key, signature_count, uv_initialized, "
+                + "backup_eligible, backup_state, attestation_object, label, fingerprint, registered_by, registered_at) VALUES "
+                + "('c1', 'u', 'AAAA', 0, 1, 0, 0, 'BBBB', 'one', '0000-0000-0000-0001', 'x', TIMESTAMP '2026-11-15 10:00:00')");
+        RecordingOutput kept = new RecordingOutput();
+        RecordingOutput removed = new RecordingOutput();
+
+        assertThat(run(cli, kept, "passkey-code").exitCode()).isZero();
+        assertThat(database.rows("SELECT credential_id FROM owner_passkey_revocation")).isEmpty();
+        assertThat(run(cli, removed, "passkey-code", "--remove-existing").exitCode()).isZero();
+
+        assertThat(removed.info()).contains("Closed 1 live passkey");
+        assertThat(database.rows("SELECT credential_id, revoked_by FROM owner_passkey_revocation")).singleElement()
+                .satisfies(row -> assertThat(row.get("revoked_by")).isEqualTo("cli:" + USER));
+        assertThat(database.rows("SELECT credential_id FROM owner_passkey")).hasSize(1);
+        assertThat(database.rows(AUDIT)).extracting(row -> row.get("operation")).contains("PASSKEY_RESET");
+        assertThat(run(cli, "passkey-code", "extra").exitCode()).isEqualTo(ExitStatus.USAGE.code());
+        assertThat(run(cli, "passkey-code", "--unknown").exitCode()).isEqualTo(ExitStatus.USAGE.code());
+    }
 }

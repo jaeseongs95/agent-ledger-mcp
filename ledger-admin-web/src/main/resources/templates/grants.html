@@ -59,7 +59,7 @@
       <code class="fingerprint" th:text="${currentKey.fingerprint()}">1111</code>,
       <span th:text="#{grants.key.registeredAt}">registered</span> <time th:replace="~{fragments :: time(${currentKey.registeredAt()})}">t</time>
     </p>
-    <form method="post" th:action="@{/grants}">
+    <form method="post" th:action="@{/grants}" data-approve>
       <input type="hidden" name="author" th:value="${preview.form().author()}">
       <input type="hidden" name="project" th:value="${preview.form().project()}">
       <input type="hidden" name="scopes" th:each="scope : ${preview.form().scopes()}" th:value="${scope}">
@@ -78,7 +78,7 @@
 
   <section>
     <h2 th:text="#{grants.revoke}">Revoke grants</h2>
-    <form method="post" th:action="@{/grants/revoke}">
+    <form method="post" th:action="@{/grants/revoke}" data-approve>
       <label for="revoke-author" th:text="#{grants.author.label}">Author</label>
       <input id="revoke-author" name="author" type="text" required autocomplete="off">
       <label for="revoke-project" th:text="#{grants.revoke.project}">Project (empty: all projects)</label>
@@ -112,7 +112,7 @@
     </table>
     <p th:if="${#lists.isEmpty(keys)}" th:text="#{keys.none}">No live key.</p>
     <p th:text="#{keys.revoke.help}">Closing a key ...</p>
-    <form method="post" th:action="@{/grants/keys/revoke}">
+    <form method="post" th:action="@{/grants/keys/revoke}" data-approve>
       <label for="key-revoke-author" th:text="#{grants.author.label}">Author</label>
       <input id="key-revoke-author" name="author" type="text" required autocomplete="off">
       <label for="key-revoke-fingerprint" th:text="#{keys.revoke.fingerprint}">Fingerprint of the key to close</label>

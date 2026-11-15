@@ -79,13 +79,11 @@ class LockoutTest {
     }
 
     @Test
-    @DisplayName("ADM-028: failures are counted per client address; failures of the login form count like those of the bearer")
+    @DisplayName("ADM-028/PSK-LCK-01: failures are counted per client address; wrong codes of the enrolment sign-in count like those of the bearer")
     void adm028_perAddressAndForm() throws Exception {
         Browser attacker = new Browser(mvc);
         for (int i = 0; i < 5; i++) {
-            String csrf = attacker.csrfOf("/login");
-            attacker.perform(attacker.form("/login", Browser.Form.of("username", "owner", "token", WRONG), csrf)
-                    .accept(MediaType.APPLICATION_JSON)).andExpect(status().isUnauthorized());
+            attacker.signInWithCode("AAAA-AAAA-AAAA-AAAA-AAAA").andExpect(status().is3xxRedirection());
         }
 
         bearer(attacker, AdminTestSettings.TOKEN).andExpect(status().isTooManyRequests());

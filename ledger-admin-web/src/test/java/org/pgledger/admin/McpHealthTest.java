@@ -58,7 +58,8 @@ class McpHealthTest {
         return new LedgerAdminProperties("a-token-of-sixteen-chars", "an-agent-token-of-sixteen", List.of("localhost"),
                 org.springframework.util.unit.DataSize.ofKilobytes(64), Path.of("/unused"), Path.of("/unused-drivers"),
                 new LedgerAdminProperties.Lockout(5, Duration.ofSeconds(60), Duration.ofSeconds(60), 50, Duration.ofSeconds(1)),
-                new LedgerAdminProperties.Oidc(List.of()), new LedgerAdminProperties.Mcp(url, timeout));
+                new LedgerAdminProperties.Oidc(null, null, List.of()), new LedgerAdminProperties.Mcp(url, timeout), null,
+                new LedgerAdminProperties.Passkey(null, List.of(), "Ledger admin"));
     }
 
     private record Expected(Mode mode, McpStatus.State state, McpStatus.Reason reason, String text) {

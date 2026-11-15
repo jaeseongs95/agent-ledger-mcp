@@ -90,7 +90,11 @@ public class AdminProblems {
             case LookupCode lookup -> HttpStatus.NOT_FOUND;
             case AdminCode admin -> switch (admin) {
                 case AGENT_TOKEN_FORBIDDEN, UNAUTHORIZED -> HttpStatus.UNAUTHORIZED;
-                case DNS_REBINDING_BLOCKED, CSRF_REJECTED -> HttpStatus.FORBIDDEN;
+                case DNS_REBINDING_BLOCKED, CSRF_REJECTED, PASSKEY_APPROVAL_REQUIRED, PASSKEY_APPROVAL_INVALID,
+                    PASSKEY_NONE_REGISTERED, PASSKEY_CODE_INVALID -> HttpStatus.FORBIDDEN;
+                case PASSKEY_HOST_MISMATCH, PASSKEY_HTTPS_REQUIRED -> HttpStatus.BAD_REQUEST;
+                case PASSKEY_ASSERTION_INVALID -> HttpStatus.UNAUTHORIZED;
+                case PASSKEY_LAST_KEY -> HttpStatus.CONFLICT;
                 case TOO_MANY_AUTH_FAILURES -> HttpStatus.TOO_MANY_REQUESTS;
                 case COMMON_CODE_DELETE_FORBIDDEN -> HttpStatus.METHOD_NOT_ALLOWED;
                 case PAYLOAD_TOO_LARGE -> HttpStatus.CONTENT_TOO_LARGE;

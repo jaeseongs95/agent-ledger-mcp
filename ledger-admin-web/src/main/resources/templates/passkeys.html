@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}">
+<head th:replace="~{fragments :: head(#{passkeys.title})}"></head>
+<body>
+<th:block th:replace="~{fragments :: header('passkeys')}"></th:block>
+<main id="main">
+  <h1 th:text="#{passkeys.title}">Passkeys</h1>
+  <p th:text="#{passkeys.intro(${rpId})}">Every change you make here is approved with a passkey.</p>
+  <p th:if="${registered}" class="notice" role="status" th:text="#{passkeys.registered}">The passkey is registered.</p>
+  <section th:attr="aria-label=#{passkeys.list}">
+    <h2 th:text="#{passkeys.list}">Registered passkeys</h2>
+    <p th:if="${#lists.isEmpty(passkeys)}" th:text="#{passkeys.none}">None yet.</p>
+    <table th:if="${!#lists.isEmpty(passkeys)}">
+      <thead>
+        <tr>
+          <th th:text="#{passkeys.label}">Label</th>
+          <th th:text="#{passkeys.fingerprint}">Fingerprint</th>
+          <th th:text="#{passkeys.registeredAt}">Registered</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr th:each="passkey : ${passkeys}">
+          <td th:text="${passkey.label()}">phone</td>
+          <td><code th:text="${passkey.fingerprint()}">0000-0000-0000-0000</code></td>
+          <td><th:block th:replace="~{fragments :: time(${passkey.registeredAt()})}"></th:block></td>
+          <td>
+            <form method="post" th:action="@{/passkeys/revoke}" data-approve>
+              <input type="hidden" name="credentialId" th:value="${passkey.credentialId()}">
+              <button type="submit" class="secondary" th:text="#{passkeys.revoke}">Close</button>
+            </form>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+  <section th:attr="aria-label=#{passkeys.add}">
+    <h2 th:text="#{passkeys.add}">Register a passkey</h2>
+    <label for="passkey-label" th:text="#{passkeys.label}">Label</label>
+    <input id="passkey-label" type="text" maxlength="60" autocomplete="off" th:value="#{passkeys.defaultLabel}">
+    <button type="button" id="passkey-register" th:text="#{passkeys.register}">Register</button>
+  </section>
+</main>
+<th:block th:replace="~{fragments :: footer}"></th:block>
+</body>
+</html>

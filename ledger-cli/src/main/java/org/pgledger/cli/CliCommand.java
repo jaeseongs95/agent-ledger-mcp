@@ -16,6 +16,7 @@ public enum CliCommand {
     RETIRE_LEGACY("retire-legacy"),
     KEY_REGISTER("key-register"),
     KEY_REVOKE("key-revoke"),
+    PASSKEY_CODE("passkey-code"),
     PROJECT_ADD("project-add"),
     CODE_SET("code-set"),
     CODES("codes"),

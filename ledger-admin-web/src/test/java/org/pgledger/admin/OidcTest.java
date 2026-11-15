@@ -42,8 +42,9 @@ class OidcTest {
     @DynamicPropertySource
     static void oidc(DynamicPropertyRegistry registry) {
         PROVIDER.registrationProperties(REDIRECT).forEach((name, value) -> registry.add(name, () -> value));
-        registry.add("ledger.admin.oidc.owners[0].issuer", PROVIDER::issuer);
-        registry.add("ledger.admin.oidc.owners[0].email", () -> AdminTestSettings.OWNER_EMAIL);
+        registry.add("ledger.admin.sign-in", () -> "oidc");
+        registry.add("ledger.admin.oidc.issuer", PROVIDER::issuer);
+        registry.add("ledger.admin.oidc.owner-email", () -> AdminTestSettings.OWNER_EMAIL);
     }
 
     @AfterAll
@@ -150,7 +151,7 @@ class OidcTest {
     @Test
     @DisplayName("ADM-067: an owner operation of an OIDC session is recorded with the issuer and the subject of the sign-in")
     void adm067_auditActorOfAnOidcSession() throws Exception {
-        Browser browser = new Browser(mvc);
+        Browser browser = new Browser(mvc).withPasskey(org.pgledger.admin.support.TestPasskeys.OWNER);
         Authorization authorization = start(browser);
         callback(browser, authorization.state(), claims -> { }, authorization).andExpect(status().is3xxRedirection());
 
@@ -166,7 +167,7 @@ class OidcTest {
     @Test
     @DisplayName("ADM-032: an OIDC session needs the CSRF token and ends with the logout, like a token session")
     void adm032_sameRulesAsTokenSessions() throws Exception {
-        Browser browser = new Browser(mvc);
+        Browser browser = new Browser(mvc).withPasskey(org.pgledger.admin.support.TestPasskeys.OWNER);
         Authorization authorization = start(browser);
         callback(browser, authorization.state(), claims -> { }, authorization).andExpect(status().is3xxRedirection());
 

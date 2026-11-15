@@ -15,6 +15,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-security-oauth2-resource-server")
     // OIDC oauth2Login: the provider is configuration (spring.security.oauth2.client.*), no provider is named in code.
     implementation("org.springframework.boot:spring-boot-starter-security-oauth2-client")
+    // Passkeys: the WebAuthn support of Spring Security (sign-in, registration, the check of every approval; WebAuthn4J is its
+    // engine, Apache-2.0) and the one-time token sign-in that carries the code of the owner's shell are in spring-security-core/web.
+    implementation(libs.spring.security.webauthn)
     // RestClient (with its builder auto-configuration) for the MCP health check of the overview.
     implementation("org.springframework.boot:spring-boot-starter-restclient")
     // /healthz is the Actuator health endpoint.
