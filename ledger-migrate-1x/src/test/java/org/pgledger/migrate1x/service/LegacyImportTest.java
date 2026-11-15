@@ -66,6 +66,7 @@ import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.domain.error.LedgerException;
 import org.pgledger.domain.error.LookupCode;
+import org.pgledger.domain.error.TransitionCode;
 import org.pgledger.domain.error.TrustCode;
 import org.pgledger.domain.error.ValidationCode;
 import org.pgledger.domain.error.ValidationException;
@@ -275,10 +276,13 @@ class LegacyImportTest {
             for (int i = 0; i < rows.size(); i++) {
                 Map<String, Object> legacy = legacyRows.get(i);
                 Map<String, Object> row = rows.get(i);
-                for (String column : List.of("id", "author_id", "login", "entity_id", "from_state", "to_state", "changes",
+                for (String column : List.of("id", "login", "entity_id", "from_state", "to_state", "changes",
                         "reason", "evidence_uri", "evidence_sha256", "corrects_id", "request_id")) {
                     assertThat(text(row, column)).as("history %s of row %d", column, i).isEqualTo(text(legacy, column));
                 }
+                // the actor id loses the prefix agent: that 1.x put before a session id (M1X-050, A2); nothing else of it changes
+                assertThat(text(row, "author_id")).as("history author_id of row %d", i)
+                        .isEqualTo(withoutAgentPrefix(text(legacy, "author_id")));
                 // the vocabulary of the imported rows (M1X-050): 1.x wrote LEGACY_LOGIN, LEGACY_NOTE ..., 2.0 holds IMPORTED_*
                 assertThat(text(row, "actor_assurance")).as("assurance of row %d", i).isEqualTo(imported(text(legacy, "actor_assurance")));
                 assertThat(text(row, "op")).as("op of row %d", i).isEqualTo(imported(text(legacy, "op")));
@@ -290,6 +294,41 @@ class LegacyImportTest {
                     "CORRECT").noneMatch(op -> op.startsWith("LEGACY_"));
             assertThat(rows.stream().map(row -> text(row, "actor_assurance")).distinct().toList()).contains("IMPORTED_LOGIN",
                     "IMPORTED_UNKNOWN", "IMPORTED_SHARED").noneMatch(assurance -> assurance.startsWith("LEGACY_"));
+        });
+    }
+
+    /** The actor id as 2.0 holds it: 1.x wrote {@code agent:<vendor>:<session>} for a session, 2.0 {@code <vendor>:<session>}. */
+    private static String withoutAgentPrefix(String actor) {
+        return actor.startsWith("agent:") ? actor.substring("agent:".length()) : actor;
+    }
+
+    @Test
+    @DisplayName("M1X-050 (A2) every actor column of every table arrives without the prefix agent: (author_id, recorded_by, owner_actor_id, created_by, granted_by), nothing else of it changes, and the digests still agree; a session that recorded the fix as agent:<id> in 1.x is the same session as <id> in 2.0: its VERIFIED is refused with SAME_SESSION")
+    void m1x050_actorIdsLoseTheAgentPrefix() {
+        withRich(rig -> {
+            ImportReport report = rig.importAll();
+
+            assertThat(report.tables()).allSatisfy(check -> assertThat(check.matches()).isTrue());
+            for (String[] column : new String[][] { { "project", "created_by" }, { "common_code", "created_by" },
+                    { "task", "owner_actor_id" }, { "task", "created_by" }, { "defect", "owner_actor_id" },
+                    { "defect", "created_by" }, { "defect_fix", "recorded_by" }, { "defect_case", "recorded_by" },
+                    { "defect_task", "created_by" }, { "defect_relation", "created_by" }, { "release_condition", "created_by" },
+                    { "condition_link", "created_by" }, { "session_grant", "author_id" }, { "session_grant", "granted_by" },
+                    { "history", "author_id" } }) {
+                assertThat(rig.count("SELECT COUNT(*) FROM " + column[0] + " WHERE " + column[1] + " LIKE 'agent:%'"))
+                        .as("%s.%s", column[0], column[1]).isZero();
+            }
+            // the imported fix 9 was recorded by agent:old-1, the fix 3 by agent:claude:e2e-seed (the fixture)
+            assertThat(rig.rows("SELECT id, recorded_by FROM defect_fix ORDER BY id").stream()
+                    .map(row -> text(row, "id") + "=" + text(row, "recorded_by")).toList())
+                    .contains("3=" + SEED, "9=old-1");
+
+            LedgerAppContext ctx = rig.ctx();
+            ctx.enroll(SEED);
+            ctx.bean(GrantService.class).grant(new GrantCommand(SEED, "e2e", List.of("verify"), null, null), TestOwners.OWNER);
+            // E2E-D-0007 is SOURCE_FIXED and its only fix is the one of this session
+            Expect.failure(() -> ctx.bean(ReviewService.class).review(SEED, new TransitionCommand(null, "defect", "E2E-D-0007",
+                    2L, "VERIFIED", Scenario.REASON, Scenario.EVIDENCE, null, null)), TransitionCode.SAME_SESSION);
         });
     }
 

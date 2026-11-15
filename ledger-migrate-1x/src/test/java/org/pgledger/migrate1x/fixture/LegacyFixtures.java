@@ -349,7 +349,7 @@ public final class LegacyFixtures {
     private static void fixesAndCases(LegacyLedger l) {
         l.insert("defect_fix", "id", 3, "defect_id", "E2E-D-0007", "repo", "repo/e2e", "commit_sha", "a".repeat(40), "branch",
                 "main", "ci_ref", "https://ci.example/run/1", "ci_conclusion", "success", "ci_completed_at",
-                at("2026-11-06T01:02:03.456789Z"), "recorded_by", SEED, "recorded_at", at("2026-11-06T01:03:00Z"),
+                at("2026-11-06T01:02:03.456789Z"), "recorded_by", "agent:" + SEED, "recorded_at", at("2026-11-06T01:03:00Z"),
                 "imported", false);
         l.insert("defect_fix", "id", 9, "defect_id", "OLD-D-0001", "repo", "repo/old", "commit_sha", "b".repeat(40), "branch",
                 "", "recorded_by", "agent:old-1", "recorded_at", at("2026-11-06T02:00:00+09:00"), "imported", true);

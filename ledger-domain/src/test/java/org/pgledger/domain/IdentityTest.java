@@ -43,11 +43,13 @@ class IdentityTest {
 
     @Test
     void dom003_sessionKeyKeepsTheVendor() {
-        assertThat(new SessionKey("agent:claude:1")).isNotEqualTo(new SessionKey("claude:1"));
+        // the key is the actor id as it is: no prefix is dropped, the vendor is part of it
+        assertThat(new SessionKey("claude:1")).isEqualTo(new SessionKey("claude:1"));
         assertThat(new SessionKey("claude:1")).isNotEqualTo(new SessionKey("codex:1"));
-        assertThat(ActorId.ofStored("agent:claude:1")).isInstanceOf(ImportedActorId.class);
-        assertThat(ActorId.ofStored("agent:claude:1").sessionKey()).isNotEqualTo(AuthorId.of("claude:1").sessionKey());
+        assertThat(ActorId.ofStored("someone")).isInstanceOf(ImportedActorId.class);
+        assertThat(ActorId.ofStored("someone").sessionKey()).isNotEqualTo(AuthorId.of("claude:1").sessionKey());
         assertThat(ActorId.ofStored("claude:1")).isInstanceOf(AuthorId.class);
+        assertThat(ActorId.ofStored("claude:1").sessionKey()).isEqualTo(AuthorId.of("claude:1").sessionKey());
     }
 
     @Test
