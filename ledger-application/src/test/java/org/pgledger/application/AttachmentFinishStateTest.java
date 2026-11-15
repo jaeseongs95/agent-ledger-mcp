@@ -90,8 +90,17 @@ class AttachmentFinishStateTest {
 
         assertThat(again).isEqualTo(closed);
         assertThat(Files.readAllBytes(file)).as("nothing was appended or changed").isEqualTo(before);
-        // no overwrite: a chunk of the same number as the end segment's is refused whatever the bit says
+        // no overwrite: a chunk of the same number as the end segment's is refused whatever the bit says. The repeated finish made the
+        // file read only again (second guard), so this append meets the bit "read only" with the data "closed": a conflict, not the
+        // I/O error of opening a read-only file for writing.
         byte[] other = "another chunk".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        assertThatThrownBy(() -> store.append(up.key(), fixture.keyId(), up.storedBytes(), up.nextSequence(), other,
+                Sha256.ofBytes(other)))
+                .isInstanceOfSatisfying(ConflictException.class,
+                        failure -> assertThat(failure.code()).isEqualTo(ConflictCode.ARTIFACT_CHUNK_CONFLICT));
+        assertThat(Files.readAllBytes(file)).isEqualTo(before);
+        // and with the bit "writable" and the data "closed" (the case of the comment above) it is the same conflict
+        assertThat(file.toFile().setWritable(true)).isTrue();
         assertThatThrownBy(() -> store.append(up.key(), fixture.keyId(), up.storedBytes(), up.nextSequence(), other,
                 Sha256.ofBytes(other)))
                 .isInstanceOfSatisfying(ConflictException.class,

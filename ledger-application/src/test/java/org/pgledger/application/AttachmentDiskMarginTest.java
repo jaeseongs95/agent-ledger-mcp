@@ -12,11 +12,15 @@ import org.pgledger.application.attachment.AttachmentProperties;
 import org.pgledger.application.attachment.AttachmentStore;
 import org.pgledger.application.support.AttachmentContext;
 import org.pgledger.application.support.Expect;
+import org.pgledger.application.support.AttachmentSettings;
 import org.pgledger.application.support.Scenario;
 import org.pgledger.application.support.StoreFixture;
+import org.pgledger.application.support.TestTrees;
 import org.pgledger.application.support.Uploads;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ConflictException;
+import org.pgledger.domain.error.InfrastructureCode;
+import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.domain.error.LedgerException;
 import org.pgledger.domain.error.TrustCode;
 import org.pgledger.domain.value.Sha256;
@@ -73,6 +77,32 @@ class AttachmentDiskMarginTest {
 
             long stored = fixture.store().append(key, fixture.keyId(), 0, 0, chunk, Sha256.ofBytes(chunk));
             assertThat(stored).as("the default margin of 64 MB leaves room on the disk of the test").isEqualTo(300 + 32);
+        } finally {
+            fixture.close();
+        }
+    }
+
+    @Test
+    @DisplayName("ATA-043: a begin before the attachment directory exists makes it (private) and measures its disk; when it cannot be made (its parent is missing) the answer is ARTIFACT_STORAGE_IO_ERROR, not a margin on another folder")
+    void ata043_beginBeforeTheDirectoryExists() {
+        StoreFixture fixture = StoreFixture.create();
+        try {
+            Path directory = fixture.properties().directory();
+            TestTrees.delete(directory);
+            assertThat(directory).as("the folder of the installation is not there yet").doesNotExist();
+
+            fixture.store().requireDiskSpace(600);
+
+            assertThat(directory).as("the folder is made the way every write makes it").isDirectory();
+            fixture.files().requireDirectory(directory);
+
+            Path noParent = fixture.root().resolve("no-such-parent").resolve("attachments");
+            AttachmentStore unreachable = new AttachmentStore(
+                    AttachmentSettings.properties(noParent, fixture.properties().keyDirectory(), fixture.keyId()), fixture.files(),
+                    fixture.keys(), fixture.cipher());
+            assertThatThrownBy(() -> unreachable.requireDiskSpace(600)).isInstanceOfSatisfying(InfrastructureException.class,
+                    failure -> assertThat(failure.code()).isEqualTo(InfrastructureCode.ARTIFACT_STORAGE_IO_ERROR));
+            assertThat(noParent.getParent()).as("nothing was made on the way").doesNotExist();
         } finally {
             fixture.close();
         }

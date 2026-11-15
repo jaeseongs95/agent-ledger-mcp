@@ -172,6 +172,10 @@ public class SchemaMigrator {
      * attempt: when it is the same version with the digest of this file, SUCCEEDED, it is applied and this runner goes on (false: not
      * applied by this call). Otherwise the attempt is recorded as FAILED unless its row is there already (the claim that a DBMS with
      * committing DDL kept, or the row of the runner that has the attempt) and the failure is thrown; the next run tries again.
+     *
+     * <p>Catching the duplicate key here is not what principle 4.4 forbids: this is the migration runner, not a use case, the catch
+     * is outside the transaction of the attempt (which is rolled back), and it only reads the history once and then skips or stops,
+     * as the common format (edition 2, section 3) prescribes.
      */
     private boolean failed(MigrationFile file, int attempt, RuntimeException cause) {
         InfrastructureException failure = new InfrastructureException(InfrastructureCode.SCHEMA_MIGRATION_FAILED,
