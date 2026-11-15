@@ -31,9 +31,11 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.pgledger.application.attachment.ServiceAccountAccess;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.FailureException;
 import org.pgledger.cli.support.RequiresPosixPermissions;
+import org.pgledger.cli.support.WindowsEffectiveRights;
 
 class SecretStoreTest {
 
@@ -262,19 +264,33 @@ class SecretStoreTest {
                 .setPermissions(EnumSet.allOf(AclEntryPermission.class)).build();
     }
 
-    /** Every entry of the ACL of the path is an ALLOW entry of its owner, which has the rights to read, write and delete. */
-    private static void assertOwnerOnlyAcl(Path path) throws IOException {
+    /** The service account LocalService as the file system knows it (the lookup is by the file system). */
+    private static UserPrincipal serviceAccount() throws IOException {
+        return ServiceAccountAccess.principal(FileSystems.getDefault());
+    }
+
+    /**
+     * PCS-030: the ACL of the path has exactly two entries, both ALLOW: the owner, which has the rights to read, write and delete,
+     * and the service account LocalService with nothing but the read rights (no write, no delete, no change of the ACL or the owner).
+     */
+    private static void assertOwnerAndServiceAcl(Path path) throws IOException {
         UserPrincipal owner = Files.getOwner(path, LinkOption.NOFOLLOW_LINKS);
-        assertThat(acl(path)).as("the ACL of %s", path).isNotEmpty().allSatisfy(entry -> {
-            assertThat(entry.type()).isEqualTo(AclEntryType.ALLOW);
-            assertThat(entry.principal()).isEqualTo(owner);
-        });
-        assertThat(acl(path).stream().flatMap(entry -> entry.permissions().stream()).toList())
-                .contains(AclEntryPermission.READ_DATA, AclEntryPermission.WRITE_DATA, AclEntryPermission.DELETE);
+        UserPrincipal service = serviceAccount();
+        List<AclEntry> entries = acl(path);
+        assertThat(entries).as("the ACL of %s", path).hasSize(2).allSatisfy(entry -> assertThat(entry.type()).isEqualTo(AclEntryType.ALLOW));
+        assertThat(entries.stream().map(AclEntry::principal)).containsExactlyInAnyOrder(owner, service);
+        AclEntry ownerEntry = entries.stream().filter(entry -> entry.principal().equals(owner)).findFirst().orElseThrow();
+        AclEntry serviceEntry = entries.stream().filter(entry -> entry.principal().equals(service)).findFirst().orElseThrow();
+        assertThat(ownerEntry.permissions()).contains(AclEntryPermission.READ_DATA, AclEntryPermission.WRITE_DATA,
+                AclEntryPermission.DELETE, AclEntryPermission.WRITE_ACL);
+        assertThat(serviceEntry.permissions()).contains(AclEntryPermission.READ_DATA, AclEntryPermission.READ_ATTRIBUTES,
+                AclEntryPermission.READ_ACL).doesNotContain(AclEntryPermission.WRITE_DATA, AclEntryPermission.APPEND_DATA,
+                AclEntryPermission.DELETE, AclEntryPermission.DELETE_CHILD, AclEntryPermission.WRITE_ACL, AclEntryPermission.WRITE_OWNER);
+        assertThat(ServiceAccountAccess.READ_FOLDER).containsAll(serviceEntry.permissions());
     }
 
     @Test
-    @DisplayName("SEC-016 on a file system with ACLs the directory and the file are created with an owner-only ACL and the exact UTF-8 bytes")
+    @DisplayName("SEC-016 (changed by PCS-030) on a file system with ACLs the directory and the file are created with the ACL of the owner (everything) and of the service account LocalService (read) and the exact UTF-8 bytes")
     void sec016_createsOwnerOnlyAcl() throws IOException {
         assumeAclFileSystem();
         Path directory = tmp.resolve("secrets");
@@ -282,8 +298,8 @@ class SecretStoreTest {
 
         Path file = store(directory).store(NAME, value.toCharArray());
 
-        assertOwnerOnlyAcl(directory);
-        assertOwnerOnlyAcl(file);
+        assertOwnerAndServiceAcl(directory);
+        assertOwnerAndServiceAcl(file);
         UserPrincipal self = new SystemProcessUser().current(FileSystems.getDefault());
         assertThat(Files.getOwner(directory)).as("the account of the process owns it, not the group Administrators").isEqualTo(self);
         assertThat(Files.getOwner(file)).isEqualTo(self);
@@ -293,7 +309,7 @@ class SecretStoreTest {
     }
 
     @Test
-    @DisplayName("SEC-017 on a file system with ACLs the same name again is replaced through a new owner-only file and a move, leaving no temporary file")
+    @DisplayName("SEC-017 (changed by PCS-030) on a file system with ACLs the same name again is replaced through a new file with the same two entries and a move, leaving no temporary file")
     void sec017_replacesWithOwnerOnlyAcl() throws IOException {
         assumeAclFileSystem();
         Path directory = tmp.resolve("secrets");
@@ -303,7 +319,7 @@ class SecretStoreTest {
         store.store(NAME, "second".toCharArray());
 
         assertThat(Files.readString(file)).isEqualTo("second");
-        assertOwnerOnlyAcl(file);
+        assertOwnerAndServiceAcl(file);
         assertThat(names(directory)).containsExactly("cloudflare-api-token");
     }
 
@@ -332,11 +348,11 @@ class SecretStoreTest {
 
         assertThat(acl(directory)).isEqualTo(before);
         assertThat(Files.readString(directory.resolve("cloudflare-api-token"))).isEqualTo("new");
-        assertOwnerOnlyAcl(directory.resolve("cloudflare-api-token"));
+        assertOwnerAndServiceAcl(directory.resolve("cloudflare-api-token"));
     }
 
     @Test
-    @DisplayName("SEC-019 (changed by SFR-010) on a file system with ACLs an existing secret file whose ACL allows another account is read and replaced: the replacement is a new owner-only file")
+    @DisplayName("SEC-019 (changed by SFR-010) on a file system with ACLs an existing secret file whose ACL allows another account is read and replaced: the replacement is a new file with the owner and service entries")
     void sec019_replacesFileThatAllowsAnotherAccount() throws IOException {
         assumeAclFileSystem();
         Path directory = tmp.resolve("secrets");
@@ -348,7 +364,63 @@ class SecretStoreTest {
         store(directory).store(NAME, "new".toCharArray());
 
         assertThat(Files.readString(file)).isEqualTo("new");
-        assertOwnerOnlyAcl(file);
+        assertOwnerAndServiceAcl(file);
+    }
+
+    @Test
+    @DisplayName("PCS-031 the service account LocalService has the effective right to list the secrets folder and to read the secret (the Windows API computes it from the ACL), and no right to write, append, delete or change the ACL or the owner; Everyone and Users have none")
+    void pcs031_theServiceAccountReadsTheSecretByTheNewAcl() throws IOException {
+        assumeAclFileSystem();
+        Path directory = tmp.resolve("secrets");
+        Path file = store(directory).store(NAME, "never-printed-0123456789".toCharArray());
+
+        for (Path path : List.of(directory, file)) {
+            int service = WindowsEffectiveRights.of(path, ServiceAccountAccess.WINDOWS_SERVICE_ACCOUNT);
+            assertThat(service & WindowsEffectiveRights.FILE_READ_DATA).as("read of %s", path).isNotZero();
+            assertThat(service & (WindowsEffectiveRights.FILE_WRITE_DATA | WindowsEffectiveRights.FILE_APPEND_DATA
+                    | WindowsEffectiveRights.DELETE | WindowsEffectiveRights.WRITE_DAC | WindowsEffectiveRights.WRITE_OWNER))
+                    .as("no change by the service account of %s", path).isZero();
+            assertThat(WindowsEffectiveRights.of(path, "Everyone")).as("Everyone on %s", path).isZero();
+            assertThat(WindowsEffectiveRights.of(path, "BUILTIN\\Users")).as("Users on %s", path).isZero();
+        }
+        assertThat(WindowsEffectiveRights.of(directory, ServiceAccountAccess.WINDOWS_SERVICE_ACCOUNT)
+                & WindowsEffectiveRights.FILE_EXECUTE).as("the service account may traverse the folder").isNotZero();
+    }
+
+    @Test
+    @DisplayName("PCS-030 a secret made in a folder that the service account may modify (the settings folder: an inherited entry) gets the same two entries and no write right for the service account")
+    void pcs030_theInheritedEntryOfTheParentIsReplaced() throws IOException {
+        assumeAclFileSystem();
+        UserPrincipal self = new SystemProcessUser().current(FileSystems.getDefault());
+        Path parent = Files.createDirectories(tmp.resolve("etc"));
+        AclEntry modify = AclEntry.newBuilder().setType(AclEntryType.ALLOW).setPrincipal(serviceAccount())
+                .setPermissions(EnumSet.complementOf(EnumSet.of(AclEntryPermission.WRITE_ACL, AclEntryPermission.WRITE_OWNER)))
+                .setFlags(java.nio.file.attribute.AclEntryFlag.FILE_INHERIT, java.nio.file.attribute.AclEntryFlag.DIRECTORY_INHERIT).build();
+        Files.getFileAttributeView(parent, AclFileAttributeView.class).setAcl(List.of(allowAll(self), modify));
+        Path directory = parent.resolve("secrets");
+
+        Path file = store(directory).store(NAME, "x".toCharArray());
+
+        assertOwnerAndServiceAcl(directory);
+        assertOwnerAndServiceAcl(file);
+        assertThat(WindowsEffectiveRights.of(file, ServiceAccountAccess.WINDOWS_SERVICE_ACCOUNT) & WindowsEffectiveRights.FILE_WRITE_DATA).isZero();
+    }
+
+    @Test
+    @DisplayName("PCS-032 a new secret in an existing folder whose ACL has an entry for another account is made with the two entries, and the folder itself is not narrowed (an existing path is never judged)")
+    void pcs032_aNewSecretInAnExistingLooseFolder() throws IOException {
+        assumeAclFileSystem();
+        Path directory = tmp.resolve("secrets");
+        store(directory).store(new SecretName("first"), "1".toCharArray());
+        UserPrincipal owner = Files.getOwner(directory);
+        Files.getFileAttributeView(directory, AclFileAttributeView.class).setAcl(List.of(allowAll(owner), allowAll(system())));
+        List<AclEntry> before = acl(directory);
+
+        Path file = store(directory).store(NAME, "2".toCharArray());
+
+        assertThat(acl(directory)).isEqualTo(before);
+        assertOwnerAndServiceAcl(file);
+        assertThat(names(directory)).containsExactly("cloudflare-api-token", "first");
     }
 
     // SEC-020 (an owner that is not the current user is refused, FOREIGN_OWNER) was removed with the rule: the owner of an existing

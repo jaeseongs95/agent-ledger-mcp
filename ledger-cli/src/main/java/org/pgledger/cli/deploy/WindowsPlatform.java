@@ -2,18 +2,16 @@ package org.pgledger.cli.deploy;
 
 import java.io.IOException;
 import java.nio.file.FileSystem;
-import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.AclEntry;
-import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.AclEntryPermission;
 import java.nio.file.attribute.UserPrincipal;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Objects;
+import java.util.Set;
+import org.pgledger.application.attachment.ServiceAccountAccess;
 import org.pgledger.cli.CliOptions;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.UsageException;
@@ -25,24 +23,22 @@ import org.springframework.stereotype.Component;
 /**
  * A personal PC or a Windows server: the services are WinSW configurations ({@link WinswServices}) below one home
  * directory ({@code --home}, for example {@code C:/ProgramData/<name>}), run by the one account LocalService.
- * {@code prepare-host} (run in an elevated prompt) first gives the secrets of an earlier run back to the installer (the folder
- * first, then its files) so the commands of the run can read them, then closes the home and its folders to every account but
- * SYSTEM and Administrators ({@link WindowsAccess}), and copies the jars, the two WinSW executables and the driver. Taking the
- * secrets back is the step that the file system can refuse (the service account owns them), so it comes before anything is
- * closed, and a run that fails at any step puts the owner and the ACL of everything it changed back as it found them: the
- * services of the installation, stopped for the run, can start again;
- * {@code seal-host} then gives the service account what it needs (read and run the jars, change the settings folder, where the
- * driver page of the admin web writes its registration, write the logs) and hands the secrets over, the files first and then
- * the folder: the service account is their owner and has full access, Administrators can only see that a file exists, and
- * nobody else, the installer included, has any. {@code mkdir}, {@code icacls} and {@code copy} did this.
+ * {@code prepare-host} (run in an elevated prompt) closes the home and its folders to every account but SYSTEM and
+ * Administrators and gives the service account in the same step what it needs ({@link WindowsAccess}): read and run the jars
+ * (the folder {@code lib}), change the settings folder (where the driver page of the admin web writes its registration), write
+ * the logs, the data folder and the attachment folder. It copies the jars, the two WinSW executables and the driver; what it
+ * makes inside these folders inherits those entries. {@code mkdir}, {@code icacls} and {@code copy} did this.
  *
- * <p>The secrets of an earlier run belong to the service account, and Administrators may only see that they exist: an
- * administrator can take them back, and hand them over again, only with the privileges to take ownership that its elevated
- * token holds disabled ({@link WindowsAccess#reassign}, {@link WindowsPrivileges}); taking ownership comes first, the ACL is
- * written by the owner.
+ * <p>The secrets are the installing user's: the folder of the secrets and the folder of the attachment keys are made with the ACL
+ * of {@link ServiceAccountAccess} (the installing user with everything, the service account with read, nothing inherited from
+ * the settings folder), and what the store of secrets and the key setup make in them has the same two entries. Why the service
+ * account reads: it runs the services, which read the secrets, and the installation does not hand the secrets over to it (there
+ * is no change of owner and no privilege to take ownership). An existing folder of the secrets is never changed (a re-run by the
+ * same user finds everything as it left it; the personal edition has one user). A run that fails at any step puts the ACL of the
+ * folders it changed back as it found them: the services of the installation, stopped for the run, can start again.
  */
 @Component
-final class WindowsPlatform implements ServicePlatform, ServiceWrappers, HostSealing {
+final class WindowsPlatform implements ServicePlatform, ServiceWrappers {
 
     /** A drive and plain segments, with {@code /}: the form every path of a Windows installation is written in. */
     private static final String PATH = "[A-Za-z]:(?:/" + DeployForms.SEGMENT + ")+";
@@ -121,54 +117,42 @@ final class WindowsPlatform implements ServicePlatform, ServiceWrappers, HostSea
         host.requireView(fileSystem, "acl");
         UserPrincipal system = accounts.user(fileSystem, WindowsAccess.SYSTEM);
         UserPrincipal administrators = accounts.user(fileSystem, WindowsAccess.ADMINISTRATORS);
+        UserPrincipal service = accounts.user(fileSystem, DeployLayout.WINDOWS_SERVICE_ACCOUNT);
         UserPrincipal installer = processUser.current(fileSystem);
-        List<AclEntry> closed = WindowsAccess.closed(system, administrators);
         Path home = lib.getParent();
         Path drivers = etc.resolve("drivers");
         Path secrets = etc.resolve("secrets");
         Path data = hostPath(root, layout.data());
         Path attachments = hostPath(root, layout.attachmentDirectory());
         Path keys = hostPath(root, layout.attachmentKeyDirectory());
-        // What a run changes is read first, so a failed run can put it back (nothing is changed by reading). The folder of the keys
-        // is inside the secrets: it is read, like the files there, once the secrets are the installer's.
+        // The folders and what the service account may do in each; the secrets are not among them (see below).
+        List<Folder> folders = List.of(new Folder(lib, WindowsAccess.READ_EXECUTE), new Folder(etc, WindowsAccess.MODIFY),
+                new Folder(drivers, WindowsAccess.MODIFY), new Folder(logs, WindowsAccess.MODIFY),
+                new Folder(data, WindowsAccess.MODIFY), new Folder(attachments, WindowsAccess.MODIFY));
+        // What a run changes is read first, so a failed run can put it back (nothing is changed by reading).
         List<WindowsAccess.Saved> saved = new ArrayList<>();
-        for (Path path : List.of(home, lib, etc, drivers, secrets, logs, data, attachments)) {
+        for (Path path : List.of(home, lib, etc, drivers, logs, data, attachments)) {
             if (Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
                 saved.add(access.save(path));
             }
         }
         try {
-            // After an earlier run the secrets belong to the service account, and Administrators may only see that a file
-            // exists. They are given back to the installer for this run first, before anything is closed: that is the step
-            // that can be refused, and a refusal then leaves the home as it was. The folder first (a file is listed and
-            // opened through it), then its files; seal-host hands them over again at the end.
-            if (Files.isDirectory(secrets, LinkOption.NOFOLLOW_LINKS)) {
-                access.reassign(secrets, installer, installer, WindowsAccess.takenBack(installer, true));
-                SecretTree tree = secretTree(secrets);
-                for (Path folder : tree.folders()) {
-                    saved.add(access.save(folder));
-                    access.reassign(folder, installer, installer, WindowsAccess.takenBack(installer, true));
-                }
-                for (Path file : tree.files()) {
-                    saved.add(access.save(file));
-                    access.reassign(file, installer, installer, WindowsAccess.takenBack(installer, false));
-                }
-            }
             // the home first: a folder made below it takes what the home gives, and the file system propagates nothing by itself
             Files.createDirectories(home);
-            access.set(home, null, closed);
-            for (Path folder : List.of(lib, etc, drivers, logs, data, attachments)) {
-                Files.createDirectories(folder);
-                access.set(folder, null, closed);
+            access.set(home, WindowsAccess.closed(system, administrators));
+            for (Folder folder : folders) {
+                Files.createDirectories(folder.path());
+                access.set(folder.path(), WindowsAccess.closedWith(system, administrators, service, folder.serviceRights()));
             }
-            if (!Files.isDirectory(secrets, LinkOption.NOFOLLOW_LINKS)) {
-                Files.createDirectories(secrets);
-                access.reassign(secrets, installer, installer, WindowsAccess.takenBack(installer, true));
-            }
-            // the folder of the keys of the attachments: the installer's alone, like the secrets, until seal-host hands it over
-            if (!Files.isDirectory(keys, LinkOption.NOFOLLOW_LINKS)) {
-                Files.createDirectories(keys);
-                access.reassign(keys, installer, installer, WindowsAccess.takenBack(installer, true));
+            // The folder of the secrets and the folder of the attachment keys inside it: the installing user with everything and the
+            // service account with read, set when the folder is made. An existing one is never changed. The settings folder holds an
+            // entry of the service account to modify that a new folder inherits, so the ACL is written at once, not left to inheritance.
+            List<AclEntry> forSecrets = ServiceAccountAccess.ownerAndService(installer, service, true);
+            for (Path secretFolder : List.of(secrets, keys)) {
+                if (!Files.isDirectory(secretFolder, LinkOption.NOFOLLOW_LINKS)) {
+                    Files.createDirectories(secretFolder);
+                    access.set(secretFolder, forSecrets);
+                }
             }
             host.copyProduct(jars, driver, lib, drivers);
             files.copy(winsw, lib.resolve(layout.mcpName() + ".exe"));
@@ -177,6 +161,10 @@ final class WindowsPlatform implements ServicePlatform, ServiceWrappers, HostSea
             putBack(saved, failure);
             throw failure;
         }
+    }
+
+    /** A folder of the installation and what the service account may do in it. */
+    private record Folder(Path path, Set<AclEntryPermission> serviceRights) {
     }
 
     /**
@@ -191,77 +179,5 @@ final class WindowsPlatform implements ServicePlatform, ServiceWrappers, HostSea
                 failure.addSuppressed(e);
             }
         }
-    }
-
-    /**
-     * What is below the secrets folder: the folders (the folder of the keys of the attachments), the shallower first, and the
-     * regular files at every depth, by name. A link is neither.
-     */
-    private record SecretTree(List<Path> folders, List<Path> files) {
-    }
-
-    private static SecretTree secretTree(Path secrets) throws IOException {
-        List<Path> folders = new ArrayList<>();
-        List<Path> files = new ArrayList<>();
-        Files.walkFileTree(secrets, new SimpleFileVisitor<>() {
-
-            @Override
-            public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attributes) {
-                if (!Objects.equals(directory, secrets)) {
-                    folders.add(directory);
-                }
-                return FileVisitResult.CONTINUE;
-            }
-
-            @Override
-            public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) {
-                if (attributes.isRegularFile()) {
-                    files.add(file);
-                }
-                return FileVisitResult.CONTINUE;
-            }
-        });
-        folders.sort(Comparator.comparingInt(Path::getNameCount).thenComparing(Comparator.naturalOrder()));
-        files.sort(Comparator.naturalOrder());
-        return new SecretTree(List.copyOf(folders), List.copyOf(files));
-    }
-
-    @Override
-    public void seal(DeployLayout layout, Path root) throws IOException {
-        Path lib = hostPath(root, layout.lib());
-        Path etc = hostPath(root, layout.etc());
-        Path logs = hostPath(root, layout.logs());
-        Path secrets = etc.resolve("secrets");
-        Path data = hostPath(root, layout.data());
-        Path attachments = hostPath(root, layout.attachmentDirectory());
-        FileSystem fileSystem = lib.getFileSystem();
-        host.requireView(fileSystem, "acl");
-        UserPrincipal service = accounts.user(fileSystem, DeployLayout.WINDOWS_SERVICE_ACCOUNT);
-        UserPrincipal administrators = accounts.user(fileSystem, WindowsAccess.ADMINISTRATORS);
-        UserPrincipal installer = processUser.current(fileSystem);
-        access.grantTree(lib, service, WindowsAccess.READ_EXECUTE, secrets);
-        access.grantTree(etc, service, WindowsAccess.MODIFY, secrets);
-        access.grantTree(logs, service, WindowsAccess.MODIFY, secrets);
-        // The data folder and the attachment folder get the entry of the service account on the folder itself and not on what is in
-        // it: what the service made there is its own, with an ACL for it alone, and the installer cannot change that ACL (a re-run
-        // must not fail on it); a file or a folder it makes later is private to it from its first moment (PrivateFiles).
-        access.grant(data, service, WindowsAccess.MODIFY);
-        access.grant(attachments, service, WindowsAccess.MODIFY);
-        // The folder is the installer's first (a run that did not take the secrets back, or one that failed half way, finds
-        // it the service account's, and Administrators could not even list it); the files are handed over, then the folder.
-        // The folder of the keys of the attachments is below it: its folders are taken first, its files are handed over, and its
-        // folders are handed over before the secrets folder itself.
-        access.reassign(secrets, installer, installer, WindowsAccess.takenBack(installer, true));
-        SecretTree tree = secretTree(secrets);
-        for (Path folder : tree.folders()) {
-            access.reassign(folder, installer, installer, WindowsAccess.takenBack(installer, true));
-        }
-        for (Path file : tree.files()) {
-            access.reassign(file, installer, service, WindowsAccess.handedOver(service, administrators, false));
-        }
-        for (Path folder : tree.folders().reversed()) {
-            access.reassign(folder, installer, service, WindowsAccess.handedOver(service, administrators, true));
-        }
-        access.reassign(secrets, installer, service, WindowsAccess.handedOver(service, administrators, true));
     }
 }

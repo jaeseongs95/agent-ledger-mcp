@@ -88,12 +88,10 @@ class PlatformBoundaryTest {
     }
 
     @Test
-    @DisplayName("DPL-05 what only some platforms do is a capability that only they implement: the service wrapper and the seal are Windows's; every platform is a ServicePlatform")
+    @DisplayName("DPL-05 what only some platforms do is a capability that only they implement: the service wrapper is Windows's (PCS: no seal); every platform is a ServicePlatform")
     void dpl05_theCapabilities() {
         assertThat(platforms.capability(Platform.WINDOWS, ServiceWrappers.class)).isPresent();
-        assertThat(platforms.capability(Platform.WINDOWS, HostSealing.class)).isPresent();
         assertThat(platforms.capability(Platform.LINUX, ServiceWrappers.class)).isEmpty();
-        assertThat(platforms.capability(Platform.LINUX, HostSealing.class)).isEmpty();
         for (Platform platform : Platform.values()) {
             assertThat(platforms.capability(platform, ServicePlatform.class)).isPresent();
         }
@@ -108,21 +106,20 @@ class PlatformBoundaryTest {
     }
 
     @Test
-    @DisplayName("DPL-07 the privileges of the Windows token are an adapter bean behind an interface that WindowsAccess is given: no static call, and a context with another implementation starts WindowsAccess with that one")
-    void dpl07_theWindowsPrivilegesAreAnAdapterBean() throws IOException, NoSuchMethodException {
-        assertThat(WindowsPrivileges.class).hasAnnotation(Component.class).isAssignableTo(TokenPrivileges.class);
-        assertThat(WindowsPrivileges.class.getDeclaredMethods()).filteredOn(method -> !method.isSynthetic())
-                .filteredOn(method -> Modifier.isStatic(method.getModifiers())).isEmpty();
-        assertThat(WindowsAccess.class.getDeclaredConstructor(TokenPrivileges.class)).isNotNull();
-        assertThat(Files.readString(MAIN.resolve("deploy/WindowsAccess.java"))).doesNotContain("WindowsPrivileges");
-
-        TokenPrivileges recorded = names -> {
-            throw new IOException("the privileges of this test");
-        };
-        new ApplicationContextRunner().withBean(TokenPrivileges.class, () -> recorded).withUserConfiguration(WindowsAccess.class)
+    @DisplayName("DPL-07 (changed by PCS-037) the installer takes no privilege and changes no owner: no class of privileges, no native call, WindowsAccess is a component with no collaborator, and the sources of the module name none of them")
+    void dpl07_noPrivilegesAndNoChangeOfOwner() throws IOException, NoSuchMethodException {
+        assertThat(WindowsAccess.class).hasAnnotation(Component.class);
+        assertThat(WindowsAccess.class.getDeclaredConstructors()).allSatisfy(constructor -> assertThat(constructor.getParameterCount()).isZero());
+        new ApplicationContextRunner().withUserConfiguration(WindowsAccess.class)
                 .run(context -> assertThat(context).hasNotFailed().hasSingleBean(WindowsAccess.class));
-        new ApplicationContextRunner().withUserConfiguration(WindowsAccess.class, WindowsPrivileges.class)
-                .run(context -> assertThat(context).hasNotFailed().hasSingleBean(TokenPrivileges.class));
+        try (Stream<Path> sources = Files.walk(MAIN)) {
+            for (Path source : sources.filter(path -> path.toString().endsWith(".java")).toList()) {
+                assertThat(Files.readString(source, StandardCharsets.UTF_8)).as(source.toString()).doesNotContain("SeTakeOwnershipPrivilege")
+                        .doesNotContain("SeRestorePrivilege").doesNotContain("AdjustTokenPrivileges").doesNotContain("java.lang.foreign")
+                        .doesNotContain("PrivilegeNotHeld").doesNotContain("reassign").doesNotContain("HostSealing")
+                        .doesNotContain("SealHostCommand");
+            }
+        }
     }
 
     @Test
@@ -154,13 +151,13 @@ class PlatformBoundaryTest {
     }
 
     @Test
-    @DisplayName("DPL-08 the executable jar allows native access with its manifest attribute Enable-Native-Access: ALL-UNNAMED, and no installer gives --enable-native-access on a command line")
-    void dpl08_theJarAllowsNativeAccessItself() throws IOException {
+    @DisplayName("DPL-08 (changed by PCS-037) the executable jar has no manifest attribute Enable-Native-Access (the product calls no native code), and no installer gives --enable-native-access on a command line")
+    void dpl08_theJarCallsNoNativeCode() throws IOException {
         Path root = Path.of(Objects.requireNonNull(System.getProperty("ledger.docs.root"),
                 "ledger.docs.root is set by the test task of ledger-cli"));
 
         assertThat(Files.readString(root.resolve("ledger-cli/build.gradle.kts"), StandardCharsets.UTF_8))
-                .contains("\"Enable-Native-Access\" to \"ALL-UNNAMED\"");
+                .doesNotContain("\"Enable-Native-Access\" to");
         for (String script : new String[] { "deploy/install.cmd", "deploy/install.sh" }) {
             assertThat(Files.readString(root.resolve(script), StandardCharsets.UTF_8).toLowerCase(Locale.ROOT)).as(script)
                     .doesNotContain("--enable-native-access").doesNotContain("%native%");

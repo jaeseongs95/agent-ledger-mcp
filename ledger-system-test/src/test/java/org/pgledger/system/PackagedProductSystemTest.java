@@ -51,8 +51,8 @@ import tools.jackson.databind.json.JsonMapper;
  * writes. The platform of the host chooses the layout of {@code render-deploy} ({@link InstalledInstance}): on Windows it
  * needs drive paths and is skipped without them. No test profile is activated.
  *
- * <p>Install steps that are not run here are listed in section 21 of the test cases ({@code prepare-host} and
- * {@code seal-host} need an elevated prompt for the ACLs, WinSW and {@code sc.exe} are not run).
+ * <p>Install steps that are not run here are listed in section 21 of the test cases ({@code prepare-host} needs an elevated
+ * prompt for the ACLs, WinSW and {@code sc.exe} are not run).
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)

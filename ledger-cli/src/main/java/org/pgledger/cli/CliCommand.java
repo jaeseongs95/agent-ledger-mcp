@@ -26,7 +26,6 @@ public enum CliCommand implements CommandName {
     MCP_CHECK("mcp-check"),
     RENDER_DEPLOY("render-deploy"),
     PREPARE_HOST("prepare-host"),
-    SEAL_HOST("seal-host"),
     INSTALL_DEFAULT("install-default");
 
     private final String cliName;
@@ -46,7 +45,7 @@ public enum CliCommand implements CommandName {
      */
     public boolean usesDatabase() {
         return switch (this) {
-            case SECRET_SET, TOKEN_GENERATE, MCP_CHECK, RENDER_DEPLOY, PREPARE_HOST, SEAL_HOST, INSTALL_DEFAULT -> false;
+            case SECRET_SET, TOKEN_GENERATE, MCP_CHECK, RENDER_DEPLOY, PREPARE_HOST, INSTALL_DEFAULT -> false;
             default -> true;
         };
     }

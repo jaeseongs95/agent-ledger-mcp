@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * The defaults of an installation, from the seed bundle: the one place they are written ({@code src/seed/install-defaults.properties}).
- * {@code render-deploy}, {@code prepare-host} and {@code seal-host} take them when an option is not given, {@code mcp-check}
+ * {@code render-deploy} and {@code prepare-host} take them when an option is not given, {@code mcp-check}
  * takes the port of the MCP server, and the installers ask for them with {@code install-default}, so no script and no class
  * holds a second copy.
  */

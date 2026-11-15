@@ -125,6 +125,36 @@ public final class BroadAccess {
     }
 
     /**
+     * True when the file or folder is as the product makes a secret of the services (PCS-030, PCS-033): POSIX permissions without
+     * any group or other bit, or an ACL that is not empty and whose every entry is an ALLOW entry of the owner or an ALLOW entry of
+     * the service account LocalService with nothing but read rights (data, attributes, ACL, wait, and for a folder the traverse).
+     * A file system whose ACL view does not know that account has no such entry.
+     */
+    public static boolean ownerAndServiceRead(Path path) {
+        try {
+            PosixFileAttributeView posix = Files.getFileAttributeView(path, PosixFileAttributeView.class);
+            if (posix != null) {
+                return posix.readAttributes().permissions().stream().noneMatch(BroadAccess::groupOrOther);
+            }
+            AclFileAttributeView acl = Files.getFileAttributeView(path, AclFileAttributeView.class);
+            if (acl == null) {
+                throw new IllegalStateException("the file system of " + path + " has neither POSIX permissions nor ACLs");
+            }
+            UserPrincipal owner = Files.getOwner(path);
+            UserPrincipal service = path.getFileSystem().getUserPrincipalLookupService()
+                    .lookupPrincipalByName("NT AUTHORITY\\LocalService");
+            Set<AclEntryPermission> read = EnumSet.of(AclEntryPermission.READ_DATA, AclEntryPermission.READ_NAMED_ATTRS,
+                    AclEntryPermission.READ_ATTRIBUTES, AclEntryPermission.READ_ACL, AclEntryPermission.SYNCHRONIZE,
+                    AclEntryPermission.EXECUTE);
+            List<AclEntry> entries = acl.getAcl();
+            return !entries.isEmpty() && entries.stream().allMatch(entry -> entry.type() == AclEntryType.ALLOW
+                    && (entry.principal().equals(owner) || (entry.principal().equals(service) && read.containsAll(entry.permissions()))));
+        } catch (IOException e) {
+            throw new UncheckedIOException("cannot read the protection of " + path, e);
+        }
+    }
+
+    /**
      * Makes a symbolic link to the target; false when this process may not make links (Windows without the privilege or the
      * developer mode, a file system without links), so that a test can skip itself with an assumption.
      */

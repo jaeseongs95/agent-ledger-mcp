@@ -94,7 +94,7 @@ public final class CliExtension implements ParameterResolver {
                     hostAccounts, applicationAccount);
         }
 
-        /** A Cli whose host commands ({@code prepare-host}, {@code seal-host}) find the accounts of the host in these (a test plays them). */
+        /** A Cli whose host commands ({@code prepare-host}) find the accounts of the host in these (a test plays them). */
         public Cli withHostAccounts(HostAccounts accounts) {
             return new Cli(database, processUser, extraArguments, standardInput, accounts, applicationAccount);
         }

@@ -92,7 +92,7 @@ class CliDatabaseConditionTest {
         registered("secret-set").run(context -> assertThat(context).hasNotFailed().doesNotHaveBean("databaseBean"));
         registered("token-generate").run(context -> assertThat(context).doesNotHaveBean("databaseBean"));
         registered("render-deploy").run(context -> assertThat(context).doesNotHaveBean("databaseBean"));
-        registered("seal-host").run(context -> assertThat(context).doesNotHaveBean("databaseBean"));
+        registered("prepare-host").run(context -> assertThat(context).doesNotHaveBean("databaseBean"));
     }
 
     @Test

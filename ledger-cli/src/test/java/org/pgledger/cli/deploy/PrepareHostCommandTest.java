@@ -272,34 +272,34 @@ class PrepareHostCommandTest {
 
     @Test
     @RequiresNonPosixFileSystem
-    @DisplayName("INS-044 Windows (in an elevated prompt): the home and its folders are closed to every account but SYSTEM and Administrators, the secrets of an earlier run are the installer's alone, the jars, the two WinSW executables and the driver are copied, the files are rendered")
+    @DisplayName("INS-044 (changed by PCS-034) Windows (in an elevated prompt): the home is closed to every account but SYSTEM and Administrators, its folders are closed and give the service account LocalService its access, the two secret folders are the installing user's with read for LocalService, the jars, the two WinSW executables and the driver are copied, the files are rendered")
     void ins044_prepareWindows(Cli cli) throws IOException {
         assumeTrue(elevated(), "this needs an elevated prompt: only an administrator may close a folder to everybody else");
         FileSystem fileSystem = FileSystems.getDefault();
         Path home = tmp.resolve("root/C/ProgramData/pg-ledger-mcp");
-        try {
-            Outcome result = run(cli, new RecordingOutput(), "--platform=windows", "--home=C:/ProgramData/pg-ledger-mcp",
-                    "--winsw=" + jars().resolve("WinSW.exe"), "--java=C:/Program Files/Java/jdk-25/bin/java.exe");
+        Outcome result = run(cli, new RecordingOutput(), "--platform=windows", "--home=C:/ProgramData/pg-ledger-mcp",
+                "--winsw=" + jars().resolve("WinSW.exe"), "--java=C:/Program Files/Java/jdk-25/bin/java.exe");
 
-            assertThat(result.code()).isEmpty();
-            UserPrincipal system = fileSystem.getUserPrincipalLookupService().lookupPrincipalByName(WindowsAccess.SYSTEM);
-            UserPrincipal administrators = fileSystem.getUserPrincipalLookupService().lookupPrincipalByName(WindowsAccess.ADMINISTRATORS);
-            for (Path folder : List.of(home, home.resolve("lib"), home.resolve("etc"), home.resolve("etc/drivers"), home.resolve("logs"),
-                    home.resolve("data"), home.resolve("data/attachments"))) {
-                List<AclEntry> acl = Files.getFileAttributeView(folder, AclFileAttributeView.class).getAcl();
-                assertThat(acl.stream().map(AclEntry::principal)).as(folder.toString()).containsExactlyInAnyOrder(system, administrators);
-            }
-            List<AclEntry> secrets = Files.getFileAttributeView(home.resolve("etc/secrets"), AclFileAttributeView.class).getAcl();
-            assertThat(secrets).as("the secrets are the installer's alone").hasSize(1);
-            List<AclEntry> keys = Files.getFileAttributeView(home.resolve("etc/secrets/attachment-keys"), AclFileAttributeView.class).getAcl();
-            assertThat(keys).as("the folder of the attachment keys is the installer's alone").hasSize(1);
-            assertThat(Files.readString(home.resolve("lib/pg-ledger-mcp.exe"))).isEqualTo("content of WinSW.exe");
-            assertThat(Files.readString(home.resolve("lib/pg-ledger-mcp-admin.exe"))).isEqualTo("content of WinSW.exe");
-            assertThat(Files.readString(home.resolve("lib").resolve(DeployLayout.CLI_JAR))).isEqualTo("content of ledger-cli.jar");
-            assertThat(Files.readString(home.resolve("etc/drivers/driver.jar"))).isEqualTo("content of driver.jar");
-            assertThat(Files.exists(home.resolve("lib/pg-ledger-mcp.xml"))).isTrue();
-        } finally {
-            WindowsAccessTest.reopen(tmp);
+        assertThat(result.code()).isEmpty();
+        UserPrincipal system = fileSystem.getUserPrincipalLookupService().lookupPrincipalByName(WindowsAccess.SYSTEM);
+        UserPrincipal administrators = fileSystem.getUserPrincipalLookupService().lookupPrincipalByName(WindowsAccess.ADMINISTRATORS);
+        UserPrincipal service = fileSystem.getUserPrincipalLookupService().lookupPrincipalByName(DeployLayout.WINDOWS_SERVICE_ACCOUNT);
+        List<AclEntry> homeAcl = Files.getFileAttributeView(home, AclFileAttributeView.class).getAcl();
+        assertThat(homeAcl.stream().map(AclEntry::principal)).as(home.toString()).containsExactlyInAnyOrder(system, administrators);
+        for (Path folder : List.of(home.resolve("lib"), home.resolve("etc"), home.resolve("etc/drivers"), home.resolve("logs"),
+                home.resolve("data"), home.resolve("data/attachments"))) {
+            List<AclEntry> acl = Files.getFileAttributeView(folder, AclFileAttributeView.class).getAcl();
+            assertThat(acl.stream().map(AclEntry::principal)).as(folder.toString()).containsExactlyInAnyOrder(system, administrators, service);
         }
+        for (Path folder : List.of(home.resolve("etc/secrets"), home.resolve("etc/secrets/attachment-keys"))) {
+            List<AclEntry> acl = Files.getFileAttributeView(folder, AclFileAttributeView.class).getAcl();
+            assertThat(acl).as("the installing user and the service account only: %s", folder).hasSize(2);
+            assertThat(acl.stream().map(AclEntry::principal)).as(folder.toString()).contains(service).doesNotContain(system, administrators);
+        }
+        assertThat(Files.readString(home.resolve("lib/pg-ledger-mcp.exe"))).isEqualTo("content of WinSW.exe");
+        assertThat(Files.readString(home.resolve("lib/pg-ledger-mcp-admin.exe"))).isEqualTo("content of WinSW.exe");
+        assertThat(Files.readString(home.resolve("lib").resolve(DeployLayout.CLI_JAR))).isEqualTo("content of ledger-cli.jar");
+        assertThat(Files.readString(home.resolve("etc/drivers/driver.jar"))).isEqualTo("content of driver.jar");
+        assertThat(Files.exists(home.resolve("lib/pg-ledger-mcp.xml"))).isTrue();
     }
 }

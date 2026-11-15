@@ -348,8 +348,8 @@ class InstallScriptsTest {
     }
 
     @Test
-    @DisplayName("INS-037 (changed by INS-046) install.cmd keeps what exists on a re-run (secret-set only with --if-absent, the agent token as a copy made once by Java, no deletion); the folders, ACLs and the hand-over of the secrets are prepare-host and seal-host, and sc.exe sets the one service account")
-    void ins037_aRerunKeepsWhatExistsAndTheSecretsAreSealed() {
+    @DisplayName("INS-037 (changed by INS-046) install.cmd keeps what exists on a re-run (secret-set only with --if-absent, the agent token as a copy made once by Java, no deletion); the folders and their ACLs (the service account reads the secrets, PCS-030) are prepare-host, nothing is handed over (PCS-004: no seal-host), and sc.exe sets the one service account")
+    void ins037_aRerunKeepsWhatExists() {
         String code = String.join("\n", cmdCodeLines());
 
         for (String line : cmdCodeLines()) {
@@ -357,8 +357,9 @@ class InstallScriptsTest {
                 assertThat(line).as(line).contains(" --if-absent");
             }
         }
-        assertThat(code).contains("sc.exe config %%S obj= \"%ACCOUNT%\"", "prepare-host", "seal-host",
+        assertThat(code).contains("sc.exe config %%S obj= \"%ACCOUNT%\"", "prepare-host",
                 "token-generate ledger.admin.token --print", "token-generate ledger.mcp.token --print \"--copy-to=ledger.admin.agent-token\"");
+        assertThat(text(CMD).toLowerCase(Locale.ROOT)).doesNotContain("seal-host", "nginx", "acme", "enable-native-access");
     }
 
     @Test
@@ -407,10 +408,10 @@ class InstallScriptsTest {
 
         assertThat(code).contains("set \"NAME=%~8\"");
         assertThat(code).anySatisfy(line -> assertThat(line).startsWith("if \"%NAME%\"==\"\" call :ask instance-name NAME "));
-        // the name goes on once, quoted, in the options that the check, prepare-host and seal-host share
+        // the name goes on once, quoted, in the options that the check and prepare-host share
         assertThat(code.stream().filter(line -> line.contains("\"--name=%NAME%\"")).count()).isEqualTo(1);
-        assertThat(code.stream().filter(line -> line.contains("render-deploy --check %RENDER%") || line.contains("prepare-host")
-                || line.contains("seal-host")).allMatch(line -> line.contains("%RENDER%"))).isTrue();
+        assertThat(code.stream().filter(line -> line.contains("render-deploy --check %RENDER%") || line.contains("prepare-host"))
+                .allMatch(line -> line.contains("%RENDER%"))).isTrue();
         assertThat(check).as("the check is there").isNotNegative();
         assertThat(check).as("the check comes before the first operating system step").isLessThan(firstIndex(code, "stop /stopwait"));
         assertThat(check).isLessThan(firstIndex(code, "prepare-host"));
@@ -508,11 +509,11 @@ class InstallScriptsTest {
     }
 
     @Test
-    @DisplayName("INS-046 install.cmd: the order is the check, the stop of what runs, prepare-host, the secrets, driver-register, migrate, the services (WinSW, sc.exe), seal-host, the start; it starts no icacls, mkdir or copy and its secrets are never copied or given on a command line")
+    @DisplayName("INS-046 install.cmd: the order is the check, the stop of what runs, prepare-host, the secrets, driver-register, migrate, the services (WinSW, sc.exe), the start (PCS-004: no seal-host); it starts no icacls, mkdir or copy and its secrets are never copied or given on a command line")
     void ins046_theOrderOfTheWindowsInstaller() {
         List<String> code = cmdCodeLines();
         List<Integer> order = Stream.of("render-deploy --check", "stop /stopwait", "prepare-host", "secret-set", "driver-register",
-                " setup ", "sc.exe config", "seal-host", "\" start ").map(fragment -> firstIndex(code, fragment)).toList();
+                " setup ", "sc.exe config", "\" start ").map(fragment -> firstIndex(code, fragment)).toList();
 
         assertThat(order).doesNotContain(-1).isSorted();
         assertThat(String.join("\n", code).toLowerCase(Locale.ROOT)).doesNotContain("icacls", "mkdir", "copy ", "java -version");

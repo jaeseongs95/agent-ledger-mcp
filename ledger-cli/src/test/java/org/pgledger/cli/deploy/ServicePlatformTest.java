@@ -60,7 +60,7 @@ class ServicePlatformTest {
     private static ApplicationContextRunner runner() {
         return new ApplicationContextRunner().withBean(ProcessUser.class, () -> fileSystem -> () -> "tester")
                 .withUserConfiguration(ServicePlatforms.class, DeployRenderer.class, DeployFiles.class, HostFiles.class,
-                        WindowsAccess.class, WindowsPrivileges.class, SystemHostAccounts.class);
+                        WindowsAccess.class, SystemHostAccounts.class);
     }
 
     @Test

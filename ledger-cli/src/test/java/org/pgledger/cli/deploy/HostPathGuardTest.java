@@ -82,8 +82,8 @@ class HostPathGuardTest {
     }
 
     @Test
-    @DisplayName("CLI-PRN-03 prepare-host and seal-host without a root refuse the platform that is not the platform of the host before they read or change anything (the jars do not exist, so nothing could be written either)")
-    void prepareAndSealHost(Cli cli) {
+    @DisplayName("CLI-PRN-03 prepare-host without a root refuses the platform that is not the platform of the host before it reads or changes anything (the jars do not exist, so nothing could be written either)")
+    void prepareHost(Cli cli) {
         String[][] platforms = { LINUX, WINDOWS };
         DeployLayout[] layouts = { DeployLayout.linux(DeployTestBeans.defaults().instanceName()),
                 DeployLayout.windows(DeployTestBeans.defaults().instanceName(), "C:/ProgramData/pg-ledger-mcp") };
@@ -93,10 +93,8 @@ class HostPathGuardTest {
             }
             Outcome prepare = run(cli, "prepare-host", platforms[index], "--jars=" + tmp.resolve("no-jars"),
                     "--driver-jar=" + tmp.resolve("no-driver.jar"), "--winsw=" + tmp.resolve("no-winsw.exe"));
-            Outcome seal = run(cli, "seal-host", platforms[index]);
 
             assertRefusedAsAPlatform(prepare);
-            assertRefusedAsAPlatform(seal);
         }
     }
 }
