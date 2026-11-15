@@ -146,6 +146,24 @@ public final class LegacyFixtures {
                 "condition_text", "lower case", "state", "UNKNOWN", "version", 1, "created_by", SEED);
     }
 
+    /**
+     * Adds what the old installer left besides tables, in the shape of 1.x (RET-001): two functions ({@code _author_ok}, which a
+     * CHECK constraint of {@code project} calls as the CHECKs of 1.x did, and {@code whoami(p_author text)}), a trigger function
+     * with its trigger on {@code common_code} (the trigger {@code common_code_keep} of 1.x) and a view {@code v_defect}. The data
+     * of the tables is unchanged, so an import of the ledger still matches.
+     */
+    public static LegacyLedger withDatabaseObjects(LegacyLedger l) {
+        String s = l.schema();
+        l.update("CREATE FUNCTION " + s + "._author_ok(p text) RETURNS boolean LANGUAGE sql IMMUTABLE AS 'SELECT p IS NOT NULL'");
+        l.update("CREATE FUNCTION " + s + ".whoami(p_author text DEFAULT NULL) RETURNS text LANGUAGE sql AS 'SELECT p_author'");
+        l.update("CREATE FUNCTION " + s + "._code_keep() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RETURN COALESCE(NEW, OLD); END'");
+        l.update("ALTER TABLE " + s + ".project ADD CONSTRAINT project_author_ok CHECK (" + s + "._author_ok(created_by))");
+        l.update("CREATE TRIGGER common_code_keep BEFORE UPDATE OR DELETE ON " + s + ".common_code FOR EACH ROW EXECUTE FUNCTION "
+                + s + "._code_keep()");
+        l.update("CREATE VIEW " + s + ".v_defect AS SELECT id, title FROM " + s + ".defect");
+        return l;
+    }
+
     private static void plainTask(LegacyLedger l, String id) {
         l.insert("task", "id", id, "project_id", "old", "title", "Task " + id.length(), "purpose", "p", "success_condition",
                 "s", "state", "PLANNED", "version", 1, "created_at", at("2026-11-01T00:00:00Z"), "updated_at",
