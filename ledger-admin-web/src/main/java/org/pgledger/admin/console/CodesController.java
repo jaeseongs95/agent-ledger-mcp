@@ -12,6 +12,7 @@ import org.pgledger.domain.error.AdminCode;
 import org.pgledger.domain.error.AdminException;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationReason;
+import org.pgledger.domain.rule.CodeDirection;
 import org.pgledger.domain.rule.CodeGroup;
 import org.pgledger.domain.rule.CodeState;
 import org.pgledger.domain.value.OwnerIdentity;
@@ -27,7 +28,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 /**
  * The common codes: the list (retired ones included), the form that adds or changes one, and the refusal to delete
  * one. A retired code is made active again only with the explicit confirmation of the form. The form is bound to the
- * closed sets ({@link CodeGroup}, {@link CodeState}): a value that is none of them fails the binding, which
+ * closed sets ({@link CodeGroup}, {@link CodeState}, {@link CodeDirection}): a value that is none of them fails the binding, which
  * {@link FormErrors} reports as the failure of invalid input with the allowed values.
  */
 @Controller
@@ -35,10 +36,12 @@ public class CodesController {
 
     /**
      * The form; {@code confirmReactivation} is the checkbox that confirms making a retired code active again. A state that
-     * is left empty is ACTIVE.
+     * is left empty is ACTIVE. The direction is for a code of the group RELATION_KIND; left empty, a new code is CANONICAL and
+     * an existing code keeps the direction it has.
      */
     public record CodeForm(CodeGroup group, String code, String nameKo, String nameEn, String descriptionKo,
-            String descriptionEn, Integer sortOrder, CodeState state, String confirmReactivation) {
+            String descriptionEn, Integer sortOrder, CodeState state, CodeDirection direction,
+            String confirmReactivation) {
     }
 
     private final CatalogService catalog;
@@ -56,6 +59,7 @@ public class CodesController {
         model.addAttribute("codes", catalog.codes(new CodesQuery(null, true, Choices.ALL, null)).items());
         model.addAttribute("groups", CodeGroup.values());
         model.addAttribute("states", CodeState.values());
+        model.addAttribute("directions", CodeDirection.values());
         return "codes";
     }
 
@@ -64,7 +68,8 @@ public class CodesController {
         forms.raiseIfAny(errors);
         requireConfirmationToReactivate(form);
         codes.set(new CodeCommand(token(form.group()), form.code(), form.nameKo(), form.nameEn(),
-                form.descriptionKo(), form.descriptionEn(), form.sortOrder(), token(form.state())), actor);
+                form.descriptionKo(), form.descriptionEn(), form.sortOrder(), token(form.state()),
+                token(form.direction())), actor);
         return "redirect:/codes";
     }
 

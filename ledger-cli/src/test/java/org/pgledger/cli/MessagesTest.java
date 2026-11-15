@@ -29,7 +29,7 @@ class MessagesTest {
                 "key-register.registered", "key-register.replaced", "key-register.server", "key-revoke.revoked",
                 "migrate.applied", "migrate.current", "import-legacy.table", "import-legacy.imported", "import-legacy.verified",
                 "import-legacy.violation", "import-legacy.mismatch", "driver-register.registered", "project-add.added", "code-set.set",
-                "codes.line", "grant.issued", "grant.never", "revoke.revoked", "grants.none", "grants.line", "mcp-check.ok"));
+                "codes.line", "codes.line.relation", "grant.issued", "grant.never", "revoke.revoked", "grants.none", "grants.line", "mcp-check.ok"));
         for (ErrorCode code : ErrorCode.values()) {
             required.add(code.messageKey());
         }

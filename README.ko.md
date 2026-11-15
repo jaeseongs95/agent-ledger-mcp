@@ -412,7 +412,7 @@ deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <a
 | `key-register` | `key-register <author> <public-key-or-block> <fingerprint> [--replace=<current-fingerprint>]` | 세션이 출력한 공개 키를 작성자에 묶습니다. 유효한 키는 `--replace`가 있어야 교체합니다 |
 | `key-revoke` | `key-revoke <author> --fingerprint=<fingerprint>` | 작성자의 유효한 키를 닫습니다 |
 | `project-add` | `project-add <id> <code> <title>` | 프로젝트를 추가합니다 |
-| `code-set` | `code-set <group> <code> <name-ko> [<description-ko>] [--name-en=<text>] [--description-en=<text>] [--sort=<n>] [--inactive]` | 공통코드를 추가하거나 수정합니다 |
+| `code-set` | `code-set <group> <code> <name-ko> [<description-ko>] [--name-en=<text>] [--description-en=<text>] [--sort=<n>] [--inactive] [--direction=<direction>]` | 공통코드를 추가하거나 수정합니다. `--direction`(`GIVEN` 또는 `CANONICAL`)은 `RELATION_KIND` 그룹용입니다(`ledger_link` 도구 참고) |
 | `codes` | `codes [<group>]` | 공통코드를 나열합니다 |
 | `grant` | `grant <author> <project> <scope>... [--note=<text>] [--expires=<ISO-8601 with Z or an offset>]` | 프로젝트의 범위를 부여합니다. 작성자에게 먼저 유효한 세션 키가 있어야 합니다 |
 | `revoke` | `revoke <author> [<project> [<scope>]]` | 유효한 부여를 회수합니다 |

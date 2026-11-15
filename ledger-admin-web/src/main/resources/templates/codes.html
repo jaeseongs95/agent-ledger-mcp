@@ -12,11 +12,14 @@
     <thead><tr>
       <th scope="col" th:text="#{codes.group}">Group</th><th scope="col" th:text="#{codes.code}">Code</th><th scope="col" th:text="#{codes.nameKo}">Name (ko)</th>
       <th scope="col" th:text="#{codes.nameEn}">Name (en)</th><th scope="col" th:text="#{codes.sort}">Order</th><th scope="col" th:text="#{common.state}">State</th>
+      <th scope="col" th:text="#{codes.direction}">Direction</th>
     </tr></thead>
     <tbody>
       <tr th:each="c : ${codes}">
         <td th:text="${c.group()}">DEFECT_CATEGORY</td><td th:text="${c.code()}">ARC</td><td th:text="${c.nameKo()}">name</td><td th:text="${c.nameEn()}">name</td>
         <td th:text="${c.sortOrder()}">1</td><td><span th:class="'badge badge-' + ${c.state()}" th:text="${c.state()}">ACTIVE</span></td>
+        <td th:if="${c.group() == 'RELATION_KIND'}" th:text="#{'codes.direction.' + ${c.direction().token()}}">no direction</td>
+        <td th:unless="${c.group() == 'RELATION_KIND'}">-</td>
       </tr>
     </tbody>
   </table>
@@ -44,6 +47,12 @@
       <select id="state" name="state">
         <option th:each="s : ${states}" th:value="${s.token()}" th:text="${s.token()}">ACTIVE</option>
       </select>
+      <label for="direction" th:text="#{codes.direction}">Direction</label>
+      <select id="direction" name="direction" aria-describedby="direction-help">
+        <option value="" th:text="#{codes.direction.keep}">keep (CANONICAL for a new code)</option>
+        <option th:each="d : ${directions}" th:value="${d.token()}" th:text="#{'codes.direction.' + ${d.token()}}">CANONICAL</option>
+      </select>
+      <p id="direction-help" th:text="#{codes.direction.help}">Only for the group RELATION_KIND.</p>
       <label class="check"><input type="checkbox" name="confirmReactivation" value="yes"> <span th:text="#{codes.confirmReactivation}">I confirm that a retired code becomes active again.</span></label>
       <button type="submit" th:text="#{codes.submit}">Save</button>
     </form>
