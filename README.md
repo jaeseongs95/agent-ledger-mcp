@@ -187,7 +187,7 @@ The build is a Gradle multi-module project.
 | `ledger-admin-web` | the Spring Boot admin web for the owner (`ledger-admin-web.jar`) |
 | `ledger-cli` | the owner command line tool (`ledger-cli.jar`) |
 | `ledger-seed` | the seed bundle of a new installation, the default defect categories and the install defaults in one H2 file, and its reader; only `ledger-cli` uses it |
-| `ledger-migrate-1x` | the separate tool that moves a 1.x installation to 2.0 (`ledger-migrate-1x.jar`, see Upgrading from 1.x); it uses `ledger-domain`, `ledger-database` and `ledger-application`, and no other module uses it |
+| `ledger-migrate-1x` | the separate tool that moves a 1.x installation to 2.0 (`ledger-migrate-1x.jar`, see Upgrading from 1.x); it uses `ledger-domain`, `ledger-database` and `ledger-application`, and the classes (the plain jar, none of its libraries) of `ledger-cli` for its command line machinery and secret store, so that the secret store is the one of the services; no other module uses it |
 | `ledger-client-hook` | the one hook jar of all clients (`ledger-client-hook.jar`) |
 | `ledger-system-test` | test code only: the system test of the packaged product, which starts the built jars against the local PostgreSQL |
 

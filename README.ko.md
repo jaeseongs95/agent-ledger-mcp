@@ -149,7 +149,7 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | `ledger-cli` | 소유자용 명령줄 도구(`ledger-cli.jar`) |
 | `ledger-seed` | 새 설치의 시드 번들(기본 결함 분류와 설치 기본값을 담은 H2 파일 하나)과 그 읽기 코드. `ledger-cli`만 사용합니다 |
 | `ledger-client-hook` | 모든 클라이언트가 함께 쓰는 훅 jar(`ledger-client-hook.jar`) |
-| `ledger-migrate-1x` | 1.x 설치를 2.0으로 옮기는 별도의 도구(`ledger-migrate-1x.jar`, 1.x에서 업그레이드 참조). `ledger-domain`, `ledger-database`, `ledger-application`을 사용하며 다른 모듈은 이 모듈을 사용하지 않습니다 |
+| `ledger-migrate-1x` | 1.x 설치를 2.0으로 옮기는 별도의 도구(`ledger-migrate-1x.jar`, 1.x에서 업그레이드 참조). `ledger-domain`, `ledger-database`, `ledger-application`을 사용하고, 명령줄 기반과 비밀 저장소를 위해 `ledger-cli`의 클래스(plain jar이며 그 모듈의 라이브러리는 가져오지 않습니다)도 사용하므로 비밀 저장소는 서비스의 것과 같습니다. 다른 모듈은 이 모듈을 사용하지 않습니다 |
 | `ledger-system-test` | 시험 코드만 있는 모듈: 빌드한 jar를 그 컴퓨터의 PostgreSQL에 대해 실행하는, 패키지된 제품의 시스템 시험 |
 
 ## 설정
