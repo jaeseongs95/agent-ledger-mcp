@@ -23,7 +23,21 @@ class StorageUnsafeMessageTest {
         String ko = MessageFormat.format(ResourceBundle.getBundle("messages/ledger-errors", Locale.KOREAN)
                 .getString("error.ARTIFACT_STORAGE_UNSAFE"), "a regular file is expected, not a directory");
 
-        assertThat(en).contains("regular file", "folder", "a regular file is expected, not a directory").doesNotContain("safe");
-        assertThat(ko).contains("일반 파일", "폴더", "a regular file is expected, not a directory").doesNotContain("안전");
+        assertThat(en).contains("regular file", "folder", "owner-only", "a regular file is expected, not a directory").doesNotContain("safe");
+        assertThat(ko).contains("일반 파일", "폴더", "소유자 전용", "a regular file is expected, not a directory").doesNotContain("안전");
+    }
+
+    @Test
+    @DisplayName("SFR-005 (design edition 11): the messages of ARTIFACT_KEY_MISSING name the key id and say that the key file is missing, empty or of the wrong length (256 bits) in English and Korean; ARTIFACT_STORAGE_IO_ERROR stays the disk failure")
+    void sfr005_keyMissingMeansNoUsableKey() {
+        String en = MessageFormat.format(ResourceBundle.getBundle("messages/ledger-errors", Locale.ROOT)
+                .getString("error.ARTIFACT_KEY_MISSING"), "key-1");
+        String ko = MessageFormat.format(ResourceBundle.getBundle("messages/ledger-errors", Locale.KOREAN)
+                .getString("error.ARTIFACT_KEY_MISSING"), "key-1");
+
+        assertThat(en).contains("key-1", "missing", "empty", "256 bits");
+        assertThat(ko).contains("key-1", "없거나", "비었거나", "256비트");
+        assertThat(ResourceBundle.getBundle("messages/ledger-errors", Locale.ROOT).getString("error.ARTIFACT_STORAGE_IO_ERROR"))
+                .contains("read or written");
     }
 }

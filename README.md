@@ -159,7 +159,7 @@ can be edited without a trace. The history row of a record points to it with the
 - **Errors.** `ARTIFACT_CHUNK_CONFLICT`, `CHUNK_HASH_MISMATCH`, `ARTIFACT_BUSY` (send again later), `ARTIFACT_INCOMPLETE`,
   `ARTIFACT_HASH_MISMATCH` (the bytes are kept), `ARTIFACT_CORRUPTED`, `ARTIFACT_LIMIT`, `ARTIFACT_UNSUPPORTED_PURPOSE`,
   `ARTIFACT_EXPIRED`, `ARTIFACT_NOT_FOUND`, `ARTIFACT_OPERATION_CONFLICT`, `ARTIFACT_STORAGE_FULL` (the disk is too full: the owner
-  has to free it), `ARTIFACT_STORAGE_IO_ERROR`, `ARTIFACT_STORAGE_UNSAFE` (a path of the storage is not what it must be: a file where the folder belongs, a folder where a file belongs, or an empty key file), `ARTIFACT_KEY_MISSING`. Every error of these tools
+  has to free it), `ARTIFACT_STORAGE_IO_ERROR`, `ARTIFACT_STORAGE_UNSAFE` (the storage path cannot be used for this purpose: a file where the folder belongs, a folder where a file belongs, or it cannot be made owner-only on this file system or for this account), `ARTIFACT_KEY_MISSING` (no usable key: the key file is missing, empty or not 256 bits long; restore it). Every error of these tools
   carries `details.retryable`, `true` only when the same request sent later can succeed (`ARTIFACT_BUSY`, and `ARTIFACT_LIMIT`
   with `details.limit` `staging-budget` or `open-uploads`); `ARTIFACT_INCOMPLETE` is `false` (send the missing chunk, then finish).
 - **Check.** `ledger-cli attachments-check` reports the attachments that are missing or damaged (never deleted) and those no

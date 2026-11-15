@@ -13,7 +13,7 @@ import java.util.Set;
  * it). It is {@code false} for {@code ARTIFACT_LIMIT} of {@code file-size} and {@code attachment-budget} (the owner has to tidy the
  * attachments), {@code ARTIFACT_STORAGE_FULL} (the owner has to free the disk), {@code ARTIFACT_INCOMPLETE} (the caller has to send the
  * missing chunk first; the same finish sent later fails again), the storage and key failures {@code ARTIFACT_STORAGE_IO_ERROR},
- * {@code ARTIFACT_STORAGE_UNSAFE} and {@code ARTIFACT_KEY_MISSING} (the owner has to repair the disk, the path that is not a regular file or a folder, or the key file),
+ * {@code ARTIFACT_STORAGE_UNSAFE} and {@code ARTIFACT_KEY_MISSING} (the owner has to repair the disk, the storage path that cannot be used, or restore the key file: missing, empty or of the wrong length),
  * and for the expired, not found, hash, conflict, corrupted and purpose errors. A code that is no upload code has no answer.
  */
 public final class ArtifactRetry {

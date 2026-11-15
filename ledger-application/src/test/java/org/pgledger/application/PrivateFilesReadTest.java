@@ -102,7 +102,7 @@ class PrivateFilesReadTest {
     }
 
     @Test
-    @DisplayName("SFR-003: a directory where the key file is expected, an empty key file and a key file of another length are refused with ARTIFACT_STORAGE_UNSAFE; a file where the key folder or the storage folder belongs is refused with ARTIFACT_STORAGE_UNSAFE, and a missing key file is ARTIFACT_KEY_MISSING")
+    @DisplayName("SFR-003 (design edition 11): a directory where the key file is expected is ARTIFACT_STORAGE_UNSAFE; an empty key file, a key file of another length and a missing key file are ARTIFACT_KEY_MISSING; a file where the key folder or the storage folder belongs is ARTIFACT_STORAGE_UNSAFE")
     void sfr003_notRegularOrEmptyIsRefused() throws Exception {
         Path keyDirectory = fixture.properties().keyDirectory();
 
@@ -110,12 +110,15 @@ class PrivateFilesReadTest {
         Files.createFile(keyDirectory.resolve("key-is-empty"));
         Files.write(keyDirectory.resolve("key-too-short"), new byte[7]);
 
-        for (String name : List.of("key-is-a-directory", "key-is-empty", "key-too-short")) {
+        assertThatThrownBy(() -> fixture.keys().byId("key-is-a-directory")).isInstanceOfSatisfying(InfrastructureException.class,
+                failure -> assertThat(failure.code()).isEqualTo(InfrastructureCode.ARTIFACT_STORAGE_UNSAFE));
+        for (String name : List.of("key-is-empty", "key-too-short", "key-absent")) {
             assertThatThrownBy(() -> fixture.keys().byId(name)).as(name).isInstanceOfSatisfying(InfrastructureException.class,
-                    failure -> assertThat(failure.code()).isEqualTo(InfrastructureCode.ARTIFACT_STORAGE_UNSAFE));
+                    failure -> {
+                        assertThat(failure.code()).isEqualTo(InfrastructureCode.ARTIFACT_KEY_MISSING);
+                        assertThat(failure.args()).containsExactly(name);
+                    });
         }
-        assertThatThrownBy(() -> fixture.keys().byId("key-absent")).isInstanceOfSatisfying(InfrastructureException.class,
-                failure -> assertThat(failure.code()).isEqualTo(InfrastructureCode.ARTIFACT_KEY_MISSING));
 
         Path fileAsKeyFolder = fixture.root().resolve("keys-is-a-file");
         Files.writeString(fileAsKeyFolder, "not a folder");

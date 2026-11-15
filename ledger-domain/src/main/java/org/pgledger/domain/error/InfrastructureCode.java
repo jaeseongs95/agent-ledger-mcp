@@ -58,12 +58,16 @@ public enum InfrastructureCode implements ErrorCode {
     /** A stored attachment fails the check of its tags, end mark, size or hash. */
     ARTIFACT_CORRUPTED,
     /**
-     * A path of the attachment storage is not of the expected kind: a file where the folder belongs, a folder where a file belongs, or a
-     * key file that is empty or has not the length of a key (who else may reach it, its owner and a link are not looked at in the
-     * personal edition); {0} = what.
+     * The storage path cannot be used for this purpose (design edition 11): it is not a regular file or a folder where one belongs, or
+     * it cannot be made owner-only (a file system without POSIX permissions or ACLs such as FAT, or the account of the process is not
+     * known). Who else may reach an existing path, its owner and a link are not looked at in the personal edition. Not a disk failure
+     * (ARTIFACT_STORAGE_IO_ERROR); {0} = what.
      */
     ARTIFACT_STORAGE_UNSAFE,
-    /** A key file that stored files need is missing; {0} = the key id (never the key). */
+    /**
+     * There is no usable key for a key id (design edition 11): its key file is missing, is empty or has not the length of a key
+     * (256 bits); {0} = the key id (never the key).
+     */
     ARTIFACT_KEY_MISSING,
     /** The disk could not be read or written (the SSH name of the common table); {0} = the class of the failure. */
     ARTIFACT_STORAGE_IO_ERROR;

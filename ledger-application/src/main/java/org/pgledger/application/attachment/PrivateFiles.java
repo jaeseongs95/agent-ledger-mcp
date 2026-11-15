@@ -18,6 +18,7 @@ import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.nio.file.attribute.UserPrincipal;
+import java.nio.file.attribute.UserPrincipalNotFoundException;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
@@ -207,6 +208,9 @@ public class PrivateFiles {
             String name = ProcessHandle.current().info().user()
                     .orElseThrow(() -> unsafe("the account of this process is not known"));
             return fileSystem.getUserPrincipalLookupService().lookupPrincipalByName(name);
+        } catch (UserPrincipalNotFoundException unknown) {
+            // the account of the process is not known to the file system: an owner-only file cannot be made for it (not a disk failure)
+            throw unsafe("the account of this process is not known to the file system");
         } catch (IOException failure) {
             throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_IO_ERROR,
                     List.of(failure.getClass().getSimpleName()), failure);
