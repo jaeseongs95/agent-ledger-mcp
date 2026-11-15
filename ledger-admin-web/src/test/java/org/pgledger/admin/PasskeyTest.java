@@ -223,7 +223,7 @@ class PasskeyTest {
         }
         Browser anonymous = new Browser(mvc);
         anonymous.perform(post(anonymous, "/approval/intent", anonymous.csrfOf("/login"),
-                "{\"method\":\"POST\",\"path\":\"/projects\",\"fields\":[]}")).andExpect(status().is3xxRedirection());
+                "{\"method\":\"POST\",\"path\":\"/projects\",\"fields\":[]}")).andExpect(status().isUnauthorized());
     }
 
     @Test

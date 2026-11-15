@@ -110,7 +110,9 @@ class MessagesTest {
                 .header(HttpHeaders.ACCEPT_LANGUAGE, acceptLanguage)).andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.detail").value(korean ? "인증이 필요합니다." : "Authentication is required."));
 
-        assertThat(page).contains(korean ? "관리자 토큰" : "Admin token").contains(korean ? "<html lang=\"ko\">" : "<html lang=\"en\">");
-        assertThat(page).doesNotContain(korean ? "Admin token" : "관리자 토큰");
+        // the login page has no token form any more: it offers the passkey and the one-time code (the sign-in text per language)
+        assertThat(page).contains(korean ? "패스키로 로그인" : "Sign in with a passkey")
+                .contains(korean ? "<html lang=\"ko\">" : "<html lang=\"en\">");
+        assertThat(page).doesNotContain(korean ? "Sign in with a passkey" : "패스키로 로그인");
     }
 }

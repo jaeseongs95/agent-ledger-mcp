@@ -2,6 +2,7 @@ package org.pgledger.admin.security;
 
 import jakarta.servlet.DispatcherType;
 import java.util.List;
+import java.util.Set;
 import org.pgledger.admin.app.AdminMode;
 import org.pgledger.admin.app.LedgerAdminProperties;
 import org.pgledger.admin.app.SignInMethod;
@@ -21,6 +22,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -28,17 +30,26 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.web.DefaultOAuth2AuthorizationRequestResolver;
 import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestCustomizers;
+import org.springframework.security.authentication.AbstractAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.web.DefaultRedirectStrategy;
 import org.springframework.security.web.RedirectStrategy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.AuthenticationConverter;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
+import org.springframework.security.web.authentication.ott.OneTimeTokenAuthenticationConverter;
 import org.springframework.security.web.authentication.logout.LogoutFilter;
 import org.springframework.security.web.firewall.HttpFirewall;
 import org.springframework.security.web.firewall.RequestRejectedHandler;
 import org.springframework.security.web.firewall.StrictHttpFirewall;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter.ReferrerPolicy;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
-import org.springframework.security.web.util.matcher.AnyRequestMatcher;
+import org.springframework.security.web.util.matcher.AndRequestMatcher;
+import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
+import org.springframework.security.web.util.matcher.NegatedRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestHeaderRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.ErrorResponseException;
 import org.springframework.web.servlet.HandlerExceptionResolver;
 
@@ -144,7 +155,7 @@ public class AdminSecurityConfiguration {
                         .defaultAuthenticationEntryPointFor(failures,
                                 PathPatternRequestMatcher.withDefaults().matcher("/api/**"))
                         .defaultAuthenticationEntryPointFor(new LoginUrlAuthenticationEntryPoint("/login"),
-                                AnyRequestMatcher.INSTANCE))
+                                browserPages()))
                 .oauth2ResourceServer(resource -> resource.authenticationManagerResolver(request -> bearer)
                         .authenticationEntryPoint(failures))
                 .headers(headers -> headers
@@ -173,6 +184,35 @@ public class AdminSecurityConfiguration {
     }
 
     /**
+     * The requests of a browser that asks for a page (it names {@code text/html}, a wildcard does not count, and it is not
+     * an XMLHttpRequest): they go to the login page when nobody is signed in. Any other request gets the 401 problem of the
+     * first entry point, as the form login of Spring Security did before.
+     */
+    private static RequestMatcher browserPages() {
+        MediaTypeRequestMatcher html = new MediaTypeRequestMatcher(MediaType.TEXT_HTML, MediaType.APPLICATION_XHTML_XML);
+        html.setIgnoredMediaTypes(Set.of(MediaType.ALL));
+        RequestMatcher ajax = new RequestHeaderRequestMatcher("X-Requested-With", "XMLHttpRequest");
+        return new AndRequestMatcher(html, new NegatedRequestMatcher(ajax));
+    }
+
+    /**
+     * The converter of the one-time code of Spring Security, plus the details of the request (the client address) that it
+     * leaves out: the lock after failed attempts ({@link EnrollmentTokenService}) counts per client address, like the one of
+     * the admin token.
+     */
+    private static AuthenticationConverter codeWithClientAddress() {
+        AuthenticationConverter codes = new OneTimeTokenAuthenticationConverter();
+        WebAuthenticationDetailsSource details = new WebAuthenticationDetailsSource();
+        return request -> {
+            Authentication code = codes.convert(request);
+            if (code instanceof AbstractAuthenticationToken token) {
+                token.setDetails(details.buildDetails(request));
+            }
+            return code;
+        };
+    }
+
+    /**
      * The passkeys, on the WebAuthn support of Spring Security: the passkey sign-in and the registration endpoints (the default
      * registration page is off: it has an inline script, which the content security policy forbids, so the passkey page of the
      * application drives the endpoints), the lock after failed attempts in front of the sign-in, and the one-time code of the
@@ -185,7 +225,10 @@ public class AdminSecurityConfiguration {
         http.addFilterBefore(guard, LogoutFilter.class)
                 .webAuthn(web -> web.rpName(party.rpName()).rpId(party.rpId()).allowedOrigins(party.origins())
                         .disableDefaultRegistrationPage(true))
-                .oneTimeTokenLogin(ott -> ott.tokenService(codes).loginProcessingUrl("/login/ott")
+                // loginPage: the application's own page, so Spring Security generates no default login page (which would also
+                // take over GET /login and add its own passkey script, forbidden by the content security policy)
+                .oneTimeTokenLogin(ott -> ott.tokenService(codes).loginPage("/login").loginProcessingUrl("/login/ott")
+                        .authenticationConverter(codeWithClientAddress())
                         .showDefaultSubmitPage(false).tokenGenerationSuccessHandler((request, response, token) -> { })
                         .failureHandler(failures)
                         .successHandler((request, response, authentication) -> {

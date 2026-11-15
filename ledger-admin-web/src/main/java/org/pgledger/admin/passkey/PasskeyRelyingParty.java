@@ -91,8 +91,8 @@ public final class PasskeyRelyingParty {
             throw new IllegalArgumentException("ledger.admin.passkey.origins: " + origin + " is not an origin", notAnOrigin);
         }
         String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
-        boolean secure = Objects.equals("https", uri.getScheme());
-        boolean plainLoopback = Objects.equals("http", uri.getScheme()) && Objects.equals(LOOPBACK, host);
+        boolean secure = "https".equals(uri.getScheme());
+        boolean plainLoopback = "http".equals(uri.getScheme()) && Objects.equals(LOOPBACK, host);
         if (!secure && !plainLoopback) {
             throw new IllegalArgumentException("ledger.admin.passkey.origins: " + origin
                     + " must use https (only localhost may use http)");

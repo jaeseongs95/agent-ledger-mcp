@@ -82,7 +82,11 @@ public final class SecurityFailures implements AuthenticationEntryPoint, Authent
         } else if (mode == AdminMode.SETUP) {
             problem = new InfrastructureException(InfrastructureCode.DRIVER_NOT_CONFIGURED, List.of());
         } else {
-            problem = new AdminException(AdminCode.UNAUTHORIZED, List.of());
+            // somebody is signed in (an anonymous request goes to the entry point), but with an authority that does not
+            // reach this path: the enrolment session of a one-time code, or a bearer of the read-only endpoints
+            problem = new ErrorResponseException(HttpStatus.FORBIDDEN,
+                    problems.problem(HttpStatus.FORBIDDEN, AdminProblems.FORBIDDEN, locales.resolveLocale(request)),
+                    failure);
         }
         resolver.resolveException(request, response, null, problem);
     }

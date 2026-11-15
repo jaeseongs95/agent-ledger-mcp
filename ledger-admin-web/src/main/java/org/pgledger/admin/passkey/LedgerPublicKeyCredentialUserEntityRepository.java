@@ -30,12 +30,20 @@ public class LedgerPublicKeyCredentialUserEntityRepository implements PublicKeyC
 
     @Override
     public PublicKeyCredentialUserEntity findById(Bytes id) {
-        return entity(passkeys.ownerById(id.toBase64UrlString()));
+        Optional<PasskeyUser> found = passkeys.ownerById(id.toBase64UrlString());
+        if (found.isEmpty()) {
+            return null;
+        }
+        return entity(found.orElseThrow());
     }
 
     @Override
     public PublicKeyCredentialUserEntity findByUsername(String username) {
-        return entity(passkeys.owner());
+        Optional<PasskeyUser> found = passkeys.owner();
+        if (found.isEmpty()) {
+            return null;
+        }
+        return entity(found.orElseThrow());
     }
 
     /** Stores the first entity (as the owner); a later one is the same person and is left out. */
@@ -50,11 +58,7 @@ public class LedgerPublicKeyCredentialUserEntityRepository implements PublicKeyC
         throw new UnsupportedOperationException("the owner is never deleted");
     }
 
-    private static PublicKeyCredentialUserEntity entity(Optional<PasskeyUser> user) {
-        if (user.isEmpty()) {
-            return null;
-        }
-        PasskeyUser owner = user.orElseThrow();
+    private static PublicKeyCredentialUserEntity entity(PasskeyUser owner) {
         return ImmutablePublicKeyCredentialUserEntity.builder().name(owner.name()).id(Bytes.fromBase64(owner.userId()))
                 .displayName(owner.displayName()).build();
     }
