@@ -14,9 +14,9 @@ import org.pgledger.mcp.support.ToolNames;
 class CatalogTest {
 
     @Test
-    @DisplayName("MCC-001: tools/list holds exactly the 22 tools: 10 write and 12 read")
-    void theServerHasTwentyTwoTools(McpSession session) {
-        assertThat(session.tools()).extracting(Tool::name).hasSize(22)
+    @DisplayName("MCC-001: tools/list holds exactly the 27 tools: 10 write, 5 attachment and 12 read")
+    void theServerHasTwentySevenTools(McpSession session) {
+        assertThat(session.tools()).extracting(Tool::name).hasSize(27)
                 .containsExactlyInAnyOrderElementsOf(ToolNames.all());
     }
 }

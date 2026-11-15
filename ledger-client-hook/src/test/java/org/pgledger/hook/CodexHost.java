@@ -18,7 +18,7 @@ final class CodexHost extends FlatHost {
 
     @Override
     public String toolName(String operation) {
-        return "mcp__test__ledger_" + operation;
+        return "mcp__test__" + Hosts.canonical(operation);
     }
 
     @Override

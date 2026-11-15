@@ -20,12 +20,16 @@ import tools.jackson.databind.node.ObjectNode;
  * model's arguments, unless the arguments are not an object, already contain the reserved key, the host id is missing
  * or malformed, or the {@code request_id} is not a text. The value is the text of an
  * {@link org.pgledger.attestation.AttestationToken}, signed with the private key of the author
- * {@code <vendor>:<host id>} for the MCP server of the call, for the canonical tool name {@code ledger_<operation>},
+ * {@code <vendor>:<host id>} for the MCP server of the call, for the canonical tool name ({@code ledger_<operation>} or
+ * {@code artifact-<operation>}),
  * the request id of the call, the digest of the arguments the hook hands the host (RFC 8785 canonical form, SHA-256:
  * {@link ArgumentsDigest}; the request id is already in them, the attestation is not) and the time of the injected
  * clock. The request id is the argument {@code request_id}; if the model gave none (absent, JSON null or blank) the
- * hook generates a random UUID and puts it into the arguments as {@code request_id}. whoami has no request id: its
- * claim is empty and no {@code request_id} is added. Nothing else is changed.
+ * hook generates a random UUID and puts it into the arguments as {@code request_id}. whoami and the five attachment
+ * tools have no request id ({@link WriteTool#carriesRequestId}): the claim is empty and no {@code request_id} is added.
+ * The digest covers the whole arguments object whatever its size (an attachment chunk is up to 349528 base64
+ * characters): the hook neither limits nor truncates the arguments, the host's 10 second hook timeout is the bound.
+ * Nothing else is changed.
  *
  * <p>The key pair of an author for a server is created in the key folder by the first call of that author for that
  * server.
@@ -90,7 +94,7 @@ final class LedgerHook {
         }
         String requestId;
         String generatedRequestId = null;
-        if (call.tool() == WriteTool.WHOAMI) {
+        if (!call.tool().carriesRequestId()) {
             requestId = "";
         } else {
             JsonNode given = arguments.get(REQUEST_ID_KEY);

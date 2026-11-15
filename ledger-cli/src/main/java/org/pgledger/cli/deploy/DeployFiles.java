@@ -182,6 +182,7 @@ public final class DeployFiles {
     public void requireReachable(HostPaths paths, Path root, DeployLayout layout) {
         paths.hostPath(root, layout.lib());
         paths.hostPath(root, layout.etc());
+        paths.hostPath(root, layout.data());
         if (layout.logs() != null) {
             paths.hostPath(root, layout.logs());
         }

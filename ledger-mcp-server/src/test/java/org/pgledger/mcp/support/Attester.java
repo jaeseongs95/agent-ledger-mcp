@@ -4,7 +4,10 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.pgledger.attestation.ArgumentsDigest;
+import org.pgledger.domain.rule.ToolContract;
 import org.pgledger.domain.value.AuthorId;
 import org.springframework.context.ApplicationContext;
 import tools.jackson.core.type.TypeReference;
@@ -24,10 +27,12 @@ public final class Attester {
     private static final String ATTESTATION = "_hostAttestation";
     private static final String REQUEST_ID = "request_id";
     private static final String WHOAMI = "ledger_whoami";
-    /** The tools that carry the attestation: the nine writes and whoami (a read tool never gets one). */
-    private static final Set<String> ATTESTED_TOOLS = Set.of("ledger_save", "ledger_transition", "ledger_record_fix",
-            "ledger_record_case", "ledger_link", "ledger_correct", "ledger_batch", "ledger_review",
-            "ledger_review_correct", WHOAMI);
+    /** The tools that carry the attestation: the nine writes, whoami and the five attachment tools (a read tool never gets one). */
+    private static final Set<String> ATTESTED_TOOLS = Stream.concat(ToolContract.WRITE.stream(),
+            ToolContract.ATTACHMENT.stream()).collect(Collectors.toUnmodifiableSet());
+    /** The tools whose attestation is signed with an empty request id, which the hook does not add: whoami and the attachment tools. */
+    private static final Set<String> WITHOUT_REQUEST_ID = Stream.concat(Stream.of(WHOAMI),
+            ToolContract.ATTACHMENT.stream()).collect(Collectors.toUnmodifiableSet());
 
     private final KeyRing keys;
     private final JsonMapper mapper;
@@ -58,7 +63,7 @@ public final class Attester {
             return arguments;
         }
         String requestId = "";
-        if (!WHOAMI.equals(tool)) {
+        if (!WITHOUT_REQUEST_ID.contains(tool)) {
             requestId = call.get(REQUEST_ID) instanceof String given && !given.isBlank() ? given
                     : UUID.randomUUID().toString();
             call.put(REQUEST_ID, requestId);

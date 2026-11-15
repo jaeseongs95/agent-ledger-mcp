@@ -6,7 +6,9 @@ public enum ValidationCode implements ErrorCode {
     REASON_INVALID,
     CODE_REQUIRED,
     CODE_INVALID,
-    ID_PREFIX_MISMATCH;
+    ID_PREFIX_MISMATCH,
+    /** An upload purpose that the ledger does not support (it supports only evidence). Argument: the purpose. */
+    ARTIFACT_UNSUPPORTED_PURPOSE;
 
     @Override
     public ErrorCategory category() {

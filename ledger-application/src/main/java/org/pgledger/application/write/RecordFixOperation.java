@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
+import org.pgledger.application.attachment.AttachmentLinks;
 import org.pgledger.application.gate.Lookup;
 import org.pgledger.application.gate.Target;
 import org.pgledger.application.gate.WriteGate;
@@ -58,16 +59,19 @@ public class RecordFixOperation extends WriteOperation<RecordFixCommand, RecordF
     private final DefectFixRepository fixes;
     private final IdAllocator ids;
     private final HistoryWriter history;
+    private final AttachmentLinks attachments;
     private final Clock clock;
 
     public RecordFixOperation(WriteGate gate, ReceiptService receipts, Rows rows, CodeRules codeRules,
-            DefectFixRepository fixes, IdAllocator ids, HistoryWriter history, Clock clock) {
+            DefectFixRepository fixes, IdAllocator ids, HistoryWriter history, AttachmentLinks attachments,
+            Clock clock) {
         super(gate, receipts, ReceiptOperation.RECORD_FIX, RecordFixResult.class);
         this.rows = rows;
         this.codeRules = codeRules;
         this.fixes = fixes;
         this.ids = ids;
         this.history = history;
+        this.attachments = attachments;
         this.clock = clock;
     }
 
@@ -95,13 +99,21 @@ public class RecordFixOperation extends WriteOperation<RecordFixCommand, RecordF
         CanonicalPayload.Fields payload = CanonicalPayload.Fields.empty().text("defect", defectId.value())
                 .text("repo", repo).text("commit", commit.value()).text("branch", branch).text("ci_ref", ciRef)
                 .text("ci_conclusion", conclusion == null ? null : conclusion.name())
-                .text("ci_completed_at", ChangeSet.text(completedAt)).text("mark", Boolean.toString(mark));
+                .text("ci_completed_at", ChangeSet.text(completedAt)).text("mark", Boolean.toString(mark))
+                .text("attachment_id", c.attachmentId());
         return new Prepared<>(payload, ctx -> execute(ctx, defectId, repo, commit, branch, ciRef, conclusion,
-                completedAt, mark));
+                completedAt, mark, c.attachmentId()));
     }
 
+    /**
+     * The attachment is on the DEFECT_FIX row (the CREATE of a new commit, the EDIT of new CI data): the main row of the
+     * operation. The defect's own TRANSITION or EDIT row that the same call may write carries none.
+     */
     private RecordFixResult execute(WriteContext ctx, DefectId defectId, String repo, CommitSha commit,
-            String branch, String ciRef, CiConclusion conclusion, Instant completedAt, boolean mark) {
+            String branch, String ciRef, CiConclusion conclusion, Instant completedAt, boolean mark,
+            String attachment) {
+        // before anything is written: a missing or foreign attachment fails the whole record (design 5)
+        attachments.requireOwnedBy(attachment, ctx.author());
         Instant now = clock.instant();
         Defect defect = rows.defectForWrite(defectId, null);
         String fixEntityId = defectId.value() + "@" + commit.value();
@@ -132,9 +144,9 @@ public class RecordFixOperation extends WriteOperation<RecordFixCommand, RecordF
         }
         FixWrite fix = known
                 .map(row -> amendFix(ctx, row, fixEntityId, ciRef, conclusion, completedAt, evidence,
-                        amendedChanges(row, ciRef, conclusion, completedAt)))
+                        amendedChanges(row, ciRef, conclusion, completedAt), attachment))
                 .orElseGet(() -> recordFix(ctx, defectId, fixEntityId, repo, commit, branch, ciRef, conclusion,
-                        completedAt, evidence, now));
+                        completedAt, evidence, now, attachment));
         long fixId = fix.fixId();
         long historyId = fix.historyId();
         Long transitionHistoryId = null;
@@ -161,14 +173,14 @@ public class RecordFixOperation extends WriteOperation<RecordFixCommand, RecordF
     /** A commit that was not recorded yet: the fix row and its CREATE history row (the recording session owns the defect). */
     private FixWrite recordFix(WriteContext ctx, DefectId defectId, String fixEntityId, String repo, CommitSha commit,
             String branch, String ciRef, CiConclusion conclusion, Instant completedAt, Evidence evidence,
-            Instant now) {
+            Instant now, String attachment) {
         DefectFix fix = DefectFix.record(ids.next(Counter.DEFECT_FIX), defectId, repo, commit, branch, ciRef,
                 conclusion, completedAt, ctx.author(), now);
         long fixId = inserted(() -> fixes.insert(fix), defectId.value()).id();
         ChangeSet changes = ChangeSet.empty().with("repo", null, repo).with("branch", null, branch)
                 .with("ci_ref", null, ciRef).with("ci_conclusion", null, name(conclusion));
         long historyId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.DEFECT_FIX, fixEntityId,
-                HistoryOp.CREATE, changes).withEvidence(evidence));
+                HistoryOp.CREATE, changes).withEvidence(evidence).withAttachment(attachment));
         return new FixWrite(fixId, historyId);
     }
 
@@ -196,10 +208,11 @@ public class RecordFixOperation extends WriteOperation<RecordFixCommand, RecordF
 
     /** New CI data of a commit that is recorded: the fix row is updated and an EDIT row keeps the old one; the owner stays. */
     private FixWrite amendFix(WriteContext ctx, DefectFix known, String fixEntityId, String ciRef,
-            CiConclusion conclusion, Instant completedAt, Evidence evidence, ChangeSet changes) {
+            CiConclusion conclusion, Instant completedAt, Evidence evidence, ChangeSet changes, String attachment) {
         fixes.update(known.withCi(ciRef, conclusion, completedAt));
         long historyId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.DEFECT_FIX, fixEntityId,
-                HistoryOp.EDIT, changes).withEvidence(evidence).withBefore(Snapshot.FixRow.of(known)));
+                HistoryOp.EDIT, changes).withEvidence(evidence).withBefore(Snapshot.FixRow.of(known))
+                .withAttachment(attachment));
         return new FixWrite(known.id(), historyId);
     }
 

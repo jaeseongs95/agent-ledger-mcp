@@ -1,5 +1,6 @@
 package org.pgledger.application.write;
 
+import org.pgledger.application.attachment.AttachmentLinks;
 import org.pgledger.application.gate.Lookup;
 import org.pgledger.application.gate.Resolution;
 import org.pgledger.application.gate.WriteGate;
@@ -32,13 +33,15 @@ public class CorrectOperation extends WriteOperation<CorrectCommand, CorrectResu
     private final Rows rows;
     private final HistoryRepository historyRows;
     private final HistoryWriter history;
+    private final AttachmentLinks attachments;
 
     public CorrectOperation(WriteGate gate, ReceiptService receipts, Rows rows, HistoryRepository historyRows,
-            HistoryWriter history) {
+            HistoryWriter history, AttachmentLinks attachments) {
         super(gate, receipts, ReceiptOperation.CORRECT, CorrectResult.class);
         this.rows = rows;
         this.historyRows = historyRows;
         this.history = history;
+        this.attachments = attachments;
     }
 
     @Override
@@ -68,12 +71,15 @@ public class CorrectOperation extends WriteOperation<CorrectCommand, CorrectResu
     @Override
     protected Prepared<CorrectResult> prepare(CorrectCommand c) {
         long id = c.requireHistoryId();
-        CanonicalPayload.Fields payload = CanonicalPayload.Fields.empty().text("history_id", Long.toString(id));
+        CanonicalPayload.Fields payload = CanonicalPayload.Fields.empty().text("history_id", Long.toString(id))
+                .text("attachment_id", c.attachmentId());
         return new Prepared<>(payload, ctx -> {
+            // before anything is written: a missing or foreign attachment fails the whole record (design 5)
+            attachments.requireOwnedBy(c.attachmentId(), ctx.author());
             HistoryEntry row = historyRows.findById(id)
                     .orElseThrow(() -> Rows.notFound("history", Long.toString(id)));
             long newId = history.append(ctx, HistoryWriter.Entry.of(row.entity(), row.entityId(),
-                    HistoryOp.CORRECT, ChangeSet.empty()).correcting(id));
+                    HistoryOp.CORRECT, ChangeSet.empty()).correcting(id).withAttachment(c.attachmentId()));
             return new CorrectResult(WriteStatus.COMMITTED, id, newId, ctx.author().value(), ctx.login());
         });
     }

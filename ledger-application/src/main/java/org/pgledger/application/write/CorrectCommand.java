@@ -3,8 +3,17 @@ package org.pgledger.application.write;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationReason;
 
-/** Points at a wrong history row with a CORRECT row. */
-public record CorrectCommand(String requestId, Long historyId, String reason) implements WriteCommand {
+/**
+ * Points at a wrong history row with a CORRECT row. {@code attachmentId} is the optional id of an attachment of the
+ * author that the CORRECT row points to (checked in the transaction of the write).
+ */
+public record CorrectCommand(String requestId, Long historyId, String reason, String attachmentId)
+        implements WriteCommand {
+
+    /** A correction without an attachment. */
+    public CorrectCommand(String requestId, Long historyId, String reason) {
+        this(requestId, historyId, reason, null);
+    }
 
     /**
      * The id of the history row to correct.

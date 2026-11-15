@@ -121,7 +121,7 @@ class GateTest {
                     SaveResult d = s.sourceFixedDefect("d");
                     s.bean(BatchService.class).batch(Scenario.AUTHOR, null, List.of(new BatchOpInput.Transition(
                             "defect", d.id(), 2L, "VERIFIED", Scenario.REASON, Scenario.EVIDENCE, null, null,
-                            null)));
+                            null, null)));
                 }));
     }
 

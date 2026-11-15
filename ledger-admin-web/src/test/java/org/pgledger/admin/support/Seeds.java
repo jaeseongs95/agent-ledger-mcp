@@ -8,6 +8,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
+import java.util.Base64;
+import org.springframework.beans.factory.ObjectProvider;
+import org.pgledger.application.attachment.AttachmentFlow;
+import org.pgledger.application.attachment.UploadCommands;
+import org.pgledger.domain.value.Sha256;
 import org.pgledger.application.admin.GrantService;
 import org.pgledger.application.admin.GrantService.GrantCommand;
 import org.pgledger.application.admin.ProjectService;
@@ -63,11 +68,13 @@ public class Seeds {
     private final RecordCaseService cases;
     private final MutableClock clock;
     private final SessionKeyService keys;
+    private final ObjectProvider<AttachmentFlow> uploads;
     private final KeyPair pair = newPair();
     private boolean enrolled;
 
     public Seeds(ProjectService projects, GrantService grants, SaveService saves, TransitionService transitions,
-            RecordCaseService cases, MutableClock clock, SessionKeyService keys) {
+            RecordCaseService cases, MutableClock clock, SessionKeyService keys, ObjectProvider<AttachmentFlow> uploads) {
+        this.uploads = uploads;
         this.projects = projects;
         this.grants = grants;
         this.saves = saves;
@@ -152,6 +159,35 @@ public class Seeds {
     public void dispute(String defect, String evidence) {
         signed("ledger_transition", attestation -> transitions.transition(attestation, new TransitionCommand(null,
                 "defect", defect, 1L, "DISPUTED", REASON, evidence, null, null)));
+    }
+
+    /**
+     * Uploads a file through the real five-operation flow ({@code artifact-begin}, one {@code artifact-chunk} per 256 KiB,
+     * {@code artifact-finish}), each call signed for its tool as the hook does, and returns the attachment id. The project of
+     * the scenario must have been made first (the author needs a live grant).
+     */
+    public String attachment(String fileName, String mediaType, byte[] body) {
+        AttachmentFlow flow = uploads.getObject();
+        String sha = Sha256.ofBytes(body).hex();
+        String key = "up-" + numbers.incrementAndGet() + "-" + sha.substring(0, 12);
+        String id = signed("artifact-begin", token -> flow.begin(token,
+                new UploadCommands.Begin(key, fileName, mediaType, body.length, sha, null))).uploadId();
+        int chunk = org.pgledger.application.attachment.AttachmentProperties.CHUNK_BYTES;
+        long sequence = 0;
+        for (int from = 0; from < body.length; from += chunk) {
+            byte[] part = java.util.Arrays.copyOfRange(body, from, Math.min(body.length, from + chunk));
+            String data = Base64.getEncoder().encodeToString(part);
+            long number = sequence++;
+            signed("artifact-chunk", token -> flow.chunk(token,
+                    new UploadCommands.Chunk(id, number, data, Sha256.ofBytes(part).hex())));
+        }
+        return signed("artifact-finish", token -> flow.finish(token, id)).attachmentId();
+    }
+
+    /** Moves an OPEN defect (version 1) to DISPUTED, the history row pointing to the attachment. */
+    public void disputeWithAttachment(String defect, String attachmentId) {
+        signed("ledger_transition", attestation -> transitions.transition(attestation, new TransitionCommand(null,
+                "defect", defect, 1L, "DISPUTED", REASON, null, null, null, attachmentId)));
     }
 
     /** Records an observation of a defect with the given evidence text. */

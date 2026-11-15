@@ -30,7 +30,7 @@ class BatchRollbackTest {
                 new BatchOpInput.Save("defect", Fields.of(s.defectFields("created by the batch")), Scenario.REASON, null, null,
                         null),
                 new BatchOpInput.Transition("defect", existing.id(), 9L, "DISPUTED", Scenario.REASON,
-                        Scenario.EVIDENCE, null, null, null));
+                        Scenario.EVIDENCE, null, null, null, null));
         LedgerException e = Expect.failure(() -> s.bean(BatchService.class).batch(actor, requestId, ops),
                 ConflictCode.VERSION_CONFLICT);
         assertThat(e.details()).containsAllEntriesOf(Map.of("op_index", List.of("2"), "op", List.of("transition")));

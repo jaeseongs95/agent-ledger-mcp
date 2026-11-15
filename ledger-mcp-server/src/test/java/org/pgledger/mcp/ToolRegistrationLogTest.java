@@ -62,7 +62,7 @@ class ToolRegistrationLogTest {
     }
 
     @Test
-    @DisplayName("REH4-MCP-01 starting the server logs no 'Replace existing Tool' and no other WARN of the MCP SDK, the level of its logger is as it was, and the 22 tools are those of the catalog")
+    @DisplayName("REH4-MCP-01 starting the server logs no 'Replace existing Tool' and no other WARN of the MCP SDK, the level of its logger is as it was, and the 27 tools are those of the catalog")
     void theToolsAreRegisteredOnce(McpSession session) {
         List<Tool> tools = session.tools();
 
@@ -73,7 +73,7 @@ class ToolRegistrationLogTest {
                 .as("the WARN events of the SDK while the server started").isEmpty();
         assertThat(logged).noneMatch(text -> text.contains("Replace existing Tool"));
         assertThat(SDK.getLevel()).as("the level of the logger is not lowered to hide anything").isNull();
-        assertThat(tools).extracting(Tool::name).hasSize(22).containsExactlyInAnyOrderElementsOf(ToolNames.all());
+        assertThat(tools).extracting(Tool::name).hasSize(27).containsExactlyInAnyOrderElementsOf(ToolNames.all());
         assertThat(tools).allSatisfy(tool -> {
             SchemaView input = SchemaView.of(session.mapper(), tool.inputSchema());
             assertThat(input.objects()).as(tool.name()).allSatisfy(object -> assertThat(object.closed()).isTrue());

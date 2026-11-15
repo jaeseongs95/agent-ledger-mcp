@@ -105,17 +105,17 @@ public class BatchService {
                     new SaveCommand(id, s.entity(), s.id(), s.expectedVersion(), s.fields(), s.reason()));
             case BatchOpInput.Transition t -> transition.run(actor, boundRequestId, Channel.AUTHOR,
                     new TransitionCommand(id, t.entity(), t.id(), t.expectedVersion(), t.to(), t.reason(),
-                            t.evidenceUri(), t.evidenceSha256(), t.mergedInto()));
+                            t.evidenceUri(), t.evidenceSha256(), t.mergedInto(), t.attachmentId()));
             case BatchOpInput.RecordFix f -> recordFix.run(actor, boundRequestId, Channel.AUTHOR,
                     new RecordFixCommand(id, f.defectId(), f.repo(), f.commitSha(), f.reason(), f.branch(),
-                            f.ciRef(), f.ciConclusion(), f.ciCompletedAt(), f.markSourceFixed()));
+                            f.ciRef(), f.ciConclusion(), f.ciCompletedAt(), f.markSourceFixed(), f.attachmentId()));
             case BatchOpInput.RecordCase c -> recordCase.run(actor, boundRequestId, Channel.AUTHOR,
                     new RecordCaseCommand(id, c.defectId(), c.observation(), c.reason(), c.evidence(),
-                            c.userQuote(), c.observedAt()));
+                            c.userQuote(), c.observedAt(), c.attachmentId()));
             case BatchOpInput.Link l -> link.run(actor, boundRequestId, Channel.AUTHOR,
                     new LinkCommand(id, l.kind(), l.a(), l.b(), l.reason(), l.remove()));
             case BatchOpInput.Correct c -> correct.run(actor, boundRequestId, Channel.AUTHOR,
-                    new CorrectCommand(id, c.historyId(), c.reason()));
+                    new CorrectCommand(id, c.historyId(), c.reason(), c.attachmentId()));
         };
     }
 }

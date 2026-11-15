@@ -38,7 +38,7 @@ sealed interface Intake {
      * @param host      the host session or conversation id: a {@link HostId}, or {@link HostIdentity.Invalid} if the
      *                  event had none of the allowed form
      * @param tool      the write tool the host tool name stands for; the attestation is issued for its canonical name
-     *                  {@code ledger_<operation>}
+     *                  {@code ledger_<operation>} or {@code artifact-<operation>}
      * @param server    the MCP server the host tool name stands for: the audience of the attestation, whose key is
      *                  kept per server (see {@link McpToolName})
      */

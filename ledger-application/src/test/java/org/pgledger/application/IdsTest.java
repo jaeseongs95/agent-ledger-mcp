@@ -168,7 +168,7 @@ class IdsTest {
     void ids12_batches(Scenario s) {
         BatchOpInput create = new BatchOpInput.Save("defect", Fields.of(s.defectFields("b")), Scenario.REASON, null, null, null);
         BatchOpInput failing = new BatchOpInput.Transition("defect", s.defectId(99), 1L, "DISPUTED", Scenario.REASON,
-                Scenario.EVIDENCE, null, null, null);
+                Scenario.EVIDENCE, null, null, null, null);
         Expect.failure(() -> s.bean(BatchService.class).batch(Scenario.AUTHOR, null, List.of(create, create, failing)),
                 org.pgledger.domain.error.LookupCode.NOT_FOUND);
         BatchResult ok = s.bean(BatchService.class).batch(Scenario.AUTHOR, null, List.of(create, create));

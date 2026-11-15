@@ -13,6 +13,8 @@ public final class ToolNames {
 
     public static final List<String> WRITE = ToolContract.WRITE;
 
+    public static final List<String> ATTACHMENT = ToolContract.ATTACHMENT;
+
     public static final List<String> READ = ToolContract.READ;
 
     private ToolNames() {
@@ -24,6 +26,10 @@ public final class ToolNames {
 
     public static Stream<String> write() {
         return WRITE.stream();
+    }
+
+    public static Stream<String> attachment() {
+        return ATTACHMENT.stream();
     }
 
     public static Stream<String> read() {

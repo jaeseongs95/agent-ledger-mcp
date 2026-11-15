@@ -43,7 +43,8 @@ class SchemaCatalogTest {
     static final Set<String> TABLES = Set.of("project", "task", "defect", "defect_fix", "defect_case", "defect_task",
             "defect_relation", "release_condition", "condition_link", "session_grant", "session_key", "owner_audit", "history",
             "request_receipt", "common_code", "code_revision", "id_counter", "schema_history", "driver_audit_key",
-            "owner_passkey_user", "owner_passkey", "owner_passkey_revocation", "owner_passkey_code");
+            "owner_passkey_user", "owner_passkey", "owner_passkey_revocation", "owner_passkey_code", "upload_staging",
+            "attachment", "attachment_file");
 
     /** The timestamp columns of the schema, exactly as the catalogue lists them (SCH-018). */
     static final Set<String> TIMESTAMP_COLUMNS = Set.of("defect.created_at", "defect.updated_at", "task.created_at",
@@ -52,7 +53,9 @@ class SchemaCatalogTest {
             "session_grant.revoked_at", "session_grant.last_used_at", "session_key.registered_at",
             "session_key.revoked_at", "owner_audit.occurred_at", "history.occurred_at", "request_receipt.created_at",
             "schema_history.applied_at", "owner_passkey.registered_at", "owner_passkey_revocation.revoked_at",
-            "owner_passkey_code.issued_at", "owner_passkey_code.expires_at", "owner_passkey_code.used_at");
+            "owner_passkey_code.issued_at", "owner_passkey_code.expires_at", "owner_passkey_code.used_at",
+            "upload_staging.expires_at", "upload_staging.created_at", "upload_staging.updated_at",
+            "attachment.created_at", "attachment_file.created_at");
 
     private LedgerTestContext ctx;
     private JdbcClient jdbc;
@@ -316,6 +319,89 @@ class SchemaCatalogTest {
                     + "TIMESTAMP '2026-11-15 10:00:00', 'cli:owner', :operation, 'passkey')")
                     .param("id", id++).param("operation", operation).update();
         }
+    }
+
+    /**
+     * ATA-015 (design 5): V8 holds the metadata of the attachments and no body: no column of a BLOB, BYTEA, CLOB or long text
+     * type, no foreign key on the two tables or on history.attachment_id, the key of an operation is unique per owner, the state
+     * is checked, and the attachment column of history is a nullable VARCHAR.
+     */
+    @Test
+    void ata015_theAttachmentTablesHoldMetadataOnly() {
+        List<Column> own = columns().stream().filter(c -> Objects.equals(c.table(), "upload_staging")
+                || Objects.equals(c.table(), "attachment") || Objects.equals(c.table(), "attachment_file")).toList();
+        assertThat(own.stream().map(Column::key)).contains("upload_staging.owner", "upload_staging.operation_key",
+                "upload_staging.declared_sha256", "upload_staging.stored_bytes", "upload_staging.next_sequence",
+                "upload_staging.last_chunk_sha256", "upload_staging.storage_key", "upload_staging.key_id",
+                "upload_staging.state", "attachment.size_bytes", "attachment.content_sha256", "attachment.created_by",
+                "attachment_file.attachment_id", "attachment_file.seq", "attachment_file.storage_key",
+                "attachment_file.key_id");
+        assertThat(own.stream().map(Column::key)).as("the key of a file is (attachment_id, seq): no id column")
+                .doesNotContain("attachment_file.id");
+        // the primary key of attachment_file is the composite (attachment_id, seq), in this order
+        List<String> primaryKey = withConnection(c -> {
+            List<String> columns = new ArrayList<>();
+            try (ResultSet rs = c.getMetaData().getPrimaryKeys(c.getCatalog(), c.getSchema(), "attachment_file")) {
+                while (rs.next()) {
+                    columns.add(rs.getInt("KEY_SEQ") + ":" + rs.getString("COLUMN_NAME").toLowerCase(Locale.ROOT));
+                }
+            }
+            return columns.stream().sorted().toList();
+        });
+        assertThat(primaryKey).containsExactly("1:attachment_id", "2:seq");
+        assertThat(own.stream().map(Column::key)).as("the location and the key moved to attachment_file")
+                .doesNotContain("attachment.storage_key", "attachment.key_id");
+        assertThat(own).as("no body column of any kind")
+                .noneMatch(c -> c.type() == Types.BLOB || c.type() == Types.CLOB || c.type() == Types.BINARY
+                        || c.type() == Types.VARBINARY || c.type() == Types.LONGVARBINARY || c.type() == Types.LONGVARCHAR
+                        || c.type() == Types.BOOLEAN || c.type() == Types.BIT || c.type() == Types.OTHER);
+        assertThat(columns()).filteredOn(c -> Objects.equals(c.key(), "history.attachment_id")).singleElement()
+                .satisfies(c -> {
+                    assertThat(c.type()).isEqualTo(Types.VARCHAR);
+                    assertThat(c.nullable()).isTrue();
+                });
+        // no foreign key: neither of the two tables nor the history column is the side of one (JDBC metadata)
+        long foreignKeys = withConnection(c -> {
+            long count = 0;
+            for (String table : List.of("upload_staging", "attachment", "attachment_file")) {
+                try (ResultSet rs = c.getMetaData().getImportedKeys(c.getCatalog(), c.getSchema(), table)) {
+                    while (rs.next()) {
+                        count++;
+                    }
+                }
+                try (ResultSet rs = c.getMetaData().getExportedKeys(c.getCatalog(), c.getSchema(), table)) {
+                    while (rs.next()) {
+                        count++;
+                    }
+                }
+            }
+            try (ResultSet rs = c.getMetaData().getImportedKeys(c.getCatalog(), c.getSchema(), "history")) {
+                while (rs.next()) {
+                    if (Objects.equals(rs.getString("FKCOLUMN_NAME").toLowerCase(Locale.ROOT), "attachment_id")) {
+                        count++;
+                    }
+                }
+            }
+            return count;
+        });
+        assertThat(foreignKeys).isZero();
+        // the key of an operation is unique per owner, and the state is checked
+        String insert = "INSERT INTO upload_staging (id, owner, operation_key, file_name, media_type, declared_size, "
+                + "declared_sha256, received_bytes, stored_bytes, next_sequence, storage_key, key_id, state, expires_at, "
+                + "created_at, updated_at) VALUES (:id, 'claude:a', 'op-1', 'f.txt', 'text/plain', 1, :sha, 0, 0, 0, :sk, "
+                + "'k1', :state, TIMESTAMP '2026-11-05 10:00:00', TIMESTAMP '2026-11-05 10:00:00', "
+                + "TIMESTAMP '2026-11-05 10:00:00')";
+        String sha = "a".repeat(64);
+        jdbc.sql(insert).param("id", "11111111-1111-1111-1111-111111111111").param("sha", sha)
+                .param("sk", "1".repeat(32)).param("state", "STAGING").update();
+        Throwable sameOperation = catchThrowable(() -> jdbc.sql(insert).param("id", "22222222-2222-2222-2222-222222222222")
+                .param("sha", sha).param("sk", "2".repeat(32)).param("state", "STAGING").update());
+        assertThat(sameOperation).isInstanceOf(org.springframework.dao.DuplicateKeyException.class);
+        Throwable badState = catchThrowable(() -> jdbc.sql(insert.replace("'op-1'", "'op-2'"))
+                .param("id", "33333333-3333-3333-3333-333333333333").param("sha", sha).param("sk", "3".repeat(32))
+                .param("state", "DELETING").update());
+        assertThat(badState).isInstanceOf(DataIntegrityViolationException.class);
+        assertThat(sqlState(badState)).startsWith("23");
     }
 
     @Test

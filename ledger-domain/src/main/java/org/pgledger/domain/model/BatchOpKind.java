@@ -11,13 +11,14 @@ import org.pgledger.domain.value.Token;
 public enum BatchOpKind implements Token {
     SAVE("save", Set.of("entity", "fields", "reason"), Set.of("id", "expected_version")),
     TRANSITION("transition", Set.of("entity", "id", "expected_version", "to", "reason"),
-            Set.of("evidence_uri", "evidence_sha256", "merged_into")),
+            Set.of("evidence_uri", "evidence_sha256", "merged_into", "attachment_id")),
     RECORD_FIX("record_fix", Set.of("defect_id", "repo", "commit_sha", "reason"),
-            Set.of("branch", "ci_ref", "ci_conclusion", "ci_completed_at", "mark_source_fixed")),
+            Set.of("branch", "ci_ref", "ci_conclusion", "ci_completed_at", "mark_source_fixed",
+                    "attachment_id")),
     RECORD_CASE("record_case", Set.of("defect_id", "observation", "reason"),
-            Set.of("evidence", "user_quote", "observed_at")),
+            Set.of("evidence", "user_quote", "observed_at", "attachment_id")),
     LINK("link", Set.of("kind", "a", "b", "reason"), Set.of("remove")),
-    CORRECT("correct", Set.of("history_id", "reason"), Set.of());
+    CORRECT("correct", Set.of("history_id", "reason"), Set.of("attachment_id"));
 
     /** The most operations one batch holds (a batch has 1 to this many). */
     public static final int MAX_OPS_PER_BATCH = 200;

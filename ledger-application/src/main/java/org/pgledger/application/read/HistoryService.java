@@ -52,12 +52,13 @@ public class HistoryService {
     /**
      * One history row as the tools show it. {@code beforeData} is null unless asked for and present; it is the JSON
      * text as the row stores it (written by the ledger mapper, snake_case), which is passed on and not parsed; so is
-     * {@code changes}, the stored JSON object of field to [before, after].
+     * {@code changes}, the stored JSON object of field to [before, after]. {@code attachmentId} is the id of the attachment
+     * the row points to, or null.
      */
     public record HistoryView(long id, Instant at, String authorId, String vendor, String login,
             String actorAssurance, String entity, String entityId, String op, String fromState, String toState,
             JsonDocument changes, JsonDocument beforeData, String reason, String evidenceUri, Long correctsId,
-            String requestId, String legacyRef) {
+            String requestId, String legacyRef, String attachmentId) {
     }
 
     private final HistoryQueryRepository queries;
@@ -108,6 +109,7 @@ public class HistoryService {
         return new HistoryView(row.id(), row.at(), row.authorId().value(), vendor,
                 row.login(), row.actorAssurance().name(), row.entity().token(), row.entityId(), row.op().name(),
                 row.fromState(), row.toState(), row.changes(), before, row.reason(),
-                row.evidenceUri(), row.correctsId(), row.requestId().toString(), row.legacyRef());
+                row.evidenceUri(), row.correctsId(), row.requestId().toString(), row.legacyRef(),
+                row.attachmentId());
     }
 }

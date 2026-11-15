@@ -140,8 +140,8 @@ class CaseTest {
     void cas10_batch(Scenario s) {
         SaveResult d = s.newDefect("d");
         var result = s.bean(BatchService.class).batch(Scenario.AUTHOR, null, List.of(
-                new BatchOpInput.RecordCase(d.id(), "one", Scenario.REASON, null, null, null, null),
-                new BatchOpInput.RecordCase(d.id(), "two", Scenario.REASON, null, null, null, null)));
+                new BatchOpInput.RecordCase(d.id(), "one", Scenario.REASON, null, null, null, null, null),
+                new BatchOpInput.RecordCase(d.id(), "two", Scenario.REASON, null, null, null, null, null)));
         assertThat(result.count()).isEqualTo(2);
         assertThat(cases(s, d.id())).extracting(DefectCase::observation).containsExactly("one", "two");
     }
@@ -153,8 +153,8 @@ class CaseTest {
         SaveResult source = s.newDefect("source");
         MergeFixture.merge(s, source.id(), 1, live.id());
         LedgerException e = Expect.failure(() -> s.bean(BatchService.class).batch(Scenario.AUTHOR, null, List.of(
-                new BatchOpInput.RecordCase(live.id(), "one", Scenario.REASON, null, null, null, null),
-                new BatchOpInput.RecordCase(source.id(), "two", Scenario.REASON, null, null, null, null))),
+                new BatchOpInput.RecordCase(live.id(), "one", Scenario.REASON, null, null, null, null, null),
+                new BatchOpInput.RecordCase(source.id(), "two", Scenario.REASON, null, null, null, null, null))),
                 TransitionCode.MERGED_DEFECT);
         assertThat(e.details()).containsEntry("op_index", List.of("2")).containsEntry("op", List.of("record_case"));
         assertThat(cases(s, live.id())).isEmpty();

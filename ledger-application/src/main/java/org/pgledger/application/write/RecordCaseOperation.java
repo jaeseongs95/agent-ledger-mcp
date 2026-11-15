@@ -3,6 +3,7 @@ package org.pgledger.application.write;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import org.pgledger.application.attachment.AttachmentLinks;
 import org.pgledger.application.gate.Lookup;
 import org.pgledger.application.gate.Target;
 import org.pgledger.application.gate.WriteGate;
@@ -42,16 +43,19 @@ public class RecordCaseOperation extends WriteOperation<RecordCaseCommand, Recor
     private final DefectCaseRepository cases;
     private final IdAllocator ids;
     private final HistoryWriter history;
+    private final AttachmentLinks attachments;
     private final Clock clock;
 
     public RecordCaseOperation(WriteGate gate, ReceiptService receipts, Rows rows, DefectRepository defects,
-            DefectCaseRepository cases, IdAllocator ids, HistoryWriter history, Clock clock) {
+            DefectCaseRepository cases, IdAllocator ids, HistoryWriter history, AttachmentLinks attachments,
+            Clock clock) {
         super(gate, receipts, ReceiptOperation.RECORD_CASE, RecordCaseResult.class);
         this.rows = rows;
         this.defects = defects;
         this.cases = cases;
         this.ids = ids;
         this.history = history;
+        this.attachments = attachments;
         this.clock = clock;
     }
 
@@ -71,12 +75,15 @@ public class RecordCaseOperation extends WriteOperation<RecordCaseCommand, Recor
                 : UtcInstant.parse("observed_at", c.observedAt()).value();
         CanonicalPayload.Fields payload = CanonicalPayload.Fields.empty().text("defect", defectId.value())
                 .text("observation", observation).text("evidence", evidence).text("user_quote", quote)
-                .text("observed_at", ChangeSet.text(observedAt));
-        return new Prepared<>(payload, ctx -> execute(ctx, defectId, observation, evidence, quote, observedAt));
+                .text("observed_at", ChangeSet.text(observedAt)).text("attachment_id", c.attachmentId());
+        return new Prepared<>(payload, ctx -> execute(ctx, defectId, observation, evidence, quote, observedAt,
+                c.attachmentId()));
     }
 
     private RecordCaseResult execute(WriteContext ctx, DefectId defectId, String observation, String evidence,
-            String quote, Instant observedAt) {
+            String quote, Instant observedAt, String attachment) {
+        // before anything is written: a missing or foreign attachment fails the whole record (design 5)
+        attachments.requireOwnedBy(attachment, ctx.author());
         if (!defects.nextCaseSeq(defectId)) {
             Defect defect = rows.defect(defectId);
             throw new TransitionException(TransitionCode.MERGED_DEFECT,
@@ -89,7 +96,7 @@ public class RecordCaseOperation extends WriteOperation<RecordCaseCommand, Recor
         ChangeSet changes = ChangeSet.empty().with("observation", null, observation).with("evidence", null, evidence)
                 .with("user_quote", null, quote).with("observed_at", null, ChangeSet.text(observedAt));
         long historyId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.DEFECT_CASE, entityId,
-                HistoryOp.CREATE, changes));
+                HistoryOp.CREATE, changes).withAttachment(attachment));
         return new RecordCaseResult(WriteStatus.COMMITTED, HistoryEntity.DEFECT_CASE.token(), entityId, caseId,
                 defectId.value(), historyId, ctx.author().value(), ctx.login());
     }

@@ -40,7 +40,9 @@ import org.springframework.stereotype.Component;
  * {@code code-set} and of the admin web, so the code revision and the owner's audit trail ({@code cli:<process user>}) are kept;
  * a code that exists is never changed (a code the owner changed or retired stays as he left it). All of them are one call of
  * the service, so one transaction: a seed that fails half way adds nothing;</li>
- * <li>the comparison of the seed with the database by counts and by digest ({@link SeedReport}).</li>
+ * <li>the comparison of the seed with the database by counts and by digest ({@link SeedReport});</li>
+ * <li>the first key of the attachments, when the attachments are configured and no key is active yet
+ * ({@link AttachmentKeySetup}: the key file, and its id as {@code ledger.attachments.active-key-id} in {@code local.yaml}).</li>
  * </ol>
  *
  * Every step can be repeated: a run that stopped at the grants or at the check (or whose seed failed, which leaves no code
@@ -53,15 +55,17 @@ public class SetupCommand implements Command {
     private final PackagedSeed seed;
     private final ObjectProvider<ApplicationAccountAccess> applicationAccount;
     private final ObjectProvider<CliLedger> ledger;
+    private final AttachmentKeySetup attachmentKey;
     private final CliOutput output;
     private final CliMessages messages;
 
     SetupCommand(SchemaMigration migration, PackagedSeed seed, ObjectProvider<ApplicationAccountAccess> applicationAccount,
-            ObjectProvider<CliLedger> ledger, CliOutput output, CliMessages messages) {
+            ObjectProvider<CliLedger> ledger, AttachmentKeySetup attachmentKey, CliOutput output, CliMessages messages) {
         this.migration = migration;
         this.seed = seed;
         this.applicationAccount = applicationAccount;
         this.ledger = ledger;
+        this.attachmentKey = attachmentKey;
         this.output = output;
         this.messages = messages;
     }
@@ -97,6 +101,7 @@ public class SetupCommand implements Command {
         output.info(messages.get("setup.report", String.valueOf(report.seed()), String.valueOf(report.present()),
                 String.valueOf(report.same()), String.valueOf(report.changed()), report.seedDigest(),
                 report.databaseDigest()));
+        attachmentKey.ensure(target);
     }
 
     /** The check of the second step; the schema is migrated and nothing else has been done when it stops here. */

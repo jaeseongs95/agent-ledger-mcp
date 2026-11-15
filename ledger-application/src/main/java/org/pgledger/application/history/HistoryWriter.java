@@ -22,26 +22,34 @@ public class HistoryWriter {
 
     /** What one history row says; the author, login, time, reason and request id come from the write context. */
     public record Entry(HistoryEntity entity, String entityId, HistoryOp op, String fromState, String toState,
-            ChangeSet changes, Snapshot before, Evidence evidence, Long correctsId) {
+            ChangeSet changes, Snapshot before, Evidence evidence, Long correctsId, String attachmentId) {
 
         public static Entry of(HistoryEntity entity, String entityId, HistoryOp op, ChangeSet changes) {
-            return new Entry(entity, entityId, op, null, null, changes, null, Evidence.NONE, null);
+            return new Entry(entity, entityId, op, null, null, changes, null, Evidence.NONE, null, null);
         }
 
         public Entry withBefore(Snapshot snapshot) {
-            return new Entry(entity, entityId, op, fromState, toState, changes, snapshot, evidence, correctsId);
+            return new Entry(entity, entityId, op, fromState, toState, changes, snapshot, evidence, correctsId,
+                    attachmentId);
         }
 
         public Entry withEvidence(Evidence value) {
-            return new Entry(entity, entityId, op, fromState, toState, changes, before, value, correctsId);
+            return new Entry(entity, entityId, op, fromState, toState, changes, before, value, correctsId,
+                    attachmentId);
         }
 
         public Entry withStates(String from, String to) {
-            return new Entry(entity, entityId, op, from, to, changes, before, evidence, correctsId);
+            return new Entry(entity, entityId, op, from, to, changes, before, evidence, correctsId, attachmentId);
         }
 
         public Entry correcting(long historyId) {
-            return new Entry(entity, entityId, op, fromState, toState, changes, before, evidence, historyId);
+            return new Entry(entity, entityId, op, fromState, toState, changes, before, evidence, historyId,
+                    attachmentId);
+        }
+
+        /** The row points to this attachment (a plain id, no foreign key); the write has checked it, null means none. */
+        public Entry withAttachment(String id) {
+            return new Entry(entity, entityId, op, fromState, toState, changes, before, evidence, correctsId, id);
         }
     }
 
@@ -64,7 +72,8 @@ public class HistoryWriter {
                 ActorAssurance.DECLARED, entry.entity(), entry.entityId(), entry.op(), entry.fromState(),
                 entry.toState(), json.write(entry.changes()),
                 entry.before() == null ? null : json.write(entry.before()), context.reason().text(),
-                entry.evidence().uri(), entry.evidence().sha256(), entry.correctsId(), context.requestId(), null);
+                entry.evidence().uri(), entry.evidence().sha256(), entry.correctsId(), context.requestId(), null,
+                entry.attachmentId());
         return history.insert(row).id();
     }
 }

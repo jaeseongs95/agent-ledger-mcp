@@ -71,10 +71,11 @@ class ContractVectorsTest {
     }
 
     @Test
-    @DisplayName("SVC-PRN-09: the write tools and the read tools of the domain's ToolContract are the names of the vectors, in order")
+    @DisplayName("SVC-PRN-09: the write tools, the attachment tools (ATA-021) and the read tools of the domain's ToolContract are the names of the vectors, in order")
     void prn09_toolNames() {
         JsonNode tools = vectors(ContractVectors.WRITE_TOOLS);
         assertThat(ToolContract.WRITE).containsExactlyElementsOf(texts(tools.get("write")));
+        assertThat(ToolContract.ATTACHMENT).containsExactlyElementsOf(texts(tools.get("attachment")));
         assertThat(ToolContract.READ).containsExactlyElementsOf(texts(tools.get("read")));
     }
 }

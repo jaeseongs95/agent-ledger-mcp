@@ -22,10 +22,12 @@ public class HistoryController {
 
     private final Choices choices;
     private final HistoryService history;
+    private final AttachmentPanels attachments;
 
-    public HistoryController(Choices choices, HistoryService history) {
+    public HistoryController(Choices choices, HistoryService history, AttachmentPanels attachments) {
         this.choices = choices;
         this.history = history;
+        this.attachments = attachments;
     }
 
     @GetMapping("/history")
@@ -44,6 +46,13 @@ public class HistoryController {
         model.addAttribute("ops", HistoryOp.values());
         model.addAttribute("sizes", Paging.SIZES);
         model.addAttribute("page", page);
+        Map<Long, String> pointing = new LinkedHashMap<>();
+        for (var row : page.items()) {
+            if (row.attachmentId() != null) {
+                pointing.put(row.id(), row.attachmentId());
+            }
+        }
+        model.addAttribute("attachments", attachments.panelsOf(pointing));
         model.addAttribute("paging", Paging.of("/history", filters, filter.limit(), filter.cursor(), filter.back(),
                 page.nextCursor()));
         return "history";

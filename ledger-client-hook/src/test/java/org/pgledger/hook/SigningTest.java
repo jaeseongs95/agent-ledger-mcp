@@ -52,6 +52,77 @@ class SigningTest {
         assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token(), stamp.addedRequestId()));
     }
 
+    /** One naming of an attachment tool in a host: {@code %s} is the tool name, for example {@code artifact-chunk}. */
+    private static final Map<Client, List<Naming>> ARTIFACT_NAMINGS = Map.of(
+            Client.CLAUDE, List.of(new Naming("mcp__ledger__%s", "ledger"), new Naming("mcp__srv__%s", "srv"),
+                    new Naming("mcp__ledger__ledger_%s", "ledger"), new Naming("mcp__ssh-test__ssh-test_%s", "ssh-test")),
+            Client.CODEX, List.of(new Naming("mcp__test__%s", "test"), new Naming("mcp__test__test_%s", "test"),
+                    new Naming("mcp__codex_apps__app_ledger_%s", "codex_apps.ledger"),
+                    new Naming("mcp__codex_apps__app_my-app_%s", "codex_apps.my-app")),
+            Client.ANTIGRAVITY, List.of(new Naming("mcp:test:%s", "test"), new Naming("mcp:test/%s", "test"),
+                    new Naming("mcp:test_%s", "test"), new Naming("mcp:test:test_%s", "test"),
+                    new Naming("mcp:ssh-test:ssh-test_%s", "ssh-test")));
+
+    static Stream<Arguments> artifactNamings() {
+        return Hosts.ALL.stream().flatMap(host -> ARTIFACT_NAMINGS.get(host.client()).stream().flatMap(naming ->
+                Hosts.ARTIFACT_OPS.stream().map(op -> Arguments.argumentSet(host + " " + naming.template().formatted(op),
+                        host, naming.template().formatted(op), naming.server(), op))));
+    }
+
+    @ParameterizedTest
+    @MethodSource("artifactNamings")
+    @DisplayName("HK-022 ATA-021 an attachment tool in every naming of every host is signed for its own hyphenated name (not ledger_...), with an empty request id, no request_id added, and the key of its server")
+    void attachmentToolClaimIsTheHyphenatedName(HostScenario host, String hostToolName, String server, String op,
+            HookFixture fixture) {
+        JsonNode input = Json.tree(Map.of("marker", "attachment"));
+        Run run = fixture.runClean(host, host.event(hostToolName, input));
+        Attestations.Stamp stamp = fixture.stampCarrier(server, host.author(HookFixture.HOST_ID), op, input,
+                host.stampedPart(run));
+        assertThat(stamp.claims().tool()).isEqualTo(op);
+        assertThat(stamp.claims().requestId()).isEmpty();
+        assertThat(stamp.addedRequestId()).isNull();
+        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token(), null));
+    }
+
+    @ParameterizedTest
+    @MethodSource("org.pgledger.hook.Hosts#withArtifactOps")
+    @DisplayName("HK-023 ATA-021 an attachment tool has no request id whatever the arguments carry: nothing is generated, a given request_id is not touched and not signed, and it is never denied for it")
+    void attachmentToolsHaveNoRequestId(HostScenario host, String op, HookFixture fixture) {
+        for (String inputJson : WHOAMI_INPUTS) {
+            JsonNode input = Json.of(inputJson);
+            Run run = fixture.runClean(host, host.event(host.toolName(op), input));
+            Attestations.Stamp stamp = fixture.stamp(host, op, input, run);
+            assertThat(stamp.claims().requestId()).as(inputJson).isEmpty();
+            assertThat(stamp.addedRequestId()).as(inputJson).isNull();
+            assertThat(run.document()).as(inputJson).isEqualTo(host.allowed(input, stamp.token(), null));
+        }
+    }
+
+    /** The most base64 characters of one chunk: 262144 bytes (the chunk size of the attachments) are 87382 groups of four. */
+    private static final int LARGEST_CHUNK_CHARACTERS = 349_528;
+
+    private record ChunkCall(String uploadId, int seq, String data) {}
+
+    @ParameterizedTest
+    @MethodSource("org.pgledger.hook.Hosts#all")
+    @DisplayName("ATA-021 end to end: artifact-chunk with the largest chunk (349528 base64 characters) passes the intake and the canonical form, is signed for artifact-chunk with an empty request id, no request_id is added, and the digest covers the whole data")
+    void largestChunkIsSigned(HostScenario host, HookFixture fixture) {
+        String data = "QUJD".repeat(LARGEST_CHUNK_CHARACTERS / 4);
+        assertThat(data).hasSize(LARGEST_CHUNK_CHARACTERS);
+        JsonNode input = Json.tree(new ChunkCall("0b8f3c1e-1111-4222-8333-444455556666", 7, data));
+        Run run = fixture.runClean(host, host.event(host.toolName("artifact-chunk"), input));
+        Attestations.Stamp stamp = fixture.stamp(host, "artifact-chunk", input, run);
+        assertThat(stamp.claims().tool()).isEqualTo("artifact-chunk");
+        assertThat(stamp.claims().requestId()).isEmpty();
+        assertThat(stamp.addedRequestId()).isNull();
+        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token(), null));
+        // the digest is over the whole object: one character of the data changed gives another digest
+        JsonNode changed = Json.tree(new ChunkCall("0b8f3c1e-1111-4222-8333-444455556666", 7, "R" + data.substring(1)));
+        Attestations.Stamp other = fixture.stamp(host, "artifact-chunk", changed,
+                fixture.runClean(host, host.event(host.toolName("artifact-chunk"), changed)));
+        assertThat(other.claims().argumentsDigest()).isNotEqualTo(stamp.claims().argumentsDigest());
+    }
+
     /** The ToolName of an Antigravity {@code call_mcp_tool} envelope with the ServerName {@code srv}: plain and with the server prefix. */
     private static final List<String> WRAPPER_TOOL_NAMES = List.of("ledger_%s", "srv_ledger_%s");
 

@@ -45,6 +45,18 @@ class ClaimsAndDigestTest {
     }
 
     @Test
+    @DisplayName("ATT-050 ATA-021 a claim for an attachment tool carries its hyphenated name and an empty request id, and matches only that tool")
+    void attachmentToolClaim() {
+        AttestationClaims chunk = new AttestationClaims("claude:s1", "artifact-chunk", "", DIGEST, 1L);
+        assertThat(chunk.firstMismatch("artifact-chunk", null, DIGEST)).isEmpty();
+        assertThat(chunk.firstMismatch("artifact-chunk", "", DIGEST)).isEmpty();
+        assertThat(chunk.firstMismatch("artifact-chunk", "r1", DIGEST)).hasValue(AttestationClaims.Field.REQUEST_ID);
+        assertThat(chunk.firstMismatch("artifact-finish", null, DIGEST)).hasValue(AttestationClaims.Field.TOOL);
+        assertThat(chunk.firstMismatch("ledger_artifact-chunk", null, DIGEST)).hasValue(AttestationClaims.Field.TOOL);
+        assertThat(chunk.firstMismatch("artifact-chunk", null, OTHER_DIGEST)).hasValue(AttestationClaims.Field.ARGUMENTS);
+    }
+
+    @Test
     @DisplayName("ATT-051 the field answers its contract token: tool, request_id, arguments")
     void fieldTokens() {
         assertThat(AttestationClaims.Field.TOOL.token()).isEqualTo("tool");

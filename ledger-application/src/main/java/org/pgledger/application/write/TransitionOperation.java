@@ -3,6 +3,7 @@ package org.pgledger.application.write;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import org.pgledger.application.attachment.AttachmentLinks;
 import org.pgledger.application.gate.Lookup;
 import org.pgledger.application.gate.Resolution;
 import org.pgledger.application.gate.Target;
@@ -59,10 +60,12 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
     private final DefectFixRepository fixes;
     private final HistoryRepository historyRows;
     private final HistoryWriter history;
+    private final AttachmentLinks attachments;
     private final Clock clock;
 
     public TransitionOperation(WriteGate gate, ReceiptService receipts, Rows rows, CodeRules codeRules,
-            DefectFixRepository fixes, HistoryRepository historyRows, HistoryWriter history, Clock clock) {
+            DefectFixRepository fixes, HistoryRepository historyRows, HistoryWriter history,
+            AttachmentLinks attachments, Clock clock) {
         super(gate, receipts, ReceiptOperation.TRANSITION, TransitionResult.class);
         this.gate = gate;
         this.rows = rows;
@@ -70,6 +73,7 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
         this.fixes = fixes;
         this.historyRows = historyRows;
         this.history = history;
+        this.attachments = attachments;
         this.clock = clock;
     }
 
@@ -115,17 +119,23 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
                 .text("id", c.id()).text("v", Long.toString(c.expectedVersion())).text("to", c.to())
                 .text("evidence_uri", evidence.uri())
                 .text("evidence_sha256", evidence.sha256() == null ? null : evidence.sha256().hex())
-                .text("merged_into", mergedInto == null ? null : mergedInto.value());
+                .text("merged_into", mergedInto == null ? null : mergedInto.value())
+                .text("attachment_id", c.attachmentId());
         long version = c.expectedVersion();
-        return new Prepared<>(payload, ctx -> switch (entity) {
-            case DEFECT -> defect(ctx, DefectId.of(c.id()), version,
-                    Tokens.parse("to", c.to(), DefectStatus.values()), evidence, mergedInto);
-            case TASK -> task(ctx, TaskId.of(c.id()), version, Tokens.parse("to", c.to(), TaskState.values()),
-                    evidence);
-            case CONDITION -> condition(ctx, ConditionId.of(c.id()), version,
-                    Tokens.parse("to", c.to(), ConditionState.values()), evidence);
-            case DEFECT_FIX, DEFECT_TASK, DEFECT_RELATION, CONDITION_LINK, DEFECT_CASE ->
-                throw new IllegalStateException("Tokens.parse refused it");
+        String attachment = c.attachmentId();
+        return new Prepared<>(payload, ctx -> {
+            // before anything is written: a missing or foreign attachment fails the whole record (design 5)
+            attachments.requireOwnedBy(attachment, ctx.author());
+            return switch (entity) {
+                case DEFECT -> defect(ctx, DefectId.of(c.id()), version,
+                        Tokens.parse("to", c.to(), DefectStatus.values()), evidence, mergedInto, attachment);
+                case TASK -> task(ctx, TaskId.of(c.id()), version, Tokens.parse("to", c.to(), TaskState.values()),
+                        evidence, attachment);
+                case CONDITION -> condition(ctx, ConditionId.of(c.id()), version,
+                        Tokens.parse("to", c.to(), ConditionState.values()), evidence, attachment);
+                case DEFECT_FIX, DEFECT_TASK, DEFECT_RELATION, CONDITION_LINK, DEFECT_CASE ->
+                    throw new IllegalStateException("Tokens.parse refused it");
+            };
         });
     }
 
@@ -140,7 +150,7 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
     }
 
     private TransitionResult defect(WriteContext ctx, DefectId id, long expected, DefectStatus to,
-            Evidence evidence, DefectId mergedInto) {
+            Evidence evidence, DefectId mergedInto, String attachment) {
         Instant now = clock.instant();
         Defect row = rows.defectForWrite(id, expected);
         recheck(ctx, HistoryEntity.DEFECT, row.projectId(), row.status(), to);
@@ -159,12 +169,13 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
                 ? ChangeSet.empty().with("merged_into", null, mergedInto.value()) : ChangeSet.empty();
         long historyId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.DEFECT, id.value(),
                 HistoryOp.TRANSITION, changes).withStates(row.status().name(), to.name()).withEvidence(evidence)
-                .withBefore(Snapshot.DefectRow.of(row)));
+                .withBefore(Snapshot.DefectRow.of(row)).withAttachment(attachment));
         return result(ctx, HistoryEntity.DEFECT, id.value(), row.status().name(), to.name(), saved.version(),
                 historyId);
     }
 
-    private TransitionResult task(WriteContext ctx, TaskId id, long expected, TaskState to, Evidence evidence) {
+    private TransitionResult task(WriteContext ctx, TaskId id, long expected, TaskState to, Evidence evidence,
+            String attachment) {
         Instant now = clock.instant();
         Task row = rows.taskForWrite(id, expected);
         recheck(ctx, HistoryEntity.TASK, row.projectId(), row.state(), to);
@@ -179,20 +190,20 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
         Task saved = rows.saveTask(row.transitioned(to, now));
         long historyId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.TASK, id.value(),
                 HistoryOp.TRANSITION, ChangeSet.empty()).withStates(row.state().name(), to.name())
-                .withEvidence(evidence).withBefore(Snapshot.TaskRow.of(row)));
+                .withEvidence(evidence).withBefore(Snapshot.TaskRow.of(row)).withAttachment(attachment));
         return result(ctx, HistoryEntity.TASK, id.value(), row.state().name(), to.name(), saved.version(),
                 historyId);
     }
 
     private TransitionResult condition(WriteContext ctx, ConditionId id, long expected, ConditionState to,
-            Evidence evidence) {
+            Evidence evidence, String attachment) {
         Condition row = rows.conditionForWrite(id, expected);
         recheck(ctx, HistoryEntity.CONDITION, row.projectId(), row.state(), to);
         row.state().requireTransitionTo(to, evidence);
         Condition saved = rows.saveCondition(row.transitioned(to));
         long historyId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.CONDITION, id.value(),
                 HistoryOp.TRANSITION, ChangeSet.empty()).withStates(row.state().name(), to.name())
-                .withEvidence(evidence).withBefore(Snapshot.ConditionRow.of(row)));
+                .withEvidence(evidence).withBefore(Snapshot.ConditionRow.of(row)).withAttachment(attachment));
         return result(ctx, HistoryEntity.CONDITION, id.value(), row.state().name(), to.name(), saved.version(),
                 historyId);
     }

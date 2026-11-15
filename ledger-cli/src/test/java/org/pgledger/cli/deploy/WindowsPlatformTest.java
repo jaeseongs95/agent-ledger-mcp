@@ -20,6 +20,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.AclEntry;
 import java.nio.file.attribute.UserPrincipal;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -111,12 +113,85 @@ class WindowsPlatformTest {
         order.verify(access).grantTree(home.resolve("lib"), SERVICE, WindowsAccess.READ_EXECUTE, secrets);
         order.verify(access).grantTree(home.resolve("etc"), SERVICE, WindowsAccess.MODIFY, secrets);
         order.verify(access).grantTree(home.resolve("logs"), SERVICE, WindowsAccess.MODIFY, secrets);
+        // ATA-036: the data folder and the attachment folder get the entry of the service account on the folder itself
+        order.verify(access).grant(home.resolve("data"), SERVICE, WindowsAccess.MODIFY);
+        order.verify(access).grant(home.resolve("data/attachments"), SERVICE, WindowsAccess.MODIFY);
         order.verify(access).reassign(secrets, INSTALLER, INSTALLER, WindowsAccess.takenBack(INSTALLER, true));
         for (Path file : files) {
             order.verify(access).reassign(file, INSTALLER, SERVICE, WindowsAccess.handedOver(SERVICE, ADMINISTRATORS, false));
         }
         order.verify(access).reassign(secrets, INSTALLER, SERVICE, WindowsAccess.handedOver(SERVICE, ADMINISTRATORS, true));
         order.verifyNoMoreInteractions();
+    }
+
+    @Test
+    @DisplayName("ATA-036 seal-host takes the folder of the attachment keys inside the secrets folder, hands over its files with the others, hands the folder over before the secrets folder, and gives the service account its entry on the data folder and the attachment folder only (never on what the service made there)")
+    void ata036_sealHandsOverTheKeyFolder() throws IOException {
+        List<Path> tokens = installed();
+        Path keys = secrets.resolve("attachment-keys");
+        Files.createDirectories(keys);
+        Path key = keys.resolve("key-0123456789abcdef");
+        Files.writeString(key, "never-printed-3");
+        List<Path> files = new ArrayList<>(tokens);
+        files.add(key);
+        files.sort(Comparator.naturalOrder());
+
+        platform.seal(layout, tmp);
+
+        InOrder order = inOrder(access);
+        order.verify(access).grant(home.resolve("data"), SERVICE, WindowsAccess.MODIFY);
+        order.verify(access).grant(home.resolve("data/attachments"), SERVICE, WindowsAccess.MODIFY);
+        order.verify(access).reassign(secrets, INSTALLER, INSTALLER, WindowsAccess.takenBack(INSTALLER, true));
+        order.verify(access).reassign(keys, INSTALLER, INSTALLER, WindowsAccess.takenBack(INSTALLER, true));
+        for (Path file : files) {
+            order.verify(access).reassign(file, INSTALLER, SERVICE, WindowsAccess.handedOver(SERVICE, ADMINISTRATORS, false));
+        }
+        order.verify(access).reassign(keys, INSTALLER, SERVICE, WindowsAccess.handedOver(SERVICE, ADMINISTRATORS, true));
+        order.verify(access).reassign(secrets, INSTALLER, SERVICE, WindowsAccess.handedOver(SERVICE, ADMINISTRATORS, true));
+        verify(access, never()).grantTree(eq(home.resolve("data")), any(), any(), any());
+        verify(access, never()).grantTree(eq(home.resolve("data/attachments")), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("ATA-036 a first installation: the data folder and the attachment folder are closed like the other folders, and the folder of the keys is made inside the secrets as the installer's alone, after the secrets folder; nothing is read")
+    void ata036_aFirstInstallationMakesTheAttachmentFolders() throws IOException {
+        prepare();
+
+        InOrder order = inOrder(access);
+        for (String folder : List.of("", "lib", "etc", "etc/drivers", "logs", "data", "data/attachments")) {
+            order.verify(access).set(eq(home.resolve(folder)), isNull(), eq(closed));
+        }
+        order.verify(access).reassign(eq(secrets), eq(INSTALLER), eq(INSTALLER), eq(WindowsAccess.takenBack(INSTALLER, true)));
+        order.verify(access).reassign(eq(secrets.resolve("attachment-keys")), eq(INSTALLER), eq(INSTALLER),
+                eq(WindowsAccess.takenBack(INSTALLER, true)));
+        verify(access, never()).save(any());
+        assertThat(home.resolve("data/attachments")).isDirectory();
+        assertThat(secrets.resolve("attachment-keys")).isDirectory();
+    }
+
+    @Test
+    @DisplayName("ATA-036 prepare-host over an earlier run that has keys: the folder of the keys and its files are taken back by the installer with the other secrets, before anything is closed")
+    void ata036_aRerunTakesTheKeyFolderBack() throws IOException {
+        List<Path> tokens = installed();
+        Path keys = secrets.resolve("attachment-keys");
+        Files.createDirectories(keys);
+        Path key = keys.resolve("key-0123456789abcdef");
+        Files.writeString(key, "never-printed-3");
+        List<Path> files = new ArrayList<>(tokens);
+        files.add(key);
+        files.sort(Comparator.naturalOrder());
+
+        prepare();
+
+        InOrder order = inOrder(access);
+        order.verify(access).reassign(eq(secrets), eq(INSTALLER), eq(INSTALLER), eq(WindowsAccess.takenBack(INSTALLER, true)));
+        order.verify(access).reassign(eq(keys), eq(INSTALLER), eq(INSTALLER), eq(WindowsAccess.takenBack(INSTALLER, true)));
+        for (Path file : files) {
+            order.verify(access).reassign(eq(file), eq(INSTALLER), eq(INSTALLER), eq(WindowsAccess.takenBack(INSTALLER, false)));
+        }
+        order.verify(access).set(eq(home), isNull(), eq(closed));
+        verify(access, never()).set(eq(keys), any(), any());
+        verify(access, never()).restore(any());
     }
 
     @Test

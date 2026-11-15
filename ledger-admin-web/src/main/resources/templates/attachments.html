@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}">
+<head th:replace="~{fragments :: head(#{attachments.title})}"></head>
+<body>
+<th:block th:replace="~{fragments :: header('attachments')}"></th:block>
+<main id="main">
+  <h1 th:text="#{attachments.title}">Attachment check</h1>
+  <p th:text="#{attachments.intro}">Result of the check.</p>
+  <p id="attachments-not-configured" th:if="${health.state().name() == 'NOT_CONFIGURED'}" th:text="#{attachments.notConfigured}">Not configured</p>
+  <p id="attachments-failed" class="notice" role="status" th:if="${health.state().name() == 'FAILED'}" th:text="#{attachments.failed}">Failed</p>
+  <th:block th:if="${health.checked()}">
+    <dl class="facts" id="attachments-counts">
+      <dt th:text="#{attachments.attachments}">Attachments</dt><dd id="attachments-total" th:text="${health.attachments()}">0</dd>
+      <dt th:text="#{attachments.orphans}">Files without a row (would be moved)</dt><dd id="attachments-orphans" th:text="${health.wouldMoveOrphans()}">0</dd>
+      <dt th:text="#{attachments.waiting}">Files without a row, within the grace</dt><dd id="attachments-waiting" th:text="${health.waitingOrphans()}">0</dd>
+      <dt th:text="#{attachments.replaced}">Replaced files (would be moved)</dt><dd id="attachments-replaced" th:text="${health.replaced()}">0</dd>
+      <dt th:text="#{attachments.restored}">Quarantined files that would be moved back</dt><dd id="attachments-restored" th:text="${health.restored()}">0</dd>
+      <dt th:text="#{attachments.quarantined}">Quarantined files</dt><dd id="attachments-quarantined" th:text="${health.quarantined()}">0</dd>
+      <dt th:text="#{attachments.missing}">Missing attachments</dt><dd id="attachments-missing" th:text="${#lists.size(health.missing())}">0</dd>
+      <dt th:text="#{attachments.damaged}">Damaged attachments</dt><dd id="attachments-damaged" th:text="${#lists.size(health.damaged())}">0</dd>
+      <dt th:text="#{attachments.unreferenced}">Unreferenced attachments</dt><dd id="attachments-unreferenced" th:text="${health.unreferencedCount()}">0</dd>
+    </dl>
+    <section th:if="${!#lists.isEmpty(health.missing())}">
+      <h2 th:text="#{attachments.missing}">Missing attachments</h2>
+      <ul class="ids"><li class="code" th:each="id : ${health.missing()}" th:text="${id}">id</li></ul>
+    </section>
+    <section th:if="${!#lists.isEmpty(health.damaged())}">
+      <h2 th:text="#{attachments.damaged}">Damaged attachments</h2>
+      <ul class="ids"><li class="code" th:each="id : ${health.damaged()}" th:text="${id}">id</li></ul>
+    </section>
+    <section th:if="${!#lists.isEmpty(health.unreferenced())}">
+      <h2 th:text="#{attachments.unreferenced}">Unreferenced attachments</h2>
+      <ul class="ids"><li class="code" th:each="id : ${health.unreferenced()}" th:text="${id}">id</li></ul>
+      <p class="hint" th:if="${health.unreferencedCount() > #lists.size(health.unreferenced())}" th:text="#{attachments.moreIds(${#lists.size(health.unreferenced())}, ${health.unreferencedCount()})}">Only some are listed.</p>
+    </section>
+  </th:block>
+  <p class="hint" id="attachments-commands" th:text="#{attachments.commands}">The command moves files.</p>
+</main>
+<th:block th:replace="~{fragments :: footer}"></th:block>
+</body>
+</html>

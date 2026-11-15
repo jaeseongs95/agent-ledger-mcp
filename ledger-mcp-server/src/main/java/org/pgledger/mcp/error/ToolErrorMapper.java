@@ -1,7 +1,10 @@
 package org.pgledger.mcp.error;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.pgledger.domain.error.AdminException;
+import org.pgledger.domain.error.ArtifactRetry;
 import org.pgledger.domain.error.ConflictException;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
@@ -83,7 +86,16 @@ public class ToolErrorMapper {
     private ToolError plain(LedgerException failure, List<String> args, List<ToolError.Issue> issues) {
         MessageSourceResolvable resolvable = new DefaultMessageSourceResolvable(
                 new String[] {failure.code().messageKey()}, args.toArray(), failure.code().token());
-        return new ToolError(failure.code().token(), messages.getMessage(resolvable), failure.details(), issues);
+        // the upload tools tell the caller whether the same request sent later can succeed (details.retryable)
+        Map<String, List<String>> details = ArtifactRetry.retryable(failure.code(), failure.details())
+                .map(retry -> withRetryable(failure.details(), retry)).orElse(failure.details());
+        return new ToolError(failure.code().token(), messages.getMessage(resolvable), details, issues);
+    }
+
+    private static Map<String, List<String>> withRetryable(Map<String, List<String>> details, boolean retry) {
+        Map<String, List<String>> merged = new LinkedHashMap<>(details);
+        merged.put(ArtifactRetry.KEY, List.of(Boolean.toString(retry)));
+        return merged;
     }
 
     private String reason(ValidationIssue issue) {

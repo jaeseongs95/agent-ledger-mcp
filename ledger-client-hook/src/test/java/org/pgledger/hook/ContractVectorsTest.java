@@ -126,11 +126,28 @@ class ContractVectorsTest {
     // ---------------------------------------------------------------- HK-043 tool names
 
     @Test
-    @DisplayName("HK-043 the write tools of the hook are exactly the write tool vectors, in the same order")
+    @DisplayName("HK-043 the write tools of the hook are exactly the ten write tool vectors and the five attachment tool vectors (ATA-021), in the same order")
     void writeToolsAreTheVectors() {
-        List<String> expected = texts(vectors(ContractVectors.WRITE_TOOLS).path("write"));
+        JsonNode tools = vectors(ContractVectors.WRITE_TOOLS);
+        List<String> expected = new ArrayList<>(texts(tools.path("write")));
+        expected.addAll(texts(tools.path("attachment")));
         assertThat(Arrays.stream(WriteTool.values()).map(WriteTool::canonicalName).toList()).isEqualTo(expected);
-        assertThat(expected).hasSize(10);
+        assertThat(expected).hasSize(15);
+    }
+
+    @Test
+    @DisplayName("HK-043 ATA-021 the attestation of an attachment tool is issued for its hyphenated name, and only whoami and the attachment tools have no request id")
+    void attachmentToolsAreHyphenatedAndHaveNoRequestId() {
+        List<String> attachment = texts(vectors(ContractVectors.WRITE_TOOLS).path("attachment"));
+        assertThat(attachment).containsExactly("artifact-begin", "artifact-chunk", "artifact-finish", "artifact-status", "artifact-read");
+        for (String name : attachment) {
+            assertThat(WriteTool.ofName(name)).as(name).isPresent();
+            assertThat(WriteTool.ofName(name).orElseThrow().canonicalName()).isEqualTo(name);
+            assertThat(WriteTool.ofName(name).orElseThrow().carriesRequestId()).as(name).isFalse();
+        }
+        assertThat(Arrays.stream(WriteTool.values()).filter(tool -> !tool.carriesRequestId()).map(WriteTool::canonicalName))
+                .containsExactly("ledger_whoami", "artifact-begin", "artifact-chunk", "artifact-finish", "artifact-status",
+                        "artifact-read");
     }
 
     @Test
@@ -138,7 +155,8 @@ class ContractVectorsTest {
     void readToolsAreNotWriteTools() {
         for (String read : texts(vectors(ContractVectors.WRITE_TOOLS).path("read"))) {
             assertThat(read).startsWith("ledger_");
-            assertThat(WriteTool.ofOperation(read.substring("ledger_".length()))).as(read).isEmpty();
+            assertThat(WriteTool.ofName(read)).as(read).isEmpty();
+            assertThat(WriteTool.ofName(read.substring("ledger_".length()))).as(read).isEmpty();
         }
     }
 

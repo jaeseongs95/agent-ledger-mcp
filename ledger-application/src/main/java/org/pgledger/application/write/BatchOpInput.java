@@ -35,18 +35,18 @@ public sealed interface BatchOpInput {
     record Transition(@NotNull(message = REQUIRED) String entity, @NotNull(message = REQUIRED) String id,
             @NotNull(message = REQUIRED) Long expectedVersion, @NotNull(message = REQUIRED) String to,
             @NotNull(message = REQUIRED) String reason, String evidenceUri, String evidenceSha256, String mergedInto,
-            String requestId) implements BatchOpInput {
+            String attachmentId, String requestId) implements BatchOpInput {
     }
 
     record RecordFix(@NotNull(message = REQUIRED) String defectId, @NotNull(message = REQUIRED) String repo,
             @NotNull(message = REQUIRED) String commitSha, @NotNull(message = REQUIRED) String reason, String branch,
-            String ciRef, String ciConclusion, String ciCompletedAt, Boolean markSourceFixed, String requestId)
-            implements BatchOpInput {
+            String ciRef, String ciConclusion, String ciCompletedAt, Boolean markSourceFixed, String attachmentId,
+            String requestId) implements BatchOpInput {
     }
 
     record RecordCase(@NotNull(message = REQUIRED) String defectId, @NotNull(message = REQUIRED) String observation,
             @NotNull(message = REQUIRED) String reason, String evidence, String userQuote, String observedAt,
-            String requestId) implements BatchOpInput {
+            String attachmentId, String requestId) implements BatchOpInput {
     }
 
     record Link(@NotNull(message = REQUIRED) String kind, @NotNull(message = REQUIRED) String a,
@@ -55,6 +55,6 @@ public sealed interface BatchOpInput {
     }
 
     record Correct(@NotNull(message = REQUIRED) Long historyId, @NotNull(message = REQUIRED) String reason,
-            String requestId) implements BatchOpInput {
+            String attachmentId, String requestId) implements BatchOpInput {
     }
 }

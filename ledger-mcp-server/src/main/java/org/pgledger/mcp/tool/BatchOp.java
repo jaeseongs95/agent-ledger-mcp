@@ -38,12 +38,13 @@ public sealed interface BatchOp {
             @JsonProperty("expected_version") Long expectedVersion, @JsonProperty("to") String to,
             @JsonProperty("reason") String reason, @JsonProperty("evidence_uri") String evidenceUri,
             @JsonProperty("evidence_sha256") String evidenceSha256, @JsonProperty("merged_into") String mergedInto,
+            @JsonProperty("attachment_id") String attachmentId,
             @JsonProperty("request_id") String requestId) implements BatchOp {
 
         @Override
         public BatchOpInput toInput() {
             return new BatchOpInput.Transition(entity, id, expectedVersion, to, reason, evidenceUri, evidenceSha256,
-                    mergedInto, requestId);
+                    mergedInto, attachmentId, requestId);
         }
     }
 
@@ -53,24 +54,26 @@ public sealed interface BatchOp {
             @JsonProperty("ci_conclusion") String ciConclusion,
             @JsonProperty("ci_completed_at") String ciCompletedAt,
             @JsonProperty("mark_source_fixed") Boolean markSourceFixed,
+            @JsonProperty("attachment_id") String attachmentId,
             @JsonProperty("request_id") String requestId) implements BatchOp {
 
         @Override
         public BatchOpInput toInput() {
             return new BatchOpInput.RecordFix(defectId, repo, commitSha, reason, branch, ciRef, ciConclusion,
-                    ciCompletedAt, markSourceFixed, requestId);
+                    ciCompletedAt, markSourceFixed, attachmentId, requestId);
         }
     }
 
     record RecordCase(@JsonProperty("defect_id") String defectId, @JsonProperty("observation") String observation,
             @JsonProperty("reason") String reason, @JsonProperty("evidence") String evidence,
             @JsonProperty("user_quote") String userQuote, @JsonProperty("observed_at") String observedAt,
+            @JsonProperty("attachment_id") String attachmentId,
             @JsonProperty("request_id") String requestId) implements BatchOp {
 
         @Override
         public BatchOpInput toInput() {
             return new BatchOpInput.RecordCase(defectId, observation, reason, evidence, userQuote, observedAt,
-                    requestId);
+                    attachmentId, requestId);
         }
     }
 
@@ -85,11 +88,12 @@ public sealed interface BatchOp {
     }
 
     record Correct(@JsonProperty("history_id") Long historyId, @JsonProperty("reason") String reason,
+            @JsonProperty("attachment_id") String attachmentId,
             @JsonProperty("request_id") String requestId) implements BatchOp {
 
         @Override
         public BatchOpInput toInput() {
-            return new BatchOpInput.Correct(historyId, reason, requestId);
+            return new BatchOpInput.Correct(historyId, reason, attachmentId, requestId);
         }
     }
 }

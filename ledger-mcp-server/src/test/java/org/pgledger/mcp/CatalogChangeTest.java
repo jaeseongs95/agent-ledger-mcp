@@ -132,7 +132,7 @@ class CatalogChangeTest {
         try (McpSession fourth = McpSession.open(context)) {
             assertThat(saveField(fourth, "fields.category").allowed()).contains("FOR_THREE");
         }
-        assertThat(announced).hasSize(3).allSatisfy(tools -> assertThat(tools).hasSize(22));
+        assertThat(announced).hasSize(3).allSatisfy(tools -> assertThat(tools).hasSize(27));
     }
 
     @Test
@@ -179,8 +179,8 @@ class CatalogChangeTest {
         List<Outcome<List<Integer>>> outcomes = Parallel.all(List.of(listing, changing));
 
         assertThat(outcomes).allMatch(Outcome::succeeded);
-        assertThat(outcomes.get(0).value()).hasSize(200).containsOnly(22);
-        assertThat(outcomes.get(1).value()).hasSize(12).containsOnly(22);
+        assertThat(outcomes.get(0).value()).hasSize(200).containsOnly(27);
+        assertThat(outcomes.get(1).value()).hasSize(12).containsOnly(27);
     }
 
     @Test

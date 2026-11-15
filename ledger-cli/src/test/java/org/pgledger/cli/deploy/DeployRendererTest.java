@@ -115,7 +115,8 @@ class DeployRendererTest {
     }
 
     static Stream<Arguments> units() {
-        return Stream.of(Arguments.of(MCP_UNIT, "ledger-mcp-server.jar", "mcp.yaml", ""),
+        // ATA-036: the MCP server writes the attachment files, so its read-only file system has that one folder open
+        return Stream.of(Arguments.of(MCP_UNIT, "ledger-mcp-server.jar", "mcp.yaml", "/var/lib/pg-ledger-mcp/attachments"),
                 Arguments.of(ADMIN_UNIT, "ledger-admin-web.jar", "admin.yaml", "/etc/pg-ledger-mcp"));
     }
 
@@ -165,7 +166,8 @@ class DeployRendererTest {
         List<RenderedFile> files = render(values());
 
         assertThat(List.of(yaml(file(files, "/etc/pg-ledger-mcp/application.yaml")).getPropertyNames()))
-                .containsExactlyInAnyOrder("ledger.jdbc.url", "ledger.jdbc.username");
+                .containsExactlyInAnyOrder("ledger.jdbc.url", "ledger.jdbc.username", "ledger.attachments.directory",
+                        "ledger.attachments.key-directory");
         assertThat(List.of(yaml(file(files, "/etc/pg-ledger-mcp/mcp.yaml")).getPropertyNames())).containsExactlyInAnyOrder(
                 "server.port", "ledger.mcp.allowed-hosts[0]", "ledger.mcp.allowed-hosts[1]");
         assertThat(List.of(yaml(file(files, "/etc/pg-ledger-mcp/admin.yaml")).getPropertyNames()))

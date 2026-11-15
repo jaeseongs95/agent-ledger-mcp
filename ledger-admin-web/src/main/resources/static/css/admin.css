@@ -110,3 +110,7 @@ dd { margin: 0; }
 @media (prefers-reduced-motion: reduce) {
   * { scroll-behavior: auto !important; }
 }
+
+.attachment-row td { background: var(--surface); }
+.attachment-title { font-size: 1rem; margin: 0 0 4px; }
+.attachment-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 24rem; overflow: auto; margin: 4px 0; padding: 8px; border: 1px solid var(--border); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 0.85rem; }

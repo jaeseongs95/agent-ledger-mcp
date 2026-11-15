@@ -6,6 +6,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.PersistenceCreator;
 import org.springframework.data.relational.core.mapping.Column;
 import org.springframework.data.relational.core.mapping.Table;
 import org.pgledger.domain.error.ValidationException;
@@ -31,13 +32,26 @@ import org.pgledger.domain.value.Sha256;
 public record HistoryEntry(@Id Long id, @Column("occurred_at") Instant at, ActorId authorId, String login, ActorAssurance actorAssurance,
         HistoryEntity entity, String entityId, HistoryOp op, String fromState, String toState, JsonDocument changes,
         JsonDocument beforeData, String reason, String evidenceUri, Sha256 evidenceSha256, Long correctsId,
-        RequestId requestId, String legacyRef) {
+        RequestId requestId, String legacyRef, String attachmentId) {
 
     private static final Set<HistoryOp> OPS_WITH_BEFORE_DATA = EnumSet.of(HistoryOp.EDIT, HistoryOp.TRANSITION,
             HistoryOp.UNLINK);
     private static final String OPS_WITH_BEFORE_DATA_TEXT = OPS_WITH_BEFORE_DATA.stream().map(HistoryOp::name)
             .collect(Collectors.joining(", "));
 
+    /**
+     * A row without an attachment (an imported row and every row written before attachments existed). {@code attachmentId} is the
+     * id of a row of {@code attachment}, a plain column without a foreign key: the write that makes the row checks it.
+     */
+    public HistoryEntry(Long id, Instant at, ActorId authorId, String login, ActorAssurance actorAssurance,
+            HistoryEntity entity, String entityId, HistoryOp op, String fromState, String toState,
+            JsonDocument changes, JsonDocument beforeData, String reason, String evidenceUri, Sha256 evidenceSha256,
+            Long correctsId, RequestId requestId, String legacyRef) {
+        this(id, at, authorId, login, actorAssurance, entity, entityId, op, fromState, toState, changes, beforeData,
+                reason, evidenceUri, evidenceSha256, correctsId, requestId, legacyRef, null);
+    }
+
+    @PersistenceCreator
     public HistoryEntry {
         if (changes == null) {
             changes = JsonDocument.EMPTY_OBJECT;

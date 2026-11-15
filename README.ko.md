@@ -12,6 +12,7 @@ AI 에이전트가 수행한 작업을 기록하는 장부이며, 하나의 MCP 
 
 - 개념
 - MCP 도구
+- 첨부
 - 모듈
 - 설정
 - 설치
@@ -79,6 +80,16 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | `ledger_review` | reviewer | `VERIFIED`, `MET`, `NOT_MET`과 그 재개를 처리합니다. 증거 링크가 필수입니다 |
 | `ledger_review_correct` | reviewer | 검증 행이 잘못되었음을 표시합니다 |
 
+첨부 도구(로그인, 증명, 작성자의 유효한 부여 하나 이상이 필요합니다. 아래 첨부 절을 보십시오).
+
+| 도구 | 내용 |
+|---|---|
+| `artifact-begin` | 기록이 가리킬 수 있는 파일의 업로드를 시작합니다. `operationKey`는 필수이며 호출을 되풀이할 수 있게 합니다. `purpose`는 선택이고 `evidence`만 지원합니다 |
+| `artifact-chunk` | 다음 청크(최대 262144바이트, base64)를 SHA-256과 함께 보냅니다. 마지막으로 반영된 청크를 다시 보내면 현재 상태로 답합니다 |
+| `artifact-finish` | 받은 바이트를 선언한 크기와 SHA-256에 대조하고 파일을 첨부로 보관합니다. 같은 업로드 ID로 다시 부르면 같은 첨부 ID를 돌려줍니다 |
+| `artifact-status` | 업로드나 첨부의 상태, 크기, SHA-256, 만료, 진행을 보여 줍니다(경로나 저장 키는 절대 보여 주지 않습니다) |
+| `artifact-read` | 보관된 첨부의 한 페이지를 복호화하고 검증해서 읽습니다 |
+
 읽기 도구(증명과 부여가 필요하지 않습니다. 1.x의 원시 SQL 도구를 대체하는 정형 조회입니다).
 
 | 도구 | 내용 |
@@ -110,6 +121,18 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
  "evidence": "request 7f3a, api/checkout.ts:88", "user_quote": "I can't pay with my gift card",
  "observed_at": "2026-11-05T10:00:00Z", "reason": "second report of the same failure"}
 ```
+
+## 첨부
+
+검수 보고서(또는 그 밖의 근거)는 첨부로 보관합니다. 데이터베이스에 본문 텍스트로 두지 않고, 흔적 없이 고칠 수 있는 로컬 파일로도 두지 않습니다. 기록의 이력 행은 `ledger_transition`, `ledger_review`, `ledger_review_correct`, `ledger_correct`, `ledger_record_fix`, `ledger_record_case`와 `ledger_batch`의 같은 연산이 받는 선택 인자 `attachment_id`로 첨부를 가리킵니다. 기록은 첨부가 있고 기록을 쓰는 작성자가 올린 것일 때만 쓰입니다.
+
+- **업로드.** 업로드는 위의 MCP 도구 다섯 개로만 합니다. `artifact-begin`(필수 `operationKey`), 청크마다 `artifact-chunk`(최대 262144바이트), `artifact-finish`, 확인용 `artifact-status`와 `artifact-read`입니다. PC의 파일을 모델 밖에서 보내는 클라이언트 프로그램은 아직 정하지 못한 항목이며, 도구가 유일한 길입니다.
+- **저장.** 데이터베이스에는 메타데이터와 파일 이름만 둡니다(`upload_staging`, `attachment`, `attachment_file`. 본문 열도 외래 키도 없습니다). 파일은 `ledger.attachments.directory` 아래에 128비트 무작위 이름으로, 확장자와 원본 이름 없이 두며, 청크마다 한 세그먼트로 AES-256-GCM 암호화하고(저장 키와 위치를 함께 인증합니다) 끝나면 읽기 전용으로 바꿉니다. 첨부는 바꾸거나 지우지 않습니다. 데이터베이스의 응용 계정은 첨부에 `SELECT`와 `INSERT`만 가집니다.
+- **키.** `setup`이 첫 256비트 키 파일을 `ledger.attachments.key-directory`에 만들고(서비스 계정만 읽습니다) `ledger.attachments.active-key-id`를 정합니다. 교체는 `ledger-cli attachments-key-create`, `active-key-id`를 새 id로 바꾸기, 재시작, 그다음 `ledger-cli attachments-rekey --from=<옛 id>`로 옛 키의 파일을 다시 쓰는 순서입니다. 옛 키 파일은 현재 파일이나 열린 업로드가 쓰는 동안 남깁니다. 필요한 키 파일이 없으면 시작 점검이 키가 아니라 키 id를 알립니다.
+- **오류.** `ARTIFACT_CHUNK_CONFLICT`, `CHUNK_HASH_MISMATCH`, `ARTIFACT_BUSY`(잠시 뒤 다시 보냅니다), `ARTIFACT_INCOMPLETE`, `ARTIFACT_HASH_MISMATCH`(바이트는 남습니다), `ARTIFACT_CORRUPTED`, `ARTIFACT_LIMIT`, `ARTIFACT_UNSUPPORTED_PURPOSE`, `ARTIFACT_EXPIRED`, `ARTIFACT_NOT_FOUND`, `ARTIFACT_OPERATION_CONFLICT`, `ARTIFACT_STORAGE_FULL`(디스크가 너무 찼으니 소유자가 비워야 합니다). 도구 오류의 `details.retryable`은 같은 요청을 나중에 다시 보내 성공할 수 있으면 `true`입니다(`ARTIFACT_BUSY`, `ARTIFACT_INCOMPLETE`, 그리고 `details.limit`이 `staging-budget`이나 `open-uploads`인 `ARTIFACT_LIMIT`).
+- **점검.** `ledger-cli attachments-check`는 없거나 손상된 첨부(지우지 않습니다)와 어떤 이력 행도 가리키지 않는 첨부(보존합니다)를 알리고, 행이 없는 파일이나 rekey가 대체한 파일을 `orphan-grace`가 지난 뒤 `orphans/`로 옮깁니다. `orphans/`를 비우는 길은 `--purge-orphans`뿐이며 감사 기록에 남습니다. 관리 웹은 같은 결과를 읽기 전용으로 보여 주고, 기록 화면에 텍스트 첨부는 이스케이프해서 보여 주며 그 밖의 형식은 응용을 거치는 내려받기로 제공합니다.
+- **백업.** 첨부 폴더, 키 폴더, 데이터베이스를 함께 백업하고 복원합니다. 복원 뒤 `ledger-cli attachments-check`를 실행하면 없거나 손상된 첨부가 없어야 합니다. 격리된 파일의 행이 다시 생기면 점검이 그 파일을 제자리로 돌려놓습니다.
+- **설치.** 설치 프로그램이 첨부 폴더(서비스 계정 소유, 다른 계정에는 닫힘), 비밀 폴더 아래의 키 폴더, 설정을 만듭니다. 1.x의 근거는 기록된 URI와 해시 그대로 남으며 이전은 아무것도 가져오지 않습니다.
 
 ## 모듈
 
@@ -168,6 +191,17 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | `ledger.admin.lockout.global-delay` | 관리 웹 | 전역 한도를 넘은 뒤 토큰을 비교하기 전에 기다리는 시간, 기본 1s. 늦출 뿐 잠그지는 않습니다 |
 | `ledger.admin.mcp.health-url` | 관리 웹 | 개요 화면에 보여 줄 MCP 서버의 `/healthz` URL. 없으면 설정하지 않은 것입니다 |
 | `ledger.admin.mcp.timeout` | 관리 웹 | 그 확인의 제한 시간, 기본 2s |
+| `ledger.attachments.directory` | 서버, CLI | 첨부 파일을 두는 위치입니다(설치 프로그램이 `<데이터 폴더>/attachments`로 정합니다). 정하지 않으면 첨부 도구는 등록되지 않습니다 |
+| `ledger.attachments.key-directory` | 서버, CLI | 키 파일을 두는 위치로 `directory` 밖이어야 합니다(안이면 시작이 실패합니다). 설치 프로그램이 `<설정 폴더>/secrets/attachment-keys`로 정합니다 |
+| `ledger.attachments.active-key-id` | 서버, CLI | 새 업로드를 쓰는 키입니다. `setup`이 `local.yaml`에 적습니다. 키 파일이 없으면 서버가 시작하지 않습니다 |
+| `ledger.attachments.max-file-bytes` | 서버, CLI | 파일 하나의 최대 크기, 기본 64MB |
+| `ledger.attachments.staging-budget-bytes` | 서버, CLI | 열린 업로드 전체가 선언할 수 있는 크기, 기본 512MB |
+| `ledger.attachments.attachment-budget-bytes` | 서버, CLI | 보관 첨부 전체(와 열린 업로드)가 가질 수 있는 크기, 기본 10GB. 넘으면 새 `artifact-begin`을 거절하고 있는 첨부는 지우지 않습니다 |
+| `ledger.attachments.max-open-per-owner` | 서버, CLI | 작성자 한 명이 열어 둘 수 있는 업로드 수, 기본 4 |
+| `ledger.attachments.disk-margin-bytes` | 서버, CLI | 파일을 쓴 뒤에도 `directory`의 디스크에 남겨 두어야 하는 공간, 기본 64MB(가장 큰 파일 하나의 크기). `usable - size`가 이보다 작으면 begin이나 청크를 `ARTIFACT_STORAGE_FULL`로 거절하며, 소유자가 디스크를 비워야 합니다 |
+| `ledger.attachments.upload-ttl` | 서버, CLI | 마지막 청크 뒤 업로드가 사는 시간, 기본 10m |
+| `ledger.attachments.orphan-grace` | 서버, CLI | 행 없는 파일(또는 대체된 파일)을 `attachments-check`가 `orphans/`로 옮기기 전 유예, 기본 24h |
+| `ledger.attachments.reaper-interval` | MCP 서버 | 만료된 업로드를 지우는 주기, 기본 1m |
 | `ledger.import.source.url` | `import-legacy` | 1.x 장부가 있는 데이터베이스의 JDBC URL |
 | `ledger.import.source.username` | `import-legacy` | 그 데이터베이스의 읽기 전용 계정(`retire-legacy`는 1.x 객체를 소유한 계정이 필요합니다) |
 | `ledger.import.source.password` | `import-legacy` | 그 비밀번호(비밀) |
@@ -430,6 +464,9 @@ OpenID Connect로 로그인하고, 첫 패스키는 `passkey-code`로 등록합�
 | `grant` | `grant <author> <project> <scope>... [--note=<text>] [--expires=<ISO-8601 with Z or an offset>]` | 프로젝트의 범위를 부여합니다. 작성자에게 먼저 유효한 세션 키가 있어야 합니다 |
 | `revoke` | `revoke <author> [<project> [<scope>]]` | 유효한 부여를 회수합니다 |
 | `grants` | `grants [<author>]` | 유효한 부여를 나열합니다 |
+| `attachments-check` | `attachments-check [--purge-orphans]` | 첨부를 그 파일 및 키와 맞춰 봅니다. 어느 행도 가리키지 않는 파일과 `attachments-rekey`가 대체한 파일은 지우지 않고 `orphans/`로 옮기며, `orphans/`에 있던 파일의 행이 다시 생겼으면 되돌립니다. 보고서는 건수와, 없어졌거나 손상되었거나 어느 이력 행도 가리키지 않는 첨부의 ID(저장 키나 경로는 출력하지 않습니다)를 보여 주고, 없어졌거나 손상된 첨부가 있으면 종료 코드는 `1`입니다. `--purge-orphans`는 먼저 `orphans/`를 비우고 그 수를 감사 기록에 남깁니다 |
+| `attachments-rekey` | `attachments-rekey --from=<keyId>` | 키 `<keyId>`로 쓴 첨부 파일을 활성 키 `ledger.attachments.active-key-id`(다른 키여야 합니다)로 다시 씁니다. 옛 파일은 `ledger.attachments.orphan-grace`가 지난 뒤 `attachments-check`가 `orphans/`로 옮깁니다 |
+| `attachments-key-create` | `attachments-key-create` | 키 디렉터리에 새 256비트 키 파일을 만들고(서비스 계정만 읽을 수 있습니다) 키 ID를 출력합니다. 키 자체는 출력하지 않으며, 새 업로드를 그 키로 쓰려면 `ledger.attachments.active-key-id`를 그 값으로 설정합니다 |
 | `mcp-check` | `mcp-check [--url=<url>] [--ledger.mcp.token=<token>]` | 실행 중인 MCP 서버에 연결해 도구를 확인합니다 |
 | `render-deploy` | `render-deploy --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--long-text-type=<type>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--from-1x-env=<file>] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>] [--check]` | 서비스 정의(systemd 유닛, Windows에서는 WinSW 설정)와 설정, 선택적 nginx 사이트를 씁니다. 설치기가 호출합니다 |
 | `prepare-host` | `prepare-host --jars=<dir> --driver-jar=<file> [--winsw=<file>] --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--long-text-type=<type>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--from-1x-env=<file>] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>]` | 호스트의 파일을 준비합니다(root로, Windows에서는 관리자 권한으로 실행). 폴더를 소유자·모드 또는 ACL과 함께 만들고, jar와 드라이버(Windows에서는 WinSW도)를 복사하고, `render-deploy`가 쓰는 것을 씁니다. 설치기가 호출합니다 |

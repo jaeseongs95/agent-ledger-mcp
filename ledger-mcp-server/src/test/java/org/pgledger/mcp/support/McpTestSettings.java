@@ -23,6 +23,14 @@ public final class McpTestSettings {
     public static final String ALLOWED_ORIGIN = "http://allowed.example";
     public static final String ORIGIN_PROPERTY = "ledger.mcp.allowed-origins=" + ALLOWED_ORIGIN;
 
+    /**
+     * The settings of the attachments. Their values are made per context by {@link AttachmentTestInitializer} (a temporary
+     * folder and a key of its own), so only the names are constants here.
+     */
+    public static final String ATTACHMENTS_DIRECTORY = "ledger.attachments.directory";
+    public static final String ATTACHMENTS_KEY_DIRECTORY = "ledger.attachments.key-directory";
+    public static final String ATTACHMENTS_ACTIVE_KEY_ID = "ledger.attachments.active-key-id";
+
     /** The host names the test server allows in the Host header (the defaults of the server). */
     public static final String ALLOWED_HOST = "localhost";
 

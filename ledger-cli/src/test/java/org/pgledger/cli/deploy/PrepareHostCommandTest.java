@@ -105,6 +105,14 @@ class PrepareHostCommandTest {
         assertThat(mode(root.resolve("etc/pg-ledger-mcp"))).isEqualTo("rwxr-x---");
         assertThat(mode(root.resolve("etc/pg-ledger-mcp/drivers"))).isEqualTo("rwxr-xr-x");
         assertThat(mode(root.resolve("etc/pg-ledger-mcp/secrets"))).isEqualTo("rwx------");
+        // ATA-036: the key folder inside the secrets, the data folder and the attachment folder below it: the service user's alone
+        assertThat(mode(root.resolve("etc/pg-ledger-mcp/secrets/attachment-keys"))).isEqualTo("rwx------");
+        assertThat(mode(root.resolve("var/lib/pg-ledger-mcp"))).isEqualTo("rwx------");
+        assertThat(mode(root.resolve("var/lib/pg-ledger-mcp/attachments"))).isEqualTo("rwx------");
+        UserPrincipal serviceUser = Files.getOwner(tmp);
+        for (String folder : List.of("etc/pg-ledger-mcp/secrets/attachment-keys", "var/lib/pg-ledger-mcp", "var/lib/pg-ledger-mcp/attachments")) {
+            assertThat(Files.getOwner(root.resolve(folder))).as(folder).isEqualTo(serviceUser);
+        }
         for (String jar : List.of(DeployLayout.CLI_JAR, DeployLayout.MCP_JAR, DeployLayout.ADMIN_JAR)) {
             Path copy = root.resolve("opt/pg-ledger-mcp").resolve(jar);
             assertThat(Files.readString(copy)).as(jar).isEqualTo("content of " + jar);
@@ -126,6 +134,10 @@ class PrepareHostCommandTest {
         Files.setPosixFilePermissions(etc, PosixFilePermissions.fromString("rwxrwxrwx"));
         Path lib = tmp.resolve("root/opt/pg-ledger-mcp");
         Files.createDirectories(lib);
+        // ATA-036: a folder of the attachments that exists with the wrong mode gets the mode of a new one
+        Path attachments = tmp.resolve("root/var/lib/pg-ledger-mcp/attachments");
+        Files.createDirectories(attachments);
+        Files.setPosixFilePermissions(attachments, PosixFilePermissions.fromString("rwxr-xr-x"));
         Files.writeString(lib.resolve(DeployLayout.CLI_JAR), "an old jar");
         Path unit = tmp.resolve("root/etc/systemd/system/pg-ledger-mcp.service");
         Files.createDirectories(unit.getParent());
@@ -139,6 +151,7 @@ class PrepareHostCommandTest {
         // REH3-INS-01: the first run says it moved the previous file
         assertThat(output.info()).contains("Kept the previous file of that name as").doesNotContain("already holds the same bytes");
         assertThat(mode(etc)).isEqualTo("rwxr-x---");
+        assertThat(mode(attachments)).isEqualTo("rwx------");
         assertThat(Files.readString(lib.resolve(DeployLayout.CLI_JAR))).isEqualTo("content of ledger-cli.jar");
         assertThat(Files.readString(unit.resolveSibling("pg-ledger-mcp.service.1x-backup"))).isEqualTo("[Unit]\nDescription=1.x\n");
     }
@@ -270,12 +283,15 @@ class PrepareHostCommandTest {
             assertThat(result.code()).isEmpty();
             UserPrincipal system = fileSystem.getUserPrincipalLookupService().lookupPrincipalByName(WindowsAccess.SYSTEM);
             UserPrincipal administrators = fileSystem.getUserPrincipalLookupService().lookupPrincipalByName(WindowsAccess.ADMINISTRATORS);
-            for (Path folder : List.of(home, home.resolve("lib"), home.resolve("etc"), home.resolve("etc/drivers"), home.resolve("logs"))) {
+            for (Path folder : List.of(home, home.resolve("lib"), home.resolve("etc"), home.resolve("etc/drivers"), home.resolve("logs"),
+                    home.resolve("data"), home.resolve("data/attachments"))) {
                 List<AclEntry> acl = Files.getFileAttributeView(folder, AclFileAttributeView.class).getAcl();
                 assertThat(acl.stream().map(AclEntry::principal)).as(folder.toString()).containsExactlyInAnyOrder(system, administrators);
             }
             List<AclEntry> secrets = Files.getFileAttributeView(home.resolve("etc/secrets"), AclFileAttributeView.class).getAcl();
             assertThat(secrets).as("the secrets are the installer's alone").hasSize(1);
+            List<AclEntry> keys = Files.getFileAttributeView(home.resolve("etc/secrets/attachment-keys"), AclFileAttributeView.class).getAcl();
+            assertThat(keys).as("the folder of the attachment keys is the installer's alone").hasSize(1);
             assertThat(Files.readString(home.resolve("lib/pg-ledger-mcp.exe"))).isEqualTo("content of WinSW.exe");
             assertThat(Files.readString(home.resolve("lib/pg-ledger-mcp-admin.exe"))).isEqualTo("content of WinSW.exe");
             assertThat(Files.readString(home.resolve("lib").resolve(DeployLayout.CLI_JAR))).isEqualTo("content of ledger-cli.jar");

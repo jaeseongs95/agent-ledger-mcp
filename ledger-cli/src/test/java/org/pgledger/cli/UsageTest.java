@@ -192,7 +192,7 @@ class UsageTest {
     void theCommandSetIsTheOneOfThePlan() {
         assertThat(Stream.of(CliCommand.values()).map(CliCommand::cliName)).containsExactly("secret-set",
                 "token-generate", "secret-import-1x", "driver-register", "migrate", "setup", "import-legacy", "retire-legacy", "key-register", "key-revoke", "project-add", "code-set",
-                "codes", "grant", "revoke", "grants", "mcp-check", "render-deploy", "prepare-host", "seal-host", "install-default", "tls-issue", "tls-renew");
+                "codes", "grant", "revoke", "grants", "attachments-check", "attachments-rekey", "attachments-key-create", "mcp-check", "render-deploy", "prepare-host", "seal-host", "install-default", "tls-issue", "tls-renew");
     }
 
     @Test
@@ -225,6 +225,15 @@ class UsageTest {
                 Arguments.of(new String[] { "revoke" }, ErrorCode.MISSING_ARGUMENT),
                 Arguments.of(new String[] { "revoke", "a", "b", "c", "d" }, ErrorCode.TOO_MANY_ARGUMENTS),
                 Arguments.of(new String[] { "grants", "a", "b" }, ErrorCode.TOO_MANY_ARGUMENTS),
+                // ATA-008, ATA-022, ATA-031: the commands of the attachments; there is no option that removes files in the check
+                Arguments.of(new String[] { "attachments-check", "--remove-orphan-files" }, ErrorCode.UNKNOWN_OPTION),
+                Arguments.of(new String[] { "attachments-check", "--purge-orphans=yes" }, ErrorCode.INVALID_OPTION_VALUE),
+                Arguments.of(new String[] { "attachments-check", "extra" }, ErrorCode.TOO_MANY_ARGUMENTS),
+                Arguments.of(new String[] { "attachments-rekey" }, ErrorCode.MISSING_ARGUMENT),
+                Arguments.of(new String[] { "attachments-rekey", "--from" }, ErrorCode.MISSING_OPTION_VALUE),
+                Arguments.of(new String[] { "attachments-rekey", "--from=a", "--to=b" }, ErrorCode.UNKNOWN_OPTION),
+                Arguments.of(new String[] { "attachments-key-create", "extra" }, ErrorCode.TOO_MANY_ARGUMENTS),
+                Arguments.of(new String[] { "attachments-key-create", "--active" }, ErrorCode.UNKNOWN_OPTION),
                 Arguments.of(new String[] { "driver-register" }, ErrorCode.MISSING_ARGUMENT),
                 Arguments.of(new String[] { "driver-register", "--jar=x" }, ErrorCode.MISSING_ARGUMENT),
                 Arguments.of(new String[] { "driver-register", "--jar=x", "--class=y", "extra" },

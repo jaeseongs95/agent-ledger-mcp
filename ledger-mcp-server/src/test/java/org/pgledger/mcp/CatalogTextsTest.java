@@ -54,7 +54,7 @@ class CatalogTextsTest {
     }
 
     @Test
-    @DisplayName("1.5/MCW-017 texts: the tools of the server are 22 and each has a description")
+    @DisplayName("1.5/MCW-017 texts: the tools of the server are 27 and each has a description")
     void everyToolHasADescription(McpSession session) {
         assertThat(session.tools()).extracting(Tool::name).containsExactlyInAnyOrderElementsOf(ToolNames.all());
         assertThat(session.tools()).allSatisfy(tool -> assertThat(tool.description()).isNotBlank());
