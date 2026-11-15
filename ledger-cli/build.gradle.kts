@@ -1,3 +1,4 @@
+import java.io.StringReader
 import java.util.Properties
 
 plugins {
@@ -53,7 +54,7 @@ tasks.bootJar {
 // The seed bundle (SETUP): the build writes the H2 file ledger-seed.mv.db from the text files of src/seed with a Java program
 // (SeedBuilder of ledger-seed, run on the JVM of the build) and packs it with the tool as a resource. The binary is generated,
 // never committed; the text files are the source and the only place the defaults of an installation are written.
-val seedBuilder by configurations.creating {
+val seedBuilder = configurations.create("seedBuilder") {
     isCanBeConsumed = false
     isCanBeResolved = true
 }
@@ -75,16 +76,21 @@ val generateSeed = tasks.register<JavaExec>("generateSeed") {
 // The one place of the install defaults is src/seed/install-defaults.properties: the seed bundle carries it for the Java code, and
 // this puts the instance name into application.properties, whose placeholders are read before any bean exists (SET-053).
 val installDefaultsFile = seedSources.file("install-defaults.properties")
-val installDefaults = Properties().apply {
-    installDefaultsFile.asFile.reader(Charsets.UTF_8).use { load(it) }
+// The file is read through a provider, so that the configuration cache knows it as an input of the build and a change of it is seen.
+val installDefaultsInstanceName = providers.fileContents(installDefaultsFile).asBytes.map { bytes ->
+    Properties().apply { load(StringReader(String(bytes, Charsets.UTF_8))) }.getProperty("instance-name")
 }
-tasks.processResources {
-    from(generateSeed) {
-        include("ledger-seed.mv.db")
-    }
-    inputs.file(installDefaultsFile).withPropertyName("installDefaults")
-    filesMatching("application.properties") {
-        filter<org.apache.tools.ant.filters.ReplaceTokens>("tokens" to mapOf("instance-name" to installDefaults.getProperty("instance-name")))
+// the value is a local one: the action below must not hold the build script (the configuration cache stores the action)
+run {
+    val instanceName = installDefaultsInstanceName.get()
+    tasks.processResources {
+        from(generateSeed) {
+            include("ledger-seed.mv.db")
+        }
+        inputs.file(installDefaultsFile).withPropertyName("installDefaults")
+        filesMatching("application.properties") {
+            filter<org.apache.tools.ant.filters.ReplaceTokens>("tokens" to mapOf("instance-name" to instanceName))
+        }
     }
 }
 

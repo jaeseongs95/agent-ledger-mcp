@@ -554,6 +554,15 @@ JVM이 인식하는 프로세서 수를 제한할 수 있습니다. 속성은 �
 ./gradlew test -Pledger.test.forks=1 -Pledger.test.maxHeapSize=1g -Pledger.test.activeProcessorCount=1
 ```
 
+### 빌드 속도
+
+`gradle.properties`는 Gradle 구성 캐시, 빌드 캐시, 병렬 실행을 켭니다(`org.gradle.configuration-cache`, `org.gradle.caching`,
+`org.gradle.parallel`). Gradle 데몬과 파일 감시는 기본값을 그대로 씁니다. 아무것도 바꾸지 않고 `./gradlew build`를 두 번째로 실행하면
+구성을 다시 쓰고, 입력이 바뀐 태스크만 실행합니다. 시험 데이터베이스를 쓰는 모듈(`ledger-database`, `ledger-application`, `ledger-mcp-server`,
+`ledger-admin-web`, `ledger-cli`, `ledger-system-test`)의 시험은 예외입니다. 데이터베이스의 상태는 Gradle이 볼 수 없는 입력이므로 이 시험은
+매번 실행하며, 빌드 캐시에서 가져오지도 않고 캐시에 저장하지도 않습니다. 다른 모듈의 시험은 캐시에서 가져올 수 있습니다. 기계의 제한(워커 수,
+시험 JVM, 힙, 프로세서)은 저장소 설정이 아니므로, 위 속성과 함께 예를 들어 `--max-workers=1`처럼 명령 인자로 줍니다.
+
 ## 구성
 
 - `ledger-domain`, `ledger-attestation`, `ledger-database`, `ledger-application`, `ledger-mcp-server`, `ledger-admin-web`,

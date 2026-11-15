@@ -629,6 +629,17 @@ number, or is smaller than 1, fails the build at configuration time.
 ./gradlew test -Pledger.test.forks=1 -Pledger.test.maxHeapSize=1g -Pledger.test.activeProcessorCount=1
 ```
 
+### Build speed
+
+`gradle.properties` switches on the Gradle configuration cache, the build cache and parallel execution (`org.gradle.configuration-cache`,
+`org.gradle.caching`, `org.gradle.parallel`); the Gradle daemon and file watching keep their defaults. A second `./gradlew build` with
+nothing changed reuses the configuration and runs only the tasks whose inputs changed. The tests of the modules that use the test
+database (`ledger-database`, `ledger-application`, `ledger-mcp-server`, `ledger-admin-web`, `ledger-cli` and `ledger-system-test`) are the
+exception: the state of the database is an input that Gradle cannot see, so they run every time and are never taken from the build
+cache or stored in it. The tests of the other modules can be taken from the cache. The limits of a machine (the number of workers, the
+test JVMs, the heap, the processors) are not repository settings: give them as command arguments, for example `--max-workers=1`
+together with the properties above.
+
 ## Layout
 
 - `ledger-domain`, `ledger-attestation`, `ledger-database`, `ledger-application`, `ledger-mcp-server`, `ledger-admin-web`,

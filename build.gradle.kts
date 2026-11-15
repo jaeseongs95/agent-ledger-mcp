@@ -1,3 +1,6 @@
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.process.CommandLineArgumentProvider
+
 plugins {
     base
 }
@@ -21,18 +24,81 @@ val ledgerTestDatabase = linkedMapOf(
     "ledger.test.app-password-file" to "C:/ags-test-secrets/ags-dbms-ledger_test_app.pw",
 )
 
+// The modules whose tests use the test database. Their test tasks are never up to date and never taken from, or stored in, the
+// build cache: the state of the database is an input that Gradle cannot see (docs/testing/TEST_CASES.md section 30, BLD-DB-01).
+val databaseModules = setOf("ledger-database", "ledger-application", "ledger-mcp-server", "ledger-admin-web", "ledger-cli",
+    "ledger-system-test")
+
+// ARC-005 / DRV-014: no JDBC driver, JPA, migration tool, Lombok or CLI framework on any runtime classpath.
+// "org.hibernate.orm" (not "org.hibernate"): the Jakarta Validation implementation is org.hibernate.validator, which is allowed; the ORM stays forbidden.
+val forbiddenRuntime = listOf(
+    "org.postgresql", "com.h2database", "com.mysql", "org.mariadb.jdbc", "com.oracle.database.jdbc",
+    "com.microsoft.sqlserver", "org.liquibase", "org.flywaydb", "org.hibernate.orm", "jakarta.persistence",
+    "org.projectlombok", "info.picocli", "org.springframework.shell", "org.zeroturnaround",
+)
+// The one exception (DRV-014, SETUP): the H2 driver, on ledger-seed and on ledger-cli (which uses it) only. H2 gives the format of
+// the seed bundle, the initial data of a new installation that `ledger-cli setup` moves into the ledger database, and nothing
+// else: the ledger database is always a DBMS the operator installs (user decision 「dbms 설치가 전제라니까?」, 「h2는 그런목적으로만
+// 쓰라고.」), the product refuses to register H2 as it, and the MCP server and the admin web keep zero JDBC drivers. The system test
+// (DRV-013) looks for the driver in the built jars of the three applications.
+val embeddedDriverGroup = "com.h2database"
+val embeddedDriverModules = setOf("ledger-seed", "ledger-cli")
+
+// Fails when a forbidden artifact is on the runtime classpath of the module. The resolved artifacts of the runtime classpath are
+// an input (a provider that Gradle evaluates when it needs the value), so the task reads neither the project nor a configuration
+// while it runs and works with the configuration cache.
+abstract class VerifyRuntimeClasspath : DefaultTask() {
+    @get:Input
+    abstract val moduleName: Property<String>
+
+    /** group:name:version of every external artifact on the runtime classpath. */
+    @get:Input
+    abstract val runtimeArtifacts: SetProperty<String>
+
+    @get:Input
+    abstract val forbiddenGroups: SetProperty<String>
+
+    /** Groups that are allowed on this module although they are forbidden on the others (the H2 driver of the seed bundle). */
+    @get:Input
+    abstract val allowedGroups: SetProperty<String>
+
+    @TaskAction
+    fun verify() {
+        val problems = runtimeArtifacts.get().sorted().filter { coordinates ->
+            val group = coordinates.substringBefore(':')
+            group !in allowedGroups.get() && forbiddenGroups.get().any { group == it || group.startsWith("$it.") }
+        }.map { "${moduleName.get()}: $it" }
+        if (problems.isNotEmpty()) {
+            throw GradleException("forbidden runtime dependencies: $problems")
+        }
+    }
+}
+
+// A system property that holds the absolute path of one jar of a file collection. The path is found when the test JVM is
+// started, not while the build is configured and not by a task action that holds a configuration (the configuration cache
+// refuses that); the jars themselves are the input (by content, not by location).
+abstract class JarPathProperty : CommandLineArgumentProvider {
+    @get:Classpath
+    abstract val jars: ConfigurableFileCollection
+
+    @get:Input
+    abstract val propertyName: Property<String>
+
+    @get:Input
+    abstract val filePrefix: Property<String>
+
+    override fun asArguments(): Iterable<String> =
+        listOf("-D${propertyName.get()}=" + jars.files.single { it.name.startsWith(filePrefix.get()) }.absolutePath)
+}
+
 subprojects {
     apply(plugin = "java-library")
 
-    // The PostgreSQL JDBC driver jar, for the tests that register a driver jar by its path (the test selects the one jar).
-    // Test-only: no runtime classpath of any module has a driver (verifyRuntimeClasspath).
-    val postgresDriverJar by configurations.creating {
-        isCanBeConsumed = false
-        isCanBeResolved = true
-    }
-
     group = "org.pgledger"
     version = "0.1.0-SNAPSHOT"
+
+    val projectName = project.name
+    val usesDatabase = projectName in databaseModules
 
     extensions.configure<JavaPluginExtension> {
         toolchain {
@@ -47,8 +113,19 @@ subprojects {
         "testImplementation"("org.junit.jupiter:junit-jupiter")
         "testImplementation"("org.assertj:assertj-core")
         "testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
-        "postgresDriverJar"(platform(rootProject.libs.spring.boot.bom))
-        "postgresDriverJar"("org.postgresql:postgresql")
+    }
+
+    // The PostgreSQL JDBC driver jar, for the tests that register a driver jar by its path (the test selects the one jar).
+    // Test-only: no runtime classpath of any module has a driver (verifyRuntimeClasspath). Only the modules with a database test.
+    val postgresDriverJar = configurations.create("postgresDriverJar") {
+        isCanBeConsumed = false
+        isCanBeResolved = true
+    }
+    if (usesDatabase) {
+        dependencies {
+            "postgresDriverJar"(platform(rootProject.libs.spring.boot.bom))
+            "postgresDriverJar"("org.postgresql:postgresql")
+        }
     }
 
     tasks.withType<JavaCompile>().configureEach {
@@ -74,64 +151,57 @@ subprojects {
         ledgerTestProperty("ledger.test.activeProcessorCount")?.let {
             jvmArgs("-XX:ActiveProcessorCount=${positiveInt("ledger.test.activeProcessorCount", it)}")
         }
-        // The test database is the PostgreSQL of the test PC (docs/testing/TEST_CASES.md 1.4a, 1.4b). Each setting is a Gradle
-        // property with a default and reaches the test JVM as a system property. The two password file properties carry
-        // the PATH of a one-line file only: the test support reads the file, and the value is never a property, a log
-        // line or a message. A test that cannot reach the database fails; it is not skipped.
-        ledgerTestDatabase.forEach { (name, fallback) ->
-            systemProperty(name, ledgerTestProperty(name) ?: fallback)
-        }
-        // The path of the PostgreSQL JDBC driver jar (test-only configuration), for the tests that register a driver.
-        doFirst {
-            // the version comes from the Boot BOM (a platform needs the transitive resolution); the driver jar is the file
-            // named postgresql-<version>.jar among the resolved files
-            systemProperty("ledger.test.postgres-jar",
-                postgresDriverJar.files.single { it.name.startsWith("postgresql-") }.absolutePath)
-        }
-        // A test of a database is never up to date: the state of the database is an input that Gradle cannot see.
-        if (project.name in setOf("ledger-database", "ledger-application", "ledger-mcp-server", "ledger-admin-web",
-                "ledger-cli", "ledger-system-test")) {
-            outputs.upToDateWhen { false }
-        }
+        // The architecture and source rule tests read the sources and the build script of their module by a path relative to
+        // the module (src/main/java, src/test/java, build.gradle.kts): they are inputs, so a change that no class file shows (a
+        // comment, a build switch) runs the tests again and a cached result is never reused for other sources.
+        inputs.files(project.fileTree(project.layout.projectDirectory) {
+            include("src/main/java/**", "src/test/java/**", "build.gradle.kts")
+        }).withPropertyName("sourceScans").withPathSensitivity(PathSensitivity.RELATIVE)
         testLogging {
             events("passed", "failed", "skipped")
             showStandardStreams = false
             exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
         }
-    }
-}
-
-// ARC-005 / DRV-014: no JDBC driver, JPA, migration tool, Lombok or CLI framework on any runtime classpath.
-// "org.hibernate.orm" (not "org.hibernate"): the Jakarta Validation implementation is org.hibernate.validator, which is allowed; the ORM stays forbidden.
-val forbiddenRuntime = listOf(
-    "org.postgresql", "com.h2database", "com.mysql", "org.mariadb.jdbc", "com.oracle.database.jdbc",
-    "com.microsoft.sqlserver", "org.liquibase", "org.flywaydb", "org.hibernate.orm", "jakarta.persistence",
-    "org.projectlombok", "info.picocli", "org.springframework.shell", "org.zeroturnaround",
-)
-// The one exception (DRV-014, SETUP): the H2 driver, on ledger-seed and on ledger-cli (which uses it) only. H2 gives the format of
-// the seed bundle, the initial data of a new installation that `ledger-cli setup` moves into the ledger database, and nothing
-// else: the ledger database is always a DBMS the operator installs (user decision 「dbms 설치가 전제라니까?」, 「h2는 그런목적으로만
-// 쓰라고.」), the product refuses to register H2 as it, and the MCP server and the admin web keep zero JDBC drivers. The system test
-// (DRV-013) looks for the driver in the built jars of the three applications.
-val embeddedDriverGroup = "com.h2database"
-val embeddedDriverModules = setOf("ledger-seed", "ledger-cli")
-val verifyRuntimeClasspath by tasks.registering {
-    group = "verification"
-    description = "Fails when a forbidden artifact is on the runtime classpath of a module."
-    doLast {
-        val problems = mutableListOf<String>()
-        subprojects.forEach { p ->
-            p.configurations.getByName("runtimeClasspath").resolvedConfiguration.resolvedArtifacts.forEach { a ->
-                val group = a.moduleVersion.id.group
-                val seedReader = group == embeddedDriverGroup && p.name in embeddedDriverModules
-                if (!seedReader && forbiddenRuntime.any { group == it || group.startsWith("$it.") }) {
-                    problems += "${p.name}: ${a.moduleVersion.id}"
-                }
+        if (usesDatabase) {
+            // The test database is the PostgreSQL of the test PC (docs/testing/TEST_CASES.md 1.4a, 1.4b). Each setting is a Gradle
+            // property with a default and reaches the test JVM as a system property. The two password file properties carry
+            // the PATH of a one-line file only: the test support reads the file, and the value is never a property, a log
+            // line or a message. A test that cannot reach the database fails; it is not skipped.
+            ledgerTestDatabase.forEach { (name, fallback) ->
+                systemProperty(name, ledgerTestProperty(name) ?: fallback)
             }
-        }
-        if (problems.isNotEmpty()) {
-            throw GradleException("forbidden runtime dependencies: $problems")
+            // The path of the PostgreSQL JDBC driver jar (test-only configuration), for the tests that register a driver. The version
+            // comes from the Boot BOM (a platform needs the transitive resolution); the driver jar is the file named
+            // postgresql-<version>.jar among the resolved files.
+            jvmArgumentProviders.add(objects.newInstance<JarPathProperty>().apply {
+                jars.from(postgresDriverJar)
+                propertyName = "ledger.test.postgres-jar"
+                filePrefix = "postgresql-"
+            })
+            // A test of a database is never up to date and never taken from or stored in the build cache: the state of the
+            // database is an input that Gradle cannot see. Both are stated; the build cache does not look at upToDateWhen.
+            outputs.upToDateWhen { false }
+            outputs.doNotCacheIf("the state of the test database is an input that Gradle cannot see") { true }
         }
     }
+
+    // One check per module, wired to the check of the module: `./gradlew check` and `./gradlew verifyRuntimeClasspath` run it for every module.
+    val verifyRuntimeClasspath = tasks.register<VerifyRuntimeClasspath>("verifyRuntimeClasspath") {
+        group = "verification"
+        description = "Fails when a forbidden artifact is on the runtime classpath of the module."
+        moduleName = projectName
+        forbiddenGroups.addAll(forbiddenRuntime)
+        if (projectName in embeddedDriverModules) {
+            allowedGroups.add(embeddedDriverGroup)
+        }
+        runtimeArtifacts.addAll(configurations.getByName("runtimeClasspath").incoming
+            .artifactView { componentFilter { it is ModuleComponentIdentifier } }
+            .artifacts.resolvedArtifacts
+            .map { artifacts ->
+                artifacts.map { artifact ->
+                    (artifact.id.componentIdentifier as ModuleComponentIdentifier).let { "${it.group}:${it.module}:${it.version}" }
+                }
+            })
+    }
+    tasks.named("check") { dependsOn(verifyRuntimeClasspath) }
 }
-tasks.named("check") { dependsOn(verifyRuntimeClasspath) }

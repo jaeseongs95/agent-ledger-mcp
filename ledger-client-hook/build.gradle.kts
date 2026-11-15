@@ -61,7 +61,7 @@ val stageTasks = stagedClients.map { client ->
         includeEmptyDirs = false
     }
 }
-val stageClientPlugins by tasks.registering {
+val stageClientPlugins = tasks.register("stageClientPlugins") {
     group = "distribution"
     description = "Stages all three client plugin directories."
     dependsOn(stageTasks)
@@ -70,6 +70,17 @@ tasks.assemble { dependsOn(stageClientPlugins) }
 
 tasks.test {
     dependsOn(tasks.jar, stageClientPlugins)
+    // What the tests read besides their class path, so that a change of it runs them again: the jar, the staged plugin
+    // directories, the manifests of the clients, and the JDK older than 25 of the machine (HK-021, optional).
+    inputs.files(tasks.jar).withPropertyName("hookJar").withPathSensitivity(PathSensitivity.NONE)
+    inputs.dir(layout.buildDirectory.dir("client-plugins")).withPropertyName("stagedPlugins").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.dir(rootProject.layout.projectDirectory.dir("clients")).withPropertyName("clients").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.property("legacyJava", providers.environmentVariable("LEDGER_HOOK_LEGACY_JAVA").orElse(""))
+    // The cold start of the jar is measured and recorded (HK-017): the files are an output of the test task.
+    outputs.dir(layout.buildDirectory.dir("hook-metrics")).withPropertyName("hookMetrics")
+    // Not cached: the tests start the real jar as processes and measure the wall time of each start (HK-017), and the time of
+    // the machine is an input that Gradle cannot see. An unchanged run may still be up to date.
+    outputs.doNotCacheIf("the tests measure the wall time of real java processes (HK-017)") { true }
     // The tests start the real jar and read the manifests; the paths are passed in, never guessed.
     systemProperty("ledger.hook.jar", tasks.jar.flatMap { it.archiveFile }.get().asFile.absolutePath)
     systemProperty("ledger.hook.staging", layout.buildDirectory.dir("client-plugins").get().asFile.absolutePath)

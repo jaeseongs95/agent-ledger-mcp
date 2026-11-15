@@ -4,11 +4,10 @@ plugins {
 }
 
 // The built client hook jar (ledger-client-hook.jar), only for the tests: the round trip test (MCW-040) signs with the
-// real hook, started as a process, and calls this server with what it printed. It is not part of the server.
-val hookJar by configurations.creating {
-    isCanBeConsumed = false
-    isCanBeResolved = true
-}
+// real hook, started as a process, and calls this server with what it printed. It is not part of the server. The jar task of the
+// hook module is the one fat jar; its path is known without resolving a configuration (the hook module is configured first).
+evaluationDependsOn(":ledger-client-hook")
+val hookJar = project(":ledger-client-hook").tasks.named<Jar>("jar")
 
 dependencies {
     // The services of the ledger (write gate, receipts, history, queries) with the database module and the domain.
@@ -30,7 +29,6 @@ dependencies {
 
     testImplementation(testFixtures(project(":ledger-domain")))
     // The tests play the client hook (they sign attestations with the shared token format) and start the built hook jar.
-    hookJar(project(":ledger-client-hook")) { isTransitive = false }
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     // ArchUnit 1.5.1: not in the Boot BOM, see gradle/libs.versions.toml
     testImplementation(libs.archunit)
@@ -40,10 +38,8 @@ dependencies {
 
 tasks.test {
     dependsOn(hookJar)
-    doFirst {
-        // the path of the hook jar is passed in, never guessed (the dependency has no transitive part: it is the one fat jar)
-        systemProperty("ledger.hook.jar", hookJar.singleFile.absolutePath)
-    }
+    // the path of the hook jar is passed in, never guessed (it is the one fat jar)
+    systemProperty("ledger.hook.jar", hookJar.flatMap { it.archiveFile }.get().asFile.absolutePath)
     // The JDK HttpClient refuses to send a Host header unless the property allows it. The Host allow list test
     // (MCC-016) must send a Host that differs from the address it connects to.
     jvmArgs("-Djdk.httpclient.allowRestrictedHeaders=host")

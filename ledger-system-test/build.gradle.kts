@@ -9,10 +9,7 @@ evaluationDependsOn(":ledger-mcp-server")
 evaluationDependsOn(":ledger-admin-web")
 
 // The built client hook jar (ledger-client-hook.jar); the same arrangement as in ledger-mcp-server, the jar is one fat jar.
-val hookJar by configurations.creating {
-    isCanBeConsumed = false
-    isCanBeResolved = true
-}
+evaluationDependsOn(":ledger-client-hook")
 
 dependencies {
     // The test database support: the settings of the database and the passwords read from their files, the name of a test
@@ -21,9 +18,9 @@ dependencies {
     // The MCP Java SDK client (the SDK the server runs on) and the Jackson 3 mapper it writes JSON with (Boot BOM).
     testImplementation(libs.mcp.sdk)
     testImplementation("tools.jackson.core:jackson-databind")
-    hookJar(project(":ledger-client-hook")) { isTransitive = false }
 }
 
+val hookJar = project(":ledger-client-hook").tasks.named<Jar>("jar")
 val cliJar = project(":ledger-cli").tasks.named<Jar>("bootJar")
 val mcpJar = project(":ledger-mcp-server").tasks.named<Jar>("bootJar")
 val adminJar = project(":ledger-admin-web").tasks.named<Jar>("bootJar")
@@ -33,10 +30,9 @@ tasks.test {
     // The paths are passed in, never guessed. The jars are inputs, so a change of a product jar runs the test again
     // (the database is an input too, which is why the test is never up to date, see the root build).
     inputs.files(cliJar, mcpJar, adminJar, hookJar)
-    doFirst {
-        systemProperty("ledger.cli.jar", cliJar.get().archiveFile.get().asFile.absolutePath)
-        systemProperty("ledger.mcp.jar", mcpJar.get().archiveFile.get().asFile.absolutePath)
-        systemProperty("ledger.admin.jar", adminJar.get().archiveFile.get().asFile.absolutePath)
-        systemProperty("ledger.hook.jar", hookJar.singleFile.absolutePath)
-    }
+    // the paths are known at configuration time (the archive file of a jar task), no configuration is resolved
+    systemProperty("ledger.cli.jar", cliJar.flatMap { it.archiveFile }.get().asFile.absolutePath)
+    systemProperty("ledger.mcp.jar", mcpJar.flatMap { it.archiveFile }.get().asFile.absolutePath)
+    systemProperty("ledger.admin.jar", adminJar.flatMap { it.archiveFile }.get().asFile.absolutePath)
+    systemProperty("ledger.hook.jar", hookJar.flatMap { it.archiveFile }.get().asFile.absolutePath)
 }
