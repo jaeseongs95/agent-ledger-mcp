@@ -20,7 +20,7 @@ import org.springframework.stereotype.Service;
  * class and creates the driver), so the jar may come from one directory only, {@code ledger.admin.driver-directory}:
  * the path is resolved with {@link Path#toRealPath} (symbolic links and {@code ..} resolved) and must be inside the real
  * allowed directory ({@link Path#startsWith}) before any class is loaded. Then the jar and the driver class are checked
- * exactly as the products load them (absolute path, readable archive, not writable by others, the class is a
+ * exactly as the products load them (absolute path, regular readable file, archive that opens, the class is a
  * {@code java.sql.Driver} that accepts the configured JDBC URL), the SHA-256 of the jar is taken, and only then the
  * registration file is replaced. A refused registration leaves the file as it was. The running pool does not change:
  * the new driver is used after the next start.

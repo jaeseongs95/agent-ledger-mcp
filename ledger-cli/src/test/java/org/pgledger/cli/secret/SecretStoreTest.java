@@ -307,7 +307,7 @@ class SecretStoreTest {
         assertThat(names(directory)).containsExactly("cloudflare-api-token");
     }
 
-    /** SYSTEM exists on every Windows file system and is not the current user; the lookup is by the file system, as FileTrust does. */
+    /** SYSTEM exists on every Windows file system and is not the current user; the lookup is by the file system. */
     private static UserPrincipal system() {
         try {
             return FileSystems.getDefault().getUserPrincipalLookupService().lookupPrincipalByName("SYSTEM");

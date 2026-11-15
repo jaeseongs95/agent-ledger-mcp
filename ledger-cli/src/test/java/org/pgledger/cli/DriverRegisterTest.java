@@ -228,18 +228,16 @@ class DriverRegisterTest {
 
     @Test
     @RequiresPosixPermissions
-    @DisplayName("CLI-014/DRV-017 a jar in a directory that the group can write is refused (DRIVER_INVALID); the same jar in an owner-only directory is accepted")
-    void refusesALooseDirectory(Cli cli) throws Exception {
+    @DisplayName("CLI-014/DRV-017 (changed by SFR-030) a jar in a directory that the group can write is registered as it is (the personal edition does not look at who may write the jar or its directory)")
+    void acceptsALooseDirectory(Cli cli) throws Exception {
         Path loose = Files.createDirectories(drivers.resolve("loose"));
         Path inLoose = OwnerOnlyFiles.copy(PostgresDriverJar.path(), loose.resolve("postgresql.jar")).toRealPath();
         Files.setPosixFilePermissions(loose, PosixFilePermissions.fromString("rwxrwx---"));
 
-        Outcome refused = register(cli, new RecordingOutput(), inLoose.toString(), DRIVER);
+        Outcome accepted = register(cli, new RecordingOutput(), inLoose.toString(), DRIVER);
 
-        assertThat(refused.code()).contains(ErrorCode.DRIVER_INVALID);
-        assertThat(file).doesNotExist();
-        Files.setPosixFilePermissions(loose, PosixFilePermissions.fromString("rwx------"));
-        assertThat(register(cli, new RecordingOutput(), inLoose.toString(), DRIVER).exitCode()).isZero();
+        assertThat(accepted.exitCode()).isZero();
+        assertThat(file).exists();
     }
 
     @Test

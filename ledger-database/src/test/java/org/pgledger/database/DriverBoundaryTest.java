@@ -65,6 +65,7 @@ import org.pgledger.domain.error.ErrorCode;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.domain.value.Sha256;
+import org.pgledger.testing.BroadAccess;
 import org.pgledger.testing.OwnerOnlyFiles;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.context.properties.bind.BindException;
@@ -309,13 +310,14 @@ class DriverBoundaryTest {
         assertThat(thrown.args().getFirst()).contains("ledger.jdbc.driver.class-name");
     }
 
+    /** DRV-017 (changed by SFR-030): who may write the jar is not looked at, the jar loads. */
     @Test
-    void drv017_aJarThatOthersCanWriteIsRefused() throws IOException {
+    void drv017_aJarThatOthersCanWriteIsLoaded() throws IOException {
         assumeTrue(temp.getFileSystem().supportedFileAttributeViews().contains("posix"), "needs POSIX permissions");
         Path copy = OwnerOnlyFiles.copy(driverJar(), temp.resolve("writable.jar"));
         Files.setPosixFilePermissions(copy, PosixFilePermissions.fromString("rw-rw-r--"));
-        assertThat(codeOf(describing(copy, PostgresDriver.CLASS_NAME, "jdbc:postgresql://127.0.0.1:1/w"))).isEqualTo(
-                InfrastructureCode.DRIVER_INVALID);
+        DriverRegistration registration = LOADER.describe(copy, PostgresDriver.CLASS_NAME, "jdbc:postgresql://127.0.0.1:1/w", NOW);
+        assertThat(registration.sha256()).isEqualTo(sha(copy));
     }
 
 
@@ -327,9 +329,9 @@ class DriverBoundaryTest {
         return Files.getFileAttributeView(path, PosixFileAttributeView.class) != null;
     }
 
-    /** DRV-030 (audit2 N4): a directory that the group or others can write is refused, the jar in it being fine. */
+    /** DRV-030 (changed by SFR-030): a directory that the group or others can write is not looked at, the jar in it loads. */
     @Test
-    void drv030_aDirectoryThatOthersCanWriteIsRefused() throws IOException {
+    void drv030_aDirectoryThatOthersCanWriteIsNotRefused() throws IOException {
         assumeTrue(hasPosix(temp), "needs POSIX permissions");
         Path directory = OwnerOnlyFiles.restrict(Files.createDirectory(temp.resolve("drivers-open")));
         Path jar = OwnerOnlyFiles.copy(driverJar(), directory.resolve("postgresql.jar"));
@@ -337,20 +339,18 @@ class DriverBoundaryTest {
 
         for (String mode : List.of("rwxrwx---", "rwx---rwx", "rwx-w----", "rwx----w-")) {
             Files.setPosixFilePermissions(directory, PosixFilePermissions.fromString(mode));
-            InfrastructureException refused = describing(jar, PostgresDriver.CLASS_NAME, "jdbc:postgresql://127.0.0.1:1/dir");
-            assertThat(codeOf(refused)).as(mode).isEqualTo(InfrastructureCode.DRIVER_INVALID);
-            assertThat(refused.args().getFirst()).as(mode).contains("directory").contains("writable");
+            DriverRegistration registration = LOADER.describe(jar, PostgresDriver.CLASS_NAME, "jdbc:postgresql://127.0.0.1:1/dir", NOW);
+            assertThat(registration.sha256()).as(mode).isEqualTo(sha(jar));
         }
         Files.setPosixFilePermissions(directory, PosixFilePermissions.fromString("rwx------"));
-        LOADER.describe(jar, PostgresDriver.CLASS_NAME, "jdbc:postgresql://127.0.0.1:1/dir-again", NOW);
     }
 
     /**
-     * DRV-031 (audit2 N4): with ACLs, an entry that lets another account change the jar or its directory refuses it; an
-     * entry that only lets it read does not.
+     * DRV-031 (changed by SFR-030): with ACLs, an entry that lets another account change the jar or its directory is not looked
+     * at either: the jar loads whatever the entry holds.
      */
     @Test
-    void drv031_aJarOrDirectoryThatAnotherAccountCanWriteIsRefusedByAcl() throws IOException {
+    void drv031_aJarOrDirectoryThatAnotherAccountCanWriteIsNotRefusedByAcl() throws IOException {
         assumeTrue(hasAcl(temp) && !hasPosix(temp), "needs ACLs");
         UserPrincipal everyone = temp.getFileSystem().getUserPrincipalLookupService().lookupPrincipalByName("Everyone");
         for (boolean onDirectory : new boolean[] {true, false}) {
@@ -367,10 +367,9 @@ class DriverBoundaryTest {
             for (AclEntryPermission change : List.of(AclEntryPermission.WRITE_DATA, AclEntryPermission.APPEND_DATA,
                     AclEntryPermission.DELETE, AclEntryPermission.WRITE_ACL, AclEntryPermission.WRITE_OWNER)) {
                 view.setAcl(withEntry(original, everyone, AclEntryPermission.READ_DATA, change));
-                InfrastructureException refused = describing(jar, PostgresDriver.CLASS_NAME, "jdbc:postgresql://127.0.0.1:1/acl");
-                assertThat(codeOf(refused)).as("%s on the %s", change, onDirectory ? "directory" : "jar")
-                        .isEqualTo(InfrastructureCode.DRIVER_INVALID);
-                assertThat(refused.args().getFirst()).contains(onDirectory ? "directory" : "jar").contains("can be changed");
+                DriverRegistration registration = LOADER.describe(jar, PostgresDriver.CLASS_NAME,
+                        "jdbc:postgresql://127.0.0.1:1/acl", NOW);
+                assertThat(registration.sha256()).as("%s on the %s", change, onDirectory ? "directory" : "jar").isEqualTo(sha(jar));
             }
             view.setAcl(original);
             LOADER.describe(jar, PostgresDriver.CLASS_NAME, "jdbc:postgresql://127.0.0.1:1/acl-again-" + onDirectory, NOW);
@@ -384,34 +383,54 @@ class DriverBoundaryTest {
         return entries;
     }
 
-    /** DRV-032 (audit2 N4, S3): a directory whose ACL has no entry at all is refused. */
-    @Test
-    void drv032_aDirectoryWithAnEmptyAclIsRefused() throws IOException {
-        assumeTrue(hasAcl(temp) && !hasPosix(temp), "needs ACLs");
-        Path directory = OwnerOnlyFiles.restrict(Files.createDirectory(temp.resolve("acl-empty")));
-        Path jar = OwnerOnlyFiles.copy(driverJar(), directory.resolve("postgresql.jar"));
-        AclFileAttributeView view = Files.getFileAttributeView(directory, AclFileAttributeView.class);
-        List<AclEntry> original = view.getAcl();
-        view.setAcl(List.of());
-        try {
-            InfrastructureException refused = describing(jar, PostgresDriver.CLASS_NAME, "jdbc:postgresql://127.0.0.1:1/acl-empty");
-            assertThat(codeOf(refused)).isEqualTo(InfrastructureCode.DRIVER_INVALID);
-            assertThat(refused.args().getFirst()).contains("without any entry");
-        } finally {
-            view.setAcl(original);
-        }
-    }
+    // DRV-032 (audit2 N4, S3: a directory whose ACL has no entry at all is refused) was removed by SFR-030: the ACL of the directory
+    // of the jar is not looked at any more. The case cannot be kept as "loads": the directory would grant nobody anything.
 
-    /** DRV-033 (audit2 N4): the jar is opened without following a link: a link to a jar is refused. */
+    /** DRV-033 (changed by SFR-031): the jar is opened once and a link to a jar is followed: it loads and its digest is the jar's. */
     @Test
-    void drv033_aSymbolicLinkToAJarIsRefused() throws IOException {
+    void drv033_aSymbolicLinkToAJarIsFollowed() throws IOException {
         Path link = temp.resolve("link.jar");
         try {
             Files.createSymbolicLink(link, driverJar());
         } catch (UnsupportedOperationException | IOException cannot) {
             throw new TestAbortedException("this file system cannot make symbolic links here: " + cannot, cannot);
         }
-        assertThat(codeOf(describing(link, PostgresDriver.CLASS_NAME, "jdbc:postgresql://127.0.0.1:1/link"))).isEqualTo(InfrastructureCode.DRIVER_INVALID);
+        DriverRegistration registration = LOADER.describe(link, PostgresDriver.CLASS_NAME, "jdbc:postgresql://127.0.0.1:1/link", NOW);
+        assertThat(registration.sha256()).isEqualTo(sha(driverJar()));
+    }
+
+    /**
+     * SFR-030: the jar and its directory opened to other accounts with write rights (an ALLOW entry of Authenticated Users, or
+     * group and other bits) load: the loader does not look at who may write them.
+     */
+    @Test
+    void sfr030_aJarAndADirectoryOpenedToOtherAccountsLoad() throws IOException {
+        assumeTrue(BroadAccess.supported(temp), "the file system has neither POSIX permissions nor ACLs");
+        Path directory = OwnerOnlyFiles.restrict(Files.createDirectory(temp.resolve("drivers-broad")));
+        Path jar = OwnerOnlyFiles.copy(driverJar(), directory.resolve("postgresql.jar"));
+        BroadAccess.open(directory);
+        BroadAccess.open(jar);
+        assertThat(BroadAccess.reachedByOthers(directory)).isTrue();
+        assertThat(BroadAccess.reachedByOthers(jar)).isTrue();
+
+        DriverRegistration registration = LOADER.describe(jar, PostgresDriver.CLASS_NAME, "jdbc:postgresql://127.0.0.1:1/broad", NOW);
+
+        assertThat(registration.sha256()).isEqualTo(sha(jar));
+        try (RegisteredDriver driver = LOADER.load(registration)) {
+            assertThat(driver).isNotNull();
+        }
+    }
+
+    /** SFR-032: a directory and an empty file at the place of the jar are refused with DRIVER_INVALID (DRV-002 and DRV-003 keep the other forms). */
+    @Test
+    void sfr032_aDirectoryOrAnEmptyFileAtTheJarPathIsRefused() throws IOException {
+        Path directory = Files.createDirectory(temp.resolve("jar-is-a-directory.jar"));
+        Path empty = Files.createFile(temp.resolve("empty.jar"));
+
+        assertThat(codeOf(describing(directory, PostgresDriver.CLASS_NAME, "jdbc:postgresql://127.0.0.1:1/d")))
+                .isEqualTo(InfrastructureCode.DRIVER_INVALID);
+        assertThat(codeOf(describing(empty, PostgresDriver.CLASS_NAME, "jdbc:postgresql://127.0.0.1:1/e")))
+                .isEqualTo(InfrastructureCode.DRIVER_INVALID);
     }
 
     @Test

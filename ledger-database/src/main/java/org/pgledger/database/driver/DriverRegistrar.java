@@ -16,8 +16,8 @@ import org.slf4j.LoggerFactory;
  * Checking a jar runs code of it ({@link DriverLoader#describe} loads the class and creates the driver), so the jar may
  * come from one allowed directory only: the path is resolved with {@link Path#toRealPath} (symbolic links and {@code ..}
  * resolved) and must be inside the real allowed directory ({@link Path#startsWith}) before any class is loaded. Then the
- * jar and the driver class are checked exactly as the products load them (absolute path, readable archive, not writable by
- * others, the class is a {@code java.sql.Driver} that accepts the configured JDBC URL) and the SHA-256 of the jar is taken.
+ * jar and the driver class are checked exactly as the products load them (absolute path, regular readable file, archive that
+ * opens, the class is a {@code java.sql.Driver} that accepts the configured JDBC URL) and the SHA-256 of the jar is taken.
  * Writing the registration (and the audit row of the owner's trail) is the business of the caller; this class changes
  * nothing.
  *

@@ -17,11 +17,12 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Files and directories that only their owner may use, for the tests that hand a driver jar to the product. The product
- * refuses a jar, or the directory of a jar, that anybody but its owner and the administrative accounts can write. The
- * default of a temporary directory is not that on every file system: on Windows a new file inherits the entries of its
- * parent, and the parent of a test directory on a data volume (or the profile's temporary folder) has entries for other
- * accounts, so the tests set the protection they need themselves. The file system decides how: POSIX permissions
+ * Files and directories that only their owner may use, for the tests that hand a driver jar to the product. The product no
+ * longer looks at who may write a jar or its directory (the personal edition trusts the whole PC), so these are a
+ * convenience of the tests and not a condition of the product: they make the state that a prepared host has, and the tests of
+ * the opposite state use {@code BroadAccess}. On Windows a new file inherits the entries of its parent, and the parent of a
+ * test directory on a data volume (or the profile's temporary folder) has entries for other accounts, so a test that needs
+ * the owner-only state sets it itself. The file system decides how: POSIX permissions
  * ({@code rwx------} for a directory, {@code rw-------} for a file) or an ACL with one entry that grants the owner
  * everything (the inheritable one for a directory), by the attribute views the file system has and not by the name of
  * the operating system.
