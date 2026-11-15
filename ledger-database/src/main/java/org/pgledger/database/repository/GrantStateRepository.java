@@ -28,7 +28,6 @@ public class GrantStateRepository {
 
     /** True when the author holds a live grant (not revoked, not expired) for the scope; stamps its last use. */
     public boolean markUsed(AuthorId author, ProjectId project, Scope scope, Instant now) {
-        RequiredTransaction.check("a grant is held");
         return jdbc.sql("UPDATE session_grant SET last_used_at = :now "
                 + "WHERE author_id = :author AND project_id = :project AND grant_scope = :scope "
                 + "AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > :now)")
@@ -54,8 +53,7 @@ public class GrantStateRepository {
      * Grants that were revoked meanwhile by someone else are not counted.
      */
     public int revokeLive(AuthorId author, ProjectId project, Scope scope, Instant now) {
-        // a read of the live grants and then a conditional update of each: one transaction, or the read and the writes part
-        RequiredTransaction.check("the live grants are revoked");
+        // a read of the live grants and then a conditional update of each, in the transaction of the calling service method
         String sql = "SELECT id FROM session_grant WHERE author_id = :author AND revoked_at IS NULL";
         if (project != null) {
             sql += " AND project_id = :project";
