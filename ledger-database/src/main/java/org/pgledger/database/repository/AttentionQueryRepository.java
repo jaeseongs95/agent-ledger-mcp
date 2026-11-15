@@ -27,9 +27,11 @@ public class AttentionQueryRepository {
     private static final String ITEMS = AttentionSql.items();
 
     private final JdbcClient jdbc;
+    private final SqlBuilder sqlBuilder;
 
-    public AttentionQueryRepository(JdbcClient jdbc) {
+    public AttentionQueryRepository(JdbcClient jdbc, SqlBuilder sqlBuilder) {
         this.jdbc = jdbc;
+        this.sqlBuilder = sqlBuilder;
     }
 
     public KeysetPage<Item> page(ProjectId project, AttentionKind kind, MaxRows maxRows, Position after) {
@@ -45,7 +47,9 @@ public class AttentionQueryRepository {
             sql.append(" AND (kind > :afterKind OR (kind = :afterKind AND id > :afterId))");
         }
         sql.append(" ORDER BY kind, id");
-        JdbcClient.StatementSpec spec = jdbc.sql(sql.toString()).withMaxRows(maxRows.value() + 1);
+        // one row more than the page tells that the list continues; the limit is the clause of the actual product
+        JdbcClient.StatementSpec spec = jdbc.sql(sqlBuilder.applyLimit(sql.toString(), ":row_count"))
+                .param("row_count", maxRows.value() + 1);
         if (project != null) {
             spec = spec.param("project", project.value());
         }

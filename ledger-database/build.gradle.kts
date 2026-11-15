@@ -6,6 +6,9 @@ dependencies {
     api(project(":ledger-domain"))
     // Spring JDBC, Spring Data JDBC and Hikari. No JDBC driver: the driver is registered by the user at run time.
     api("org.springframework.boot:spring-boot-starter-data-jdbc")
+    // DatabaseDriver names the product of a JDBC URL or of a connection (SqlBuilder); the starter above brings the module, it
+    // is named here because the code uses its class directly (version from the Boot BOM)
+    implementation("org.springframework.boot:spring-boot-jdbc")
     // Bean Validation for the @Validated settings records: a bad value stops the startup (version from the Boot BOM)
     api("org.springframework.boot:spring-boot-starter-validation")
     // YAML reader and writer (Jackson 3, Boot BOM) of the driver registration file that the admin web and the CLI write.

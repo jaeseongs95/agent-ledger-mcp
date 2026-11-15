@@ -14,7 +14,8 @@ import org.springframework.stereotype.Repository;
 
 /**
  * Task lists, newest first, in keyset pages ({@code created_at < ? OR (created_at = ? AND id < ?)}); the limit is
- * JDBC {@code setMaxRows(max + 1)}. Values are bind parameters, the SQL is built from fixed fragments.
+ * {@code max + 1} rows in the row-limit clause of the actual product ({@link SqlBuilder}). Values are bind parameters,
+ * the SQL is built from fixed fragments.
  */
 @Repository
 public class TaskQueryRepository {
@@ -34,9 +35,11 @@ public class TaskQueryRepository {
     }
 
     private final JdbcClient jdbc;
+    private final SqlBuilder sqlBuilder;
 
-    public TaskQueryRepository(JdbcClient jdbc) {
+    public TaskQueryRepository(JdbcClient jdbc, SqlBuilder sqlBuilder) {
         this.jdbc = jdbc;
+        this.sqlBuilder = sqlBuilder;
     }
 
     public KeysetPage<TaskSummary> page(ProjectId project, Filter filter, MaxRows maxRows, Position after) {
@@ -55,8 +58,8 @@ public class TaskQueryRepository {
             sql.append(" AND (created_at < :after OR (created_at = :after AND id < :afterId))");
         }
         sql.append(" ORDER BY created_at DESC, id DESC");
-        JdbcClient.StatementSpec spec = jdbc.sql(sql.toString()).param("project", project.value())
-                .withMaxRows(maxRows.value() + 1);
+        JdbcClient.StatementSpec spec = jdbc.sql(sqlBuilder.applyLimit(sql.toString(), ":row_count"))
+                .param("project", project.value()).param("row_count", maxRows.value() + 1);
         if (filter.state() != null) {
             spec = spec.param("state", filter.state().name());
         }

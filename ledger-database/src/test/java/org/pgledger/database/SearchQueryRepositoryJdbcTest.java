@@ -13,6 +13,7 @@ import org.pgledger.database.repository.SearchQueryRepository;
 import org.pgledger.database.repository.SearchQueryRepository.Filter;
 import org.pgledger.database.repository.SearchQueryRepository.Hit;
 import org.pgledger.database.repository.SearchQueryRepository.Kind;
+import org.pgledger.database.repository.SqlBuilder;
 import org.pgledger.database.schema.LedgerSchemaConfiguration;
 import org.pgledger.database.schema.SchemaMigrator;
 import org.pgledger.domain.value.MaxRows;
@@ -44,7 +45,8 @@ class SearchQueryRepositoryJdbcTest {
 
     /** The slice: the schema services, the repository under test, the clock and the client they need. */
     @Configuration(proxyBeanMethods = false)
-    @Import({LedgerSchemaConfiguration.class, SearchQueryRepository.class, TestDataSourceConfiguration.class})
+    @Import({LedgerSchemaConfiguration.class, SearchQueryRepository.class, SqlBuilder.class,
+            TestDataSourceConfiguration.class})
     static class Slice {
 
         @Bean

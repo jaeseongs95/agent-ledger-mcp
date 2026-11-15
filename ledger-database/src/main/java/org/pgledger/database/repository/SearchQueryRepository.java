@@ -15,7 +15,8 @@ import org.springframework.stereotype.Repository;
  * of a kind contains it, ignoring case ({@code LOWER(col) LIKE LOWER(?) ESCAPE}); {@code %}, {@code _} and the
  * backslash of a keyword are literal. The three kinds are read with one UNION ALL; a condition has no creation
  * time and is placed after everything else (its time is the epoch). Pages are keyset pages in the OR form, the
- * limit is JDBC {@code setMaxRows(max + 1)}; every value is a bind parameter.
+ * limit is {@code max + 1} rows in the row-limit clause of the actual product ({@link SqlBuilder}); every value is a
+ * bind parameter.
  */
 @Repository
 public class SearchQueryRepository {
@@ -47,9 +48,11 @@ public class SearchQueryRepository {
     private static final String EPOCH = "TIMESTAMP '1970-01-01 00:00:00'";
 
     private final JdbcClient jdbc;
+    private final SqlBuilder sqlBuilder;
 
-    public SearchQueryRepository(JdbcClient jdbc) {
+    public SearchQueryRepository(JdbcClient jdbc, SqlBuilder sqlBuilder) {
         this.jdbc = jdbc;
+        this.sqlBuilder = sqlBuilder;
     }
 
     public KeysetPage<Hit> page(Filter filter, MaxRows maxRows, Position after) {
@@ -77,7 +80,8 @@ public class SearchQueryRepository {
                     + "(id = :afterId AND kind < :afterKind)))");
         }
         sql.append(" ORDER BY created_at DESC, id DESC, kind DESC");
-        JdbcClient.StatementSpec spec = jdbc.sql(sql.toString()).withMaxRows(maxRows.value() + 1);
+        JdbcClient.StatementSpec spec = jdbc.sql(sqlBuilder.applyLimit(sql.toString(), ":row_count"))
+                .param("row_count", maxRows.value() + 1);
         if (filter.project() != null) {
             spec = spec.param("project", filter.project().value());
         }

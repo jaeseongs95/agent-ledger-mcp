@@ -100,7 +100,7 @@ class BatchAndErrorsTest {
     @Test
     void dom026_everyCodeMapsToOneExceptionSubtypeOfItsCategory() {
         List<ErrorCode> codes = allCodes();
-        assertThat(codes).hasSize(60);
+        assertThat(codes).hasSize(63);
         assertThat(codes.stream().map(ErrorCode::token)).doesNotHaveDuplicates();
         assertThat(codes.stream().map(ErrorCode::token)).contains("AUTHOR_ID_FORMAT", "SESSION_NOT_GRANTED",
                 "HOST_ATTESTATION_REQUIRED", "VERSION_CONFLICT", "SAME_SESSION", "MERGED_DEFECT", "CODE_REQUIRED",
@@ -242,5 +242,25 @@ class BatchAndErrorsTest {
                 .contains("V3", "V3__x.sql", "aaa", "bbb");
         assertThat(new MessageFormat(en.getString("error.SCHEMA_VERSION_GAP")).format(new Object[] {"2", "4"}))
                 .contains("2", "V4");
+    }
+
+    /** SQB-001: the three failures about the database product are INFRASTRUCTURE codes with a message in both bundles. */
+    @Test
+    void sqb001_theDatabaseProductFailuresAreInfrastructureCodesWithAMessageEach() {
+        ResourceBundle en = ResourceBundle.getBundle("messages/ledger-errors", Locale.ROOT);
+        ResourceBundle ko = ResourceBundle.getBundle("messages/ledger-errors", Locale.KOREAN);
+        for (String token : List.of("DATABASE_PRODUCT_UNREADABLE", "DATABASE_PRODUCT_UNSUPPORTED",
+                "DATABASE_PRODUCT_MISMATCH")) {
+            InfrastructureCode code = InfrastructureCode.valueOf(token);
+            assertThat(code.category()).isEqualTo(ErrorCategory.INFRASTRUCTURE);
+            assertThat(code.token()).isEqualTo(token);
+            assertThat(en.getString(code.messageKey())).as(token).isNotBlank();
+            assertThat(ko.getString(code.messageKey())).as(token).isNotBlank();
+        }
+        // the arguments are filled in the order the throwing code gives them: configured product, then connected product
+        assertThat(new MessageFormat(en.getString("error.DATABASE_PRODUCT_MISMATCH"))
+                .format(new Object[] {"MYSQL", "POSTGRESQL"})).contains("MYSQL", "POSTGRESQL");
+        assertThat(new MessageFormat(en.getString("error.DATABASE_PRODUCT_UNSUPPORTED"))
+                .format(new Object[] {"Derby"})).contains("Derby");
     }
 }
