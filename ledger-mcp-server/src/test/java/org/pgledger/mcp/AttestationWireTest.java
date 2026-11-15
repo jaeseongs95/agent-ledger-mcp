@@ -186,7 +186,7 @@ class AttestationWireTest {
 
         assertThat(error.details()).containsEntry("field", List.of("operationKey"));
         assertThat(Ledger.history(session, seed.project())).hasSize(before);
-        assertThat(Ledger.receipts(scenario, sent)).isZero();
+        assertThat(Ledger.writes(scenario, sent)).isZero();
         assertThat(Ledger.receipts(scenario, signedFor)).isZero();
         assertThat(Ledger.receiptsOf(scenario, write.actor())).isEqualTo(receiptsBefore);
 
@@ -194,7 +194,7 @@ class AttestationWireTest {
         CallToolResult written = session.callUnsigned(write.tool(), callOf(session, write, seed, sent, own));
         assertThat(written.isError()).as("the token for the key of the call: %s", written.content()).isFalse();
         assertThat(Ledger.history(session, seed.project()).size()).isGreaterThan(before);
-        assertThat(Ledger.receipts(scenario, sent)).isOne();
+        assertThat(Ledger.writes(scenario, sent)).isOne();
         assertThat(Ledger.receipts(scenario, signedFor)).isZero();
     }
 

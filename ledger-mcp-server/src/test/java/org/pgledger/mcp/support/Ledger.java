@@ -1,6 +1,7 @@
 package org.pgledger.mcp.support;
 
 import java.util.List;
+import org.pgledger.domain.value.OperationKey;
 import org.pgledger.mcp.tool.ReadOutputs;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
@@ -21,6 +22,17 @@ public final class Ledger {
     public static long receipts(Scenario scenario, String operationKey) {
         return scenario.bean(JdbcClient.class).sql("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ?")
                 .param(operationKey).query(Long.class).single();
+    }
+
+    /**
+     * How many writes were made with this operation key as the caller sent it: 1 when a receipt is held under the key itself
+     * (a single write) or under the first derived key of a batch ({@code derive(0)}: the receipts of the operations of a batch are
+     * kept under the keys derived from the batch key, not under the batch key), otherwise 0.
+     */
+    public static long writes(Scenario scenario, String operationKey) {
+        boolean wrote = receipts(scenario, operationKey) > 0
+                || receipts(scenario, OperationKey.parse(operationKey).derive(0).value()) > 0;
+        return wrote ? 1 : 0;
     }
 
     /** How many write receipts the author holds, for a call that has no key of its own to look for (it must change nothing). */

@@ -74,8 +74,10 @@ class SaveInputTest {
                 .put("reason", Scenario.REASON).put("operationKey", operationKey);
         arguments.set("fields", fields);
         keys.enroll(Scenario.AUTHOR);
-        String digest = ArgumentsDigest.of(mapper.convertValue(arguments, new TypeReference<LinkedHashMap<String, Object>>() {
-        }));
+        // the digest of the arguments exactly as the text that is sent holds them (the null of fields included)
+        String digest = ArgumentsDigest.of(mapper.readValue(mapper.writeValueAsString(arguments),
+                new TypeReference<LinkedHashMap<String, Object>>() {
+                }));
         arguments.put("_hostAttestation", keys.token(Scenario.AUTHOR, "ledger_save", operationKey, digest));
         ObjectNode params = mapper.createObjectNode();
         params.put("name", "ledger_save");

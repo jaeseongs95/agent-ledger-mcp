@@ -127,7 +127,7 @@ class OperationKeyTest {
         CallToolResult result = session.call(write.tool(), callOf(session, write, seed).with(KEY, key));
 
         assertThat(result.isError()).as("%s with a key of 128 characters: %s", write.tool(), result.content()).isFalse();
-        assertThat(Ledger.receipts(scenario, key)).isOne();
+        assertThat(Ledger.writes(scenario, key)).isOne();
     }
 
     // ---------------------------------------------------------------------------------------------- OPK-005 (wire)
@@ -168,7 +168,7 @@ class OperationKeyTest {
         assertThat(error.issues()).containsExactly(
                 new ToolError.Issue("ops[1]." + given.key(), UNKNOWN_ARGUMENT, List.of()));
         assertThat(Ledger.history(session, scenario.projectId())).isEmpty();
-        assertThat(Ledger.receipts(scenario, batchKey)).isZero();
+        assertThat(Ledger.writes(scenario, batchKey)).isZero();
     }
 
     @Test
@@ -191,7 +191,8 @@ class OperationKeyTest {
         assertThat(again).isEqualTo(first);
         assertThat(other.code()).isEqualTo("OPERATION_CONFLICT");
         assertThat(Ledger.history(session, scenario.projectId())).hasSize(2);
-        assertThat(Ledger.receipts(scenario, batchKey)).isOne();
+        // the receipts of the operations are kept under the keys derived from the batch key
+        assertThat(Ledger.writes(scenario, batchKey)).isOne();
     }
 
     // ---------------------------------------------------------------------------------------------- OPK-006
