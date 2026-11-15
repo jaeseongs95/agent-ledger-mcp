@@ -49,13 +49,15 @@ public final class NoOneXRules {
     }
 
     /**
-     * ARC-1X-03: no Java, SQL, properties, YAML or HTML file under the given roots (a root that does not exist is
-     * skipped) names 1.x. Each problem names the file, the line and the text found.
+     * ARC-1X-03: no Java, SQL, properties, YAML or HTML file under the given roots names 1.x. Each problem names the file, the
+     * line and the text found; a root that does not exist is a problem too (a rule that finds nothing to scan checks nothing).
      */
     public static List<String> oneXText(Path... roots) {
         List<String> problems = new ArrayList<>();
         for (Path root : roots) {
             if (!Files.isDirectory(root)) {
+                // a rule that cannot find what it scans checks nothing: that is a failure, never a pass
+                problems.add(root + ": the folder to scan does not exist (the test runs in the module folder)");
                 continue;
             }
             for (Path file : textFiles(root)) {
@@ -71,9 +73,14 @@ public final class NoOneXRules {
         return problems;
     }
 
-    /** ARC-1X-03 for the module under test: its {@code src/main/java} and {@code src/main/resources} (the tests run in the module directory). */
+    /**
+     * ARC-1X-03 for the module under test: its {@code src/main/java}, which has to be there, and its {@code src/main/resources}
+     * when it has them (the tests run in the module directory).
+     */
     public static List<String> oneXTextInMainSources() {
-        return oneXText(Path.of("src", "main", "java"), Path.of("src", "main", "resources"));
+        Path resources = Path.of("src", "main", "resources");
+        return Files.isDirectory(resources) ? oneXText(Path.of("src", "main", "java"), resources)
+                : oneXText(Path.of("src", "main", "java"));
     }
 
     private static List<Path> textFiles(Path root) {
