@@ -1,5 +1,6 @@
 package org.pgledger.hook;
 
+import java.util.Map;
 import org.springframework.boot.SpringApplication;
 
 /**
@@ -18,11 +19,22 @@ import org.springframework.boot.SpringApplication;
  */
 public final class Main {
 
+    /**
+     * The one place Boot reads {@code application.properties} from: the jar. Boot's default is also {@code ./} and
+     * {@code ./config/} of the working directory, and a host starts the hook in the directory of the project the user works
+     * on, which can be a clone of someone else's repository: a file there must never set the key folder, the account of the
+     * key owner or the output of the hook. A default property is read before any configuration file is, and a file cannot
+     * change where files are looked for.
+     */
+    private static final Map<String, Object> CONFIG_ONLY_FROM_THE_JAR = Map.of("spring.config.location",
+            "classpath:/application.properties");
+
     private Main() {}
 
     public static void main(String[] args) {
         SpringApplication application = new SpringApplication(HookApplication.class);
         application.setAddCommandLineProperties(false);
+        application.setDefaultProperties(CONFIG_ONLY_FROM_THE_JAR);
         System.exit(SpringApplication.exit(application.run(args)));
     }
 }

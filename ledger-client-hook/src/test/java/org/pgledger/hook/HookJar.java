@@ -44,11 +44,25 @@ final class HookJar {
     }
 
     Timed start(Path javaExecutable, List<String> jvmArgs, Map<String, String> env, byte[] stdin, String... args) throws IOException {
+        return start(javaExecutable, jvmArgs, env, Map.of(), stdin, args);
+    }
+
+    /**
+     * Like the start with an empty working directory, but the working directory holds the files given (relative path to
+     * text): the way a host starts the hook in the directory of a project that has files of its own.
+     */
+    Timed start(Path javaExecutable, List<String> jvmArgs, Map<String, String> env, Map<String, String> workingFiles,
+            byte[] stdin, String... args) throws IOException {
         Path in = Files.createTempFile(work, "stdin", ".json");
         Path out = Files.createTempFile(work, "stdout", ".out");
         Path err = Files.createTempFile(work, "stderr", ".out");
         Files.write(in, stdin);
         Path cwd = Files.createTempDirectory(work, "cwd");
+        for (Map.Entry<String, String> file : workingFiles.entrySet()) {
+            Path target = cwd.resolve(file.getKey());
+            Files.createDirectories(target.getParent());
+            Files.writeString(target, file.getValue());
+        }
         List<String> command = new ArrayList<>();
         command.add(javaExecutable.toString());
         command.addAll(jvmArgs);
