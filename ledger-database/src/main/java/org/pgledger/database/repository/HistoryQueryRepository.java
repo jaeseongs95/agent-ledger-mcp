@@ -45,19 +45,21 @@ public class HistoryQueryRepository {
             + "(SELECT 1 FROM release_condition p WHERE p.project_id = :project AND " + CHILD_OF + ")))";
 
     private final JdbcClient jdbc;
+    private final SqlBuilder sqlBuilder;
 
-    public HistoryQueryRepository(JdbcClient jdbc) {
+    public HistoryQueryRepository(JdbcClient jdbc, SqlBuilder sqlBuilder) {
         this.jdbc = jdbc;
+        this.sqlBuilder = sqlBuilder;
     }
 
     /** History ids of one entity in id order, after {@code afterId} (use 0 for the first page). */
     public KeysetPage<Long> idsOfEntity(HistoryEntity entity, String entityId, long afterId, MaxRows maxRows) {
-        return KeysetPage.of(jdbc.sql("SELECT id FROM history WHERE entity = :entity AND entity_id = :entityId "
-                + "AND id > :after ORDER BY id")
+        return KeysetPage.of(jdbc.sql(sqlBuilder.applyLimit("SELECT id FROM history WHERE entity = :entity "
+                + "AND entity_id = :entityId AND id > :after ORDER BY id", ":row_count"))
                 .param("entity", entity.name())
                 .param("entityId", entityId)
                 .param("after", afterId)
-                .withMaxRows(maxRows.value() + 1)
+                .param("row_count", maxRows.value() + 1)
                 .query(Long.class).list(), maxRows.value());
     }
 
@@ -95,8 +97,8 @@ public class HistoryQueryRepository {
             sql.append(" AND h.occurred_at <= :atTo");
         }
         sql.append(" ORDER BY h.id");
-        JdbcClient.StatementSpec spec = jdbc.sql(sql.toString()).param("after", afterId)
-                .withMaxRows(maxRows.value() + 1);
+        JdbcClient.StatementSpec spec = jdbc.sql(sqlBuilder.applyLimit(sql.toString(), ":row_count"))
+                .param("after", afterId).param("row_count", maxRows.value() + 1);
         if (!filter.ids().isEmpty()) {
             spec = spec.param("ids", filter.ids());
         }
@@ -135,11 +137,11 @@ public class HistoryQueryRepository {
      * {@code withoutImport} is set; at most {@code count} ids.
      */
     public List<Long> newestOfEntity(HistoryEntity entity, String entityId, boolean withoutImport, int count) {
-        return jdbc.sql("SELECT id FROM history WHERE entity = :entity AND entity_id = :entityId"
-                + (withoutImport ? " AND op <> 'IMPORT'" : "") + " ORDER BY occurred_at DESC, id DESC")
+        return jdbc.sql(sqlBuilder.applyLimit("SELECT id FROM history WHERE entity = :entity AND entity_id = :entityId"
+                + (withoutImport ? " AND op <> 'IMPORT'" : "") + " ORDER BY occurred_at DESC, id DESC", ":row_count"))
                 .param("entity", entity.name())
                 .param("entityId", entityId)
-                .withMaxRows(count)
+                .param("row_count", count)
                 .query(Long.class).list();
     }
 }

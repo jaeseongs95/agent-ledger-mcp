@@ -4,10 +4,12 @@ import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import javax.sql.DataSource;
 import org.pgledger.database.repository.SchemaHistoryRepository;
+import org.pgledger.database.repository.SqlBuilder;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.datasource.SimpleDriverDataSource;
+import java.sql.DatabaseMetaData;
 import java.util.List;
 
 /**
@@ -27,6 +29,9 @@ public final class DriverDataSources {
     }
 
     /**
+     * The pool is made ready after the product of its connections is checked against the configured JDBC URL
+     * ({@link #requireConfiguredProduct}); a pool that fails the check is closed.
+     *
      * @param schema the schema every connection uses, or {@code null} for the default schema of the account. It need not
      *               exist yet (the migrator creates it through this pool): the pool names it with
      *               {@code Connection.setSchema} ({@code HikariConfig.setSchema}), which on PostgreSQL is
@@ -51,7 +56,30 @@ public final class DriverDataSources {
         }
         // principle 3.9: the one place that makes the pool; only the @Bean methods of LedgerDataSourceConfiguration and
         // LegacySourceConfiguration call this factory, and the container closes what they return (destroyMethod = "close")
-        return new HikariDataSource(config);
+        HikariDataSource pool = new HikariDataSource(config);
+        boolean ready = false;
+        try {
+            requireConfiguredProduct(pool, properties.url());
+            ready = true;
+            return pool;
+        } finally {
+            if (!ready) {
+                pool.close();
+            }
+        }
+    }
+
+    /**
+     * Refuses a pool whose connections are of another database product than the configured JDBC URL names, and a product that
+     * the ledger has no SQL for ({@link SqlBuilder}): the SQL that differs by product is chosen from the product of the
+     * connection, so a URL that says one product while the driver connects to another would run the wrong dialect.
+     *
+     * @throws InfrastructureException DATABASE_PRODUCT_MISMATCH, DATABASE_PRODUCT_UNSUPPORTED, or INTERNAL_ERROR when the
+     *         product cannot be read
+     */
+    public static void requireConfiguredProduct(DataSource dataSource, String jdbcUrl) {
+        SqlBuilder.requireSame(jdbcUrl,
+                SchemaHistoryRepository.inspect(dataSource, DatabaseMetaData::getDatabaseProductName));
     }
 
     /**

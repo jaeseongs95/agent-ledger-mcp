@@ -36,6 +36,8 @@ class AnsiRulesTest {
     private static final Path REPOSITORY = MAIN_JAVA.resolve("org/pgledger/database/repository");
     private static final Path SCHEMA = Path.of("src", "main", "resources", "db");
     private static final Path TEMPLATES = Path.of("src", "main", "resources", "db-templates");
+    /** The one class of the repository package that renders the row limit of each database product. */
+    private static final String SQL_BUILDER = "SqlBuilder.java";
 
     /** Reserved words of SQL:2003 and PostgreSQL that an identifier must not be (AT and SCOPE too: F10, no allow-list). */
     private static final Set<String> RESERVED = Set.of("condition", "release", "user", "type", "value", "key", "order",
@@ -112,8 +114,20 @@ class AnsiRulesTest {
         return Stream.concat(schemaFiles(), repositorySources().filter(s -> !"SessionClockRepository.java".equals(s.name())));
     }
 
+    /**
+     * Schema files and the SQL of the repositories, except {@code SqlBuilder}: it holds the row-limit clause of each product,
+     * which is vendor syntax by purpose (the clause is chosen from the product the database reports; SQB-007).
+     */
     static Stream<SqlText> sqlOfTheApplication() {
-        return Stream.concat(schemaFiles(), repositorySources());
+        return Stream.concat(schemaFiles(), repositorySources().filter(s -> !SQL_BUILDER.equals(s.name())));
+    }
+
+    @Test
+    @DisplayName("SQB-007: the row-limit clause of the products is written in SqlBuilder only, no other repository holds one")
+    void onlyTheSqlBuilderHoldsRowLimitSyntax() {
+        Pattern rowLimit = Pattern.compile("\\b(LIMIT|FETCH|TOP|ROWNUM|OFFSET)\\b", Pattern.CASE_INSENSITIVE);
+        assertThat(repositorySources().filter(s -> rowLimit.matcher(s.stripped()).find()).map(SqlText::name))
+                .containsExactly(SQL_BUILDER);
     }
 
     @ParameterizedTest

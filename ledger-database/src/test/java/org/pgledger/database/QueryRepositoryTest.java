@@ -54,9 +54,6 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 @LedgerDataJdbcTest
 class QueryRepositoryTest {
 
-    private static final java.util.regex.Pattern ROW_LIMIT_KEYWORD = java.util.regex.Pattern.compile(
-            "\\b(LIMIT|FETCH|TOP|ROWNUM|OFFSET)\\b", java.util.regex.Pattern.CASE_INSENSITIVE);
-
     @Autowired
     private ApplicationContext context;
 
@@ -115,14 +112,15 @@ class QueryRepositoryTest {
 
     @ParameterizedTest
     @MethodSource("pageSizes")
-    void repo025_oneRowMoreThanTheLimitTellsTheListContinuesWithoutVendorSql(PageSize size) {
+    void repo025_oneRowMoreThanTheLimitTellsTheListContinuesWithTheRowLimitOfTheProduct(PageSize size) {
         Project project = projectWithDefects(30, true);
         spy.clear();
         KeysetPage<DefectSummary> page = queries.page(project.id(), Filter.NONE, new MaxRows(size.max()),
                 Order.NEWEST_FIRST, null);
         assertThat(page.rows()).hasSize(size.rows());
         assertThat(page.truncated()).isEqualTo(size.truncated());
-        assertThat(spy.statements()).isNotEmpty().noneMatch(s -> ROW_LIMIT_KEYWORD.matcher(s).find());
+        // the limit is the clause of the product (PostgreSQL: FETCH FIRST) with a placeholder, never a number in the text
+        assertThat(spy.statements()).hasSize(1).allMatch(s -> s.endsWith(" FETCH FIRST ? ROWS ONLY"));
     }
 
     /** All ids of a list, two rows per page, following the position of each page's last row. */

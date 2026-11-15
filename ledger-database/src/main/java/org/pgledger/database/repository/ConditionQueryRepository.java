@@ -26,9 +26,11 @@ public class ConditionQueryRepository {
     }
 
     private final JdbcClient jdbc;
+    private final SqlBuilder sqlBuilder;
 
-    public ConditionQueryRepository(JdbcClient jdbc) {
+    public ConditionQueryRepository(JdbcClient jdbc, SqlBuilder sqlBuilder) {
         this.jdbc = jdbc;
+        this.sqlBuilder = sqlBuilder;
     }
 
     public KeysetPage<ConditionSummary> page(ProjectId project, Filter filter, MaxRows maxRows, ConditionId after) {
@@ -44,8 +46,8 @@ public class ConditionQueryRepository {
             sql.append(" AND id < :after");
         }
         sql.append(" ORDER BY id DESC");
-        JdbcClient.StatementSpec spec = jdbc.sql(sql.toString()).param("project", project.value())
-                .withMaxRows(maxRows.value() + 1);
+        JdbcClient.StatementSpec spec = jdbc.sql(sqlBuilder.applyLimit(sql.toString(), ":row_count"))
+                .param("project", project.value()).param("row_count", maxRows.value() + 1);
         if (filter.state() != null) {
             spec = spec.param("state", filter.state().name());
         }

@@ -17,9 +17,9 @@ import org.springframework.stereotype.Repository;
 /**
  * Defect lists for the read tools. Pages are keyset pages positioned by the last row of the previous page with
  * {@code created_at < ? OR (created_at = ? AND id < ?)} (or {@code >} for the oldest-first order); a row-value
- * comparison is not understood by every DBMS. The row limit is JDBC {@code setMaxRows(max + 1)}, never a vendor
- * clause: the extra row only tells that the list continues. SQL text is built from fixed fragments; every value
- * is a bind parameter.
+ * comparison is not understood by every DBMS. The row limit is {@code max + 1} rows in the clause of the actual
+ * product ({@link SqlBuilder}), a bind parameter like every value: the extra row only tells that the list continues.
+ * SQL text is built from fixed fragments.
  */
 @Repository
 public class DefectQueryRepository {
@@ -53,9 +53,11 @@ public class DefectQueryRepository {
             + " AS owner, version, created_at, updated_at FROM defect WHERE project_id = :project";
 
     private final JdbcClient jdbc;
+    private final SqlBuilder sqlBuilder;
 
-    public DefectQueryRepository(JdbcClient jdbc) {
+    public DefectQueryRepository(JdbcClient jdbc, SqlBuilder sqlBuilder) {
         this.jdbc = jdbc;
+        this.sqlBuilder = sqlBuilder;
     }
 
     public KeysetPage<DefectSummary> page(ProjectId project, Filter filter, MaxRows maxRows, Order order,
@@ -90,8 +92,8 @@ public class DefectQueryRepository {
                     : " AND (created_at > :after OR (created_at = :after AND id > :afterId))");
         }
         sql.append(newestFirst ? " ORDER BY created_at DESC, id DESC" : " ORDER BY created_at ASC, id ASC");
-        JdbcClient.StatementSpec spec = jdbc.sql(sql.toString()).param("project", project.value())
-                .withMaxRows(maxRows.value() + 1);
+        JdbcClient.StatementSpec spec = jdbc.sql(sqlBuilder.applyLimit(sql.toString(), ":row_count"))
+                .param("project", project.value()).param("row_count", maxRows.value() + 1);
         if (filter.status() != null) {
             spec = spec.param("status", filter.status().name());
         }
@@ -132,8 +134,8 @@ public class DefectQueryRepository {
         }
         String joiner = match == KeywordMatch.ALL ? " AND " : " OR ";
         String sql = SELECT + " AND (" + String.join(joiner, terms) + ") ORDER BY created_at DESC, id DESC";
-        JdbcClient.StatementSpec spec = jdbc.sql(sql).param("project", project.value())
-                .withMaxRows(maxRows.value() + 1);
+        JdbcClient.StatementSpec spec = jdbc.sql(sqlBuilder.applyLimit(sql, ":row_count"))
+                .param("project", project.value()).param("row_count", maxRows.value() + 1);
         for (int i = 0; i < keywords.size(); i++) {
             spec = spec.param("k" + i, LikePattern.contains(keywords.get(i)));
         }

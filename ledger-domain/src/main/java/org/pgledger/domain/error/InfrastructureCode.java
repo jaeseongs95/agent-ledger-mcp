@@ -48,7 +48,13 @@ public enum InfrastructureCode implements ErrorCode {
     /** The session time zone of the database is not UTC; {0} = how far its clock is from the UTC clock. */
     SESSION_ZONE_NOT_UTC,
     /** The session clock of the database cannot be read. */
-    SESSION_CLOCK_UNREADABLE;
+    SESSION_CLOCK_UNREADABLE,
+    /** The product name of the connected database cannot be read from the connection. */
+    DATABASE_PRODUCT_UNREADABLE,
+    /** The database product is none that the ledger has SQL for; {0} = the product as the connection or the URL names it. */
+    DATABASE_PRODUCT_UNSUPPORTED,
+    /** The configured JDBC URL names another product than the one the connection reports; {0} = configured, {1} = connected. */
+    DATABASE_PRODUCT_MISMATCH;
 
     @Override
     public ErrorCategory category() {
