@@ -25,7 +25,7 @@ final class HookFixture {
     /** The time of the injected clock until a test moves it. */
     static final Instant NOW = Instant.parse("2026-11-11T09:00:00Z");
 
-    private final JsonCodec codec = JsonCodec.create();
+    private final JsonCodec codec = HookContext.bean(JsonCodec.class);
     private final Path keyDirectory;
     private Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
 

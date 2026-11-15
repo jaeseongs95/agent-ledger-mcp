@@ -11,6 +11,7 @@ import org.pgledger.hook.keys.SessionKeyException;
 import org.pgledger.hook.keys.SessionKeyStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
 
 /**
  * One hook invocation. Two forms:
@@ -22,10 +23,12 @@ import org.slf4j.LoggerFactory;
  *       server, the author, the public key and the fingerprint (four lines on {@code out}) for the owner, who registers
  *       the key on that server. A key is kept per server: the owner registers each server's key separately.</li>
  * </ul>
- * Streams, the clock and the key store are passed in, so the only place that touches the process is {@link Main}.
+ * The streams are passed in, the codec, the clock and the key store are injected, so the places that touch the process are
+ * {@link Main} and {@link ProcessChannels}.
  * Every outcome, a failed read of stdin included, is a {@link Response}; the one complete {@code switch} in
  * {@link #render} turns it into the output and the exit code.
  */
+@Component
 public final class HookCli {
 
     /** The first argument of the key command. */

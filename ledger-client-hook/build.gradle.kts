@@ -13,7 +13,9 @@ val hookJarName = "ledger-client-hook.jar"
 dependencies {
     // Spring Boot core, logging (SLF4J + Logback) and the configuration properties binding; no web server, no JDBC, no data access (HK-018).
     implementation("org.springframework.boot:spring-boot-starter")
-    // Jackson 3 (tools.jackson), version from the Boot BOM (the JDK has no JSON parser).
+    // Jackson 3 (tools.jackson) with the JsonMapper that Boot configures (JacksonAutoConfiguration, the settings are
+    // spring.jackson.* in application.properties); the versions come from the Boot BOM (the JDK has no JSON parser).
+    implementation("org.springframework.boot:spring-boot-starter-jackson")
     implementation("tools.jackson.core:jackson-databind")
 
     // The attestation token and the Ed25519 key text forms (pure JDK): the hook signs with them, the server verifies
