@@ -63,6 +63,27 @@ public class SchemaHistoryRepository {
     }
 
     /**
+     * A name as the exact pattern of {@code DatabaseMetaData.getTables} and the other catalog calls: their schema and table
+     * arguments are LIKE patterns (JDBC), where {@code _} and {@code %} are wildcards, so {@code schema_history} would match
+     * {@code schemaXhistory} too. The escape character is the one the driver reports
+     * ({@code getSearchStringEscape}); a driver that reports none gets the name unchanged. A null stays null (no restriction).
+     */
+    public static String exactPattern(DatabaseMetaData metaData, String name) throws SQLException {
+        String escape = metaData.getSearchStringEscape();
+        if (name == null || escape == null || escape.isEmpty()) {
+            return name;
+        }
+        StringBuilder exact = new StringBuilder(name.length() + 4);
+        for (char c : name.toCharArray()) {
+            if (c == '_' || c == '%' || escape.indexOf(c) >= 0) {
+                exact.append(escape);
+            }
+            exact.append(c);
+        }
+        return exact.toString();
+    }
+
+    /**
      * Reads the database metadata through Spring's {@link JdbcUtils}, which gets and releases the connection. This and
      * {@link #fold} are the contact points with raw JDBC metadata, kept to the few questions that no Spring Data or
      * {@code JdbcClient} call answers: whether a table or a schema exists, how the DBMS folds an unquoted identifier,
@@ -108,8 +129,8 @@ public class SchemaHistoryRepository {
     public boolean tableExists() {
         return inspect(dataSource, metaData -> {
             Connection connection = metaData.getConnection();
-            try (ResultSet rs = metaData.getTables(connection.getCatalog(), connection.getSchema(),
-                    fold(metaData, TABLE), new String[] {"TABLE"})) {
+            try (ResultSet rs = metaData.getTables(connection.getCatalog(),
+                    exactPattern(metaData, connection.getSchema()), exactPattern(metaData, fold(metaData, TABLE)), new String[] {"TABLE"})) {
                 return rs.next();
             }
         });
