@@ -19,8 +19,8 @@ import org.pgledger.testing.ContractVectors;
 import tools.jackson.databind.JsonNode;
 
 /**
- * HK-042, HK-043: the contract vectors of the author format and of the ledger tool names. The hook (Spring free, on the
- * attestation module only) and the server are two programs that each define these; the vector files of the test fixture
+ * HK-042, HK-043: the contract vectors of the author format and of the ledger tool names. The hook (its own
+ * program, which shares only the attestation module with the server) and the server are two programs that each define these; the vector files of the test fixture
  * of {@code ledger-attestation} are what both are tested against (the server side runs the same files).
  */
 @ExtendWith(HookExtension.class)

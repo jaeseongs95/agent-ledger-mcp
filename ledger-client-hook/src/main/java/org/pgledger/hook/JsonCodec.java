@@ -1,18 +1,13 @@
 package org.pgledger.hook;
 
 import java.util.Optional;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.JsonParser;
-import tools.jackson.core.StreamReadConstraints;
-import tools.jackson.core.StreamWriteConstraints;
-import tools.jackson.core.json.JsonFactory;
 import tools.jackson.databind.DatabindException;
-import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.SerializationFeature;
-import tools.jackson.databind.cfg.JsonNodeFeature;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -23,41 +18,21 @@ import tools.jackson.databind.json.JsonMapper;
  * kept as {@code BigDecimal} with their trailing zeros (never a double), strings and unknown fields are untouched.
  * A number is written back by value: {@code 1e999} becomes {@code 1E+999} and {@code -0} becomes {@code 0}.
  *
- * <p>The one place that builds a {@code JsonMapper}: the hook jar runs as a plain {@code java -jar} process without a
- * Spring context (HK-018), so there is no Boot {@code JsonMapper} bean to inject, and the settings above differ from
- * the Boot defaults.
+ * <p>The {@link JsonMapper} is the one bean that Spring Boot configures (principle 3.7). What this codec needs beyond
+ * the Boot defaults is set in {@code application.properties} under {@code spring.jackson}: the nesting depth limits,
+ * decimals as {@code BigDecimal} with their trailing zeros, text after the first JSON value as an error (as with
+ * {@code JSON.parse}), and the answer {@code {}} as a record without components. Unknown fields of the host events are
+ * ignored, which is a Boot default.
  */
+@Component
 public final class JsonCodec {
 
-    /** Deeper input is refused as malformed. Real tool calls are a handful of levels deep. */
-    private static final int MAX_NESTING_DEPTH = 256;
-
-    private static final Logger LOG = Logger.getLogger(JsonCodec.class.getName());
+    private static final Logger LOG = LoggerFactory.getLogger(JsonCodec.class);
 
     private final JsonMapper mapper;
 
-    private JsonCodec(JsonMapper mapper) {
+    JsonCodec(JsonMapper mapper) {
         this.mapper = mapper;
-    }
-
-    public static JsonCodec create() {
-        JsonFactory factory = JsonFactory.builder()
-                .streamReadConstraints(StreamReadConstraints.builder().maxNestingDepth(MAX_NESTING_DEPTH).build())
-                // the hook output wraps the input one or two levels deeper
-                .streamWriteConstraints(StreamWriteConstraints.builder().maxNestingDepth(MAX_NESTING_DEPTH + 8).build())
-                .build();
-        JsonMapper mapper = JsonMapper.builder(factory)
-                .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
-                .enable(JsonNodeFeature.USE_BIG_DECIMAL_FOR_FLOATS)
-                .disable(JsonNodeFeature.STRIP_TRAILING_BIGDECIMAL_ZEROES)
-                // text after the first JSON value is an error, as with JSON.parse
-                .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
-                // the host events carry far more than the hook reads
-                .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-                // the answer {} is a record without components
-                .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
-                .build();
-        return new JsonCodec(mapper);
     }
 
     /**
@@ -71,7 +46,7 @@ public final class JsonCodec {
             return mapper.readValue(json, type);
         } catch (DatabindException notThisShape) {
             if (isOneJsonDocument(json)) {
-                LOG.log(Level.FINE, "the JSON document is not an event of the host", notThisShape);
+                LOG.debug("the JSON document is not an event of the host", notThisShape);
                 return null;
             }
             throw notThisShape;

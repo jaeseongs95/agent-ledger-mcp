@@ -3,6 +3,7 @@ package org.pgledger.hook;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 
 /**
@@ -25,6 +26,7 @@ import tools.jackson.core.JacksonException;
  * </ul>
  * The operation is one of the ten known ones, exactly.
  */
+@Component
 record CodexDialect(JsonCodec codec) implements HostDialect {
 
     private static final String EVENT_NAME = "PreToolUse";
@@ -36,6 +38,11 @@ record CodexDialect(JsonCodec codec) implements HostDialect {
     /** Group 1 is the app, group 2 the operation; compiled once. */
     private static final Pattern APP_TOOL_NAME = Pattern.compile("^mcp__" + CODEX_APPS + "__app_([A-Za-z0-9][A-Za-z0-9_-]{0,"
             + (MAX_APP_LENGTH - 1) + "}?)_ledger_" + WriteTool.alternation() + "$");
+
+    @Override
+    public Client client() {
+        return Client.CODEX;
+    }
 
     @Override
     public Intake read(byte[] stdin) throws JacksonException {

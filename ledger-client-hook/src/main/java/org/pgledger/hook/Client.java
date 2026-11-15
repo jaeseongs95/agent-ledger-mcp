@@ -42,13 +42,4 @@ public enum Client {
     public static String choices() {
         return Arrays.stream(values()).map(Client::argument).collect(Collectors.joining("|"));
     }
-
-    /** The input and output dialect of this host. */
-    HostDialect dialect(JsonCodec codec) {
-        return switch (this) {
-            case CLAUDE -> new ClaudeDialect(codec);
-            case CODEX -> new CodexDialect(codec);
-            case ANTIGRAVITY -> new AntigravityDialect(codec);
-        };
-    }
 }

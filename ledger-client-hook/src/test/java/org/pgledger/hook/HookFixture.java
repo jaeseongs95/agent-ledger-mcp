@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
@@ -24,7 +25,8 @@ final class HookFixture {
     /** The time of the injected clock until a test moves it. */
     static final Instant NOW = Instant.parse("2026-11-11T09:00:00Z");
 
-    private final JsonCodec codec = JsonCodec.create();
+    private final JsonCodec codec = HookContext.bean(JsonCodec.class);
+    private final HostDialects dialects = HookContext.bean(HostDialects.class);
     private final Path keyDirectory;
     private Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
 
@@ -44,11 +46,16 @@ final class HookFixture {
     }
 
     Run run(String[] args, byte[] stdin) {
+        return run(args, new ByteArrayInputStream(stdin));
+    }
+
+    Run run(String[] args, InputStream stdin) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
-        // a new store and a new command for every run: like a new process, nothing is kept between two runs
-        int exit = new HookCli(codec, clock, TestStores.open(keyDirectory))
-                .run(args, new ByteArrayInputStream(stdin), out, err);
+        // a new store and a new command for every run: like a new process, nothing is kept between two runs. The codec and the
+        // dialects are the stateless beans of the shared context; the store and the clock are this test's own.
+        SessionKeyStore store = TestStores.open(keyDirectory);
+        int exit = new HookCli(codec, new LedgerHook(dialects, codec, clock, store), store).run(args, stdin, out, err);
         return new Run(exit, out.toByteArray(), err.toByteArray());
     }
 

@@ -13,7 +13,10 @@ import java.util.Objects;
  */
 public sealed interface KeyFolder {
 
-    /** The environment variable that names the key folder. */
+    /**
+     * The environment variable that names the key folder. Boot binds it to the setting {@code ledger.hook.key-dir}
+     * ({@link KeyStoreProperties}); the name is the contract with the installed host configurations and the owner.
+     */
     String ENVIRONMENT_VARIABLE = "LEDGER_HOOK_KEY_DIR";
 
     /** The key folder inside the user's home directory. */

@@ -4,10 +4,10 @@ plugins {
 }
 
 // The built client hook jar (ledger-client-hook.jar), only for the tests: the round trip test (MCW-040) signs with the
-// real hook, started as a process, and calls this server with what it printed. It is not part of the server. The jar task of the
-// hook module is the one fat jar; its path is known without resolving a configuration (the hook module is configured first).
+// real hook, started as a process, and calls this server with what it printed. It is not part of the server. The bootJar task of
+// the hook module is its one executable jar; its path is known without resolving a configuration (the hook module is configured first).
 evaluationDependsOn(":ledger-client-hook")
-val hookJar = project(":ledger-client-hook").tasks.named<Jar>("jar")
+val hookJar = project(":ledger-client-hook").tasks.named<Jar>("bootJar")
 
 dependencies {
     // The services of the ledger (write gate, receipts, history, queries) with the database module and the domain.
@@ -41,7 +41,7 @@ dependencies {
 
 tasks.test {
     dependsOn(hookJar)
-    // the path of the hook jar is passed in, never guessed (it is the one fat jar)
+    // the path of the hook jar is passed in, never guessed (it is the executable jar of the hook)
     systemProperty("ledger.hook.jar", hookJar.flatMap { it.archiveFile }.get().asFile.absolutePath)
     // The JDK HttpClient refuses to send a Host header unless the property allows it. The Host allow list test
     // (MCC-016) must send a Host that differs from the address it connects to.

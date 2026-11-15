@@ -3,10 +3,11 @@ package org.pgledger.hook;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 
@@ -32,10 +33,11 @@ import tools.jackson.databind.JsonNode;
  * </ul>
  * The operation is one of the ten known ones, exactly.
  */
+@Component
 record AntigravityDialect(JsonCodec codec) implements HostDialect {
 
-    // java.util.logging, like the rest of the hook: see HookCli for why.
-    private static final Logger LOG = Logger.getLogger(AntigravityDialect.class.getName());
+    // SLF4J at DEBUG, like the rest of the hook: see HookCli for why.
+    private static final Logger LOG = LoggerFactory.getLogger(AntigravityDialect.class);
     private static final String WRAPPER_TOOL = "call_mcp_tool";
     private static final String DIRECT_PREFIX = "mcp:";
     /** Group 1 is the server, group 2 the operation; compiled once. */
@@ -47,6 +49,11 @@ record AntigravityDialect(JsonCodec codec) implements HostDialect {
      */
     private static final Pattern ENVELOPE_TOOL_NAME = Pattern.compile("^(?:([" + McpToolName.SERVER_CHARACTERS + "]{1,"
             + McpToolName.MAX_SERVER_LENGTH + "})_)?ledger_" + WriteTool.alternation() + "$");
+
+    @Override
+    public Client client() {
+        return Client.ANTIGRAVITY;
+    }
 
     @Override
     public Intake read(byte[] stdin) throws JacksonException {
@@ -109,7 +116,7 @@ record AntigravityDialect(JsonCodec codec) implements HostDialect {
             return new Intake.Attest(codec.read(arguments.stringValue().getBytes(StandardCharsets.UTF_8)), host,
                     Intake.ArgumentForm.EMBEDDED_TEXT, tool, server);
         } catch (JacksonException notJson) {
-            LOG.log(Level.FINE, "the Arguments text is not JSON", notJson);
+            LOG.debug("the Arguments text is not JSON", notJson);
             return new Intake.Refuse(Refusal.ARGUMENTS_NOT_JSON_OBJECT);
         }
     }

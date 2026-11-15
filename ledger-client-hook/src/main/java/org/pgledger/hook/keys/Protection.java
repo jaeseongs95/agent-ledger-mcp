@@ -40,7 +40,7 @@ import org.pgledger.hook.keys.SessionKeyException.Reason;
  *     file whatever its ACL, so this protects against the other accounts of the machine that are not administrators, and
  *     an entry for them would add nothing but exposure.
  * <li>Both: the owner of the folder and of the file must be the current user ({@link Reason#WRONG_OWNER}); the current
- *     user is the account name that {@code Main} reads from {@code user.name}, resolved by the file system's
+ *     user is the account name of the setting {@code ledger.hook.user-name} ({@code user.name}, see {@link KeyStoreProperties}), resolved by the file system's
  *     {@code UserPrincipalLookupService}. The group Administrators is not accepted as owner: Microsoft documents that
  *     for objects such as files created by members of Domain Admins "the default owner is the Administrators group"
  *     (https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/manage/understand-security-groups, "Domain
