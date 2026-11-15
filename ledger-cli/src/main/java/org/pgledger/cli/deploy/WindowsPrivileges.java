@@ -192,7 +192,7 @@ final class WindowsPrivileges implements TokenPrivileges {
         }
     }
 
-    private static void require(Api api, String function, int result, MemorySegment capture) throws IOException {
+    private void require(Api api, String function, int result, MemorySegment capture) throws IOException {
         if (result == 0) {
             throw new IOException(function + " failed: Windows error " + api.lastError(capture));
         }
