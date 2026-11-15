@@ -3,7 +3,6 @@ package org.pgledger.application.receipt;
 import java.time.Clock;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import org.pgledger.application.json.LedgerJson;
 import org.pgledger.database.repository.ReceiptCompletionRepository;
 import org.pgledger.database.repository.ReceiptRepository;
@@ -71,11 +70,14 @@ public class ReceiptService {
      */
     public <R> Reservation<R> reserve(RequestId id, ReceiptOperation operation, Sha256 digest, AuthorId author,
             Channel channel, Class<R> responseType) {
-        Optional<Receipt> stored = receipts.findById(id);
-        if (stored.isPresent()) {
-            return new Reservation.Replayed<>(storedResponse(stored.get(), id, operation, digest, author, channel,
-                    responseType));
-        }
+        return receipts.findById(id)
+                .<Reservation<R>>map(stored -> new Reservation.Replayed<>(storedResponse(stored, id, operation, digest,
+                        author, channel, responseType)))
+                .orElseGet(() -> insertReservation(id, operation, digest, author, channel));
+    }
+
+    private <R> Reservation<R> insertReservation(RequestId id, ReceiptOperation operation, Sha256 digest,
+            AuthorId author, Channel channel) {
         try {
             receipts.insert(Receipt.reserve(id, operation, digest, author, channel, clock.instant()));
         } catch (DuplicateKeyException duplicate) {
