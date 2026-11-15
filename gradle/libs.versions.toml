@@ -13,7 +13,15 @@ acme4j = "5.1.0"
 # Jackson 3 (databind and CBOR 3.2.1) and SLF4J. All Apache-2.0 or MIT: no GPL or AGPL.
 springSecurity = "7.1.2"
 
+# Jackson 3 family (tools.jackson): the webauthn4j-core 0.31.10.RELEASE that Spring Security 7.1.2 declares
+# (spring-security-webauthn-7.1.2.pom) needs Jackson 3.2 and brings the tools.jackson:jackson-bom 3.2.1, while the Boot 4.1.2 BOM
+# manages 3.1.7. Gradle would resolve the family to 3.2.1 by conflict resolution anyway; this makes that explicit in one place
+# (3.1.7 is not forced, WebAuthn4J is not pinned).
+jackson = "3.2.1"
+
 [libraries]
+# The Jackson 3 BOM at the version of the comment of jackson above, declared next to the Boot BOM in build.gradle.kts.
+jackson-bom = { module = "tools.jackson:jackson-bom", version.ref = "jackson" }
 # Spring Security 7.1.2 WebAuthn support (sign-in, registration, the approval check): see the comment of springSecurity above.
 spring-security-webauthn = { module = "org.springframework.security:spring-security-webauthn", version.ref = "springSecurity" }
 spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "springBoot" }

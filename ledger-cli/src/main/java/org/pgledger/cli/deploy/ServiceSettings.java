@@ -1,6 +1,7 @@
 package org.pgledger.cli.deploy;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * The settings files, Spring Boot properties in YAML, the same on every platform: {@code application.yaml} (what the two
@@ -77,7 +78,7 @@ final class ServiceSettings {
         Text.line(yaml, "      rp-id: " + Text.quoted(rpId));
         Text.line(yaml, "      origins:");
         for (String host : adminHosts) {
-            if (host.equals(rpId) || host.endsWith("." + rpId)) {
+            if (Objects.equals(host, rpId) || host.endsWith("." + rpId)) {
                 Text.line(yaml, "        - " + Text.quoted("https://" + host));
             }
         }

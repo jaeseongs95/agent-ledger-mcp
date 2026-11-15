@@ -56,8 +56,8 @@ import org.springframework.web.servlet.HandlerExceptionResolver;
 /**
  * The security of the admin web, all of it Spring Security in one filter chain: the Host allow list (the firewall refuses
  * any other Host with 403, before anything else runs: the guard against DNS rebinding), the sign-in the owner chose
- * ({@code ledger.admin.sign-in}: OpenID Connect {@code oauth2Login} for the one e-mail address of the owner, or a passkey with
- * {@code webAuthn}), the one-time code of the owner's shell ({@code oneTimeTokenLogin}) that reaches the registration of a
+ * ({@code ledger.admin.sign-in}: the admin token with {@code formLogin} of the application's own page, OpenID Connect
+ * {@code oauth2Login} for the one e-mail address of the owner, or a passkey with {@code webAuthn}), the one-time code of the owner's shell ({@code oneTimeTokenLogin}) that reaches the registration of a
  * passkey, the admin token as the bearer of the read-only JSON endpoints, the CSRF token with the session cookie of Spring
  * Boot ({@code SameSite=Strict}), a new session id after the sign-in (fixation protection), the lock after failed attempts and
  * the headers (CSP and the rest). The approval of every owner write by a passkey is checked by the interceptor
@@ -114,6 +114,7 @@ public class AdminSecurityConfiguration {
         AuthenticationManager bearer = new ProviderManager(tokens);
         boolean console = mode == AdminMode.CONSOLE;
         boolean oidc = properties.effectiveSignIn() == SignInMethod.OIDC;
+        boolean passkeySignIn = properties.effectiveSignIn() == SignInMethod.PASSKEY;
         http
                 .authorizeHttpRequests(requests -> {
                     requests.dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
@@ -126,11 +127,11 @@ public class AdminSecurityConfiguration {
                         requests.anyRequest().denyAll();
                         return;
                     }
-                    if (oidc) {
-                        // one sign-in at a time: with OpenID Connect the passkey is for approvals, never for signing in
-                        requests.requestMatchers("/login/webauthn", "/webauthn/authenticate/**").denyAll();
-                    } else {
+                    if (passkeySignIn) {
                         requests.requestMatchers("/login/webauthn", "/webauthn/authenticate/**").permitAll();
+                    } else {
+                        // one sign-in at a time: with the token or OpenID Connect the passkey is for approvals, never for signing in
+                        requests.requestMatchers("/login/webauthn", "/webauthn/authenticate/**").denyAll();
                     }
                     requests.requestMatchers(HttpMethod.GET, "/api/session")
                             .hasAnyAuthority(AdminTokenProvider.OWNER_AUTHORITY, AdminTokenProvider.API_READ_AUTHORITY,
@@ -165,6 +166,12 @@ public class AdminSecurityConfiguration {
                         .permissionsPolicyHeader(policy -> policy.policy("camera=(), microphone=(), geolocation=()")));
         if (console) {
             passkeys(http, failures, parties.getObject(), guards.getObject(), codes.getObject());
+        }
+        if (console && properties.effectiveSignIn() == SignInMethod.TOKEN) {
+            // the admin token as the password of the application's own page (the personal edition): the lock per client address
+            // is in AdminTokenProvider, CSRF and the new session id after the sign-in are the defaults of this chain
+            http.formLogin(form -> form.loginPage("/login").passwordParameter("token").defaultSuccessUrl("/")
+                    .failureHandler(failures));
         }
         ClientRegistrationRepository registrations = clients.getIfAvailable();
         if (console && oidc) {

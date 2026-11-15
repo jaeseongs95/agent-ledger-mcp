@@ -54,11 +54,13 @@ class LoginTest {
     }
 
     @Test
-    @DisplayName("ADM-009/PSK-ENR-01: the admin token no longer signs a browser in: a post of the token to /login finds no sign-in (no session)")
+    @DisplayName("ADM-009/PSK-ENR-01/PSK-TOK-05: with sign-in=passkey (the default) the admin token does not sign a browser in: a post of the token to /login finds no sign-in (no session), and the page has no token form (sign-in=token is TokenSignInTest)")
     void adm009_tokenFormIsGone() throws Exception {
         Browser browser = new Browser(mvc);
         String csrf = browser.csrfOf("/login");
 
+        assertThat(browser.perform(browser.get("/login")).andReturn().getResponse().getContentAsString())
+                .doesNotContain("type=\"password\"");
         browser.perform(browser.form("/login", Form.of("username", "owner", "token", AdminTestSettings.TOKEN), csrf)
                 .accept(MediaType.APPLICATION_JSON)).andExpect(status().is4xxClientError());
 

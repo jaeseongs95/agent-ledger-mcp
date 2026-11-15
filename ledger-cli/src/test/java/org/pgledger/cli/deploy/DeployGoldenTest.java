@@ -104,12 +104,15 @@ class DeployGoldenTest {
     }
 
     // FUP-NGX-03 changed the digest of "linux with site" on purpose (it renders the operator's certificate site, whose 443 blocks now
-    // have `server_tokens off;`); the other three targets are unchanged.
+    // have `server_tokens off;`); the other three targets are unchanged. PSK-INS-01 then changed "linux with site" and "windows server"
+    // on purpose (the two targets with --admin-host: admin.yaml now carries ledger.admin.passkey.rp-id and origins, the passkey: block of
+    // four lines); checked by rendering both again without that block, which gave the digests above (f18fa93f..., 4e1ec84d...). The two
+    // targets without a public admin name are unchanged.
     private static final Map<String, String> BEFORE_SETUP = Map.of(
-            "linux with site", "f18fa93fa4d9b32392fdf1fe40559110fc48154d641fd59daf393b292279a865",
+            "linux with site", "78200d1ae042a42563187723e6294154f6dd706bfe2ed210ad30a1d9379032a0",
             "linux plain", "a7cc4e0a5d1ff750a4044e9f07bd99bad4bd6b897f8c9fa4779d1bd5ddfbb8e9",
             "personal pc", "09d2be30498adb057b386356b338b0c6be703833cabd16f4f80e0bf5bb595ef1",
-            "windows server", "4e1ec84da3f6a9af42fa0b8eeedbec939f80b85458866e8cd8788da2e729ffdf");
+            "windows server", "819c9e62752b66bc2029cb0d6a910426ebffdba725d12133ef59ac3dcdf9b5b9");
 
     @Test
     @DisplayName("SET-008 the files rendered for the three targets are byte for byte those of the renderer before the unit SETUP (the defaults moved, the files did not)")

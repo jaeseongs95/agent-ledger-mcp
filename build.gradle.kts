@@ -122,6 +122,8 @@ subprojects {
         // The Boot BOM pins every managed version; the Spring AI BOM is declared for the later MCP modules.
         "implementation"(platform(rootProject.libs.spring.boot.bom))
         "implementation"(platform(rootProject.libs.spring.ai.bom))
+        // Jackson 3.2.1, which the WebAuthn4J of Spring Security 7.1.2 needs, above the 3.1.7 of the Boot BOM (see libs.versions.toml).
+        "implementation"(platform(rootProject.libs.jackson.bom))
         "testImplementation"("org.junit.jupiter:junit-jupiter")
         "testImplementation"("org.assertj:assertj-core")
         "testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
