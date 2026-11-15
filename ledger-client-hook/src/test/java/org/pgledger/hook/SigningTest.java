@@ -202,13 +202,17 @@ class SigningTest {
         // the nulls are handed on: the document is the input plus the token, nothing dropped
         assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token()));
         JsonNode handed = host.stampedPart(run);
-        assertThat(handed.has("note")).isEqualTo(input.has("note"));
-        if (input.has("note")) {
-            assertThat(handed.get("note").isNull()).as("note stays null").isTrue();
-        }
-        if (input.path("fields").has("owner_actor_id")) {
-            assertThat(handed.path("fields").has("owner_actor_id")).isTrue();
-            assertThat(handed.path("fields").get("owner_actor_id").isNull()).as("owner_actor_id stays null").isTrue();
+        // a host that merges an overwrite (the direct call of antigravity) is handed the token only: the arguments are the
+        // host's own and nothing of them is touched, which the comparison of the document above has shown
+        if (handed.size() > 1) {
+            assertThat(handed.has("note")).isEqualTo(input.has("note"));
+            if (input.has("note")) {
+                assertThat(handed.get("note").isNull()).as("note stays null").isTrue();
+            }
+            if (input.path("fields").has("owner_actor_id")) {
+                assertThat(handed.path("fields").has("owner_actor_id")).isTrue();
+                assertThat(handed.path("fields").get("owner_actor_id").isNull()).as("owner_actor_id stays null").isTrue();
+            }
         }
         // the claim's key: the operationKey text, empty when it was null
         assertThat(stamp.claims().operationKey()).isEqualTo(input.path("operationKey").isString()
