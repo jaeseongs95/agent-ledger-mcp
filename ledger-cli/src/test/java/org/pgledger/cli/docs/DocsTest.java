@@ -69,7 +69,7 @@ class DocsTest {
     private static final Pattern MODULE = Pattern.compile("\"(ledger-[a-z-]+)\"");
     private static final Pattern VENDOR = Pattern.compile(
             "(?i)\\b(PostgreSQL|Postgres|MySQL|MariaDB|Oracle|SQL Server|H2|DB2|SQLite|Derby|HSQLDB)\\b");
-    private static final Pattern SUPPORT_WORD = Pattern.compile("(?i)support|compatib|certif|tested|지원|호환|검증");
+    private static final Pattern SUPPORT_WORD = Pattern.compile("(?i)support|compatib|certif|지원|호환");
 
     /** A thing that belongs to the 1.x implementation (or to its way of installing) and so never to the new product text. */
     private record Term(String label, Pattern pattern) {
@@ -283,7 +283,7 @@ class DocsTest {
 
     @ParameterizedTest
     @EnumSource(Language.class)
-    @DisplayName("DOC-010 (ARC-031) no DBMS is named as supported, compatible, certified or tested")
+    @DisplayName("DOC-010 (ARC-031) no DBMS is named as supported, compatible or certified (naming the one tested DBMS is allowed)")
     void noDatabaseIsNamedAsSupported(Language language) {
         List<String> offending = language.readme().lines().stream()
                 .filter(line -> VENDOR.matcher(line).find() && SUPPORT_WORD.matcher(line).find()).toList();
