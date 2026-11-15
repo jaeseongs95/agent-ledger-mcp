@@ -28,7 +28,6 @@ import org.pgledger.testing.PrincipleRules;
 import org.pgledger.testing.SourceRules;
 import java.util.Map;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /** The ARC rules that apply to the database module (the shared rules come from the domain test fixtures). */
@@ -93,10 +92,11 @@ class ArchitectureTest {
                                 "org.springframework.jdbc.core.JdbcOperations")
                         .orShould().dependOnClassesThat().haveFullyQualifiedName(
                                 "org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate")),
-                // the database module never opens a transaction: the caller (the service) owns it. The one use of
-                // @Transactional here is MANDATORY on the class that allocates ids, which only refuses a call without one.
-                new Rule("ARC-013 @Transactional here only as propagation MANDATORY, on a class",
-                        classes().that().areAnnotatedWith(Transactional.class).should(haveMandatoryPropagation())),
+                // the database module never declares a transaction (principle 4.4): the caller, a service method, owns it and
+                // the repositories join it. Not even the id allocator carries @Transactional (it refuses a call without a
+                // transaction itself).
+                new Rule("ARC-013 no @Transactional on a class here", noClasses().should().beAnnotatedWith(
+                        Transactional.class)),
                 new Rule("ARC-013 no @Transactional on a method here", noMethods().should().beAnnotatedWith(
                         Transactional.class)),
                 new Rule("ARC-027 DriverManager, class loaders and the pool only in the driver package",
@@ -132,20 +132,6 @@ class ArchitectureTest {
     @DisplayName("ARC-017: configuration properties are records")
     void configurationPropertiesAreRecords() {
         classes().that().areAnnotatedWith(ConfigurationProperties.class).should().beRecords().check(MAIN);
-    }
-
-    /** A class whose {@code @Transactional} is {@code propagation = MANDATORY}. */
-    private static ArchCondition<JavaClass> haveMandatoryPropagation() {
-        return new ArchCondition<>("be @Transactional(propagation = MANDATORY)") {
-            @Override
-            public void check(JavaClass type, ConditionEvents events) {
-                Propagation propagation = type.getAnnotationOfType(Transactional.class).propagation();
-                if (propagation != Propagation.MANDATORY) {
-                    events.add(SimpleConditionEvent.violated(type, type.getName() + " is @Transactional with "
-                            + propagation));
-                }
-            }
-        };
     }
 
     /** A class with a code unit that has a catch block for {@code throwable}. */

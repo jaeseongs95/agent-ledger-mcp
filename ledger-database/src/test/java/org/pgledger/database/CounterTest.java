@@ -76,10 +76,28 @@ class CounterTest {
         LookupException unknown = catchThrowableOfType(LookupException.class,
                 () -> ctx.tx(() -> ids.nextDefectNo(ProjectCode.of("NOSUCH"))));
         assertThat(unknown.code()).isEqualTo(LookupCode.NOT_FOUND);
-        // @Transactional(propagation = MANDATORY): Spring itself refuses a call that has no transaction
+        // a repository joins the transaction of its caller and opens none: a call that has no transaction is refused with
+        // the exception of a missing transaction (principle 4.4: no @Transactional on the allocator)
         assertThatThrownBy(() -> ids.nextDefectNo(project.code()))
                 .isInstanceOf(org.springframework.transaction.IllegalTransactionStateException.class)
                 .as("ids are only issued inside a transaction");
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("TXD-003 every method of the allocator refuses a call with no transaction, and the allocator is no transaction boundary: it carries no @Transactional")
+    void txd003_everyMethodRefusesACallWithoutATransaction() {
+        Project project = seed.project();
+        Class<org.springframework.transaction.IllegalTransactionStateException> refusal =
+                org.springframework.transaction.IllegalTransactionStateException.class;
+
+        assertThatThrownBy(() -> ids.nextDefectNo(project.code())).isInstanceOf(refusal);
+        assertThatThrownBy(() -> ids.nextTaskNo(project.code())).isInstanceOf(refusal);
+        assertThatThrownBy(() -> ids.raiseDefectNo(project.code(), 5)).isInstanceOf(refusal);
+        assertThatThrownBy(() -> ids.raiseTaskNo(project.code(), 5)).isInstanceOf(refusal);
+        assertThatThrownBy(() -> ids.next(Counter.HISTORY)).isInstanceOf(refusal);
+        assertThatThrownBy(() -> ids.raise(Counter.HISTORY, 5)).isInstanceOf(refusal);
+        assertThat(IdAllocator.class.getAnnotation(org.springframework.transaction.annotation.Transactional.class))
+                .as("a repository joins the transaction of its caller").isNull();
     }
 
     @Test
