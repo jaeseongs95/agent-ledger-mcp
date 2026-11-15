@@ -2,6 +2,7 @@ package org.pgledger.database;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -28,6 +29,16 @@ import org.pgledger.testing.legacy.LegacyLedger;
 @DatabaseTest
 class LegacyTableTest {
 
+    /**
+     * The columns that only the 2.0 schema has and that the import neither reads nor writes: 1.x had no such data, so a row the
+     * import inserts takes the default of the column and a row it overwrites (a code the seed made) keeps its own value. They are
+     * listed here, with the file that adds each, so that a new column of a migrated table is a decision and not an accident:
+     * {@code common_code.direction} (V4, default CANONICAL; the relations whose direction the import cannot restore are
+     * reported, see ImportReport) and {@code common_code.version} (V5, default 0; the version that the update of a code checks).
+     */
+    private static final Map<LegacyTable, List<String>> SCHEMA_ONLY = Map.of(LegacyTable.COMMON_CODE,
+            List.of("direction", "version"));
+
     private static List<String> names(List<LegacyColumn> columns) {
         return columns.stream().map(LegacyColumn::name).toList();
     }
@@ -39,7 +50,9 @@ class LegacyTableTest {
 
         for (LegacyTable table : LegacyTable.values()) {
             Map<String, ColumnRule> rules = target.columnRules(table);
-            assertThat(rules.keySet()).as(table.name()).containsExactlyInAnyOrderElementsOf(names(table.targetColumns()));
+            List<String> expected = new ArrayList<>(names(table.targetColumns()));
+            expected.addAll(SCHEMA_ONLY.getOrDefault(table, List.of()));
+            assertThat(rules.keySet()).as(table.name()).containsExactlyInAnyOrderElementsOf(expected);
             assertThat(table.targetKey()).as(table.name() + " key").isSubsetOf(names(table.targetColumns()));
             assertThat(table.sourceKey()).as(table.name() + " source key").isSubsetOf(names(table.sourceColumns()));
         }

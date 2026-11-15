@@ -33,6 +33,7 @@ import org.pgledger.database.repository.SchemaHistoryRepository;
 import org.pgledger.database.repository.SchemaHistoryRepository.Outcome;
 import org.pgledger.database.repository.SchemaHistoryRepository.Row;
 import org.pgledger.database.schema.LedgerSchemaGuardConfiguration;
+import org.pgledger.database.schema.MigrationFile;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.database.schema.SchemaMigrator;
@@ -308,7 +309,7 @@ class SchemaMigratorTest {
         assertThat(twoMigrationsAtOnce()).as("the loser waits or is refused cleanly").contains("done")
                 .allMatch(outcome -> "done".equals(outcome) || "refused".equals(outcome));
         assertThat(history().stream().filter(r -> r.outcome() == Outcome.SUCCESS).map(Row::version))
-                .containsExactly(1, 2, 3);
+                .containsExactlyElementsOf(shippedFiles().stream().map(MigrationFile::version).toList());
         assertThat(tableExists("request_receipt")).isTrue();
         assertThat(tableExists("defect")).isTrue();
         assertThat(JdbcClient.create(pool).sql("SELECT COUNT(*) FROM common_code").query(Integer.class).single())
@@ -416,6 +417,17 @@ class SchemaMigratorTest {
         assertThat(jdbc.sql("SELECT title FROM " + legacy + ".defect WHERE id = 'OLD-D-1'").query(String.class).single())
                 .isEqualTo("old");
         assertThat(jdbc.sql("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = :schema")
-                .param("schema", named).query(Integer.class).single()).isEqualTo(18);
+                .param("schema", named).query(Integer.class).single()).isEqualTo(tablesOfTheShippedFiles());
+    }
+
+    /** The migration files that the product ships (V1 .. Vn of {@code classpath:db/}), as the migrator reads them. */
+    private static List<MigrationFile> shippedFiles() {
+        return MigrationFile.load(new PathMatchingResourcePatternResolver(SchemaMigratorTest.class.getClassLoader()),
+                SchemaProperties.DEFAULT_LOCATION);
+    }
+
+    /** The tables of a migrated schema: one per CREATE TABLE of the shipped files, and the schema_history the migrator makes. */
+    private static int tablesOfTheShippedFiles() {
+        return 1 + shippedFiles().stream().mapToInt(file -> file.text().split("CREATE TABLE", -1).length - 1).sum();
     }
 }
