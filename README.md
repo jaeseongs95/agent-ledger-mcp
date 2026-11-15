@@ -31,13 +31,14 @@ and no argument of an earlier version is accepted next to the new ones); what ch
   `claude:1f2e3d4c` or `codex:9a8b7c6d`; the owner of the ledger is `user:owner`. The author is the attestation and nothing else: a tool has no `author_id` argument.
 - **Writes need a live grant.** The owner grants an author a scope on a project with `ledger-cli grant` (or on the grants page of
   the admin web). The scopes are `defect`, `task`, `fix` and `verify`. A write without a matching grant is refused. A write that
-  touches rows of two projects (a task moved to another project, a link, a merge into a defect of another project) needs the
+  touches rows of two projects (a task or a condition moved to another project, a link, a merge into a defect of another project) needs the
   matching grant on both projects.
 - **Verification is separate.** `VERIFIED`, `MET` and `NOT_MET` are set only through the reviewer tools `ledger_review` and
   `ledger_review_correct`, which need the scope `verify`. A defect is verified only with an evidence link and at least one
   recorded fix, and only by a session that did not register the defect, did not record a case of it and did not record a fix of
-  it; a task is verified only by a session that did not register it, does not own it and never reported it done (otherwise
-  `SAME_SESSION`). The verification and rework requests go to the session that recorded the fix (`fixed_by`), not to the one
+  it (the cases and the registrants of the defects merged into it count as its own); a task is verified only by a session that
+  did not register it, does not own it and never reported it done; a condition is set `MET` or `NOT_MET` only by a session
+  that did not register it (otherwise `SAME_SESSION`). The verification and rework requests go to the session that recorded the fix (`fixed_by`), not to the one
   that registered the defect (`created_by`). CI results are optional metadata. A `VERIFIED` defect takes no `ledger_record_fix`
   and no edit by `ledger_save` (`VERIFIED_DEFECT`): a reviewer reopens it first with `ledger_review`.
 - **History is append-only.** Every write adds a history row: when, author, channel, operation, state change and reason. The
@@ -61,7 +62,8 @@ and no argument of an earlier version is accepted next to the new ones); what ch
   existing one when the case is ignored is refused (`DUPLICATE_KEY`), and an id is always compared exactly. A defect id that a caller
   chooses, and a task id in the form `<CODE>-T-0001` that a caller chooses, must have a number that is not above the next number of
   the project: a free number below it is accepted, and a number above it is refused with `ID_NUMBER_AHEAD`, whose message names the
-  next id, so that one id cannot stop the numbering by the server.
+  next id, so that one id cannot stop the numbering by the server. Such an id is written as the server writes it (a number of at
+  least 1, zero padded to 4 digits and not otherwise): `<CODE>-D-00002` and number 0 are refused (`VALIDATION_FAILED` at `id`).
 - **One defect, one root cause, many observed cases.** Each observation of a defect (symptom, log, user report) is a case under it
   (`ledger_record_case`). A merged defect (`MERGED`, `merged_into`) keeps its cases; `ledger_defect` shows them under the defect it
   was merged into, and a `MERGED` defect takes no new cases.
