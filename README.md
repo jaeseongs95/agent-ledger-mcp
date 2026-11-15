@@ -51,7 +51,12 @@ of the write tools, the keys of the results, the `_hostAttestation` key) and cha
   was merged into, and a `MERGED` defect takes no new cases.
 - **Common codes.** Defect category, defect severity and relation kind are the three groups `DEFECT_CATEGORY`, `DEFECT_SEVERITY` and
   `RELATION_KIND`, with Korean and English names. The active values are part of the tool definitions. A retired code stays on
-  existing rows and is refused when newly assigned. A severity is required on every defect.
+  existing rows and is refused when newly assigned. A severity is required on every defect. A relation kind has a direction, which is
+  part of its code: `caused_by` (a is caused by b) and `blocks` (a blocks b) are directed, keep `a` and `b` in the order the caller gave
+  them, and so (a, b) and (b, a) are two relations; `same_site`, `same_family`, `same_fix_unit` and `regression_of` have no direction
+  and are one relation in either order. A kind that is added with `code-set` or in the admin console declares its direction as well
+  (`ledger_codes` shows it, and the list of kinds in the `ledger_link` definition marks it); the direction of a kind that already has
+  relations cannot be changed.
 - **Creation provenance is immutable.** New rows receive `created_by` automatically; edits and reviewer transitions keep it.
 - **Time is UTC.** Timestamps are stored and transmitted in UTC (ISO-8601 with `Z`); the server converts no time zone. The JVM and
   the database session must run in UTC, and a server that finds otherwise does not start (`ledger.schema.require-utc`).
@@ -77,7 +82,7 @@ Write tools (a login, an attestation and a live grant are needed):
 | `ledger_transition` | author | change state (`OPEN`, `SOURCE_FIXED`, `MERGED`, `ACTIVE`, `REPORTED_DONE`, and so on) |
 | `ledger_record_fix` | author | record a fix commit and optional CI metadata; the fixing session becomes `fixed_by` and an `OPEN` defect becomes `SOURCE_FIXED` |
 | `ledger_record_case` | author | add an observed case under a defect (a `MERGED` defect is refused and names its target) |
-| `ledger_link` | author | link defects, tasks and conditions, or remove a link |
+| `ledger_link` | author | link defects, tasks and conditions, or remove a link; the relation kinds `caused_by` and `blocks` are directed (`a` is the subject, an unlink names the ends in the order they were linked) |
 | `ledger_correct` | author | mark a history row as wrong |
 | `ledger_batch` | author | up to 200 of the operations above in one transaction: all commit or none |
 | `ledger_review` | reviewer | `VERIFIED`, `MET`, `NOT_MET`, and reopening them; the evidence link is required |
@@ -562,6 +567,10 @@ import, check. Do the steps in this order; the installer stops nothing of 1.x by
    unique on every DBMS), so the import refuses such a pair and lists it, and a task or condition cannot be created with an id that
    equals an existing one when the case is ignored. An empty text of 1.x (`purpose`, `success_condition`, `behavior`, `root_cause`
    and `condition_text` allowed `''`) is stored as NULL and the tools return an empty string for it, as 1.x did.
+   1.x stored every relation with its smaller id first and kept nowhere which defect the caller named first, so the import copies the
+   relations of the directed kinds (`caused_by`, `blocks`) as they are stored and never guesses; it lists them (the count and the ids,
+   also in the audit row and with `--verify-only`). Check each one and, where it is the wrong way round, remove it and link it again with
+   `ledger_link` with the right defect first.
    The `code` of a condition (200 characters) and the `ci_ref` (2000 characters) are longer than in the earlier 2.0 builds, and the `origin_ref` of a task is a long text (up to 20000 characters
    when written), so every value of 1.x fits.
 7. The old grants are copied without a session key. Every author registers a session key with `key-register`; then its grants work.
