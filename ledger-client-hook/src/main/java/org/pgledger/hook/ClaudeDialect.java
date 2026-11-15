@@ -12,20 +12,22 @@ import tools.jackson.core.JacksonException;
  * used. A stamped call answers with {@code updatedInput} and no permission decision, so the host's own permission policy
  * still decides; exit 2 blocks the call.
  *
- * <p>The tool names that are signed for are {@code mcp__<server>__ledger_<op>}, or {@code mcp__<server>__<server>_ledger_<op>}
+ * <p>The tool names that are signed for are {@code mcp__<server>__<tool>}, or {@code mcp__<server>__<server>_<tool>}
  * when the tool reaches the host through a gateway that prefixes the tool names with the name of its upstream (the portal
- * of the deployment names the upstream like the server, {@code mcp__ledger__ledger_ledger_save}). The prefix before
- * {@code ledger_} must be exactly the server segment: a look-alike server that names its tool {@code other_ledger_save}
- * is not signed for. The server segment is made of {@code A-Za-z0-9_-} (the host's own rule: no dot). The operation is
- * one of the ten known ones, exactly. The Codex Apps namespace belongs to Codex alone and is not signed for here.
+ * of the deployment names the upstream like the server, {@code mcp__ledger__ledger_ledger_save}). The tool is one of the
+ * ten {@code ledger_<op>} tools or one of the five attachment tools {@code artifact-begin}, {@code artifact-chunk},
+ * {@code artifact-finish}, {@code artifact-status}, {@code artifact-read}, exactly. The prefix before the tool must be
+ * exactly the server segment: a look-alike server that names its tool {@code other_ledger_save} or
+ * {@code other_artifact-begin} is not signed for. The server segment is made of {@code A-Za-z0-9_-} (the host's own
+ * rule: no dot). The Codex Apps namespace belongs to Codex alone and is not signed for here.
  */
 @Component
 record ClaudeDialect(JsonCodec codec) implements HostDialect {
 
     private static final String EVENT_NAME = "PreToolUse";
-    /** Group 1 is the server, group 2 the operation; compiled once. */
+    /** Group 1 is the server, group 2 the canonical tool name; compiled once. */
     private static final Pattern TOOL_NAME = Pattern.compile("^mcp__([A-Za-z0-9_-]{1," + McpToolName.MAX_SERVER_LENGTH
-            + "}?)__(?:\\1_)?ledger_" + WriteTool.alternation() + "$");
+            + "}?)__(?:\\1_)?" + WriteTool.alternation() + "$");
 
     @Override
     public Client client() {
@@ -37,10 +39,10 @@ record ClaudeDialect(JsonCodec codec) implements HostDialect {
         return Intake.ofFlatEvent(codec.readEvent(stdin, FlatEvent.class), ClaudeDialect::toolName);
     }
 
-    /** {@code mcp__<server>__[<server>_]ledger_<op>}. */
+    /** {@code mcp__<server>__[<server>_]<tool>}. */
     private static Optional<McpToolName> toolName(String hostToolName) {
         Matcher matcher = TOOL_NAME.matcher(hostToolName);
-        return matcher.matches() ? McpToolName.ofOperation(matcher.group(1), matcher.group(2)) : Optional.empty();
+        return matcher.matches() ? McpToolName.ofName(matcher.group(1), matcher.group(2)) : Optional.empty();
     }
 
     @Override

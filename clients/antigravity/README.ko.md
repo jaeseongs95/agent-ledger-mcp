@@ -6,10 +6,10 @@
 
 ## 동작
 
-`plugin.json`과 `hooks.json`은 플러그인 루트에 있습니다. 플러그인 훅의 명령은 플러그인 루트에서 실행되므로, `hooks.json`은 도구를 호출하기 전에 `java -jar "./lib/ledger-client-hook.jar" antigravity`를 실행합니다. matcher는 `call_mcp_tool`과 쓰기 도구의 직접 MCP 이름(`mcp:...ledger_<op>`)을 고르고, 훅은 도구 이름을 다시 검사합니다. 훅은 쓰기 도구 10종(`save`, `transition`, `record_fix`, `record_case`, `link`, `correct`, `batch`, `review`, `review_correct`, `whoami`)만 처리하며, 서버 이름이 드러나는 이름에만 서명합니다.
+`plugin.json`과 `hooks.json`은 플러그인 루트에 있습니다. 플러그인 훅의 명령은 플러그인 루트에서 실행되므로, `hooks.json`은 도구를 호출하기 전에 `java -jar "./lib/ledger-client-hook.jar" antigravity`를 실행합니다. matcher는 `call_mcp_tool`과 쓰기 도구의 직접 MCP 이름(`mcp:...ledger_<op>`)을 고르고, 훅은 도구 이름을 다시 검사합니다. 훅은 쓰기 도구 10종(`save`, `transition`, `record_fix`, `record_case`, `link`, `correct`, `batch`, `review`, `review_correct`, `whoami`)과 첨부 도구 5종(`artifact-begin`, `artifact-chunk`, `artifact-finish`, `artifact-status`, `artifact-read`)만 처리하며, 서버 이름이 드러나는 이름에만 서명합니다. 첨부 도구는 `whoami`와 같이 요청 ID가 없습니다.
 
-- 직접 호출: `mcp:<server><:|/|_>[<server>_]ledger_<op>`
-- `call_mcp_tool` 호출: `ServerName`이 서버 이름(`A-Za-z0-9._-` 1~100자)이고 `ToolName`이 `ledger_<op>` 또는 `<ServerName>_ledger_<op>`인 경우
+- 직접 호출: `mcp:<server><:|/|_>[<server>_]ledger_<op>` 또는 `mcp:<server><:|/|_>[<server>_]artifact-<op>`
+- `call_mcp_tool` 호출: `ServerName`이 서버 이름(`A-Za-z0-9._-` 1~100자)이고 `ToolName`이 `ledger_<op>`, `artifact-<op>`, `<ServerName>_ledger_<op>` 또는 `<ServerName>_artifact-<op>`인 경우
 
 `mcp:ledger_save`처럼 서버 이름이 없는 이름에는 서명하지 않습니다. 그 밖의 도구와 읽기 도구는 변경 없이 통과합니다.
 

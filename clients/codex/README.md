@@ -6,11 +6,11 @@ This directory is a Codex plugin. It proves the author of the ledger write calls
 
 ## How it works
 
-`extensions.com.openai.hooks` of `plugin.json` points to `hooks/hooks.json`. Its `PreToolUse` hook runs `java -jar "${PLUGIN_ROOT}/lib/ledger-client-hook.jar" codex` before each call of a ledger write tool (on Windows: `cmd.exe /d /c java -jar "%PLUGIN_ROOT%/lib/ledger-client-hook.jar" codex`). The hook handles only the ten write tools (`save`, `transition`, `record_fix`, `record_case`, `link`, `correct`, `batch`, `review`, `review_correct` and `whoami`). It signs a call whose tool name is one of these forms:
+`extensions.com.openai.hooks` of `plugin.json` points to `hooks/hooks.json`. Its `PreToolUse` hook runs `java -jar "${PLUGIN_ROOT}/lib/ledger-client-hook.jar" codex` before each call of a ledger write tool (on Windows: `cmd.exe /d /c java -jar "%PLUGIN_ROOT%/lib/ledger-client-hook.jar" codex`). The hook handles only the ten write tools (`save`, `transition`, `record_fix`, `record_case`, `link`, `correct`, `batch`, `review`, `review_correct` and `whoami`) and the five attachment tools (`artifact-begin`, `artifact-chunk`, `artifact-finish`, `artifact-status` and `artifact-read`, which carry no request id, like `whoami`). It signs a call whose tool name is one of these forms, with `<tool>` being `ledger_<op>` or `artifact-<op>`:
 
-- `mcp__<server>__ledger_<op>`
-- `mcp__<server>__<server>_ledger_<op>`, where the prefix must equal the server name exactly
-- `mcp__codex_apps__app_<app>_ledger_<op>`, the namespace of Codex Apps
+- `mcp__<server>__<tool>`
+- `mcp__<server>__<server>_<tool>`, where the prefix must equal the server name exactly
+- `mcp__codex_apps__app_<app>_<tool>`, the namespace of Codex Apps
 
 Read tools, unknown operations and names of any other shape pass unchanged.
 

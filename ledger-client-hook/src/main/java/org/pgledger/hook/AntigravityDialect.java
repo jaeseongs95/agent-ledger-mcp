@@ -25,13 +25,14 @@ import tools.jackson.databind.JsonNode;
  *
  * <p>The tool names that are signed for:
  * <ul>
- * <li>Direct: {@code mcp:<server><sep>ledger_<op>} or {@code mcp:<server><sep><server>_ledger_<op>} with a separator of
+ * <li>Direct: {@code mcp:<server><sep><tool>} or {@code mcp:<server><sep><server>_<tool>} with a separator of
  *     {@code :}, {@code /} or {@code _}; a name without a server ({@code mcp:ledger_save}) names no audience and is not
- *     signed. The prefix before {@code ledger_} must be exactly the server.
- * <li>{@code call_mcp_tool}: the {@code ServerName} of the envelope, and a {@code ToolName} of {@code ledger_<op>} or
- *     {@code <ServerName>_ledger_<op>}.
+ *     signed. The prefix before the tool must be exactly the server.
+ * <li>{@code call_mcp_tool}: the {@code ServerName} of the envelope, and a {@code ToolName} of {@code <tool>} or
+ *     {@code <ServerName>_<tool>}.
  * </ul>
- * The operation is one of the ten known ones, exactly.
+ * The {@code <tool>} is {@code ledger_<op>} or one of the attachment tools {@code artifact-begin} ... {@code artifact-read};
+ * it is one of the fifteen known ones, exactly.
  */
 @Component
 record AntigravityDialect(JsonCodec codec) implements HostDialect {
@@ -40,15 +41,15 @@ record AntigravityDialect(JsonCodec codec) implements HostDialect {
     private static final Logger LOG = LoggerFactory.getLogger(AntigravityDialect.class);
     private static final String WRAPPER_TOOL = "call_mcp_tool";
     private static final String DIRECT_PREFIX = "mcp:";
-    /** Group 1 is the server, group 2 the operation; compiled once. */
+    /** Group 1 is the server, group 2 the canonical tool name; compiled once. */
     private static final Pattern DIRECT_TOOL_NAME = Pattern.compile("^mcp:([" + McpToolName.SERVER_CHARACTERS + "]{1,"
-            + McpToolName.MAX_SERVER_LENGTH + "}?)[:/_](?:\\1_)?ledger_" + WriteTool.alternation() + "$");
+            + McpToolName.MAX_SERVER_LENGTH + "}?)[:/_](?:\\1_)?" + WriteTool.alternation() + "$");
     /**
-     * Group 1 is the prefix, if the tool name has one, group 2 the operation; the prefix must be the {@code ServerName} of
+     * Group 1 is the prefix, if the tool name has one, group 2 the canonical tool name; the prefix must be the {@code ServerName} of
      * the envelope, which {@link #envelopeName} compares. Compiled once, not per call.
      */
     private static final Pattern ENVELOPE_TOOL_NAME = Pattern.compile("^(?:([" + McpToolName.SERVER_CHARACTERS + "]{1,"
-            + McpToolName.MAX_SERVER_LENGTH + "})_)?ledger_" + WriteTool.alternation() + "$");
+            + McpToolName.MAX_SERVER_LENGTH + "})_)?" + WriteTool.alternation() + "$");
 
     @Override
     public Client client() {
@@ -76,10 +77,10 @@ record AntigravityDialect(JsonCodec codec) implements HostDialect {
         return new Intake.Skip();
     }
 
-    /** A direct MCP call: {@code mcp:<server><sep>[<server>_]ledger_<op>}. */
+    /** A direct MCP call: {@code mcp:<server><sep>[<server>_]<tool>}. */
     private static Optional<McpToolName> directName(String hostToolName) {
         Matcher matcher = DIRECT_TOOL_NAME.matcher(hostToolName);
-        return matcher.matches() ? McpToolName.ofOperation(matcher.group(1), matcher.group(2)) : Optional.empty();
+        return matcher.matches() ? McpToolName.ofName(matcher.group(1), matcher.group(2)) : Optional.empty();
     }
 
     /** {@code call_mcp_tool}: the {@code ServerName} and the {@code ToolName} of the envelope. */
@@ -92,7 +93,7 @@ record AntigravityDialect(JsonCodec codec) implements HostDialect {
         if (!matcher.matches() || (matcher.group(1) != null && !Objects.equals(serverName, matcher.group(1)))) {
             return Optional.empty();
         }
-        return McpToolName.ofOperation(serverName, matcher.group(2));
+        return McpToolName.ofName(serverName, matcher.group(2));
     }
 
     private Intake readWrapped(JsonNode args, HostIdentity host) {

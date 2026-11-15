@@ -6,11 +6,11 @@
 
 ## 동작
 
-`plugin.json`의 `extensions.com.openai.hooks`가 `hooks/hooks.json`을 가리킵니다. 이 파일의 `PreToolUse` 훅은 장부 쓰기 도구를 호출하기 전에 `java -jar "${PLUGIN_ROOT}/lib/ledger-client-hook.jar" codex`를 실행합니다(Windows에서는 `cmd.exe /d /c java -jar "%PLUGIN_ROOT%/lib/ledger-client-hook.jar" codex`). 훅은 쓰기 도구 10종(`save`, `transition`, `record_fix`, `record_case`, `link`, `correct`, `batch`, `review`, `review_correct`, `whoami`)만 처리하며, 도구 이름이 다음 형식 중 하나일 때 서명합니다.
+`plugin.json`의 `extensions.com.openai.hooks`가 `hooks/hooks.json`을 가리킵니다. 이 파일의 `PreToolUse` 훅은 장부 쓰기 도구를 호출하기 전에 `java -jar "${PLUGIN_ROOT}/lib/ledger-client-hook.jar" codex`를 실행합니다(Windows에서는 `cmd.exe /d /c java -jar "%PLUGIN_ROOT%/lib/ledger-client-hook.jar" codex`). 훅은 쓰기 도구 10종(`save`, `transition`, `record_fix`, `record_case`, `link`, `correct`, `batch`, `review`, `review_correct`, `whoami`)과 첨부 도구 5종(`artifact-begin`, `artifact-chunk`, `artifact-finish`, `artifact-status`, `artifact-read`. `whoami`와 같이 요청 ID가 없습니다)만 처리하며, 도구 이름이 다음 형식 중 하나일 때 서명합니다. `<tool>`은 `ledger_<op>` 또는 `artifact-<op>`입니다.
 
-- `mcp__<server>__ledger_<op>`
-- `mcp__<server>__<server>_ledger_<op>`: 접두어는 서버 이름과 정확히 같아야 합니다
-- `mcp__codex_apps__app_<app>_ledger_<op>`: Codex Apps의 네임스페이스입니다
+- `mcp__<server>__<tool>`
+- `mcp__<server>__<server>_<tool>`: 접두어는 서버 이름과 정확히 같아야 합니다
+- `mcp__codex_apps__app_<app>_<tool>`: Codex Apps의 네임스페이스입니다
 
 읽기 도구, 알 수 없는 작업, 그 밖의 형태의 이름은 변경 없이 통과합니다.
 
