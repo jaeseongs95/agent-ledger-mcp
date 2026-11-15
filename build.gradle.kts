@@ -1,4 +1,6 @@
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.services.BuildService
+import org.gradle.api.services.BuildServiceParameters
 import org.gradle.process.CommandLineArgumentProvider
 
 plugins {
@@ -28,6 +30,16 @@ val ledgerTestDatabase = linkedMapOf(
 // build cache: the state of the database is an input that Gradle cannot see (docs/testing/TEST_CASES.md section 30, BLD-DB-01).
 val databaseModules = setOf("ledger-database", "ledger-application", "ledger-mcp-server", "ledger-admin-web", "ledger-cli",
     "ledger-system-test")
+
+// The one test database is a shared external resource: each test JVM opens up to 10 connections to its role, which has a
+// connection limit. With parallel execution on, the test tasks of the database modules must not run at the same time (docs/testing/
+// TEST_CASES.md section 30, BLD-DB-03). Every such task uses this service, and the service allows one user at a time; no other task
+// is held back by it, and it is a correctness constraint of the resource, not a limit of the machine (workers stay a command argument).
+abstract class TestDatabaseService : BuildService<BuildServiceParameters.None>
+
+val testDatabaseService = gradle.sharedServices.registerIfAbsent("ledgerTestDatabase", TestDatabaseService::class.java) {
+    maxParallelUsages = 1
+}
 
 // ARC-005 / DRV-014: no JDBC driver, JPA, migration tool, Lombok or CLI framework on any runtime classpath.
 // "org.hibernate.orm" (not "org.hibernate"): the Jakarta Validation implementation is org.hibernate.validator, which is allowed; the ORM stays forbidden.
@@ -182,6 +194,8 @@ subprojects {
             // database is an input that Gradle cannot see. Both are stated; the build cache does not look at upToDateWhen.
             outputs.upToDateWhen { false }
             outputs.doNotCacheIf("the state of the test database is an input that Gradle cannot see") { true }
+            // one database test task at a time (the connection limit of the test database role)
+            usesService(testDatabaseService)
         }
     }
 
