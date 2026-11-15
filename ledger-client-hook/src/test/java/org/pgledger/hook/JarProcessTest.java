@@ -32,7 +32,7 @@ class JarProcessTest {
         return text.getBytes(StandardCharsets.UTF_8);
     }
 
-    /** Three answers of every host that do not depend on the clock or a generated id: denied, passed and silent for empty input. */
+    /** Three answers of every host that do not depend on the clock: denied, passed and silent for empty input. */
     static Stream<Arguments> cleanChannelCases() {
         return Hosts.ALL.stream().flatMap(host -> Stream.of(
                 Arguments.argumentSet(host + " deny", host,
@@ -63,7 +63,7 @@ class JarProcessTest {
         assertThat(run.exit()).as("exit code").isZero();
         assertThat(run.out()).matches("(?s)[^\\n]*\\n");
         Attestations.Stamp stamp = jar.stamp(host, "save", KOREAN_INPUT, run);
-        assertThat(run.document()).isEqualTo(host.allowed(KOREAN_INPUT, stamp.token(), stamp.addedRequestId()));
+        assertThat(run.document()).isEqualTo(host.allowed(KOREAN_INPUT, stamp.token()));
     }
 
     @ParameterizedTest
@@ -81,8 +81,8 @@ class JarProcessTest {
     @MethodSource("org.pgledger.hook.Hosts#all")
     @DisplayName("HK-015 with another JVM default charset, locale and LC_ALL=C the output is the same UTF-8 text (the token, which differs with every signing time, is masked)")
     void outputIsUtf8WhateverTheJvmDefaults(HostScenario host, HookJar jar, HookFixture fixture) throws IOException {
-        // an own request id: the rest of the answer does not depend on a generated value
-        JsonNode input = Json.tree(Map.of("note", "한글 😀 é", "request_id", "req-15"));
+        // an own operation key (the hook generates none: the answer carries it unchanged)
+        JsonNode input = Json.tree(Map.of("note", "한글 😀 é", "operationKey", "req-15"));
         byte[] stdin = host.echoEvent("save", input);
         Run baseline = jar.run(stdin, host.client().argument());
         assertThat(baseline.exit()).isZero();
@@ -111,7 +111,7 @@ class JarProcessTest {
         HookJar.Timed timed = jar.start(codex.event(codex.toolName("save"), KOREAN_INPUT), "codex");
         assertThat(timed.run().err()).isEmpty();
         Attestations.Stamp stamp = jar.stamp(codex, "save", KOREAN_INPUT, timed.run());
-        assertThat(timed.run().document()).isEqualTo(codex.allowed(KOREAN_INPUT, stamp.token(), stamp.addedRequestId()));
+        assertThat(timed.run().document()).isEqualTo(codex.allowed(KOREAN_INPUT, stamp.token()));
         String report = "HK-017 start " + start + ": java -jar wall time " + timed.millis()
                 + " ms ; limit " + HOST_LIMIT_MILLIS + " ms ; jar " + HookJar.JAR.toFile().length() + " bytes ; "
                 + System.getProperty("java.vendor.version");
@@ -132,7 +132,7 @@ class JarProcessTest {
         HookJar.Timed timed = jar.start(stdin, "claude");
         assertThat(timed.run().err()).isEmpty();
         Attestations.Stamp stamp = jar.stamp(claude, "save", input, timed.run());
-        assertThat(timed.run().document()).isEqualTo(claude.allowed(input, stamp.token(), stamp.addedRequestId()));
+        assertThat(timed.run().document()).isEqualTo(claude.allowed(input, stamp.token()));
         assertThat(timed.millis()).isLessThan(HOST_LIMIT_MILLIS);
     }
 
@@ -182,7 +182,7 @@ class JarProcessTest {
         Run run = jar.run(host.event(host.toolName("whoami"), input), host.client().argument());
         assertThat(run.err()).isEmpty();
         Attestations.Stamp stamp = jar.stamp(host, "whoami", input, run);
-        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token(), stamp.addedRequestId()));
+        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token()));
     }
 
     @Test

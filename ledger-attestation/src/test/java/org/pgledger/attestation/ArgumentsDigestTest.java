@@ -128,7 +128,7 @@ class ArgumentsDigestTest {
     }
 
     private static Map<String, Object> call() {
-        return map("request_id", "r1", "entity", "defect", "fields", map("title", "t", "project_id", "p"),
+        return map("operationKey", "r1", "entity", "defect", "fields", map("title", "t", "project_id", "p"),
                 "ops", List.of(map("op", "save"), map("op", "link")));
     }
 
@@ -140,7 +140,7 @@ class ArgumentsDigestTest {
         assertThat(ArgumentsDigest.of(Map.of())).isEqualTo("44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a");
 
         Map<String, Object> reordered = map("ops", List.of(map("op", "save"), map("op", "link")),
-                "fields", map("project_id", "p", "title", "t"), "entity", "defect", "request_id", "r1");
+                "fields", map("project_id", "p", "title", "t"), "entity", "defect", "operationKey", "r1");
         assertThat(ArgumentsDigest.of(reordered)).isEqualTo(digest);
         assertThat(ArgumentsDigest.of(map("n", 1))).isEqualTo(ArgumentsDigest.of(map("n", 1.0)))
                 .isEqualTo(ArgumentsDigest.of(map("n", new BigDecimal("1.00"))));
@@ -173,7 +173,7 @@ class ArgumentsDigestTest {
         added.put("note", "x");
         others.add(added);
         Map<String, Object> removed = call();
-        removed.remove("request_id");
+        removed.remove("operationKey");
         others.add(removed);
         Map<String, Object> asText = call();
         asText.put("fields", "{\"title\":\"t\",\"project_id\":\"p\"}");

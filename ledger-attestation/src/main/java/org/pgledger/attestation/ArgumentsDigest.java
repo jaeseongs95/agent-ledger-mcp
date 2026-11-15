@@ -8,8 +8,8 @@ import java.util.regex.Pattern;
 /**
  * The digest of the arguments of a call that the attestation signs: SHA-256 of the RFC 8785 canonical form
  * ({@link JsonCanonicalizer}) of the arguments object without its top-level member {@code _hostAttestation}, in 64
- * lower-case hex characters. The client hook computes it for the arguments it hands the host (after it has put the
- * {@code request_id} in), the server for the arguments it received, with this one class, so the two cannot disagree
+ * lower-case hex characters. The client hook computes it for the arguments it hands the host (the {@code operationKey}
+ * is in them, as the caller sent it), the server for the arguments it received, with this one class, so the two cannot disagree
  * about what "the same arguments" means: the same JSON value, whatever the order of the members and the white space.
  * Nothing else is normalised; in particular the rules that make two requests the same request for idempotency
  * (empty text equals absent, {@code fields} as an object or as JSON text) are not applied, because the signature has to

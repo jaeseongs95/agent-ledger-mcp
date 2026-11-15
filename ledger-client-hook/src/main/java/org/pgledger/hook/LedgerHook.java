@@ -2,7 +2,6 @@ package org.pgledger.hook;
 
 import java.time.Clock;
 import java.util.Map;
-import java.util.UUID;
 import org.pgledger.attestation.ArgumentsDigest;
 import org.pgledger.attestation.AttestationClaims;
 import org.pgledger.hook.keys.SessionKey;
@@ -18,15 +17,17 @@ import tools.jackson.databind.node.ObjectNode;
 /**
  * The attestation rule, the same for every host: a ledger write call gets {@code _hostAttestation} added to the
  * model's arguments, unless the arguments are not an object, already contain the reserved key, the host id is missing
- * or malformed, or the {@code request_id} is not a text. The value is the text of an
+ * or malformed, or the {@code operationKey} is not a text. The value is the text of an
  * {@link org.pgledger.attestation.AttestationToken}, signed with the private key of the author
  * {@code <vendor>:<host id>} for the MCP server of the call, for the canonical tool name ({@code ledger_<operation>} or
  * {@code artifact-<operation>}),
- * the request id of the call, the digest of the arguments the hook hands the host (RFC 8785 canonical form, SHA-256:
- * {@link ArgumentsDigest}; the request id is already in them, the attestation is not) and the time of the injected
- * clock. The request id is the argument {@code request_id}; if the model gave none (absent, JSON null or blank) the
- * hook generates a random UUID and puts it into the arguments as {@code request_id}. whoami and the five attachment
- * tools have no request id ({@link WriteTool#carriesRequestId}): the claim is empty and no {@code request_id} is added.
+ * the operation key of the call, the digest of the arguments the hook hands the host (RFC 8785 canonical form, SHA-256:
+ * {@link ArgumentsDigest}; the operation key is already in them, the attestation is not) and the time of the injected
+ * clock. The operation key is the argument {@code operationKey}, exactly as the model gave it; the hook never makes
+ * one up and adds nothing to the arguments but the attestation: a call without a key is signed with the empty key and
+ * the server refuses it. whoami and the five attachment tools have no operation key in the claim
+ * ({@link WriteTool#carriesOperationKey}): the claim is empty (the digest of the arguments covers the {@code operationKey}
+ * of {@code artifact-begin}).
  * The digest covers the whole arguments object whatever its size (an attachment chunk is up to 349528 base64
  * characters): the hook neither limits nor truncates the arguments, the host's 10 second hook timeout is the bound.
  * Nothing else is changed.
@@ -43,7 +44,7 @@ final class LedgerHook {
     // SLF4J at DEBUG, like the rest of the hook: see HookCli for why.
     private static final Logger LOG = LoggerFactory.getLogger(LedgerHook.class);
     private static final String RESERVED_KEY = Intake.RESERVED_KEY;
-    private static final String REQUEST_ID_KEY = "request_id";
+    private static final String OPERATION_KEY = "operationKey";
 
     private final HostDialects dialects;
     private final JsonCodec codec;
@@ -92,26 +93,20 @@ final class LedgerHook {
         if (!(call.host() instanceof HostId id)) {
             return new Verdict.Denied(Refusal.HOST_ID_INVALID);
         }
-        String requestId;
-        String generatedRequestId = null;
-        if (!call.tool().carriesRequestId()) {
-            requestId = "";
-        } else {
-            JsonNode given = arguments.get(REQUEST_ID_KEY);
-            if (given == null || given.isNull() || (given.isString() && given.stringValue().isBlank())) {
-                generatedRequestId = UUID.randomUUID().toString();
-                requestId = generatedRequestId;
-            } else if (given.isString()) {
-                requestId = given.stringValue();
-            } else {
-                return new Verdict.Denied(Refusal.REQUEST_ID_INVALID);
+        // the key is the caller's: the hook never makes one up. A call without one is signed with the empty key and the
+        // server refuses it (VALIDATION_FAILED, path operationKey).
+        String operationKey = "";
+        if (call.tool().carriesOperationKey()) {
+            JsonNode given = arguments.get(OPERATION_KEY);
+            if (given != null && !given.isNull()) {
+                if (!given.isString()) {
+                    return new Verdict.Denied(Refusal.OPERATION_KEY_INVALID);
+                }
+                operationKey = given.stringValue();
             }
         }
         // what the host hands the server, without the attestation: the signature covers exactly this (F1/F3)
         ObjectNode stamped = arguments.deepCopy();
-        if (generatedRequestId != null) {
-            stamped.put(REQUEST_ID_KEY, generatedRequestId);
-        }
         String argumentsDigest;
         try {
             argumentsDigest = ArgumentsDigest.of((Map<?, ?>) codec.plain(stamped));
@@ -129,11 +124,11 @@ final class LedgerHook {
             LOG.debug("the session key of the author cannot be used", unusable);
             return new Verdict.Denied(Refusal.SESSION_KEY_UNAVAILABLE);
         }
-        AttestationClaims claims = new AttestationClaims(author, call.tool().canonicalName(), requestId,
+        AttestationClaims claims = new AttestationClaims(author, call.tool().canonicalName(), operationKey,
                 argumentsDigest, clock.instant().getEpochSecond());
         String attestation = key.sign(claims).text();
         stamped.put(RESERVED_KEY, attestation);
-        return new Verdict.Stamped(stamped, attestation, generatedRequestId);
+        return new Verdict.Stamped(stamped, attestation);
     }
 
     private static boolean isBlank(byte[] bytes) {

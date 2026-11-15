@@ -18,7 +18,7 @@ import tools.jackson.databind.JsonNode;
  * text). The server is the audience of the signature: only the shapes below are signed, for the server in the name or
  * in {@code ServerName}.
  * {@code overwrite} is merged into the host's tool args, so a direct call overwrites only {@code _hostAttestation}
- * (and {@code request_id} when the hook had to generate one) and a wrapped call overwrites only {@code Arguments},
+ * and a wrapped call overwrites only {@code Arguments},
  * in its original form. Only {@code allow} is used: no
  * auto-approval, the host's permission policy stays in force. The host ignores a failing hook process, so
  * malformed input is denied explicitly with exit 0.
@@ -140,7 +140,7 @@ record AntigravityDialect(JsonCodec codec) implements HostDialect {
     @Override
     public Response allow(Intake.Attest call, Verdict.Stamped stamped) {
         HostDocument.Overwrite overwrite = switch (call.form()) {
-            case DIRECT -> new HostDocument.Overwrite.Attestation(stamped.attestation(), stamped.generatedRequestId());
+            case DIRECT -> new HostDocument.Overwrite.Attestation(stamped.attestation());
             case EMBEDDED_OBJECT -> new HostDocument.Overwrite.ObjectArguments(stamped.arguments());
             case EMBEDDED_TEXT -> new HostDocument.Overwrite.TextArguments(codec.writeText(stamped.arguments()));
         };

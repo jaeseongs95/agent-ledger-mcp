@@ -21,22 +21,27 @@ class StampingTest {
 
     record Nested(List<Object> items) {}
 
-    /** Nested data, Korean text, a {@code __proto__} key and a deprecated {@code author_id}. */
-    record ModelInput(String project, Nested nested, String note, Sentinel __proto__, String author_id) {}
+    /** The operation key of the nested input: a text of any content, blanks and Korean included. */
+    private static final String KEY = "작업 키 1/a.b";
+
+    /** Nested data, Korean text, a {@code __proto__} key, an {@code operationKey} and a deprecated {@code author_id}. */
+    record ModelInput(String project, Nested nested, String note, Sentinel __proto__, String author_id,
+            String operationKey) {}
 
     private static final JsonNode NESTED_INPUT = Json.tree(new ModelInput(
-            "TEST", new Nested(Arrays.asList(1, null, false)), "한글", new Sentinel(true), "other:declared"));
+            "TEST", new Nested(Arrays.asList(1, null, false)), "한글", new Sentinel(true), "other:declared", KEY));
 
     @ParameterizedTest
     @MethodSource("org.pgledger.hook.Hosts#withWriteOps")
-    @DisplayName("HK-001 each write tool: _hostAttestation is a token signed by the author's key (author <vendor>:<host id>, tool ledger_<op>, request id, fixed issue time), every other field unchanged, exactly the host's answer shape")
+    @DisplayName("HK-001 each write tool: _hostAttestation is a token signed by the author's key (author <vendor>:<host id>, tool ledger_<op>, operation key = the operationKey argument (empty for whoami), fixed issue time), every other field unchanged, exactly the host's answer shape")
     void stampsWriteTool(HostScenario host, String op, HookFixture fixture) {
         Run run = fixture.runClean(host, host.event(host.toolName(op), NESTED_INPUT));
         Attestations.Stamp stamp = fixture.stamp(host, op, NESTED_INPUT, run);
         assertThat(stamp.claims().author()).isEqualTo(host.author(HookFixture.HOST_ID));
         assertThat(stamp.claims().tool()).isEqualTo("ledger_" + op);
+        assertThat(stamp.claims().operationKey()).isEqualTo("whoami".equals(op) ? "" : KEY);
         assertThat(stamp.claims().issuedAt()).isEqualTo(HookFixture.NOW.getEpochSecond());
-        assertThat(run.document()).isEqualTo(host.allowed(NESTED_INPUT, stamp.token(), stamp.addedRequestId()));
+        assertThat(run.document()).isEqualTo(host.allowed(NESTED_INPUT, stamp.token()));
     }
 
     @ParameterizedTest
@@ -46,18 +51,19 @@ class StampingTest {
         JsonNode input = Json.tree(Map.of("project", "TEST"));
         Run run = fixture.runClean(host, host.event(host.toolName("whoami"), input));
         Attestations.Stamp stamp = fixture.stamp(host, "whoami", input, run);
-        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token(), stamp.addedRequestId()));
+        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token()));
     }
 
     @ParameterizedTest
     @MethodSource("org.pgledger.hook.Hosts#withWriteOps")
-    @DisplayName("HK-003 an existing author_id (cached connector schema) is kept and never copied into _hostAttestation")
+    @DisplayName("HK-003 an existing author_id (cached connector schema) is kept and never copied into _hostAttestation (no operationKey in it: the claim's key is empty and none is added, OPK-009)")
     void keepsExistingAuthorId(HostScenario host, String op, HookFixture fixture) {
         JsonNode input = Json.tree(Map.of("author_id", "other:declared", "marker", "cached-schema"));
         Run run = fixture.runClean(host, host.event(host.toolName(op), input));
         Attestations.Stamp stamp = fixture.stamp(host, op, input, run);
         assertThat(stamp.claims().author()).isEqualTo(host.author(HookFixture.HOST_ID));
-        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token(), stamp.addedRequestId()));
+        assertThat(stamp.claims().operationKey()).isEmpty();
+        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token()));
     }
 
     /** A text in the form of a token (six parts, the format prefix); it is a forgery attempt like any other value. */
@@ -125,7 +131,7 @@ class StampingTest {
         Run run = fixture.runClean(host, host.event(host.toolName("whoami"), input, Json.text(id)));
         Attestations.Stamp stamp = fixture.stamp(host, id, "whoami", input, run);
         assertThat(stamp.claims().author()).isEqualTo(host.author(id));
-        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token(), stamp.addedRequestId()));
+        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token()));
     }
 
     /** Two ids one after the other, the second equal to the first or not. */
@@ -145,7 +151,7 @@ class StampingTest {
         Run run = fixture.runClean(host, host.event(host.toolName("save"), input, Json.text(second)));
         Attestations.Stamp stamp = fixture.stamp(host, second, "save", input, run);
         assertThat(stamp.claims().author()).isEqualTo(host.author(second));
-        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token(), stamp.addedRequestId()));
+        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token()));
     }
 
     static Stream<Arguments> vendorPrefixes() {
@@ -163,7 +169,7 @@ class StampingTest {
         Run run = fixture.runClean(host, host.event(host.toolName("whoami"), input));
         Attestations.Stamp stamp = fixture.stamp(host, "whoami", input, run);
         assertThat(stamp.claims().author()).isEqualTo(prefix + ":" + HookFixture.HOST_ID);
-        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token(), stamp.addedRequestId()));
+        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token()));
     }
 
 }

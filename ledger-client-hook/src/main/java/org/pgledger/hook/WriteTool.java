@@ -10,9 +10,10 @@ import java.util.stream.Collectors;
  * ledger tools named {@code ledger_<operation>} and the five attachment tools named {@code artifact-<operation>}. Read
  * tools (ledger_get, ledger_history, ledger_search, ledger_defects, ...) are deliberately absent.
  *
- * <p>The attachment tools carry no request id, like whoami: the claim's request id is empty and the hook adds no
- * {@code request_id} to the arguments (the server binding of those tools refuses an unknown argument; the begin is made
- * idempotent by its {@code operationKey}, and chunk and finish are bound to the upload by {@code uploadId}).
+ * <p>The nine ledger write tools carry the {@code operationKey} of the call in the claim. whoami and the attachment tools
+ * do not: their claim's operation key is empty (the begin is made idempotent by its own {@code operationKey}, which the
+ * digest of the arguments covers, and chunk and finish are bound to the upload by {@code uploadId}, they take no
+ * {@code operationKey}).
  */
 public enum WriteTool {
     SAVE("ledger_save", true),
@@ -32,11 +33,11 @@ public enum WriteTool {
     ARTIFACT_READ("artifact-read", false);
 
     private final String canonicalName;
-    private final boolean carriesRequestId;
+    private final boolean carriesOperationKey;
 
-    WriteTool(String canonicalName, boolean carriesRequestId) {
+    WriteTool(String canonicalName, boolean carriesOperationKey) {
         this.canonicalName = canonicalName;
-        this.carriesRequestId = carriesRequestId;
+        this.carriesOperationKey = carriesOperationKey;
     }
 
     /**
@@ -47,9 +48,9 @@ public enum WriteTool {
         return canonicalName;
     }
 
-    /** Whether the call has a request id (the claim names it, and the hook generates one if the model gave none). */
-    boolean carriesRequestId() {
-        return carriesRequestId;
+    /** Whether the claim of the call names the {@code operationKey} argument of the call (otherwise the claim's key is empty). */
+    boolean carriesOperationKey() {
+        return carriesOperationKey;
     }
 
     /**

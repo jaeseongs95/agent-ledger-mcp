@@ -43,9 +43,9 @@ interface HostScenario {
 
     /**
      * The answer to a call that gets stamped; {@code sent} are the arguments of the direct call, {@code token} the
-     * attestation the hook wrote, {@code addedRequestId} the request id the hook generated (null if it added none).
+     * attestation the hook wrote; nothing else is added to the arguments.
      */
-    Optional<JsonNode> allowed(JsonNode sent, String token, String addedRequestId);
+    Optional<JsonNode> allowed(JsonNode sent, String token);
 
     /**
      * The object of the answer to a direct call that carries {@code _hostAttestation}: the whole stamped arguments

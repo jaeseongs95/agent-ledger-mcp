@@ -136,18 +136,42 @@ class ContractVectorsTest {
     }
 
     @Test
-    @DisplayName("HK-043 ATA-021 the attestation of an attachment tool is issued for its hyphenated name, and only whoami and the attachment tools have no request id")
-    void attachmentToolsAreHyphenatedAndHaveNoRequestId() {
+    @DisplayName("HK-043 ATA-021 the attestation of an attachment tool is issued for its hyphenated name, and only whoami and the attachment tools carry no operation key (was: no request id)")
+    void attachmentToolsAreHyphenatedAndHaveNoOperationKey() {
         List<String> attachment = texts(vectors(ContractVectors.WRITE_TOOLS).path("attachment"));
         assertThat(attachment).containsExactly("artifact-begin", "artifact-chunk", "artifact-finish", "artifact-status", "artifact-read");
         for (String name : attachment) {
             assertThat(WriteTool.ofName(name)).as(name).isPresent();
             assertThat(WriteTool.ofName(name).orElseThrow().canonicalName()).isEqualTo(name);
-            assertThat(WriteTool.ofName(name).orElseThrow().carriesRequestId()).as(name).isFalse();
+            assertThat(WriteTool.ofName(name).orElseThrow().carriesOperationKey()).as(name).isFalse();
         }
-        assertThat(Arrays.stream(WriteTool.values()).filter(tool -> !tool.carriesRequestId()).map(WriteTool::canonicalName))
+        assertThat(Arrays.stream(WriteTool.values()).filter(tool -> !tool.carriesOperationKey()).map(WriteTool::canonicalName))
                 .containsExactly("ledger_whoami", "artifact-begin", "artifact-chunk", "artifact-finish", "artifact-status",
                         "artifact-read");
+    }
+
+    @Test
+    @DisplayName("OPK-016 the contract vectors name the nine ledger write tools that carry the operationKey: WriteTool.carriesOperationKey() is true for exactly those (the ten write vectors but ledger_whoami) and false for whoami, the five attachment tools and every read tool")
+    void exactlyTheNineLedgerWriteToolsCarryTheOperationKey() {
+        JsonNode tools = vectors(ContractVectors.WRITE_TOOLS);
+        List<String> nine = new ArrayList<>(texts(tools.path("write")));
+        assertThat(nine.remove("ledger_whoami")).isTrue();
+        assertThat(nine).containsExactly("ledger_save", "ledger_transition", "ledger_record_fix", "ledger_record_case",
+                "ledger_link", "ledger_correct", "ledger_batch", "ledger_review", "ledger_review_correct");
+        for (String name : nine) {
+            assertThat(WriteTool.ofName(name).orElseThrow().carriesOperationKey()).as(name).isTrue();
+        }
+        assertThat(Arrays.stream(WriteTool.values()).filter(WriteTool::carriesOperationKey).map(WriteTool::canonicalName))
+                .containsExactlyElementsOf(nine);
+        assertThat(WriteTool.WHOAMI.carriesOperationKey()).isFalse();
+        for (String name : texts(tools.path("attachment"))) {
+            assertThat(WriteTool.ofName(name).orElseThrow().carriesOperationKey()).as(name).isFalse();
+        }
+        for (String read : texts(tools.path("read"))) {
+            assertThat(WriteTool.ofName(read)).as(read + " is no write tool, so it carries no key").isEmpty();
+        }
+        // the vector file speaks of the operationKey and no longer of a request id
+        assertThat(tools.path("description").stringValue()).contains("operationKey").doesNotContainIgnoringCase("request_id");
     }
 
     @Test

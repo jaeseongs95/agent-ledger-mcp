@@ -14,7 +14,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.pgledger.hook.AntigravityHost.Envelope;
 import tools.jackson.databind.JsonNode;
 
-/** HK-022, HK-023, HK-030: which tool, which request id and which time the signed attestation carries. */
+/** HK-022, HK-023, HK-030, OPK-009: which tool, which operation key and which time the signed attestation carries. */
 @ExtendWith(HookExtension.class)
 class SigningTest {
 
@@ -49,7 +49,7 @@ class SigningTest {
         Attestations.Stamp stamp = fixture.stampCarrier(server, host.author(HookFixture.HOST_ID), op, input,
                 host.stampedPart(run));
         assertThat(stamp.claims().tool()).isEqualTo("ledger_" + op);
-        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token(), stamp.addedRequestId()));
+        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token()));
     }
 
     /** One naming of an attachment tool in a host: {@code %s} is the tool name, for example {@code artifact-chunk}. */
@@ -71,7 +71,7 @@ class SigningTest {
 
     @ParameterizedTest
     @MethodSource("artifactNamings")
-    @DisplayName("HK-022 ATA-021 an attachment tool in every naming of every host is signed for its own hyphenated name (not ledger_...), with an empty request id, no request_id added, and the key of its server")
+    @DisplayName("HK-022 ATA-021 an attachment tool in every naming of every host is signed for its own hyphenated name (not ledger_...), with an empty operation key, no operationKey added, and the key of its server")
     void attachmentToolClaimIsTheHyphenatedName(HostScenario host, String hostToolName, String server, String op,
             HookFixture fixture) {
         JsonNode input = Json.tree(Map.of("marker", "attachment"));
@@ -79,22 +79,20 @@ class SigningTest {
         Attestations.Stamp stamp = fixture.stampCarrier(server, host.author(HookFixture.HOST_ID), op, input,
                 host.stampedPart(run));
         assertThat(stamp.claims().tool()).isEqualTo(op);
-        assertThat(stamp.claims().requestId()).isEmpty();
-        assertThat(stamp.addedRequestId()).isNull();
-        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token(), null));
+        assertThat(stamp.claims().operationKey()).isEmpty();
+        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token()));
     }
 
     @ParameterizedTest
     @MethodSource("org.pgledger.hook.Hosts#withArtifactOps")
-    @DisplayName("HK-023 ATA-021 an attachment tool has no request id whatever the arguments carry: nothing is generated, a given request_id is not touched and not signed, and it is never denied for it")
-    void attachmentToolsHaveNoRequestId(HostScenario host, String op, HookFixture fixture) {
+    @DisplayName("HK-023 OPK-009 ATA-021 an attachment tool has no operation key in its claim whatever the arguments carry: nothing is generated, a given operationKey (artifact-begin has its own) is not touched and not signed as the claim's key, and it is never denied for it")
+    void attachmentToolsHaveNoOperationKey(HostScenario host, String op, HookFixture fixture) {
         for (String inputJson : WHOAMI_INPUTS) {
             JsonNode input = Json.of(inputJson);
             Run run = fixture.runClean(host, host.event(host.toolName(op), input));
             Attestations.Stamp stamp = fixture.stamp(host, op, input, run);
-            assertThat(stamp.claims().requestId()).as(inputJson).isEmpty();
-            assertThat(stamp.addedRequestId()).as(inputJson).isNull();
-            assertThat(run.document()).as(inputJson).isEqualTo(host.allowed(input, stamp.token(), null));
+            assertThat(stamp.claims().operationKey()).as(inputJson).isEmpty();
+            assertThat(run.document()).as(inputJson).isEqualTo(host.allowed(input, stamp.token()));
         }
     }
 
@@ -105,7 +103,7 @@ class SigningTest {
 
     @ParameterizedTest
     @MethodSource("org.pgledger.hook.Hosts#all")
-    @DisplayName("ATA-021 end to end: artifact-chunk with the largest chunk (349528 base64 characters) passes the intake and the canonical form, is signed for artifact-chunk with an empty request id, no request_id is added, and the digest covers the whole data")
+    @DisplayName("ATA-021 end to end: artifact-chunk with the largest chunk (349528 base64 characters) passes the intake and the canonical form, is signed for artifact-chunk with an empty operation key (it takes none), no operationKey is added, and the digest covers the whole data")
     void largestChunkIsSigned(HostScenario host, HookFixture fixture) {
         String data = "QUJD".repeat(LARGEST_CHUNK_CHARACTERS / 4);
         assertThat(data).hasSize(LARGEST_CHUNK_CHARACTERS);
@@ -113,9 +111,8 @@ class SigningTest {
         Run run = fixture.runClean(host, host.event(host.toolName("artifact-chunk"), input));
         Attestations.Stamp stamp = fixture.stamp(host, "artifact-chunk", input, run);
         assertThat(stamp.claims().tool()).isEqualTo("artifact-chunk");
-        assertThat(stamp.claims().requestId()).isEmpty();
-        assertThat(stamp.addedRequestId()).isNull();
-        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token(), null));
+        assertThat(stamp.claims().operationKey()).isEmpty();
+        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token()));
         // the digest is over the whole object: one character of the data changed gives another digest
         JsonNode changed = Json.tree(new ChunkCall("0b8f3c1e-1111-4222-8333-444455556666", 7, "R" + data.substring(1)));
         Attestations.Stamp other = fixture.stamp(host, "artifact-chunk", changed,
@@ -142,72 +139,70 @@ class SigningTest {
         assertThat(stamp.claims().tool()).isEqualTo("ledger_" + op);
     }
 
-    // ---- HK-023: request_id ----
+    // ---- HK-023 / OPK-009: operationKey ----
 
-    /** Inputs whose request_id is absent, JSON null or blank: the hook generates one. */
-    private static final List<String> WITHOUT_REQUEST_ID = List.of(
+    /**
+     * Inputs whose operationKey is absent or JSON null: the hook generates nothing (before OPK-009 it generated a
+     * UUID, also for a blank text); the claim's key is empty and the arguments go on unchanged but for the token.
+     */
+    private static final List<String> WITHOUT_OPERATION_KEY = List.of(
             "{\"note\":\"x\"}",
-            "{\"note\":\"x\",\"request_id\":null}",
-            "{\"note\":\"x\",\"request_id\":\"\"}",
-            "{\"note\":\"x\",\"request_id\":\"   \"}",
-            "{\"note\":\"x\",\"request_id\":\"\\t\\n\"}");
+            "{\"note\":\"x\",\"operationKey\":null}");
 
-    static Stream<Arguments> withoutRequestId() {
-        return Hosts.cross(WITHOUT_REQUEST_ID);
+    static Stream<Arguments> withoutOperationKey() {
+        return Hosts.cross(WITHOUT_OPERATION_KEY);
     }
 
     @ParameterizedTest
-    @MethodSource("withoutRequestId")
-    @DisplayName("HK-023 an absent, null or blank request_id is replaced by a generated UUID, the same in the arguments and in the signed token")
-    void generatesTheRequestId(HostScenario host, String inputJson, HookFixture fixture) {
+    @MethodSource("withoutOperationKey")
+    @DisplayName("HK-023 OPK-009 an absent or null operationKey is not replaced by a generated one (this changed: the hook used to generate a UUID): the claim's operation key is empty and the arguments are unchanged but for _hostAttestation; the server refuses the call")
+    void generatesNoOperationKey(HostScenario host, String inputJson, HookFixture fixture) {
         JsonNode input = Json.of(inputJson);
         byte[] event = host.event(host.toolName("save"), input);
         Run run = fixture.runClean(host, event);
         Attestations.Stamp stamp = fixture.stamp(host, "save", input, run);
-        assertThat(stamp.addedRequestId()).as("generated request id").isNotNull().isEqualTo(stamp.claims().requestId());
-        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token(), stamp.addedRequestId()));
-        Run again = fixture.runClean(host, event);
-        Attestations.Stamp second = fixture.stamp(host, "save", input, again);
-        assertThat(second.addedRequestId()).as("a new call gets a new id").isNotEqualTo(stamp.addedRequestId());
+        assertThat(stamp.claims().operationKey()).isEmpty();
+        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token()));
+        assertThat(host.stampedPart(run).has("request_id")).as("no request_id is added").isFalse();
     }
 
-    /** Request ids the model chose: kept exactly as they are, spaces, case and non-ASCII included. */
-    private static final List<String> OWN_REQUEST_IDS = List.of(
+    /** Operation keys the model chose: kept exactly as they are, blanks, case, length and non-ASCII included. */
+    private static final List<String> OWN_OPERATION_KEYS = List.of(
             "abc", " Req 1 ", "UPPER-lower-Mixed", "  leading", "trailing  ", "550E8400-E29B-41D4-A716-446655440000",
-            "한글-요청", "0");
+            "한글-요청", "0", "", "   ", "\t\n", "x".repeat(200));
 
-    static Stream<Arguments> ownRequestIds() {
-        return Hosts.cross(OWN_REQUEST_IDS);
+    static Stream<Arguments> ownOperationKeys() {
+        return Hosts.cross(OWN_OPERATION_KEYS);
     }
 
     @ParameterizedTest
-    @MethodSource("ownRequestIds")
-    @DisplayName("HK-023 a non-blank request_id text is kept unchanged (no trimming, no case change) and signed exactly as it is")
-    void keepsTheOwnRequestId(HostScenario host, String requestId, HookFixture fixture) {
-        JsonNode input = Json.tree(Map.of("note", "x", "request_id", requestId));
+    @MethodSource("ownOperationKeys")
+    @DisplayName("HK-023 OPK-009 an operationKey text of any content (also empty, blank or longer than the server accepts) is kept unchanged (no trimming, no case change) and signed exactly as it is; the hook does not judge the key, the server does")
+    void keepsTheOwnOperationKey(HostScenario host, String operationKey, HookFixture fixture) {
+        JsonNode input = Json.tree(Map.of("note", "x", "operationKey", operationKey));
         Run run = fixture.runClean(host, host.event(host.toolName("save"), input));
         Attestations.Stamp stamp = fixture.stamp(host, "save", input, run);
-        assertThat(stamp.claims().requestId()).isEqualTo(requestId);
-        assertThat(stamp.addedRequestId()).as("nothing generated").isNull();
-        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token(), null));
+        assertThat(stamp.claims().operationKey()).isEqualTo(operationKey);
+        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token()));
     }
 
-    /** Request ids of another JSON type: number, boolean, object, array. */
-    private static final List<String> INVALID_REQUEST_IDS = List.of(
+    /** Operation keys of another JSON type: number, boolean, object, array. */
+    private static final List<String> INVALID_OPERATION_KEYS = List.of(
             "7", "1.5", "0", "true", "false", "{}", "{\"a\":1}", "[]", "[\"x\"]");
 
-    static Stream<Arguments> invalidRequestIds() {
-        return Hosts.cross(INVALID_REQUEST_IDS);
+    static Stream<Arguments> invalidOperationKeys() {
+        return Hosts.cross(INVALID_OPERATION_KEYS);
     }
 
     @ParameterizedTest
-    @MethodSource("invalidRequestIds")
-    @DisplayName("HK-023 a request_id that is a number, boolean, object or array is denied (REQUEST_ID_INVALID): no output arguments, nothing signed, no key created")
-    void deniesAnInvalidRequestId(HostScenario host, String requestIdJson, HookFixture fixture) {
-        JsonNode input = Json.of("{\"note\":\"x\",\"request_id\":" + requestIdJson + "}");
+    @MethodSource("invalidOperationKeys")
+    @DisplayName("HK-023 OPK-009 an operationKey that is a number, boolean, object or array is denied (OPERATION_KEY_INVALID, was REQUEST_ID_INVALID): no output arguments, nothing signed, no key created")
+    void deniesAnInvalidOperationKey(HostScenario host, String operationKeyJson, HookFixture fixture) {
+        JsonNode input = Json.of("{\"note\":\"x\",\"operationKey\":" + operationKeyJson + "}");
         Run run = fixture.runClean(host, host.event(host.toolName("save"), input));
-        assertThat(run.document()).isEqualTo(host.denied(Refusal.REQUEST_ID_INVALID));
-        assertThat(run.out()).doesNotContain("updatedInput").doesNotContain("overwrite").doesNotContain("pgla2");
+        assertThat(run.document()).isEqualTo(host.denied(Refusal.OPERATION_KEY_INVALID));
+        assertThat(run.out()).contains("operationKey").doesNotContain("updatedInput").doesNotContain("overwrite")
+                .doesNotContain("pgla2");
         assertThat(fixture.keyDirectory()).as("no key folder, so no key was created").doesNotExist();
     }
 
@@ -217,19 +212,25 @@ class SigningTest {
 
     @ParameterizedTest
     @MethodSource("nineWriteOps")
-    @DisplayName("HK-023 each of the nine write tools gets a generated request_id when it has none")
-    void nineWriteToolsGetARequestId(HostScenario host, String op, HookFixture fixture) {
-        JsonNode input = Json.of("{\"note\":\"x\"}");
-        Run run = fixture.runClean(host, host.event(host.toolName(op), input));
-        Attestations.Stamp stamp = fixture.stamp(host, op, input, run);
-        assertThat(stamp.addedRequestId()).isNotNull();
-        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token(), stamp.addedRequestId()));
+    @DisplayName("HK-023 OPK-009 each of the nine write tools signs the operationKey argument as its claim's key, and an empty key when it has none: nothing is generated")
+    void nineWriteToolsSignTheOperationKey(HostScenario host, String op, HookFixture fixture) {
+        JsonNode without = Json.of("{\"note\":\"x\"}");
+        Run noKeyRun = fixture.runClean(host, host.event(host.toolName(op), without));
+        Attestations.Stamp noKey = fixture.stamp(host, op, without, noKeyRun);
+        assertThat(noKey.claims().operationKey()).isEmpty();
+        assertThat(noKeyRun.document()).isEqualTo(host.allowed(without, noKey.token()));
+
+        JsonNode with = Json.of("{\"note\":\"x\",\"operationKey\":\"key-" + op + "\"}");
+        Run run = fixture.runClean(host, host.event(host.toolName(op), with));
+        Attestations.Stamp stamp = fixture.stamp(host, op, with, run);
+        assertThat(stamp.claims().operationKey()).isEqualTo("key-" + op);
+        assertThat(run.document()).isEqualTo(host.allowed(with, stamp.token()));
     }
 
-    /** whoami has no request id whatever it carries: the arguments are not touched and never denied for it. */
+    /** whoami has no operation key whatever it carries: the arguments are not touched and never denied for it. */
     private static final List<String> WHOAMI_INPUTS = List.of(
-            "{\"note\":\"x\"}", "{\"request_id\":\"keep-me\"}", "{\"request_id\":null}", "{\"request_id\":7}",
-            "{\"request_id\":\"\"}");
+            "{\"note\":\"x\"}", "{\"operationKey\":\"keep-me\"}", "{\"operationKey\":null}", "{\"operationKey\":7}",
+            "{\"operationKey\":\"\"}");
 
     static Stream<Arguments> whoamiInputs() {
         return Hosts.cross(WHOAMI_INPUTS);
@@ -237,14 +238,13 @@ class SigningTest {
 
     @ParameterizedTest
     @MethodSource("whoamiInputs")
-    @DisplayName("HK-023 whoami: the request id claim is empty and no request_id is added")
-    void whoamiHasNoRequestId(HostScenario host, String inputJson, HookFixture fixture) {
+    @DisplayName("HK-023 OPK-009 whoami: the operation key claim is empty and nothing is added (whoami has only _hostAttestation)")
+    void whoamiHasNoOperationKey(HostScenario host, String inputJson, HookFixture fixture) {
         JsonNode input = Json.of(inputJson);
         Run run = fixture.runClean(host, host.event(host.toolName("whoami"), input));
         Attestations.Stamp stamp = fixture.stamp(host, "whoami", input, run);
-        assertThat(stamp.claims().requestId()).isEmpty();
-        assertThat(stamp.addedRequestId()).isNull();
-        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token(), null));
+        assertThat(stamp.claims().operationKey()).isEmpty();
+        assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token()));
     }
 
     // ---- HK-030: time ----
@@ -253,7 +253,7 @@ class SigningTest {
     @MethodSource("org.pgledger.hook.Hosts#all")
     @DisplayName("HK-030 issuedAt follows the injected clock: runs 90 s apart give claims 90 s apart, and a fraction of a second is cut off; every token verifies")
     void issuedAtFollowsTheClock(HostScenario host, HookFixture fixture) {
-        JsonNode input = Json.of("{\"request_id\":\"r-30\"}");
+        JsonNode input = Json.of("{\"operationKey\":\"r-30\"}");
         byte[] event = host.event(host.toolName("save"), input);
         Attestations.Stamp first = fixture.stamp(host, "save", input, fixture.runClean(host, event));
         fixture.at(HookFixture.NOW.plusSeconds(90));
