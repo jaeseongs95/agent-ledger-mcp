@@ -13,9 +13,11 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 /**
- * State changes of session grants as plain ANSI statements. The conditional UPDATE of {@link #markUsed} is both the
- * check and the lock: it keeps the row locked until the writer's transaction ends, so a revocation waits for the
- * write (the write commits before the revocation) and a committed revocation makes the check fail.
+ * State changes of session grants as plain ANSI statements. The conditional UPDATE of {@link #markUsed} is the check of the
+ * write and a real write of it (it stamps the last use): the race with a revocation is decided by the number of rows it
+ * affects, one for a live grant and none for a grant that a committed revocation closed, and the write whose check affects
+ * none ends with the translated SESSION_NOT_GRANTED. That the database makes a concurrent revocation of the same row wait
+ * until the write's transaction ends is what any UPDATE of a row does; no statement exists only for that (principle 4.4).
  */
 @Repository
 public class GrantStateRepository {
@@ -26,7 +28,10 @@ public class GrantStateRepository {
         this.jdbc = jdbc;
     }
 
-    /** True when the author holds a live grant (not revoked, not expired) for the scope; stamps its last use. */
+    /**
+     * True when the author holds a live grant (not revoked, not expired) for the scope and its last use is stamped (the
+     * affected row count of the conditional UPDATE is the answer); false when no live grant exists.
+     */
     public boolean markUsed(AuthorId author, ProjectId project, Scope scope, Instant now) {
         return jdbc.sql("UPDATE session_grant SET last_used_at = :now "
                 + "WHERE author_id = :author AND project_id = :project AND grant_scope = :scope "
