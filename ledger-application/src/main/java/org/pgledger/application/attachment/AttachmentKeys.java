@@ -123,11 +123,15 @@ public class AttachmentKeys {
     }
 
     /**
-     * The start check of the keys: the key directory is a directory and every key id in the list has its key file (the active key
-     * too). A row whose key file is missing stops the start, naming the key id only.
+     * The start check of the keys: the key directory, when it is there, is a directory (a file where it belongs is
+     * ARTIFACT_STORAGE_UNSAFE), and every key id in the list has its key file (the active key too). The server does not make the key
+     * folder or a key: {@code prepare-host} makes the folder and {@code setup} the key (design 4.3), so a missing key folder is "no
+     * usable key" (ARTIFACT_KEY_MISSING naming the key id only), the answer of a missing key file, and a start that stops.
      */
     public void requirePresent(Collection<String> keyIds) {
-        files.requireDirectory(properties.keyDirectory());
+        if (Files.exists(properties.keyDirectory())) {
+            files.requireDirectory(properties.keyDirectory());
+        }
         byId(properties.activeKeyId());
         for (String keyId : keyIds) {
             byId(keyId);
