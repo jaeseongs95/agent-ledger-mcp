@@ -80,7 +80,7 @@ public class LedgerTestInfrastructure {
     @Bean
     SchemaMigrated schemaMigrated(DataSource dataSource, Clock clock, Environment environment) {
         return new SchemaMigrated(TestSchemaServices.migrator(dataSource,
-                new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, SchemaProperties.DEFAULT_LONG_TEXT_TYPE, true,
+                new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, true,
                         environment.getRequiredProperty(TestSchemaInitializer.SCHEMA_PROPERTY),
                         Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT)), clock).migrate());
     }

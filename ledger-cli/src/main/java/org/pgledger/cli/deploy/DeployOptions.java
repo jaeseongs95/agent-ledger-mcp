@@ -17,7 +17,6 @@ public final class DeployOptions {
     /** The application account: the one database account of the MCP server, the admin web and the owner commands. */
     public static final String APP_ACCOUNT = "app-account";
     public static final String SCHEMA = "schema";
-    public static final String LONG_TEXT_TYPE = "long-text-type";
     public static final String MCP_PORT = "mcp-port";
     public static final String ADMIN_PORT = "admin-port";
     /** The public host names of the MCP server: one name or a comma list, each allowed in its Host check and served by the nginx site. */
@@ -52,8 +51,7 @@ public final class DeployOptions {
     public static final String CHECK = "check";
 
     /** The options that take a value, in the order of their usage text. */
-    public static final List<String> ALL = List.of(NAME, PLATFORM, HOME, JAVA, JDBC_URL, APP_ACCOUNT, SCHEMA, LONG_TEXT_TYPE,
-            MCP_PORT, ADMIN_PORT, MCP_HOST, ADMIN_HOST, NGINX_CONF, TLS_CERTIFICATE, TLS_KEY, ACME_DIRECTORY, FROM_1X_ENV, ROOT);
+    public static final List<String> ALL = List.of(NAME, PLATFORM, HOME, JAVA, JDBC_URL, APP_ACCOUNT, SCHEMA, MCP_PORT, ADMIN_PORT, MCP_HOST, ADMIN_HOST, NGINX_CONF, TLS_CERTIFICATE, TLS_KEY, ACME_DIRECTORY, FROM_1X_ENV, ROOT);
 
     /** Every option of the command, as the set the runner checks the command line against. */
     public static final Set<String> NAMES = Stream.concat(ALL.stream(), Stream.of(CHECK, TLS_ACME))

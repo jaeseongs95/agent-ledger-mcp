@@ -63,7 +63,6 @@ class MigrateCommandTest {
 
     private Outcome run(Cli cli, RecordingOutput output, String... args) {
         return cli.withDatabase(database.dataSource()).asProcessUser(USER)
-                .withArguments("--ledger.schema.long-text-type=" + TestLedgerDatabase.longTextType())
                 .run(tmp.resolve("secrets"), null, output, args);
     }
 

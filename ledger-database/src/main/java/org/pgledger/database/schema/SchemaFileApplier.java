@@ -22,34 +22,26 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class SchemaFileApplier {
 
-    /**
-     * The one place where the DDL differs between DBMSs: the type of a long text ({@code TEXT}, {@code CLOB}, ...) is not
-     * the same in ANSI SQL on every DBMS, so the schema files write this placeholder and the file is applied with
-     * {@code ledger.schema.long-text-type} in its place. It is a plain text replacement of the file, made before the file runs
-     * (the digest is of the file, so it does not depend on the setting).
-     */
-    private static final String PLACEHOLDER = "${longtext}";
-
     private final DataSource dataSource;
     private final SchemaHistoryRepository history;
-    private final SchemaProperties properties;
 
-    public SchemaFileApplier(DataSource dataSource, SchemaHistoryRepository history, SchemaProperties properties) {
+    public SchemaFileApplier(DataSource dataSource, SchemaHistoryRepository history) {
         this.dataSource = dataSource;
         this.history = history;
-        this.properties = properties;
     }
 
     /**
      * Runs the file and appends its SUCCESS row, in one transaction. The populator gets its connection from Spring's
-     * {@code DataSourceUtils}, so it runs on the connection of the transaction, like the history row.
+     * {@code DataSourceUtils}, so it runs on the connection of the transaction, like the history row. The file is applied with
+     * {@code longTextType} in place of {@value LongTextType#PLACEHOLDER}: a plain text replacement made before the file runs (the
+     * digest is of the file, so it does not depend on the type).
      *
      * @param appliedAt the time of the row (strictly after the previous attempt of the same version, which the key needs)
      * @throws org.springframework.dao.DataAccessException when a statement or the row fails; the transaction is rolled back
      */
     @Transactional
-    public void apply(MigrationFile file, Instant appliedAt) {
-        String sql = file.text().replace(PLACEHOLDER, properties.longTextType());
+    public void apply(MigrationFile file, Instant appliedAt, String longTextType) {
+        String sql = file.text().replace(LongTextType.PLACEHOLDER, longTextType);
         ResourceDatabasePopulator populator = new ResourceDatabasePopulator(false, false, "UTF-8",
                 new ByteArrayResource(sql.getBytes(StandardCharsets.UTF_8)));
         DatabasePopulatorUtils.execute(populator, dataSource);

@@ -45,7 +45,6 @@ class DeployParametersTest {
         wrong.put(DeployOptions.JDBC_URL, "jdbc:postgresql://h/db?x=" + MARKER + "&password=1");
         wrong.put(DeployOptions.APP_ACCOUNT, "acc ount-" + MARKER);
         wrong.put(DeployOptions.SCHEMA, MARKER);
-        wrong.put(DeployOptions.LONG_TEXT_TYPE, MARKER + "\n");
         wrong.put(DeployOptions.MCP_HOST, MARKER + ".example.org");
         wrong.put(DeployOptions.ADMIN_HOST, MARKER + ".example.org");
 
@@ -99,7 +98,7 @@ class DeployParametersTest {
         assertThat(VALIDATOR.validate(good)).isEmpty();
 
         DeployParameters wrong = new DeployParameters(
-                DeployLayout.linux("Bad_Name-admin"), "relative", "jdbc:x", "a b", "Wrong", "1TEXT", 80, 80, java.util.List.of("-h"), java.util.List.of("-h"),
+                DeployLayout.linux("Bad_Name-admin"), "relative", "jdbc:x", "a b", "Wrong", 80, 80, java.util.List.of("-h"), java.util.List.of("-h"),
                 new DeployParameters.Nginx("rel", "rel", "rel"));
         Set<String> messages = new TreeSet<>();
         for (ConstraintViolation<DeployParameters> violation : VALIDATOR.validate(wrong)) {
@@ -110,8 +109,16 @@ class DeployParametersTest {
 
         assertThat(messages).isSubsetOf(DeployOptions.ALL);
         assertThat(messages).containsExactlyInAnyOrder(DeployOptions.NAME, DeployOptions.JAVA, DeployOptions.JDBC_URL,
-                DeployOptions.APP_ACCOUNT, DeployOptions.SCHEMA, DeployOptions.LONG_TEXT_TYPE, DeployOptions.MCP_PORT,
+                DeployOptions.APP_ACCOUNT, DeployOptions.SCHEMA, DeployOptions.MCP_PORT,
                 DeployOptions.ADMIN_PORT, DeployOptions.MCP_HOST, DeployOptions.ADMIN_HOST, DeployOptions.NGINX_CONF,
                 DeployOptions.TLS_CERTIFICATE, DeployOptions.TLS_KEY);
+    }
+
+    @Test
+    @DisplayName("RUN-006 the option for the long text type is gone: it is no option of the installer commands, and no record field or option constant is left for it")
+    void run006_noOptionForTheLongTextType() {
+        assertThat(DeployOptions.NAMES).noneMatch(name -> name.startsWith("long-text"));
+        assertThat(java.util.Arrays.stream(DeployParameters.class.getRecordComponents()).map(java.lang.reflect.RecordComponent::getName))
+                .noneMatch(name -> name.toLowerCase(java.util.Locale.ROOT).contains("longtext"));
     }
 }

@@ -237,7 +237,7 @@ class DriverBoundaryTest {
             try (Connection c = pool.getConnection(); var s = c.createStatement(); var rs = s.executeQuery("SELECT 1")) {
                 assertThat(rs.next()).isTrue();
             }
-            SchemaProperties named = new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, Databases.LONG_TEXT, true,
+            SchemaProperties named = new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, true,
                     schema, java.time.Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT));
             // the pool names the schema itself (it is not there yet): the migrator creates it through the same pool
             TestSchemaServices.migrator(pool, named, java.time.Clock.systemUTC()).migrate();

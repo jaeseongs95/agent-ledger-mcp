@@ -1,6 +1,6 @@
 -- V1: the core tables. ANSI SQL only: no trigger, procedure, view, sequence or identity column, no boolean
 -- column, no DEFAULT on a time column. Every id and counter is assigned by the application. Times are UTC
--- TIMESTAMP values written by the application clock. ${longtext} is the only per-DBMS part (see SchemaMigrator).
+-- TIMESTAMP values written by the application clock. ${long_text} is the only per-DBMS part (see LongTextType: the type is read from the driver).
 -- No column is named with a word that SQL:2003 reserves (so no quoting is needed on any DBMS): the time of a history
 -- or audit row is occurred_at (not AT) and the scope of a grant is grant_scope (not SCOPE).
 
@@ -57,11 +57,11 @@ CREATE TABLE task (
   id_key VARCHAR(360) NOT NULL,
   project_id VARCHAR(64) NOT NULL,
   title VARCHAR(300) NOT NULL,
-  purpose ${longtext},
-  success_condition ${longtext},
+  purpose ${long_text},
+  success_condition ${long_text},
   state VARCHAR(20) NOT NULL,
   owner_actor_id VARCHAR(200),
-  origin_ref ${longtext},
+  origin_ref ${long_text},
   origin_quote VARCHAR(2000),
   version BIGINT NOT NULL,
   created_at TIMESTAMP NOT NULL,
@@ -83,8 +83,8 @@ CREATE TABLE defect (
   severity VARCHAR(32) NOT NULL,
   status VARCHAR(20) NOT NULL,
   merged_into VARCHAR(120),
-  behavior ${longtext},
-  root_cause ${longtext},
+  behavior ${long_text},
+  root_cause ${long_text},
   owner_actor_id VARCHAR(200),
   case_seq BIGINT DEFAULT 0 NOT NULL,
   version BIGINT NOT NULL,
@@ -128,7 +128,7 @@ CREATE TABLE defect_fix (
 CREATE TABLE defect_case (
   id BIGINT NOT NULL,
   defect_id VARCHAR(120) NOT NULL,
-  observation ${longtext} NOT NULL,
+  observation ${long_text} NOT NULL,
   evidence VARCHAR(2000),
   user_quote VARCHAR(2000),
   observed_at TIMESTAMP,
@@ -166,7 +166,7 @@ CREATE TABLE release_condition (
   release_name VARCHAR(100) NOT NULL,
   goal_label VARCHAR(200),
   code VARCHAR(200) NOT NULL,
-  condition_text ${longtext},
+  condition_text ${long_text},
   state VARCHAR(10) NOT NULL,
   version BIGINT NOT NULL,
   created_by VARCHAR(200) NOT NULL,

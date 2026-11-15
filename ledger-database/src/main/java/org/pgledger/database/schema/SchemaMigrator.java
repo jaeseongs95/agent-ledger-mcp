@@ -81,11 +81,13 @@ public class SchemaMigrator {
                 repository.createSchemaIfMissing(properties.name());
             }
             ensureTable();
+            // what the placeholder of the files stands for on this database, asked once (LongTextType: from the driver, no setting)
+            String longTextType = LongTextType.choose(repository.typeInfo());
             List<Integer> applied = new ArrayList<>();
             for (MigrationFile file : files) {
                 SchemaHistory history = new SchemaHistory(repository.rows());
                 history.requireFileForEveryVersion(files);
-                if (!settle(history, file) && apply(file)) {
+                if (!settle(history, file) && apply(file, longTextType)) {
                     applied.add(file.version());
                 }
             }
@@ -136,10 +138,10 @@ public class SchemaMigrator {
      * Has the service run one file and its SUCCESS row (one transaction); true when applied by this call. A failure rolls the
      * transaction back; the FAILED row is written afterwards, outside it.
      */
-    private boolean apply(MigrationFile file) {
+    private boolean apply(MigrationFile file, String longTextType) {
         List<Row> before = new SchemaHistory(repository.rows()).attemptsOf(file.version());
         try {
-            applier.apply(file, nextTime(before));
+            applier.apply(file, nextTime(before), longTextType);
             LOG.info("applied V{} {}", file.version(), file.fileName());
             return true;
         } catch (DataAccessException | TransactionException e) {

@@ -164,7 +164,7 @@ class GrantTemplateTest {
         // may do exists only in the schema of this test (it goes with the drop of the schema)
         TestDatabase database = databases.database();
         TestSchema schema = databases.newSchema();
-        SchemaProperties named = new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, Databases.LONG_TEXT, true,
+        SchemaProperties named = new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, true,
                 schema.name(), Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT));
         TestSchemaServices.migrator(schema.dataSource(), named, Clock.systemUTC()).migrate();
         String account = database.settings().appUser();

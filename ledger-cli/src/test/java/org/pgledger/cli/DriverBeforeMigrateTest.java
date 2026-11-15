@@ -70,7 +70,7 @@ class DriverBeforeMigrateTest {
 
     private Cli configured(Cli cli, String url) {
         return cli.withArguments("--ledger.cli.driver.file=" + slashed(file), "--ledger.cli.driver.directory=" + slashed(drivers),
-                "--ledger.jdbc.url=" + url, "--ledger.schema.long-text-type=" + TestLedgerDatabase.longTextType())
+                "--ledger.jdbc.url=" + url)
                 .asProcessUser("alice");
     }
 

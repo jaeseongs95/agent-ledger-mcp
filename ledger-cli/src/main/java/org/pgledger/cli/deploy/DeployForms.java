@@ -47,7 +47,6 @@ public final class DeployForms {
      */
     static final String ACME_URL = "https://[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?::[0-9]{1,5})?(?:/[A-Za-z0-9._+-]+)*";
     static final String SCHEMA ="[a-z][a-z0-9_]{0,29}";
-    static final String LONG_TEXT = "[A-Za-z][A-Za-z0-9_]{0,30}";
 
     private DeployForms() {
     }

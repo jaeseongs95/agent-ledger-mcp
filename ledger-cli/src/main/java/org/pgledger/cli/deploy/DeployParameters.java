@@ -35,7 +35,6 @@ import org.pgledger.database.schema.GrantApplier;
  * @param jdbcUrl      JDBC URL of the ledger database; it never holds a password (the passwords are secrets of the secret store)
  * @param appAccount   the application account: the one database account of the MCP server, the admin web and the owner commands
  * @param schema       {@code ledger.schema.name}, or null for the default schema of the account
- * @param longTextType {@code ledger.schema.long-text-type}, or null for the default
  * @param mcpPort      loopback port of the MCP server
  * @param adminPort    loopback port of the admin web
  * @param mcpHosts     public host names of the MCP server (each allowed in its Host check and served by the nginx site), none when it
@@ -51,7 +50,6 @@ public record DeployParameters(
         @Pattern(regexp = DeployForms.URL, message = DeployOptions.JDBC_URL) String jdbcUrl,
         String appAccount,
         @Pattern(regexp = DeployForms.SCHEMA, message = DeployOptions.SCHEMA) String schema,
-        @Pattern(regexp = DeployForms.LONG_TEXT, message = DeployOptions.LONG_TEXT_TYPE) String longTextType,
         @Min(value = DeployForms.FIRST_UNPRIVILEGED_PORT, message = DeployOptions.MCP_PORT)
         @Max(value = DeployForms.LAST_PORT, message = DeployOptions.MCP_PORT) int mcpPort,
         @Min(value = DeployForms.FIRST_UNPRIVILEGED_PORT, message = DeployOptions.ADMIN_PORT)
@@ -110,8 +108,8 @@ public record DeployParameters(
             return this;
         }
         Nginx site = new Nginx(nginx.conf(), nginx.certificate(), nginx.key(), new Acme(nginx.acme().directory(), issued));
-        return new DeployParameters(layout, java, jdbcUrl, appAccount, schema, longTextType, mcpPort, adminPort, mcpHosts,
-                adminHosts, site);
+        return new DeployParameters(layout, java, jdbcUrl, appAccount, schema, mcpPort, adminPort, mcpHosts, adminHosts,
+                site);
     }
 
     @AssertTrue(message = DeployOptions.APP_ACCOUNT)

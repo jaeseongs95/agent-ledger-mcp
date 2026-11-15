@@ -61,7 +61,7 @@ class GrantStepTest {
     void txf005_theGrantStepIsATransactionAndRunsAgain(Databases databases) {
         TestDatabase database = databases.database();
         TestSchema schema = databases.newSchema();
-        SchemaProperties named = new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, Databases.LONG_TEXT, true,
+        SchemaProperties named = new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, true,
                 schema.name(), Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT));
         DataSource pool = schema.dataSource();
         TestSchemaServices.migrator(pool, named, Clock.systemUTC()).migrate();
@@ -74,8 +74,7 @@ class GrantStepTest {
                 .withConfiguration(AutoConfigurations.of(DataSourceTransactionManagerAutoConfiguration.class,
                         TransactionAutoConfiguration.class))
                 .withBean(Clock.class, Clock::systemUTC)
-                .withPropertyValues("ledger.schema.long-text-type=" + Databases.LONG_TEXT,
-                        "ledger.schema.require-utc=false")
+                .withPropertyValues("ledger.schema.require-utc=false")
                 .run(context -> {
                     GrantApplier applier = context.getBean(GrantApplier.class);
                     assertThat(AopUtils.isAopProxy(applier)).as("the grant step is a transaction proxy").isTrue();

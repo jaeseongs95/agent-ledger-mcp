@@ -39,6 +39,11 @@ public enum InfrastructureCode implements ErrorCode {
     SCHEMA_PENDING,
     /** A migration failed (its cause is the database failure); {0} = the version, {1} = the file name. */
     SCHEMA_MIGRATION_FAILED,
+    /**
+     * The driver reports no long character type for the placeholder of the schema files; {0} = the JDBC type that was looked for,
+     * {1} = the least length of the other character type that is taken for one.
+     */
+    SCHEMA_LONG_TEXT_TYPE_MISSING,
     /** The wait for another migration process was interrupted. */
     SCHEMA_MIGRATION_INTERRUPTED,
     /** The grants cannot be applied to the account. */

@@ -29,7 +29,7 @@ import org.springframework.jdbc.datasource.AbstractDataSource;
 class ApplicationAccountAccessTest {
 
     private static final SchemaProperties PROPERTIES = new SchemaProperties(SchemaProperties.DEFAULT_LOCATION,
-            Databases.LONG_TEXT, true, null, Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT));
+            true, null, Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT));
 
     /** A migrated schema of its own; the application account has no right on it yet. */
     private static TestSchema migrated(Databases databases) {

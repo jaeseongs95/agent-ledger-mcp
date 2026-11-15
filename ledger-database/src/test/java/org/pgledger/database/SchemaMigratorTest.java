@@ -33,6 +33,7 @@ import org.pgledger.database.repository.SchemaHistoryRepository;
 import org.pgledger.database.repository.SchemaHistoryRepository.Outcome;
 import org.pgledger.database.repository.SchemaHistoryRepository.Row;
 import org.pgledger.database.schema.LedgerSchemaGuardConfiguration;
+import org.pgledger.database.schema.LongTextType;
 import org.pgledger.database.schema.MigrationFile;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
@@ -103,7 +104,7 @@ class SchemaMigratorTest {
     }
 
     private SchemaProperties props(Path dir, String schema) {
-        return new SchemaProperties(dir.toUri().toString(), Databases.LONG_TEXT, true, schema,
+        return new SchemaProperties(dir.toUri().toString(), true, schema,
                 Duration.ofMillis(200));
     }
 
@@ -158,7 +159,7 @@ class SchemaMigratorTest {
     @Test
     void sch001_aFreshDatabaseGetsEveryRealFileInOrderWithItsDigest() {
         SchemaMigrator real = TestSchemaServices.migrator(pool,
-                new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, Databases.LONG_TEXT, true, null,
+                new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, true, null,
                         Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT)), clock);
         assertThat(real.migrate()).containsExactly(1, 2, 3, 4, 5, 6, 7, 8);
         assertThat(history()).isEqualTo(List.of(
@@ -171,6 +172,25 @@ class SchemaMigratorTest {
                 success(7, "V7__owner_passkey.sql", resource("db/V7__owner_passkey.sql"), T0),
                 success(8, "V8__attachments.sql", resource("db/V8__attachments.sql"), T0)));
         assertThat(tableExists("defect")).isTrue();
+    }
+
+    /** RUN-004: the type that the driver of the test PostgreSQL gives for the placeholder is one that holds a long text. */
+    @Test
+    void run004_theLongTextTypeOfTheDriverHoldsALongText() {
+        String type = LongTextType.choose(TestSchemaServices.history(pool).typeInfo());
+        JdbcClient jdbc = JdbcClient.create(pool);
+        jdbc.sql("CREATE TABLE t_long (id INTEGER NOT NULL, body " + type + ", CONSTRAINT pk_t_long PRIMARY KEY (id))").update();
+        String text = "긴".repeat(50_000);
+
+        jdbc.sql("INSERT INTO t_long (id, body) VALUES (1, :body)").param("body", text).update();
+
+        assertThat(jdbc.sql("SELECT body FROM t_long WHERE id = 1").query(String.class).single()).isEqualTo(text);
+        // and the files are applied with it: the placeholder is gone from the DDL that ran, and a long text fits the real columns
+        Path dir = files(Map.of("V1__long.sql", "CREATE TABLE t_files (id INTEGER NOT NULL, body ${long_text}, "
+                + "CONSTRAINT pk_t_files PRIMARY KEY (id));\n"));
+        assertThat(migrator(dir).migrate()).containsExactly(1);
+        jdbc.sql("INSERT INTO t_files (id, body) VALUES (1, :body)").param("body", text).update();
+        assertThat(jdbc.sql("SELECT LENGTH(body) FROM t_files WHERE id = 1").query(Integer.class).single()).isEqualTo(50_000);
     }
 
     @Test
@@ -292,7 +312,7 @@ class SchemaMigratorTest {
     }
 
     private List<String> twoMigrationsAtOnce() {
-        SchemaProperties real = new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, Databases.LONG_TEXT, true,
+        SchemaProperties real = new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, true,
                 null, Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT));
         Callable<String> migrate = () -> {
             Throwable refused = catchThrowable(
@@ -356,8 +376,7 @@ class SchemaMigratorTest {
     private ConfigurableApplicationContext startApplication(Path dir) {
         return new SpringApplicationBuilder(LedgerSchemaGuardConfiguration.class).web(WebApplicationType.NONE)
                 .properties("spring.main.banner-mode=off", "logging.level.root=WARN",
-                        "ledger.schema.location=" + dir.toUri(), "ledger.schema.long-text-type=" + Databases.LONG_TEXT,
-                        "ledger.schema.require-utc=false")
+                        "ledger.schema.location=" + dir.toUri(), "ledger.schema.require-utc=false")
                 .initializers(context -> {
                     context.getBeanFactory().registerSingleton("dataSource", pool);
                     context.getBeanFactory().registerSingleton("jdbcClient", JdbcClient.create(pool));
@@ -408,7 +427,7 @@ class SchemaMigratorTest {
         jdbc.sql("CREATE TABLE " + legacy + ".defect (id VARCHAR(20) NOT NULL, title VARCHAR(50), "
                 + "CONSTRAINT pk_legacy_defect PRIMARY KEY (id))").update();
         jdbc.sql("INSERT INTO " + legacy + ".defect (id, title) VALUES ('OLD-D-1', 'old')").update();
-        SchemaProperties properties = new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, Databases.LONG_TEXT, true,
+        SchemaProperties properties = new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, true,
                 named, Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT));
         // the data source of the product names its schema itself: here the schema that the migrator creates
         DataSource product = TestDatabase.scoped(database, named);

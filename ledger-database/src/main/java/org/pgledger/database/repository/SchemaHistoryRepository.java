@@ -39,6 +39,10 @@ public class SchemaHistoryRepository {
         SUCCESS, FAILED
     }
 
+    /** One row of {@code getTypeInfo}: the name of a type the database offers, its JDBC type ({@code java.sql.Types}) and its precision. */
+    public record TypeInfo(String name, int dataType, long precision) {
+    }
+
     /** One row of schema_history. */
     public record Row(int version, String fileName, Sha256 sha256, Instant appliedAt, Outcome outcome) {
     }
@@ -124,6 +128,22 @@ public class SchemaHistoryRepository {
         if (!exists) {
             jdbc.sql("CREATE SCHEMA " + schema).update();
         }
+    }
+
+    /** The types the driver reports ({@code getTypeInfo}), in its order: the facts that the long text type is chosen from. */
+    public List<TypeInfo> typeInfo() {
+        return inspect(dataSource, SchemaHistoryRepository::typeInfo);
+    }
+
+    /** The rows of {@code metaData.getTypeInfo()}: the columns {@code TYPE_NAME}, {@code DATA_TYPE} and {@code PRECISION}. */
+    public static List<TypeInfo> typeInfo(DatabaseMetaData metaData) throws SQLException {
+        List<TypeInfo> types = new ArrayList<>();
+        try (ResultSet rs = metaData.getTypeInfo()) {
+            while (rs.next()) {
+                types.add(new TypeInfo(rs.getString("TYPE_NAME"), rs.getInt("DATA_TYPE"), rs.getLong("PRECISION")));
+            }
+        }
+        return List.copyOf(types);
     }
 
     public boolean tableExists() {
