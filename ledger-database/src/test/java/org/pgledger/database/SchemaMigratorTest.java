@@ -39,9 +39,9 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.pgledger.database.repository.SchemaHistoryRepository;
 import org.pgledger.database.repository.SchemaHistoryRepository.Outcome;
 import org.pgledger.database.repository.SchemaHistoryRepository.Row;
+import org.pgledger.database.repository.SqlBuilder;
 import org.pgledger.database.schema.LedgerSchemaGuardConfiguration;
 import org.pgledger.database.schema.DatabaseEncoding;
-import org.pgledger.database.schema.LongTextType;
 import org.pgledger.database.schema.MigrationFile;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
@@ -181,17 +181,16 @@ class SchemaMigratorTest {
         assertThat(tableExists("defect")).isTrue();
     }
 
-    /** RUN-004: the type that the driver of the test PostgreSQL gives for the placeholder is one that holds a long text. */
+    /** RUN-004: the declaration that the dialect of SqlBuilder gives for the placeholder on the test PostgreSQL holds a long text. */
     @Test
-    void run004_theLongTextTypeOfTheDriverHoldsALongText() {
-        String type = LongTextType.choose(TestSchemaServices.history(pool).typeInfo());
+    void run004_theLongTextTypeOfTheDialectHoldsALongText() {
+        String type = new SqlBuilder(pool).longTextType();
         JdbcClient jdbc = JdbcClient.create(pool);
         jdbc.sql("CREATE TABLE t_long (id INTEGER NOT NULL, body " + type + ", CONSTRAINT pk_t_long PRIMARY KEY (id))").update();
         // 40000 characters of mixed Korean and ASCII text
         String text = "긴 text 글 ".repeat(5_715).substring(0, 40_000);
         assertThat(text).hasSize(40_000);
-        // the driver of PostgreSQL reports no CLOB or LONGVARCHAR: the declaration is a VARCHAR type without parameters, no length written
-        assertThat(type).as("the declaration chosen from the PostgreSQL driver").isEqualTo("varchar");
+        assertThat(type).as("the declaration of the PostgreSQL dialect").isEqualTo("TEXT");
 
         jdbc.sql("INSERT INTO t_long (id, body) VALUES (1, :body)").param("body", text).update();
 
@@ -205,6 +204,30 @@ class SchemaMigratorTest {
         assertThat(jdbc.sql("SELECT LENGTH(body) FROM t_files WHERE id = 1").query(Integer.class).single()).isEqualTo(40_000);
         jdbc.sql("INSERT INTO t_files (id, body) VALUES (2, :body)").param("body", text).update();
         assertThat(jdbc.sql("SELECT body FROM t_files WHERE id = 2").query(String.class).single()).isEqualTo(text);
+    }
+
+    /**
+     * RUN-022: the dialect is asked before any statement that changes the database. The builder of the migrator reports a product
+     * that has no dialect (the database itself is the test PostgreSQL), and the migrator names a schema to create: it is refused with
+     * DATABASE_PRODUCT_UNSUPPORTED and neither that schema nor the history table exists afterwards.
+     */
+    @Test
+    void run022_aProductWithoutADialectIsRefusedBeforeAnySchemaOrTableIsMade() throws SQLException {
+        DataSource derby = org.mockito.Mockito.mock(DataSource.class);
+        Connection connection = org.mockito.Mockito.mock(Connection.class);
+        java.sql.DatabaseMetaData metaData = org.mockito.Mockito.mock(java.sql.DatabaseMetaData.class);
+        org.mockito.Mockito.when(derby.getConnection()).thenReturn(connection);
+        org.mockito.Mockito.when(connection.getMetaData()).thenReturn(metaData);
+        org.mockito.Mockito.when(metaData.getDatabaseProductName()).thenReturn("Apache Derby");
+        Path dir = files(Map.of("V1__one.sql", ONE));
+        String named = "lt4_no_dialect";
+        SchemaMigrator refusing = TestSchemaServices.migrator(pool, props(dir, named), clock, new SqlBuilder(derby));
+
+        refusedWith(refusing::migrate, InfrastructureCode.DATABASE_PRODUCT_UNSUPPORTED);
+
+        SchemaHistoryRepository repository = TestSchemaServices.history(pool);
+        assertThat(repository.schemaExists(named)).as("the named schema is not created").isFalse();
+        assertThat(repository.tableExists()).as("the history table is not created").isFalse();
     }
 
     @Test

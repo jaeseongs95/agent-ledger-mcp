@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.pgledger.database.schema.LongTextType;
+import org.pgledger.database.repository.SqlBuilder;
 import org.pgledger.database.support.DdlModel;
 import org.pgledger.database.support.SqlText;
 import org.pgledger.database.support.SqlText.Banned;
@@ -81,7 +81,7 @@ class AnsiRulesTest {
     }
 
     private static SqlText schemaFile(Path file) {
-        return new SqlText(file.getFileName().toString(), read(file).replace(LongTextType.PLACEHOLDER, "TEXT"));
+        return new SqlText(file.getFileName().toString(), read(file).replace(SqlBuilder.LONG_TEXT_PLACEHOLDER, "TEXT"));
     }
 
     /** All string literals of a Java source file, adjacent literals joined (the way the SQL text is built). */
@@ -237,7 +237,7 @@ class AnsiRulesTest {
     void oneTextForEveryDbms() {
         assertThat(files(SCHEMA, ".*").stream().map(p -> p.getFileName().toString()))
                 .allMatch(name -> MIGRATION_FILE_NAME.matcher(name).matches());
-        assertThat(schemaFiles().map(s -> s.raw().replace(LongTextType.PLACEHOLDER, "")))
+        assertThat(schemaFiles().map(s -> s.raw().replace(SqlBuilder.LONG_TEXT_PLACEHOLDER, "")))
                 .noneMatch(text -> text.contains("${") || text.toLowerCase(Locale.ROOT).contains("dbms:"));
     }
 

@@ -6,6 +6,7 @@ import javax.sql.DataSource;
 import org.pgledger.database.repository.SchemaHistoryRepository;
 import org.pgledger.database.repository.SchemaHistoryRepository.Outcome;
 import org.pgledger.database.repository.SchemaHistoryRepository.Row;
+import org.pgledger.database.repository.SqlBuilder;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.jdbc.datasource.init.DatabasePopulatorUtils;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
@@ -36,7 +37,7 @@ public class SchemaFileApplier {
     /**
      * Claims the attempt, runs the file and turns the claim to SUCCEEDED, in one transaction. The populator gets its connection
      * from Spring's {@code DataSourceUtils}, so it runs on the connection of the transaction, like the history statements. The file
-     * is applied with {@code longTextType} in place of {@value LongTextType#PLACEHOLDER}: a plain text replacement made before the
+     * is applied with {@code longTextType} in place of {@value SqlBuilder#LONG_TEXT_PLACEHOLDER}: a plain text replacement made before the
      * file runs (the digest is of the file, so it does not depend on the type).
      *
      * @param attempt   the number of this attempt of the version (1 for the first, then one more than the highest recorded)
@@ -47,7 +48,7 @@ public class SchemaFileApplier {
     @Transactional
     public void apply(MigrationFile file, int attempt, Instant appliedAt, String longTextType) {
         history.append(new Row(file.version(), attempt, file.fileName(), file.digest(), appliedAt, Outcome.FAILED));
-        String sql = file.text().replace(LongTextType.PLACEHOLDER, longTextType);
+        String sql = file.text().replace(SqlBuilder.LONG_TEXT_PLACEHOLDER, longTextType);
         ResourceDatabasePopulator populator = new ResourceDatabasePopulator(false, false, "UTF-8",
                 new ByteArrayResource(sql.getBytes(StandardCharsets.UTF_8)));
         DatabasePopulatorUtils.execute(populator, dataSource);
