@@ -167,7 +167,7 @@ class SessionKeyTest {
         assertThat(Files.readAllBytes(file)).as("the key file is not touched").isEqualTo(before);
         Run command = fixture.run(new String[] {HookCli.SESSION_KEY_COMMAND, host.server(), author}, new byte[0]);
         assertThat(command.exit()).isZero();
-        assertThat(command.stdout()).contains("public-key: ");
+        assertThat(command.out()).contains("public-key: ");
         assertThat(command.err()).doesNotContain(privateKey);
     }
 
