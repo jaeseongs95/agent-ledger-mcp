@@ -3,6 +3,7 @@ package org.pgledger.application.attachment;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Pattern;
 import org.pgledger.application.attachment.UploadCommands.Begin;
@@ -15,9 +16,11 @@ import org.pgledger.application.gate.WriteGate;
 import org.pgledger.database.repository.AttachmentFileRepository;
 import org.pgledger.database.repository.AttachmentRepository;
 import org.pgledger.database.repository.UploadStagingRepository;
+import org.pgledger.domain.error.ArtifactRetry;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ConflictException;
 import org.pgledger.domain.error.InfrastructureCode;
+import org.pgledger.domain.error.LedgerException;
 import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.domain.error.LookupCode;
 import org.pgledger.domain.error.LookupException;
@@ -146,19 +149,25 @@ public class UploadService {
         return new Begun(row.id(), AttachmentProperties.CHUNK_BYTES, row.expiresAt());
     }
 
+    /** ARTIFACT_LIMIT whose detail {@code limit} names which limit it is (file-size, open-uploads, staging-budget, attachment-budget). */
+    private static LedgerException limit(String kind, String text) {
+        return new ConflictException(ConflictCode.ARTIFACT_LIMIT, List.of(text))
+                .withDetails(Map.of(ArtifactRetry.LIMIT_KEY, List.of(kind)));
+    }
+
     private Begun create(AuthorId owner, Begin command, Sha256 declared) {
         if (command.size() > properties.maxFileBytes().toBytes()) {
-            throw new ConflictException(ConflictCode.ARTIFACT_LIMIT, List.of("the file is larger than the limit"));
+            throw limit("file-size", "the file is larger than the limit");
         }
         if (uploads.openCount(owner) >= properties.maxOpenPerOwner()) {
-            throw new ConflictException(ConflictCode.ARTIFACT_LIMIT, List.of("too many open uploads"));
+            throw limit("open-uploads", "too many open uploads");
         }
         long open = uploads.openDeclaredBytes();
         if (open + command.size() > properties.stagingBudgetBytes().toBytes()) {
-            throw new ConflictException(ConflictCode.ARTIFACT_LIMIT, List.of("the budget of the open uploads is used"));
+            throw limit("staging-budget", "the budget of the open uploads is used");
         }
         if (attachments.keptBytes() + open + command.size() > properties.attachmentBudgetBytes().toBytes()) {
-            throw new ConflictException(ConflictCode.ARTIFACT_LIMIT, List.of("the budget of the kept attachments is used"));
+            throw limit("attachment-budget", "the budget of the kept attachments is used");
         }
         Instant now = clock.instant();
         UploadStaging row = new UploadStaging(ids.generateId().toString(), owner, command.operationKey(), command.fileName(),

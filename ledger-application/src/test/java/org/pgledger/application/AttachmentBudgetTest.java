@@ -40,6 +40,7 @@ class AttachmentBudgetTest {
                 ConflictCode.ARTIFACT_LIMIT);
 
         assertThat(refused.args()).anyMatch(arg -> arg.contains("kept attachments"));
+        assertThat(refused.details().get("limit")).as("ATA-040: the detail names the limit").containsExactly("attachment-budget");
         assertThat(s.count("SELECT COUNT(*) FROM upload_staging WHERE owner = ? AND state = 'STAGING'", actor)).as("no row").isZero();
         assertThat(s.count("SELECT COUNT(*) FROM attachment")).as("nothing is deleted").isEqualTo(rows);
         assertThat(s.count("SELECT COUNT(*) FROM attachment_file")).isEqualTo(files);

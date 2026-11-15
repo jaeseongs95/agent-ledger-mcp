@@ -4,11 +4,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.pgledger.domain.error.ConflictCode;
+import org.pgledger.domain.error.ConflictException;
 import org.pgledger.domain.error.ErrorCode;
+import org.pgledger.domain.error.InfrastructureCode;
+import org.pgledger.domain.error.LedgerException;
+import org.pgledger.domain.error.LookupCode;
 import org.pgledger.domain.error.ValidationCode;
 import org.pgledger.mcp.error.ToolError;
 import org.pgledger.mcp.error.ToolErrorMapper;
@@ -68,5 +75,48 @@ class ToolErrorMapperTest {
     @DisplayName("1.5: a failure of any other code lists no issues")
     void otherFailuresListNoIssues(ErrorCode code) {
         assertThat(mapper().map(Failures.of(code)).issues()).isEmpty();
+    }
+
+    /** ATA-040 (design 3.2, edition 8): the tool error of an upload code carries details.retryable, by code and by the kind of limit. */
+    @ParameterizedTest(name = "{0} {1} -> {2}")
+    @CsvSource(value = {"ARTIFACT_BUSY,-,true", "ARTIFACT_INCOMPLETE,-,true", "ARTIFACT_LIMIT,staging-budget,true",
+            "ARTIFACT_LIMIT,open-uploads,true", "ARTIFACT_LIMIT,file-size,false", "ARTIFACT_LIMIT,attachment-budget,false",
+            "ARTIFACT_STORAGE_FULL,-,false", "ARTIFACT_EXPIRED,-,false", "ARTIFACT_HASH_MISMATCH,-,false",
+            "CHUNK_HASH_MISMATCH,-,false", "ARTIFACT_CHUNK_CONFLICT,-,false", "ARTIFACT_OPERATION_CONFLICT,-,false"})
+    @DisplayName("ATA-040: the conflict codes of the upload tools say whether the same request sent later can succeed")
+    void ata040_retryableOfTheConflictCodes(String token, String limit, String retryable) {
+        ConflictException failure = new ConflictException(ConflictCode.valueOf(token), Failures.ARGS);
+        LedgerException withLimit = "-".equals(limit) ? failure
+                : failure.withDetails(Map.of("limit", List.of(limit)));
+
+        ToolError error = mapper().map(withLimit);
+
+        assertThat(error.details().get("retryable")).containsExactly(retryable);
+        if (!"-".equals(limit)) {
+            assertThat(error.details().get("limit")).containsExactly(limit);
+        }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("otherUploadCodes")
+    @DisplayName("ATA-040: not found, corrupted and the unsupported purpose are not retryable; a code of no upload tool has no retryable detail")
+    void ata040_retryableOfTheOtherCodes(ErrorCode code) {
+        ToolError error = mapper().map(Failures.of(code));
+
+        assertThat(error.details().get("retryable")).containsExactly("false");
+    }
+
+    static Stream<ErrorCode> otherUploadCodes() {
+        return Stream.of(LookupCode.ARTIFACT_NOT_FOUND, InfrastructureCode.ARTIFACT_CORRUPTED,
+                ValidationCode.ARTIFACT_UNSUPPORTED_PURPOSE);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("codes")
+    @DisplayName("ATA-040: no other code of the ledger has a retryable detail")
+    void ata040_noRetryableOnTheOtherCodes(ErrorCode code) {
+        if (!code.name().startsWith("ARTIFACT_") && !"CHUNK_HASH_MISMATCH".equals(code.name())) {
+            assertThat(mapper().map(Failures.of(code)).details()).doesNotContainKey("retryable");
+        }
     }
 }

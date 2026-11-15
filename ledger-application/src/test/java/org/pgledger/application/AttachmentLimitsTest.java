@@ -44,6 +44,7 @@ class AttachmentLimitsTest {
                 ConflictCode.ARTIFACT_LIMIT);
         Expect.failure(() -> flow.begin(actor, Uploads.begin(Uploads.body(KIB + 1, 4))), ConflictCode.ARTIFACT_LIMIT);
         assertThat(mentions(tooLarge, "larger")).isTrue();
+        assertThat(tooLarge.details().get("limit")).as("ATA-040: the detail names the limit").containsExactly("file-size");
         assertThat(s.count("SELECT COUNT(*) FROM upload_staging WHERE owner = ?", actor)).as("no row for a refused begin").isZero();
 
         Begun one = flow.begin(actor, Uploads.begin(first));
@@ -51,9 +52,11 @@ class AttachmentLimitsTest {
         LedgerException third = Expect.failure(() -> flow.begin(actor, Uploads.begin(Uploads.body(KIB, 5))),
                 ConflictCode.ARTIFACT_LIMIT);
         assertThat(mentions(third, "too many")).isTrue();
+        assertThat(third.details().get("limit")).containsExactly("open-uploads");
         LedgerException overBudget = Expect.failure(() -> flow.begin(other, Uploads.begin(Uploads.body(KIB, 6))),
                 ConflictCode.ARTIFACT_LIMIT);
         assertThat(mentions(overBudget, "budget")).as("another author, no upload of its own, but the budget is used").isTrue();
+        assertThat(overBudget.details().get("limit")).containsExactly("staging-budget");
 
         assertThat(s.count("SELECT COUNT(*) FROM upload_staging WHERE owner = ?", actor)).isEqualTo(2);
         assertThat(s.count("SELECT COUNT(*) FROM upload_staging WHERE owner = ?", other)).isZero();
