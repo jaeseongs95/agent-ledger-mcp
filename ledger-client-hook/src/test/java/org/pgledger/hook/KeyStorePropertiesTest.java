@@ -11,7 +11,7 @@ import org.pgledger.hook.keys.KeyFolder;
 import org.pgledger.hook.keys.KeyStoreProperties;
 import org.pgledger.hook.keys.SessionKeyException;
 import org.pgledger.hook.keys.SessionKeyStore;
-import org.springframework.boot.context.config.ConfigDataApplicationContextInitializer;
+import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.core.env.StandardEnvironment;
 import org.springframework.core.env.SystemEnvironmentPropertySource;
