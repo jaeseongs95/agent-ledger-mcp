@@ -114,9 +114,10 @@ class BatchAndErrorsTest {
         List<ErrorCode> codes = allCodes();
         // 62, the 8 passkey codes (PSK-DOM-01) and the 15 codes of the attachments (ATA-001 ..; common table 3.2):
         // ARTIFACT_UNSUPPORTED_PURPOSE (validation), ARTIFACT_NOT_FOUND (lookup), nine conflicts (with ARTIFACT_STORAGE_FULL),
-        // four infrastructure codes, the code of the long text type of the schema files (RUN-003) and the code of the encoding of the database (RUN-017), and no
-        // code for an interrupted wait for another runner any more (the database waits, RUN-012)
-        assertThat(codes).hasSize(86);
+        // four infrastructure codes and the code of the encoding of the database (RUN-017), and no code for the long text type
+        // of the schema files (the dialect of SqlBuilder decides, RUN-003 retired) and none for an interrupted wait for another
+        // runner (the database waits, RUN-012)
+        assertThat(codes).hasSize(85);
         assertThat(codes.stream().map(ErrorCode::token)).doesNotHaveDuplicates();
         assertThat(codes.stream().map(ErrorCode::token)).contains("AUTHOR_ID_FORMAT", "SESSION_NOT_GRANTED",
                 "HOST_ATTESTATION_REQUIRED", "VERSION_CONFLICT", "SAME_SESSION", "MERGED_DEFECT", "CODE_REQUIRED",
@@ -246,7 +247,7 @@ class BatchAndErrorsTest {
                 "SCHEMA_FILES_UNREADABLE", "SCHEMA_DATABASE_UNREACHABLE", "SCHEMA_HISTORY_MISSING",
                 "SCHEMA_HISTORY_NOT_CREATED", "SCHEMA_APPLIED_FILE_MISSING", "SCHEMA_DIGEST_MISMATCH",
                 "SCHEMA_RECORDED_FAILED", "SCHEMA_OUT_OF_ORDER", "SCHEMA_PENDING", "SCHEMA_MIGRATION_FAILED",
-                "SCHEMA_LONG_TEXT_TYPE_MISSING", "SCHEMA_ENCODING_NOT_UTF8", "SCHEMA_GRANT_FAILED", "JVM_ZONE_NOT_UTC", "SESSION_ZONE_NOT_UTC",
+                "SCHEMA_ENCODING_NOT_UTF8", "SCHEMA_GRANT_FAILED", "JVM_ZONE_NOT_UTC", "SESSION_ZONE_NOT_UTC",
                 "SESSION_CLOCK_UNREADABLE");
         ResourceBundle en = ResourceBundle.getBundle("messages/ledger-errors", Locale.ROOT);
         for (String token : schema) {

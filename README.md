@@ -71,10 +71,10 @@ and no argument of an earlier version is accepted next to the new ones); what ch
 - **ANSI SQL.** The product does not bundle a JDBC driver: the user obtains the JDBC driver of the database of their choice
   and registers it with `driver-register`. The SQL is ANSI and uses the JDBC standard, and no DBMS-specific feature is used: the
   schema files have no triggers, procedures, views, sequences, identity columns or boolean columns, and the rules that the database
-  used to enforce are enforced by the application services. The row limit of a list is the one statement that differs by
-  product, and `SqlBuilder` chooses it from the product of the connection. PostgreSQL is the database that is tested and
-  guaranteed in this edition. Other products may work but are not tested, and this edition contains no tailoring for a
-  particular product (column types, collations, session settings). The database must use UTF-8 and compare text case-sensitively.
+  used to enforce are enforced by the application services. Two places differ by product: the row limit of a list and the
+  declaration of the long text column type, and `SqlBuilder` chooses both from the product of the connection. PostgreSQL is the
+  database that is tested and guaranteed in this edition. Other products may work but are not tested, and outside these two places
+  this edition contains no tailoring for a particular product (collations, session settings). The database must use UTF-8 and compare text case-sensitively.
 
 A direct MCP caller is not authenticated as a host: the bearer token admits the caller, and the signed attestation proves the author.
 
@@ -522,10 +522,10 @@ one row to `SUCCEEDED`; if the file fails, the attempt is rolled back, the row s
 the next attempt without changing or deleting the earlier rows. Two `migrate` runs at the same time are safe: the second waits in the
 database for the first and then skips what the first has applied. A file that was changed after it was applied stops `migrate` before it
 applies anything, and every process at start; no row is added for it. The database must use the encoding UTF-8, and the long text type of
-the schema files is taken from the JDBC driver (there is no setting for it): a large object type (`CLOB`, `LONGVARCHAR`) is preferred to
-`VARCHAR`, and a type that reports `CREATE_PARAMS` is declared with its largest reported length, because the parameters only say what may
-be given and some databases set a small default limit when the length is left out; without a large object type the plain `VARCHAR` type of
-the driver (for example `varchar` as the PostgreSQL driver reports it) or else the `VARCHAR` of the largest length, which must be at least 32768 characters, is used.
+the schema files is decided by the database dialect of the ledger, which `migrate` takes from the product name of the connection (there is
+no setting for it). Each declaration is taken from the official documentation of the database it is for, and where a database sets a small
+default limit when the length is left out, the declaration carries a length. The type information of the JDBC driver is not used, because a
+driver may report it in a form that cannot be judged.
 
 The ledger does not use Flyway: a current Flyway release needs a module for each DBMS and refuses a database it has none for, while the
 ledger asks for ANSI SQL on any database whose driver you register. And the ledger migrates by this explicit command and not when a server
