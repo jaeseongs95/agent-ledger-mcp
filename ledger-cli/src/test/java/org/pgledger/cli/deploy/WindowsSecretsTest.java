@@ -43,6 +43,8 @@ class WindowsSecretsTest {
 
     private static final String HOME_OPTION = "--home=C:/ProgramData/pg-ledger-mcp";
     private static final String JAVA = "--java=C:/Program Files/Java/jdk-25/bin/java.exe";
+    /** The adapter of the product that calls the Windows API (the production component; its constructor links nothing). */
+    private static final TokenPrivileges PRIVILEGES = new WindowsPrivileges();
 
     @TempDir
     Path tmp;
@@ -107,7 +109,7 @@ class WindowsSecretsTest {
         Path secrets = home().resolve("etc/secrets");
         if (Files.isDirectory(secrets)) {
             UserPrincipal self = self();
-            WindowsAccess access = new WindowsAccess();
+            WindowsAccess access = new WindowsAccess(PRIVILEGES);
             access.reassign(secrets, self, self, WindowsAccess.takenBack(self, true));
             List<Path> files = new ArrayList<>();
             try (Stream<Path> found = Files.list(secrets)) {
@@ -121,7 +123,7 @@ class WindowsSecretsTest {
     }
 
     private static List<WindowsAccess.Saved> saved(List<Path> paths) throws IOException {
-        WindowsAccess access = new WindowsAccess();
+        WindowsAccess access = new WindowsAccess(PRIVILEGES);
         List<WindowsAccess.Saved> all = new ArrayList<>();
         for (Path path : paths) {
             all.add(access.save(path));
@@ -135,10 +137,10 @@ class WindowsSecretsTest {
     void wsec04_theElevatedTokenHoldsThePrivileges() throws IOException {
         assumeTrue(elevated(), "this needs an elevated prompt: only an administrator's token holds the privileges");
 
-        try (WindowsPrivileges.Enabled first = WindowsPrivileges.enable(WindowsPrivileges.TAKE_OWNERSHIP, WindowsPrivileges.RESTORE)) {
+        try (TokenPrivileges.Enabled first = PRIVILEGES.enable(TokenPrivileges.TAKE_OWNERSHIP, TokenPrivileges.RESTORE)) {
             assertThat(first.allHeld()).isTrue();
         }
-        try (WindowsPrivileges.Enabled second = WindowsPrivileges.enable(WindowsPrivileges.TAKE_OWNERSHIP)) {
+        try (TokenPrivileges.Enabled second = PRIVILEGES.enable(TokenPrivileges.TAKE_OWNERSHIP)) {
             assertThat(second.allHeld()).isTrue();
         }
     }
@@ -149,7 +151,7 @@ class WindowsSecretsTest {
     void wsec05_aTokenWithoutThePrivilegesSaysSo() throws IOException {
         assumeFalse(elevated(), "this needs a prompt that is not elevated");
 
-        try (WindowsPrivileges.Enabled held = WindowsPrivileges.enable(WindowsPrivileges.TAKE_OWNERSHIP, WindowsPrivileges.RESTORE)) {
+        try (TokenPrivileges.Enabled held = PRIVILEGES.enable(TokenPrivileges.TAKE_OWNERSHIP, TokenPrivileges.RESTORE)) {
             assertThat(held.allHeld()).isFalse();
         }
     }
@@ -165,7 +167,7 @@ class WindowsSecretsTest {
         Path file = tmp.resolve("sealed.txt");
         Files.writeString(file, "never-printed-0123456789");
         AclFileAttributeView view = Files.getFileAttributeView(file, AclFileAttributeView.class);
-        WindowsAccess access = new WindowsAccess();
+        WindowsAccess access = new WindowsAccess(PRIVILEGES);
         try {
             // the order of seal-host: the owner first (the ACL still gives the owner everything), then the ACL
             view.setOwner(system);

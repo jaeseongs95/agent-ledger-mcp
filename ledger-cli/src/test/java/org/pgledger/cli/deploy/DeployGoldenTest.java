@@ -115,7 +115,7 @@ class DeployGoldenTest {
         new ApplicationContextRunner().withBean(ProcessUser.class, () -> fileSystem -> () -> "tester")
                 .withBean(Validator.class, () -> Validation.buildDefaultValidatorFactory().getValidator())
                 .withUserConfiguration(ServicePlatforms.class, LinuxPlatform.class, WindowsPlatform.class, DeployRenderer.class,
-                        DeployInputReader.class, DeployFiles.class, HostFiles.class, WindowsAccess.class,
+                        DeployInputReader.class, DeployFiles.class, HostFiles.class, WindowsAccess.class, WindowsPrivileges.class,
                         SystemHostAccounts.class, InstallDefaults.class, PackagedSeed.class)
                 .run(context -> {
                     assertThat(context).hasNotFailed();

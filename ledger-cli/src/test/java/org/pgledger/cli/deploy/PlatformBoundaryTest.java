@@ -4,9 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
+import java.lang.reflect.Modifier;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -14,9 +18,11 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.UsageException;
 import org.pgledger.cli.deploy.DeployLayout.Platform;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.stereotype.Component;
 
 /**
- * DPL-02 .. DPL-06: what differs between the operating system families is in the platform adapters ({@link ServicePlatform})
+ * DPL-02 .. DPL-08: what differs between the operating system families is in the platform adapters ({@link ServicePlatform})
  * and nowhere else. The syntax of a path as a platform writes it into its files (a Linux path, a drive path), the form of the
  * path of the Java runtime, whether there is an nginx site, and the steps that only some platforms have are the adapter's; the
  * code that is common to the platforms holds none of it.
@@ -117,5 +123,37 @@ class PlatformBoundaryTest {
         assertThat(Files.readString(MAIN.resolve("deploy/DeployLayout.java"))).doesNotContain("servesNginx")
                 .doesNotContain("javaPathForm");
         assertThat(Platform.values()).extracting(Platform::option).containsExactly("linux", "windows");
+    }
+
+    @Test
+    @DisplayName("DPL-07 the privileges of the Windows token are an adapter bean behind an interface that WindowsAccess is given: no static call, and a context with another implementation starts WindowsAccess with that one")
+    void dpl07_theWindowsPrivilegesAreAnAdapterBean() throws IOException, NoSuchMethodException {
+        assertThat(WindowsPrivileges.class).isAnnotatedWith(Component.class).isAssignableTo(TokenPrivileges.class);
+        assertThat(WindowsPrivileges.class.getDeclaredMethods()).filteredOn(method -> !method.isSynthetic())
+                .filteredOn(method -> Modifier.isStatic(method.getModifiers())).isEmpty();
+        assertThat(WindowsAccess.class.getDeclaredConstructor(TokenPrivileges.class)).isNotNull();
+        assertThat(Files.readString(MAIN.resolve("deploy/WindowsAccess.java"))).doesNotContain("WindowsPrivileges");
+
+        TokenPrivileges recorded = names -> {
+            throw new IOException("the privileges of this test");
+        };
+        new ApplicationContextRunner().withBean(TokenPrivileges.class, () -> recorded).withUserConfiguration(WindowsAccess.class)
+                .run(context -> assertThat(context).hasNotFailed().hasSingleBean(WindowsAccess.class));
+        new ApplicationContextRunner().withUserConfiguration(WindowsAccess.class, WindowsPrivileges.class)
+                .run(context -> assertThat(context).hasNotFailed().hasSingleBean(TokenPrivileges.class));
+    }
+
+    @Test
+    @DisplayName("DPL-08 the executable jar allows native access with its manifest attribute Enable-Native-Access: ALL-UNNAMED, and no installer gives --enable-native-access on a command line")
+    void dpl08_theJarAllowsNativeAccessItself() throws IOException {
+        Path root = Path.of(Objects.requireNonNull(System.getProperty("ledger.docs.root"),
+                "ledger.docs.root is set by the test task of ledger-cli"));
+
+        assertThat(Files.readString(root.resolve("ledger-cli/build.gradle.kts"), StandardCharsets.UTF_8))
+                .contains("\"Enable-Native-Access\" to \"ALL-UNNAMED\"");
+        for (String script : new String[] { "deploy/install.cmd", "deploy/install.sh" }) {
+            assertThat(Files.readString(root.resolve(script), StandardCharsets.UTF_8).toLowerCase(Locale.ROOT)).as(script)
+                    .doesNotContain("--enable-native-access").doesNotContain("%native%");
+        }
     }
 }
