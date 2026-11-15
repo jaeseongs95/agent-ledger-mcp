@@ -11,14 +11,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.pgledger.database.schema.ApplicationAccountAccess;
 import org.pgledger.database.schema.GrantApplier;
-import org.pgledger.database.schema.SchemaMigrator;
 import org.pgledger.database.schema.SchemaProperties;
 import org.pgledger.database.support.Databases;
 import org.pgledger.database.support.DatabaseTest;
 import org.pgledger.testing.database.TestDatabase;
 import org.pgledger.testing.database.TestSchema;
-import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
-import org.springframework.core.io.support.ResourcePatternResolver;
+import org.pgledger.testing.database.TestSchemaServices;
 import org.springframework.jdbc.datasource.AbstractDataSource;
 
 /**
@@ -30,14 +28,13 @@ import org.springframework.jdbc.datasource.AbstractDataSource;
 @DatabaseTest
 class ApplicationAccountAccessTest {
 
-    private static final ResourcePatternResolver RESOLVER = new PathMatchingResourcePatternResolver();
     private static final SchemaProperties PROPERTIES = new SchemaProperties(SchemaProperties.DEFAULT_LOCATION,
             Databases.LONG_TEXT, true, null, Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT));
 
     /** A migrated schema of its own; the application account has no right on it yet. */
     private static TestSchema migrated(Databases databases) {
         TestSchema schema = databases.newSchema();
-        new SchemaMigrator(schema.dataSource(), RESOLVER, PROPERTIES, Clock.systemUTC()).migrate();
+        TestSchemaServices.migrator(schema.dataSource(), PROPERTIES, Clock.systemUTC()).migrate();
         return schema;
     }
 
@@ -49,8 +46,12 @@ class ApplicationAccountAccessTest {
         return TestDatabase.scoped(TestDatabase.shared().appPool(), schema.name());
     }
 
+    private static ApplicationAccountAccess access(String account, DataSource connections) {
+        return new ApplicationAccountAccess(account, TestSchemaServices.verifier(connections, PROPERTIES));
+    }
+
     private static ApplicationAccountAccess access(TestSchema schema) {
-        return new ApplicationAccountAccess(appAccount(), applicationConnections(schema), RESOLVER, PROPERTIES);
+        return access(appAccount(), applicationConnections(schema));
     }
 
     @Test
@@ -63,7 +64,7 @@ class ApplicationAccountAccessTest {
         schema.allowUsage(appAccount());
         assertThat(access(schema).canUseSchema()).as("it may use the schema but read no table").isFalse();
 
-        new GrantApplier(schema.dataSource(), PROPERTIES).apply(appAccount());
+        new GrantApplier(schema.dataSource()).apply(appAccount());
         assertThat(access(schema).canUseSchema()).as("the step of the operator and the grants are done").isTrue();
         assertThat(access(schema).account()).isEqualTo(appAccount());
     }
@@ -84,10 +85,10 @@ class ApplicationAccountAccessTest {
             }
         };
 
-        assertThat(new ApplicationAccountAccess("ledger_app", refusing, RESOLVER, PROPERTIES).canUseSchema()).isFalse();
-        ApplicationAccountAccess unconfigured = ApplicationAccountAccess.notConfigured(RESOLVER, PROPERTIES);
+        assertThat(access("ledger_app", refusing).canUseSchema()).isFalse();
+        ApplicationAccountAccess unconfigured = ApplicationAccountAccess.notConfigured();
         assertThat(unconfigured.canUseSchema()).isFalse();
         assertThat(unconfigured.account()).isEqualTo("(not configured)");
-        assertThat(new ApplicationAccountAccess(" ", applicationConnections(schema), RESOLVER, PROPERTIES).canUseSchema()).isFalse();
+        assertThat(access(" ", applicationConnections(schema)).canUseSchema()).isFalse();
     }
 }

@@ -65,12 +65,16 @@ public class McpCheckCommand implements Command {
 
     private final McpCheckProperties properties;
     private final InstallDefaults defaults;
+    private final JsonMapper json;
     private final CliOutput output;
     private final CliMessages messages;
 
-    McpCheckCommand(McpCheckProperties properties, InstallDefaults defaults, CliOutput output, CliMessages messages) {
+    /** @param json the {@code JsonMapper} bean of Spring Boot, which the MCP client of this command writes its JSON with */
+    McpCheckCommand(McpCheckProperties properties, InstallDefaults defaults, JsonMapper json, CliOutput output,
+            CliMessages messages) {
         this.properties = properties;
         this.defaults = defaults;
+        this.json = json;
         this.output = output;
         this.messages = messages;
     }
@@ -136,7 +140,7 @@ public class McpCheckCommand implements Command {
         String base = uri.getScheme() + "://" + uri.getRawAuthority();
         HttpClientStreamableHttpTransport transport = HttpClientStreamableHttpTransport.builder(base)
                 .endpoint(path(uri))
-                .jsonMapper(new JacksonMcpJsonMapper(JsonMapper.builder().build()))
+                .jsonMapper(new JacksonMcpJsonMapper(json))
                 .connectTimeout(TIMEOUT)
                 .addHttpRequestCustomizer((request, method, target, body, context) ->
                         request.header("Authorization", "Bearer " + token))

@@ -56,7 +56,7 @@ class ImportAfterSetupTest {
 
     private Outcome run(Cli cli, RecordingOutput output, String... args) {
         return cli.withDatabase(database.dataSource()).withApplicationAccount(database.applicationDataSource(true))
-                .withLegacySource(new LegacySourceRepository(legacy.reader(), legacy.schema())).asProcessUser(USER)
+                .withLegacySource(legacy.reader(), legacy.schema()).asProcessUser(USER)
                 .withArguments("--ledger.schema.long-text-type=" + TestLedgerDatabase.longTextType())
                 .run(tmp.resolve("secrets"), null, output, args);
     }
@@ -127,7 +127,7 @@ class ImportAfterSetupTest {
             assertThat(ready.exitCode()).isZero();
             other.update("INSERT INTO project (id, code, title, version, created_by) VALUES ('own', 'OWN', 'a project of its own', 1, 'owner')");
             Outcome refused = cli.withDatabase(other.dataSource())
-                    .withLegacySource(new LegacySourceRepository(legacy.reader(), legacy.schema())).asProcessUser(USER)
+                    .withLegacySource(legacy.reader(), legacy.schema()).asProcessUser(USER)
                     .run(tmp.resolve("secrets"), null, new RecordingOutput(), "import-legacy");
 
             assertThat(refused.exitCode()).isEqualTo(ExitStatus.FAILURE.code());

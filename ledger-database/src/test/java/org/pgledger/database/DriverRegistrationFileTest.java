@@ -30,7 +30,6 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.TransactionSystemException;
 import org.springframework.transaction.support.DefaultTransactionStatus;
-import org.springframework.transaction.support.TransactionOperations;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -76,6 +75,14 @@ class DriverRegistrationFileTest {
         return new TransactionTemplate(new CommitCanFail(ctx.pool(), refuseCommit));
     }
 
+    /**
+     * What a {@code @Transactional} service method is to the file: a call that opens its own transaction, runs the work in it and
+     * has committed when it returns (the test plays that method with a transaction whose commit it can refuse).
+     */
+    private static Runnable serviceMethod(LedgerTestContext ctx, boolean refuseCommit, Runnable work) {
+        return () -> transaction(ctx, refuseCommit).executeWithoutResult(status -> work.run());
+    }
+
     private static void auditRow(LedgerTestContext ctx, long id) {
         JdbcClient.create(ctx.pool()).sql("INSERT INTO owner_audit (id, occurred_at, actor, operation, subject) "
                 + "VALUES (:id, :at, 'token:owner', 'DRIVER_REGISTERED', 'x')").param("id", id).param("at", WHEN)
@@ -107,17 +114,17 @@ class DriverRegistrationFileTest {
         List<String> seenInsideTheTransaction = new ArrayList<>();
         List<String> seenJustBeforeTheCommit = new ArrayList<>();
 
-        file.register(NEW, transaction(ctx, false), () -> {
+        file.register(NEW, serviceMethod(ctx, false, () -> {
             auditRow(ctx, 8_100_001L);
             seenInsideTheTransaction.add(file.read().orElseThrow().sha256());
-            // looks again at the last moment before the commit, after the replacement has been tied to the transaction
+            // looks again at the last moment before the commit
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void beforeCommit(boolean readOnly) {
                     seenJustBeforeTheCommit.add(file.read().orElseThrow().sha256());
                 }
             });
-        });
+        }));
 
         assertThat(seenInsideTheTransaction).as("not replaced while the audit row is not committed")
                 .containsExactly(OLD.sha256());
@@ -133,7 +140,7 @@ class DriverRegistrationFileTest {
     void aFailedCommitLeavesTheFile(LedgerTestContext ctx) throws IOException {
         DriverRegistrationFile file = fileWithTheOldRegistration();
 
-        assertThatThrownBy(() -> file.register(NEW, transaction(ctx, true), () -> auditRow(ctx, 8_100_002L)))
+        assertThatThrownBy(() -> file.register(NEW, serviceMethod(ctx, true, () -> auditRow(ctx, 8_100_002L))))
                 .isInstanceOf(TransactionSystemException.class);
 
         assertThat(file.read().orElseThrow().sha256()).isEqualTo(OLD.sha256());
@@ -146,9 +153,9 @@ class DriverRegistrationFileTest {
     void aFailedAuditRowLeavesTheFile(LedgerTestContext ctx) throws IOException {
         DriverRegistrationFile file = fileWithTheOldRegistration();
 
-        assertThatThrownBy(() -> file.register(NEW, transaction(ctx, false), () -> {
+        assertThatThrownBy(() -> file.register(NEW, serviceMethod(ctx, false, () -> {
             throw new IllegalStateException("the audit row is refused");
-        })).isInstanceOf(IllegalStateException.class).hasMessage("the audit row is refused");
+        }))).isInstanceOf(IllegalStateException.class).hasMessage("the audit row is refused");
 
         assertThat(file.read().orElseThrow().sha256()).isEqualTo(OLD.sha256());
         assertThat(namesIn(file.path().getParent())).containsExactly("jdbc-driver.yaml");
@@ -167,7 +174,7 @@ class DriverRegistrationFileTest {
                 .getLogger(DriverRegistrationFile.class);
         logger.addAppender(log);
         try {
-            assertThatThrownBy(() -> file.register(NEW, transaction(ctx, false), () -> auditRow(ctx, 8_100_003L)))
+            assertThatThrownBy(() -> file.register(NEW, serviceMethod(ctx, false, () -> auditRow(ctx, 8_100_003L))))
                     .isInstanceOfSatisfying(InfrastructureException.class, failure -> {
                         assertThat(failure.code()).isEqualTo(InfrastructureCode.INTERNAL_ERROR);
                         assertThat(failure.getCause()).isInstanceOf(IOException.class);
@@ -186,12 +193,12 @@ class DriverRegistrationFileTest {
     }
 
     @Test
-    @DisplayName("DRV-044 register opens its own transaction: called inside one it refuses, because the new file would be written inside it")
+    @DisplayName("DRV-044 register is called outside any transaction (the audit row opens its own): called inside one it refuses, because the new file would be written inside it")
     void itIsRefusedInsideATransaction(LedgerTestContext ctx) throws IOException {
         DriverRegistrationFile file = fileWithTheOldRegistration();
 
         transaction(ctx, false).executeWithoutResult(status -> assertThatThrownBy(
-                () -> file.register(NEW, TransactionOperations.withoutTransaction(), () -> {
+                () -> file.register(NEW, () -> {
                 })).isInstanceOf(IllegalStateException.class));
 
         assertThat(file.read().orElseThrow().sha256()).isEqualTo(OLD.sha256());
@@ -204,7 +211,7 @@ class DriverRegistrationFileTest {
         DriverRegistrationFile file = fileWithTheOldRegistration();
         List<String> order = new ArrayList<>();
 
-        file.register(NEW, TransactionOperations.withoutTransaction(), () -> order.add(file.read().orElseThrow().sha256()));
+        file.register(NEW, () -> order.add(file.read().orElseThrow().sha256()));
 
         assertThat(order).containsExactly(OLD.sha256());
         assertThat(file.read().orElseThrow().sha256()).isEqualTo(NEW.sha256());

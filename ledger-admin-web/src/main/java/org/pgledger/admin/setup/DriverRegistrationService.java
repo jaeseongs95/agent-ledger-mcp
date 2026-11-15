@@ -3,21 +3,17 @@ package org.pgledger.admin.setup;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.util.Objects;
-import org.pgledger.application.admin.OwnerAuditWriter;
+import org.pgledger.application.admin.DriverAuditService;
 import org.pgledger.database.driver.DriverRegistrar;
 import org.pgledger.database.driver.DriverRegistration;
 import org.pgledger.database.driver.DriverRegistrationFile;
 import org.pgledger.database.driver.LedgerJdbcProperties;
 import org.pgledger.domain.error.InfrastructureException;
-import org.pgledger.domain.rule.OwnerAction;
 import org.pgledger.domain.value.OwnerIdentity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionOperations;
-import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Registers the JDBC driver the user supplies. Checking a jar runs code of it ({@link DriverRegistrar} loads the
@@ -66,35 +62,32 @@ public class DriverRegistrationService {
     private final DriverRegistrationFile file;
     private final DriverRegistrar registrar;
     private final Clock clock;
-    private final ObjectProvider<OwnerAuditWriter> audit;
-    private final ObjectProvider<PlatformTransactionManager> transactions;
+    private final ObjectProvider<DriverAuditService> audit;
     private final LedgerJdbcProperties jdbc;
 
     /**
-     * @param audit        the writer of the owner's audit trail; absent in setup mode, where there is no database
-     * @param transactions the transaction manager of that database; absent in setup mode
+     * @param audit the audit rows of a registration, a service of its own transaction; absent in setup mode, where there is
+     *              no database
      */
     public DriverRegistrationService(DriverRegistrationFile file, DriverRegistrar registrar, LedgerJdbcProperties jdbc,
-            Clock clock, ObjectProvider<OwnerAuditWriter> audit,
-            ObjectProvider<PlatformTransactionManager> transactions) {
+            Clock clock, ObjectProvider<DriverAuditService> audit) {
         this.file = file;
         this.registrar = registrar;
         this.jdbc = jdbc;
         this.clock = clock;
         this.audit = audit;
-        this.transactions = transactions;
     }
 
     /**
      * Registers the driver for the signed-in owner. The file is a thing a transaction cannot roll back, so it is not
      * written inside one (principle 4.4): after the checks, {@link DriverRegistrationFile#register} writes the new file
-     * next to the old one outside any transaction, the audit row of the owner's trail is written and committed in a
-     * transaction, and the old file is replaced by the new one only after that commit. A commit that fails leaves the
-     * registration file as it was (and no row); a replacement that fails after the commit is an error to the caller and
-     * the row stays, it records the attempt. In setup mode there is no database and so no trail: the registration is logged
-     * at WARN with the owner and the digest instead, and the file is replaced at once.
+     * next to the old one outside any transaction, the audit row of the owner's trail is written and committed by a method
+     * of {@link DriverAuditService} (its own transaction), and the old file is replaced by the new one only after that
+     * commit. A commit that fails leaves the registration file as it was (and no row); a replacement that fails after the
+     * commit is an error to the caller and the row stays, it records the attempt. In setup mode there is no database and so
+     * no trail: the registration is logged at WARN with the owner and the digest instead, and the file is replaced at once.
      *
-     * <p>Not to be called inside a transaction: the file registration refuses that.
+     * <p>Not to be called inside a transaction: the file registration refuses that. This method opens none.
      *
      * @param actor the owner who registers it ({@code token:owner}, or the OpenID Connect identity)
      * @throws InfrastructureException DRIVER_INVALID with the jar or the class missing from the form (naming the
@@ -103,17 +96,15 @@ public class DriverRegistrationService {
      */
     public DriverRegistration register(String jar, String className, OwnerIdentity actor) {
         DriverRegistration registration = registrar.check(jar, className, clock.instant());
-        OwnerAuditWriter writer = audit.getIfAvailable();
-        PlatformTransactionManager manager = transactions.getIfAvailable();
+        DriverAuditService writer = audit.getIfAvailable();
         String detail = "jar=" + registration.jar() + " sha256=" + registration.sha256();
-        if (writer == null || manager == null) {
+        if (writer == null) {
             LOG.warn("driver registered by {}: {} {} (setup mode has no database, so there is no row of the owner's audit "
                     + "trail)", actor.value(), registration.className(), DriverRegistrar.printable(detail));
-            file.register(registration, TransactionOperations.withoutTransaction(), () -> { });
+            file.register(registration, () -> { });
             return registration;
         }
-        file.register(registration, new TransactionTemplate(manager),
-                () -> writer.record(actor, OwnerAction.DRIVER_REGISTERED, registration.className(), detail));
+        file.register(registration, () -> writer.recordRegistered(actor, registration.className(), detail));
         return registration;
     }
 

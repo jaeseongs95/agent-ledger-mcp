@@ -11,7 +11,7 @@ import org.pgledger.application.gate.SignedAttestationVerifier;
 import org.pgledger.application.support.LedgerTestFixtures;
 import org.pgledger.application.support.RecordingDataSource;
 import org.pgledger.application.support.TestClock;
-import org.pgledger.database.schema.SchemaMigrator;
+import org.pgledger.testing.database.TestSchemaServices;
 import org.pgledger.database.schema.SchemaProperties;
 import org.pgledger.testing.database.TestDataSourceConfiguration;
 import org.pgledger.testing.database.TestSchemaInitializer;
@@ -79,7 +79,7 @@ public class LedgerTestInfrastructure {
 
     @Bean
     SchemaMigrated schemaMigrated(DataSource dataSource, Clock clock, Environment environment) {
-        return new SchemaMigrated(new SchemaMigrator(dataSource, new PathMatchingResourcePatternResolver(),
+        return new SchemaMigrated(TestSchemaServices.migrator(dataSource,
                 new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, SchemaProperties.DEFAULT_LONG_TEXT_TYPE, true,
                         environment.getRequiredProperty(TestSchemaInitializer.SCHEMA_PROPERTY),
                         Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT)), clock).migrate());

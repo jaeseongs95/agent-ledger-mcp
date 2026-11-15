@@ -34,10 +34,7 @@ class ArchitectureTest {
 
     /** ARC-PRN-01 .. 06 (TEST_CASES.md section 25): what this module allows of each rule (key to reason). */
     private static final Map<String, Map<String, String>> PRINCIPLE_ALLOWED = Map.of(
-            PrincipleRules.OR_ELSE_NULL, Map.of(
-                    "LegacyRowMapper.java", "a mapped row of a legacy table is a map from column to value in which SQL NULL is the "
-                            + "value null (the link key of a link without a valid condition, a token column that holds no constant "
-                            + "of the new schema): the row is written to a nullable column"));
+            PrincipleRules.OR_ELSE_NULL, Map.of());
 
     static Stream<PrincipleRules.Rule> principleRules() {
         return PrincipleRules.all(MAIN, MAIN_JAVA, PRINCIPLE_ALLOWED).stream();

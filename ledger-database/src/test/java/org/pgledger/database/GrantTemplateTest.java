@@ -39,6 +39,7 @@ import org.pgledger.database.support.Databases;
 import org.pgledger.database.support.LedgerDatabaseExtension;
 import org.pgledger.testing.database.TestDatabase;
 import org.pgledger.testing.database.TestSchema;
+import org.pgledger.testing.database.TestSchemaServices;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
@@ -109,11 +110,6 @@ class GrantTemplateTest {
         return tables;
     }
 
-    private static SchemaProperties properties() {
-        return new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, Databases.LONG_TEXT, true, null,
-                Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT));
-    }
-
     @Test
     @DisplayName("INS-007 the template holds only GRANT statements of SELECT, INSERT, UPDATE and DELETE on tables to the placeholder account")
     void ins007_theTemplateHoldsOnlyPlainGrants() {
@@ -143,7 +139,7 @@ class GrantTemplateTest {
         assertThat(GrantApplier.isAccountName(name)).isFalse();
         // the data source is never touched: a refusal comes before the template is read
         DataSource untouched = null;
-        GrantApplier applier = new GrantApplier(untouched, properties());
+        GrantApplier applier = new GrantApplier(untouched);
         assertThatThrownBy(() -> applier.apply(name)).isInstanceOf(IllegalArgumentException.class)
                 .hasMessageNotContaining(name.isEmpty() ? "\0" : name);
     }
@@ -170,11 +166,10 @@ class GrantTemplateTest {
         TestSchema schema = databases.newSchema();
         SchemaProperties named = new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, Databases.LONG_TEXT, true,
                 schema.name(), Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT));
-        new SchemaMigrator(database.pool(), new PathMatchingResourcePatternResolver(), named, Clock.systemUTC())
-                .migrate();
+        TestSchemaServices.migrator(schema.dataSource(), named, Clock.systemUTC()).migrate();
         String account = database.settings().appUser();
         schema.allowUsage(account);
-        GrantApplier applier = new GrantApplier(database.pool(), named);
+        GrantApplier applier = new GrantApplier(schema.dataSource());
 
         applier.apply(account);
         applier.apply(account);

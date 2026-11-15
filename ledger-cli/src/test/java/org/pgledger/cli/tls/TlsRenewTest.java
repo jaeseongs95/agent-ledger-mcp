@@ -144,6 +144,19 @@ class TlsRenewTest {
         verifyNoInteractions(client);
     }
 
+    @Test
+    @DisplayName("TXD-008 a certificate file that holds no certificate is TLS_NO_CERTIFICATE with the exception of the parser as its cause (the reason is not swallowed)")
+    void txd008_theCauseOfAnUnreadableCertificateIsKept() throws Exception {
+        Files.writeString(files.chain(tlsDir), "this is no certificate", StandardCharsets.US_ASCII);
+        files.writeAccountKey(tlsDir, files.newKeyPair());
+
+        CliException refused = refusal();
+
+        assertThat(refused.code()).isEqualTo(ErrorCode.TLS_NO_CERTIFICATE);
+        assertThat(refused.getCause()).isInstanceOf(java.security.cert.CertificateException.class);
+        verifyNoInteractions(client);
+    }
+
     private CliException refusal() {
         try {
             issuer.renew(request(30));

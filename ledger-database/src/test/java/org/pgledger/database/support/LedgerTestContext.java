@@ -4,7 +4,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import java.time.Instant;
 import java.util.function.Supplier;
 import javax.sql.DataSource;
-import org.pgledger.database.schema.SchemaMigrator;
+import org.pgledger.testing.database.TestSchemaServices;
 import org.pgledger.database.schema.SchemaProperties;
 import org.pgledger.domain.context.ActorScope;
 import org.pgledger.domain.value.ActorId;
@@ -43,7 +43,7 @@ public final class LedgerTestContext implements AutoCloseable {
         this.owned = owned;
         this.spy = new RecordingDataSource(pool);
         if (migrate) {
-            new SchemaMigrator(spy, new PathMatchingResourcePatternResolver(),
+            TestSchemaServices.migrator(spy,
                     new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, Databases.LONG_TEXT, true, schema,
                             java.time.Duration.parse(SchemaProperties.DEFAULT_PEER_WAIT)), clock).migrate();
         }

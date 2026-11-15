@@ -44,7 +44,7 @@ import org.springframework.transaction.annotation.Transactional;
  * Copies the legacy ledger (the old schema {@code ledger}, read only) into the new schema, and checks the copy. The whole
  * import is one transaction of the new schema (the class is {@code @Transactional}), so a failure anywhere leaves no
  * imported row and a rerun can succeed; the legacy side is read in one read-only snapshot
- * ({@link LegacySourceRepository#readSnapshot}) that the import never writes to.
+ * ({@link LegacySnapshotService#read}) that the import never writes to.
  *
  * <p>Steps, in this order:
  * <ol>
@@ -90,6 +90,7 @@ public class LegacyImportService {
     private static final String MISSING_STEP = "legacy migration step";
 
     private final ObjectProvider<LegacySourceRepository> sources;
+    private final LegacySnapshotService snapshot;
     private final LegacyTargetRepository target;
     private final IdAllocator ids;
     private final CodeRevisionRepository revision;
@@ -97,10 +98,11 @@ public class LegacyImportService {
     private final LegacyRowMapper mapper;
     private final CommonCodeRepository codes;
 
-    public LegacyImportService(ObjectProvider<LegacySourceRepository> sources, LegacyTargetRepository target,
-            IdAllocator ids, CodeRevisionRepository revision, OwnerAuditWriter audit, LegacyRowMapper mapper,
-            CommonCodeRepository codes) {
+    public LegacyImportService(ObjectProvider<LegacySourceRepository> sources, LegacySnapshotService snapshot,
+            LegacyTargetRepository target, IdAllocator ids, CodeRevisionRepository revision, OwnerAuditWriter audit,
+            LegacyRowMapper mapper, CommonCodeRepository codes) {
         this.sources = sources;
+        this.snapshot = snapshot;
         this.target = target;
         this.ids = ids;
         this.revision = revision;
@@ -134,7 +136,7 @@ public class LegacyImportService {
             throw new ConflictException(ConflictCode.DUPLICATE_KEY,
                     List.of("ledger data in " + String.join(", ", occupied)));
         }
-        return source.readSnapshot(() -> {
+        return snapshot.read(() -> {
             requireSteps(source);
             Map<LegacyTable, Map<String, ColumnRule>> rules = columnRules();
             ImportCounters counters = new ImportCounters();
@@ -159,7 +161,7 @@ public class LegacyImportService {
     @Transactional(readOnly = true)
     public ImportReport verify() {
         LegacySourceRepository source = requireSource();
-        return source.readSnapshot(() -> {
+        return snapshot.read(() -> {
             requireSteps(source);
             Map<LegacyTable, Map<String, ColumnRule>> rules = columnRules();
             ImportCounters counters = new ImportCounters();

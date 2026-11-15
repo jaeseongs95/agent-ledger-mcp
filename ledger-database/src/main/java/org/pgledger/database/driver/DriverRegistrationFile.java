@@ -14,8 +14,6 @@ import org.pgledger.domain.error.InfrastructureException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.support.TransactionOperations;
-import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import tools.jackson.dataformat.yaml.YAMLMapper;
 
@@ -32,10 +30,11 @@ import tools.jackson.dataformat.yaml.YAMLMapper;
  * <p>Registering a driver is the audit row of the owner's trail and the replacement of this file. A file cannot be rolled
  * back, so {@link #register} orders the two the way principle 4.4 asks (no file I/O inside a transaction, the follow-up
  * work after the commit): the new file is written next to the old one first, outside any transaction; the audit row is
- * written in a transaction; and the old file is replaced by the new one only after that transaction has committed
- * ({@link TransactionSynchronization#afterCommit}). A transaction that does not commit leaves the old file as it was and
- * removes the new one. A replacement that fails after the commit is logged at ERROR and thrown to the caller (the row
- * stays, it records the attempt), never swallowed.
+ * written by a service method of the caller that opens and commits its own transaction ({@code @Transactional}, the
+ * transaction boundary is the service's and never this file's); and the old file is replaced by the new one only after
+ * that method has returned, which is after the commit. A service method that throws (the row is refused, the commit
+ * fails) leaves the old file as it was and removes the new one. A replacement that fails after the commit is logged at
+ * ERROR and thrown to the caller (the row stays, it records the attempt), never swallowed.
  */
 @Component
 public final class DriverRegistrationFile {
@@ -99,37 +98,34 @@ public final class DriverRegistrationFile {
     }
 
     /**
-     * Registers the driver: the new file is written outside any transaction, {@code auditRow} runs inside {@code transaction}
-     * (it writes the audit row), and the file is replaced after that transaction has committed. When the commit does not
-     * happen (the audit row fails, the commit is refused, the transaction is rolled back) the registration file is not
-     * touched and the new file is removed. When the replacement itself fails after the commit, the failure is logged at ERROR
-     * and thrown; the audit row stays and records the attempt.
+     * Registers the driver: the new file is written outside any transaction, {@code auditRow} writes the audit row in a
+     * transaction of its own (a call of a {@code @Transactional} service method), and the file is replaced after that
+     * call has returned, that is after the commit. When the commit does not happen (the audit row fails, the commit is
+     * refused, the transaction is rolled back) the call throws, the registration file is not touched and the new file is
+     * removed. When the replacement itself fails after the commit, the failure is logged at ERROR and thrown; the audit
+     * row stays and records the attempt.
      *
-     * <p>Pass {@link TransactionOperations#withoutTransaction()} when there is no database (the admin web in setup mode):
-     * there is then no audit row to wait for, and the file is replaced at once.
+     * <p>Pass a no-op, or a log line, when there is no database (the admin web in setup mode): there is then no audit row
+     * to wait for, and the file is replaced at once.
      *
-     * @param transaction the transaction of the audit row; this method must not be called inside a transaction, it opens
-     *                    its own (the new file would be written inside it)
-     * @param auditRow    writes the audit row; runs in the transaction
+     * @param auditRow writes the audit row; it must open and commit its own transaction and must not leave one open (this
+     *                 file is neither written nor replaced inside it)
      * @throws InfrastructureException INTERNAL_ERROR when the new file cannot be written, or cannot replace the old one
      *         (an atomic move that the file system does not support is a failure too, never a copy)
      * @throws IllegalStateException when called inside a transaction
      */
-    public void register(DriverRegistration registration, TransactionOperations transaction, Runnable auditRow) {
+    public void register(DriverRegistration registration, Runnable auditRow) {
         if (TransactionSynchronizationManager.isActualTransactionActive()) {
             throw new IllegalStateException("the driver registration file is written outside a transaction: "
-                    + "register opens its own");
+                    + "the audit row opens its own");
         }
         Pending pending = prepare(registration);
         try {
-            transaction.executeWithoutResult(status -> {
-                auditRow.run();
-                replaceAfterCommit(pending);
-            });
+            auditRow.run();
+            replace(pending);
         } finally {
-            // whatever happened, the new file is not left behind: after a commit it has been moved (or removed after a
-            // failed move) and this finds nothing; when the audit row failed before the replacement was tied to the
-            // transaction, this is what removes it
+            // whatever happened, the new file is not left behind: after the replacement it has been moved (or removed
+            // after a failed move) and this finds nothing; when the audit row failed, this is what removes it
             discard(pending);
         }
     }
@@ -166,27 +162,6 @@ public final class DriverRegistrationFile {
                 discard(new Pending(temporary, file));
             }
         }
-    }
-
-    /** Ties the replacement to the commit of the running transaction (at once when there is none). */
-    private void replaceAfterCommit(Pending pending) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            replace(pending);
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                replace(pending);
-            }
-
-            @Override
-            public void afterCompletion(int status) {
-                // after a commit the temporary file has been moved (or removed after a failed move); in every other end
-                // of the transaction it is still there and is not wanted
-                discard(pending);
-            }
-        });
     }
 
     /**

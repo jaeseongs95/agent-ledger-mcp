@@ -24,9 +24,23 @@ public final class CliOptions {
      *         for the option given twice
      */
     public static Optional<String> value(ApplicationArguments arguments, String name) {
+        return Optional.ofNullable(valueOrNull(arguments, name));
+    }
+
+    /**
+     * As {@link #value}, but an absent option is null (the method says "not given" with a null, it does not turn an
+     * {@link Optional} back into one). This is the one place where an option that was not given becomes null, for the commands of
+     * the application services whose records say "not given" with a null component ({@code CodeCommand},
+     * {@code GrantCommand}); everything of this tool that is not such a record keeps the {@link Optional}. {@link #value} is
+     * this method in an {@link Optional}.
+     *
+     * @throws UsageException MISSING_OPTION_VALUE for {@code --name} or {@code --name=} (no value), TOO_MANY_ARGUMENTS
+     *         for the option given twice
+     */
+    public static String valueOrNull(ApplicationArguments arguments, String name) {
         List<String> values = arguments.getOptionValues(name);
         if (values == null) {
-            return Optional.empty();
+            return null;
         }
         if (values.size() > 1) {
             throw new UsageException(ErrorCode.TOO_MANY_ARGUMENTS);
@@ -34,17 +48,7 @@ public final class CliOptions {
         if (values.isEmpty() || values.getFirst().isBlank()) {
             throw new UsageException(ErrorCode.MISSING_OPTION_VALUE);
         }
-        return Optional.of(values.getFirst());
-    }
-
-    /**
-     * As {@link #value}, but an absent option is null. This is the one place where an option that was not given becomes null,
-     * for the commands of the application services whose records say "not given" with a null component
-     * ({@code CodeCommand}, {@code GrantCommand}); everything of this tool that is not such a record keeps the
-     * {@link Optional}.
-     */
-    public static String valueOrNull(ApplicationArguments arguments, String name) {
-        return value(arguments, name).orElse(null);
+        return values.getFirst();
     }
 
     /**
@@ -54,13 +58,15 @@ public final class CliOptions {
      *         cause; the message names no value)
      */
     public static Integer integerOrNull(ApplicationArguments arguments, String name) {
-        return value(arguments, name).map(text -> {
-            try {
-                return Integer.valueOf(text.strip());
-            } catch (NumberFormatException notANumber) {
-                throw new UsageException(ErrorCode.INVALID_OPTION_VALUE, notANumber);
-            }
-        }).orElse(null);
+        String text = valueOrNull(arguments, name);
+        if (text == null) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(text.strip());
+        } catch (NumberFormatException notANumber) {
+            throw new UsageException(ErrorCode.INVALID_OPTION_VALUE, notANumber);
+        }
     }
 
     /** As {@link #value}, but the option is required: its absence is MISSING_ARGUMENT. */

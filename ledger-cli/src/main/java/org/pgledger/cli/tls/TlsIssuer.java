@@ -3,6 +3,7 @@ package org.pgledger.cli.tls;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.security.KeyPair;
+import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.time.Clock;
 import java.time.Duration;
@@ -105,6 +106,9 @@ class TlsIssuer {
             return files.readCertificate(directory);
         } catch (IOException e) {
             throw new FailureException(ErrorCode.TLS_FILES_FAILED, e, files.chain(directory).toString(), kind(e));
+        } catch (CertificateException e) {
+            // a file that holds no certificate is no certificate to renew; the parser's exception stays the cause
+            throw new FailureException(ErrorCode.TLS_NO_CERTIFICATE, e, files.chain(directory).toString());
         }
     }
 
@@ -113,8 +117,7 @@ class TlsIssuer {
         AcmeClient.Issued issued = client.obtain(request, account, onlyExisting, store);
         try {
             // a certificate the authority sent that cannot be read, or that is for other names, replaces nothing
-            X509Certificate certificate = files.firstCertificate(issued.chainPem()).orElseThrow(
-                    () -> new FailureException(ErrorCode.TLS_ISSUE_FAILED, "certificate", "unreadable certificate"));
+            X509Certificate certificate = files.firstCertificate(issued.chainPem());
             Set<String> names = files.names(certificate);
             if (!Objects.equals(names, new TreeSet<>(request.hosts()))) {
                 throw new FailureException(ErrorCode.TLS_ISSUE_FAILED, "certificate", "names differ from the order");
@@ -122,6 +125,8 @@ class TlsIssuer {
             files.ensureDirectory(directory);
             files.writeCertificate(directory, issued.chainPem(), issued.keys().getPrivate());
             return new Outcome(Result.ISSUED, certificate.getNotAfter().toInstant());
+        } catch (CertificateException e) {
+            throw new FailureException(ErrorCode.TLS_ISSUE_FAILED, e, "certificate", "unreadable certificate");
         } catch (IOException e) {
             throw new FailureException(ErrorCode.TLS_FILES_FAILED, e, directory.toString(), kind(e));
         }

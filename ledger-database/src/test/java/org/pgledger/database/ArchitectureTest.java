@@ -1,6 +1,7 @@
 package org.pgledger.database;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noFields;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -28,7 +29,6 @@ import org.pgledger.testing.PrincipleRules;
 import org.pgledger.testing.SourceRules;
 import java.util.Map;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /** The ARC rules that apply to the database module (the shared rules come from the domain test fixtures). */
@@ -44,7 +44,11 @@ class ArchitectureTest {
                     "LedgerDataSourceConfiguration.registeredDriver",
                     "the driver is made at run time from the jar the user registered, inside a class loader of its own "
                             + "(DriverLoader.load, a factory call): there is no class of ours with a constructor that Spring could "
-                            + "call, and the auto-configuration of Spring Boot cannot load a driver from a path"),
+                            + "call, and the auto-configuration of Spring Boot cannot load a driver from a path",
+                    "ApplicationAccountConfiguration.applicationAccountAccess",
+                    "the check asks over the connections of the application account, a second data source that is genuinely "
+                            + "needed (the run is connected as the owner account); it is made from the settings that the tool "
+                            + "binds, over a data source and a JdbcClient that exist for this one object (principle 3.9)"),
             PrincipleRules.OPTIONAL_STORED, Map.of(
                     "LedgerJdbcConfiguration.jdbcMappingContext",
                     "it overrides AbstractJdbcConfiguration.jdbcMappingContext of Spring Data JDBC, whose signature takes an "
@@ -84,8 +88,15 @@ class ArchitectureTest {
                 new Rule("ARC-009 no web in the database module", noClasses().should().dependOnClassesThat()
                         .resideInAnyPackage("org.springframework.web..", "org.springframework.http..",
                                 "jakarta.servlet..")),
-                new Rule("ARC-012 JDBC clients only in the repository package", noClasses().that()
-                        .resideOutsideOfPackage("org.pgledger.database.repository..").should().dependOnClassesThat()
+                // The two configurations of a second data source make the JdbcClient of that data source (principle 3.9): the
+                // legacy ledger (LegacySourceWiring) and the application account of the check of setup
+                // (ApplicationAccountConfiguration). A third class is a finding.
+                new Rule("ARC-012 JDBC clients only in the repository package, but the two second-data-source configurations",
+                        noClasses().that()
+                        .resideOutsideOfPackage("org.pgledger.database.repository..")
+                        .and().doNotHaveFullyQualifiedName("org.pgledger.database.driver.LegacySourceWiring")
+                        .and().doNotHaveFullyQualifiedName("org.pgledger.database.driver.ApplicationAccountConfiguration")
+                        .should().dependOnClassesThat()
                         .haveFullyQualifiedName("org.springframework.jdbc.core.simple.JdbcClient")
                         .orShould().dependOnClassesThat().haveFullyQualifiedName(
                                 "org.springframework.jdbc.core.JdbcTemplate")
@@ -93,12 +104,13 @@ class ArchitectureTest {
                                 "org.springframework.jdbc.core.JdbcOperations")
                         .orShould().dependOnClassesThat().haveFullyQualifiedName(
                                 "org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate")),
-                // the database module never opens a transaction: the caller (the service) owns it. The one use of
-                // @Transactional here is MANDATORY on the class that allocates ids, which only refuses a call without one.
-                new Rule("ARC-013 @Transactional here only as propagation MANDATORY, on a class",
-                        classes().that().areAnnotatedWith(Transactional.class).should(haveMandatoryPropagation())),
-                new Rule("ARC-013 no @Transactional on a method here", noMethods().should().beAnnotatedWith(
-                        Transactional.class)),
+                // the transaction boundary is a service (principle 4.4): the only service of this module is the one that applies a
+                // schema file (SchemaFileApplier); the repositories join the transaction of their caller. Not even the id
+                // allocator carries @Transactional (it refuses a call without a transaction itself).
+                new Rule("ARC-013 @Transactional on no class here but a @Service",
+                        ArchitectureRules.transactionalOnlyOnServiceClasses()),
+                new Rule("ARC-013 @Transactional on no method here but a method of a @Service",
+                        ArchitectureRules.transactionalOnlyOnServiceMethods()),
                 new Rule("ARC-027 DriverManager, class loaders and the pool only in the driver package",
                         noClasses().that().resideOutsideOfPackage("org.pgledger.database.driver..").should()
                                 .dependOnClassesThat().haveFullyQualifiedName("java.sql.DriverManager")
@@ -106,6 +118,17 @@ class ArchitectureTest {
                                 .orShould().dependOnClassesThat().resideInAPackage("com.zaxxer.hikari..")
                                 .orShould().dependOnClassesThat().haveFullyQualifiedName(
                                         "org.springframework.jdbc.datasource.SimpleDriverDataSource")),
+                // principle 4.4: nothing opens a transaction by hand, no exception: the file of the migrator is a @Transactional
+                // method of a service, and the snapshot of the legacy source is one of LegacySnapshotService of the application
+                // module, on the transaction manager bean of the legacy data source
+                new Rule("TXD-005 no TransactionTemplate here", ArchitectureRules.noTransactionTemplate()),
+                // principles 3.9 and 4.4: no JdbcClient.create, no new TransactionTemplate, no new DataSourceTransactionManager
+                // outside a @Configuration class (TXD-010), no exception
+                new Rule("TXD-010 no own JDBC plumbing outside a @Configuration class",
+                        ArchitectureRules.noOwnJdbcPlumbing()),
+                // principle 3.9: a pool is the return value of a @Bean method, which the container closes; no class keeps one
+                new Rule("TXD-004 no class holds a connection pool in a field", noFields().should().haveRawType(
+                        com.zaxxer.hikari.HikariDataSource.class)),
                 new Rule("ARC-027 DriverManager nowhere", noClasses().should().dependOnClassesThat()
                         .haveFullyQualifiedName("java.sql.DriverManager")),
                 new Rule("ARC-029 no JPA", noClasses().should().dependOnClassesThat().resideInAnyPackage(
@@ -132,20 +155,6 @@ class ArchitectureTest {
     @DisplayName("ARC-017: configuration properties are records")
     void configurationPropertiesAreRecords() {
         classes().that().areAnnotatedWith(ConfigurationProperties.class).should().beRecords().check(MAIN);
-    }
-
-    /** A class whose {@code @Transactional} is {@code propagation = MANDATORY}. */
-    private static ArchCondition<JavaClass> haveMandatoryPropagation() {
-        return new ArchCondition<>("be @Transactional(propagation = MANDATORY)") {
-            @Override
-            public void check(JavaClass type, ConditionEvents events) {
-                Propagation propagation = type.getAnnotationOfType(Transactional.class).propagation();
-                if (propagation != Propagation.MANDATORY) {
-                    events.add(SimpleConditionEvent.violated(type, type.getName() + " is @Transactional with "
-                            + propagation));
-                }
-            }
-        };
     }
 
     /** A class with a code unit that has a catch block for {@code throwable}. */

@@ -1,7 +1,6 @@
 package org.pgledger.database.schema;
 
 import java.util.List;
-import javax.sql.DataSource;
 import org.pgledger.database.repository.SchemaHistoryRepository;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
@@ -17,12 +16,13 @@ import org.springframework.stereotype.Component;
 @Component
 public class SchemaVerifier {
 
-    private final DataSource dataSource;
+    private final SchemaHistoryRepository repository;
     private final ResourcePatternResolver resolver;
     private final SchemaProperties properties;
 
-    public SchemaVerifier(DataSource dataSource, ResourcePatternResolver resolver, SchemaProperties properties) {
-        this.dataSource = dataSource;
+    public SchemaVerifier(SchemaHistoryRepository repository, ResourcePatternResolver resolver,
+            SchemaProperties properties) {
+        this.repository = repository;
         this.resolver = resolver;
         this.properties = properties;
     }
@@ -34,8 +34,6 @@ public class SchemaVerifier {
         List<MigrationFile> files = MigrationFile.load(resolver, properties.location());
         MigrationFile.requireContiguous(files);
         try {
-            SchemaHistoryRepository repository = new SchemaHistoryRepository(
-                    SchemaDataSource.of(dataSource, properties.name()));
             if (!repository.tableExists()) {
                 throw new InfrastructureException(InfrastructureCode.SCHEMA_HISTORY_MISSING, List.of());
             }

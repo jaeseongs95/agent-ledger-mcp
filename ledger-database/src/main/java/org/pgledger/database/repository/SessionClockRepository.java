@@ -2,16 +2,17 @@ package org.pgledger.database.repository;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
-import javax.sql.DataSource;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.stereotype.Repository;
 
 /** Reads the wall clock of the database session (ANSI {@code LOCALTIMESTAMP}) for the UTC guard. */
-public final class SessionClockRepository {
+@Repository
+public class SessionClockRepository {
 
     private final JdbcClient jdbc;
 
-    public SessionClockRepository(DataSource dataSource) {
-        this.jdbc = JdbcClient.create(dataSource);
+    public SessionClockRepository(JdbcClient jdbc) {
+        this.jdbc = jdbc;
     }
 
     /**

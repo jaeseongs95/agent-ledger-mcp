@@ -8,18 +8,18 @@ import org.pgledger.domain.error.LookupException;
 import org.pgledger.domain.value.ProjectCode;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.IllegalTransactionStateException;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Counter based id allocation. The UPDATE takes the row lock and keeps it until the caller's transaction ends, so
  * the SELECT that follows reads the number this transaction issued and a concurrent allocation waits. A rolled
- * back transaction gives its number back. Every method must run inside a transaction of the caller:
- * {@link Propagation#MANDATORY} makes Spring refuse a call without one (IllegalTransactionStateException), instead of
- * the allocator checking for it by hand.
+ * back transaction gives its number back. Like every repository it only joins the transaction of the service method that
+ * calls it and opens none (principle 4.4, so it carries no {@code @Transactional}); a call without a transaction would
+ * issue a number that is not locked and would read it on another connection, so every method refuses one with Spring's
+ * {@link IllegalTransactionStateException}, the exception of a missing transaction.
  */
 @Repository
-@Transactional(propagation = Propagation.MANDATORY)
 public class IdAllocator {
 
     private final JdbcClient jdbc;
@@ -30,6 +30,7 @@ public class IdAllocator {
 
     /** The next defect number of a project (the first is 1). */
     public long nextDefectNo(ProjectCode code) {
+        requireTransaction();
         advance("UPDATE project SET next_defect_no = next_defect_no + 1 WHERE code = :code", code);
         return jdbc.sql("SELECT next_defect_no FROM project WHERE code = :code").param("code", code.value())
                 .query(Long.class).single();
@@ -37,6 +38,7 @@ public class IdAllocator {
 
     /** The next task number of a project (the first is 1). */
     public long nextTaskNo(ProjectCode code) {
+        requireTransaction();
         advance("UPDATE project SET next_task_no = next_task_no + 1 WHERE code = :code", code);
         return jdbc.sql("SELECT next_task_no FROM project WHERE code = :code").param("code", code.value())
                 .query(Long.class).single();
@@ -44,18 +46,21 @@ public class IdAllocator {
 
     /** After an explicit defect id was used: the counter never lags behind the highest number in use. */
     public void raiseDefectNo(ProjectCode code, long atLeast) {
+        requireTransaction();
         jdbc.sql("UPDATE project SET next_defect_no = :n WHERE code = :code AND next_defect_no < :n")
                 .param("n", atLeast).param("code", code.value()).update();
     }
 
     /** After an explicit task id was used: the counter never lags behind the highest number in use. */
     public void raiseTaskNo(ProjectCode code, long atLeast) {
+        requireTransaction();
         jdbc.sql("UPDATE project SET next_task_no = :n WHERE code = :code AND next_task_no < :n")
                 .param("n", atLeast).param("code", code.value()).update();
     }
 
     /** The next number of a surrogate key sequence (history, fix, case, grant). */
     public long next(Counter counter) {
+        requireTransaction();
         int rows = jdbc.sql("UPDATE id_counter SET issued_no = issued_no + 1 WHERE name = :name")
                 .param("name", counter.name()).update();
         if (rows != 1) {
@@ -71,11 +76,19 @@ public class IdAllocator {
      * the next number issued is above every id in use. A counter that is already higher is left alone.
      */
     public void raise(Counter counter, long atLeast) {
+        requireTransaction();
         int rows = jdbc.sql("UPDATE id_counter SET issued_no = :n WHERE name = :name AND issued_no < :n")
                 .param("n", atLeast).param("name", counter.name()).update();
         if (rows > 1) {
             throw new InfrastructureException(InfrastructureCode.INTEGRITY_VIOLATION,
                     List.of("counter row duplicated: " + counter));
+        }
+    }
+
+    private static void requireTransaction() {
+        if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+            throw new IllegalTransactionStateException("ids are issued inside the transaction of the calling service "
+                    + "method; there is none");
         }
     }
 

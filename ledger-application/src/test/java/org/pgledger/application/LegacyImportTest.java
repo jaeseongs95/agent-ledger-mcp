@@ -1109,8 +1109,10 @@ class LegacyImportTest {
         LegacyLedger legacy = LegacyFixtures.rich();
         withRig(legacy, rig -> assertThat(rig.service().sourceConfigured()).isTrue());
         try (LegacyLedger other = LegacyLedger.create()) {
-            assertThat(new LegacySourceRepository(other.admin(), other.schema()).schema()).isEqualTo(other.schema());
-            assertThatThrownBy(() -> new LegacySourceRepository(other.admin(), "Ledger; DROP"))
+            assertThat(new LegacySourceRepository(JdbcClient.create(other.admin()), other.admin(), other.schema()).schema())
+                    .isEqualTo(other.schema());
+            assertThatThrownBy(() -> new LegacySourceRepository(JdbcClient.create(other.admin()), other.admin(),
+                    "Ledger; DROP"))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }

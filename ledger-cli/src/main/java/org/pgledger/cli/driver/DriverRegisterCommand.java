@@ -3,7 +3,7 @@ package org.pgledger.cli.driver;
 import java.time.Clock;
 import java.util.List;
 import java.util.Set;
-import org.pgledger.application.admin.OwnerAuditWriter;
+import org.pgledger.application.admin.DriverAuditService;
 import org.pgledger.cli.CliCommand;
 import org.pgledger.cli.CliMessages;
 import org.pgledger.cli.CliOptions;
@@ -19,7 +19,6 @@ import org.pgledger.database.driver.DriverRegistrationFile;
 import org.pgledger.database.schema.SchemaVerifier;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
-import org.pgledger.domain.rule.OwnerAction;
 import org.pgledger.domain.value.OwnerIdentity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,10 +26,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionException;
-import org.springframework.transaction.support.TransactionOperations;
-import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * {@code driver-register --jar=<path> --class=<class>}: registers the JDBC driver the owner supplies. It is the one command
@@ -65,21 +61,19 @@ public class DriverRegisterCommand implements Command {
     private final DriverRegistrationFile file;
     private final Clock clock;
     private final CliActor actor;
-    private final ObjectProvider<OwnerAuditWriter> audit;
-    private final ObjectProvider<PlatformTransactionManager> transactions;
+    private final ObjectProvider<DriverAuditService> audit;
     private final ObjectProvider<SchemaVerifier> schema;
     private final CliOutput output;
     private final CliMessages messages;
 
     DriverRegisterCommand(DriverRegistrar registrar, DriverRegistrationFile file, Clock clock, CliActor actor,
-            ObjectProvider<OwnerAuditWriter> audit, ObjectProvider<PlatformTransactionManager> transactions,
-            ObjectProvider<SchemaVerifier> schema, CliOutput output, CliMessages messages) {
+            ObjectProvider<DriverAuditService> audit, ObjectProvider<SchemaVerifier> schema, CliOutput output,
+            CliMessages messages) {
         this.registrar = registrar;
         this.file = file;
         this.clock = clock;
         this.actor = actor;
         this.audit = audit;
-        this.transactions = transactions;
         this.schema = schema;
         this.output = output;
         this.messages = messages;
@@ -125,8 +119,8 @@ public class DriverRegisterCommand implements Command {
     }
 
     /**
-     * The audit row and the file, in the order of {@link DriverRegistrationFile#register}; this runs in no transaction of its
-     * own (the call opens it). Without a database, or while the schema of the database is not up to date (not migrated, dropped,
+     * The audit row and the file, in the order of {@link DriverRegistrationFile#register}; this runs in no transaction (the
+     * audit row is a method of {@link DriverAuditService}, which opens and commits its own). Without a database, or while the schema of the database is not up to date (not migrated, dropped,
      * an upgrade pending: the audit table is not there or is not the one of this version), there is no row to write yet: a log
      * line stands in for it, the file is replaced at once, and {@code migrate} and {@code setup} write the row when the schema is
      * ready ({@link PendingDriverAudit}). A database that cannot be reached is no such case: it is DATABASE_FAILED.
@@ -134,11 +128,10 @@ public class DriverRegisterCommand implements Command {
      * @return whether the row of the audit trail was written
      */
     private boolean register(DriverRegistration registration, OwnerIdentity owner) {
-        OwnerAuditWriter writer = audit.getIfAvailable();
-        PlatformTransactionManager manager = transactions.getIfAvailable();
+        DriverAuditService writer = audit.getIfAvailable();
         String detail = PendingDriverAudit.detail(registration.jar().toString(), registration.sha256());
-        if (writer == null || manager == null) {
-            file.register(registration, TransactionOperations.withoutTransaction(), () -> LOG.info(
+        if (writer == null) {
+            file.register(registration, () -> LOG.info(
                     "driver registered by {}: {} {} (no ledger database is configured, so there is no row of the owner's "
                             + "audit trail; migrate or setup records it)", owner.value(), registration.className(),
                     DriverRegistrar.printable(detail)));
@@ -160,15 +153,14 @@ public class DriverRegisterCommand implements Command {
                         && notReady.code() != InfrastructureCode.SCHEMA_PENDING) {
                     throw new FailureException(ErrorCode.SCHEMA_NOT_READY, notReady, notReady.getMessage());
                 }
-                file.register(registration, TransactionOperations.withoutTransaction(), () -> LOG.info(
+                file.register(registration, () -> LOG.info(
                         "driver registered by {}: {} {} (the schema of the ledger database is not up to date, {}; migrate or "
                                 + "setup records the row of the owner's audit trail)", owner.value(),
                         registration.className(), DriverRegistrar.printable(detail), notReady.code()));
                 return false;
             }
         }
-        file.register(registration, new TransactionTemplate(manager),
-                () -> writer.record(owner, OwnerAction.DRIVER_REGISTERED, registration.className(), detail));
+        file.register(registration, () -> writer.recordRegistered(owner, registration.className(), detail));
         return true;
     }
 }

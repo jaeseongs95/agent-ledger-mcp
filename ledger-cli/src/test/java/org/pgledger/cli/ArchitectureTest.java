@@ -49,15 +49,9 @@ class ArchitectureTest {
                     "the registrar is a class of the database module that serves two programs (this tool and the admin web) and "
                             + "takes what differs between them as arguments: the JDBC URL and the one directory a jar may be in, "
                             + "a setting of this tool; the module cannot make it a component",
-                    "CliDriverDataSourceConfiguration.applicationAccountAccess",
+                    "CliDriverDataSourceConfiguration.applicationAccountSettings",
                     "the settings of the application account are bound from a filtered view of the environment, without the "
-                            + "source of the owner account, which no annotation can say; the class belongs to the database module"),
-            PrincipleRules.OR_ELSE_NULL, Map.of(
-                    "CliOptions.java",
-                    "valueOrNull and integerOrNull are the one place where an option that was not given becomes null, for the "
-                            + "records of the application services (CodeCommand, GrantCommand) and of the TLS request, which say "
-                            + "'not given' with a null component and may not hold an Optional (ARC-PRN-02); every other command "
-                            + "keeps the Optional"));
+                            + "source of the owner account, which no annotation can say; the record belongs to the database module"));
 
     static Stream<PrincipleRules.Rule> principleRules() {
         return PrincipleRules.all(MAIN, Path.of("src", "main", "java"), PRINCIPLE_ALLOWED).stream();
@@ -155,6 +149,26 @@ class ArchitectureTest {
     void noJdbcDependency() {
         noClasses().should().dependOnClassesThat().resideInAnyPackage("java.sql..", "javax.sql..", "org.springframework.jdbc..")
                 .check(MAIN);
+    }
+
+    @Test
+    @DisplayName("TXD-005 (principle 4.4) the CLI opens no transaction: no TransactionTemplate, no @Transactional; a transaction is a method of an application service")
+    void txd005_noTransactionBoundaryInTheCli() {
+        ArchitectureRules.noTransactionTemplate().check(MAIN);
+        ArchitectureRules.transactionalOnlyOnServiceClasses().check(MAIN);
+        ArchitectureRules.transactionalOnlyOnServiceMethods().check(MAIN);
+    }
+
+    @Test
+    @DisplayName("TXD-010 (principles 3.9, 4.4) the CLI makes no JdbcClient, no TransactionTemplate and no transaction manager of its own")
+    void txd010_noOwnJdbcPlumbingInTheCli() {
+        ArchitectureRules.noOwnJdbcPlumbing().check(MAIN);
+    }
+
+    @Test
+    @DisplayName("TXD-007 (principle 3.7) the CLI makes no JsonMapper of its own: the Spring Boot bean is injected")
+    void txd007_noOwnJsonMapper() {
+        ArchitectureRules.noOwnJsonMapper().check(MAIN);
     }
 
     @Test

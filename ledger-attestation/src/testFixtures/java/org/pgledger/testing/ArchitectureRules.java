@@ -3,9 +3,11 @@ package org.pgledger.testing;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.fields;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noFields;
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noMethods;
 
 import com.tngtech.archunit.base.DescribedPredicate;
 import com.tngtech.archunit.core.domain.JavaClass;
+import com.tngtech.archunit.core.domain.JavaConstructorCall;
 import com.tngtech.archunit.core.domain.JavaMethodCall;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
@@ -109,6 +111,75 @@ public final class ArchitectureRules {
     /** ARC-018, second half. */
     public static ArchRule staticFieldsAreFinal() {
         return fields().that().areStatic().should().beFinal();
+    }
+
+    private static final String JSON_MAPPER = "tools.jackson.databind.json.JsonMapper";
+
+    /**
+     * TXD-007 (principle 3.7 and 2.2 category 2): a Spring module makes no {@code JsonMapper} of its own, no
+     * {@code JsonMapper.builder()} and no {@code new JsonMapper()}: the Spring Boot bean is injected, so that every JSON is
+     * written and read with the same settings.
+     */
+    public static ArchRule noOwnJsonMapper() {
+        DescribedPredicate<JavaMethodCall> builder = DescribedPredicate.describe("calls JsonMapper.builder(..)",
+                call -> JSON_MAPPER.equals(call.getTargetOwner().getName()) && "builder".equals(call.getTarget().getName()));
+        DescribedPredicate<JavaConstructorCall> constructor = DescribedPredicate.describe("calls a constructor of JsonMapper",
+                call -> JSON_MAPPER.equals(call.getTargetOwner().getName()));
+        return noClasses().should().callMethodWhere(builder).orShould().callConstructorWhere(constructor);
+    }
+
+    private static final String TRANSACTIONAL = "org.springframework.transaction.annotation.Transactional";
+    private static final String SERVICE = "org.springframework.stereotype.Service";
+
+    /**
+     * ARC-013 / TXD-005 (principle 4.4): nothing opens a transaction by hand. A transaction is declared with
+     * {@code @Transactional} on a service method; {@code TransactionTemplate} (made with {@code new}, or injected) is not used.
+     */
+    public static ArchRule noTransactionTemplate() {
+        return noClasses().should().dependOnClassesThat()
+                .haveFullyQualifiedName("org.springframework.transaction.support.TransactionTemplate");
+    }
+
+    private static final String CONFIGURATION = "org.springframework.context.annotation.Configuration";
+
+    /**
+     * TXD-010 (principles 3.9 and 4.4): no class makes its own database plumbing: no {@code JdbcClient.create(..)}, no
+     * {@code new TransactionTemplate(..)} and no {@code new DataSourceTransactionManager(..)} in production code outside a
+     * {@code @Configuration} class. The {@code JdbcClient} and the transaction manager are beans of the container (Spring Boot's,
+     * or a {@code @Bean} method of a configuration for a second data source), and a transaction is {@code @Transactional}.
+     *
+     * @param allowedClassNames classes that still do, each to be named in the test with its reason (a finding if there are
+     *                          more than the test says)
+     */
+    public static ArchRule noOwnJdbcPlumbing(String... allowedClassNames) {
+        java.util.Set<String> allowed = java.util.Set.of(allowedClassNames);
+        DescribedPredicate<JavaClass> notAConfiguration = DescribedPredicate.describe(
+                "are no @Configuration class and not one of the named exceptions",
+                type -> !type.isAnnotatedWith(CONFIGURATION) && !allowed.contains(type.getName()));
+        DescribedPredicate<JavaMethodCall> createsJdbcClient = DescribedPredicate.describe("call JdbcClient.create(..)",
+                call -> "org.springframework.jdbc.core.simple.JdbcClient".equals(call.getTargetOwner().getName())
+                        && "create".equals(call.getTarget().getName()));
+        DescribedPredicate<JavaConstructorCall> createsTransactionPlumbing = DescribedPredicate.describe(
+                "call a constructor of TransactionTemplate or DataSourceTransactionManager",
+                call -> "org.springframework.transaction.support.TransactionTemplate".equals(call.getTargetOwner().getName())
+                        || "org.springframework.jdbc.datasource.DataSourceTransactionManager"
+                                .equals(call.getTargetOwner().getName()));
+        return noClasses().that(notAConfiguration).should().callMethodWhere(createsJdbcClient)
+                .orShould().callConstructorWhere(createsTransactionPlumbing);
+    }
+
+    /**
+     * ARC-013 / TXD-005: the transaction boundary is the service layer. A class that is no {@code @Service} (a repository, a
+     * controller, a command, a tool, a configuration) is not annotated with {@code @Transactional}.
+     */
+    public static ArchRule transactionalOnlyOnServiceClasses() {
+        return noClasses().that().areNotAnnotatedWith(SERVICE).should().beAnnotatedWith(TRANSACTIONAL);
+    }
+
+    /** ARC-013 / TXD-005: the same for a method: only a method of a {@code @Service} is {@code @Transactional}. */
+    public static ArchRule transactionalOnlyOnServiceMethods() {
+        return noMethods().that().areDeclaredInClassesThat().areNotAnnotatedWith(SERVICE).should()
+                .beAnnotatedWith(TRANSACTIONAL);
     }
 
     /** ARC-019 / ARC-024: no time without the injected Clock, no default zone, no legacy date classes. */
