@@ -214,6 +214,21 @@ class DriverRegistrationServiceTest {
     }
 
     @Test
+    @DisplayName("SET-033: the registration the driver form calls is refused while the JDBC URL of the ledger database is an H2 "
+            + "URL (the PostgreSQL jar and class are usable, the URL is the only reason): DRIVER_INVALID, no registration file")
+    void anH2UrlIsRefused(@TempDir Path directory) throws Exception {
+        Path file = directory.resolve("jdbc-driver.yaml");
+        Path jar = driverJarIn(realDirectory(directory, "drivers"), "postgresql.jar");
+
+        withService(file, jar.getParent(), "jdbc:h2:mem:not-the-ledger", service -> {
+            assertThatThrownBy(() -> register(service, jar.toString(), TestDriverJar.DRIVER_CLASS))
+                    .isInstanceOfSatisfying(InfrastructureException.class,
+                            e -> assertThat(e.code()).isEqualTo(InfrastructureCode.DRIVER_INVALID));
+        });
+        assertThat(file).as("nothing is registered").doesNotExist();
+    }
+
+    @Test
     @DisplayName("DRV-016/DRV-020: a second registration replaces the first atomically; no temporary file is left")
     void aSecondRegistrationReplacesTheFirst(@TempDir Path directory) throws Exception {
         Path configuration = realDirectory(directory, "config");
