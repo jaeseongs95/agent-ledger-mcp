@@ -22,13 +22,13 @@ class BatchWireTest {
         return switch (kind) {
             case SAVE -> new BatchOpInput.Save("defect", Fields.of("title", "x"), "reason", "id", 1L, "request");
             case TRANSITION -> new BatchOpInput.Transition("defect", "id", 1L, "OPEN", "reason", "uri", "sha",
-                    "target", "request");
+                    "target", "attachment", "request");
             case RECORD_FIX -> new BatchOpInput.RecordFix("defect", "repo", "commit", "reason", "branch", "ci",
-                    "success", "time", true, "request");
+                    "success", "time", true, "attachment", "request");
             case RECORD_CASE -> new BatchOpInput.RecordCase("defect", "seen", "reason", "evidence", "quote", "time",
-                    "request");
+                    "attachment", "request");
             case LINK -> new BatchOpInput.Link("kind", "a", "b", "reason", false, "request");
-            case CORRECT -> new BatchOpInput.Correct(1L, "reason", "request");
+            case CORRECT -> new BatchOpInput.Correct(1L, "reason", "attachment", "request");
         };
     }
 

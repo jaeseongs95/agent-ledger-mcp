@@ -207,9 +207,9 @@ class BatchTest {
         SaveResult d = s.newDefect("d");
         List<BatchOpInput> ops = List.of(
                 new BatchOpInput.RecordFix(d.id(), "repo/e2e", Scenario.commit('a'), Scenario.REASON, null, null, null,
-                        null, null, null),
-                new BatchOpInput.RecordCase(d.id(), "seen", Scenario.REASON, null, null, null, null),
-                new BatchOpInput.Correct(d.historyId(), Scenario.REASON, null));
+                        null, null, null, null),
+                new BatchOpInput.RecordCase(d.id(), "seen", Scenario.REASON, null, null, null, null, null),
+                new BatchOpInput.Correct(d.historyId(), Scenario.REASON, null, null));
         String fixOnly = s.actorWith("fix");
         LedgerException e = Expect.failure(() -> batch(s, fixOnly, null, ops), TrustCode.SESSION_NOT_GRANTED);
         assertThat(e.details()).containsEntry("op_index", List.of("2")).containsEntry("scope", List.of("defect"));
