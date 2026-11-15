@@ -36,14 +36,16 @@ public class RenderDeployCommand implements Command {
     private final DeployInputReader inputs;
     private final DeployRenderer renderer;
     private final DeployFiles files;
+    private final ServicePlatforms platforms;
     private final CliOutput output;
     private final CliMessages messages;
 
-    RenderDeployCommand(DeployInputReader inputs, DeployRenderer renderer, DeployFiles files, CliOutput output,
-            CliMessages messages) {
+    RenderDeployCommand(DeployInputReader inputs, DeployRenderer renderer, DeployFiles files, ServicePlatforms platforms,
+            CliOutput output, CliMessages messages) {
         this.inputs = inputs;
         this.renderer = renderer;
         this.files = files;
+        this.platforms = platforms;
         this.output = output;
         this.messages = messages;
     }
@@ -67,13 +69,14 @@ public class RenderDeployCommand implements Command {
         DeployInput input = inputs.read(arguments);
         DeployParameters parameters = input.parameters();
         Path root = input.root();
-        files.requireReachable(root, parameters.layout());
+        ServicePlatform platform = platforms.of(parameters.layout().platform());
+        files.requireReachable(platform, root, parameters.layout());
         if (check) {
             // the installers run this before they change anything: a bad option stops them while nothing exists yet
             output.info(messages.get("render-deploy.checked", parameters.layout().name()));
             return;
         }
-        for (Path file : files.write(root, renderer.render(parameters), BackupNotice.told(output, messages))) {
+        for (Path file : files.write(platform, root, renderer.render(parameters), BackupNotice.told(output, messages))) {
             output.info(messages.get("render-deploy.written", file.toString()));
         }
     }

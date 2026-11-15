@@ -55,9 +55,10 @@ public class SealHostCommand implements Command {
         }
         DeployInput input = inputs.read(arguments);
         DeployLayout layout = input.parameters().layout();
-        files.requireReachable(input.root(), layout);
+        ServicePlatform platform = platforms.of(layout.platform());
+        files.requireReachable(platform, input.root(), layout);
         try {
-            platforms.of(layout.platform()).seal(layout, input.root());
+            platform.seal(layout, input.root());
         } catch (IOException e) {
             throw HostFiles.failure(e);
         }

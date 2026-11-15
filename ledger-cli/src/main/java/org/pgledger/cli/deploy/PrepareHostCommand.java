@@ -89,8 +89,8 @@ public class PrepareHostCommand implements Command {
         DeployInput input = inputs.read(arguments);
         DeployParameters parameters = input.parameters();
         DeployLayout layout = parameters.layout();
-        files.requireReachable(input.root(), layout);
         ServicePlatform platform = platforms.of(layout.platform());
+        files.requireReachable(platform, input.root(), layout);
         Path jars = Path.of(CliOptions.required(arguments, JARS));
         Path driver = Path.of(CliOptions.required(arguments, DRIVER_JAR));
         List<Path> wrappers = platform.wrappers(arguments);
@@ -107,7 +107,7 @@ public class PrepareHostCommand implements Command {
             if (parameters.nginx() != null && parameters.nginx().acme() != null) {
                 platform.prepareTls(layout, input.root());
             }
-            for (Path file : files.writeIntoHost(input.root(), renderer.render(parameters),
+            for (Path file : files.writeIntoHost(platform, input.root(), renderer.render(parameters),
                     BackupNotice.told(output, messages))) {
                 output.info(messages.get("render-deploy.written", file.toString()));
             }

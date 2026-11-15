@@ -1546,6 +1546,16 @@ Source of the cases: plan 2 (`ags-3446-solid-plan.md`), items F3 (CLI), F8, F9 a
 | CLI-PRN-13 | CLI | 2.1: the command line tool without a registered driver | every command that needs the database (`migrate`, `project-add`, `code-set`, `codes`, `grant`, `revoke`, `grants`, `key-register`, `key-revoke`, `import-legacy`) | exit 1 `DRIVER_NOT_CONFIGURED` from the one place that answers an absent bean (no copy of the check in the commands) | plan 3 | no |
 | CLI-PRN-14 | CLI | 2.4: `secret-import-1x` and `token-generate --copy-to` after the change of the key choice (an enum of the 1.x keys and the secrets they become) and of the option handling | the cases of SEC-027 and INS-047 | unchanged: the same names, the same output, the same refusals | plan 2.3/2.4 | no |
 
+## 22a. DPL: the platform adapters of the installer (task PG_LEDGER_MCP-T-0008, unit DEPLOYPLAT)
+
+Source: the audit of the development principles (1.1, 3.7, 3.9, 5.3, 9): what differs between the operating system families (the syntax of a path in a rendered file, the flags of a platform, the Windows privileges, the options of the JVM) is in the adapters and in one place each, and the code common to the platforms holds none of it. The rendered files are unchanged (SET-008, W7-SP-01).
+
+| ID | Level | Given | When | Then | Source | DBMS |
+|---|---|---|---|---|---|---|
+| DPL-01 | CLI | the options `--webroot` of `tls-issue` as a Linux path (`/srv/acme`) and as a drive path (`C:/acme`) | read the options (`TlsRequestReader`) | each is accepted where the file system of the host calls it absolute (`Path.isAbsolute`) and refused naming `webroot` where it does not; the form of no operating system is written in the reader; the web root and the TLS directory that are not given are those of the layout of the instance on any host | principles 1.1, 3.7 (finding 1) | no |
+| DPL-02 | UNIT | the platforms of the installer | `hostPath` of a Linux path and of a drive path below a root; of a relative path without a root | a Linux path drops its leading slash (`/etc/x` is `<root>/etc/x`), a drive letter becomes a directory name (`C:/x` is `<root>/C/x`); without a root a path that is not an absolute path of this host is `INVALID_DEPLOY_VALUE` naming `platform`, for either platform | principles 1.1 (finding 1) | no |
+| DPL-03 | ARCH (source) | the sources `DeployFiles`, `TlsRequestReader` and `DeployForms` | search | no drive letter pattern, no `WINDOWS_PATH` | principles 1.1, 3.7 (finding 1) | no |
+
 ## 23. SET: first setup, the seed bundle and the install defaults (task PG_LEDGER_MCP-T-0008, unit SETUP)
 
 Written before the code of the unit. Decisions this section applies (user, verbatim): 「dbms 설치가 전제라니까?」, 「h2는 초기 셋팅값이나 뭐 이것저것 담아두는 용도로만 쓰고 dbms에 마이그레이션하는 목적으로만 써.」, 「1. 장부 mcp를 깃헙에서 처음 다운받은 사람은 그럼 초기셋팅을 어떻게 해줄건데? 2. 마이그레이션은 마이그레이션 툴을 제공해야하지 않겠어? 근데 마이그레이션도 기준이 필요할거잖아. h2는 그런목적으로만 쓰라고.」, 「쿼리는 ansi sql 방식으로 짜고, 특정 dbms 기능은 사용 금지야. 트리거도 사용 금지야.」, 「java로 할수있는걸 외부프로그램으로 굳이 하지 말란소리야.」, 「근데 나만사용하겠냐고. github에 공개리포지로 올라간다는게 무슨의민지는 알기나해?」 (the product is designed for unknown users: no provider name and nothing of the maintainer's own hosting in the code, the defaults or the texts).

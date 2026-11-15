@@ -19,7 +19,7 @@ import org.springframework.boot.ApplicationArguments;
  * and every place that used to branch on it (the renderer, {@code prepare-host}, {@code seal-host}, the validation of the
  * options) is now a method here.
  */
-interface ServicePlatform {
+interface ServicePlatform extends HostPaths {
 
     Platform platform();
 

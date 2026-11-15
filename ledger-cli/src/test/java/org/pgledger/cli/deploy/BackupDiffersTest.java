@@ -30,6 +30,8 @@ class BackupDiffersTest {
     Path tmp;
 
     private final DeployFiles files = new DeployFiles();
+    /** The paths of the unit are Linux paths: the platform that wrote them puts them below the root. */
+    private final ServicePlatform linux = DeployTestBeans.platforms().of(DeployLayout.Platform.LINUX);
 
     @Test
     @DisplayName("REH2-INS-02 a file of 1.x and a backup with other bytes: BackupDiffersException naming both files, nothing of either changed; prepare-host reports it as HOST_FAILED naming both files, not as FileAlreadyExistsException")
@@ -40,7 +42,7 @@ class BackupDiffersTest {
         Files.writeString(unit, ONE_X + "# changed since\n", StandardCharsets.UTF_8);
         Files.writeString(backup, ONE_X, StandardCharsets.UTF_8);
 
-        assertThatThrownBy(() -> files.writeIntoHost(tmp, List.of(new RenderedFile(UNIT, RENDERED)), (path, how) -> { }))
+        assertThatThrownBy(() -> files.writeIntoHost(linux, tmp, List.of(new RenderedFile(UNIT, RENDERED)), (path, how) -> { }))
                 .isInstanceOfSatisfying(DeployFiles.BackupDiffersException.class, refused -> {
                     assertThat(refused.getFile()).isEqualTo(unit.toString());
                     assertThat(refused.getOtherFile()).isEqualTo(backup.toString());

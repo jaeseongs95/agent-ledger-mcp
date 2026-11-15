@@ -42,6 +42,9 @@ import org.springframework.stereotype.Component;
 @Component
 final class WindowsPlatform implements ServicePlatform {
 
+    /** A drive and plain segments, with {@code /}: the form every path of a Windows installation is written in. */
+    private static final String PATH = "[A-Za-z]:(?:/" + DeployForms.SEGMENT + ")+";
+
     private final HostAccounts accounts;
     private final ProcessUser processUser;
     private final WindowsAccess access;
@@ -62,12 +65,22 @@ final class WindowsPlatform implements ServicePlatform {
         return Platform.WINDOWS;
     }
 
+    /**
+     * A Windows path is written with a drive letter, {@code C:/x}; below a root the drive letter is a directory name, so it is
+     * {@code <root>/C/x}.
+     */
+    @Override
+    public Path hostPath(Path root, String path) {
+        return root == null ? files.ownPath(path)
+                : root.resolve(path.replaceFirst("^([A-Za-z]):", "$1").replaceFirst("^/", ""));
+    }
+
     @Override
     public DeployLayout layout(String name, String home) {
         if (home == null) {
             throw new UsageException(ErrorCode.MISSING_ARGUMENT);
         }
-        return DeployLayout.windows(name, DeployForms.requirePath(home, DeployForms.WINDOWS_PATH, DeployOptions.HOME));
+        return DeployLayout.windows(name, DeployForms.requirePath(home, PATH, DeployOptions.HOME));
     }
 
     @Override
@@ -88,9 +101,9 @@ final class WindowsPlatform implements ServicePlatform {
     @Override
     public void prepare(DeployLayout layout, Path root, Path jars, Path driver, List<Path> wrappers) throws IOException {
         Path winsw = wrappers.getFirst();
-        Path lib = files.resolve(root, layout.lib());
-        Path etc = files.resolve(root, layout.etc());
-        Path logs = files.resolve(root, layout.logs());
+        Path lib = hostPath(root,layout.lib());
+        Path etc = hostPath(root,layout.etc());
+        Path logs = hostPath(root,layout.logs());
         FileSystem fileSystem = lib.getFileSystem();
         host.requireView(fileSystem, "acl");
         UserPrincipal system = accounts.user(fileSystem, WindowsAccess.SYSTEM);
@@ -167,9 +180,9 @@ final class WindowsPlatform implements ServicePlatform {
 
     @Override
     public void seal(DeployLayout layout, Path root) throws IOException {
-        Path lib = files.resolve(root, layout.lib());
-        Path etc = files.resolve(root, layout.etc());
-        Path logs = files.resolve(root, layout.logs());
+        Path lib = hostPath(root,layout.lib());
+        Path etc = hostPath(root,layout.etc());
+        Path logs = hostPath(root,layout.logs());
         Path secrets = etc.resolve("secrets");
         FileSystem fileSystem = lib.getFileSystem();
         host.requireView(fileSystem, "acl");

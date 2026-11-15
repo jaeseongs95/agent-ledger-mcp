@@ -34,6 +34,11 @@ class ServicePlatformTest {
         }
 
         @Override
+        public Path hostPath(Path root, String path) {
+            return root == null ? Path.of(path) : root.resolve(path);
+        }
+
+        @Override
         public DeployLayout layout(String name, String home) {
             return DeployLayout.linux(name);
         }

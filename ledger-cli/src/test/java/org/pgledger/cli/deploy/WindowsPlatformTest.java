@@ -37,7 +37,7 @@ import org.pgledger.cli.support.RecordingHostAccounts;
  * WSEC-01 .. WSEC-03 (and WSEC-08 .. WSEC-11): the order of the steps of {@code prepare-host} and {@code seal-host} on Windows
  * ({@link WindowsPlatform}), and what a failed run leaves behind. The platform is run on any operating system: what touches the
  * ACLs ({@link WindowsAccess}) and the copy of the jars ({@link HostFiles}) are replaced by recorders, the folders are real ones
- * below a temporary root (a Windows path becomes a path below the root, {@link DeployFiles#resolve}). The real ACLs, the
+ * below a temporary root (a Windows path becomes a path below the root, {@link WindowsPlatform#hostPath}). The real ACLs, the
  * privileges and the services are {@link WindowsSecretsTest} and the Windows test server.
  */
 class WindowsPlatformTest {

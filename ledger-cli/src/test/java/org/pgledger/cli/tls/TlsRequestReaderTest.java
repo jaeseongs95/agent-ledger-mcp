@@ -145,27 +145,50 @@ class TlsRequestReaderTest {
         assertThat(refused(true, "--admin-host=admin.example.org").code()).isEqualTo(ErrorCode.MISSING_ARGUMENT);
     }
 
-    @Test
-    @DisplayName("TLS-015 the web root and the TLS directory are the options when given and the layout of the instance when not; a path that is not plain is INVALID_DEPLOY_VALUE naming the option")
-    void tls015_thePaths() {
-        TlsRequest given = reader.read(arguments("--webroot=/srv/acme", "--tls-dir=/srv/tls"), true);
-        TlsRequest windows = reader.read(arguments("--webroot=C:/acme", "--tls-dir=D:/data/tls"), true);
-        TlsRequest named = reader.read(arguments("--name=x"), true);
-        TlsRequest defaults = reader.read(arguments(), true);
+    /** A path below the root of the file system of this host, written with {@code /}: an absolute path of the host, whatever it is. */
+    private static String own(String below) {
+        return Path.of("").toAbsolutePath().getRoot().toString().replace('\\', '/') + below;
+    }
 
-        assertThat(given.webroot()).isEqualTo(Path.of("/srv/acme"));
-        assertThat(given.directory()).isEqualTo(Path.of("/srv/tls"));
-        assertThat(windows.webroot()).isEqualTo(Path.of("C:/acme"));
-        assertThat(named.webroot()).isEqualTo(Path.of("/var/www/x-acme"));
-        assertThat(named.directory()).isEqualTo(Path.of("/etc/x/tls"));
-        assertThat(defaults.directory()).isEqualTo(Path.of("/etc/" + new InstallDefaults(new PackagedSeed()).instanceName() + "/tls"));
-        for (String bad : List.of("--webroot=/srv/a b", "--webroot=/srv/../etc", "--webroot=relative", "--webroot=/srv/a$b",
-                "--tls-dir=/srv/a b", "--tls-dir=/srv/..", "--tls-dir=tls")) {
+    @Test
+    @DisplayName("TLS-015 the web root and the TLS directory are the options when given; a path that is not plain is INVALID_DEPLOY_VALUE naming the option")
+    void tls015_thePaths() {
+        TlsRequest given = reader.read(arguments("--webroot=" + own("srv/acme"), "--tls-dir=" + own("srv/tls")), true);
+
+        assertThat(given.webroot()).isEqualTo(Path.of(own("srv/acme")));
+        assertThat(given.directory()).isEqualTo(Path.of(own("srv/tls")));
+        for (String bad : List.of("--webroot=" + own("srv/a b"), "--webroot=" + own("srv/../etc"), "--webroot=relative",
+                "--webroot=" + own("srv/a$b"), "--tls-dir=" + own("srv/a b"), "--tls-dir=" + own("srv/.."), "--tls-dir=tls")) {
             CliException refused = refused(true, "--mcp-host=mcp.example.org", "--admin-host=admin.example.org", bad);
             assertThat(refused.code()).as(bad).isEqualTo(ErrorCode.INVALID_DEPLOY_VALUE);
             assertThat(refused.arguments()).containsExactly(bad.substring(2, bad.indexOf('=')));
         }
         assertThat(refused(true, "--mcp-host=mcp.example.org", "--admin-host=admin.example.org", "--name=Bad Name").code())
                 .isEqualTo(ErrorCode.INVALID_DEPLOY_VALUE);
+    }
+
+    @Test
+    @DisplayName("TLS-015 left out, the web root and the TLS directory are those of the layout of the instance (the Linux installation's own paths, on any host)")
+    void tls015_theDefaults() {
+        TlsRequest named = reader.read(arguments("--name=x"), true);
+        TlsRequest defaults = reader.read(arguments(), true);
+
+        assertThat(named.webroot()).isEqualTo(Path.of("/var/www/x-acme"));
+        assertThat(named.directory()).isEqualTo(Path.of("/etc/x/tls"));
+        assertThat(defaults.directory()).isEqualTo(Path.of("/etc/" + new InstallDefaults(new PackagedSeed()).instanceName() + "/tls"));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "/srv/acme", "C:/acme" })
+    @DisplayName("DPL-01 whether a path is absolute is the answer of the file system of the host (Path.isAbsolute), not the form of a path of an operating system: a Linux path and a drive path are each accepted where the host calls them absolute, and refused where it does not")
+    void dpl01_theHostFileSystemSaysWhatIsAbsolute(String value) {
+        if (Path.of(value).isAbsolute()) {
+            assertThat(reader.read(arguments("--webroot=" + value), true).webroot()).isEqualTo(Path.of(value));
+        } else {
+            CliException refused = refused(true, "--mcp-host=mcp.example.org", "--admin-host=admin.example.org", "--webroot=" + value);
+
+            assertThat(refused.code()).isEqualTo(ErrorCode.INVALID_DEPLOY_VALUE);
+            assertThat(refused.arguments()).containsExactly("webroot");
+        }
     }
 }

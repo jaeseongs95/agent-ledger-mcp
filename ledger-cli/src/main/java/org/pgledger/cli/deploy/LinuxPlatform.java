@@ -39,6 +39,12 @@ final class LinuxPlatform implements ServicePlatform {
         return Platform.LINUX;
     }
 
+    /** A Linux path starts with {@code /}; below a root the slash is dropped, so {@code /etc/x} is {@code <root>/etc/x}. */
+    @Override
+    public Path hostPath(Path root, String path) {
+        return root == null ? files.ownPath(path) : root.resolve(path.replaceFirst("^/", ""));
+    }
+
     @Override
     public DeployLayout layout(String name, String home) {
         if (home != null) {
@@ -79,8 +85,8 @@ final class LinuxPlatform implements ServicePlatform {
 
     @Override
     public void prepare(DeployLayout layout, Path root, Path jars, Path driver, List<Path> wrappers) throws IOException {
-        Path lib = files.resolve(root, layout.lib());
-        Path etc = files.resolve(root, layout.etc());
+        Path lib = hostPath(root, layout.lib());
+        Path etc = hostPath(root, layout.etc());
         FileSystem fileSystem = lib.getFileSystem();
         host.requireView(fileSystem, "posix");
         // the accounts are looked up before the first change: a host without the service user is refused with nothing done
@@ -95,8 +101,8 @@ final class LinuxPlatform implements ServicePlatform {
 
     @Override
     public void prepareTls(DeployLayout layout, Path root) throws IOException {
-        Path tls = files.resolve(root, layout.tlsDirectory());
-        Path webroot = files.resolve(root, layout.acmeWebroot());
+        Path tls = hostPath(root, layout.tlsDirectory());
+        Path webroot = hostPath(root, layout.acmeWebroot());
         FileSystem fileSystem = tls.getFileSystem();
         host.requireView(fileSystem, "posix");
         UserPrincipal user = accounts.user(fileSystem, layout.serviceUser());

@@ -34,14 +34,10 @@ final class DeployInputReader {
     /** The name of the instance and the two ports an option that is not given takes (the seed bundle, the one place they are written). */
     private final InstallDefaults defaults;
 
-    /** Looks at the certificate files of an automatic certificate, below the root of the command. */
-    private final DeployFiles files;
-
-    DeployInputReader(Validator validator, ServicePlatforms platforms, InstallDefaults defaults, DeployFiles files) {
+    DeployInputReader(Validator validator, ServicePlatforms platforms, InstallDefaults defaults) {
         this.validator = validator;
         this.platforms = platforms;
         this.defaults = defaults;
-        this.files = files;
     }
 
     /**
@@ -78,9 +74,10 @@ final class DeployInputReader {
         if (parameters.nginx() == null || parameters.nginx().acme() == null) {
             return parameters;
         }
-        // the files are looked up with the platform of the host the command runs on, and refused before by requireReachable
-        Path certificate = files.resolve(root, parameters.nginx().certificate());
-        Path key = files.resolve(root, parameters.nginx().key());
+        // the files are looked up where the platform of the installation puts them on this host, and refused before by requireReachable
+        ServicePlatform platform = platforms.of(parameters.layout().platform());
+        Path certificate = platform.hostPath(root, parameters.nginx().certificate());
+        Path key = platform.hostPath(root, parameters.nginx().key());
         return parameters.withCertificateIssued(Files.isRegularFile(certificate) && Files.isRegularFile(key));
     }
 

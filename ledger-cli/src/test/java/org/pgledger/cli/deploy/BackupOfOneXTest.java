@@ -26,6 +26,8 @@ class BackupOfOneXTest {
     Path tmp;
 
     private final DeployFiles files = new DeployFiles();
+    /** The paths of the unit are Linux paths: the platform that wrote them puts them below the root. */
+    private final ServicePlatform linux = DeployTestBeans.platforms().of(DeployLayout.Platform.LINUX);
 
     @Test
     @DisplayName("REH2-INS-01 a file of 1.x and a backup with the same bytes (what the README rollback leaves): the writer goes on, the backup is kept as it is and told as kept, the file is the rendered one; the next run keeps the backup too")
@@ -38,7 +40,7 @@ class BackupOfOneXTest {
         List<Path> kept = new ArrayList<>();
         List<DeployFiles.Backup> how = new ArrayList<>();
 
-        List<Path> written = files.write(tmp, List.of(new RenderedFile(UNIT, RENDERED)), (path, made) -> {
+        List<Path> written = files.write(linux, tmp, List.of(new RenderedFile(UNIT, RENDERED)), (path, made) -> {
             kept.add(path);
             how.add(made);
         });
@@ -49,7 +51,7 @@ class BackupOfOneXTest {
         assertThat(how).containsExactly(DeployFiles.Backup.KEPT);
         assertThat(Files.readString(backup, StandardCharsets.UTF_8)).isEqualTo(ONE_X);
         assertThat(Files.readString(unit, StandardCharsets.UTF_8)).isEqualTo(RENDERED);
-        files.write(tmp, List.of(new RenderedFile(UNIT, RENDERED)), (path, made) -> {
+        files.write(linux, tmp, List.of(new RenderedFile(UNIT, RENDERED)), (path, made) -> {
             kept.add(path);
             how.add(made);
         });
@@ -66,7 +68,7 @@ class BackupOfOneXTest {
         Files.writeString(unit, ONE_X, StandardCharsets.UTF_8);
         List<DeployFiles.Backup> how = new ArrayList<>();
 
-        files.write(tmp, List.of(new RenderedFile(UNIT, RENDERED)), (path, made) -> how.add(made));
+        files.write(linux, tmp, List.of(new RenderedFile(UNIT, RENDERED)), (path, made) -> how.add(made));
 
         assertThat(how).containsExactly(DeployFiles.Backup.MOVED);
         assertThat(Files.readString(backup, StandardCharsets.UTF_8)).isEqualTo(ONE_X);

@@ -29,8 +29,10 @@ import org.springframework.stereotype.Component;
  *
  * <p>Without a root a file is written at its own path, and that path has to be a path of this host: a Windows drive path on a
  * host that has no drives, or a path of the root of a Linux file system on a host that has none, is no path of the host but a
- * relative one that would be written below the working directory. {@link #resolve} refuses it (naming the option
- * {@code platform}), and {@link #requireReachable} lets a command do that before it reads or changes anything.
+ * relative one that would be written below the working directory. {@link #ownPath} refuses it (naming the option
+ * {@code platform}), and {@link #requireReachable} lets a command do that before it reads or changes anything. How a path
+ * that a platform wrote into its files is put below a root is that platform's ({@link HostPaths}); this class holds no form of
+ * the paths of any operating system.
  */
 @Component
 public final class DeployFiles {
@@ -50,8 +52,10 @@ public final class DeployFiles {
     }
 
     /**
-     * @param root the directory the absolute paths of the files are put below (a drive letter becomes a directory name:
-     *             {@code C:/x} is {@code <root>/C/x}), or null to write each file at its own path, as an installation does
+     * @param paths the platform that rendered the files: where its paths are on this host
+     * @param root the directory the absolute paths of the files are put below (what the platform makes of them: on Windows a
+     *             drive letter becomes a directory name, {@code C:/x} is {@code <root>/C/x}), or null to write each file at
+     *             its own path, as an installation does
      * @param backups told the backup file of every foreign file that is replaced ({@link #BACKUP_SUFFIX}), and whether this
      *                run moved the file there or the backup was there already
      * @return the files written, in order
@@ -60,8 +64,8 @@ public final class DeployFiles {
      * @throws FailureException DEPLOY_WRITE_FAILED naming the file and the kind of failure (for a backup that holds other bytes
      *         both files)
      */
-    public List<Path> write(Path root, List<RenderedFile> files, BiConsumer<Path, Backup> backups) {
-        List<Path> targets = targets(root, files);
+    public List<Path> write(HostPaths paths, Path root, List<RenderedFile> files, BiConsumer<Path, Backup> backups) {
+        List<Path> targets = targets(paths, root, files);
         List<Path> written = new ArrayList<>();
         for (int index = 0; index < files.size(); index++) {
             Path target = targets.get(index);
@@ -84,19 +88,19 @@ public final class DeployFiles {
      *
      * @throws IOException the file that could not be written, or {@link BackupDiffersException} naming the file and its backup
      */
-    public List<Path> writeIntoHost(Path root, List<RenderedFile> files, BiConsumer<Path, Backup> backups)
+    public List<Path> writeIntoHost(HostPaths paths, Path root, List<RenderedFile> files, BiConsumer<Path, Backup> backups)
             throws IOException {
-        List<Path> targets = targets(root, files);
+        List<Path> targets = targets(paths, root, files);
         for (int index = 0; index < files.size(); index++) {
             writeOne(targets.get(index), files.get(index).content(), backups);
         }
         return targets;
     }
 
-    private List<Path> targets(Path root, List<RenderedFile> files) {
+    private List<Path> targets(HostPaths paths, Path root, List<RenderedFile> files) {
         List<Path> targets = new ArrayList<>();
         for (RenderedFile file : files) {
-            targets.add(resolve(root, file.path()));
+            targets.add(paths.hostPath(root, file.path()));
         }
         return targets;
     }
@@ -156,16 +160,13 @@ public final class DeployFiles {
     }
 
     /**
-     * Where a path of a file (absolute, {@code /} also on Windows) is put: itself, or below {@code root} (a drive letter is a
-     * directory name).
+     * The path of a file on this host when there is no root: the path itself, which the file system of the host must call
+     * absolute ({@link Path#isAbsolute}). What a platform does with a root is its own ({@link HostPaths}).
      *
-     * @throws UsageException INVALID_DEPLOY_VALUE naming {@code platform} when there is no root and the path is not an
-     *         absolute path of this host (it is the path of the other platform)
+     * @throws UsageException INVALID_DEPLOY_VALUE naming {@code platform} when the path is not an absolute path of this host
+     *         (it is the path of the other platform)
      */
-    public Path resolve(Path root, String path) {
-        if (root != null) {
-            return root.resolve(path.replaceFirst("^([A-Za-z]):", "$1").replaceFirst("^/", ""));
-        }
+    public Path ownPath(String path) {
         try {
             Path own = Path.of(path);
             if (own.isAbsolute()) {
@@ -177,12 +178,12 @@ public final class DeployFiles {
         throw new UsageException(ErrorCode.INVALID_DEPLOY_VALUE, DeployOptions.PLATFORM);
     }
 
-    /** Refuses a layout whose folders are no paths of this host (see {@link #resolve}); nothing is read or written. */
-    public void requireReachable(Path root, DeployLayout layout) {
-        resolve(root, layout.lib());
-        resolve(root, layout.etc());
+    /** Refuses a layout whose folders are no paths of this host (see {@link #ownPath}); nothing is read or written. */
+    public void requireReachable(HostPaths paths, Path root, DeployLayout layout) {
+        paths.hostPath(root, layout.lib());
+        paths.hostPath(root, layout.etc());
         if (layout.logs() != null) {
-            resolve(root, layout.logs());
+            paths.hostPath(root, layout.logs());
         }
     }
 

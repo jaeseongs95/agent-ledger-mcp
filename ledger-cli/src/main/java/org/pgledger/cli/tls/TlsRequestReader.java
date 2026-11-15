@@ -22,8 +22,9 @@ import org.springframework.stereotype.Component;
 /**
  * Reads the options of {@code tls-issue} and {@code tls-renew} and refuses what cannot be used before anything is read from the
  * host or sent to a certificate authority. The host names and the name of the instance have the forms of {@code render-deploy};
- * the paths are plain absolute paths (a Linux path or a drive path), and when they are not given they are those of the layout of
- * the instance (the Linux installation: the commands themselves run anywhere). A refusal names the option and never the value.
+ * the paths that are given are plain absolute paths of the host the command runs on (the file system says what is absolute), and
+ * when they are not given they are those of the layout of the instance (the Linux installation: on a host with other paths
+ * the commands are given {@code --webroot} and {@code --tls-dir}). A refusal names the option and never the value.
  */
 @Component
 final class TlsRequestReader {
@@ -56,8 +57,11 @@ final class TlsRequestReader {
         String name = DeployForms.requireName(CliOptions.value(arguments, DeployOptions.NAME).orElseGet(defaults::instanceName),
                 DeployOptions.NAME);
         DeployLayout layout = DeployLayout.linux(name);
-        Path webroot = path(CliOptions.value(arguments, TlsOptions.WEBROOT).orElse(layout.acmeWebroot()), TlsOptions.WEBROOT);
-        Path directory = path(CliOptions.value(arguments, TlsOptions.TLS_DIR).orElse(layout.tlsDirectory()), TlsOptions.TLS_DIR);
+        // a path that the operator gives is judged by the file system of this host; the paths of the layout are the instance's own
+        Path webroot = CliOptions.value(arguments, TlsOptions.WEBROOT).map(value -> path(value, TlsOptions.WEBROOT))
+                .orElseGet(() -> Path.of(layout.acmeWebroot()));
+        Path directory = CliOptions.value(arguments, TlsOptions.TLS_DIR).map(value -> path(value, TlsOptions.TLS_DIR))
+                .orElseGet(() -> Path.of(layout.tlsDirectory()));
         URI acme = directory(CliOptions.value(arguments, DeployOptions.ACME_DIRECTORY).orElse(TlsOptions.DEFAULT_DIRECTORY));
         String email = null;
         boolean agree = false;
@@ -73,11 +77,14 @@ final class TlsRequestReader {
         return new TlsRequest(Stream.concat(mcpHosts.stream(), adminHosts.stream()).toList(), webroot, directory, acme, email, agree, days);
     }
 
+    /** The path as the file system of this host reads it: it has to be absolute there, and plain ({@link DeployForms#isPlainAbsolute}). */
     private static Path path(String value, String option) {
         try {
-            String plain = DeployForms.isPath(value, DeployForms.POSIX_PATH) ? value
-                    : DeployForms.requirePath(value, DeployForms.WINDOWS_PATH, option);
-            return Path.of(plain);
+            Path path = Path.of(value);
+            if (!DeployForms.isPlainAbsolute(path)) {
+                throw new UsageException(ErrorCode.INVALID_DEPLOY_VALUE, option);
+            }
+            return path;
         } catch (InvalidPathException e) {
             throw new UsageException(ErrorCode.INVALID_DEPLOY_VALUE, e, option);
         }
