@@ -117,7 +117,7 @@ public class UploadService {
             throw new ValidationException(ValidationCode.UNSUPPORTED_PURPOSE, List.of(command.purpose()), List.of(),
                     java.util.Map.of());
         }
-        requireText("operation_key", command.operationKey(), 1, 128);
+        requireText("operationKey", command.operationKey(), 1, 128);
         requireFileName(command.fileName());
         requireMediaType(command.mediaType());
         if (command.size() < 0) {
@@ -273,17 +273,17 @@ public class UploadService {
      */
     public Source planRead(String actor, String attachmentId, long offsetBytes, long maxBytes) {
         gate.openWithAnyGrant(actor, Channel.AUTHOR);
-        requireUuid("attachment_id", attachmentId);
+        requireUuid("attachmentId", attachmentId);
         Attachment attachment = attachments.findById(attachmentId)
                 .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND, List.of("attachment", attachmentId)));
         AttachmentFile file = files.currentOf(attachmentId).orElseThrow(() -> new InfrastructureException(
                 InfrastructureCode.ATTACHMENT_CORRUPTED, List.of()));
         if (offsetBytes < 0 || offsetBytes > attachment.sizeBytes()) {
-            throw ValidationException.invalid("offset_bytes", ValidationReason.OUT_OF_RANGE, "0",
+            throw ValidationException.invalid("offsetBytes", ValidationReason.OUT_OF_RANGE, "0",
                     Long.toString(attachment.sizeBytes()));
         }
         if (maxBytes < 1 || maxBytes > AttachmentProperties.CHUNK_BYTES) {
-            throw ValidationException.invalid("max_bytes", ValidationReason.OUT_OF_RANGE, "1",
+            throw ValidationException.invalid("maxBytes", ValidationReason.OUT_OF_RANGE, "1",
                     Integer.toString(AttachmentProperties.CHUNK_BYTES));
         }
         return new Source(attachment, file);
@@ -292,7 +292,7 @@ public class UploadService {
     // ------------------------------------------------------------------------------------------------ details
 
     private UploadStaging ownedUpload(AuthorId author, String uploadId) {
-        requireUuid("upload_id", uploadId);
+        requireUuid("uploadId", uploadId);
         return uploads.findById(uploadId).filter(row -> Objects.equals(row.owner(), author))
                 .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND, List.of("upload", uploadId)));
     }
@@ -321,16 +321,16 @@ public class UploadService {
     }
 
     private static void requireFileName(String name) {
-        requireText("file_name", name, 1, 255);
+        requireText("fileName", name, 1, 255);
         if (FILE_NAME_FORBIDDEN.matcher(name).find()) {
-            throw ValidationException.invalid("file_name", ValidationReason.MUST_MATCH, "a name without a path or a control character");
+            throw ValidationException.invalid("fileName", ValidationReason.MUST_MATCH, "a name without a path or a control character");
         }
     }
 
     private static void requireMediaType(String type) {
-        requireText("media_type", type, 3, 127);
+        requireText("mediaType", type, 3, 127);
         if (!MEDIA_TYPE.matcher(type).matches()) {
-            throw ValidationException.invalid("media_type", ValidationReason.MUST_MATCH, "type/subtype");
+            throw ValidationException.invalid("mediaType", ValidationReason.MUST_MATCH, "type/subtype");
         }
     }
 }

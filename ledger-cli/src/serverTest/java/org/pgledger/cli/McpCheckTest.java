@@ -62,16 +62,18 @@ class McpCheckTest {
 
             assertThat(result.exitCode()).isZero();
             assertThat(result.failure()).isNull();
-            assertThat(output.info()).contains("22 tools listed").contains("all 22 expected tools").contains(server.url());
+            assertThat(output.info()).contains("27 tools listed").contains("all 27 expected tools").contains(server.url());
         }
         assertNoSecret(captured, output);
     }
 
     @Test
-    @DisplayName("CLI-010 the list the command expects is the 22 names of the contract: ten write tools and twelve read tools")
+    @DisplayName("CLI-010 the list the command expects is the 27 names of the contract: ten write tools, five attachment tools and twelve read tools")
     void theExpectedListIsTheContract() {
-        assertThat(ToolContract.all()).hasSize(22).doesNotHaveDuplicates();
+        assertThat(ToolContract.all()).hasSize(27).doesNotHaveDuplicates();
         assertThat(ToolContract.WRITE).hasSize(10);
+        assertThat(ToolContract.ATTACHMENT).containsExactly("artifact-begin", "artifact-chunk", "artifact-finish",
+                "artifact-status", "artifact-read");
         assertThat(ToolContract.READ).hasSize(12);
     }
 
@@ -85,7 +87,7 @@ class McpCheckTest {
             Outcome result = run(cli.withArguments("--ledger.mcp.token=" + TOKEN), output, "mcp-check", "--url=" + server.url());
 
             assertThat(result.exitCode()).isZero();
-            assertThat(output.info()).contains("23 tools listed").contains("all 22 expected tools");
+            assertThat(output.info()).contains("28 tools listed").contains("all 27 expected tools");
         }
     }
 
@@ -99,7 +101,7 @@ class McpCheckTest {
             Outcome result = run(cli, output, "mcp-check", "--url=" + server.url());
 
             assertThat(result.exitCode()).isZero();
-            assertThat(output.info()).contains("22 tools listed");
+            assertThat(output.info()).contains("27 tools listed");
         }
         assertNoSecret(captured, output);
     }

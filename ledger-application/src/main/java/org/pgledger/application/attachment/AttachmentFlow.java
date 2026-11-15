@@ -110,7 +110,7 @@ public class AttachmentFlow {
         try {
             return Sha256.of(text);
         } catch (ValidationException invalid) {
-            throw ValidationException.invalid("chunk_sha256", ValidationReason.MUST_BE_LOWER_CASE_HEX, invalid, "64");
+            throw ValidationException.invalid("chunkSha256", ValidationReason.MUST_BE_LOWER_CASE_HEX, invalid, "64");
         }
     }
 }
