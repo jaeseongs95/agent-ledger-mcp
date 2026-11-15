@@ -13,6 +13,7 @@ of the write tools, the keys of the results, the `_hostAttestation` key) and cha
 
 - Concepts
 - MCP tools
+- Attachments
 - Modules
 - Configuration
 - Installation
@@ -92,6 +93,16 @@ Write tools (a login, an attestation and a live grant are needed):
 | `ledger_review` | reviewer | `VERIFIED`, `MET`, `NOT_MET`, and reopening them; the evidence link is required |
 | `ledger_review_correct` | reviewer | mark a verification row as wrong |
 
+Attachment tools (a login, an attestation and at least one live grant of the author; see Attachments below):
+
+| Tool | What |
+|---|---|
+| `artifact-begin` | start the upload of a file that a record can point to; `operationKey` is required and makes the call repeatable, `purpose` is optional and only `evidence` is supported |
+| `artifact-chunk` | send the next chunk (at most 262144 bytes, base64) with its SHA-256; the last applied chunk sent again is answered with the current state |
+| `artifact-finish` | check the received bytes against the declared size and SHA-256 and keep the file as an attachment; the same upload id again gives the same attachment id |
+| `artifact-status` | the state, size, SHA-256, expiry and progress of an upload or an attachment (never a path or a storage key) |
+| `artifact-read` | one page of a kept attachment, decrypted and checked |
+
 Read tools (no attestation and no grant; structured queries that replace the raw SQL tools of 1.x):
 
 | Tool | What |
@@ -125,6 +136,40 @@ definitions without a restart. A change made by another process (the admin web, 
  "evidence": "request 7f3a, api/checkout.ts:88", "user_quote": "I can't pay with my gift card",
  "observed_at": "2026-11-05T10:00:00Z", "reason": "second report of the same failure"}
 ```
+
+## Attachments
+
+A review report (or any other evidence) is kept as an attachment, never as text in the database and never as a local file that
+can be edited without a trace. The history row of a record points to it with the optional `attachment_id` of `ledger_transition`,
+`ledger_review`, `ledger_review_correct`, `ledger_correct`, `ledger_record_fix`, `ledger_record_case` and the same operations of
+`ledger_batch`. The record is written only when the attachment exists and was uploaded by the author who writes the record.
+
+- **Upload.** Uploads are made through the five MCP tools above: `artifact-begin` (with a required `operationKey`), `artifact-chunk`
+  for each chunk of at most 262144 bytes, `artifact-finish`, and `artifact-status` and `artifact-read` to look at it. A client
+  program outside the model that sends a file of the PC is an open item; the tools are the one way in.
+- **Storage.** The database holds only metadata and the name of the file (`upload_staging`, `attachment`, `attachment_file`;
+  no body column, no foreign key). The file is under `ledger.attachments.directory`, named by 128 random bits, with no extension and
+  no original name, encrypted with AES-256-GCM in segments (one per chunk, the storage key and the position are authenticated), and
+  read only once it is finished. An attachment is never changed or deleted: the application account of the database has `SELECT`
+  and `INSERT` on it only.
+- **Keys.** `setup` creates the first 256-bit key file in `ledger.attachments.key-directory` (readable by the service account
+  only) and sets `ledger.attachments.active-key-id`. To rotate: `ledger-cli attachments-key-create`, set `active-key-id` to the new id,
+  restart, then `ledger-cli attachments-rekey --from=<old id>` writes the files of the old key again; an old key file is kept while a
+  current file or an open upload uses it. The start check names the key id (never the key) when a needed key file is missing.
+- **Errors.** `ARTIFACT_CHUNK_CONFLICT`, `CHUNK_HASH_MISMATCH`, `ARTIFACT_BUSY` (send again later), `ARTIFACT_INCOMPLETE`,
+  `ARTIFACT_HASH_MISMATCH` (the bytes are kept), `ARTIFACT_CORRUPTED`, `ARTIFACT_LIMIT`, `ARTIFACT_UNSUPPORTED_PURPOSE`,
+  `ARTIFACT_EXPIRED`, `ARTIFACT_NOT_FOUND`, `ARTIFACT_OPERATION_CONFLICT`.
+- **Check.** `ledger-cli attachments-check` reports the attachments that are missing or damaged (never deleted) and those no
+  history row points to (kept), and moves a file that no row names, or that a rekey replaced, to `orphans/` once
+  `orphan-grace` has passed; `--purge-orphans` is the only way `orphans/` is emptied (audited). The admin web shows the same result
+  read only, and shows a text attachment escaped on the page of the record and offers any other type as a download through the
+  application.
+- **Backup.** Back up and restore the attachment directory, the key directory and the database together. After a restore run
+  `ledger-cli attachments-check`: it has to report no missing and no damaged attachment. The check moves a quarantined file back
+  when its row exists again.
+- **Install.** The installer creates the attachment directory (owned by the service account, closed to every other account), the key
+  directory below the secret directory, and the settings. 1.x evidence stays as the URI and digest it was recorded with: the import
+  fetches nothing.
 
 ## Modules
 
@@ -179,6 +224,16 @@ There is no command that prints a stored secret.
 | `ledger.admin.lockout.global-delay` | admin web | the wait before a token is compared once the global budget is used, default 1s; it slows down and never locks |
 | `ledger.admin.mcp.health-url` | admin web | the `/healthz` URL of the MCP server shown on the overview; absent means not configured |
 | `ledger.admin.mcp.timeout` | admin web | timeout of that check, default 2s |
+| `ledger.attachments.directory` | servers, CLI | where the files of the attachments are kept (the installer sets it to `<data folder>/attachments`); when it is not set the attachment tools are not registered |
+| `ledger.attachments.key-directory` | servers, CLI | where the key files are kept, outside `directory` (the start fails when it is inside); the installer sets it to `<settings folder>/secrets/attachment-keys` |
+| `ledger.attachments.active-key-id` | servers, CLI | the key that new uploads are written with; `setup` writes it into `local.yaml`; the server does not start without the key file |
+| `ledger.attachments.max-file-bytes` | servers, CLI | the largest file, default 64MB |
+| `ledger.attachments.staging-budget-bytes` | servers, CLI | what all open uploads may declare together, default 512MB |
+| `ledger.attachments.attachment-budget-bytes` | servers, CLI | what all kept attachments (and the open uploads) may hold together, default 10GB; over it a new `artifact-begin` is refused and nothing is deleted |
+| `ledger.attachments.max-open-per-owner` | servers, CLI | how many uploads of one author may be open, default 4 |
+| `ledger.attachments.upload-ttl` | servers, CLI | how long an upload lives after its last chunk, default 10m |
+| `ledger.attachments.orphan-grace` | servers, CLI | how long a file without a row (or a replaced file) waits before `attachments-check` moves it to `orphans/`, default 24h |
+| `ledger.attachments.reaper-interval` | MCP server | how often expired uploads are removed, default 1m |
 | `ledger.import.source.url` | `import-legacy` | JDBC URL of the database that holds the 1.x ledger |
 | `ledger.import.source.username` | `import-legacy` | a read-only account of that database (`retire-legacy` needs an account that owns the 1.x objects) |
 | `ledger.import.source.password` | `import-legacy` | its password (secret) |
