@@ -64,10 +64,10 @@ of the write tools, the keys of the results, the `_hostAttestation` key) and cha
 - **ANSI SQL.** The product does not bundle a JDBC driver: the user obtains the JDBC driver of the database of their choice
   and registers it with `driver-register`. The SQL is ANSI and uses the JDBC standard, and no DBMS-specific feature is used: the
   schema files have no triggers, procedures, views, sequences, identity columns or boolean columns, and the rules that the database
-  used to enforce are enforced by the application services. The row limit of a list is the one statement that differs by
-  product, and `SqlBuilder` chooses it from the product of the connection. PostgreSQL is the database that is tested and
-  guaranteed in this edition. Other products may work but are not tested, and this edition contains no tailoring for a
-  particular product (column types, collations, session settings). The database must use UTF-8 and compare text case-sensitively.
+  used to enforce are enforced by the application services. Two places differ by product: the row limit of a list and the
+  declaration of the long text column type, and `SqlBuilder` chooses both from the product of the connection. PostgreSQL is the
+  database that is tested and guaranteed in this edition. Other products may work but are not tested, and outside these two places
+  this edition contains no tailoring for a particular product (collations, session settings). The database must use UTF-8 and compare text case-sensitively.
 
 A direct MCP caller is not authenticated as a host: the bearer token admits the caller, and the signed attestation proves the author.
 
