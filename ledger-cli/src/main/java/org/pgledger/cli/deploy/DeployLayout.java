@@ -3,6 +3,7 @@ package org.pgledger.cli.deploy;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Pattern;
 import java.util.Locale;
+import org.pgledger.application.attachment.ServiceAccountAccess;
 
 /**
  * Where an installation puts its files, and the names of it. An installation is an <em>instance</em> with a name (the default
@@ -54,7 +55,7 @@ public record DeployLayout(Platform platform,
      * password, and the installer can create nothing else without a PowerShell script or {@code net user} (see
      * {@code deploy/install.cmd}). It is shared by every instance of the host and by every other service that runs as it.
      */
-    public static final String WINDOWS_SERVICE_ACCOUNT = "NT AUTHORITY\\LocalService";
+    public static final String WINDOWS_SERVICE_ACCOUNT = ServiceAccountAccess.WINDOWS_SERVICE_ACCOUNT;
     public static final String MCP_JAR = "ledger-mcp-server.jar";
     public static final String ADMIN_JAR = "ledger-admin-web.jar";
     public static final String CLI_JAR = "ledger-cli.jar";
