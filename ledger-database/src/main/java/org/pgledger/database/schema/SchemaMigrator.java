@@ -8,6 +8,7 @@ import java.util.List;
 import org.pgledger.database.repository.SchemaHistoryRepository;
 import org.pgledger.database.repository.SchemaHistoryRepository.Outcome;
 import org.pgledger.database.repository.SchemaHistoryRepository.Row;
+import org.pgledger.database.repository.SqlBuilder;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 import org.slf4j.Logger;
@@ -39,12 +40,12 @@ import org.springframework.transaction.TransactionException;
  *     file means the other runner did it, so it goes on; otherwise it stops with {@code SCHEMA_MIGRATION_FAILED} and the next run
  *     tries again. The runners themselves never wait, poll or retry.
  * <li>Gaps, files applied out of order and files that are missing are refused. The encoding of the database has to be UTF-8, and
- *     the long text type of the files comes from the driver ({@link LongTextType}).
+ *     the long text type of the files is the one the dialect of {@link SqlBuilder} names (edition 4).
  * </ul>
  *
  * <p>Why this applier and why the explicit command. The ledger does not use Flyway: a Flyway release from 10 on needs a module for
  * every DBMS it supports and answers "Unsupported Database" for one it has none for, while the ledger asks for ANSI SQL on any
- * database whose JDBC driver the owner registers (the one difference, the long text type, is read from the driver). And the ledger
+ * database whose JDBC driver the owner registers (the one difference, the long text type, is decided by the dialect of SqlBuilder). And the ledger
  * migrates by the explicit command {@code ledger-cli migrate} and not when the server starts, because the server never holds the
  * password of the DDL account: the schema is changed by the DDL account of the operator, the servers run on the application account
  * that can read and write the tables and cannot change them, so a server that is taken over cannot change the schema.
@@ -62,9 +63,11 @@ public class SchemaMigrator {
     private final ResourcePatternResolver resolver;
     private final SchemaProperties properties;
     private final Clock clock;
+    private final SqlBuilder sqlBuilder;
 
     public SchemaMigrator(SchemaHistoryRepository repository, SchemaFileApplier applier,
-            ResourcePatternResolver resolver, SchemaProperties properties, Clock clock) {
+            ResourcePatternResolver resolver, SchemaProperties properties, Clock clock, SqlBuilder sqlBuilder) {
+        this.sqlBuilder = sqlBuilder;
         this.repository = repository;
         this.applier = applier;
         this.resolver = resolver;
@@ -89,8 +92,9 @@ public class SchemaMigrator {
                 ensureSchema(properties.name());
             }
             ensureTable();
-            // what the placeholder of the files stands for on this database, asked once (LongTextType: from the driver, no setting)
-            String longTextType = LongTextType.choose(repository.typeInfo());
+            // what the placeholder of the files stands for on this database: the dialect of SqlBuilder (from the product name
+            // of the connection) decides, asked once; no setting
+            String longTextType = sqlBuilder.longTextType();
             List<Integer> applied = new ArrayList<>();
             for (MigrationFile file : files) {
                 SchemaHistory history = new SchemaHistory(repository.rows());

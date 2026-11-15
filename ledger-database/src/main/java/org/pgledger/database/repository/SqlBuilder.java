@@ -99,6 +99,42 @@ public class SqlBuilder {
         };
     }
 
+    /** What the schema files write where a long text column type belongs; the migrator puts {@link #longTextType()} in its place. */
+    public static final String LONG_TEXT_PLACEHOLDER = "${long_text}";
+
+    /** The long text column type of the actual database, for {@link #LONG_TEXT_PLACEHOLDER}. */
+    public String longTextType() {
+        return longTextType(database());
+    }
+
+    /**
+     * The long text column type of {@code database}: the type of a column that holds far more than the longest text of the ledger
+     * (a field is at most 20000 characters, see {@code TextRule}, and the history keeps a JSON of the record). It is decided by the
+     * dialect, as the row limit is, and not read from the driver: the MariaDB driver reports {@code [CHARACTER SET charset_name]
+     * [COLLATE collation_name]} as the {@code CREATE_PARAMS} of LONGTEXT, so what the driver says cannot be judged. A DBMS whose default
+     * limit is small when the length is omitted gets a length.
+     */
+    public static String longTextType(Database database) {
+        // PostgreSQL: TEXT stores strings of any length (about 1 GB at most): https://www.postgresql.org/docs/current/datatype-character.html
+        // H2: CHARACTER LARGE OBJECT, length optional, for very large Unicode strings: https://h2database.com/html/datatypes.html#character_large_object_type
+        // Oracle: CLOB, (4 GB - 1) * block size, database character set: https://docs.oracle.com/en/database/oracle/oracle-database/23/sqlrf/Data-Types.html
+        // Db2: CLOB is 1M code units when the length is omitted, so a length is written (100M, a CLOB goes to 2 GB - 1):
+        //      https://www.ibm.com/docs/en/db2/11.5?topic=statements-create-table
+        //      https://www.ibm.com/docs/en/db2/11.5?topic=list-character-strings
+        // SQL Server: NVARCHAR(MAX), 2^31-1 bytes, Unicode (UTF-16); VARCHAR(MAX) would store Korean only if the collation's code page has it:
+        //      https://learn.microsoft.com/en-us/sql/t-sql/data-types/nchar-and-nvarchar-transact-sql
+        // MariaDB: LONGTEXT, 4 GB, the character set of the table (the ledger requires UTF-8): https://mariadb.com/kb/en/longtext/
+        // MySQL: LONGTEXT, L + 4 bytes, L < 2^32: https://dev.mysql.com/doc/refman/8.4/en/storage-requirements.html
+        return switch (database) {
+            case POSTGRESQL -> "TEXT";
+            case H2 -> "CHARACTER LARGE OBJECT";
+            case ORACLE -> "CLOB";
+            case DB2 -> "CLOB(100M)";
+            case SQLSERVER -> "NVARCHAR(MAX)";
+            case MARIADB, MYSQL -> "LONGTEXT";
+        };
+    }
+
     /** Appends the dialect's row limit to an otherwise complete query (it must end with an ORDER BY). */
     public String applyLimit(String statement, String parameter) {
         return statement + " " + generateLimit(parameter);

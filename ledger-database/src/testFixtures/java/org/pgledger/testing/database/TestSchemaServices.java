@@ -4,6 +4,7 @@ import java.time.Clock;
 import javax.sql.DataSource;
 import org.pgledger.database.repository.SchemaHistoryRepository;
 import org.pgledger.database.repository.SessionClockRepository;
+import org.pgledger.database.repository.SqlBuilder;
 import org.pgledger.database.schema.GrantApplier;
 import org.pgledger.database.schema.SchemaFileApplier;
 import org.pgledger.database.schema.SchemaMigrator;
@@ -50,7 +51,8 @@ public final class TestSchemaServices {
         TransactionManager transactions = new DataSourceTransactionManager(dataSource);
         proxy.addAdvice(new TransactionInterceptor(transactions, new AnnotationTransactionAttributeSource()));
         SchemaFileApplier applier = (SchemaFileApplier) proxy.getProxy(TestSchemaServices.class.getClassLoader());
-        return new SchemaMigrator(history, applier, new PathMatchingResourcePatternResolver(), properties, clock);
+        return new SchemaMigrator(history, applier, new PathMatchingResourcePatternResolver(), properties, clock,
+                new SqlBuilder(dataSource));
     }
 
     public static SchemaVerifier verifier(DataSource dataSource, SchemaProperties properties) {

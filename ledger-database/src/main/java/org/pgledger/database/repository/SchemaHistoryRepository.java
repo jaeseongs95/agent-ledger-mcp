@@ -43,18 +43,6 @@ public class SchemaHistoryRepository {
     }
 
     /**
-     * One row of {@code getTypeInfo}: the name of a type the database offers, its JDBC type ({@code java.sql.Types}), its precision and
-     * its {@code CREATE_PARAMS} (the parameters used in creating the type, may be null: it tells what can be given, not what is required).
-     */
-    public record TypeInfo(String name, int dataType, long precision, String createParams) {
-
-        /** Whether the type reports parameters (a length) for its creation, that is, {@code CREATE_PARAMS} is not null or blank. */
-        public boolean needsLength() {
-            return createParams != null && !createParams.isBlank();
-        }
-    }
-
-    /**
      * One row of schema_history: attempt number {@code attempt} (from 1) of {@code version}, with the file name and the SHA-256 of
      * the file before the placeholder is replaced.
      */
@@ -155,23 +143,6 @@ public class SchemaHistoryRepository {
      */
     public List<String> characterSets() {
         return jdbc.sql("SELECT character_set_name FROM information_schema.character_sets").query(String.class).list();
-    }
-
-    /** The types the driver reports ({@code getTypeInfo}), in its order: the facts that the long text type is chosen from. */
-    public List<TypeInfo> typeInfo() {
-        return inspect(dataSource, SchemaHistoryRepository::typeInfo);
-    }
-
-    /** The rows of {@code metaData.getTypeInfo()}: the columns {@code TYPE_NAME}, {@code DATA_TYPE}, {@code PRECISION} and {@code CREATE_PARAMS}. */
-    public static List<TypeInfo> typeInfo(DatabaseMetaData metaData) throws SQLException {
-        List<TypeInfo> types = new ArrayList<>();
-        try (ResultSet rs = metaData.getTypeInfo()) {
-            while (rs.next()) {
-                types.add(new TypeInfo(rs.getString("TYPE_NAME"), rs.getInt("DATA_TYPE"), rs.getLong("PRECISION"),
-                        rs.getString("CREATE_PARAMS")));
-            }
-        }
-        return List.copyOf(types);
     }
 
     public boolean tableExists() {
