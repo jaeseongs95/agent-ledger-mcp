@@ -30,7 +30,9 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     // ArchUnit 1.5.1: see gradle/libs.versions.toml
     testImplementation(libs.archunit)
-    // The shared architecture and source rules (ARC-033: no operating system detection) live in the domain test fixtures.
+    // The shared architecture and source rules (ARC-033: no operating system detection) live in the attestation test fixtures.
+    testImplementation(testFixtures(project(":ledger-attestation")))
+    // OwnerOnlyFiles (owner-only file rights) needs a domain class, so it stays in the domain test fixtures.
     testImplementation(testFixtures(project(":ledger-domain")))
     // The test database support (the PostgreSQL of the test PC: settings, pools, schema per test, PostgreSQL driver) and the
     // builder of the legacy ledger (the table shapes of the old schema and the data of the old installer), MIG-024.

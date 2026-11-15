@@ -10,9 +10,10 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-jackson")
     implementation("tools.jackson.core:jackson-databind")
 
+    // TestOwners needs a domain class, so it stays in the domain test fixtures.
     testImplementation(testFixtures(project(":ledger-domain")))
-    // The contract vectors of the author format and of the tool names, which the client hook tests against as well: the
-    // server's side of that contract is tested here (ContractVectorsTest).
+    // The shared architecture and source rules, and the contract vectors of the author format and of the tool names, which
+    // the client hook tests against as well: the server's side of that contract is tested here (ContractVectorsTest).
     testImplementation(testFixtures(project(":ledger-attestation")))
     // The test database support (the PostgreSQL of the test PC: settings, pools, schema per test, PostgreSQL driver) and the
     // builder of the legacy ledger (the table shapes of the old schema and the data of the old installer), MIG-024.

@@ -27,6 +27,9 @@ dependencies {
     // YAML writer of the driver registration file (the same Jackson 3 mapper family, version from the Boot BOM).
     implementation("tools.jackson.dataformat:jackson-dataformat-yaml")
 
+    // The shared architecture and source rules live in the attestation test fixtures; TestOwners and OwnerOnlyFiles
+    // (they need a domain class) stay in the domain test fixtures.
+    testImplementation(testFixtures(project(":ledger-attestation")))
     testImplementation(testFixtures(project(":ledger-domain")))
     // The tests play the client hook of an author: they make an Ed25519 key pair and sign as the hook does (JDK only).
     testImplementation(project(":ledger-attestation"))

@@ -27,6 +27,9 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-jackson")
     implementation("tools.jackson.core:jackson-databind")
 
+    // The shared architecture and source rules live in the attestation test fixtures; TestOwners (it needs a domain
+    // class) stays in the domain test fixtures.
+    testImplementation(testFixtures(project(":ledger-attestation")))
     testImplementation(testFixtures(project(":ledger-domain")))
     // The tests play the client hook (they sign attestations with the shared token format) and start the built hook jar.
     testImplementation("org.springframework.boot:spring-boot-starter-test")
