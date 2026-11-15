@@ -250,7 +250,7 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
         long version;
         switch (fields) {
             case DefectFields f -> {
-                Defect row = rows.lockedDefect(DefectId.of(id), expectedVersion);
+                Defect row = rows.defectForWrite(DefectId.of(id), expectedVersion);
                 Defect after = row.edited(f, now);
                 if (after.category() == null || after.severity() == null) {
                     codeRules.checkDefect(row, after.category(), after.severity());
@@ -263,7 +263,7 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
                 version = rows.saveDefect(after).version();
             }
             case TaskFields f -> {
-                Task row = rows.lockedTask(TaskId.of(id), expectedVersion);
+                Task row = rows.taskForWrite(TaskId.of(id), expectedVersion);
                 Task after = row.edited(f, now);
                 beforeColumns = editors.columns(row);
                 afterColumns = editors.columns(after);
@@ -272,7 +272,7 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
                 version = rows.saveTask(after).version();
             }
             case ConditionFields f -> {
-                Condition row = rows.lockedCondition(ConditionId.of(id), expectedVersion);
+                Condition row = rows.conditionForWrite(ConditionId.of(id), expectedVersion);
                 Condition after = row.edited(f);
                 beforeColumns = editors.columns(row);
                 afterColumns = editors.columns(after);

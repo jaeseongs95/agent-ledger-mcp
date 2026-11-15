@@ -18,7 +18,7 @@ import org.springframework.stereotype.Component;
 /**
  * Decides whether a write may start. The order is fixed: a verification through the author channel, the host
  * attestation (present; a signed token with an author of the right format; the signature under the live key of the
- * author, which is locked until the write ends; the tool, request id and arguments digest of the call; the time
+ * author, which is read and not locked; the tool, request id and arguments digest of the call; the time
  * window), the project, the grant. The attestation is
  * checked by the {@link AttestationVerifier}: nothing is looked up for a caller that cannot prove its author, and the
  * grant is only asked for the author the signature proves. The grant check is a conditional UPDATE in the

@@ -11,8 +11,8 @@ import org.pgledger.application.history.HistoryWriter;
 import org.pgledger.application.receipt.ReceiptService;
 import org.pgledger.application.write.WriteResult.RecordCaseResult;
 import org.pgledger.database.repository.Counter;
-import org.pgledger.database.repository.DefectCaseLockRepository;
 import org.pgledger.database.repository.DefectCaseRepository;
+import org.pgledger.database.repository.DefectRepository;
 import org.pgledger.database.repository.IdAllocator;
 import org.pgledger.domain.error.TransitionCode;
 import org.pgledger.domain.error.TransitionException;
@@ -29,26 +29,26 @@ import org.pgledger.domain.value.UtcInstant;
 import org.springframework.stereotype.Component;
 
 /**
- * Records one observed case under a defect. The case takes the defect row with a conditional counter UPDATE that
- * affects no row for a MERGED defect (the case is refused and names the merge target); a merge updates the same
- * row, so recording and merging serialise. The counter is a lock device: it changes neither the version nor the
- * time of the defect, and no defect history row is written for it.
+ * Records one observed case under a defect. The case takes its number with a conditional counter UPDATE of the defect row
+ * that affects no row for a MERGED defect (the case is refused and names the merge target); a merge updates the same
+ * row, so the database decides which of the two came first. The counter is a real write of the use case (the case
+ * number): it changes neither the version nor the time of the defect, and no defect history row is written for it.
  */
 @Component
 public class RecordCaseOperation extends WriteOperation<RecordCaseCommand, RecordCaseResult> {
 
     private final Rows rows;
-    private final DefectCaseLockRepository lock;
+    private final DefectRepository defects;
     private final DefectCaseRepository cases;
     private final IdAllocator ids;
     private final HistoryWriter history;
     private final Clock clock;
 
-    public RecordCaseOperation(WriteGate gate, ReceiptService receipts, Rows rows, DefectCaseLockRepository lock,
+    public RecordCaseOperation(WriteGate gate, ReceiptService receipts, Rows rows, DefectRepository defects,
             DefectCaseRepository cases, IdAllocator ids, HistoryWriter history, Clock clock) {
         super(gate, receipts, ReceiptOperation.RECORD_CASE, RecordCaseResult.class);
         this.rows = rows;
-        this.lock = lock;
+        this.defects = defects;
         this.cases = cases;
         this.ids = ids;
         this.history = history;
@@ -77,7 +77,7 @@ public class RecordCaseOperation extends WriteOperation<RecordCaseCommand, Recor
 
     private RecordCaseResult execute(WriteContext ctx, DefectId defectId, String observation, String evidence,
             String quote, Instant observedAt) {
-        if (!lock.lockForCase(defectId)) {
+        if (!defects.nextCaseSeq(defectId)) {
             Defect defect = rows.defect(defectId);
             throw new TransitionException(TransitionCode.MERGED_DEFECT,
                     List.of(defectId.value(), defect.mergedInto() == null ? "?" : defect.mergedInto().value()));

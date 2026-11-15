@@ -7,7 +7,6 @@ import org.pgledger.application.gate.Target;
 import org.pgledger.database.repository.ConditionRepository;
 import org.pgledger.database.repository.DefectRepository;
 import org.pgledger.database.repository.ProjectRepository;
-import org.pgledger.database.repository.RowLockRepository;
 import org.pgledger.database.repository.TaskRepository;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ConflictException;
@@ -27,9 +26,10 @@ import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
 
 /**
- * Loads the rows a write works on. A locked load takes the row lock first (see {@link RowLockRepository}), reads
- * the row, and compares its version with the version the caller expects, so the row it returns is the row the
- * next update replaces.
+ * Loads the rows a write works on. A load for a write reads the row and compares its version with the version the caller
+ * expects; the save that follows replaces the row only if it still has the version that was read (Spring Data JDBC
+ * {@code @Version}), so a write that lost the race to another one ends with VERSION_CONFLICT. There is no lock statement
+ * (principle 4.4): the conditional save is the statement that decides.
  */
 @Component
 public class Rows {
@@ -38,15 +38,13 @@ public class Rows {
     private final DefectRepository defects;
     private final TaskRepository tasks;
     private final ConditionRepository conditions;
-    private final RowLockRepository locks;
 
     public Rows(ProjectRepository projects, DefectRepository defects, TaskRepository tasks,
-            ConditionRepository conditions, RowLockRepository locks) {
+            ConditionRepository conditions) {
         this.projects = projects;
         this.defects = defects;
         this.tasks = tasks;
         this.conditions = conditions;
-        this.locks = locks;
     }
 
     public Optional<Defect> findDefect(DefectId id) {
@@ -93,29 +91,26 @@ public class Rows {
         return conditions.findById(id).orElseThrow(() -> notFound(HistoryEntity.CONDITION.token(),id.value()));
     }
 
-    /** Locks the defect; with a non-null expected version a different current version is a VERSION_CONFLICT. */
-    public Defect lockedDefect(DefectId id, Long expectedVersion) {
-        if (!locks.lock(id)) {
-            throw notFound(HistoryEntity.DEFECT.token(),id.value());
-        }
+    /**
+     * Reads the defect for a write; with a non-null expected version a different current version is a VERSION_CONFLICT. Nothing
+     * is locked (principle 4.4): the save that follows is conditional on the version read here ({@link #saveDefect}), and that
+     * statement decides a race.
+     */
+    public Defect defectForWrite(DefectId id, Long expectedVersion) {
         Defect row = defects.findById(id).orElseThrow(() -> notFound(HistoryEntity.DEFECT.token(),id.value()));
         requireVersion(HistoryEntity.DEFECT.token(),id.value(), expectedVersion, row.version());
         return row;
     }
 
-    public Task lockedTask(TaskId id, Long expectedVersion) {
-        if (!locks.lock(id)) {
-            throw notFound(HistoryEntity.TASK.token(),id.value());
-        }
+    /** As {@link #defectForWrite} for a task. */
+    public Task taskForWrite(TaskId id, Long expectedVersion) {
         Task row = tasks.findById(id).orElseThrow(() -> notFound(HistoryEntity.TASK.token(),id.value()));
         requireVersion(HistoryEntity.TASK.token(),id.value(), expectedVersion, row.version());
         return row;
     }
 
-    public Condition lockedCondition(ConditionId id, Long expectedVersion) {
-        if (!locks.lock(id)) {
-            throw notFound(HistoryEntity.CONDITION.token(),id.value());
-        }
+    /** As {@link #defectForWrite} for a condition. */
+    public Condition conditionForWrite(ConditionId id, Long expectedVersion) {
         Condition row = conditions.findById(id).orElseThrow(() -> notFound(HistoryEntity.CONDITION.token(),id.value()));
         requireVersion(HistoryEntity.CONDITION.token(),id.value(), expectedVersion, row.version());
         return row;

@@ -3,6 +3,7 @@ package org.pgledger.application.receipt;
 import java.time.Clock;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import org.pgledger.application.json.LedgerJson;
 import org.pgledger.database.repository.ReceiptCompletionRepository;
 import org.pgledger.database.repository.ReceiptRepository;
@@ -17,33 +18,28 @@ import org.pgledger.domain.rule.ReceiptOrigin;
 import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.RequestId;
 import org.pgledger.domain.value.Sha256;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
 
 /**
- * Idempotency. The receipt is inserted first, in the transaction of the write, by {@link ReceiptWriter} in a nested
- * transaction (a savepoint that Spring makes and rolls back): a duplicate key (the same request id from another or an
- * earlier call) takes back that insert only, so the transaction stays usable on every DBMS, and the stored response is
- * returned. A concurrent duplicate waits on the key until the first call commits. A failed write rolls its receipt back
- * with everything else, so a retry with a corrected payload is not a conflict.
+ * Idempotency. It has no transaction of its own: it joins the one of the write (principle 4.4). The receipt of the request
+ * id is read first: a committed receipt of an earlier call answers with its stored response (a replay) or, for another
+ * request under the same id, with REQUEST_CONFLICT. Without one the receipt is inserted, in the transaction of the write.
+ * A second call at the very same moment meets the unique key of the request id (the insert waits until the first call
+ * commits) and ends with the translated DUPLICATE_KEY; the caller sends the request again and then gets the replay. A
+ * failed write rolls its receipt back with everything else, so a retry with a corrected payload is not a conflict.
  */
 @Component
 public class ReceiptService {
 
-    private static final Logger LOG = LoggerFactory.getLogger(ReceiptService.class);
-
     private final ReceiptRepository receipts;
-    private final ReceiptWriter writer;
     private final ReceiptCompletionRepository completion;
     private final LedgerJson json;
     private final Clock clock;
 
-    public ReceiptService(ReceiptRepository receipts, ReceiptWriter writer, ReceiptCompletionRepository completion,
-            LedgerJson json, Clock clock) {
+    public ReceiptService(ReceiptRepository receipts, ReceiptCompletionRepository completion, LedgerJson json,
+            Clock clock) {
         this.receipts = receipts;
-        this.writer = writer;
         this.completion = completion;
         this.json = json;
         this.clock = clock;
@@ -70,24 +66,27 @@ public class ReceiptService {
      * {@link Reservation.Replayed} with the stored response when the same request was answered before.
      *
      * @throws ConflictException REQUEST_CONFLICT when the id belongs to another operation, payload, author or
-     *         channel; REQUEST_ID_LEGACY when it belongs to an imported receipt
+     *         channel; REQUEST_ID_LEGACY when it belongs to an imported receipt; DUPLICATE_KEY when another call reserved
+     *         the id at the very same moment
      */
     public <R> Reservation<R> reserve(RequestId id, ReceiptOperation operation, Sha256 digest, AuthorId author,
             Channel channel, Class<R> responseType) {
-        try {
-            writer.insert(Receipt.reserve(id, operation, digest, author, channel, clock.instant()));
-            return new Reservation.Reserved<>();
-        } catch (DuplicateKeyException duplicate) {
-            LOG.debug("request id {} is already reserved; the stored receipt decides", id, duplicate);
-            return new Reservation.Replayed<>(storedResponse(id, operation, digest, author, channel, responseType));
+        Optional<Receipt> stored = receipts.findById(id);
+        if (stored.isPresent()) {
+            return new Reservation.Replayed<>(storedResponse(stored.get(), id, operation, digest, author, channel,
+                    responseType));
         }
+        try {
+            receipts.insert(Receipt.reserve(id, operation, digest, author, channel, clock.instant()));
+        } catch (DuplicateKeyException duplicate) {
+            throw new ConflictException(ConflictCode.DUPLICATE_KEY, List.of("request " + id), duplicate);
+        }
+        return new Reservation.Reserved<>();
     }
 
     /** The response stored for a request id that was reserved before; it must be the same request. */
-    private <R> R storedResponse(RequestId id, ReceiptOperation operation, Sha256 digest, AuthorId author,
-            Channel channel, Class<R> responseType) {
-        Receipt stored = receipts.findById(id).orElseThrow(() -> new InfrastructureException(
-                InfrastructureCode.INTEGRITY_VIOLATION, List.of("receipt vanished after a duplicate key: " + id)));
+    private <R> R storedResponse(Receipt stored, RequestId id, ReceiptOperation operation, Sha256 digest,
+            AuthorId author, Channel channel, Class<R> responseType) {
         if (stored.origin() == ReceiptOrigin.LEGACY) {
             throw new ConflictException(ConflictCode.REQUEST_ID_LEGACY, List.of(id.toString()));
         }

@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Supplier;
 import org.pgledger.application.gate.Lookup;
 import org.pgledger.application.gate.Target;
@@ -42,8 +43,10 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
 
 /**
- * Records a fix commit (or new CI data of a known commit). The defect row is locked first, so the state check and
- * the fix insert see the same defect (no write skew); an OPEN defect moves to SOURCE_FIXED in the same
+ * Records a fix commit (or new CI data of a known commit). The defect row is read first and, when the fix changes it, written
+ * first with the conditional save of its version (before any counter is taken), so a race with another write of the defect
+ * is decided by that statement (VERSION_CONFLICT) and the state check and the fix insert see the same defect (no write
+ * skew); an OPEN defect moves to SOURCE_FIXED in the same
  * transaction unless told not to, and recording a new fix commit makes the recording session the owner.
  * Recording a fix on a MERGED defect is allowed, as the old function allowed it.
  */
@@ -100,37 +103,49 @@ public class RecordFixOperation extends WriteOperation<RecordFixCommand, RecordF
     private RecordFixResult execute(WriteContext ctx, DefectId defectId, String repo, CommitSha commit,
             String branch, String ciRef, CiConclusion conclusion, Instant completedAt, boolean mark) {
         Instant now = clock.instant();
-        Defect defect = rows.lockedDefect(defectId, null);
+        Defect defect = rows.defectForWrite(defectId, null);
         String fixEntityId = defectId.value() + "@" + commit.value();
         ActorId author = ctx.author();
         Evidence evidence = Evidence.of(ciRef, null);
-        FixWrite fix = fixes.findByDefectIdAndRepoAndCommitSha(defectId, repo, commit)
-                .map(known -> amendFix(ctx, defect, known, fixEntityId, ciRef, conclusion, completedAt, evidence))
-                .orElseGet(() -> recordFix(ctx, defectId, fixEntityId, repo, commit, branch, ciRef, conclusion,
-                        completedAt, evidence, now));
-        long fixId = fix.fixId();
-        long historyId = fix.historyId();
-        ActorId nextOwner = fix.nextOwner();
+        Optional<DefectFix> known = fixes.findByDefectIdAndRepoAndCommitSha(defectId, repo, commit);
+        // a commit that is recorded already keeps the owner of the defect; a new one is owned by the recording session
+        ActorId nextOwner = known.isPresent() ? defect.ownerActorId() : author;
+        ChangeSet amended = known.map(row -> amendedChanges(row, ciRef, conclusion, completedAt)).orElse(null);
         String oldOwner = defect.ownerActorId() == null ? null : defect.ownerActorId().value();
         String newOwner = nextOwner == null ? null : nextOwner.value();
         DefectStatus status = defect.status();
         long version = defect.version();
-        Long transitionHistoryId = null;
+        // The row of the defect is written first, before any counter (an id, a history row) is taken: it is the statement
+        // that decides a race with another write of the same defect (VERSION_CONFLICT), and every write of a defect takes
+        // its row before the counters, so two writes cannot wait for each other (principle 4.4: no lock statement).
+        HistoryOp defectOp = null;
         if (defect.status() == DefectStatus.OPEN && mark) {
             Defect after = defect.transitioned(DefectStatus.SOURCE_FIXED, null, now).ownedBy(nextOwner, now);
             codeRules.checkDefect(defect, after.category(), after.severity());
             version = rows.saveDefect(after).version();
+            defectOp = HistoryOp.TRANSITION;
+            status = DefectStatus.SOURCE_FIXED;
+        } else if (!Objects.equals(oldOwner, newOwner)) {
+            Defect after = defect.ownedBy(nextOwner, now);
+            codeRules.checkDefect(defect, after.category(), after.severity());
+            version = rows.saveDefect(after).version();
+            defectOp = HistoryOp.EDIT;
+        }
+        FixWrite fix = known
+                .map(row -> amendFix(ctx, row, fixEntityId, ciRef, conclusion, completedAt, evidence, amended))
+                .orElseGet(() -> recordFix(ctx, defectId, fixEntityId, repo, commit, branch, ciRef, conclusion,
+                        completedAt, evidence, now));
+        long fixId = fix.fixId();
+        long historyId = fix.historyId();
+        Long transitionHistoryId = null;
+        if (defectOp == HistoryOp.TRANSITION) {
             ChangeSet changes = ChangeSet.empty().with("fix", null, commit.value())
                     .withIfChanged("owner_actor_id", oldOwner, newOwner);
             transitionHistoryId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.DEFECT,
                     defectId.value(), HistoryOp.TRANSITION, changes)
                     .withStates(DefectStatus.OPEN.name(), DefectStatus.SOURCE_FIXED.name()).withEvidence(evidence)
                     .withBefore(Snapshot.DefectRow.of(defect)));
-            status = DefectStatus.SOURCE_FIXED;
-        } else if (!Objects.equals(oldOwner, newOwner)) {
-            Defect after = defect.ownedBy(nextOwner, now);
-            codeRules.checkDefect(defect, after.category(), after.severity());
-            version = rows.saveDefect(after).version();
+        } else if (defectOp == HistoryOp.EDIT) {
             transitionHistoryId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.DEFECT,
                     defectId.value(), HistoryOp.EDIT, ChangeSet.empty().with("owner_actor_id", oldOwner, newOwner))
                     .withEvidence(evidence).withBefore(Snapshot.DefectRow.of(defect)));
@@ -139,11 +154,11 @@ public class RecordFixOperation extends WriteOperation<RecordFixCommand, RecordF
                 historyId, transitionHistoryId, author.value(), ctx.login());
     }
 
-    /** What writing the fix row did: its id, its history row, and who owns the defect after it. */
-    private record FixWrite(long fixId, long historyId, ActorId nextOwner) {
+    /** What writing the fix row did: its id and its history row. */
+    private record FixWrite(long fixId, long historyId) {
     }
 
-    /** A commit that was not recorded yet: the fix row and its CREATE history row; the recording session owns the defect. */
+    /** A commit that was not recorded yet: the fix row and its CREATE history row (the recording session owns the defect). */
     private FixWrite recordFix(WriteContext ctx, DefectId defectId, String fixEntityId, String repo, CommitSha commit,
             String branch, String ciRef, CiConclusion conclusion, Instant completedAt, Evidence evidence,
             Instant now) {
@@ -154,12 +169,18 @@ public class RecordFixOperation extends WriteOperation<RecordFixCommand, RecordF
                 .with("ci_ref", null, ciRef).with("ci_conclusion", null, name(conclusion));
         long historyId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.DEFECT_FIX, fixEntityId,
                 HistoryOp.CREATE, changes).withEvidence(evidence));
-        return new FixWrite(fixId, historyId, ctx.author());
+        return new FixWrite(fixId, historyId);
     }
 
-    /** New CI data of a commit that is recorded: the fix row is updated and an EDIT row keeps the old one; the owner stays. */
-    private FixWrite amendFix(WriteContext ctx, Defect defect, DefectFix known, String fixEntityId, String ciRef,
-            CiConclusion conclusion, Instant completedAt, Evidence evidence) {
+    /**
+     * What new CI data changes in a commit that is recorded. Checked before anything is written, so a refused amendment
+     * leaves nothing behind and the error does not depend on what the defect row would have needed.
+     *
+     * @throws TransitionException FIX_ALREADY_RECORDED when the call carries no CI reference; NOTHING_CHANGES when it
+     *         changes nothing
+     */
+    private static ChangeSet amendedChanges(DefectFix known, String ciRef, CiConclusion conclusion,
+            Instant completedAt) {
         if (ciRef == null) {
             throw new TransitionException(TransitionCode.FIX_ALREADY_RECORDED, List.of());
         }
@@ -170,10 +191,16 @@ public class RecordFixOperation extends WriteOperation<RecordFixCommand, RecordF
         if (changes.isEmpty()) {
             throw new TransitionException(TransitionCode.NOTHING_CHANGES, List.of());
         }
+        return changes;
+    }
+
+    /** New CI data of a commit that is recorded: the fix row is updated and an EDIT row keeps the old one; the owner stays. */
+    private FixWrite amendFix(WriteContext ctx, DefectFix known, String fixEntityId, String ciRef,
+            CiConclusion conclusion, Instant completedAt, Evidence evidence, ChangeSet changes) {
         fixes.update(known.withCi(ciRef, conclusion, completedAt));
         long historyId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.DEFECT_FIX, fixEntityId,
                 HistoryOp.EDIT, changes).withEvidence(evidence).withBefore(Snapshot.FixRow.of(known)));
-        return new FixWrite(known.id(), historyId, defect.ownerActorId());
+        return new FixWrite(known.id(), historyId);
     }
 
     private static String name(CiConclusion conclusion) {

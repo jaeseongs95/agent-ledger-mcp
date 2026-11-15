@@ -142,7 +142,7 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
     private TransitionResult defect(WriteContext ctx, DefectId id, long expected, DefectStatus to,
             Evidence evidence, DefectId mergedInto) {
         Instant now = clock.instant();
-        Defect row = rows.lockedDefect(id, expected);
+        Defect row = rows.defectForWrite(id, expected);
         recheck(ctx, HistoryEntity.DEFECT, row.projectId(), row.status(), to);
         FixHistory fixHistory = new FixHistory(fixes.findByDefectIdOrderById(id).stream()
                 .map(f -> f.recordedBy().sessionKey()).toList());
@@ -166,7 +166,7 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
 
     private TransitionResult task(WriteContext ctx, TaskId id, long expected, TaskState to, Evidence evidence) {
         Instant now = clock.instant();
-        Task row = rows.lockedTask(id, expected);
+        Task row = rows.taskForWrite(id, expected);
         recheck(ctx, HistoryEntity.TASK, row.projectId(), row.state(), to);
         TaskReports reports = new TaskHistory(historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.TASK,
                 id.value())).reports();
@@ -186,7 +186,7 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
 
     private TransitionResult condition(WriteContext ctx, ConditionId id, long expected, ConditionState to,
             Evidence evidence) {
-        Condition row = rows.lockedCondition(id, expected);
+        Condition row = rows.conditionForWrite(id, expected);
         recheck(ctx, HistoryEntity.CONDITION, row.projectId(), row.state(), to);
         row.state().requireTransitionTo(to, evidence);
         Condition saved = rows.saveCondition(row.transitioned(to));

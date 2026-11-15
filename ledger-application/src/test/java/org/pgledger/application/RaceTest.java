@@ -212,6 +212,22 @@ class RaceTest {
                 .isEqualTo(outcomes.stream().filter(Outcome::succeeded).count());
     }
 
+    @RepeatedTest(30)
+    @DisplayName("SVC-RACE-11 (principle 4.4): a record_fix and a transition of the same OPEN defect at the same time, with no lock statement: both write the defect row before any counter, so neither waits for the other while holding one (no deadlock): each call succeeds or ends with VERSION_CONFLICT or TRANSITION_INVALID, never a raw database error, and a fix row exists exactly for each fix that succeeded")
+    void race11_fixAgainstTransition(Scenario s) {
+        SaveResult d = s.newDefect("d");
+        List<Callable<WriteResult>> calls = List.of(
+                () -> s.fix(Scenario.REVIEWER, d.id(), Scenario.commit('c')),
+                () -> s.bean(TransitionService.class).transition(Scenario.AUTHOR, s.move("defect", d.id(), 1,
+                        "DISPUTED", Scenario.EVIDENCE)));
+        List<Outcome<WriteResult>> outcomes = Parallel.all(calls);
+        assertThat(codes(outcomes)).allSatisfy(c -> assertThat(c).isIn(Optional.empty(),
+                Optional.of(ConflictCode.VERSION_CONFLICT), Optional.of(TransitionCode.TRANSITION_INVALID)));
+        assertThat(outcomes.stream().filter(Outcome::succeeded)).isNotEmpty();
+        assertThat(s.count("SELECT COUNT(*) FROM defect_fix WHERE defect_id = ?", d.id()))
+                .isEqualTo(outcomes.get(0).succeeded() ? 1 : 0);
+    }
+
     @Test
     @DisplayName("SVC-RACE-05: two reviewers verify the same defect: exactly one VERIFIED")
     void race05_twoVerifications(Scenario s) {
@@ -287,8 +303,8 @@ class RaceTest {
     // ------------------------------------------------------------------ 10
 
     @Test
-    @DisplayName("SVC-RACE-10: closing the key of the author waits for a write that has verified it; afterwards nothing is accepted")
-    void race10_keyCloseWaitsForTheWrite(Scenario s) throws Exception {
+    @DisplayName("SVC-RACE-10 (principle 4.4): the key of the author is read, not locked: closing it does not wait for a write that has verified it (the ceiling documented in SignedAttestationVerifier: that write may commit after the close); afterwards nothing is accepted")
+    void race10_keyCloseDoesNotWaitForTheWrite(Scenario s) throws Exception {
         String actor = s.actorWith("defect");
         CountDownLatch written = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -297,10 +313,9 @@ class RaceTest {
         assertThat(written.await(60, TimeUnit.SECONDS)).isTrue();
         Future<Boolean> closing = Parallel.start(() -> s.bean(SessionKeyService.class).revoke(actor,
                 TestOwners.OWNER));
-        assertThatThrownBy(() -> closing.get(400, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
+        assertThat(closing.get(30, TimeUnit.SECONDS)).as("the close did not wait for the open write").isTrue();
         release.countDown();
         assertThat(writing.get(60, TimeUnit.SECONDS).version()).isEqualTo(1);
-        assertThat(closing.get(60, TimeUnit.SECONDS)).isTrue();
         Expect.failure(() -> s.bean(SaveService.class).save(actor, s.create("defect", null, s.defectFields("late"))),
                 TrustCode.ATTESTATION_SIGNATURE_INVALID);
     }
@@ -345,7 +360,7 @@ class RaceTest {
     // -------------------------------------------------------------- SVC-GRT-06
 
     @Test
-    @DisplayName("SVC-GRT-06: two grants of the same key at the same time leave exactly one live grant, without any retry of the transaction (the proxy of GrantService has no retry advice, TXA-01)")
+    @DisplayName("SVC-GRT-06 (principle 4.4): two grants of the same key at the same time leave exactly one live grant: every call succeeds or ends with the translated DUPLICATE_KEY (the unique key of the live grant decides), and no transaction is run again (the proxy of GrantService has no retry advice, TXA-01)")
     void grt06_parallelGrants(Scenario s) {
         assertThat(((org.springframework.aop.framework.Advised) s.bean(GrantService.class)).getAdvisors())
                 .extracting(advisor -> advisor.getAdvice().getClass().getName())
@@ -355,9 +370,13 @@ class RaceTest {
         List<Callable<Object>> calls = IntStream.range(0, 2).<Callable<Object>>mapToObj(i -> () -> s.bean(
                 GrantService.class).grant(new GrantCommand(author, s.projectId(), List.of("defect"), null, "n" + i), TestOwners.OWNER))
                 .toList();
-        assertThat(Parallel.all(calls)).allSatisfy(o -> assertThat(o.failure()).isNull());
+        List<Outcome<Object>> outcomes = Parallel.all(calls);
+        assertThat(codes(outcomes)).allSatisfy(c -> assertThat(c).isIn(Optional.empty(),
+                Optional.of(ConflictCode.DUPLICATE_KEY)));
+        long succeeded = outcomes.stream().filter(Outcome::succeeded).count();
+        assertThat(succeeded).as("at least the call that won").isPositive();
         assertThat(s.count("SELECT COUNT(*) FROM session_grant WHERE author_id = ? AND revoked_at IS NULL",
                 author)).isEqualTo(1);
-        assertThat(s.count("SELECT COUNT(*) FROM session_grant WHERE author_id = ?", author)).isEqualTo(2);
+        assertThat(s.count("SELECT COUNT(*) FROM session_grant WHERE author_id = ?", author)).isEqualTo(succeeded);
     }
 }

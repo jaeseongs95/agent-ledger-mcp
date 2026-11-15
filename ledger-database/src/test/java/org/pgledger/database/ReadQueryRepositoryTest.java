@@ -10,10 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.pgledger.database.repository.AttentionQueryRepository;
@@ -29,13 +25,11 @@ import org.pgledger.database.repository.IdAllocator;
 import org.pgledger.database.repository.KeysetPage;
 import org.pgledger.database.repository.KeywordMatch;
 import org.pgledger.database.repository.LinkRepository;
-import org.pgledger.database.repository.RowLockRepository;
 import org.pgledger.database.repository.SearchQueryRepository;
 import org.pgledger.database.repository.StatsQueryRepository;
 import org.pgledger.database.repository.TaskQueryRepository;
 import org.pgledger.database.support.DatabaseTest;
 import org.pgledger.database.support.LedgerTestContext;
-import org.pgledger.database.support.Parallel;
 import org.pgledger.database.support.Seed;
 import org.pgledger.domain.model.ConditionLink;
 import org.pgledger.domain.model.Defect;
@@ -50,17 +44,13 @@ import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
 import org.pgledger.domain.rule.TaskState;
 import org.pgledger.domain.value.CommitSha;
-import org.pgledger.domain.value.ConditionId;
-import org.pgledger.domain.value.DefectId;
 import org.pgledger.domain.value.JsonDocument;
 import org.pgledger.domain.value.MaxRows;
 import org.pgledger.domain.value.RequestId;
-import org.pgledger.domain.value.TaskId;
-import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * The query repositories behind the read tools (REPO-025 .. REPO-028 for the new lists): lookups, filters, keyset
- * pages in the OR form, search, history filters, counts, attention and the row lock, on the PostgreSQL of the test PC.
+ * pages in the OR form, search, history filters, counts and attention, on the PostgreSQL of the test PC.
  */
 @DatabaseTest
 class ReadQueryRepositoryTest {
@@ -366,42 +356,5 @@ class ReadQueryRepositoryTest {
         assertThat(links.defectsOfTask(task.id())).containsExactly(defect.id().value());
         assertThat(links.conditionsOfDefect(defect.id())).containsExactly(condition.id().value());
         assertThat(links.conditionsOfTask(task.id())).containsExactly(condition.id().value());
-    }
-
-    // ---------------------------------------------------------------- row lock
-
-    @Test
-    void theRowLockExistsOnlyForExistingRowsAndMakesAWriterWaitUntilCommit() throws Exception {
-        Project project = seed.project();
-        Defect defect = seed.defect(project, 1, "d", T0);
-        Task task = seed.task(project, 1, "t");
-        var condition = seed.condition(project, project.code().value() + "-C-1", "r", "c");
-        RowLockRepository locks = ctx.bean(RowLockRepository.class);
-        assertThat(ctx.tx(() -> locks.lock(defect.id()))).isTrue();
-        assertThat(ctx.tx(() -> locks.lock(task.id()))).isTrue();
-        assertThat(ctx.tx(() -> locks.lock(condition.id()))).isTrue();
-        assertThat(ctx.tx(() -> locks.lock(DefectId.of(project.code().value() + "-D-9999")))).isFalse();
-        assertThat(ctx.tx(() -> locks.lock(TaskId.of("NOBODY-T-1")))).isFalse();
-        assertThat(ctx.tx(() -> locks.lock(ConditionId.of("NOBODY-C-1")))).isFalse();
-        TransactionTemplate tx = ctx.bean(TransactionTemplate.class);
-        CountDownLatch locked = new CountDownLatch(1);
-        CountDownLatch release = new CountDownLatch(1);
-        Future<Boolean> holder = Parallel.start(() -> tx.execute(status -> {
-            boolean ok = locks.lock(defect.id());
-            locked.countDown();
-            try {
-                release.await(30, TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-            return ok;
-        }));
-        assertThat(locked.await(10, TimeUnit.SECONDS)).isTrue();
-        Future<Boolean> waiter = Parallel.start(() -> tx.execute(status -> locks.lock(defect.id())));
-        assertThatThrownBy(() -> waiter.get(1500, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
-        release.countDown();
-        assertThat(holder.get(10, TimeUnit.SECONDS)).isTrue();
-        assertThat(waiter.get(10, TimeUnit.SECONDS)).isTrue();
-        assertThat(ctx.bean(DefectRepository.class).findById(defect.id()).orElseThrow().version()).isEqualTo(1);
     }
 }

@@ -28,6 +28,7 @@ import org.pgledger.domain.value.OwnerIdentity;
 import org.pgledger.domain.value.ProjectId;
 import org.pgledger.domain.value.Tokens;
 import org.pgledger.domain.value.UtcInstant;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -73,10 +74,10 @@ public class GrantService {
 
     /**
      * Issues the grants and returns the id of each, one per scope in the order given; who issued them is recorded in the
-     * owner's audit trail in the same transaction. Grants of one author run one after the other: the live key of the
-     * author is held (a conditional UPDATE, {@code requireLiveKey}) before any grant row is read or written, so another
-     * grant of the same key that commits first is seen by the lookup that follows and is closed before the insert; no
-     * insert can meet a live row of its key, and no call is run again.
+     * owner's audit trail in the same transaction. The live key of the author is read first ({@code requireLiveKey}), then
+     * the grants of the same key that are live are closed and the new ones inserted. Two grants of one key at the same
+     * moment are decided by the unique key of the live grant: the call that loses it ends with the translated
+     * DUPLICATE_KEY, and no call is run again.
      */
     public List<Long> grant(GrantCommand command, OwnerIdentity actor) {
         return issueAll(command, actor);
@@ -133,12 +134,17 @@ public class GrantService {
 
     /**
      * A write is accepted only when it is signed with the registered key of its author, so a grant for an author without
-     * a live key could never be used: it is refused (SESSION_KEY_REQUIRED) before any row is written. The live key is
-     * held until this transaction ends, so a close of the key waits for the grant and cannot slip in between.
+     * a live key could never be used: it is refused (SESSION_KEY_REQUIRED) before any row is written.
+     *
+     * <p>ceiling: the live key is read, not locked (principle 4.4: no lock device, READ_COMMITTED). No write of this use case
+     * touches the row of the key (the close of a key does not touch the grants either: they stay), so no statement of the use
+     * case can decide the race with a close of the key. The window is the time of this transaction: a key that the owner closes
+     * after the read and before the commit leaves a grant for an author without a live key. That grant can never be used (every
+     * write of the author is refused until a key is registered, and then it is the grant the owner issued), so nothing is
+     * accepted that should not be.
      */
     private void requireLiveKey(AuthorId author) {
-        boolean live = keys.findLive(author).map(key -> keys.holdLive(key.id())).orElse(false);
-        if (!live) {
+        if (keys.findLive(author).isEmpty()) {
             throw new ConflictException(ConflictCode.SESSION_KEY_REQUIRED, List.of(author.value()));
         }
     }
@@ -147,7 +153,13 @@ public class GrantService {
             String note) {
         closeLive(author, project, scope, now);
         long id = ids.next(Counter.SESSION_GRANT);
-        grants.insert(SessionGrant.issue(id, author, project, scope, AuthorId.OWNER, now, expiresAt, note));
+        try {
+            grants.insert(SessionGrant.issue(id, author, project, scope, AuthorId.OWNER, now, expiresAt, note));
+        } catch (DuplicateKeyException duplicate) {
+            // another grant of the same key became live at the same moment: the unique key of the live grant decided
+            throw new ConflictException(ConflictCode.DUPLICATE_KEY,
+                    List.of("grant " + author.value() + "|" + project.value() + "|" + scope.token()), duplicate);
+        }
         return id;
     }
 

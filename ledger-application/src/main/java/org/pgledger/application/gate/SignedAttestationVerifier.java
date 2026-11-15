@@ -61,15 +61,23 @@ public class SignedAttestationVerifier implements AttestationVerifier {
 
     @Override
     public Proof prove(String presented, ToolCall call, String requestId) {
-        return check(presented, call, requestId, false);
+        return check(presented, call, requestId);
     }
 
+    /**
+     * ceiling: the live key is read, not locked (principle 4.4: no lock device, READ_COMMITTED). The write that follows
+     * ({@link WriteGate} stamps the grant with a conditional UPDATE) does not touch the row of the key, and the close of a key does
+     * not touch the grants of the author (they stay), so no statement of the write can decide a race with a close of the key.
+     * The window is the time of the write transaction: a write that read the key as live before the owner's close committed
+     * may commit after it. Every write that reads the key after the close committed is refused
+     * ({@code ATTESTATION_SIGNATURE_INVALID}).
+     */
     @Override
     public AuthorId verifyForWrite(String presented, ToolCall call, String requestId) {
-        return check(presented, call, requestId, true).requireAuthor();
+        return check(presented, call, requestId).requireAuthor();
     }
 
-    private Proof check(String presented, ToolCall call, String requestId, boolean hold) {
+    private Proof check(String presented, ToolCall call, String requestId) {
         requireTokenForm(presented);
         if (!presented.startsWith(AttestationToken.PREFIX + ".")) {
             // not a token and not a bare author (requireTokenForm refused that): a malformed author
@@ -81,12 +89,7 @@ public class SignedAttestationVerifier implements AttestationVerifier {
             return new Proof.MalformedAuthor(claims.author());
         }
         AuthorId author = AuthorId.of(claims.author());
-        SessionPublicKey registered = provenKey(token, author);
-        if (hold && !keys.holdLive(registered.id())) {
-            // the key was closed after it was read, before this transaction could lock it: the same answer
-            LOG.info("attestation of {} refused: its key was closed meanwhile", author.value());
-            throw signatureInvalid();
-        }
+        provenKey(token, author);
         verifyBinding(claims, call, requestId);
         verifyWindow(claims);
         return new Proof.Proven(author);

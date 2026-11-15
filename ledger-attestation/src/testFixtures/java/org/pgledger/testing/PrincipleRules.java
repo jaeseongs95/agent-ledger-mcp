@@ -1,9 +1,11 @@
 package org.pgledger.testing;
 
+import com.tngtech.archunit.core.domain.JavaAnnotation;
 import com.tngtech.archunit.core.domain.JavaCall;
 import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.domain.JavaCodeUnit;
+import com.tngtech.archunit.core.domain.JavaEnumConstant;
 import com.tngtech.archunit.core.domain.JavaMethod;
 import com.tngtech.archunit.core.domain.JavaModifier;
 import java.io.IOException;
@@ -41,6 +43,10 @@ public final class PrincipleRules {
     public static final String OR_ELSE_NULL = "ARC-PRN-04";
     public static final String FILE_WRITE_IN_TRANSACTION = "ARC-PRN-05";
     public static final String VARIABLE_EQUALS = "ARC-PRN-06";
+    /** TXP-001 .. TXP-003 (principle 4.4): no non-default propagation, no lock-only UPDATE, no transaction-only bean. */
+    public static final String NO_NON_DEFAULT_PROPAGATION = "TXP-001";
+    public static final String NO_LOCK_ONLY_UPDATE = "TXP-002";
+    public static final String NO_TRANSACTION_ONLY_BEAN = "TXP-003";
     /** W7-EMB-01: the product has no profile of the name that used to let a test bring its own database. */
     public static final String NO_EMBEDDED_PROFILE = "W7-EMB-01";
 
@@ -48,6 +54,8 @@ public final class PrincipleRules {
     private static final String BEAN = "org.springframework.context.annotation.Bean";
     private static final Set<String> TRANSACTIONAL = Set.of("org.springframework.transaction.annotation.Transactional",
             "jakarta.transaction.Transactional");
+    private static final Set<String> FORBIDDEN_PROPAGATIONS = Set.of("NESTED", "REQUIRES_NEW", "MANDATORY");
+    private static final Set<String> TRANSACTION_ONLY_SUFFIXES = Set.of("Writer", "Recorder", "Entry", "Coordinator");
     private static final String TRANSACTION_TEMPLATE = "org.springframework.transaction.support.TransactionTemplate";
     private static final Set<String> TEMPLATE_RUNS = Set.of("execute", "executeWithoutResult");
     private static final Set<String> FILE_WRITES = Set.of("write", "writeString", "newOutputStream", "newBufferedWriter",
@@ -55,6 +63,12 @@ public final class PrincipleRules {
             "createTempFile", "createTempDirectory", "createLink", "createSymbolicLink", "setAttribute",
             "setPosixFilePermissions", "setLastModifiedTime", "setOwner");
     private static final Set<String> FILE_WRITING_CONSTRUCTORS = Set.of("java.io.FileOutputStream", "java.io.FileWriter");
+    /** The part of a statement after SET, up to the next WHERE or the start of another statement. */
+    private static final Pattern SET_CLAUSE = Pattern.compile(
+            "(?is)\\bSET\\s+((?:(?!\\b(?:WHERE|FROM|SELECT|INSERT|UPDATE|DELETE)\\b).)*)");
+    /** {@code col = col} and nothing after the second {@code col} that makes it a calculation ({@code col = col + 1}). */
+    private static final Pattern SELF_ASSIGNMENT = Pattern.compile(
+            "(?i)(?<![\\w.:])([a-z_][a-z0-9_]*)\\s*=\\s*\\1(?![\\w.(:])(?!\\s*[-+*/%|])");
     private static final Pattern OR_ELSE_NULL_CALL = Pattern.compile("\\.\\s*orElse\\s*\\(\\s*null\\s*\\)");
     /** {@code equals} only: {@code equalsIgnoreCase} has no null-safe static form, so two variables are compared with it. */
     private static final Pattern EQUALS_CALL = Pattern.compile("\\.\\s*equals\\s*\\(");
@@ -103,7 +117,10 @@ public final class PrincipleRules {
                 rule(OR_ELSE_NULL, () -> orElseNull(mainJava), allowed),
                 rule(FILE_WRITE_IN_TRANSACTION, () -> fileWritesInTransactions(classes), allowed),
                 rule(VARIABLE_EQUALS, () -> variableEquals(mainJava), allowed),
-                rule(NO_EMBEDDED_PROFILE, () -> embeddedProfile(mainJava), allowed));
+                rule(NO_EMBEDDED_PROFILE, () -> embeddedProfile(mainJava), allowed),
+                rule(NO_NON_DEFAULT_PROPAGATION, () -> nonDefaultPropagation(classes), allowed),
+                rule(NO_LOCK_ONLY_UPDATE, () -> lockOnlyUpdates(mainJava), allowed),
+                rule(NO_TRANSACTION_ONLY_BEAN, () -> transactionOnlyBeans(classes), allowed));
     }
 
     /** W7-EMB-01: the text {@code "embedded"} (or {@code "!embedded"}) as a string in a main source: a profile that only tests use. */
@@ -252,6 +269,72 @@ public final class PrincipleRules {
         return Optional.empty();
     }
 
+    /**
+     * TXP-001 (principle 4.4): a {@code @Transactional} with {@code NESTED} (a savepoint), {@code REQUIRES_NEW} or
+     * {@code MANDATORY}. One use case is one service method and one transaction; nothing of a use case is run in a transaction
+     * of its own, and a repository does not demand one. ({@code SUPPORTS} of a method that never touches the database is not
+     * one of the three.) Looks at the class and at every method. The key is {@code Class} (class annotation) or
+     * {@code Class.method}.
+     */
+    public static List<Finding> nonDefaultPropagation(JavaClasses classes) {
+        List<Finding> found = new ArrayList<>();
+        for (JavaClass type : classes) {
+            propagationOf(type.getAnnotations()).ifPresent(propagation -> found.add(new Finding(
+                    type.getName().substring(type.getPackageName().length() + 1), type.getName()
+                            + ": @Transactional with " + propagation + " (principle 4.4: the default propagation only)")));
+            for (JavaMethod method : type.getMethods()) {
+                propagationOf(method.getAnnotations()).ifPresent(propagation -> found.add(new Finding(key(method),
+                        type.getName() + "." + method.getName() + ": @Transactional with " + propagation
+                                + " (principle 4.4: the default propagation only)")));
+            }
+        }
+        return found;
+    }
+
+    private static Optional<String> propagationOf(Set<? extends JavaAnnotation<?>> annotations) {
+        for (JavaAnnotation<?> annotation : annotations) {
+            if (!TRANSACTIONAL.contains(annotation.getRawType().getName())) {
+                continue;
+            }
+            // Spring: propagation = Propagation.X; Jakarta: value = TxType.X
+            for (String property : List.of("propagation", "value")) {
+                Optional<Object> value = annotation.tryGetExplicitlyDeclaredProperty(property);
+                if (value.isPresent() && value.get() instanceof JavaEnumConstant constant
+                        && FORBIDDEN_PROPAGATIONS.contains(constant.name())) {
+                    return Optional.of(constant.name());
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * TXP-003 (principle 4.4): a bean that exists only to give another service a transaction of its own: a class with
+     * {@code @Transactional} (on the class or a method) whose name ends in {@code Writer}, {@code Recorder}, {@code Entry} or
+     * {@code Coordinator}, the names such beans have been given (the nested writers of the earlier units, the "Recorder or Entry
+     * coordinators" that principle 4.4 names). The rule is by name because "a service that only other transactional services call" is
+     * not decidable in one module: the callers of a service are classes of other modules, which ArchUnit of this module does not
+     * import. The key is the simple class name.
+     */
+    public static List<Finding> transactionOnlyBeans(JavaClasses classes) {
+        List<Finding> found = new ArrayList<>();
+        for (JavaClass type : classes) {
+            if (!carriesTransaction(type)) {
+                continue;
+            }
+            if (TRANSACTION_ONLY_SUFFIXES.stream().anyMatch(type.getSimpleName()::endsWith)) {
+                found.add(new Finding(type.getSimpleName(), type.getName() + ": a bean named for a transaction-only role; "
+                        + "fold its statements into the one service method of the use case"));
+            }
+        }
+        return found;
+    }
+
+    private static boolean carriesTransaction(JavaClass type) {
+        return TRANSACTIONAL.stream().anyMatch(name -> type.isAnnotatedWith(name)) || type.getMethods().stream()
+                .anyMatch(method -> TRANSACTIONAL.stream().anyMatch(name -> method.isAnnotatedWith(name)));
+    }
+
     private static String key(JavaCodeUnit unit) {
         return key(unit.getOwner(), unit.getName());
     }
@@ -262,6 +345,28 @@ public final class PrincipleRules {
     }
 
     // ---------------------------------------------------------------- source rules
+
+    /**
+     * TXP-002 (principle 4.4): a lock-only UPDATE: an assignment of a column to itself in the SET clause of a SQL string literal
+     * ({@code SET version = version}, {@code SET note = note}), a statement that writes nothing and exists to take a row lock. A
+     * counter ({@code SET n = n + 1}) is a real write and is not found. The key is the file name.
+     */
+    public static List<Finding> lockOnlyUpdates(Path mainJava) {
+        Map<String, Finding> found = new LinkedHashMap<>();
+        for (Path file : javaFiles(mainJava)) {
+            String text = String.join(" ", CodingScan.stringLiterals(file));
+            Matcher clauses = SET_CLAUSE.matcher(text);
+            while (clauses.find()) {
+                Matcher assignment = SELF_ASSIGNMENT.matcher(clauses.group(1));
+                if (assignment.find()) {
+                    found.putIfAbsent(file.getFileName().toString(), new Finding(file.getFileName().toString(),
+                            file + ": SET " + assignment.group() + ": an UPDATE that writes nothing to take a lock; "
+                                    + "the write of the use case decides a race (a conditional UPDATE by its row count)"));
+                }
+            }
+        }
+        return List.copyOf(found.values());
+    }
 
     /** ARC-PRN-04: {@code .orElse(null)} in a main source. The key is the file name. */
     public static List<Finding> orElseNull(Path mainJava) {

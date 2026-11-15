@@ -1,7 +1,6 @@
 package org.pgledger.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.util.List;
@@ -11,15 +10,17 @@ import java.util.stream.IntStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.pgledger.application.admin.DriverAuditService;
-import org.pgledger.application.admin.DriverAuditWriter;
 import org.pgledger.application.admin.OwnerAuditWriter;
+import org.pgledger.application.support.Expect;
 import org.pgledger.application.support.LedgerServiceTest;
 import org.pgledger.application.support.Parallel;
 import org.pgledger.application.support.Scenario;
+import org.pgledger.database.repository.DriverAuditKeyRepository;
 import org.pgledger.database.repository.OwnerAuditRepository;
+import org.pgledger.domain.error.ConflictCode;
+import org.pgledger.domain.error.LedgerException;
 import org.pgledger.domain.model.OwnerAuditEntry;
 import org.pgledger.domain.value.OwnerIdentity;
-import org.springframework.dao.DuplicateKeyException;
 
 /**
  * TXD-001 .. TXD-002 (principle 4.4): the audit rows of a driver registration are written by a service method that opens and
@@ -87,27 +88,28 @@ class DriverAuditServiceTest {
     };
 
     @Test
-    @DisplayName("TXF-004 (TX-03): a run that looked at the trail before the other run committed (it sees no row) still writes nothing: the key of the registration is unique, the second claim is refused by the database and recordIfMissing answers false")
+    @DisplayName("TXF-004 (TX-03, principle 4.4): a run that looked at the trail before the other run committed (it sees no row) writes nothing: the key of the registration is unique, the claim breaks it and recordIfMissing ends with the translated DUPLICATE_KEY (not a raw exception, not 'already recorded, continue'); a registration with another time is another registration")
     void txf004_theUniqueKeyDecidesWhenTheReadMissedTheRow(Scenario s) {
         DriverAuditService first = s.bean(DriverAuditService.class);
         DriverAuditService blind = new DriverAuditService(s.bean(OwnerAuditWriter.class), BLIND_TRAIL,
-                s.bean(DriverAuditWriter.class));
+                s.bean(DriverAuditKeyRepository.class));
         String driver = newDriverClass();
         String known = "jar=/drivers/c.jar sha256=cc";
 
         assertThat(first.recordIfMissing(OWNER, driver, known, WHEN)).isTrue();
-        assertThat(blind.recordIfMissing(OWNER, driver, known, WHEN)).as("the key was claimed by the first run").isFalse();
+        Expect.failure(() -> s.ctx().tx(() -> blind.recordIfMissing(OWNER, driver, known, WHEN)),
+                ConflictCode.DUPLICATE_KEY);
 
         assertThat(audit(s, driver)).containsExactly(
                 "DRIVER_REGISTERED token:owner jar=/drivers/c.jar sha256=cc registered_at=2026-11-05T10:00:00Z");
         assertThat(s.count("SELECT COUNT(*) FROM driver_audit_key")).isPositive();
         // another time of registration is another registration: its row is written
-        assertThat(blind.recordIfMissing(OWNER, driver, known, WHEN.plusSeconds(1))).isTrue();
+        assertThat(s.ctx().tx(() -> blind.recordIfMissing(OWNER, driver, known, WHEN.plusSeconds(1)))).isTrue();
         assertThat(audit(s, driver)).hasSize(2);
     }
 
     @Test
-    @DisplayName("TXF-004 (TX-03): 8 calls of recordIfMissing for the same registration at the same time write exactly one row, and exactly one of them answers true")
+    @DisplayName("TXF-004 (TX-03, principle 4.4): 8 calls of recordIfMissing for the same registration at the same time write exactly one row and exactly one of them answers true; each other call answers false (it read the committed row) or ends with the translated DUPLICATE_KEY, never a raw exception")
     void txf004_concurrentRunsWriteOneRow(Scenario s) {
         DriverAuditService service = s.bean(DriverAuditService.class);
         String driver = newDriverClass();
@@ -116,28 +118,11 @@ class DriverAuditServiceTest {
 
         List<Parallel.Outcome<Boolean>> outcomes = Parallel.all(calls);
 
-        assertThat(outcomes).allSatisfy(outcome -> assertThat(outcome.failure()).isNull());
+        assertThat(outcomes).allSatisfy(outcome -> assertThat(outcome.failure()).as("only the translated DUPLICATE_KEY")
+                .satisfiesAnyOf(failure -> assertThat(failure).isNull(),
+                        failure -> assertThat(failure).isInstanceOfSatisfying(LedgerException.class,
+                                refused -> assertThat(refused.code()).isEqualTo(ConflictCode.DUPLICATE_KEY))));
         assertThat(outcomes.stream().filter(outcome -> Boolean.TRUE.equals(outcome.value()))).hasSize(1);
         assertThat(audit(s, driver)).hasSize(1);
-    }
-
-    @Test
-    @DisplayName("TXF-004 (TX-03): the claim of a registration is a nested write (DriverAuditWriter): a second claim of the key is a DuplicateKeyException that takes back that call only, so the transaction it ran in stays usable and the next claim of another key commits")
-    void txf004_aRefusedClaimLeavesTheTransactionUsable(Scenario s) {
-        DriverAuditWriter writer = s.bean(DriverAuditWriter.class);
-        String driver = newDriverClass();
-        String key = UUID.randomUUID().toString().replace("-", "").repeat(2);
-        String other = UUID.randomUUID().toString().replace("-", "").repeat(2);
-
-        s.ctx().tx(() -> {
-            writer.recordOnce(key, OWNER, driver, "first");
-            assertThatThrownBy(() -> writer.recordOnce(key, OWNER, driver, "again"))
-                    .isInstanceOf(DuplicateKeyException.class);
-            writer.recordOnce(other, OWNER, driver, "second");
-            return null;
-        });
-
-        assertThat(audit(s, driver)).containsExactly("DRIVER_REGISTERED token:owner first",
-                "DRIVER_REGISTERED token:owner second");
     }
 }

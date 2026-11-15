@@ -17,7 +17,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.pgledger.database.repository.CodeRevisionRepository;
 import org.pgledger.database.repository.Counter;
-import org.pgledger.database.repository.DefectCaseLockRepository;
+import org.pgledger.database.repository.DefectRepository;
 import org.pgledger.database.repository.HistoryRepository;
 import org.pgledger.database.repository.IdAllocator;
 import org.pgledger.database.support.DatabaseTest;
@@ -76,28 +76,6 @@ class CounterTest {
         LookupException unknown = catchThrowableOfType(LookupException.class,
                 () -> ctx.tx(() -> ids.nextDefectNo(ProjectCode.of("NOSUCH"))));
         assertThat(unknown.code()).isEqualTo(LookupCode.NOT_FOUND);
-        // a repository joins the transaction of its caller and opens none: a call that has no transaction is refused with
-        // the exception of a missing transaction (principle 4.4: no @Transactional on the allocator)
-        assertThatThrownBy(() -> ids.nextDefectNo(project.code()))
-                .isInstanceOf(org.springframework.transaction.IllegalTransactionStateException.class)
-                .as("ids are only issued inside a transaction");
-    }
-
-    @Test
-    @org.junit.jupiter.api.DisplayName("TXD-003 every method of the allocator refuses a call with no transaction, and the allocator is no transaction boundary: it carries no @Transactional")
-    void txd003_everyMethodRefusesACallWithoutATransaction() {
-        Project project = seed.project();
-        Class<org.springframework.transaction.IllegalTransactionStateException> refusal =
-                org.springframework.transaction.IllegalTransactionStateException.class;
-
-        assertThatThrownBy(() -> ids.nextDefectNo(project.code())).isInstanceOf(refusal);
-        assertThatThrownBy(() -> ids.nextTaskNo(project.code())).isInstanceOf(refusal);
-        assertThatThrownBy(() -> ids.raiseDefectNo(project.code(), 5)).isInstanceOf(refusal);
-        assertThatThrownBy(() -> ids.raiseTaskNo(project.code(), 5)).isInstanceOf(refusal);
-        assertThatThrownBy(() -> ids.next(Counter.HISTORY)).isInstanceOf(refusal);
-        assertThatThrownBy(() -> ids.raise(Counter.HISTORY, 5)).isInstanceOf(refusal);
-        assertThat(IdAllocator.class.getAnnotation(org.springframework.transaction.annotation.Transactional.class))
-                .as("a repository joins the transaction of its caller").isNull();
     }
 
     @Test
@@ -199,13 +177,13 @@ class CounterTest {
     void repo014_mixedWorkloadInTheFixedLockOrderNeverDeadlocks() {
         Project project = seed.project();
         Defect defect = seed.defect(project, 1, "lock order", LedgerTestContext.START);
-        DefectCaseLockRepository lock = ctx.bean(DefectCaseLockRepository.class);
-        // the order is always: project counter, then the row lock, then the history counter
+        DefectRepository defects = ctx.bean(DefectRepository.class);
+        // the order is always: project counter, then the defect row (the case counter), then the history counter
         List<Callable<Integer>> work = IntStream.range(0, 100).<Callable<Integer>>mapToObj(i -> () -> ctx.tx(() -> {
             Runnable first = switch (i % 4) {
                 case 0, 3 -> () -> ids.nextDefectNo(project.code());
                 case 1 -> () -> ids.nextTaskNo(project.code());
-                default -> () -> lock.lockForCase(defect.id());
+                default -> () -> defects.nextCaseSeq(defect.id());
             };
             first.run();
             ctx.bean(HistoryRepository.class).insert(historyRow(ids.next(Counter.HISTORY), defect, i));

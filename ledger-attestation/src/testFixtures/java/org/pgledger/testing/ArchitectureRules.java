@@ -149,8 +149,11 @@ public final class ArchitectureRules {
      * TXF-001 (principle 4.4): no class manages a transaction or a savepoint by hand: {@code TransactionAspectSupport} (the
      * handle of the current transaction: {@code currentTransactionStatus()}, {@code setRollbackOnly()}) is not used, and neither
      * are the savepoint methods of {@code TransactionStatus} ({@code createSavepoint}, {@code rollbackToSavepoint},
-     * {@code releaseSavepoint}). A write that has to be taken back alone is a method of a service bean with
-     * {@code @Transactional(propagation = Propagation.NESTED)}, and Spring makes and rolls back the savepoint.
+     * {@code releaseSavepoint}). Nor is there a transaction by annotation that stands in for one made by hand: no
+     * {@code Propagation.NESTED} (a savepoint), no {@code REQUIRES_NEW} and no {@code MANDATORY} anywhere in production code, which
+     * {@code PrincipleRules.nonDefaultPropagation} (TXP-001) checks in every module. One use case is one service method and one
+     * transaction (principle 4.4); a write that loses a race is not taken back alone and continued, it ends the call with the
+     * translated error and the whole transaction is rolled back.
      */
     public static ArchRule noHandMadeTransactionControl() {
         // Spring is no dependency of this module (it knows no framework class), so the names are texts

@@ -74,8 +74,8 @@ class ReceiptTest {
     }
 
     @Test
-    @DisplayName("SVC-RCP-17 (TXF-001): a reserve that loses to an earlier receipt (the duplicate key of the request id) takes back its insert only, with the savepoint that Spring makes for the nested write of ReceiptWriter: it answers Replayed with the stored response, and the transaction it runs in stays usable, so a receipt reserved and finished after it commits")
-    void rcp17_theLoserLeavesTheTransactionUsable(Scenario s) {
+    @DisplayName("SVC-RCP-17 (TXF-001, principle 4.4): a reserve of a request id that has a receipt reads it first and answers Replayed with the stored response: no insert is tried, so no duplicate key, no savepoint and no nested write is involved; the transaction it runs in is the one of the write, and a receipt reserved and finished after it commits")
+    void rcp17_aStoredReceiptIsReplayedFromTheRead(Scenario s) {
         org.pgledger.application.receipt.ReceiptService service = s.bean(
                 org.pgledger.application.receipt.ReceiptService.class);
         RequestId first = RequestId.parse(Scenario.uuid());
@@ -97,9 +97,51 @@ class ReceiptTest {
         assertThat(again).isEqualTo(new org.pgledger.application.receipt.ReceiptService.Reservation.Replayed<>(
                 new Answer("first")));
         assertThat(receipts(s, first.toString())).isEqualTo(1);
-        assertThat(receipts(s, next.toString())).as("the transaction was usable after the loser").isEqualTo(1);
+        assertThat(receipts(s, next.toString())).isEqualTo(1);
         assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE request_id = ? AND response IS NOT NULL",
                 next.toString())).isEqualTo(1);
+    }
+
+    /** A receipt repository that never finds a receipt: what a read sees that ran before the other call committed. */
+    private static ReceiptRepository blind(ReceiptRepository real) {
+        return new ReceiptRepository() {
+            @Override
+            public Receipt insert(Receipt aggregate) {
+                return real.insert(aggregate);
+            }
+
+            @Override
+            public java.util.Optional<Receipt> findById(RequestId requestId) {
+                return java.util.Optional.empty();
+            }
+        };
+    }
+
+    @Test
+    @DisplayName("SVC-RCP-18 (TXF-001, principle 4.4): a reserve whose read missed the receipt of another call (it ran before that call committed) breaks the unique key of the request id and ends with the translated DUPLICATE_KEY: no raw exception, nothing of it stays written, the receipt and the response of the winner are untouched, and nothing is run again")
+    void rcp18_aReserveThatMissedTheReceiptEndsWithDuplicateKey(Scenario s) {
+        org.pgledger.application.receipt.ReceiptService real = s.bean(
+                org.pgledger.application.receipt.ReceiptService.class);
+        org.pgledger.application.receipt.ReceiptService blind = new org.pgledger.application.receipt.ReceiptService(
+                blind(s.bean(ReceiptRepository.class)),
+                s.bean(org.pgledger.database.repository.ReceiptCompletionRepository.class),
+                s.bean(org.pgledger.application.json.LedgerJson.class), s.bean(java.time.Clock.class));
+        RequestId id = RequestId.parse(Scenario.uuid());
+        AuthorId author = AuthorId.of(Scenario.AUTHOR);
+        Sha256 digest = Sha256.ofText("payload " + id);
+        s.ctx().tx(() -> {
+            real.reserve(id, ReceiptOperation.SAVE, digest, author, Channel.AUTHOR, Answer.class);
+            real.finish(id, new Answer("winner"));
+            return null;
+        });
+
+        Expect.failure(() -> s.ctx().tx(() -> blind.reserve(id, ReceiptOperation.SAVE, digest, author, Channel.AUTHOR,
+                Answer.class)), ConflictCode.DUPLICATE_KEY);
+
+        assertThat(receipts(s, id.toString())).isEqualTo(1);
+        assertThat(s.ctx().tx(() -> real.reserve(id, ReceiptOperation.SAVE, digest, author, Channel.AUTHOR, Answer.class)))
+                .as("a sequential repeat answers from the first call").isEqualTo(
+                        new org.pgledger.application.receipt.ReceiptService.Reservation.Replayed<>(new Answer("winner")));
     }
 
     private static SaveCommand create(Scenario s, String requestId, String title) {
