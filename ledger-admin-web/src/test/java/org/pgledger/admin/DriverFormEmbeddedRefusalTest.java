@@ -25,7 +25,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * SET-033 (the JDBC URL half; the class half is a case of {@link SetupModeTest}): the driver form of the admin web takes its
+ * SET-033 (the JDBC URL half; the class half is a case of {@link DriverPageTest}): the driver form of the admin web takes its
  * checks from the one check of the products ({@code DriverRegistrar}), so a ledger database whose JDBC URL names the embedded
  * database H2 is refused when a driver is registered for it: 400 DRIVER_INVALID, and no registration file is written (user:
  * 「dbms 설치가 전제라니까?」). The jar and the class are the usable ones, so the URL is the only reason.
