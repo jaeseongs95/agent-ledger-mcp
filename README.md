@@ -159,8 +159,9 @@ can be edited without a trace. The history row of a record points to it with the
 - **Errors.** `ARTIFACT_CHUNK_CONFLICT`, `CHUNK_HASH_MISMATCH`, `ARTIFACT_BUSY` (send again later), `ARTIFACT_INCOMPLETE`,
   `ARTIFACT_HASH_MISMATCH` (the bytes are kept), `ARTIFACT_CORRUPTED`, `ARTIFACT_LIMIT`, `ARTIFACT_UNSUPPORTED_PURPOSE`,
   `ARTIFACT_EXPIRED`, `ARTIFACT_NOT_FOUND`, `ARTIFACT_OPERATION_CONFLICT`, `ARTIFACT_STORAGE_FULL` (the disk is too full: the owner
-  has to free it). A tool error carries `details.retryable`, `true` when the same request sent later can succeed
-  (`ARTIFACT_BUSY`, `ARTIFACT_INCOMPLETE`, and `ARTIFACT_LIMIT` with `details.limit` `staging-budget` or `open-uploads`).
+  has to free it), `ARTIFACT_STORAGE_IO_ERROR`, `ARTIFACT_STORAGE_UNSAFE`, `ARTIFACT_KEY_MISSING`. Every error of these tools
+  carries `details.retryable`, `true` only when the same request sent later can succeed (`ARTIFACT_BUSY`, and `ARTIFACT_LIMIT`
+  with `details.limit` `staging-budget` or `open-uploads`); `ARTIFACT_INCOMPLETE` is `false` (send the missing chunk, then finish).
 - **Check.** `ledger-cli attachments-check` reports the attachments that are missing or damaged (never deleted) and those no
   history row points to (kept), and moves a file that no row names, or that a rekey replaced, to `orphans/` once
   `orphan-grace` has passed; `--purge-orphans` is the only way `orphans/` is emptied (audited). The admin web shows the same result

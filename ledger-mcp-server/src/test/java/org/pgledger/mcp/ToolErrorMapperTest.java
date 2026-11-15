@@ -79,7 +79,7 @@ class ToolErrorMapperTest {
 
     /** ATA-040 (design 3.2, edition 8): the tool error of an upload code carries details.retryable, by code and by the kind of limit. */
     @ParameterizedTest(name = "{0} {1} -> {2}")
-    @CsvSource(value = {"ARTIFACT_BUSY,-,true", "ARTIFACT_INCOMPLETE,-,true", "ARTIFACT_LIMIT,staging-budget,true",
+    @CsvSource(value = {"ARTIFACT_BUSY,-,true", "ARTIFACT_INCOMPLETE,-,false", "ARTIFACT_LIMIT,staging-budget,true",
             "ARTIFACT_LIMIT,open-uploads,true", "ARTIFACT_LIMIT,file-size,false", "ARTIFACT_LIMIT,attachment-budget,false",
             "ARTIFACT_STORAGE_FULL,-,false", "ARTIFACT_EXPIRED,-,false", "ARTIFACT_HASH_MISMATCH,-,false",
             "CHUNK_HASH_MISMATCH,-,false", "ARTIFACT_CHUNK_CONFLICT,-,false", "ARTIFACT_OPERATION_CONFLICT,-,false"})
@@ -99,7 +99,7 @@ class ToolErrorMapperTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("otherUploadCodes")
-    @DisplayName("ATA-040: not found, corrupted and the unsupported purpose are not retryable; a code of no upload tool has no retryable detail")
+    @DisplayName("ATA-040: not found, corrupted, the storage and key failures and the unsupported purpose are not retryable")
     void ata040_retryableOfTheOtherCodes(ErrorCode code) {
         ToolError error = mapper().map(Failures.of(code));
 
@@ -108,7 +108,17 @@ class ToolErrorMapperTest {
 
     static Stream<ErrorCode> otherUploadCodes() {
         return Stream.of(LookupCode.ARTIFACT_NOT_FOUND, InfrastructureCode.ARTIFACT_CORRUPTED,
-                ValidationCode.ARTIFACT_UNSUPPORTED_PURPOSE);
+                InfrastructureCode.ARTIFACT_STORAGE_IO_ERROR, InfrastructureCode.ARTIFACT_STORAGE_UNSAFE,
+                InfrastructureCode.ARTIFACT_KEY_MISSING, ValidationCode.ARTIFACT_UNSUPPORTED_PURPOSE);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("codes")
+    @DisplayName("ATA-040: every code of the upload tools carries a retryable detail (common design 3.2, edition 9 supplement)")
+    void ata040_everyUploadCodeCarriesRetryable(ErrorCode code) {
+        if (code.name().startsWith("ARTIFACT_") || "CHUNK_HASH_MISMATCH".equals(code.name())) {
+            assertThat(mapper().map(Failures.of(code)).details().get("retryable")).hasSize(1);
+        }
     }
 
     @ParameterizedTest(name = "{0}")

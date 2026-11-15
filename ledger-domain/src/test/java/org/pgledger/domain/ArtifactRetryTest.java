@@ -21,10 +21,26 @@ class ArtifactRetryTest {
     }
 
     @Test
-    @DisplayName("ATA-040: the busy append and the incomplete upload are retryable")
-    void busyAndIncompleteAreRetryable() {
+    @DisplayName("ATA-040: the busy append is retryable; the incomplete upload is not (the caller sends the missing chunk first)")
+    void busyIsRetryableIncompleteIsNot() {
         assertThat(ArtifactRetry.retryable(ConflictCode.ARTIFACT_BUSY, Map.of())).contains(true);
-        assertThat(ArtifactRetry.retryable(ConflictCode.ARTIFACT_INCOMPLETE, Map.of())).contains(true);
+        assertThat(ArtifactRetry.retryable(ConflictCode.ARTIFACT_INCOMPLETE, Map.of())).contains(false);
+    }
+
+    @Test
+    @DisplayName("ATA-040: the storage and key failures are not retryable, and every code of the upload tools has an answer (edition 9 supplement)")
+    void everyUploadCodeHasAnAnswer() {
+        assertThat(List.of(InfrastructureCode.ARTIFACT_STORAGE_IO_ERROR, InfrastructureCode.ARTIFACT_STORAGE_UNSAFE,
+                InfrastructureCode.ARTIFACT_KEY_MISSING))
+                .allSatisfy(code -> assertThat(ArtifactRetry.retryable(code, Map.of())).contains(false));
+        List<org.pgledger.domain.error.ErrorCode> uploadCodes = java.util.stream.Stream
+                .<org.pgledger.domain.error.ErrorCode[]>of(ConflictCode.values(), InfrastructureCode.values(),
+                        LookupCode.values(), ValidationCode.values())
+                .flatMap(java.util.Arrays::stream)
+                .filter(code -> code.name().startsWith("ARTIFACT_") || code.name().equals("CHUNK_HASH_MISMATCH"))
+                .toList();
+        assertThat(uploadCodes).hasSize(15)
+                .allSatisfy(code -> assertThat(ArtifactRetry.retryable(code, Map.of())).isPresent());
     }
 
     @Test
