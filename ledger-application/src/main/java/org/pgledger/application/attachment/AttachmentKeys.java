@@ -63,12 +63,13 @@ public class AttachmentKeys {
     /**
      * The key of a key id (the name of its file).
      *
-     * @throws InfrastructureException ARTIFACT_KEY_MISSING when the file is not there; ARTIFACT_STORAGE_UNSAFE when the file
-     *         is not private or has not the length of a key
+     * @throws InfrastructureException ARTIFACT_KEY_MISSING when the file is not there; ARTIFACT_STORAGE_UNSAFE when the path is not
+     *         a regular file (a link is followed) or the file has not the length of a key (an empty file included). Who else may
+     *         reach the file or its folder is not looked at.
      */
     public Key byId(String keyId) {
         Path file = fileOf(keyId);
-        if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
+        if (!Files.exists(file)) {
             throw new InfrastructureException(InfrastructureCode.ARTIFACT_KEY_MISSING, List.of(keyId));
         }
         files.requireDirectory(properties.keyDirectory());
@@ -123,7 +124,7 @@ public class AttachmentKeys {
     }
 
     /**
-     * The start check of the keys: the key directory is private and every key id in the list has its key file (the active key
+     * The start check of the keys: the key directory is a directory and every key id in the list has its key file (the active key
      * too). A row whose key file is missing stops the start, naming the key id only.
      */
     public void requirePresent(Collection<String> keyIds) {
