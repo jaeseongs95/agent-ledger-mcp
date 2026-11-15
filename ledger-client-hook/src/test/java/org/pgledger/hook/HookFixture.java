@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
@@ -44,11 +45,14 @@ final class HookFixture {
     }
 
     Run run(String[] args, byte[] stdin) {
+        return run(args, new ByteArrayInputStream(stdin));
+    }
+
+    Run run(String[] args, InputStream stdin) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
         // a new store and a new command for every run: like a new process, nothing is kept between two runs
-        int exit = new HookCli(codec, clock, TestStores.open(keyDirectory))
-                .run(args, new ByteArrayInputStream(stdin), out, err);
+        int exit = new HookCli(codec, clock, TestStores.open(keyDirectory)).run(args, stdin, out, err);
         return new Run(exit, out.toByteArray(), err.toByteArray());
     }
 

@@ -6,11 +6,11 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.util.List;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import org.pgledger.hook.keys.KeyInfo;
 import org.pgledger.hook.keys.SessionKeyException;
 import org.pgledger.hook.keys.SessionKeyStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * One hook invocation. Two forms:
@@ -32,12 +32,11 @@ public final class HookCli {
     static final String SESSION_KEY_COMMAND = "session-key";
 
     /**
-     * The hook logs with {@code java.util.logging}, the logger of the JDK, because the hook jar carries no Spring Boot, no
-     * SLF4J and no Logback (HK-018: the jar holds the JDK-only attestation classes and Jackson, nothing else). Every
-     * record is at FINE or SEVERE; the host contract allows no extra line on stderr, so nothing is printed for FINE.
-     * The other classes of the hook use the same logger.
+     * The hook logs with SLF4J and Logback of Spring Boot, to stderr (see {@code logback-spring.xml}). Every record is at
+     * DEBUG or ERROR; the host contract allows no extra line on stderr, so nothing is printed for DEBUG (the root level is
+     * WARN). The other classes of the hook use the same logger.
      */
-    private static final Logger LOG = Logger.getLogger(HookCli.class.getName());
+    private static final Logger LOG = LoggerFactory.getLogger(HookCli.class);
     private static final int EXIT_OK = 0;
     private static final int EXIT_BLOCK_OR_USAGE = 2;
     private static final String USAGE = "usage: java -jar ledger-client-hook.jar <" + Client.choices() + "> | "
@@ -105,7 +104,7 @@ public final class HookCli {
             return new Response.Lines(List.of("server: " + info.server(), "author: " + info.author(),
                     "public-key: " + info.publicKey(), "fingerprint: " + info.fingerprint()));
         } catch (SessionKeyException unusable) {
-            LOG.log(Level.FINE, "the session key of the author cannot be used", unusable);
+            LOG.debug("the session key of the author cannot be used", unusable);
             return new Response.Failure(Refusal.SESSION_KEY_UNAVAILABLE.message() + " [" + unusable.reason() + "]");
         }
     }
@@ -135,7 +134,7 @@ public final class HookCli {
 
     /** The one log line and exit code of an I/O failure (reading stdin or writing the answer). */
     private static int ioFailure(IOException cause) {
-        LOG.log(Level.SEVERE, "ledger: hook I/O failure", cause);
+        LOG.error("ledger: hook I/O failure", cause);
         return EXIT_BLOCK_OR_USAGE;
     }
 

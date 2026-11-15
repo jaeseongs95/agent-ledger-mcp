@@ -113,6 +113,18 @@ class ArchitectureTest {
     }
 
     @Test
+    @DisplayName("HK-052 the hook logs with SLF4J only: no java.util.logging, no printStackTrace, no System.out or System.err access outside ProcessChannels (the host streams)")
+    void loggingOnlyWithSlf4j() {
+        noClasses().should().dependOnClassesThat().resideInAPackage("java.util.logging..")
+                .orShould().callMethod(Throwable.class, "printStackTrace")
+                .check(hook);
+        noClasses().that().doNotHaveFullyQualifiedName("org.pgledger.hook.ProcessChannels")
+                .should().accessField(System.class, "out")
+                .orShould().accessField(System.class, "err")
+                .check(hook);
+    }
+
+    @Test
     @DisplayName("ARC-033 no operating system detection in main and test code")
     void noOperatingSystemDetection() {
         ArchitectureRules.noOperatingSystemDetection().check(hook);

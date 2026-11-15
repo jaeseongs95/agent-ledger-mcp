@@ -3,13 +3,13 @@ package org.pgledger.hook;
 import java.time.Clock;
 import java.util.Map;
 import java.util.UUID;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import org.pgledger.attestation.ArgumentsDigest;
 import org.pgledger.attestation.AttestationClaims;
 import org.pgledger.hook.keys.SessionKey;
 import org.pgledger.hook.keys.SessionKeyException;
 import org.pgledger.hook.keys.SessionKeyStore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
@@ -31,8 +31,8 @@ import tools.jackson.databind.node.ObjectNode;
  */
 record LedgerHook(HostDialect dialect, Vendor vendor, JsonCodec codec, Clock clock, SessionKeyStore keys) {
 
-    // java.util.logging, like the rest of the hook: see HookCli for why.
-    private static final Logger LOG = Logger.getLogger(LedgerHook.class.getName());
+    // SLF4J at DEBUG, like the rest of the hook: see HookCli for why.
+    private static final Logger LOG = LoggerFactory.getLogger(LedgerHook.class);
     private static final String RESERVED_KEY = Intake.RESERVED_KEY;
     private static final String REQUEST_ID_KEY = "request_id";
 
@@ -46,7 +46,7 @@ record LedgerHook(HostDialect dialect, Vendor vendor, JsonCodec codec, Clock clo
             intake = dialect.read(stdin);
         } catch (JacksonException malformed) {
             // the one place where malformed input becomes the host's answer (the stderr contract allows no log line)
-            LOG.log(Level.FINE, "the hook input is not valid JSON", malformed);
+            LOG.debug("the hook input is not valid JSON", malformed);
             return dialect.malformedInput();
         }
         return switch (intake) {
@@ -95,7 +95,7 @@ record LedgerHook(HostDialect dialect, Vendor vendor, JsonCodec codec, Clock clo
             argumentsDigest = ArgumentsDigest.of((Map<?, ?>) codec.plain(stamped));
         } catch (IllegalArgumentException | JacksonException notSignable) {
             // for example 1e999: no double, so no canonical form; nothing is signed and no key is created
-            LOG.log(Level.FINE, "the tool arguments cannot be put into the canonical form", notSignable);
+            LOG.debug("the tool arguments cannot be put into the canonical form", notSignable);
             return new Verdict.Denied(Refusal.ARGUMENTS_NOT_SIGNABLE);
         }
         String author = Author.of(vendor, id).value();
@@ -104,7 +104,7 @@ record LedgerHook(HostDialect dialect, Vendor vendor, JsonCodec codec, Clock clo
             key = keys.load(call.server(), author);
         } catch (SessionKeyException unusable) {
             // the denial names no path and no key; the reason is in the cause (fine level only)
-            LOG.log(Level.FINE, "the session key of the author cannot be used", unusable);
+            LOG.debug("the session key of the author cannot be used", unusable);
             return new Verdict.Denied(Refusal.SESSION_KEY_UNAVAILABLE);
         }
         AttestationClaims claims = new AttestationClaims(author, call.tool().canonicalName(), requestId,
