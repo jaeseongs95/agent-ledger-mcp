@@ -208,4 +208,14 @@ class ValuesTest {
             Expect.invalid(() -> UtcInstant.parse("observed_at", bad));
         }
     }
+
+    @Test
+    void hlp001_sha256HasFixedVectorsAndIsTheAttestationHelper() {
+        // FIPS 180-4 vectors: the digest of the domain value is byte-identical to the one helper of the product
+        assertThat(Sha256.ofText("abc").hex()).isEqualTo("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        assertThat(Sha256.ofBytes(new byte[0]).hex())
+                .isEqualTo("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+        byte[] bytes = {0, 1, 2, (byte) 0xff};
+        assertThat(Sha256.ofBytes(bytes).hex()).isEqualTo(org.pgledger.attestation.Sha256Hex.of(bytes));
+    }
 }

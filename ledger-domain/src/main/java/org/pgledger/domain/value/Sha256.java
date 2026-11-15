@@ -1,10 +1,8 @@
 package org.pgledger.domain.value;
 
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
 import java.util.regex.Pattern;
+import org.pgledger.attestation.Sha256Hex;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationReason;
 
@@ -24,11 +22,7 @@ public record Sha256(String hex) {
     }
 
     public static Sha256 ofBytes(byte[] bytes) {
-        try {
-            return new Sha256(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 is mandatory on every JVM", e);
-        }
+        return new Sha256(Sha256Hex.of(bytes));
     }
 
     public static Sha256 ofText(String text) {

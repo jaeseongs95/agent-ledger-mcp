@@ -5,9 +5,9 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 
 /**
- * SHA-256 (FIPS 180-4) of bytes as 64 lower-case hex characters: the one place of this module that digests. The domain
- * module has its own {@code Sha256} value, because the client hook jar depends on this module only and the domain needs
- * a value type with its format check.
+ * SHA-256 (FIPS 180-4) of bytes as 64 lower-case hex characters: the one SHA-256 helper of the product. This module is
+ * the lowest one (JDK only), so the client hook, the domain ({@code Sha256}, the value type with its format check) and
+ * the seed ({@code SeedDigest}) all digest through it.
  */
 public final class Sha256Hex {
 
