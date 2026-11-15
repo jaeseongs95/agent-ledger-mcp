@@ -36,6 +36,14 @@ dependencies {
     testImplementation(testFixtures(project(":ledger-database")))
 }
 
+// WindowsEffectiveRights (a test class, PCS-031) calls the Windows API with the foreign function API; javac reports its restricted
+// methods as [restricted] warnings, and the build turns warnings into errors. The one category is switched off for the compilation of
+// the tests of this module only: the main sources of every module keep the whole of -Xlint:all as errors (and the product calls no
+// native code).
+tasks.named<JavaCompile>("compileTestJava") {
+    options.compilerArgs.add("-Xlint:-restricted")
+}
+
 // The plain jar (the classes of this module with the classifier plain, which the Boot plugin gives it) stays enabled: the migration
 // tool (ledger-migrate-1x) is built on the command line machinery and the secret store of this module and takes its classes from
 // it, so its secret store cannot differ from this one. It takes no library of this module with it (isTransitive = false there).
