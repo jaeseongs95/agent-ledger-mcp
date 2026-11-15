@@ -21,7 +21,6 @@ import org.pgledger.domain.value.OwnerIdentity;
 import org.pgledger.domain.value.StorageKey;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.IdGenerator;
 
 /**
  * The database half of the reaper, the check, the start check and the rekey: every method is one use case and one transaction, and
@@ -38,16 +37,14 @@ public class AttachmentMaintenanceService {
     private final AttachmentRepository attachments;
     private final AttachmentFileRepository files;
     private final OwnerAuditWriter audit;
-    private final IdGenerator ids;
     private final Clock clock;
 
     public AttachmentMaintenanceService(UploadStagingRepository uploads, AttachmentRepository attachments,
-            AttachmentFileRepository files, OwnerAuditWriter audit, IdGenerator ids, Clock clock) {
+            AttachmentFileRepository files, OwnerAuditWriter audit, Clock clock) {
         this.uploads = uploads;
         this.attachments = attachments;
         this.files = files;
         this.audit = audit;
-        this.ids = ids;
         this.clock = clock;
     }
 
@@ -126,14 +123,19 @@ public class AttachmentMaintenanceService {
             String keyId) {
         attachments.findById(attachmentId).orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND,
                 List.of("attachment", attachmentId)));
-        boolean stillCurrent = files.currentOf(attachmentId).filter(file -> Objects.equals(file.storageKey(), expectedCurrent))
-                .isPresent();
-        if (!stillCurrent) {
-            return false;
-        }
-        files.insert(new AttachmentFile(ids.generateId().toString(), attachmentId, newKey, keyId, clock.instant()));
-        audit.record(actor, OwnerAction.ATTACHMENT_REKEY, attachmentId, "key " + keyId);
-        return true;
+        return files.currentOf(attachmentId).filter(file -> Objects.equals(file.storageKey(), expectedCurrent))
+                .map(current -> {
+                    // the number after the current one: of two rekeys that read the same current file one inserts it and the
+                    // other ends with the translated primary key violation (nothing is retried)
+                    files.insert(new AttachmentFile(attachmentId, current.seq() + 1, newKey, keyId, clock.instant()));
+                    audit.record(actor, OwnerAction.ATTACHMENT_REKEY, attachmentId, "key " + keyId);
+                    return true;
+                }).orElse(false);
+    }
+
+    /** When the file was replaced by a newer one of its attachment; empty when it is not a replaced file. */
+    public Optional<Instant> replacedAt(StorageKey key) {
+        return files.replacedAt(key);
     }
 
     /** Records that the quarantine folder was emptied (the number of files), for the owner's audit trail. */

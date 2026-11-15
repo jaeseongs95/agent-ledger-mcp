@@ -289,7 +289,21 @@ class SchemaCatalogTest {
                 "upload_staging.declared_sha256", "upload_staging.stored_bytes", "upload_staging.next_sequence",
                 "upload_staging.last_chunk_sha256", "upload_staging.storage_key", "upload_staging.key_id",
                 "upload_staging.state", "attachment.size_bytes", "attachment.content_sha256", "attachment.created_by",
-                "attachment_file.attachment_id", "attachment_file.storage_key", "attachment_file.key_id");
+                "attachment_file.attachment_id", "attachment_file.seq", "attachment_file.storage_key",
+                "attachment_file.key_id");
+        assertThat(own.stream().map(Column::key)).as("the key of a file is (attachment_id, seq): no id column")
+                .doesNotContain("attachment_file.id");
+        // the primary key of attachment_file is the composite (attachment_id, seq), in this order
+        List<String> primaryKey = withConnection(c -> {
+            List<String> columns = new ArrayList<>();
+            try (ResultSet rs = c.getMetaData().getPrimaryKeys(c.getCatalog(), c.getSchema(), "attachment_file")) {
+                while (rs.next()) {
+                    columns.add(rs.getInt("KEY_SEQ") + ":" + rs.getString("COLUMN_NAME").toLowerCase(Locale.ROOT));
+                }
+            }
+            return columns.stream().sorted().toList();
+        });
+        assertThat(primaryKey).containsExactly("1:attachment_id", "2:seq");
         assertThat(own.stream().map(Column::key)).as("the location and the key moved to attachment_file")
                 .doesNotContain("attachment.storage_key", "attachment.key_id");
         assertThat(own).as("no body column of any kind")

@@ -115,10 +115,9 @@ class AttachmentRepositoryTest {
         AttachmentFileRepository files = ctx.bean(AttachmentFileRepository.class);
         UploadStagingRepository uploads = ctx.bean(UploadStagingRepository.class);
         String attachmentId = "bbbbbbbb-0000-0000-0000-000000000002";
-        AttachmentFile first = new AttachmentFile("cccccccc-0000-0000-0000-000000000001", attachmentId,
-                StorageKey.of("5".repeat(32)), "key-a", T0);
-        AttachmentFile second = new AttachmentFile("cccccccc-0000-0000-0000-000000000002", attachmentId,
-                StorageKey.of("6".repeat(32)), "key-b", T0.plusSeconds(60));
+        AttachmentFile first = new AttachmentFile(attachmentId, 1, StorageKey.of("5".repeat(32)), "key-a", T0);
+        AttachmentFile second = new AttachmentFile(attachmentId, 2, StorageKey.of("6".repeat(32)), "key-b",
+                T0.plusSeconds(60));
         ctx.tx(() -> {
             files.insert(first);
             return null;
@@ -135,7 +134,29 @@ class AttachmentRepositoryTest {
         assertThat(files.holdsStorageKey(first.storageKey())).as("a replaced file still has its row").isTrue();
         assertThat(uploads.holdsStorageKey(first.storageKey())).isFalse();
         assertThat(files.keyIdsInUse()).contains("key-b").as("only current files need their key").doesNotContain("key-a");
-        assertThat(files.currentPage("", 100)).extracting(AttachmentFile::id).contains(second.id())
-                .doesNotContain(first.id());
+        assertThat(files.currentPage("", 100)).extracting(AttachmentFile::storageKey).contains(second.storageKey())
+                .doesNotContain(first.storageKey());
+        assertThat(files.replacedAt(first.storageKey())).as("the grace of a replaced file is counted from the next row")
+                .contains(second.createdAt());
+        assertThat(files.replacedAt(second.storageKey())).isEmpty();
+    }
+
+    /** ATA-033: two rekeys that read the same current file insert the same number; the second ends with the translated key violation. */
+    @Test
+    void ata033_theSecondRekeyOfTheSameFileEndsWithThePrimaryKeyViolation(LedgerTestContext ctx) {
+        AttachmentFileRepository files = ctx.bean(AttachmentFileRepository.class);
+        String attachmentId = "bbbbbbbb-0000-0000-0000-000000000003";
+        ctx.tx(() -> {
+            files.insert(new AttachmentFile(attachmentId, 1, StorageKey.of("7".repeat(32)), "key-a", T0));
+            files.insert(new AttachmentFile(attachmentId, 2, StorageKey.of("8".repeat(32)), "key-b", T0.plusSeconds(1)));
+            return null;
+        });
+        AttachmentFile loser = new AttachmentFile(attachmentId, 2, StorageKey.of("9".repeat(32)), "key-c", T0.plusSeconds(2));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> ctx.tx(() -> {
+            files.insert(loser);
+            return null;
+        })).isInstanceOf(org.springframework.dao.DuplicateKeyException.class);
+        assertThat(files.currentOf(attachmentId)).hasValueSatisfying(
+                current -> assertThat(current.storageKey()).isEqualTo(StorageKey.of("8".repeat(32))));
     }
 }

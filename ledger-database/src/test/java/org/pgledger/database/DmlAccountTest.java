@@ -147,8 +147,8 @@ class DmlAccountTest {
                 "INSERT INTO attachment (id, file_name, media_type, size_bytes, content_sha256, created_by, created_at) "
                         + "VALUES ('11111111-1111-1111-1111-111111111111', 'f.txt', 'text/plain', 1, "
                         + "'" + "a".repeat(64) + "', 'claude:a', TIMESTAMP '2026-11-05 10:00:00')",
-                "INSERT INTO attachment_file (id, attachment_id, storage_key, key_id, created_at) VALUES "
-                        + "('33333333-3333-3333-3333-333333333333', '11111111-1111-1111-1111-111111111111', '"
+                "INSERT INTO attachment_file (attachment_id, seq, storage_key, key_id, created_at) VALUES "
+                        + "('11111111-1111-1111-1111-111111111111', 1, '"
                         + "1".repeat(32) + "', 'k1', TIMESTAMP '2026-11-05 10:00:00')",
                 "SELECT COUNT(*) FROM attachment",
                 "SELECT COUNT(*) FROM attachment_file",

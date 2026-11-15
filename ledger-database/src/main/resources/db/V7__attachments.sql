@@ -7,8 +7,8 @@
 -- upload_staging is the one table of the attachments that changes: an upload that is not finished (STAGING), and an upload
 -- that was finished (COMPLETED) until the reaper removes the row. attachment and attachment_file are written once and never
 -- changed or deleted: the application account has only SELECT and INSERT on them (dml-grants.sql), so a body that was kept as
--- evidence stays what it was. The file of an attachment is the latest row of attachment_file: the finish adds the first row, a
--- re-encryption (rekey) adds the next one, and the file of an older row is a replaced file.
+-- evidence stays what it was. The file of an attachment is the row of attachment_file with the largest seq: the finish adds the
+-- first row, a re-encryption (rekey) adds the next one, and the file of an older row is a replaced file.
 -- Ids are text (UUID) made by the application. Times are UTC TIMESTAMP values written by the application clock.
 
 CREATE TABLE upload_staging (
@@ -51,16 +51,19 @@ CREATE TABLE attachment (
 );
 CREATE INDEX ix_attachment_author ON attachment (created_by, created_at);
 
+-- The key of a file is the attachment and the number of the file of that attachment (a composite primary key, no id column of its
+-- own): the finish writes seq 1 and a rekey writes the next number in its own transaction, so of two rekeys that read the same
+-- current file exactly one inserts the number and the other ends with the primary key violation (nothing is retried).
 CREATE TABLE attachment_file (
-  id VARCHAR(36) NOT NULL,
   attachment_id VARCHAR(36) NOT NULL,
+  seq BIGINT NOT NULL,
   storage_key VARCHAR(32) NOT NULL,
   key_id VARCHAR(64) NOT NULL,
   created_at TIMESTAMP NOT NULL,
-  CONSTRAINT pk_attachment_file PRIMARY KEY (id),
-  CONSTRAINT uq_attachment_file_storage UNIQUE (storage_key)
+  CONSTRAINT pk_attachment_file PRIMARY KEY (attachment_id, seq),
+  CONSTRAINT uq_attachment_file_storage UNIQUE (storage_key),
+  CONSTRAINT ck_attachment_file_seq CHECK (seq >= 1)
 );
-CREATE INDEX ix_attachment_file_attachment ON attachment_file (attachment_id, created_at);
 
 -- The owner's audit trail names the two operations of the attachments that the owner runs: a re-encryption and the emptying of the
 -- quarantine folder.

@@ -243,7 +243,7 @@ public class UploadService {
         Attachment attachment = new Attachment(row.id(), row.fileName(), row.mediaType(), row.declaredSize(),
                 row.declaredSha256(), author, now);
         attachments.insert(attachment);
-        files.insert(new AttachmentFile(ids.generateId().toString(), row.id(), row.storageKey(), row.keyId(), now));
+        files.insert(new AttachmentFile(row.id(), 1, row.storageKey(), row.keyId(), now));
         return finished(attachment);
     }
 

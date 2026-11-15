@@ -11,6 +11,7 @@ import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.domain.model.Attachment;
 import org.pgledger.domain.model.AttachmentFile;
 import org.pgledger.domain.value.OwnerIdentity;
+import org.pgledger.domain.value.StorageKey;
 import org.springframework.stereotype.Component;
 
 /**
@@ -20,7 +21,8 @@ import org.springframework.stereotype.Component;
  * <ul>
  * <li>a file that no row names ({@code upload_staging}, {@code attachment_file}) and that is older than {@code orphan-grace} is moved
  *     under {@code orphans/}; a file of a younger age stays (an upload that is about to be recorded);
- * <li>a replaced file (a row that is not the latest of its attachment) is moved under {@code orphans/} at once;
+ * <li>a replaced file (a row whose seq is not the largest of its attachment) is moved under {@code orphans/} after {@code orphan-grace}
+ *     counted from the row of the file that replaced it;
  * <li>a quarantined file whose row exists again and is not a replaced one (the database was restored) is moved back;
  * <li>an attachment without its current file, or whose file does not pass every tag, the end mark, the size and the hash, is damaged:
  *     reported and never deleted; an attachment no history row points to is listed and kept.
@@ -98,7 +100,7 @@ public class AttachmentCheck {
                 } else {
                     waiting++;
                 }
-            } else if (maintenance.isReplaced(stored.key())) {
+            } else if (isReplacedLongEnough(stored.key(), now, grace)) {
                 replaced++;
                 if (moveFiles) {
                     store.quarantine(stored.key());
@@ -132,6 +134,11 @@ public class AttachmentCheck {
         }
         return new Report(orphans, waiting, replaced, restored, store.listQuarantined().size(), missing, damaged, unreferenced,
                 looked);
+    }
+
+    /** A replaced file waits for the grace, counted from the row of the file that replaced it (a reader may still hold the old one). */
+    private boolean isReplacedLongEnough(StorageKey key, Instant now, Duration grace) {
+        return maintenance.replacedAt(key).filter(at -> Duration.between(at, now).compareTo(grace) >= 0).isPresent();
     }
 
     private void inspect(Attachment attachment, List<String> missing, List<String> damaged) {
