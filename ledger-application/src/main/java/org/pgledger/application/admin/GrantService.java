@@ -7,6 +7,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.pgledger.application.admin.SessionKeyService.RegisterCommand;
 import org.pgledger.database.repository.Counter;
 import org.pgledger.database.repository.GrantStateRepository;
 import org.pgledger.database.repository.IdAllocator;
@@ -51,15 +52,18 @@ public class GrantService {
     private final GrantStateRepository state;
     private final SessionGrantRepository grants;
     private final SessionKeyStateRepository keys;
+    private final SessionKeyService sessionKeys;
     private final ProjectRepository projects;
     private final IdAllocator ids;
     private final OwnerAuditWriter audit;
     private final Clock clock;
 
     public GrantService(GrantStateRepository state, SessionGrantRepository grants, SessionKeyStateRepository keys,
-            ProjectRepository projects, IdAllocator ids, OwnerAuditWriter audit, Clock clock) {
+            SessionKeyService sessionKeys, ProjectRepository projects, IdAllocator ids, OwnerAuditWriter audit,
+            Clock clock) {
         this.state = state;
         this.keys = keys;
+        this.sessionKeys = sessionKeys;
         this.grants = grants;
         this.projects = projects;
         this.ids = ids;
@@ -75,6 +79,28 @@ public class GrantService {
      * insert can meet a live row of its key, and no call is run again.
      */
     public List<Long> grant(GrantCommand command, OwnerIdentity actor) {
+        return issueAll(command, actor);
+    }
+
+    /**
+     * The use case of the grant screen: binds the public key to the author (the key is registered as
+     * {@link SessionKeyService#register} does, the repeated registration of the key the author has is accepted) and issues
+     * the grants, in one transaction. A refused grant takes the registration of the key back with it, and a refused key
+     * issues no grant; the owner's audit trail gets the rows of both operations or none.
+     */
+    public List<Long> grantWithKey(GrantCommand command, String publicKey, OwnerIdentity actor) {
+        sessionKeys.register(new RegisterCommand(command.author(), publicKey, null), actor);
+        return issueAll(command, actor);
+    }
+
+    /**
+     * Like {@link #grantWithKey}, and when the author already has another live key, replaces it: the caller names the
+     * fingerprint of the key that is replaced ({@link SessionKeyService#registerReplacing}). The replacement and the grants
+     * are one transaction.
+     */
+    public List<Long> grantReplacingKey(GrantCommand command, String publicKey, String replacedFingerprint,
+            OwnerIdentity actor) {
+        sessionKeys.registerReplacing(new RegisterCommand(command.author(), publicKey, null), actor, replacedFingerprint);
         return issueAll(command, actor);
     }
 

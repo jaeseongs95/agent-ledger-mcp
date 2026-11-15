@@ -106,6 +106,64 @@ class GrantProjectTest {
                 TestOwners.OWNER), ValidationCode.VALIDATION_FAILED);
     }
 
+    private static final String SUBJECT_AUDIT_ROWS = "SELECT COUNT(*) FROM owner_audit WHERE subject = ?";
+
+    @Test
+    @DisplayName("SVC-GRT-14 (TXA-02): the key and the grants of the grant screen are one use case and one transaction: a refused grant leaves no key and no audit row, an accepted one commits the key, the grants and both audit rows together, the same key again is a second grant of the one key")
+    void grt14_keyAndGrantsAreOneTransaction(Scenario s) {
+        String author = "claude:grt14";
+        GrantService grants = s.bean(GrantService.class);
+        SessionKeyService keys = s.bean(SessionKeyService.class);
+        String key = PublicKeys.encode(TestKeyRing.newPair().getPublic());
+
+        Expect.failure(() -> grants.grantWithKey(new GrantCommand(author, "nowhere", List.of("defect"), null, null), key,
+                TestOwners.OWNER), LookupCode.NOT_FOUND);
+        assertThat(keys.history(author)).as("the key was rolled back with the refused grant").isEmpty();
+        assertThat(rows(s, SUBJECT_AUDIT_ROWS, author)).isZero();
+        assertThat(rows(s, GRANT_ROWS, author)).isZero();
+
+        GrantCommand command = new GrantCommand(author, s.projectId(), List.of("defect", "task"), null, null);
+        assertThat(grants.grantWithKey(command, key, TestOwners.OWNER)).hasSize(2);
+        assertThat(keys.live(author)).isPresent();
+        assertThat(rows(s, GRANT_ROWS, author)).isEqualTo(2);
+        assertThat(rows(s, SUBJECT_AUDIT_ROWS, author)).as("KEY_REGISTERED").isEqualTo(1);
+        assertThat(rows(s, AUDIT_ROWS, author)).as("GRANT_ISSUED").isEqualTo(1);
+
+        assertThat(grants.grantWithKey(command, key, TestOwners.OWNER)).hasSize(2);
+        assertThat(keys.history(author)).hasSize(1);
+        assertThat(rows(s, GRANT_ROWS, author)).isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("SVC-GRT-15 (TXA-02): the confirmed replacement of a key and the grants are one transaction: a refused grant leaves the old key live and no closed row, a replacement that is not confirmed issues no grant, a confirmed one replaces the key and grants")
+    void grt15_replacementAndGrantsAreOneTransaction(Scenario s) {
+        GrantService grants = s.bean(GrantService.class);
+        SessionKeyService keys = s.bean(SessionKeyService.class);
+        String author = s.actorWith("defect");
+        String oldFingerprint = keys.live(author).orElseThrow().fingerprint();
+        String replacement = PublicKeys.encode(TestKeyRing.newPair().getPublic());
+        long grantRows = rows(s, GRANT_ROWS, author);
+
+        Expect.failure(() -> grants.grantReplacingKey(new GrantCommand(author, "nowhere", List.of("fix"), null, null),
+                replacement, oldFingerprint, TestOwners.OWNER), LookupCode.NOT_FOUND);
+        assertThat(keys.live(author).orElseThrow().fingerprint()).isEqualTo(oldFingerprint);
+        assertThat(keys.history(author)).as("the close of the old key was rolled back").hasSize(1);
+        assertThat(rows(s, GRANT_ROWS, author)).isEqualTo(grantRows);
+
+        GrantCommand command = new GrantCommand(author, s.projectId(), List.of("fix"), null, null);
+        Expect.failure(() -> grants.grantReplacingKey(command, replacement, "0".repeat(64), TestOwners.OWNER),
+                ConflictCode.KEY_REPLACEMENT_NOT_CONFIRMED);
+        assertThat(keys.live(author).orElseThrow().fingerprint()).isEqualTo(oldFingerprint);
+        assertThat(rows(s, GRANT_ROWS, author)).isEqualTo(grantRows);
+
+        assertThat(grants.grantReplacingKey(command, replacement, oldFingerprint, TestOwners.OWNER)).hasSize(1);
+        assertThat(keys.live(author).orElseThrow().publicKey()).isEqualTo(replacement);
+        assertThat(keys.history(author)).hasSize(2);
+        assertThat(rows(s, GRANT_ROWS, author)).isEqualTo(grantRows + 1);
+        assertThat(s.count("SELECT COUNT(*) FROM owner_audit WHERE subject = ? AND operation = 'KEY_REPLACED'", author))
+                .isEqualTo(1);
+    }
+
     /** A grant request that must be refused, and why. */
     record Bad(String name, GrantCommand command, ErrorCode expected) {
         @Override

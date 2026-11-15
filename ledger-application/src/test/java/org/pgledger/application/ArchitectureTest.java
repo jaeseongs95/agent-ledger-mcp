@@ -165,7 +165,8 @@ class ArchitectureTest {
     @DisplayName("ARC-038: every owner operation of the services names its actor; no main code has an actor-less path or "
             + "the system actor")
     void arc038_ownerOperationsNameTheirActor() throws java.io.IOException {
-        Set<String> operations = Set.of("grant", "revoke", "set", "register", "registerReplacing");
+        Set<String> operations = Set.of("grant", "revoke", "set", "register", "registerReplacing", "grantWithKey",
+                "grantReplacingKey");
         for (Class<?> service : List.of(org.pgledger.application.admin.GrantService.class,
                 org.pgledger.application.admin.CommonCodeService.class,
                 org.pgledger.application.admin.SessionKeyService.class)) {

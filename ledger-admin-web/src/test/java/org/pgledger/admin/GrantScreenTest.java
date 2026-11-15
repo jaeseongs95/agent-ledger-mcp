@@ -171,8 +171,9 @@ class GrantScreenTest {
     }
 
     @Test
-    @DisplayName("ADM-069: a grant refused after the key was registered can be submitted again: the key stays registered "
-            + "once and the grants are issued")
+    @DisplayName("ADM-069 (changed by TXA-02): the key and the grants of one submission are one transaction: a refused grant "
+            + "leaves no key registered (and no audit row), and the same submission with a known project registers the key "
+            + "once and issues the grants")
     void adm069_retryAfterARefusedGrant() throws Exception {
         Seeded project = seeds.project();
         String author = newAuthor();
@@ -181,11 +182,12 @@ class GrantScreenTest {
 
         post(browser, "/grants", key.confirmed(Form.of("author", author, "project", "no-such-project", "scopes",
                 "defect"))).andExpect(status().isNotFound());
-        long registered = keys.live(author).orElseThrow().id();
+        assertThat(keys.history(author)).as("the refused grant took the registration of the key back").isEmpty();
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM owner_audit WHERE subject = :author").param("author", author)
+                .query(Integer.class).single()).isZero();
         browser.perform(browser.form("/grants", key.confirmed(Form.of("author", author, "project", project.project(),
                 "scopes", "defect")), browser.csrfOf("/grants"))).andExpect(status().is3xxRedirection());
 
-        assertThat(keys.live(author).orElseThrow().id()).isEqualTo(registered);
         assertThat(keys.history(author)).hasSize(1);
         assertThat(grants.live(author)).extracting(g -> g.scope().token()).containsExactly("defect");
         assertThat(jdbc.sql("SELECT COUNT(*) FROM owner_audit WHERE operation = 'KEY_REGISTERED' AND subject = :author")
