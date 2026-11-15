@@ -88,12 +88,12 @@ class ReceiptTest {
 
         org.pgledger.application.receipt.ReceiptService.Reservation<Answer> again = s.ctx().tx(() -> {
             service.reserve(first, ReceiptOperation.SAVE, digest, author, Channel.AUTHOR, Answer.class);
-            service.finish(first, new Answer("first"));
+            service.finish(first, author, new Answer("first"));
             org.pgledger.application.receipt.ReceiptService.Reservation<Answer> loser = service.reserve(first,
                     ReceiptOperation.SAVE, digest, author, Channel.AUTHOR, Answer.class);
             service.reserve(next, ReceiptOperation.SAVE, Sha256.ofText("payload " + next), author, Channel.AUTHOR,
                     Answer.class);
-            service.finish(next, new Answer("next"));
+            service.finish(next, author, new Answer("next"));
             return loser;
         });
 
@@ -114,7 +114,8 @@ class ReceiptTest {
             }
 
             @Override
-            public java.util.Optional<Receipt> findById(OperationKey operationKey) {
+            public java.util.Optional<Receipt> findByAuthorIdAndOperationKey(org.pgledger.domain.value.ActorId authorId,
+                    OperationKey operationKey) {
                 return java.util.Optional.empty();
             }
         };
@@ -134,7 +135,7 @@ class ReceiptTest {
         Sha256 digest = Sha256.ofText("payload " + id);
         s.ctx().tx(() -> {
             real.reserve(id, ReceiptOperation.SAVE, digest, author, Channel.AUTHOR, Answer.class);
-            real.finish(id, new Answer("winner"));
+            real.finish(id, author, new Answer("winner"));
             return null;
         });
 
@@ -215,19 +216,20 @@ class ReceiptTest {
     }
 
     @Test
-    @DisplayName("SVC-RCP-04 (OPK-004): the same operation key from another author is a conflict")
+    @DisplayName("SVC-RCP-04 (OPK-004, OPK-020): the same operation key from another author is no conflict any more (changed: it used to be one): the receipts are per author, so the other author writes its own write and has its own receipt under the key")
     void rcp04_anotherAuthor(Scenario s) {
         String id = Scenario.uuid();
-        SaveResult d = s.newDefect("d");
-        TransitionCommand dispute = new TransitionCommand(id, "defect", d.id(), 1L, "DISPUTED", Scenario.REASON,
-                Scenario.EVIDENCE, null, null);
-        s.bean(TransitionService.class).transition(Scenario.AUTHOR, dispute);
-        Expect.failure(() -> s.bean(TransitionService.class).transition(Scenario.DEFECT_ONLY, dispute),
-                ConflictCode.OPERATION_CONFLICT);
+        SaveResult mine = s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, id, "d"));
+        SaveResult theirs = s.bean(SaveService.class).save(Scenario.DEFECT_ONLY, create(s, id, "d"));
+        assertThat(theirs.id()).isNotEqualTo(mine.id());
+        assertThat(defects(s)).isEqualTo(2);
+        assertThat(receipts(s, id)).isEqualTo(2);
+        assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ? AND author_id = ?", id,
+                Scenario.DEFECT_ONLY)).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("SVC-RCP-04 (OPK-004): the same operation key through the other channel is a conflict")
+    @DisplayName("SVC-RCP-04 (OPK-004): the same operation key and payload of the same author through the other channel (reviewer) is still a conflict: the channel is compared, the receipt of the author is found")
     void rcp04_anotherChannel(Scenario s) {
         String id = Scenario.uuid();
         SaveResult d = s.newDefect("d");
@@ -553,8 +555,9 @@ class ReceiptTest {
     @Test
     @DisplayName("OPK-004 (service): an operation key already bound to one write service is OPERATION_CONFLICT for any other write service")
     void opk004_anotherServiceWithTheSameKey(Scenario s) {
-        // the batch keeps its receipts under the keys derived from its own key, so it takes no part in this ring
-        List<BiFunction<String, String, Object>> calls = keyedWrites().filter(write -> !"batch".equals(write.name()))
+        // the ring is of one author (the receipts are per author, so a key of another author is no conflict, see OPK-020):
+        // review_correct is the reviewer's. The batch takes part since it has a receipt of its own under its key (OPK-019)
+        List<BiFunction<String, String, Object>> calls = keyedWrites().filter(write -> !"review_correct".equals(write.name()))
                 .map(write -> write.prepare().apply(s)).toList();
         for (int i = 0; i < calls.size(); i++) {
             String key = Scenario.uuid();
@@ -566,6 +569,80 @@ class ReceiptTest {
 
             assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
         }
+    }
+
+    // ---------------------------------------------------------------------- OPK-020: receipts per author
+
+    private static long receiptsOf(Scenario s, String operationKey, String author) {
+        return s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ? AND author_id = ?", operationKey,
+                author);
+    }
+
+    @Test
+    @DisplayName("OPK-020 (service): a key that author A used first is free for author B: B writes its own write (no conflict), each has a receipt under its own author, and each replays its own response")
+    void opk020_anotherAuthorWritesItsOwn(Scenario s) {
+        String other = s.actorWith("defect");
+        String key = Scenario.uuid();
+        SaveResult mine = s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, key, "same content"));
+        SaveResult theirs = s.bean(SaveService.class).save(other, create(s, key, "same content"));
+
+        assertThat(theirs.id()).isNotEqualTo(mine.id());
+        assertThat(theirs.author()).isEqualTo(other);
+        assertThat(defects(s)).isEqualTo(2);
+        assertThat(receiptsOf(s, key, Scenario.AUTHOR)).isEqualTo(1);
+        assertThat(receiptsOf(s, key, other)).isEqualTo(1);
+        assertThat(s.count("SELECT COUNT(*) FROM history WHERE operation_key = ?", key)).isEqualTo(2);
+
+        assertThat(s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, key, "same content"))).isEqualTo(mine);
+        assertThat(s.bean(SaveService.class).save(other, create(s, key, "same content"))).isEqualTo(theirs);
+        assertThat(defects(s)).as("the replays write nothing").isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("OPK-020 (service): the same author with other content under the key is OPERATION_CONFLICT, whichever author it is, and nothing more is written")
+    void opk020_theSameAuthorWithOtherContent(Scenario s) {
+        String other = s.actorWith("defect");
+        String key = Scenario.uuid();
+        s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, key, "first"));
+        s.bean(SaveService.class).save(other, create(s, key, "first"));
+        long history = s.count("SELECT COUNT(*) FROM history");
+
+        Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, key, "other content")),
+                ConflictCode.OPERATION_CONFLICT);
+        Expect.failure(() -> s.bean(SaveService.class).save(other, create(s, key, "other content")),
+                ConflictCode.OPERATION_CONFLICT);
+
+        assertThat(defects(s)).isEqualTo(2);
+        assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
+    }
+
+    @Test
+    @DisplayName("OPK-020 (service): the same holds for the batch key: author B with a batch key that author A used writes its own batch (a receipt of the batch and of its operation under its own author), the same author with other operations is OPERATION_CONFLICT")
+    void opk020_theBatchKey(Scenario s) {
+        String other = s.actorWith("defect");
+        String key = Scenario.uuid();
+        OperationKey derived = OperationKey.parse(key).derive(0);
+        List<BatchOpInput> ops = List.of(new BatchOpInput.Save("defect", Fields.of(s.defectFields("one")),
+                Scenario.REASON, null, null));
+        BatchResult mine = s.bean(BatchService.class).batch(Scenario.AUTHOR, key, ops);
+        BatchResult theirs = s.bean(BatchService.class).batch(other, key, ops);
+
+        assertThat(theirs).isNotEqualTo(mine);
+        assertThat(defects(s)).isEqualTo(2);
+        for (String author : List.of(Scenario.AUTHOR, other)) {
+            assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ? AND author_id = ? "
+                    + "AND operation = 'BATCH'", key, author)).as("batch receipt of %s", author).isEqualTo(1);
+            assertThat(receiptsOf(s, derived.toString(), author)).as("operation receipt of %s", author).isEqualTo(1);
+        }
+        assertThat(s.bean(BatchService.class).batch(other, key, ops)).isEqualTo(theirs);
+        assertThat(defects(s)).as("the replay writes nothing").isEqualTo(2);
+
+        List<BatchOpInput> changed = List.of(new BatchOpInput.Save("defect", Fields.of(s.defectFields("other")),
+                Scenario.REASON, null, null));
+        Expect.failure(() -> s.bean(BatchService.class).batch(other, key, changed), ConflictCode.OPERATION_CONFLICT);
+        Expect.failure(() -> s.bean(BatchService.class).batch(Scenario.AUTHOR, key, changed),
+                ConflictCode.OPERATION_CONFLICT);
+        assertThat(defects(s)).isEqualTo(2);
     }
 
     @ParameterizedTest

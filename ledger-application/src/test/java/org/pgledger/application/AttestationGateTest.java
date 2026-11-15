@@ -375,16 +375,19 @@ class AttestationGateTest {
                 new BatchOpInput.Save("defect", Fields.of(s.defectFields("two")), Scenario.REASON, null, null));
         assertThat(asTool("ledger_batch", () -> s.bean(BatchService.class).batch(now(s, author, "ledger_batch", batchId),
                 batchId, ops)).results()).hasSize(2);
-        // the attestation names the key of the batch; the receipts are those of the derived keys of the operations
+        // the attestation names the key of the batch; the receipts are the one of the batch under its own key (operation
+        // BATCH, changed: there was none) and those of the derived keys of the operations
         OperationKey batchKey = OperationKey.parse(batchId);
-        assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ?", batchId)).isZero();
+        assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ? AND operation = 'BATCH'",
+                batchId)).isEqualTo(1);
         assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key IN (?, ?)",
                 batchKey.derive(0).toString(), batchKey.derive(1).toString())).isEqualTo(2);
 
         String other = newOperationKey();
         LedgerException failure = Expect.failure(() -> asTool("ledger_batch", () -> s.bean(BatchService.class)
                 .batch(now(s, author, "ledger_batch", other), batchId, ops)), TrustCode.ATTESTATION_BINDING_MISMATCH);
-        assertThat(failure.details()).containsEntry("op_index", List.of("1"));
+        // changed: the attestation of the batch is checked before any operation runs, so the failure names no operation
+        assertThat(failure.details()).doesNotContainKey("op_index").containsEntry("field", List.of("operationKey"));
         Expect.failure(() -> asTool("ledger_batch", () -> s.bean(BatchService.class)
                 .batch(now(s, author, SAVE, batchId), batchId, ops)), TrustCode.ATTESTATION_BINDING_MISMATCH);
     }
@@ -437,7 +440,7 @@ class AttestationGateTest {
     }
 
     @Test
-    @DisplayName("SVC-GATE-36: the token of a batch is bound to the digest of the arguments of the whole batch: another digest is ATTESTATION_BINDING_MISMATCH (arguments) at operation 1 and writes nothing")
+    @DisplayName("SVC-GATE-36: the token of a batch is bound to the digest of the arguments of the whole batch: another digest is ATTESTATION_BINDING_MISMATCH (arguments) and writes nothing (changed: the batch is attested before its first operation, so the failure names no operation any more)")
     void gate36_batchTokenIsBoundToTheArguments(Scenario s) {
         String author = s.actorWith("defect");
         String batchId = newOperationKey();
@@ -448,8 +451,7 @@ class AttestationGateTest {
         LedgerException failure = Expect.failure(() -> asTool("ledger_batch", DIGEST,
                 () -> s.bean(BatchService.class).batch(token, batchId, ops)), TrustCode.ATTESTATION_BINDING_MISMATCH);
         assertThat(failure.args()).containsExactly("arguments");
-        assertThat(failure.details()).containsEntry("op_index", List.of("1")).containsEntry("field",
-                List.of("arguments"));
+        assertThat(failure.details()).doesNotContainKey("op_index").containsEntry("field", List.of("arguments"));
         // a call outside a tool call has no digest at all
         Expect.failure(() -> s.bean(BatchService.class).batch(token, batchId, ops),
                 TrustCode.ATTESTATION_BINDING_MISMATCH);
@@ -462,6 +464,77 @@ class AttestationGateTest {
         assertThat(asTool("ledger_batch", OTHER_DIGEST, () -> s.bean(BatchService.class).batch(token, batchId, ops))
                 .results()).hasSize(1);
         assertThat(s.count("SELECT COUNT(*) FROM defect WHERE project_id = ?", s.projectId())).isEqualTo(1);
+    }
+
+    private static List<BatchOpInput> oneSave(Scenario s) {
+        return List.of(new BatchOpInput.Save("defect", Fields.of(s.defectFields("order")), Scenario.REASON, null, null));
+    }
+
+    private static long writtenBy(Scenario s, String author) {
+        return s.count("SELECT COUNT(*) FROM request_receipt WHERE author_id = ?", author)
+                + s.count("SELECT COUNT(*) FROM history WHERE author_id = ?", author)
+                + s.count("SELECT COUNT(*) FROM defect WHERE project_id = ?", s.projectId());
+    }
+
+    @Test
+    @DisplayName("OPK-023 (service): the order of the checks of a batch starts with the attestation: an unsigned, malformed or wrongly signed call with an empty key (and with an empty list of operations) is refused by the attestation, not for the key or the operations, and writes nothing")
+    void opk023_theAttestationIsFirst(Scenario s) {
+        String author = s.actorWith("defect");
+        String forged = TestKeyRing.token(TestKeyRing.newPair(), author, "ledger_batch", "", s.ctx().clock().instant());
+        for (List<BatchOpInput> ops : List.of(oneSave(s), List.<BatchOpInput>of())) {
+            Expect.failure(() -> asTool("ledger_batch", () -> s.bean(BatchService.class).batch(null, "", ops)),
+                    TrustCode.HOST_ATTESTATION_REQUIRED);
+            Expect.failure(() -> asTool("ledger_batch", () -> s.bean(BatchService.class).batch("claude", "", ops)),
+                    TrustCode.AUTHOR_ID_FORMAT);
+            Expect.failure(() -> asTool("ledger_batch", () -> s.bean(BatchService.class).batch(forged, "", ops)),
+                    TrustCode.ATTESTATION_SIGNATURE_INVALID);
+        }
+        // a token for another operation key is refused by the attestation, before the key (here the empty one) is looked at
+        String forAnotherKey = now(s, author, "ledger_batch", newOperationKey());
+        Expect.failure(() -> asTool("ledger_batch", () -> s.bean(BatchService.class).batch(forAnotherKey, "",
+                oneSave(s))), TrustCode.ATTESTATION_BINDING_MISMATCH);
+        assertThat(writtenBy(s, author)).isZero();
+    }
+
+    @Test
+    @DisplayName("OPK-023 (service): with a valid attestation the number of operations is checked before the key: an empty list with an empty key is MUST_HOLD_ITEMS at ops, and writes nothing")
+    void opk023_theNumberOfOperationsComesBeforeTheKey(Scenario s) {
+        String author = s.actorWith("defect");
+        String token = now(s, author, "ledger_batch", "");
+
+        LedgerException failure = Expect.failure(() -> asTool("ledger_batch", () -> s.bean(BatchService.class)
+                .batch(token, "", List.of())), ValidationCode.VALIDATION_FAILED);
+
+        assertThat(Expect.firstIssue(failure).path()).isEqualTo("ops");
+        assertThat(Expect.firstIssue(failure).reason()).isEqualTo(ValidationReason.MUST_HOLD_ITEMS);
+        assertThat(writtenBy(s, author)).isZero();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", " ", "   ", "\t"})
+    @DisplayName("OPK-023 (service): with a valid attestation and operations an empty or blank operation key is VALIDATION_FAILED at operationKey (MUST_BE_CHARS_RANGE 1..128) and nothing is written: no receipt, no history, no defect")
+    void opk023_aBlankKeyIsRefusedAfterTheAttestation(String operationKey, Scenario s) {
+        assertKeyRefused(s, operationKey);
+    }
+
+    @Test
+    @DisplayName("OPK-023 (service): with a valid attestation and operations an operation key of 129 characters is VALIDATION_FAILED at operationKey (MUST_BE_CHARS_RANGE 1..128) and nothing is written")
+    void opk023_aKeyOf129CharactersIsRefused(Scenario s) {
+        assertKeyRefused(s, "k".repeat(129));
+    }
+
+    private static void assertKeyRefused(Scenario s, String operationKey) {
+        String author = s.actorWith("defect");
+        String token = now(s, author, "ledger_batch", operationKey);
+
+        LedgerException failure = Expect.failure(() -> asTool("ledger_batch", () -> s.bean(BatchService.class)
+                .batch(token, operationKey, oneSave(s))), ValidationCode.VALIDATION_FAILED);
+
+        assertThat(failure.args()).containsExactly("operationKey");
+        assertThat(Expect.firstIssue(failure).path()).isEqualTo("operationKey");
+        assertThat(Expect.firstIssue(failure).reason()).isEqualTo(ValidationReason.MUST_BE_CHARS_RANGE);
+        assertThat(Expect.firstIssue(failure).reasonArgs()).containsExactly("1", "128");
+        assertThat(writtenBy(s, author)).isZero();
     }
 
     @Test

@@ -192,4 +192,24 @@ class ArchitectureTest {
     void opk017_noRetiredRequestKeyName() {
         assertThat(NoOneXRules.retiredRequestKeyTextInMainSources()).isEmpty();
     }
+
+    @Test
+    @DisplayName("OPK-024 the batch has one entry: BatchService has no public method batch(String, String, String) (the text form of ops) and LedgerJson has no readInputList; the only public batch method takes the actor, the operation key and the list of operations")
+    void opk024_theBatchHasOneEntry() {
+        Class<?> service = org.pgledger.application.write.BatchService.class;
+        assertThat(java.util.Arrays.stream(service.getMethods()).filter(method -> "batch".equals(method.getName()))
+                .map(method -> java.util.Arrays.toString(method.getParameterTypes())).toList())
+                .as("the public methods named batch of BatchService")
+                .containsExactly("[class java.lang.String, class java.lang.String, interface java.util.List]");
+        assertThat(java.util.Arrays.stream(service.getDeclaredMethods())
+                .filter(method -> "batch".equals(method.getName()))
+                .map(method -> java.util.Arrays.toString(method.getParameterTypes())).toList())
+                .as("no method named batch of any visibility takes the text form of ops")
+                .doesNotContain("[class java.lang.String, class java.lang.String, class java.lang.String]");
+        assertThat(java.util.Arrays.stream(org.pgledger.application.json.LedgerJson.class.getDeclaredMethods())
+                .map(java.lang.reflect.Method::getName)).as("the methods of LedgerJson").doesNotContain("readInputList");
+        assertThat(java.util.Arrays.stream(org.pgledger.application.json.LedgerJson.class.getDeclaredFields())
+                .map(java.lang.reflect.Field::getName)).as("LedgerJson has no strict mapper any more")
+                .doesNotContain("strict");
+    }
 }

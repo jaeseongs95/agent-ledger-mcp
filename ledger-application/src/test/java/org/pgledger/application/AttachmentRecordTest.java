@@ -185,7 +185,10 @@ class AttachmentRecordTest {
         return OperationKey.parse(operationKey).derive(0).toString();
     }
 
-    /** Receipts bound to the key (a plain write) or to the key derived for the first operation (a batch). */
+    /**
+     * Receipts bound to the key (a plain write, or the receipt of a batch under its own key) or to the key derived for the
+     * first operation (a batch). Only ever compared with zero here: a refused call leaves neither.
+     */
     private static long receipts(Scenario s, String operationKey) {
         return s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key IN (?, ?)", operationKey,
                 derived(operationKey));

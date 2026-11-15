@@ -2,9 +2,7 @@ package org.pgledger.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
@@ -32,13 +30,10 @@ import org.pgledger.domain.error.TrustCode;
 import org.pgledger.domain.error.ValidationCode;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.value.OperationKey;
-import tools.jackson.databind.json.JsonMapper;
 
 /** SVC-BAT-01, -02, -04 .. -12 (SVC-BAT-03 needs both databases and is in the rollback test). */
 @LedgerServiceTest
 class BatchTest {
-
-    private static final JsonMapper JSON = new JsonMapper();
 
     private BatchOpInput.Save saveDefect(Scenario s, String title) {
         return new BatchOpInput.Save("defect", Fields.of(s.defectFields(title)), Scenario.REASON, null, null);
@@ -71,59 +66,35 @@ class BatchTest {
 
     // ---------------------------------------------------------------------- 06
 
-    private static Map<String, Object> save(Scenario s, String key, Object value) {
-        Map<String, Object> op = new java.util.LinkedHashMap<>();
-        op.put("op", "save");
-        op.put("entity", "defect");
-        op.put("fields", s.defectFields("x"));
-        op.put("reason", Scenario.REASON);
-        if (key != null) {
-            op.put(key, value);
-        }
-        return op;
-    }
+    // The wire cases of SVC-BAT-06 and SVC-BAT-07 (an unknown key, an unknown or missing op, ops that is not an array, an
+    // operationKey or request_id inside an op) are no longer reachable here: the batch has the one entry with the records
+    // (changed: BatchService.batch(String, String, String) and LedgerJson.readInputList are gone, OPK-024); the strict reading of
+    // ops is the binding of the tool and is tested in the module ledger-mcp-server (ops[i].<key> UNKNOWN_ARGUMENT).
 
     @Test
-    @DisplayName("SVC-BAT-06: an unknown key names its path and nothing is written")
-    void bat06_unknownKey(Scenario s) {
-        assertRefused(s, List.of(save(s, "titel", "x")), "ops[0].titel");
-    }
-
-    @Test
-    @DisplayName("SVC-BAT-06: a missing expected_version names its path")
+    @DisplayName("SVC-BAT-06 (changed: the operation is a record, a missing key is a null): a missing expected_version names its path")
     void bat06_missingExpectedVersion(Scenario s) {
         SaveResult d = s.newDefect("d");
-        assertRefused(s, List.of(Map.of("op", "transition", "entity", "defect", "id", d.id(), "to", "DISPUTED",
-                "reason", Scenario.REASON)), "ops[0].expected_version");
+        assertRefused(s, List.of(new BatchOpInput.Transition("defect", d.id(), null, "DISPUTED", Scenario.REASON, null,
+                null, null, null)), "ops[0].expected_version");
     }
 
     @Test
-    @DisplayName("SVC-BAT-06: a missing reason in the second operation rolls the first back")
+    @DisplayName("SVC-BAT-06 (changed: the operation is a record, a missing key is a null): a missing reason in the second operation rolls the first back")
     void bat06_missingReasonLater(Scenario s) {
-        Map<String, Object> noReason = save(s, null, null);
-        noReason.remove("reason");
-        assertRefused(s, List.of(save(s, null, null), noReason), "ops[1].reason");
+        BatchOpInput noReason = new BatchOpInput.Save("defect", Fields.of(s.defectFields("x")), null, null, null);
+        assertRefused(s, List.of(saveDefect(s, "x"), noReason), "ops[1].reason");
     }
 
-    @Test
-    @DisplayName("SVC-BAT-06: an unknown op")
-    void bat06_unknownOp(Scenario s) {
-        assertRefused(s, List.of(Map.of("op", "review", "entity", "defect")), "ops[0]");
-    }
-
-    @Test
-    @DisplayName("SVC-BAT-06: an operation without op")
-    void bat06_noOp(Scenario s) {
-        assertRefused(s, List.of(Map.of("entity", "defect")), "ops[0]");
-    }
-
-    private void assertRefused(Scenario s, List<Map<String, Object>> ops, String path) {
-        String json = JSON.writeValueAsString(ops);
+    private void assertRefused(Scenario s, List<BatchOpInput> ops, String path) {
         long defects = s.count("SELECT COUNT(*) FROM defect WHERE project_id = ?", s.projectId());
+        String batchKey = Scenario.uuid();
         ValidationException e = (ValidationException) Expect.failure(() -> s.bean(BatchService.class)
-                .batch(Scenario.AUTHOR, Scenario.uuid(), json), ValidationCode.VALIDATION_FAILED);
+                .batch(Scenario.AUTHOR, batchKey, ops), ValidationCode.VALIDATION_FAILED);
         assertThat(e.issues().get(0).path()).startsWith(path);
         assertThat(s.count("SELECT COUNT(*) FROM defect WHERE project_id = ?", s.projectId())).isEqualTo(defects);
+        assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ?", batchKey))
+                .as("the receipt of the batch key is rolled back with the batch").isZero();
     }
 
     // ---------------------------------------------------------------------- 07
@@ -145,19 +116,9 @@ class BatchTest {
     @MethodSource("sizes")
     @DisplayName("SVC-BAT-07: 1 to 200 operations")
     void bat07_sizes(Size size, Scenario s) {
-        List<Map<String, Object>> ops = IntStream.range(0, size.count()).mapToObj(i -> save(s, null, null)).toList();
-        String json = JSON.writeValueAsString(ops);
-        assertThat(Expect.outcome(() -> s.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(), json)))
+        List<BatchOpInput> ops = IntStream.range(0, size.count()).<BatchOpInput>mapToObj(i -> saveDefect(s, "x")).toList();
+        assertThat(Expect.outcome(() -> s.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(), ops)))
                 .isEqualTo(Optional.ofNullable(size.expected()));
-    }
-
-    @Test
-    @DisplayName("SVC-BAT-07: ops that is not an array")
-    void bat07_notAnArray(Scenario s) {
-        String json = JSON.writeValueAsString(Map.of("op", "save"));
-        ValidationException e = (ValidationException) Expect.failure(() -> s.bean(BatchService.class).batch(
-                Scenario.AUTHOR, Scenario.uuid(), json), ValidationCode.VALIDATION_FAILED);
-        assertThat(e.issues().get(0).path()).startsWith("ops");
     }
 
     // ---------------------------------------------------------------------- 08
@@ -168,8 +129,10 @@ class BatchTest {
         String batchId = Scenario.uuid();
         OperationKey batchKey = OperationKey.parse(batchId);
         BatchResult first = batch(s, Scenario.AUTHOR, batchId, List.of(saveDefect(s, "zero"), saveDefect(s, "one")));
-        // the receipts of the operations are under the derived keys, none under the key of the batch itself
-        assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ?", batchId)).isZero();
+        // the receipts of the operations are under the derived keys, and the batch has a receipt of its own under its key
+        // (changed: there used to be none under the key of the batch itself, OPK-019)
+        assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ? AND operation = 'BATCH'",
+                batchId)).isEqualTo(1);
         assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key IN (?, ?)",
                 batchKey.derive(0).toString(), batchKey.derive(1).toString())).isEqualTo(2);
         // a direct write with the derived key and the same content is the replay of the operation
@@ -212,11 +175,126 @@ class BatchTest {
         assertThat(batchKey.derive(0)).isNotEqualTo(OperationKey.parse(Scenario.uuid()).derive(0));
     }
 
+    // OPK-005 (an operation carries no key: operationKey, request_id or requestId inside an op is UNKNOWN_ARGUMENT at
+    // ops[i].<key>) is the binding of the tool: it is tested in ledger-mcp-server (OperationKeyTest); the record
+    // BatchOpInput has no such component (BatchWireTest).
+
+    // ---------------------------------------------------------------------- OPK-019: the receipt of the batch
+
+    private static long defects(Scenario s) {
+        return s.count("SELECT COUNT(*) FROM defect WHERE project_id = ?", s.projectId());
+    }
+
+    private static long receiptsOf(Scenario s, String author) {
+        return s.count("SELECT COUNT(*) FROM request_receipt WHERE author_id = ?", author);
+    }
+
+    @Test
+    @DisplayName("OPK-019 (service): the same batch key with the same operations replays the stored results and writes once per operation; a receipt with the operation BATCH exists under the batch key, one per operation under its derived key")
+    void opk019_replay(Scenario s) {
+        String batchId = Scenario.uuid();
+        OperationKey batchKey = OperationKey.parse(batchId);
+        List<BatchOpInput> ops = List.of(saveDefect(s, "a"), saveDefect(s, "b"));
+        BatchResult first = batch(s, Scenario.AUTHOR, batchId, ops);
+        long history = s.count("SELECT COUNT(*) FROM history");
+        long receipts = receiptsOf(s, Scenario.AUTHOR);
+
+        assertThat(batch(s, Scenario.AUTHOR, batchId, ops)).isEqualTo(first);
+
+        assertThat(defects(s)).as("one write per operation").isEqualTo(2);
+        assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
+        assertThat(receiptsOf(s, Scenario.AUTHOR)).as("a replay adds no receipt").isEqualTo(receipts);
+        assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ? AND operation = 'BATCH'",
+                batchId)).isEqualTo(1);
+        assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key IN (?, ?) AND operation = 'SAVE'",
+                batchKey.derive(0).toString(), batchKey.derive(1).toString())).isEqualTo(2);
+        assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key IN (?, ?, ?)", batchId,
+                batchKey.derive(0).toString(), batchKey.derive(1).toString()))
+                .as("the batch, and its two operations").isEqualTo(3);
+    }
+
+    /** A first batch, and the batch that is sent later with the same key. */
+    private record Resend(String name, List<BatchOpInput> first, List<BatchOpInput> later) {
+        @Override
+        public String toString() {
+            return name;
+        }
+    }
+
+    static Stream<Resend> resentWithOtherOperations() {
+        BatchOpInput a = new BatchOpInput.Save("defect", Fields.of("title", "a"), Scenario.REASON, null, null);
+        BatchOpInput b = new BatchOpInput.Save("defect", Fields.of("title", "b"), Scenario.REASON, null, null);
+        BatchOpInput aWithAnotherReason = new BatchOpInput.Save("defect", Fields.of("title", "a"),
+                "another reason, long enough", null, null);
+        BatchOpInput aWithAnotherValue = new BatchOpInput.Save("defect", Fields.of("title", "a changed"), Scenario.REASON,
+                null, null);
+        return Stream.of(new Resend("one operation added: [A] then [A, B]", List.of(a), List.of(a, b)),
+                new Resend("one operation removed: [A, B] then [A]", List.of(a, b), List.of(a)),
+                new Resend("operations moved: [A, B] then [B, A]", List.of(a, b), List.of(b, a)),
+                new Resend("one operation changed (reason)", List.of(a, b), List.of(aWithAnotherReason, b)),
+                new Resend("one operation changed (a value of fields)", List.of(a, b), List.of(aWithAnotherValue, b)));
+    }
+
     @ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(strings = {"operationKey", "request_id", "requestId"})
-    @DisplayName("OPK-005 (service): an operation of a batch carries no key: an operationKey or request id inside an op is an unknown key at ops[0].<key> and nothing is written")
-    void opk005_noKeyInAnOperation(String name, Scenario s) {
-        assertRefused(s, List.of(save(s, name, Scenario.uuid())), "ops[0]." + name);
+    @MethodSource("resentWithOtherOperations")
+    @DisplayName("OPK-019 (service): the same batch key with other operations (added, removed, moved, changed) is OPERATION_CONFLICT and nothing is written")
+    void opk019_otherOperations(Resend resend, Scenario s) {
+        String batchId = Scenario.uuid();
+        // the fields of the operations carry the project of the scenario
+        List<BatchOpInput> first = withProject(s, resend.first());
+        List<BatchOpInput> later = withProject(s, resend.later());
+        batch(s, Scenario.AUTHOR, batchId, first);
+        long written = defects(s);
+        long history = s.count("SELECT COUNT(*) FROM history");
+        long receipts = receiptsOf(s, Scenario.AUTHOR);
+
+        Expect.failure(() -> batch(s, Scenario.AUTHOR, batchId, later), ConflictCode.OPERATION_CONFLICT);
+
+        assertThat(defects(s)).as("no operation of the later batch is written").isEqualTo(written);
+        assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
+        assertThat(receiptsOf(s, Scenario.AUTHOR)).isEqualTo(receipts);
+    }
+
+    /** The save operations of a list with the fields of a defect of the project of the scenario (the title is kept). */
+    private static List<BatchOpInput> withProject(Scenario s, List<BatchOpInput> ops) {
+        return ops.stream().<BatchOpInput>map(op -> {
+            BatchOpInput.Save save = (BatchOpInput.Save) op;
+            String title = save.fields().title().orNull();
+            return new BatchOpInput.Save(save.entity(), Fields.of(s.defectFields(title)), save.reason(), save.id(),
+                    save.expectedVersion());
+        }).toList();
+    }
+
+    @Test
+    @DisplayName("OPK-019 (service): a key used by ledger_save and then by ledger_batch is OPERATION_CONFLICT, and nothing more is written")
+    void opk019_saveThenBatch(Scenario s) {
+        String key = Scenario.uuid();
+        s.bean(SaveService.class).save(Scenario.AUTHOR, new SaveCommand(key, "defect", null, 0L,
+                Fields.of(s.defectFields("a")), Scenario.REASON));
+        long history = s.count("SELECT COUNT(*) FROM history");
+        long receipts = receiptsOf(s, Scenario.AUTHOR);
+
+        Expect.failure(() -> batch(s, Scenario.AUTHOR, key, List.of(saveDefect(s, "a"))), ConflictCode.OPERATION_CONFLICT);
+
+        assertThat(defects(s)).isEqualTo(1);
+        assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
+        assertThat(receiptsOf(s, Scenario.AUTHOR)).isEqualTo(receipts);
+    }
+
+    @Test
+    @DisplayName("OPK-019 (service): a key used by ledger_batch and then by ledger_save is OPERATION_CONFLICT, and nothing more is written")
+    void opk019_batchThenSave(Scenario s) {
+        String key = Scenario.uuid();
+        batch(s, Scenario.AUTHOR, key, List.of(saveDefect(s, "a")));
+        long history = s.count("SELECT COUNT(*) FROM history");
+        long receipts = receiptsOf(s, Scenario.AUTHOR);
+
+        Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR, new SaveCommand(key, "defect", null, 0L,
+                Fields.of(s.defectFields("a")), Scenario.REASON)), ConflictCode.OPERATION_CONFLICT);
+
+        assertThat(defects(s)).isEqualTo(1);
+        assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
+        assertThat(receiptsOf(s, Scenario.AUTHOR)).isEqualTo(receipts);
     }
 
     // ---------------------------------------------------------------------- 09
