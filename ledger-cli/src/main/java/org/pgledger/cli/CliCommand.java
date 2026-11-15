@@ -13,6 +13,7 @@ public enum CliCommand {
     MIGRATE("migrate"),
     SETUP("setup"),
     IMPORT_LEGACY("import-legacy"),
+    RETIRE_LEGACY("retire-legacy"),
     KEY_REGISTER("key-register"),
     KEY_REVOKE("key-revoke"),
     PROJECT_ADD("project-add"),

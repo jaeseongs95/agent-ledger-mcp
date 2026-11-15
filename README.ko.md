@@ -162,9 +162,10 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | `ledger.admin.mcp.health-url` | 관리 웹 | 개요 화면에 보여 줄 MCP 서버의 `/healthz` URL. 없으면 설정하지 않은 것입니다 |
 | `ledger.admin.mcp.timeout` | 관리 웹 | 그 확인의 제한 시간, 기본 2s |
 | `ledger.import.source.url` | `import-legacy` | 1.x 장부가 있는 데이터베이스의 JDBC URL |
-| `ledger.import.source.username` | `import-legacy` | 그 데이터베이스의 읽기 전용 계정 |
+| `ledger.import.source.username` | `import-legacy` | 그 데이터베이스의 읽기 전용 계정(`retire-legacy`는 1.x 객체를 소유한 계정이 필요합니다) |
 | `ledger.import.source.password` | `import-legacy` | 그 비밀번호(비밀) |
 | `ledger.import.source.schema` | `import-legacy` | 1.x 스키마, 기본 `ledger` |
+| `ledger.import.source.roles` | `retire-legacy` | `retire-legacy`가 스키마 다음에 제거하는 1.x 설치기의 데이터베이스 역할, 기본 `ledger_owner`, `ledger_author`, `ledger_reviewer`, `ledger_reader` |
 | `ledger.secrets.home` | `ledger-cli` | 설정, 드라이버 등록, 드라이버 jar, 비밀 디렉터리를 담는 설치 디렉터리, 기본 `/etc/pg-ledger-mcp`(Windows 설치기는 자기 것을 지정합니다) |
 | `ledger.secrets.directory` | `ledger-cli` | 비밀 디렉터리, 기본 `/etc/pg-ledger-mcp/secrets` |
 | `ledger.secrets.instance` | `ledger-cli` | 기본 경로가 따르는 인스턴스 이름, 기본 `pg-ledger-mcp` |
@@ -412,6 +413,7 @@ deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <a
 | `migrate` | `migrate [--owner-account=<account>] [--app-account=<account>] [--stdin]` | 아직 적용하지 않은 스키마 파일을 적용하며(`--owner-account`를 주면 DDL 계정으로 실행하고 그 비밀번호는 입력받거나 `--stdin`이면 표준 입력에서 읽으며 저장하지 않습니다), 이어서 `dml-grants.sql`의 권한을 앱 계정에 부여합니다 |
 | `setup` | `setup [--owner-account=<account>] [--app-account=<account>] [--stdin]` | 첫 설정입니다. `migrate`처럼 마이그레이션하고, 앱 계정이 스키마를 쓸 수 있는지 확인하며(쓸 수 없으면 종료 코드 `3`과 빠진 단계를 알림), 없는 시드 코드를 추가하고(있는 코드는 바꾸지 않음), 시드와 데이터베이스를 개수와 다이제스트로 대조합니다. 다시 실행해도 아무것도 바뀌지 않습니다 |
 | `import-legacy` | `import-legacy [--verify-only] [--owner-account=<account>] [--stdin]` | 1.x 장부를 새 스키마로 복사하고 모든 표를 대조합니다. 장부 전체를 쓰므로 DDL 계정으로 실행합니다 |
+| `retire-legacy` | `retire-legacy [--confirm=<sha256> --backup-tested]` | 2.0을 받아들인 뒤, 1.x 설치기가 데이터베이스에 만든 트리거·뷰·표·함수·시퀀스·스키마·데이터베이스 역할을 제거합니다. 옵션 없이 실행하면 그 목록과 목록의 SHA-256을 보여 주고 아무것도 바꾸지 않으며, `--confirm`은 바로 그 목록을 하나의 트랜잭션으로 제거합니다. `--confirm`에는 `--backup-tested`가 필요합니다. 1.x 데이터베이스를 `pg_dump`로 백업하고 복원 시험을 마쳤다는 확인이며, 명령은 이를 확인할 수 없습니다 |
 | `key-register` | `key-register <author> <public-key-or-block> <fingerprint> [--replace=<current-fingerprint>]` | 세션이 출력한 공개 키를 작성자에 묶습니다. 유효한 키는 `--replace`가 있어야 교체합니다 |
 | `key-revoke` | `key-revoke <author> --fingerprint=<fingerprint>` | 작성자의 유효한 키를 닫습니다 |
 | `project-add` | `project-add <id> <code> <title>` | 프로젝트를 추가합니다 |
@@ -512,6 +514,15 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 가로챈 토큰으로 다른
    백업의 내용이 다르면 `prepare-host`가 두 파일을 밝히며 `HOST_FAILED`로 멈추고 아무것도 바꾸지 않습니다.
 10. 클라이언트: `execute_sql_reader`와 `search_objects_reader` 도구는 제거되었으며 읽기 도구가 대체합니다. 쓰기 도구의 결과는 `rows[0].result` 감싸기 없이 키를 그대로 유지합니다.
    서버를 전환하기 전에 훅 jar(Java 25 런타임)를 설치합니다.
+11. **1.x 데이터베이스 객체 제거(2.0을 받아들인 뒤).** 1.x 설치기는 데이터베이스에 함수, 트리거, 뷰, 표, 스키마 하나와 데이터베이스 역할 네 개를 만들었고,
+   `import-legacy`는 그것을 읽기만 합니다. 2.0을 받아들일 때까지 1.x 스키마를 되돌릴 원본으로 보관합니다. 받아들인 뒤에는 1.x 데이터베이스를 `pg_dump`로 백업하고
+   그 1.x 백업의 복원을 시험합니다. 다음 단계를 마치면 그 백업이 되돌아갈 유일한 길입니다. 1.x 서비스를 멈추고, 1.x 객체를 소유한 계정(1.x 설치기의 소유자 역할 또는 그 권한을 가진 역할)의
+   비밀번호를 `secret-set ledger.import.source.password`로 저장하고 `ledger.import.source.username`을 그 계정으로 지정한 뒤 옵션 없이 `retire-legacy`를 실행합니다.
+   이 명령은 `import-legacy --verify-only`가 일치하는지, 다른 세션이 1.x 역할로 실행 중이거나 1.x 스키마에 잠금을 잡고 있지 않은지, 계정이 객체를 소유하는지 확인하고,
+   모든 객체를 제거 순서대로 보여 주며 그 목록의 SHA-256을 출력할 뿐 아무것도 바꾸지 않습니다. 목록을 읽은 뒤 `retire-legacy --confirm=<sha256> --backup-tested`를 실행합니다.
+   명령은 백업을 확인할 수 없으므로 `--backup-tested`는 1.x 백업을 만들었고 그 복원을 시험했다는 당신의 확인입니다. 명령은 트리거, 뷰, 표, 함수, 시퀀스, 스키마를 하나의 트랜잭션으로
+   제거한 다음 `ledger.import.source.roles`의 역할을 제거합니다. 실행 중인 계정이나 2.0 설정의 계정이거나, 다른 구성원이 있거나, 다른 곳의 객체를 소유한 역할은 남기고
+   `SKIPPED`로 표시합니다. 장부는 이 작업을 스스로 실행하지 않습니다.
 
 ## 빌드와 시험
 

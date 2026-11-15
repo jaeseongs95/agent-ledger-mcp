@@ -137,6 +137,21 @@ class LedgerRefusalsTest {
     }
 
     @Test
+    @DisplayName("RET-016 retire: the verification that retire-legacy runs first is refused with its own words: a failed comparison is RETIRE_VERIFY_FAILED with its first table, an incomplete legacy ledger is IMPORT_SOURCE_INCOMPLETE, data that cannot be imported is IMPORT_DATA_REFUSED; an integrity failure that is no comparison is LEDGER_REFUSED")
+    void retireLegacy() {
+        assertRefusedAs(new InfrastructureException(InfrastructureCode.INTEGRITY_VIOLATION,
+                List.of("defect", "3", "2", "aaaa", "bbbb", "task", "1", "1", "cccc", "dddd")), Context.RETIRE,
+                ErrorCode.RETIRE_VERIFY_FAILED, "defect", "3", "2", "aaaa", "bbbb");
+        assertRefusedAs(new LookupException(LookupCode.NOT_FOUND, List.of("missing", "step 1, step 2")), Context.RETIRE,
+                ErrorCode.IMPORT_SOURCE_INCOMPLETE, "step 1, step 2");
+        ValidationException one = new ValidationException(ValidationCode.VALIDATION_FAILED, List.of(), List.of(
+                new ValidationIssue("a[1].x", ValidationReason.REQUIRED, List.of())), Map.of());
+        assertRefusedAs(one, Context.RETIRE, ErrorCode.IMPORT_DATA_REFUSED, "1");
+        assertRefusedAs(new InfrastructureException(InfrastructureCode.INTEGRITY_VIOLATION, List.of("receipt")), Context.RETIRE,
+                ErrorCode.LEDGER_REFUSED, "INTEGRITY_VIOLATION");
+    }
+
+    @Test
     @DisplayName("CLI-PRN-15 SESSION_KEY_REQUIRED of the grant service is NO_SESSION_KEY with the author, in every context")
     void sessionKeyRequired() {
         for (Context context : Context.values()) {

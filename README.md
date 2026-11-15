@@ -176,9 +176,10 @@ There is no command that prints a stored secret.
 | `ledger.admin.mcp.health-url` | admin web | the `/healthz` URL of the MCP server shown on the overview; absent means not configured |
 | `ledger.admin.mcp.timeout` | admin web | timeout of that check, default 2s |
 | `ledger.import.source.url` | `import-legacy` | JDBC URL of the database that holds the 1.x ledger |
-| `ledger.import.source.username` | `import-legacy` | a read-only account of that database |
+| `ledger.import.source.username` | `import-legacy` | a read-only account of that database (`retire-legacy` needs an account that owns the 1.x objects) |
 | `ledger.import.source.password` | `import-legacy` | its password (secret) |
 | `ledger.import.source.schema` | `import-legacy` | the 1.x schema, default `ledger` |
+| `ledger.import.source.roles` | `retire-legacy` | the database roles of the 1.x installer that `retire-legacy` removes after the schema, default `ledger_owner`, `ledger_author`, `ledger_reviewer`, `ledger_reader` |
 | `ledger.secrets.home` | `ledger-cli` | the directory of the installation that holds the settings, the driver registration, the driver jars and the secret directory, default `/etc/pg-ledger-mcp` (the Windows installer gives its own) |
 | `ledger.secrets.directory` | `ledger-cli` | the secret directory, default `/etc/pg-ledger-mcp/secrets` |
 | `ledger.secrets.instance` | `ledger-cli` | the instance name that the default paths follow, default `pg-ledger-mcp` |
@@ -458,6 +459,7 @@ service user), and every owner operation is recorded with that user.
 | `migrate` | `migrate [--owner-account=<account>] [--app-account=<account>] [--stdin]` | apply the pending schema files, as the DDL account when `--owner-account` is given (its password is typed, or with `--stdin` read from standard input, and not stored), and then the grants of `dml-grants.sql` to the application account |
 | `setup` | `setup [--owner-account=<account>] [--app-account=<account>] [--stdin]` | the first setup: migrate as `migrate` does, check that the application account can use the schema (exit code `3` and the missing step when it cannot), add the seed codes that are missing (a code that exists is never changed) and compare the seed with the database by counts and digest; running it again changes nothing |
 | `import-legacy` | `import-legacy [--verify-only] [--owner-account=<account>] [--stdin]` | copy the 1.x ledger into the new schema and compare every table; it writes the whole ledger, so it runs as the DDL account |
+| `retire-legacy` | `retire-legacy [--confirm=<sha256> --backup-tested]` | after you accept 2.0, remove what the 1.x installer made in the database: triggers, views, tables, functions, sequences, the schema and the database roles. Without options it lists them with the SHA-256 of the list and changes nothing; `--confirm` drops exactly that list in one transaction and needs `--backup-tested`, your statement that a `pg_dump` backup of the 1.x database was made and its restore was tested (the command cannot check that) |
 | `key-register` | `key-register <author> <public-key-or-block> <fingerprint> [--replace=<current-fingerprint>]` | bind the public key a session printed to its author; a live key is replaced only with `--replace` |
 | `key-revoke` | `key-revoke <author> --fingerprint=<fingerprint>` | close the live key of an author |
 | `project-add` | `project-add <id> <code> <title>` | add a project |
@@ -582,6 +584,18 @@ import, check. Do the steps in this order; the installer stops nothing of 1.x by
    backup holds other bytes, `prepare-host` stops with `HOST_FAILED` naming both files and changes nothing.
 10. Clients: the tools `execute_sql_reader` and `search_objects_reader` were removed; the read tools replace them. The results of the write
    tools keep their keys without the `rows[0].result` wrapping. Install the hook jar (a Java 25 runtime) before the server is switched.
+11. **Retire the 1.x database objects (after you accept 2.0).** The 1.x installer made functions, triggers, views, tables, a schema and
+   four database roles in your database, and `import-legacy` only reads them. Keep the 1.x schema as the rollback source until you
+   accept 2.0. Then make a `pg_dump` backup of the 1.x database and test the restore of that 1.x backup: after the next step it is the
+   only way back. Stop the 1.x service, store the password of an account that owns the 1.x objects (the owner role of the 1.x installer
+   or a role that has its rights) with `secret-set ledger.import.source.password`, set `ledger.import.source.username` to that account
+   and run `retire-legacy` without options. It checks that `import-legacy --verify-only` matches, that no other session runs as a 1.x
+   role or holds a lock in the 1.x schema and that the account owns the objects; it prints every object in the order it is dropped and
+   the SHA-256 of that list, and changes nothing. Read the list, then run `retire-legacy --confirm=<sha256> --backup-tested`. The command
+   cannot check the backup, so `--backup-tested` is your statement that the 1.x backup was made and its restore was tested. It drops
+   the triggers, views, tables, functions, sequences and the schema in one transaction, and then the roles of
+   `ledger.import.source.roles`; a role that is the account of the run or of the 2.0 settings, has other members or owns objects
+   elsewhere stays and is listed as `SKIPPED`. The ledger never runs this by itself.
 
 ## Build and test
 
