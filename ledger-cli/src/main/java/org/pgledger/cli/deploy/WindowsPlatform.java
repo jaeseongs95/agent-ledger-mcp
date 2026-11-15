@@ -1,11 +1,15 @@
 package org.pgledger.cli.deploy;
 
 import java.io.IOException;
+import java.nio.file.DirectoryIteratorException;
+import java.nio.file.DirectoryStream;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.AclEntry;
 import java.nio.file.attribute.UserPrincipal;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import org.pgledger.cli.CliOptions;
 import org.pgledger.cli.ErrorCode;
@@ -25,6 +29,11 @@ import org.springframework.stereotype.Component;
  * driver page of the admin web writes its registration, write the logs) and hands the secrets over, the files first and then
  * the folder: the service account is their owner and has full access, Administrators can only see that a file exists, and
  * nobody else, the installer included, has any. {@code mkdir}, {@code icacls} and {@code copy} did this.
+ *
+ * <p>The secrets of an earlier run belong to the service account, and Administrators may only see that they exist: an
+ * administrator can take them back, and hand them over again, only with the privileges to take ownership that its elevated
+ * token holds disabled ({@link WindowsAccess#reassign}, {@link WindowsPrivileges}); taking ownership comes first, the ACL is
+ * written by the owner.
  */
 @Component
 final class WindowsPlatform implements ServicePlatform {
@@ -89,21 +98,33 @@ final class WindowsPlatform implements ServicePlatform {
         Files.createDirectories(home);
         access.set(home, null, closed);
         Path secrets = etc.resolve("secrets");
-        for (Path folder : List.of(lib, etc, etc.resolve("drivers"), secrets, logs)) {
+        for (Path folder : List.of(lib, etc, etc.resolve("drivers"), logs)) {
             Files.createDirectories(folder);
             access.set(folder, null, closed);
         }
-        // After an earlier run the secrets belong to the service account: given back to the installer for this run (the
-        // folder first, then its files); seal-host hands them over again at the end.
-        access.set(secrets, installer, WindowsAccess.takenBack(installer, true));
-        try (var secretFiles = Files.list(secrets)) {
-            for (Path file : (Iterable<Path>) secretFiles.filter(Files::isRegularFile)::iterator) {
-                access.set(file, installer, WindowsAccess.takenBack(installer, false));
-            }
+        // After an earlier run the secrets belong to the service account, and the ACL of the folder gives Administrators nothing
+        // but the right to see it: closing it like the others is refused. The installer takes it over (the folder first, then its
+        // files) and gives it the ACL of this run; seal-host hands the secrets over again at the end.
+        Files.createDirectories(secrets);
+        access.reassign(secrets, installer, installer, WindowsAccess.takenBack(installer, true));
+        for (Path file : secretFiles(secrets)) {
+            access.reassign(file, installer, installer, WindowsAccess.takenBack(installer, false));
         }
         host.copyProduct(jars, driver, lib, etc.resolve("drivers"));
         files.copy(winsw, lib.resolve(layout.mcpName() + ".exe"));
         files.copy(winsw, lib.resolve(layout.adminName() + ".exe"));
+    }
+
+    /** The files in the secrets folder, by name. */
+    private static List<Path> secretFiles(Path secrets) throws IOException {
+        List<Path> found = new ArrayList<>();
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(secrets, Files::isRegularFile)) {
+            stream.forEach(found::add);
+        } catch (DirectoryIteratorException e) {
+            throw e.getCause();
+        }
+        found.sort(Comparator.naturalOrder());
+        return found;
     }
 
     @Override
@@ -116,14 +137,16 @@ final class WindowsPlatform implements ServicePlatform {
         host.requireView(fileSystem, "acl");
         UserPrincipal service = accounts.user(fileSystem, DeployLayout.WINDOWS_SERVICE_ACCOUNT);
         UserPrincipal administrators = accounts.user(fileSystem, WindowsAccess.ADMINISTRATORS);
+        UserPrincipal installer = processUser.current(fileSystem);
         access.grantTree(lib, service, WindowsAccess.READ_EXECUTE, secrets);
         access.grantTree(etc, service, WindowsAccess.MODIFY, secrets);
         access.grantTree(logs, service, WindowsAccess.MODIFY, secrets);
-        try (var secretFiles = Files.list(secrets)) {
-            for (Path file : (Iterable<Path>) secretFiles.filter(Files::isRegularFile)::iterator) {
-                access.set(file, service, WindowsAccess.handedOver(service, administrators, false));
-            }
+        // The folder is the installer's first (a run that did not take the secrets back, or one that failed half way, finds
+        // it the service account's, and Administrators could not even list it); the files are handed over, then the folder.
+        access.reassign(secrets, installer, installer, WindowsAccess.takenBack(installer, true));
+        for (Path file : secretFiles(secrets)) {
+            access.reassign(file, installer, service, WindowsAccess.handedOver(service, administrators, false));
         }
-        access.set(secrets, service, WindowsAccess.handedOver(service, administrators, true));
+        access.reassign(secrets, installer, service, WindowsAccess.handedOver(service, administrators, true));
     }
 }

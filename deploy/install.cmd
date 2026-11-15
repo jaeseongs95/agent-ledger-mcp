@@ -38,11 +38,12 @@ if "%NAME%"=="" call :ask instance-name NAME abcdefghijklmnopqrstuvwxyz012345678
 call :ask mcp-port MCPPORT 0123456789 || exit /b 1
 set "SVC=%NAME%"
 set "ADMIN=%NAME%-admin"
-set "ACCOUNT=NT AUTHORITY\LocalService"
+rem NATIVE: prepare-host and seal-host call the Windows API through Java (the privileges to take over the secrets), which Java 25 asks to allow.
+set "ACCOUNT=NT AUTHORITY\LocalService" & set "NATIVE=--enable-native-access=ALL-UNNAMED"
 set "WHOME=C:\ProgramData\%NAME%"
 set "HOME=C:/ProgramData/%NAME%"
 set RENDER=--platform=windows "--home=%HOME%" "--name=%NAME%" "--java=%JAVA%" "--jdbc-url=%~7" "--app-account=%~6" %~9
-set JARCMD="%JAVA%" -Duser.timezone=UTC -jar "%WHOME%\lib\ledger-cli.jar"
+set JARCMD="%JAVA%" -Duser.timezone=UTC %NATIVE% -jar "%WHOME%\lib\ledger-cli.jar"
 set CLI=%JARCMD% --ledger.secrets.home=%HOME%/etc
 rem The hint at the end names the port of the MCP server: the value after --mcp-port in the render options (cmd splits it at the
 rem equals sign), the install default (above) when there is none. Java validates the option itself before anything is changed.
@@ -55,7 +56,7 @@ if exist "%WHOME%\lib\%SVC%.exe" "%WHOME%\lib\%SVC%.exe" stop /stopwait >nul 2>&
 if exist "%WHOME%\lib\%ADMIN%.exe" "%WHOME%\lib\%ADMIN%.exe" stop /stopwait >nul 2>&1
 rem Folders and their ACLs, the secrets of an earlier run given back for this run, the jars, WinSW and the driver copied, the
 rem WinSW configurations and the settings rendered: Java (no secret is read: the home of this call has none).
-"%JAVA%" -Duser.timezone=UTC -jar "%~1\ledger-cli.jar" --ledger.secrets.home=C:/nonexistent prepare-host "--jars=%~1" "--winsw=%~2" "--driver-jar=%~3" %RENDER% || exit /b 1
+"%JAVA%" -Duser.timezone=UTC %NATIVE% -jar "%~1\ledger-cli.jar" --ledger.secrets.home=C:/nonexistent prepare-host "--jars=%~1" "--winsw=%~2" "--driver-jar=%~3" %RENDER% || exit /b 1
 
 rem Secrets: typed with hidden input or generated, as the administrator; an existing one is kept. The tokens are shown once.
 %CLI% secret-set ledger.jdbc.password --if-absent %STDIN% || exit /b 1
