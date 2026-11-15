@@ -206,6 +206,30 @@ class SchemaMigratorTest {
         assertThat(jdbc.sql("SELECT body FROM t_files WHERE id = 2").query(String.class).single()).isEqualTo(text);
     }
 
+    /**
+     * RUN-022: the dialect is asked before any statement that changes the database. The builder of the migrator reports a product
+     * that has no dialect (the database itself is the test PostgreSQL), and the migrator names a schema to create: it is refused with
+     * DATABASE_PRODUCT_UNSUPPORTED and neither that schema nor the history table exists afterwards.
+     */
+    @Test
+    void run022_aProductWithoutADialectIsRefusedBeforeAnySchemaOrTableIsMade() throws SQLException {
+        DataSource derby = org.mockito.Mockito.mock(DataSource.class);
+        Connection connection = org.mockito.Mockito.mock(Connection.class);
+        java.sql.DatabaseMetaData metaData = org.mockito.Mockito.mock(java.sql.DatabaseMetaData.class);
+        org.mockito.Mockito.when(derby.getConnection()).thenReturn(connection);
+        org.mockito.Mockito.when(connection.getMetaData()).thenReturn(metaData);
+        org.mockito.Mockito.when(metaData.getDatabaseProductName()).thenReturn("Apache Derby");
+        Path dir = files(Map.of("V1__one.sql", ONE));
+        String named = "lt4_no_dialect";
+        SchemaMigrator refusing = TestSchemaServices.migrator(pool, props(dir, named), clock, new SqlBuilder(derby));
+
+        refusedWith(refusing::migrate, InfrastructureCode.DATABASE_PRODUCT_UNSUPPORTED);
+
+        SchemaHistoryRepository repository = TestSchemaServices.history(pool);
+        assertThat(repository.schemaExists(named)).as("the named schema is not created").isFalse();
+        assertThat(repository.tableExists()).as("the history table is not created").isFalse();
+    }
+
     @Test
     void sch002_aSecondRunDoesNothing() {
         Path dir = files(Map.of("V1__one.sql", ONE, "V2__two.sql", TWO));

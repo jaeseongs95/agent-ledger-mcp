@@ -45,7 +45,7 @@ import org.springframework.transaction.TransactionException;
  *
  * <p>Why this applier and why the explicit command. The ledger does not use Flyway: a Flyway release from 10 on needs a module for
  * every DBMS it supports and answers "Unsupported Database" for one it has none for, while the ledger asks for ANSI SQL on any
- * database whose JDBC driver the owner registers (the one difference, the long text type, is decided by the dialect of SqlBuilder). And the ledger
+ * database whose JDBC driver the owner registers (the two differences, the row limit and the long text type, are decided by the dialect of SqlBuilder). And the ledger
  * migrates by the explicit command {@code ledger-cli migrate} and not when the server starts, because the server never holds the
  * password of the DDL account: the schema is changed by the DDL account of the operator, the servers run on the application account
  * that can read and write the tables and cannot change them, so a server that is taken over cannot change the schema.
@@ -86,15 +86,16 @@ public class SchemaMigrator {
         List<MigrationFile> files = MigrationFile.load(resolver, properties.location());
         MigrationFile.requireContiguous(files);
         try {
+            // what the placeholder of the files stands for on this database: the dialect of SqlBuilder (from the product name
+            // of the connection) decides, asked once; no setting. It is asked before any statement that changes the database,
+            // so a product without a dialect is refused (DATABASE_PRODUCT_UNSUPPORTED) before a schema or a table is made.
+            String longTextType = sqlBuilder.longTextType();
             DatabaseEncoding.requireUtf8(repository.characterSets());
             if (properties.name() != null) {
                 // the data source of the application already names this schema for every connection (DriverDataSources)
                 ensureSchema(properties.name());
             }
             ensureTable();
-            // what the placeholder of the files stands for on this database: the dialect of SqlBuilder (from the product name
-            // of the connection) decides, asked once; no setting
-            String longTextType = sqlBuilder.longTextType();
             List<Integer> applied = new ArrayList<>();
             for (MigrationFile file : files) {
                 SchemaHistory history = new SchemaHistory(repository.rows());

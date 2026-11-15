@@ -13,9 +13,10 @@ import org.springframework.stereotype.Component;
 
 /**
  * Builds the SQL that differs by database product, taking the product from the actual database the first time it is
- * needed. The ledger runs on the DBMS the user installs, so a row limit is the clause of that product, never one product's
- * text for all and never a driver call that each driver may handle in its own way. Every value stays a bind parameter;
- * the builder only joins fixed fragments.
+ * needed. The ledger runs on the DBMS the user installs, so the two places that differ by product, the row limit and the
+ * declaration of the long text column type, are the text of that product, never one product's text for all and never a
+ * driver call that each driver may handle in its own way. Every value stays a bind parameter; the builder only joins fixed
+ * fragments.
  *
  * <p>Ported from the AGS SqlBuilder (AGS repository jaeseongs95/sennard-source, commit 1ad1b8e7; AGS is AGPL-3.0-or-later,
  * like the ledger 2.0). Changes for the ledger: its own business failures ({@link InfrastructureException}) instead of the
@@ -121,7 +122,7 @@ public class SqlBuilder {
         // Db2: CLOB is 1M code units when the length is omitted, so a length is written (100M, a CLOB goes to 2 GB - 1):
         //      https://www.ibm.com/docs/en/db2/11.5?topic=statements-create-table
         //      https://www.ibm.com/docs/en/db2/11.5?topic=list-character-strings
-        // SQL Server: NVARCHAR(MAX), 2^31-1 bytes, Unicode (UTF-16); VARCHAR(MAX) would store Korean only if the collation's code page has it:
+        // SQL Server: NVARCHAR(MAX), 2^31-1 characters (2 GB), Unicode (UTF-16); VARCHAR(MAX) would store Korean only if the collation's code page has it:
         //      https://learn.microsoft.com/en-us/sql/t-sql/data-types/nchar-and-nvarchar-transact-sql
         // MariaDB: LONGTEXT, 4 GB, the character set of the table (the ledger requires UTF-8): https://mariadb.com/kb/en/longtext/
         // MySQL: LONGTEXT, L + 4 bytes, L < 2^32: https://dev.mysql.com/doc/refman/8.4/en/storage-requirements.html

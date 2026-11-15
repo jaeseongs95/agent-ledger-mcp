@@ -44,6 +44,12 @@ public final class TestSchemaServices {
     }
 
     public static SchemaMigrator migrator(DataSource dataSource, SchemaProperties properties, Clock clock) {
+        return migrator(dataSource, properties, clock, new SqlBuilder(dataSource));
+    }
+
+    /** The same with the {@link SqlBuilder} a test hands in (one that reports another product than the database it runs on). */
+    public static SchemaMigrator migrator(DataSource dataSource, SchemaProperties properties, Clock clock,
+            SqlBuilder sqlBuilder) {
         SchemaHistoryRepository history = history(dataSource);
         ProxyFactory proxy = new ProxyFactory(new SchemaFileApplier(dataSource, history));
         proxy.setProxyTargetClass(true);
@@ -51,8 +57,7 @@ public final class TestSchemaServices {
         TransactionManager transactions = new DataSourceTransactionManager(dataSource);
         proxy.addAdvice(new TransactionInterceptor(transactions, new AnnotationTransactionAttributeSource()));
         SchemaFileApplier applier = (SchemaFileApplier) proxy.getProxy(TestSchemaServices.class.getClassLoader());
-        return new SchemaMigrator(history, applier, new PathMatchingResourcePatternResolver(), properties, clock,
-                new SqlBuilder(dataSource));
+        return new SchemaMigrator(history, applier, new PathMatchingResourcePatternResolver(), properties, clock, sqlBuilder);
     }
 
     public static SchemaVerifier verifier(DataSource dataSource, SchemaProperties properties) {
