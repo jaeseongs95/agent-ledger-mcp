@@ -212,7 +212,11 @@ class Hosts1xCommandTest {
 
     @ParameterizedTest
     @ValueSource(strings = { "a.example.org,b.example.org", "a.example.org,", ",a.example.org", "A.example.org", "a b", "a.example.org:443",
-        "a$b.example.org", "a%b.example.org", "-a.example.org", "a..example.org", "x" + "xxxxxxxxxx".repeat(26) })
+        "a$b.example.org", "a%b.example.org", "-a.example.org", "a..example.org",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa."
+                + "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb."
+                + "ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc."
+                + "ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" })
     @DisplayName("PCS-024 an option that is no one host name of the form of the installer (a list, a capital letter, a port, a space, a name longer than 253 characters) is INVALID_OPTION_VALUE (exit 2) before any call, for both options")
     void pcs024_theFormIsTheRuleOfTheInstaller(String value, Tool tool) throws IOException {
         Path file = environment("DBHUB_ALLOWED_HOSTS=a.example.org");

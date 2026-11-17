@@ -3,6 +3,7 @@ package org.pgledger.migrate1x.host;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.pgledger.migrate1x.secret.OneXEnvironment;
@@ -10,8 +11,12 @@ import org.pgledger.migrate1x.secret.OneXEnvironment;
 /** REH4-HOST-03: which host names of a 1.x environment file the options would drop. */
 class Hosts1xTest {
 
-    private static List<String> dropped(String environment, String key, String... given) {
-        return Hosts1x.dropped(OneXEnvironment.parse(environment), key, List.of(given));
+    private static List<String> dropped(String environment, String key) {
+        return Hosts1x.dropped(OneXEnvironment.parse(environment), key, Optional.empty());
+    }
+
+    private static List<String> dropped(String environment, String key, String given) {
+        return Hosts1x.dropped(OneXEnvironment.parse(environment), key, Optional.of(given));
     }
 
     @Test
