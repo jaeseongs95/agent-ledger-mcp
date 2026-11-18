@@ -1,17 +1,25 @@
 package org.pgledger.application.attachment;
 
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Objects;
 import org.pgledger.application.attachment.UploadCommands.Begin;
+import org.pgledger.application.attachment.UploadCommands.BeginFile;
 import org.pgledger.application.attachment.UploadCommands.Begun;
 import org.pgledger.application.attachment.UploadCommands.Chunk;
 import org.pgledger.application.attachment.UploadCommands.Finished;
-import org.pgledger.application.attachment.UploadCommands.ReadPage;
+import org.pgledger.application.attachment.UploadCommands.Page;
 import org.pgledger.application.attachment.UploadCommands.Received;
 import org.pgledger.application.attachment.UploadCommands.Status;
+import org.pgledger.application.attachment.UploadService.ChunkPlan;
+import org.pgledger.application.attachment.UploadService.ClosedFile;
+import org.pgledger.application.attachment.UploadService.FileView;
+import org.pgledger.application.attachment.UploadService.FinishPlan;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ConflictException;
+import org.pgledger.domain.error.TrustCode;
+import org.pgledger.domain.error.TrustException;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.model.UploadStaging;
@@ -19,19 +27,14 @@ import org.pgledger.domain.value.Sha256;
 import org.springframework.stereotype.Component;
 
 /**
- * The entry point of the five upload operations: the place where the file work is done between the service methods
- * ({@link UploadService}). It opens no transaction (principle 4.4: file I/O is outside it): a chunk is decoded and its hash checked,
- * the service says whether it is a repeat or the next one, the store appends it under the lock, and the service records it with one
- * conditional UPDATE; a finish verifies and closes the file and then the service marks the upload and inserts the attachment.
- * A failure between the two service methods leaves a tail in the file that the next request of the same chunk, or the finish,
- * recognises (design 4.4); nothing here retries.
+ * Orchestration entry for bundle uploads and reads: opens no transaction, coordinates {@link UploadService} and
+ * {@link AttachmentStore} outside transactions (design 6).
  */
 @Component
 @ConditionalOnAttachments
 public class AttachmentFlow {
 
-    /** The longest base64 text of one chunk: {@code ceil(262144 / 3) * 4} characters. */
-    private static final int MAX_BASE64 = (AttachmentProperties.CHUNK_BYTES + 2) / 3 * 4;
+    private static final int MAX_BASE64_CHARS = (AttachmentProperties.CHUNK_BYTES + 2) / 3 * 4;
 
     private final UploadService service;
     private final AttachmentStore store;
@@ -41,80 +44,119 @@ public class AttachmentFlow {
         this.store = store;
     }
 
-    /** {@code artifact-begin}. */
     public Begun begin(String actor, Begin command) {
-        // the gate first, then the free space of the disk for the declared size (file I/O, so outside the transaction of begin)
         service.admit(actor);
-        if (command.size() > 0) {
-            store.requireDiskSpace(command.size());
+        long declaredBytes = 0L;
+        if (command != null && command.files() != null) {
+            for (BeginFile file : command.files()) {
+                if (file != null && file.size() > 0) {
+                    declaredBytes = declaredBytes > Long.MAX_VALUE - file.size()
+                            ? Long.MAX_VALUE
+                            : declaredBytes + file.size();
+                }
+            }
         }
+        store.requireDiskSpace(declaredBytes);
         return service.begin(actor, command);
     }
 
-    /** {@code artifact-chunk}. */
+    /**
+     * Uploads one chunk. {@code actor} may be null when a standalone upload client presents {@code uploadId} as a
+     * capability without a host session; when {@code actor} is present, ownership of the upload is enforced.
+     */
     public Received chunk(String actor, Chunk command) {
-        if (command.sequence() < 0) {
-            throw ValidationException.invalid("sequence", ValidationReason.MUST_NOT_BE_NEGATIVE);
+        if (command == null) {
+            throw ValidationException.invalid("chunk", ValidationReason.REQUIRED);
         }
-        byte[] plain = decode(command.data());
-        Sha256 chunkSha = chunkSha(command.chunkSha256());
-        if (!Objects.equals(Sha256.ofBytes(plain), chunkSha)) {
+        byte[] plain = decodeChunk(command.data());
+        Sha256 declaredChunkSha = parseChunkSha(command.chunkSha256());
+        if (!Objects.equals(Sha256.ofBytes(plain), declaredChunkSha)) {
             throw new ConflictException(ConflictCode.CHUNK_HASH_MISMATCH, List.of());
         }
-        return switch (service.planChunk(actor, command.uploadId(), command.sequence(), plain.length, chunkSha)) {
-            case UploadService.ChunkPlan.AlreadyHeld held -> held.received();
-            case UploadService.ChunkPlan.Append append -> {
+        return switch (service.planChunk(actor, command.uploadId(), command.sequence(), plain.length, declaredChunkSha)) {
+            case ChunkPlan.AlreadyApplied applied -> applied.received();
+            case ChunkPlan.Append append -> {
                 UploadStaging row = append.row();
-                long stored = store.append(row.storageKey(), row.keyId(), row.storedBytes(), row.nextSequence(), plain,
-                        chunkSha);
-                yield service.recordChunk(actor, row, stored, plain.length, chunkSha);
+                long storedBytes = store.append(row.storageKey(), row.keyId(), row.storedBytes(),
+                        command.sequence(), plain, declaredChunkSha);
+                yield service.recordChunk(actor, row, storedBytes, plain.length, declaredChunkSha);
             }
         };
     }
 
-    /** {@code artifact-finish}. */
-    public Finished finish(String actor, String uploadId) {
-        return switch (service.planFinish(actor, uploadId)) {
-            case UploadService.FinishPlan.Done done -> done.finished();
-            case UploadService.FinishPlan.Close close -> {
-                UploadStaging row = close.row();
-                long length = store.finish(row.storageKey(), row.keyId(), row.storedBytes(), row.nextSequence(),
-                        row.declaredSize(), row.declaredSha256());
-                yield service.completeUpload(actor, row, length);
+    /** Closes and finishes every file of the bundle {@code attachmentId}, committing all bundle rows atomically. */
+    public Finished finish(String actor, String attachmentId) {
+        return switch (service.planFinish(actor, attachmentId)) {
+            case FinishPlan.Done done -> done.finished();
+            case FinishPlan.Close close -> {
+                List<ClosedFile> closed = new ArrayList<>(close.rows().size());
+                for (UploadStaging row : close.rows()) {
+                    long storedBytes = store.finish(row.storageKey(), row.keyId(), row.storedBytes(),
+                            row.nextSequence(), row.declaredSize(), row.declaredSha256());
+                    closed.add(new ClosedFile(row.id(), storedBytes));
+                }
+                yield service.completeUpload(actor, attachmentId, List.copyOf(closed));
             }
         };
     }
 
-    /** {@code artifact-status}. */
-    public Status status(String actor, String id) {
-        return service.status(actor, id);
+    /** Upload status by {@code uploadId} ({@code actor} may be null when called via uploadId capability). */
+    public Status uploadStatus(String actor, String uploadId) {
+        return service.uploadStatus(actor, uploadId);
     }
 
-    /** {@code artifact-read}: a page of the body, opened and checked. */
-    public ReadPage read(String actor, String attachmentId, long offsetBytes, long maxBytes) {
-        UploadService.Source source = service.planRead(actor, attachmentId, offsetBytes, maxBytes);
-        AttachmentStore.Page page = store.read(source.file().storageKey(), source.file().keyId(), offsetBytes,
-                (int) maxBytes);
-        return new ReadPage(attachmentId, page.offset(), page.totalSize(), page.data(), source.attachment().mediaType(),
-                source.attachment().fileName());
+    /** Attachment bundle status by {@code attachmentId} (requires a session actor). */
+    public Status attachmentStatus(String actor, String attachmentId) {
+        return service.attachmentStatus(actor, attachmentId);
     }
 
-    private static byte[] decode(String data) {
-        if (data == null || data.isEmpty() || data.length() > MAX_BASE64) {
-            throw ValidationException.invalid("data", ValidationReason.MUST_BE_CHARS_RANGE, "1",
-                    Integer.toString(MAX_BASE64));
+    /** Dispatches {@code artifact-status} on {@code uploadId} XOR {@code attachmentId}. */
+    public Status status(String actor, String uploadId, String attachmentId) {
+        boolean hasUpload = uploadId != null && !uploadId.isBlank();
+        boolean hasAttachment = attachmentId != null && !attachmentId.isBlank();
+        if (hasUpload == hasAttachment) {
+            throw ValidationException.invalid("uploadId", ValidationReason.MUST_BE_EXACTLY_ONE_OF, "uploadId",
+                    "attachmentId");
         }
+        return hasUpload ? uploadStatus(actor, uploadId) : attachmentStatus(actor, attachmentId);
+    }
+
+    public Page read(String actor, String attachmentId, int seq, long offsetBytes, int maxBytes) {
+        FileView view = service.fileView(actor, attachmentId, seq);
+        AttachmentStore.Page page = store.read(view.current().storageKey(), view.current().keyId(), offsetBytes, maxBytes);
+        return new Page(
+                view.attachment().id(),
+                view.file().seq(),
+                offsetBytes,
+                page.totalSize(),
+                page.data().length,
+                page.data(),
+                view.file().mediaType(),
+                view.file().fileName());
+    }
+
+    private static byte[] decodeChunk(String data) {
+        if (data == null || data.length() > MAX_BASE64_CHARS) {
+            throw ValidationException.invalid("data", ValidationReason.MUST_BE_AT_MOST_CHARS,
+                    Integer.toString(MAX_BASE64_CHARS));
+        }
+        byte[] decoded;
         try {
-            return Base64.getDecoder().decode(data);
-        } catch (IllegalArgumentException notBase64) {
-            throw ValidationException.invalid("data", ValidationReason.WRONG_TYPE, notBase64, "base64 text");
+            decoded = Base64.getDecoder().decode(data);
+        } catch (IllegalArgumentException invalidBase64) {
+            throw ValidationException.invalid("data", ValidationReason.MUST_MATCH, invalidBase64, "base64");
         }
+        if (decoded.length > AttachmentProperties.CHUNK_BYTES) {
+            throw ValidationException.invalid("data", ValidationReason.OUT_OF_RANGE, "0",
+                    Integer.toString(AttachmentProperties.CHUNK_BYTES));
+        }
+        return decoded;
     }
 
-    private static Sha256 chunkSha(String text) {
+    private static Sha256 parseChunkSha(String text) {
         try {
             return Sha256.of(text);
-        } catch (ValidationException invalid) {
+        } catch (RuntimeException invalid) {
             throw ValidationException.invalid("chunkSha256", ValidationReason.MUST_BE_LOWER_CASE_HEX, invalid, "64");
         }
     }

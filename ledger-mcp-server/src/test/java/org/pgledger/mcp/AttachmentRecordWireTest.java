@@ -111,8 +111,7 @@ class AttachmentRecordWireTest {
     /** An attachment row of {@code author}, as a finished upload leaves it; returns its id. */
     private static String attachmentOf(Scenario scenario, String author) {
         String id = UUID.randomUUID().toString();
-        Attachment row = new Attachment(id, "report.md", "text/markdown", 4, Sha256.ofText("body"),
-                AuthorId.of(author), Instant.parse("2026-11-05T09:00:00Z"));
+        Attachment row = new Attachment(id, AuthorId.of(author), Instant.parse("2026-11-05T09:00:00Z"));
         scenario.bean(TransactionTemplate.class).executeWithoutResult(status ->
                 scenario.bean(AttachmentRepository.class).insert(row));
         return id;

@@ -23,7 +23,7 @@ import org.pgledger.application.attachment.AttachmentProperties;
 import org.pgledger.application.attachment.AttachmentStore;
 import org.pgledger.application.attachment.PrivateFiles;
 import org.pgledger.application.attachment.StorageKeys;
-import org.pgledger.database.repository.AttachmentFileRepository;
+import org.pgledger.database.repository.AttachmentStorageRepository;
 import org.pgledger.domain.value.StorageKey;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -84,13 +84,13 @@ class AttachmentHealthPageTest {
     private StorageKeys storageKeys;
 
     @Autowired
-    private AttachmentFileRepository files;
+    private AttachmentStorageRepository storages;
 
     @Autowired
     private MutableClock clock;
 
     private StorageKey keyOf(String attachmentId) {
-        return files.currentOf(attachmentId).orElseThrow().storageKey();
+        return storages.current(attachmentId, 0).orElseThrow().storageKey();
     }
 
     private static Path pathOf(StorageKey key) {

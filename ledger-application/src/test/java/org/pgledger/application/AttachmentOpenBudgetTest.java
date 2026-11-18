@@ -43,9 +43,10 @@ class AttachmentOpenBudgetTest {
         assertThat(refused.details().get("limit")).containsExactly("attachment-budget");
         assertThat(s.count("SELECT COUNT(*) FROM upload_staging WHERE owner = ?", actor)).as("no row for the refused begin")
                 .isEqualTo(rows);
-        assertThat(flow.status(actor, open.uploadId()).state()).as("the open upload is not touched").isEqualTo("STAGING");
+        assertThat(flow.uploadStatus(actor, open.files().getFirst().uploadId()).state())
+                .as("the open upload is not touched").isEqualTo("STAGING");
         assertThat(Uploads.readAll(flow, actor, kept, 300)).as("what is kept still reads").isEqualTo(keptBody);
-        assertThat(flow.begin(actor, Uploads.begin(Uploads.body(KIB, 64))).uploadId())
+        assertThat(flow.begin(actor, Uploads.begin(Uploads.body(KIB, 64))).attachmentId())
                 .as("2 KiB kept, 1 KiB open and 1 KiB declared is exactly the budget").isNotBlank();
     }
 }

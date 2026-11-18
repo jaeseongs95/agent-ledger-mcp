@@ -18,12 +18,14 @@ import org.junit.jupiter.api.Test;
 import org.pgledger.admin.support.AdminTest;
 import org.pgledger.admin.support.Browser;
 import org.pgledger.admin.support.Seeds;
+import org.pgledger.admin.support.Seeds.BundleFile;
 import org.pgledger.admin.support.Seeds.Seeded;
 import org.pgledger.application.attachment.AttachmentKeys;
 import org.pgledger.application.attachment.AttachmentProperties;
 import org.pgledger.application.attachment.AttachmentStore;
 import org.pgledger.application.attachment.PrivateFiles;
 import org.pgledger.database.repository.AttachmentFileRepository;
+import org.pgledger.database.repository.AttachmentStorageRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -80,6 +82,9 @@ class AttachmentPagesTest {
     @Autowired
     private AttachmentFileRepository files;
 
+    @Autowired
+    private AttachmentStorageRepository storages;
+
     @BeforeEach
     void folders() {
         store.prepare();
@@ -92,8 +97,11 @@ class AttachmentPagesTest {
 
     /** The page and the file hold nothing of the places: no storage key, no folder, no key id. */
     private void assertNoPlaces(String text, String attachmentId) {
-        String storageKey = files.currentOf(attachmentId).orElseThrow().storageKey().hex();
-        assertThat(text).doesNotContain(storageKey).doesNotContain(DIRECTORY.toString()).doesNotContain(KEY_DIRECTORY.toString())
+        for (var file : files.ofAttachment(attachmentId)) {
+            String storageKey = storages.current(attachmentId, file.seq()).orElseThrow().storageKey().hex();
+            assertThat(text).doesNotContain(storageKey);
+        }
+        assertThat(text).doesNotContain(DIRECTORY.toString()).doesNotContain(KEY_DIRECTORY.toString())
                 .doesNotContain(BASE.toString()).doesNotContain(KEY_ID);
     }
 
@@ -189,5 +197,40 @@ class AttachmentPagesTest {
         Browser owner = Browser.signedIn(mvc);
         owner.perform(owner.get("/attachments/" + id + "/download")).andExpect(status().isNotFound());
         owner.perform(owner.get("/attachments/not-an-id/download")).andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("ATA-044: multi-file bundle renders all files on history and downloads each by ?seq=N (default 0), returning 404 on invalid seq")
+    void ata044_multiFileBundleRendersAndDownloadsBySeq() throws Exception {
+        Seeded project = seeds.project();
+        String defect = seeds.defect(project, "defect with a multi-file bundle");
+        byte[] doc = "# Bundle Summary\nLine 2\n".getBytes(StandardCharsets.UTF_8);
+        byte[] bin = new byte[1024];
+        new Random(9).nextBytes(bin);
+        String attachment = seeds.bundle(java.util.List.of(
+                new BundleFile("summary.md", "text/markdown", doc),
+                new BundleFile("trace.bin", "application/octet-stream", bin)));
+        seeds.disputeWithAttachment(defect, attachment);
+        Browser browser = Browser.signedIn(mvc);
+
+        String page = history(browser, project);
+        assertThat(page).contains("summary.md", "text/markdown", "# Bundle Summary",
+                "trace.bin", "application/octet-stream",
+                "/attachments/" + attachment + "/download?seq=0",
+                "/attachments/" + attachment + "/download?seq=1");
+        assertNoPlaces(page, attachment);
+
+        MockHttpServletResponse d0 = browser.perform(browser.get("/attachments/" + attachment + "/download?seq=0"))
+                .andExpect(status().isOk()).andReturn().getResponse();
+        MockHttpServletResponse d1 = browser.perform(browser.get("/attachments/" + attachment + "/download?seq=1"))
+                .andExpect(status().isOk()).andReturn().getResponse();
+        MockHttpServletResponse dDefault = browser.perform(browser.get("/attachments/" + attachment + "/download"))
+                .andExpect(status().isOk()).andReturn().getResponse();
+        assertThat(d0.getContentAsByteArray()).isEqualTo(doc);
+        assertThat(dDefault.getContentAsByteArray()).isEqualTo(doc);
+        assertThat(d1.getContentAsByteArray()).isEqualTo(bin);
+
+        browser.perform(browser.get("/attachments/" + attachment + "/download?seq=2")).andExpect(status().isNotFound());
+        browser.perform(browser.get("/attachments/" + attachment + "/download?seq=-1")).andExpect(status().isNotFound());
     }
 }

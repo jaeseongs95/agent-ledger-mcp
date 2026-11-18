@@ -15,6 +15,7 @@ import java.util.function.Function;
 import java.util.stream.Stream;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.pgledger.application.admin.SessionKeyService;
@@ -50,7 +51,11 @@ class AttachmentGateTest {
             "artifact-chunk", author -> Chunk.of(ID, 0, BODY, author),
             "artifact-finish", author -> new Finish(ID, author),
             "artifact-status", author -> Status.ofUpload(ID, author),
-            "artifact-read", author -> new Read(ID, 0L, 10L, author));
+            "artifact-read", author -> Read.of(ID, 0L, 10L, author));
+
+    private static List<String> hostRequiredTools() {
+        return List.of("artifact-begin", "artifact-finish", "artifact-read");
+    }
 
     private static long rows(DataSource dataSource) {
         return JdbcClient.create(dataSource)
@@ -84,11 +89,34 @@ class AttachmentGateTest {
     }
 
     @ParameterizedTest(name = "{0}")
-    @MethodSource("org.pgledger.mcp.support.ToolNames#attachment")
-    @DisplayName("ATA-018: without a host attestation the tool is HOST_ATTESTATION_REQUIRED; no row, no file")
+    @MethodSource("hostRequiredTools")
+    @DisplayName("ATA-018: without a host attestation the session-bound tools are HOST_ATTESTATION_REQUIRED; no row, no file")
     void noAttestation(String tool, McpSession session, Scenario scenario, @Autowired DataSource dataSource,
             @Autowired Environment environment) {
         refused(session, dataSource, environment, tool, null, false, "HOST_ATTESTATION_REQUIRED");
+    }
+
+    @Test
+    @DisplayName("ATA-018: without a host attestation, artifact-status by attachmentId is HOST_ATTESTATION_REQUIRED while uploadId capability tools refuse unknown ids")
+    void uploadCapabilityWithoutAttestation(McpSession session, Scenario scenario, @Autowired DataSource dataSource,
+            @Autowired Environment environment) {
+        long rowsBefore = rows(dataSource);
+        List<Path> filesBefore = files(environment);
+
+        CallToolResult attStatus = session.callUnsigned("artifact-status", Status.ofAttachment(ID, null));
+        assertThat(attStatus.isError()).isTrue();
+        assertThat(session.error(attStatus).code()).isEqualTo("HOST_ATTESTATION_REQUIRED");
+
+        CallToolResult uploadStatus = session.callUnsigned("artifact-status", Status.ofUpload(ID, null));
+        assertThat(uploadStatus.isError()).isTrue();
+        assertThat(session.error(uploadStatus).code()).isEqualTo("ARTIFACT_NOT_FOUND");
+
+        CallToolResult chunk = session.callUnsigned("artifact-chunk", Chunk.of(ID, 0, BODY, null));
+        assertThat(chunk.isError()).isTrue();
+        assertThat(session.error(chunk).code()).isEqualTo("ARTIFACT_NOT_FOUND");
+
+        assertThat(rows(dataSource)).isEqualTo(rowsBefore);
+        assertThat(files(environment)).isEqualTo(filesBefore);
     }
 
     @ParameterizedTest(name = "{0}")

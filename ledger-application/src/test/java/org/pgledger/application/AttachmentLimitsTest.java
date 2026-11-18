@@ -60,14 +60,14 @@ class AttachmentLimitsTest {
 
         assertThat(s.count("SELECT COUNT(*) FROM upload_staging WHERE owner = ?", actor)).isEqualTo(2);
         assertThat(s.count("SELECT COUNT(*) FROM upload_staging WHERE owner = ?", other)).isZero();
-        assertThat(flow.status(actor, one.uploadId()).size()).as("nothing was cut").isEqualTo(KIB);
-        assertThat(flow.status(actor, two.uploadId()).size()).isEqualTo(KIB);
+        assertThat(flow.uploadStatus(actor, one.files().getFirst().uploadId()).size()).as("nothing was cut").isEqualTo(KIB);
+        assertThat(flow.uploadStatus(actor, two.files().getFirst().uploadId()).size()).isEqualTo(KIB);
 
         // an upload that is finished is no longer open: its budget and its place are free again
-        Uploads.sendParts(flow, actor, one.uploadId(), Uploads.parts(first, 512), 0);
-        Finished finished = flow.finish(actor, one.uploadId());
-        assertThat(finished.size()).isEqualTo(KIB);
-        assertThat(flow.begin(other, Uploads.begin(Uploads.body(KIB, 7))).uploadId()).isNotBlank();
+        Uploads.sendParts(flow, actor, one.files().getFirst().uploadId(), Uploads.parts(first, 512), 0);
+        Finished finished = flow.finish(actor, one.attachmentId());
+        assertThat(finished.files().getFirst().size()).isEqualTo(KIB);
+        assertThat(flow.begin(other, Uploads.begin(Uploads.body(KIB, 7))).attachmentId()).isNotBlank();
         Expect.failure(() -> flow.begin(other, Uploads.begin(Uploads.body(KIB, 8))), ConflictCode.ARTIFACT_LIMIT);
     }
 }

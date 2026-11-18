@@ -192,7 +192,8 @@ class UsageTest {
     void theCommandSetIsTheOneOfThePlan() {
         assertThat(Stream.of(CliCommand.values()).map(CliCommand::cliName)).containsExactly("secret-set",
                 "token-generate", "driver-register", "migrate", "setup", "key-register", "key-revoke", "passkey-code", "project-add", "code-set",
-                "codes", "grant", "revoke", "grants", "attachments-check", "attachments-rekey", "attachments-key-create", "mcp-check", "render-deploy", "prepare-host", "install-default");
+                "codes", "grant", "revoke", "grants", "attachments-check", "attachments-rekey", "attachments-key-create",
+                "attachments-prepare", "attachments-send", "mcp-check", "render-deploy", "prepare-host", "install-default");
     }
 
     @Test
@@ -234,6 +235,15 @@ class UsageTest {
                 Arguments.of(new String[] { "attachments-rekey", "--from=a", "--to=b" }, ErrorCode.UNKNOWN_OPTION),
                 Arguments.of(new String[] { "attachments-key-create", "extra" }, ErrorCode.TOO_MANY_ARGUMENTS),
                 Arguments.of(new String[] { "attachments-key-create", "--active" }, ErrorCode.UNKNOWN_OPTION),
+                Arguments.of(new String[] { "attachments-prepare" }, ErrorCode.MISSING_ARGUMENT),
+                Arguments.of(new String[] { "attachments-prepare", "a", "b" }, ErrorCode.TOO_MANY_ARGUMENTS),
+                Arguments.of(new String[] { "attachments-prepare", "a", "--name" }, ErrorCode.MISSING_OPTION_VALUE),
+                Arguments.of(new String[] { "attachments-prepare", "a", "--bogus=1" }, ErrorCode.UNKNOWN_OPTION),
+                Arguments.of(new String[] { "attachments-send" }, ErrorCode.MISSING_ARGUMENT),
+                Arguments.of(new String[] { "attachments-send", "a", "b" }, ErrorCode.TOO_MANY_ARGUMENTS),
+                Arguments.of(new String[] { "attachments-send", "a" }, ErrorCode.MISSING_ARGUMENT),
+                Arguments.of(new String[] { "attachments-send", "a", "--upload-id=1", "--url" }, ErrorCode.MISSING_OPTION_VALUE),
+                Arguments.of(new String[] { "attachments-send", "a", "--upload-id=1", "--bogus=1" }, ErrorCode.UNKNOWN_OPTION),
                 Arguments.of(new String[] { "driver-register" }, ErrorCode.MISSING_ARGUMENT),
                 Arguments.of(new String[] { "driver-register", "--jar=x" }, ErrorCode.MISSING_ARGUMENT),
                 Arguments.of(new String[] { "driver-register", "--jar=x", "--class=y", "extra" },

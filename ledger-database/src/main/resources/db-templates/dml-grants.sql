@@ -28,6 +28,7 @@ GRANT SELECT, INSERT ON owner_passkey_revocation TO ${dml_account};
 GRANT SELECT, INSERT, UPDATE ON owner_passkey_code TO ${dml_account};
 GRANT SELECT, INSERT ON attachment TO ${dml_account};
 GRANT SELECT, INSERT ON attachment_file TO ${dml_account};
+GRANT SELECT, INSERT ON attachment_storage TO ${dml_account};
 GRANT SELECT, INSERT, UPDATE, DELETE ON upload_staging TO ${dml_account};
 GRANT SELECT, INSERT, UPDATE ON request_receipt TO ${dml_account};
 GRANT SELECT ON schema_history TO ${dml_account};

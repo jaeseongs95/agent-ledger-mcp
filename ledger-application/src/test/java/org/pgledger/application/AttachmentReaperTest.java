@@ -21,8 +21,10 @@ import org.pgledger.application.attachment.AttachmentStore;
 import org.pgledger.application.attachment.UploadCommands.Begun;
 import org.pgledger.application.attachment.UploadCommands.Finished;
 import org.pgledger.application.attachment.UploadCommands.Received;
+import org.pgledger.application.attachment.UploadCommands.Status;
 import org.pgledger.application.attachment.UploadService;
 import org.pgledger.application.attachment.UploadService.ChunkPlan;
+import org.pgledger.application.attachment.UploadService.ClosedFile;
 import org.pgledger.application.attachment.UploadService.FinishPlan;
 import org.pgledger.application.support.AttachmentContext;
 import org.pgledger.application.support.HeldTransaction;
@@ -93,22 +95,23 @@ class AttachmentReaperTest {
         List<byte[]> parts = Uploads.parts(body, 200);
 
         Begun begun = flow.begin(actor, Uploads.begin(body));
+        String uploadId = begun.files().getFirst().uploadId();
         assertThat(begun.expiresAt()).isEqualTo(begin.plus(TTL));
         ctx.clock().set(begin.plus(Duration.ofMinutes(5)));
-        Uploads.send(flow, actor, begun.uploadId(), 0, parts.get(0));
+        Uploads.send(flow, actor, uploadId, 0, parts.get(0));
 
-        UploadStaging row = Uploads.row(ctx, begun.uploadId());
+        UploadStaging row = Uploads.row(ctx, uploadId);
         assertThat(row.expiresAt()).as("counted again from the last chunk, not from the begin").isEqualTo(begin.plus(Duration.ofMinutes(15)));
         assertThat(Uploads.fileOf(ctx, row.storageKey())).exists();
 
         ctx.clock().set(begin.plus(Duration.ofMinutes(11)));
         assertThat(reaper.reap()).as("past the TTL of the begin, before the TTL of the last chunk").isZero();
-        assertThat(uploads.findById(begun.uploadId())).isPresent();
+        assertThat(uploads.findById(uploadId)).isPresent();
         assertThat(Uploads.fileOf(ctx, row.storageKey())).exists();
 
         ctx.clock().set(begin.plus(Duration.ofMinutes(16)));
         assertThat(reaper.reap()).isEqualTo(1);
-        assertThat(uploads.findById(begun.uploadId())).as("the row is removed").isEmpty();
+        assertThat(uploads.findById(uploadId)).as("the row is removed").isEmpty();
         assertThat(Uploads.fileOf(ctx, row.storageKey())).as("and then its file").doesNotExist();
     }
 
@@ -119,18 +122,21 @@ class AttachmentReaperTest {
         String actor = s.actorWith("defect");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] body = Uploads.body(300, 2);
-        Finished finished = Uploads.upload(flow, actor, body, 100);
-        StorageKey storageKey = Uploads.currentFile(ctx, finished.attachmentId()).storageKey();
-        assertThat(Uploads.row(ctx, finished.attachmentId()).state()).isEqualTo(UploadState.COMPLETED);
+        Begun begun = Uploads.sendAll(flow, actor, body, 100);
+        String uploadId = begun.files().getFirst().uploadId();
+        Finished finished = flow.finish(actor, begun.attachmentId());
+        StorageKey storageKey = Uploads.currentStorage(ctx, finished.attachmentId()).storageKey();
+        assertThat(Uploads.row(ctx, uploadId).state()).isEqualTo(UploadState.COMPLETED);
 
         s.bean(AttachmentReaper.class).reap();
 
-        assertThat(s.bean(UploadStagingRepository.class).findById(finished.attachmentId())).isEmpty();
+        assertThat(s.bean(UploadStagingRepository.class).findById(uploadId)).isEmpty();
         assertThat(s.bean(AttachmentRepository.class).findById(finished.attachmentId())).isPresent();
         assertThat(Uploads.fileOf(ctx, storageKey)).exists();
         assertThat(Uploads.readAll(flow, actor, finished.attachmentId(), 64)).isEqualTo(body);
-        assertThat(flow.status(actor, finished.attachmentId()).state()).isEqualTo("COMPLETED");
-        assertThat(flow.status(actor, finished.attachmentId()).expiresAt()).as("an attachment has no expiry").isNull();
+        Status status = flow.attachmentStatus(actor, finished.attachmentId());
+        assertThat(status.state()).isEqualTo("COMPLETED");
+        assertThat(status.expiresAt()).as("an attachment has no expiry").isNull();
     }
 
     // ------------------------------------------------------------------------------------------------ ATA-011
@@ -144,7 +150,7 @@ class AttachmentReaperTest {
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] body = Uploads.body(400, 1000L + round);
         List<byte[]> parts = Uploads.parts(body, 200);
-        String id = flow.begin(actor, Uploads.begin(body)).uploadId();
+        String id = flow.begin(actor, Uploads.begin(body)).files().getFirst().uploadId();
         for (int sequence = 0; sequence < chunksSent; sequence++) {
             Uploads.send(flow, actor, id, sequence, parts.get(sequence));
         }
@@ -160,7 +166,7 @@ class AttachmentReaperTest {
         return s.bean(AttachmentStore.class).append(row.storageKey(), row.keyId(), row.storedBytes(), sequence, part, sha);
     }
 
-    /** No row of an open upload without its file, no attachment without a file, no finished upload row without its attachment. */
+    /** No row of an open upload without its file, no attachment without a file, no file without storage, no finished upload without its attachment. */
     private static void assertConsistent(LedgerAppContext ctx) {
         List<Map<String, Object>> open = ctx.jdbc().sql("SELECT id, storage_key FROM upload_staging WHERE state = 'STAGING'")
                 .query().listOfRows();
@@ -168,15 +174,17 @@ class AttachmentReaperTest {
             assertThat(Uploads.fileOf(ctx, StorageKey.of((String) row.get("storage_key")))).as("the file of the open upload %s", row.get("id"))
                     .exists();
         }
-        List<Map<String, Object>> files = ctx.jdbc().sql("SELECT attachment_id, storage_key FROM attachment_file").query().listOfRows();
-        for (Map<String, Object> row : files) {
+        List<Map<String, Object>> storages = ctx.jdbc().sql("SELECT attachment_id, storage_key FROM attachment_storage").query().listOfRows();
+        for (Map<String, Object> row : storages) {
             assertThat(Uploads.fileOf(ctx, StorageKey.of((String) row.get("storage_key")))).as("the file of the attachment %s", row.get("attachment_id"))
                     .exists();
         }
         assertThat(ctx.jdbc().sql("SELECT COUNT(*) FROM attachment a WHERE NOT EXISTS (SELECT 1 FROM attachment_file f "
                 + "WHERE f.attachment_id = a.id)").query(Long.class).single()).as("attachments without a file row").isZero();
+        assertThat(ctx.jdbc().sql("SELECT COUNT(*) FROM attachment_file f WHERE NOT EXISTS (SELECT 1 FROM attachment_storage s "
+                + "WHERE s.attachment_id = f.attachment_id AND s.seq = f.seq)").query(Long.class).single()).as("files without a storage row").isZero();
         assertThat(ctx.jdbc().sql("SELECT COUNT(*) FROM upload_staging u WHERE u.state = 'COMPLETED' AND NOT EXISTS "
-                + "(SELECT 1 FROM attachment a WHERE a.id = u.id)").query(Long.class).single())
+                + "(SELECT 1 FROM attachment a WHERE a.id = u.attachment_id)").query(Long.class).single())
                 .as("completed uploads without their attachment").isZero();
     }
 
@@ -251,23 +259,25 @@ class AttachmentReaperTest {
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         for (int round = 0; round < ROUNDS; round++) {
             Prepared p = prepared(s, round, 2);
-            FinishPlan.Close close = (FinishPlan.Close) service.planFinish(p.actor(), p.id());
-            UploadStaging row = close.row();
+            String attachmentId = p.row().attachmentId();
+            FinishPlan.Close close = (FinishPlan.Close) service.planFinish(p.actor(), attachmentId);
+            UploadStaging row = close.rows().getFirst();
             long length = s.bean(AttachmentStore.class).finish(row.storageKey(), row.keyId(), row.storedBytes(),
                     row.nextSequence(), row.declaredSize(), row.declaredSha256());
             ctx.clock().set(Uploads.row(ctx, p.id()).expiresAt());
 
-            HeldTransaction<Finished> finish = HeldTransaction.start(ctx, () -> service.completeUpload(p.actor(), row, length));
+            HeldTransaction<Finished> finish = HeldTransaction.start(ctx,
+                    () -> service.completeUpload(p.actor(), attachmentId, List.of(new ClosedFile(row.id(), length))));
             int holder = finish.awaitHeld();
             Future<Integer> reaping = Parallel.start(reaper::reap);
             LockWaits.awaitWaitingFor(ctx, holder);
             Finished finished = finish.release();
 
             assertThat(value(reaping)).as("no expired upload was removed (round %d)", round).isZero();
-            assertThat(finished.attachmentId()).isEqualTo(p.id());
-            assertThat(s.bean(AttachmentRepository.class).findById(p.id())).as("a completed upload is not gone").isPresent();
+            assertThat(finished.attachmentId()).isEqualTo(attachmentId);
+            assertThat(s.bean(AttachmentRepository.class).findById(attachmentId)).as("a completed upload is not gone").isPresent();
             assertThat(Uploads.fileOf(ctx, row.storageKey())).exists();
-            assertThat(Uploads.readAll(flow, p.actor(), p.id(), 150)).hasSize(400);
+            assertThat(Uploads.readAll(flow, p.actor(), attachmentId, 150)).hasSize(400);
             assertConsistent(ctx);
             drain(ctx);
         }
@@ -281,8 +291,9 @@ class AttachmentReaperTest {
         AttachmentMaintenanceService maintenance = s.bean(AttachmentMaintenanceService.class);
         for (int round = 0; round < ROUNDS; round++) {
             Prepared p = prepared(s, round, 2);
-            FinishPlan.Close close = (FinishPlan.Close) service.planFinish(p.actor(), p.id());
-            UploadStaging row = close.row();
+            String attachmentId = p.row().attachmentId();
+            FinishPlan.Close close = (FinishPlan.Close) service.planFinish(p.actor(), attachmentId);
+            UploadStaging row = close.rows().getFirst();
             long length = s.bean(AttachmentStore.class).finish(row.storageKey(), row.keyId(), row.storedBytes(),
                     row.nextSequence(), row.declaredSize(), row.declaredSha256());
             Instant expiry = Uploads.row(ctx, p.id()).expiresAt();
@@ -290,14 +301,15 @@ class AttachmentReaperTest {
 
             HeldTransaction<Boolean> reaping = HeldTransaction.start(ctx, () -> maintenance.removeExpired(p.id(), expiry));
             int holder = reaping.awaitHeld();
-            Future<Finished> finish = Parallel.start(() -> service.completeUpload(p.actor(), row, length));
+            Future<Finished> finish = Parallel.start(
+                    () -> service.completeUpload(p.actor(), attachmentId, List.of(new ClosedFile(row.id(), length))));
             LockWaits.awaitWaitingFor(ctx, holder);
             assertThat(reaping.release()).isTrue();
             s.bean(AttachmentStore.class).remove(row.storageKey());
 
             assertThat(failureOf(finish)).isInstanceOfSatisfying(LookupException.class,
                     lost -> assertThat(lost.code()).isEqualTo(LookupCode.ARTIFACT_NOT_FOUND));
-            assertThat(s.bean(AttachmentRepository.class).findById(p.id())).as("round %d", round).isEmpty();
+            assertThat(s.bean(AttachmentRepository.class).findById(attachmentId)).as("round %d", round).isEmpty();
             assertThat(s.bean(UploadStagingRepository.class).findById(p.id())).isEmpty();
             assertThat(Uploads.fileOf(ctx, row.storageKey())).doesNotExist();
             assertConsistent(ctx);

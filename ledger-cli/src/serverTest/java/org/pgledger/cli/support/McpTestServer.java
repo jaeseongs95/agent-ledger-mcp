@@ -13,6 +13,7 @@ import java.security.MessageDigest;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import org.apache.catalina.Context;
 import org.apache.catalina.LifecycleException;
 import org.apache.catalina.startup.Tomcat;
@@ -43,14 +44,22 @@ public final class McpTestServer implements AutoCloseable {
      * @param baseDirectory an empty directory of the test for Tomcat's working files
      */
     public static McpTestServer start(Path baseDirectory, String bearer, List<String> toolNames) {
+        return start(baseDirectory, bearer, specification -> {
+            for (String name : toolNames) {
+                Tool tool = Tool.builder(name, Map.of("type", "object")).description("test tool " + name).build();
+                specification.toolCall(tool, (exchange, request) -> CallToolResult.builder().addTextContent("ok").build());
+            }
+        });
+    }
+
+    /** Starts a server with caller-supplied tool handlers. */
+    public static McpTestServer start(Path baseDirectory, String bearer,
+            Consumer<McpServer.StreamableSyncSpecification> tools) {
         HttpServletStreamableServerTransportProvider transport = HttpServletStreamableServerTransportProvider.builder()
                 .jsonMapper(new JacksonMcpJsonMapper(JsonMapper.builder().build())).mcpEndpoint(ENDPOINT).build();
         McpServer.StreamableSyncSpecification specification = McpServer.sync(transport);
         specification.serverInfo("ledger-test", "0").immediateExecution(true).validateToolInputs(false);
-        for (String name : toolNames) {
-            Tool tool = Tool.builder(name, Map.of("type", "object")).description("test tool " + name).build();
-            specification.toolCall(tool, (exchange, request) -> CallToolResult.builder().addTextContent("ok").build());
-        }
+        tools.accept(specification);
         McpSyncServer server = specification.build();
 
         Tomcat tomcat = new Tomcat();

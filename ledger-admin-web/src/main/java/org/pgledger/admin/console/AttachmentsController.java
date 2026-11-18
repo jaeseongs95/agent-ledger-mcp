@@ -10,6 +10,7 @@ import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * The download of an attachment through the application (read only). It is a page of the console like the others: the security
@@ -36,8 +37,11 @@ public class AttachmentsController {
     }
 
     @GetMapping("/attachments/{id}/download")
-    void download(@PathVariable("id") String id, HttpServletResponse response) throws IOException {
-        AttachmentPanels.Download download = panels.download(id);
+    void download(@PathVariable("id") String id,
+            @RequestParam(name = "seq", required = false) Integer seq,
+            HttpServletResponse response) throws IOException {
+        int fileSeq = seq == null ? 0 : seq;
+        AttachmentPanels.Download download = panels.download(id, fileSeq);
         response.setStatus(HttpServletResponse.SC_OK);
         response.setContentType(MediaType.APPLICATION_OCTET_STREAM_VALUE);
         response.setContentLengthLong(download.sizeBytes());

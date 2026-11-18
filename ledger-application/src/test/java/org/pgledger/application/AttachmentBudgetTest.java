@@ -47,7 +47,8 @@ class AttachmentBudgetTest {
         for (int i = 0; i < kept.size(); i++) {
             assertThat(Uploads.readAll(flow, actor, kept.get(i), 300)).as("kept attachment %d still reads", i).isEqualTo(bodies.get(i));
         }
-        assertThat(flow.begin(actor, Uploads.begin(Uploads.body(KIB, 15))).uploadId()).as("3 KiB kept and 1 KiB declared is the budget")
+        assertThat(flow.begin(actor, Uploads.begin(Uploads.body(KIB, 15))).attachmentId())
+                .as("3 KiB kept and 1 KiB declared is the budget")
                 .isNotBlank();
     }
 }

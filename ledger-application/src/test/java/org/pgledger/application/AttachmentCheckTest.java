@@ -25,9 +25,9 @@ import org.pgledger.application.support.Scenario;
 import org.pgledger.application.support.StoredFiles;
 import org.pgledger.application.support.TestClock;
 import org.pgledger.application.support.Uploads;
-import org.pgledger.database.repository.AttachmentFileRepository;
 import org.pgledger.database.repository.AttachmentRepository;
-import org.pgledger.domain.model.AttachmentFile;
+import org.pgledger.database.repository.AttachmentStorageRepository;
+import org.pgledger.domain.model.AttachmentStorage;
 import org.pgledger.domain.value.Sha256;
 import org.pgledger.domain.value.StorageKey;
 import org.pgledger.testing.TestOwners;
@@ -85,13 +85,13 @@ class AttachmentCheckTest {
         String damaged = Uploads.upload(flow, actor, damagedBody, 100).attachmentId();
         String restored = Uploads.upload(flow, actor, restoredBody, 100).attachmentId();
         // the damaged one: a byte of its first segment is changed; the missing one: its file is deleted
-        Path damagedFile = Uploads.fileOf(ctx, Uploads.currentFile(ctx, damaged).storageKey());
+        Path damagedFile = Uploads.fileOf(ctx, Uploads.currentStorage(ctx, damaged).storageKey());
         StoredFiles.replace(damagedFile, StoredFiles.flip(StoredFiles.readAll(damagedFile), 20));
-        StoredFiles.delete(Uploads.fileOf(ctx, Uploads.currentFile(ctx, missing).storageKey()));
+        StoredFiles.delete(Uploads.fileOf(ctx, Uploads.currentStorage(ctx, missing).storageKey()));
         // the restored one: the database was restored to a state before its row, so its file has no row (and is old)
-        AttachmentFile restoredRow = Uploads.currentFile(ctx, restored);
+        AttachmentStorage restoredRow = Uploads.currentStorage(ctx, restored);
         // (the row of the finished upload names the same file until the reaper removes it, so a restore removes that row too)
-        assertThat(ctx.jdbc().sql("DELETE FROM attachment_file WHERE attachment_id = ?").param(restored).update()).isEqualTo(1);
+        assertThat(ctx.jdbc().sql("DELETE FROM attachment_storage WHERE attachment_id = ?").param(restored).update()).isEqualTo(1);
         assertThat(ctx.jdbc().sql("DELETE FROM upload_staging WHERE storage_key = ?").param(restoredRow.storageKey().hex()).update())
                 .as("the COMPLETED row of the upload names the file too").isEqualTo(1);
         touch(Uploads.fileOf(ctx, restoredRow.storageKey()), now.minus(GRACE).minusSeconds(3600));
@@ -134,7 +134,7 @@ class AttachmentCheckTest {
 
         // a restore: a row with the storage key of the quarantined file exists again, so the file is moved back
         ctx.tx(() -> {
-            ctx.bean(AttachmentFileRepository.class).insert(restoredRow);
+            ctx.bean(AttachmentStorageRepository.class).insert(restoredRow);
             return null;
         });
         Report restoring = check.run(true);

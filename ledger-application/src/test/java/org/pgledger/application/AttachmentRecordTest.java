@@ -159,8 +159,7 @@ class AttachmentRecordTest {
     /** An attachment row of {@code author}, as a finished upload leaves it; returns its id. */
     private static String attachmentOf(Scenario s, String author) {
         String id = UUID.randomUUID().toString();
-        Attachment row = new Attachment(id, "report.md", "text/markdown", 4, Sha256.ofText("body"),
-                AuthorId.of(author), WHEN);
+        Attachment row = new Attachment(id, AuthorId.of(author), WHEN);
         s.ctx().tx(() -> {
             s.bean(AttachmentRepository.class).insert(row);
             return null;

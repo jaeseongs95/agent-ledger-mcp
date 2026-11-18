@@ -176,14 +176,17 @@ can be edited without a trace. The history row of a record points to it with the
 `ledger_review`, `ledger_review_correct`, `ledger_correct`, `ledger_record_fix`, `ledger_record_case` and the same operations of
 `ledger_batch`. The record is written only when the attachment exists and was uploaded by the author who writes the record.
 
-- **Upload.** Uploads are made through the five MCP tools above: `artifact-begin` (with a required `operationKey`), `artifact-chunk`
-  for each chunk of at most 262144 bytes, `artifact-finish`, and `artifact-status` and `artifact-read` to look at it. A client
-  program outside the model that sends a file of the PC is an open item; the tools are the one way in.
-- **Storage.** The database holds only metadata and the name of the file (`upload_staging`, `attachment`, `attachment_file`;
-  no body column, no foreign key). The file is under `ledger.attachments.directory`, named by 128 random bits, with no extension and
-  no original name, encrypted with AES-256-GCM in segments (one per chunk, the storage key and the position are authenticated), and
-  read only once it is finished. An attachment is never changed or deleted: the application account of the database has `SELECT`
-  and `INSERT` on it only.
+- **Upload.** Uploads are made through the five MCP tools above: `artifact-begin` (with a required `operationKey` and an
+  ordered `files` list of 1..64 files), `artifact-chunk` for each chunk of at most 262144 bytes, `artifact-finish` (with
+  `attachmentId`), and `artifact-status` and `artifact-read` (with optional `seq`, default `0`) to inspect or read a file.
+  To upload local files without sending raw bytes through the model context, measure them locally with
+  `ledger-cli attachments-prepare <file> [--name=<name>]` and stream chunks directly to `/mcp` with
+  `ledger-cli attachments-send <file> --upload-id=<id>` (uses `uploadId` capability without session attestation).
+- **Storage.** The database holds only bundle/file metadata and storage copy revisions (`upload_staging`, `attachment`,
+  `attachment_file`, `attachment_storage`; no body column, no foreign key). Each file copy is under `ledger.attachments.directory`,
+  named by 128 random bits, with no extension and no original name, encrypted with AES-256-GCM in segments (one per chunk, the
+  storage key and the position are authenticated), and read only once finished. An attachment is never changed or deleted: the
+  application account of the database has `SELECT` and `INSERT` on it only.
 - **Keys.** `setup` creates the first 256-bit key file in `ledger.attachments.key-directory` (readable by the service account
   only) and sets `ledger.attachments.active-key-id`. To rotate: `ledger-cli attachments-key-create`, set `active-key-id` to the new id,
   restart, then `ledger-cli attachments-rekey --from=<old id>` writes the files of the old key again; an old key file is kept while a
@@ -528,6 +531,8 @@ service user), and every owner operation is recorded with that user.
 | `attachments-check` | `attachments-check [--purge-orphans]` | check the attachments against their files and keys: a file that no row names, and a file that `attachments-rekey` replaced, is moved to `orphans/` and never deleted; a file in `orphans/` whose row exists again is moved back; the report gives the counts and the ids (never a storage key or a path) of the attachments that are missing, damaged or pointed to by no history row, and the exit code is `1` when one is missing or damaged; `--purge-orphans` first empties `orphans/` and records the number in the audit trail |
 | `attachments-rekey` | `attachments-rekey --from=<keyId>` | write the attachment files of the key `<keyId>` again under the active key `ledger.attachments.active-key-id` (a different key); the old files are moved to `orphans/` by `attachments-check` after `ledger.attachments.orphan-grace` |
 | `attachments-key-create` | `attachments-key-create` | create a new 256-bit key file in the key directory (readable by the service account only; on Windows by the installing user and, read only, by LocalService) and print its key id, never the key; set `ledger.attachments.active-key-id` to it to write new uploads with it |
+| `attachments-prepare` | `attachments-prepare <file> [--name=<name>]` | measure one regular file in a single streaming pass and print JSON (`fileName`, `size`, `sha256`, `mediaType`) for `artifact-begin`; connects to nothing |
+| `attachments-send` | `attachments-send <file> --upload-id=<id> [--url=<url>] [--ledger.mcp.token=<token>]` | send the chunks of one file directly to the running MCP server using `artifact-status` and `artifact-chunk` (`uploadId` capability without session attestation); resumes from server progress if interrupted and needs no database |
 | `mcp-check` | `mcp-check [--url=<url>] [--ledger.mcp.token=<token>]` | connect to a running MCP server and check its tools |
 | `render-deploy` | `render-deploy --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>] [--admin-host=<host>] [--root=<directory>] [--check]` | write the service definitions (systemd units, or WinSW configurations on Windows) and the settings; the installers call it |
 | `prepare-host` | `prepare-host --jars=<dir> --driver-jar=<file> [--winsw=<file>] --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>] [--admin-host=<host>] [--root=<directory>]` | prepare the files of the host (run as root, or elevated on Windows): the folders with owner and mode, or their ACLs (on Windows the access of LocalService and the secret folders of the installing user), the copies of the jars and the driver (on Windows also of WinSW), and what `render-deploy` writes; the installers call it |

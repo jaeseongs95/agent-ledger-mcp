@@ -163,27 +163,45 @@ public class Seeds {
                 "defect", defect, 1L, "DISPUTED", REASON, evidence, null, null)));
     }
 
+    /** One file in a bundle seed upload. */
+    public record BundleFile(String fileName, String mediaType, byte[] body) {
+    }
+
     /**
-     * Uploads a file through the real five-operation flow ({@code artifact-begin}, one {@code artifact-chunk} per 256 KiB,
-     * {@code artifact-finish}), each call signed for its tool as the hook does, and returns the attachment id. The project of
-     * the scenario must have been made first (the author needs a live grant).
+     * Uploads a single-file bundle through the real five-operation flow and returns the attachment id.
      */
     public String attachment(String fileName, String mediaType, byte[] body) {
+        return bundle(List.of(new BundleFile(fileName, mediaType, body)));
+    }
+
+    /**
+     * Uploads a multi-file bundle through the real five-operation flow ({@code artifact-begin}, chunks per file,
+     * {@code artifact-finish}), each call signed for its tool as the hook does, and returns the attachment id.
+     */
+    public String bundle(List<BundleFile> bundleFiles) {
         AttachmentFlow flow = uploads.getObject();
-        String sha = Sha256.ofBytes(body).hex();
-        String key = "up-" + numbers.incrementAndGet() + "-" + sha.substring(0, 12);
-        String id = signed("artifact-begin", token -> flow.begin(token,
-                new UploadCommands.Begin(key, fileName, mediaType, body.length, sha, null))).uploadId();
-        int chunk = org.pgledger.application.attachment.AttachmentProperties.CHUNK_BYTES;
-        long sequence = 0;
-        for (int from = 0; from < body.length; from += chunk) {
-            byte[] part = java.util.Arrays.copyOfRange(body, from, Math.min(body.length, from + chunk));
-            String data = Base64.getEncoder().encodeToString(part);
-            long number = sequence++;
-            signed("artifact-chunk", token -> flow.chunk(token,
-                    new UploadCommands.Chunk(id, number, data, Sha256.ofBytes(part).hex())));
+        List<UploadCommands.BeginFile> declared = new java.util.ArrayList<>(bundleFiles.size());
+        for (BundleFile file : bundleFiles) {
+            declared.add(new UploadCommands.BeginFile(file.fileName(), file.mediaType(), file.body().length,
+                    Sha256.ofBytes(file.body()).hex()));
         }
-        return signed("artifact-finish", token -> flow.finish(token, id)).attachmentId();
+        String key = "up-" + numbers.incrementAndGet() + "-" + UUID.randomUUID();
+        UploadCommands.Begun begun = signed("artifact-begin", token -> flow.begin(token,
+                new UploadCommands.Begin(key, declared, null)));
+        int chunk = org.pgledger.application.attachment.AttachmentProperties.CHUNK_BYTES;
+        for (int seq = 0; seq < bundleFiles.size(); seq++) {
+            byte[] body = bundleFiles.get(seq).body();
+            String uploadId = begun.files().get(seq).uploadId();
+            long sequence = 0;
+            for (int from = 0; from < body.length; from += chunk) {
+                byte[] part = java.util.Arrays.copyOfRange(body, from, Math.min(body.length, from + chunk));
+                String data = Base64.getEncoder().encodeToString(part);
+                long number = sequence++;
+                signed("artifact-chunk", token -> flow.chunk(token,
+                        new UploadCommands.Chunk(uploadId, number, data, Sha256.ofBytes(part).hex())));
+            }
+        }
+        return signed("artifact-finish", token -> flow.finish(token, begun.attachmentId())).attachmentId();
     }
 
     /**

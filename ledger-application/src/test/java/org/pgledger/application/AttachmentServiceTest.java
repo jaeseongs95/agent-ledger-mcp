@@ -21,9 +21,12 @@ import org.pgledger.application.attachment.AttachmentLinks;
 import org.pgledger.application.attachment.AttachmentProperties;
 import org.pgledger.application.attachment.AttachmentStore;
 import org.pgledger.application.attachment.UploadCommands.Begin;
+import org.pgledger.application.attachment.UploadCommands.BeginFile;
 import org.pgledger.application.attachment.UploadCommands.Begun;
+import org.pgledger.application.attachment.UploadCommands.BegunFile;
 import org.pgledger.application.attachment.UploadCommands.Chunk;
 import org.pgledger.application.attachment.UploadCommands.Finished;
+import org.pgledger.application.attachment.UploadCommands.KeptFile;
 import org.pgledger.application.attachment.UploadCommands.Received;
 import org.pgledger.application.attachment.UploadCommands.Status;
 import org.pgledger.application.support.AttachmentContext;
@@ -75,43 +78,47 @@ class AttachmentServiceTest {
         byte[] body = Uploads.body(600 * 1024, 11);
 
         Begun begun = flow.begin(actor, Uploads.begin(body));
-        assertThat(begun.uploadId()).isNotBlank();
+        assertThat(begun.attachmentId()).isNotBlank();
+        assertThat(begun.files()).hasSize(1);
+        String uploadId = begun.files().getFirst().uploadId();
+        assertThat(uploadId).isNotBlank();
         assertThat(begun.maxChunkBytes()).as("the chunk size is the contract constant").isEqualTo(262_144);
         assertThat(begun.expiresAt()).isEqualTo(TestClock.START.plus(Duration.ofMinutes(10)));
 
-        assertThat(Uploads.send(flow, actor, begun.uploadId(), 0, slice(body, 0, CHUNK))).isEqualTo(new Received(0, CHUNK));
-        assertThat(Uploads.send(flow, actor, begun.uploadId(), 1, slice(body, CHUNK, 2 * CHUNK)))
+        assertThat(Uploads.send(flow, actor, uploadId, 0, slice(body, 0, CHUNK))).isEqualTo(new Received(0, CHUNK));
+        assertThat(Uploads.send(flow, actor, uploadId, 1, slice(body, CHUNK, 2 * CHUNK)))
                 .isEqualTo(new Received(1, 2 * CHUNK));
-        assertThat(Uploads.send(flow, actor, begun.uploadId(), 2, slice(body, 2 * CHUNK, body.length)))
+        assertThat(Uploads.send(flow, actor, uploadId, 2, slice(body, 2 * CHUNK, body.length)))
                 .isEqualTo(new Received(2, body.length));
 
-        Status open = flow.status(actor, begun.uploadId());
+        Status open = flow.uploadStatus(actor, uploadId);
+        assertThat(open.kind()).isEqualTo("upload");
+        assertThat(open.seq()).isZero();
         assertThat(open.state()).isEqualTo("STAGING");
         assertThat(open.received()).isEqualTo(body.length);
         assertThat(open.sequence()).isEqualTo(3L);
         assertThat(open.expiresAt()).isNotNull();
 
-        Finished finished = flow.finish(actor, begun.uploadId());
-        assertThat(finished.size()).isEqualTo(body.length);
-        assertThat(finished.sha256()).isEqualTo(Uploads.sha(body));
-        assertThat(finished.attachmentId()).as("the id of the attachment is the id of its upload").isEqualTo(begun.uploadId());
+        Finished finished = flow.finish(actor, begun.attachmentId());
+        assertThat(finished.attachmentId()).isEqualTo(begun.attachmentId());
+        assertThat(finished.files()).containsExactly(new KeptFile(0, Uploads.NAME, Uploads.MEDIA_TYPE, body.length,
+                Uploads.sha(body)));
 
-        Status status = flow.status(actor, finished.attachmentId());
+        Status status = flow.attachmentStatus(actor, finished.attachmentId());
+        assertThat(status.kind()).isEqualTo("attachment");
         assertThat(status.state()).isEqualTo("COMPLETED");
-        assertThat(status.size()).isEqualTo(body.length);
-        assertThat(status.sha256()).isEqualTo(Uploads.sha(body));
+        assertThat(status.files()).isEqualTo(finished.files());
         assertThat(status.expiresAt()).as("a finished upload is answered in the attachment form: no expiry").isNull();
-        assertThat(status.received()).isEqualTo(body.length);
         assertThat(status.sequence()).as("the attachment form has no sequence").isNull();
-        StorageKey storageKey = Uploads.currentFile(ctx, finished.attachmentId()).storageKey();
+        StorageKey storageKey = Uploads.currentStorage(ctx, finished.attachmentId()).storageKey();
         assertThat(status.toString()).as("no storage key and no path").doesNotContain(storageKey.hex())
                 .doesNotContain(s.bean(AttachmentProperties.class).directory().toString());
 
         byte[] joined = Uploads.readAll(flow, actor, finished.attachmentId(), 100_000);
         assertThat(joined).isEqualTo(body);
-        assertThat(Uploads.sha(joined)).isEqualTo(finished.sha256());
+        assertThat(Uploads.sha(joined)).isEqualTo(finished.files().getFirst().sha256());
         assertThat(Uploads.readAll(flow, actor, finished.attachmentId(), CHUNK)).isEqualTo(body);
-        assertThat(Uploads.currentFile(ctx, finished.attachmentId()).seq()).as("the finish writes the first file row").isEqualTo(1L);
+        assertThat(Uploads.currentStorage(ctx, finished.attachmentId()).rev()).as("the finish writes rev 0").isZero();
     }
 
     @Test
@@ -120,13 +127,13 @@ class AttachmentServiceTest {
         String actor = s.actorWith("defect");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
 
-        Finished empty = flow.finish(actor, flow.begin(actor, Uploads.begin(new byte[0])).uploadId());
+        Finished empty = flow.finish(actor, flow.begin(actor, Uploads.begin(new byte[0])).attachmentId());
         byte[] one = {42};
         Finished single = Uploads.upload(flow, actor, one);
 
-        assertThat(empty.size()).isZero();
+        assertThat(empty.files().getFirst().size()).isZero();
         assertThat(Uploads.readAll(flow, actor, empty.attachmentId(), 100)).isEmpty();
-        assertThat(single.size()).isEqualTo(1);
+        assertThat(single.files().getFirst().size()).isEqualTo(1);
         assertThat(Uploads.readAll(flow, actor, single.attachmentId(), 100)).isEqualTo(one);
     }
 
@@ -141,12 +148,13 @@ class AttachmentServiceTest {
 
         assertThat(Uploads.readAll(flow, other, finished.attachmentId(), 100)).as("another author reads it").isEqualTo(body);
         Begun second = flow.begin(owner, Uploads.begin(Uploads.body(100, 13)));
-        Expect.failure(() -> Uploads.send(flow, other, second.uploadId(), 0, Uploads.body(100, 13)),
+        String secondUploadId = second.files().getFirst().uploadId();
+        Expect.failure(() -> Uploads.send(flow, other, secondUploadId, 0, Uploads.body(100, 13)),
                 LookupCode.ARTIFACT_NOT_FOUND);
-        Expect.failure(() -> flow.finish(other, second.uploadId()), LookupCode.ARTIFACT_NOT_FOUND);
-        Expect.failure(() -> flow.status(other, second.uploadId()), LookupCode.ARTIFACT_NOT_FOUND);
-        Expect.failure(() -> flow.status(owner, Scenario.uuid()), LookupCode.ARTIFACT_NOT_FOUND);
-        Expect.failure(() -> flow.read(owner, Scenario.uuid(), 0, 10), LookupCode.ARTIFACT_NOT_FOUND);
+        Expect.failure(() -> flow.finish(other, second.attachmentId()), LookupCode.ARTIFACT_NOT_FOUND);
+        Expect.failure(() -> flow.uploadStatus(other, secondUploadId), LookupCode.ARTIFACT_NOT_FOUND);
+        Expect.failure(() -> flow.uploadStatus(owner, Scenario.uuid()), LookupCode.ARTIFACT_NOT_FOUND);
+        Expect.failure(() -> flow.read(owner, Scenario.uuid(), 0, 0, 10), LookupCode.ARTIFACT_NOT_FOUND);
     }
 
     // ------------------------------------------------------------------------------------------------ ATA-002
@@ -160,7 +168,7 @@ class AttachmentServiceTest {
         byte[] body = Uploads.body(1000, 21);
         List<byte[]> parts = Uploads.parts(body, 100, 200, 300);
         Begun begun = flow.begin(actor, Uploads.begin(body));
-        String id = begun.uploadId();
+        String id = begun.files().getFirst().uploadId();
 
         Expect.failure(() -> Uploads.send(flow, actor, id, 1, parts.get(1)), ConflictCode.ARTIFACT_CHUNK_CONFLICT);
         Uploads.send(flow, actor, id, 0, parts.get(0));
@@ -186,7 +194,7 @@ class AttachmentServiceTest {
         assertThat(Files.size(fileOf(ctx, id))).as("nothing was appended in the failures").isEqualTo(sizeBefore);
 
         assertThat(Uploads.send(flow, actor, id, 3, parts.get(3))).isEqualTo(new Received(3, 1000));
-        Finished finished = flow.finish(actor, id);
+        Finished finished = flow.finish(actor, begun.attachmentId());
         assertThat(Uploads.readAll(flow, actor, finished.attachmentId(), 300)).isEqualTo(body);
     }
 
@@ -199,20 +207,22 @@ class AttachmentServiceTest {
         String actor = s.actorWith("defect");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] body = Uploads.body(600, 31);
-        Begin wrong = new Begin("op-" + Scenario.uuid(), Uploads.NAME, Uploads.MEDIA_TYPE, body.length,
-                Uploads.sha(Uploads.body(600, 32)), null);
-        String id = flow.begin(actor, wrong).uploadId();
+        Begin wrong = new Begin("op-" + Scenario.uuid(),
+                List.of(new BeginFile(Uploads.NAME, Uploads.MEDIA_TYPE, body.length, Uploads.sha(Uploads.body(600, 32)))),
+                null);
+        Begun begun = flow.begin(actor, wrong);
+        String id = begun.files().getFirst().uploadId();
         Uploads.sendParts(flow, actor, id, Uploads.parts(body, 200, 200), 0);
         long stored = Uploads.row(ctx, id).storedBytes();
 
-        Expect.failure(() -> flow.finish(actor, id), ConflictCode.ARTIFACT_HASH_MISMATCH);
-        Expect.failure(() -> flow.finish(actor, id), ConflictCode.ARTIFACT_HASH_MISMATCH);
+        Expect.failure(() -> flow.finish(actor, begun.attachmentId()), ConflictCode.ARTIFACT_HASH_MISMATCH);
+        Expect.failure(() -> flow.finish(actor, begun.attachmentId()), ConflictCode.ARTIFACT_HASH_MISMATCH);
 
         UploadStaging row = Uploads.row(ctx, id);
         assertThat(row.state()).isEqualTo(UploadState.STAGING);
         assertThat(row.storedBytes()).isEqualTo(stored);
         assertThat(Files.size(fileOf(ctx, id))).as("the bytes are still there and no end mark was added").isEqualTo(stored);
-        assertThat(flow.status(actor, id).state()).isEqualTo("STAGING");
+        assertThat(flow.uploadStatus(actor, id).state()).isEqualTo("STAGING");
     }
 
     @Test
@@ -223,17 +233,18 @@ class AttachmentServiceTest {
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] body = Uploads.body(600, 33);
         List<byte[]> parts = Uploads.parts(body, 200, 200, 200);
-        String id = flow.begin(actor, Uploads.begin(body)).uploadId();
+        Begun begun = flow.begin(actor, Uploads.begin(body));
+        String id = begun.files().getFirst().uploadId();
         Uploads.sendParts(flow, actor, id, parts.subList(0, 2), 0);
         long stored = Uploads.row(ctx, id).storedBytes();
 
-        Expect.failure(() -> flow.finish(actor, id), ConflictCode.ARTIFACT_INCOMPLETE);
+        Expect.failure(() -> flow.finish(actor, begun.attachmentId()), ConflictCode.ARTIFACT_INCOMPLETE);
 
         assertThat(Uploads.row(ctx, id).state()).isEqualTo(UploadState.STAGING);
         assertThat(Files.size(fileOf(ctx, id))).as("the bytes remain").isEqualTo(stored);
         Uploads.send(flow, actor, id, 2, parts.get(2));
-        Finished finished = flow.finish(actor, id);
-        assertThat(finished.sha256()).isEqualTo(Uploads.sha(body));
+        Finished finished = flow.finish(actor, begun.attachmentId());
+        assertThat(finished.files().getFirst().sha256()).isEqualTo(Uploads.sha(body));
         assertThat(Uploads.readAll(flow, actor, finished.attachmentId(), 250)).isEqualTo(body);
     }
 
@@ -244,7 +255,7 @@ class AttachmentServiceTest {
         String actor = s.actorWith("defect");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] declared = Uploads.body(300, 34);
-        String id = flow.begin(actor, Uploads.begin(declared)).uploadId();
+        String id = flow.begin(actor, Uploads.begin(declared)).files().getFirst().uploadId();
 
         Expect.failure(() -> Uploads.send(flow, actor, id, 0, Uploads.body(400, 35)), ConflictCode.ARTIFACT_HASH_MISMATCH);
 
@@ -264,7 +275,8 @@ class AttachmentServiceTest {
                 s.bean(AttachmentStore.class));
         byte[] body = Uploads.body(500, 41);
         List<byte[]> parts = Uploads.parts(body, 300);
-        String id = flow.begin(actor, Uploads.begin(body)).uploadId();
+        Begun begun = flow.begin(actor, Uploads.begin(body));
+        String id = begun.files().getFirst().uploadId();
         Uploads.send(flow, actor, id, 0, parts.get(0));
         long recorded = Uploads.row(ctx, id).storedBytes();
 
@@ -276,7 +288,7 @@ class AttachmentServiceTest {
         assertThat(row.nextSequence()).as("the row does not know the chunk").isEqualTo(1);
         assertThat(row.storedBytes()).isEqualTo(recorded);
         assertThat(withTail).as("the file is longer than the row says").isGreaterThan(recorded);
-        Expect.failure(() -> flow.finish(actor, id), ConflictCode.ARTIFACT_INCOMPLETE);
+        Expect.failure(() -> flow.finish(actor, begun.attachmentId()), ConflictCode.ARTIFACT_INCOMPLETE);
         assertThat(Files.size(fileOf(ctx, id))).as("the finish appended nothing").isEqualTo(withTail);
 
         assertThat(Uploads.send(flow, actor, id, 1, parts.get(1))).as("the same chunk again is accepted").isEqualTo(new Received(1, 500));
@@ -284,8 +296,8 @@ class AttachmentServiceTest {
         assertThat(healed.nextSequence()).isEqualTo(2);
         assertThat(healed.storedBytes()).as("applied once: the tail is the segment, not another one").isEqualTo(withTail);
         assertThat(Files.size(fileOf(ctx, id))).isEqualTo(withTail);
-        Finished finished = flow.finish(actor, id);
-        assertThat(finished.sha256()).isEqualTo(Uploads.sha(body));
+        Finished finished = flow.finish(actor, begun.attachmentId());
+        assertThat(finished.files().getFirst().sha256()).isEqualTo(Uploads.sha(body));
         assertThat(Uploads.readAll(flow, actor, finished.attachmentId(), 123)).isEqualTo(body);
     }
 
@@ -299,7 +311,8 @@ class AttachmentServiceTest {
                 s.bean(AttachmentStore.class));
         byte[] body = Uploads.body(400, 42);
         List<byte[]> parts = Uploads.parts(body, 200);
-        String id = flow.begin(actor, Uploads.begin(body)).uploadId();
+        Begun begun = flow.begin(actor, Uploads.begin(body));
+        String id = begun.files().getFirst().uploadId();
         assertThatThrownBy(() -> Uploads.send(failing, actor, id, 0, parts.get(0))).isInstanceOf(IllegalStateException.class);
         long withTail = Files.size(fileOf(ctx, id));
 
@@ -308,7 +321,7 @@ class AttachmentServiceTest {
         assertThat(Files.size(fileOf(ctx, id))).as("the tail stays: it may be the segment of a request that still runs").isEqualTo(withTail);
         Uploads.send(flow, actor, id, 0, parts.get(0));
         Uploads.send(flow, actor, id, 1, parts.get(1));
-        assertThat(flow.finish(actor, id).sha256()).isEqualTo(Uploads.sha(body));
+        assertThat(flow.finish(actor, begun.attachmentId()).files().getFirst().sha256()).isEqualTo(Uploads.sha(body));
     }
 
     // ------------------------------------------------------------------------------------------------ ATA-028
@@ -322,23 +335,25 @@ class AttachmentServiceTest {
         AttachmentFlow failing = new AttachmentFlow(new FailingUploadService(ctx, Step.COMPLETE_UPLOAD),
                 s.bean(AttachmentStore.class));
         byte[] body = Uploads.body(700, 51);
-        String id = Uploads.sendAll(flow, actor, body, 300, 300);
+        Begun begun = Uploads.sendAll(flow, actor, body, 300, 300);
+        String id = begun.files().getFirst().uploadId();
+        String attachmentId = begun.attachmentId();
         long recorded = Uploads.row(ctx, id).storedBytes();
 
-        assertThatThrownBy(() -> failing.finish(actor, id)).isInstanceOf(IllegalStateException.class)
+        assertThatThrownBy(() -> failing.finish(actor, attachmentId)).isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("injected failure");
 
         long withEndSegment = Files.size(fileOf(ctx, id));
         assertThat(withEndSegment).as("the end segment (4 + 12 + 0 + 16) was appended").isEqualTo(recorded + 32);
         assertThat(Uploads.row(ctx, id).state()).as("the row was not moved").isEqualTo(UploadState.STAGING);
 
-        Finished finished = flow.finish(actor, id);
+        Finished finished = flow.finish(actor, attachmentId);
 
-        assertThat(finished.attachmentId()).isEqualTo(id);
-        assertThat(finished.sha256()).isEqualTo(Uploads.sha(body));
+        assertThat(finished.attachmentId()).isEqualTo(attachmentId);
+        assertThat(finished.files().getFirst().sha256()).isEqualTo(Uploads.sha(body));
         assertThat(Files.size(fileOf(ctx, id))).as("nothing more was appended").isEqualTo(withEndSegment);
-        assertThat(Uploads.readAll(flow, actor, id, 200)).isEqualTo(body);
-        assertThat(flow.finish(actor, id)).as("and a third finish gives the same answer").isEqualTo(finished);
+        assertThat(Uploads.readAll(flow, actor, attachmentId, 200)).isEqualTo(body);
+        assertThat(flow.finish(actor, attachmentId)).as("and a third finish gives the same answer").isEqualTo(finished);
     }
 
     // ------------------------------------------------------------------------------------------------ ATA-025
@@ -361,14 +376,16 @@ class AttachmentServiceTest {
         assertThat(second).as("the same upload, with the expiry it had").isEqualTo(first);
         byte[] changed = Uploads.body(301, 62);
         Expect.failure(() -> flow.begin(actor, Uploads.begin(operationKey, changed)), ConflictCode.ARTIFACT_OPERATION_CONFLICT);
-        Expect.failure(() -> flow.begin(actor, new Begin(operationKey, "other.md", Uploads.MEDIA_TYPE, body.length,
-                Uploads.sha(body), null)), ConflictCode.ARTIFACT_OPERATION_CONFLICT);
-        Expect.failure(() -> flow.begin(actor, new Begin(operationKey, Uploads.NAME, Uploads.MEDIA_TYPE, body.length,
-                Uploads.sha(Uploads.body(300, 63)), null)), ConflictCode.ARTIFACT_OPERATION_CONFLICT);
+        Expect.failure(() -> flow.begin(actor, new Begin(operationKey,
+                List.of(new BeginFile("other.md", Uploads.MEDIA_TYPE, body.length, Uploads.sha(body))), null)),
+                ConflictCode.ARTIFACT_OPERATION_CONFLICT);
+        Expect.failure(() -> flow.begin(actor, new Begin(operationKey,
+                List.of(new BeginFile(Uploads.NAME, Uploads.MEDIA_TYPE, body.length, Uploads.sha(Uploads.body(300, 63)))), null)),
+                ConflictCode.ARTIFACT_OPERATION_CONFLICT);
         assertThat(s.count("SELECT COUNT(*) FROM upload_staging WHERE owner = ? AND operation_key = ?", actor, operationKey))
                 .isEqualTo(1);
-        assertThat(flow.begin(other, Uploads.begin(operationKey, body)).uploadId()).as("the key belongs to its author")
-                .isNotEqualTo(first.uploadId());
+        assertThat(flow.begin(other, Uploads.begin(operationKey, body)).attachmentId()).as("the key belongs to its author")
+                .isNotEqualTo(first.attachmentId());
         assertThat(s.count("SELECT COUNT(*) FROM request_receipt")).as("no second decision point").isEqualTo(receipts);
     }
 
@@ -395,17 +412,17 @@ class AttachmentServiceTest {
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] body = Uploads.body(10, 71);
 
-        assertThat(flow.begin(actor, new Begin("op-" + Scenario.uuid(), Uploads.NAME, Uploads.MEDIA_TYPE, body.length,
-                Uploads.sha(body), null)).uploadId()).isNotBlank();
-        assertThat(flow.begin(actor, new Begin("op-" + Scenario.uuid(), Uploads.NAME, Uploads.MEDIA_TYPE, body.length,
-                Uploads.sha(body), "evidence")).uploadId()).isNotBlank();
+        assertThat(flow.begin(actor, new Begin("op-" + Scenario.uuid(), List.of(Uploads.beginFile(body)), null)).attachmentId())
+                .isNotBlank();
+        assertThat(flow.begin(actor, new Begin("op-" + Scenario.uuid(), List.of(Uploads.beginFile(body)), "evidence"))
+                .attachmentId()).isNotBlank();
         long rows = s.count("SELECT COUNT(*) FROM upload_staging WHERE owner = ?", actor);
         assertThat(rows).isEqualTo(2);
 
         for (String purpose : new String[] {"upload", "staged", "x"}) {
             String operationKey = "op-" + Scenario.uuid();
-            LedgerException failure = Expect.failure(() -> flow.begin(actor, new Begin(operationKey, Uploads.NAME,
-                    Uploads.MEDIA_TYPE, body.length, Uploads.sha(body), purpose)), ValidationCode.ARTIFACT_UNSUPPORTED_PURPOSE);
+            LedgerException failure = Expect.failure(() -> flow.begin(actor, new Begin(operationKey,
+                    List.of(Uploads.beginFile(body)), purpose)), ValidationCode.ARTIFACT_UNSUPPORTED_PURPOSE);
             assertThat(failure).isInstanceOf(ValidationException.class);
             assertThat(failure.args()).containsExactly(purpose);
             assertThat(Expect.message(failure)).as("a message in English").contains(purpose).contains("evidence");
@@ -429,7 +446,8 @@ class AttachmentServiceTest {
         Finished keptAttachment = Uploads.upload(flow, actor, kept, 150);
         byte[] body = Uploads.body(500, 82);
         List<byte[]> parts = Uploads.parts(body, 200, 150);
-        String id = flow.begin(actor, Uploads.begin(body)).uploadId();
+        Begun begun = flow.begin(actor, Uploads.begin(body));
+        String id = begun.files().getFirst().uploadId();
         Uploads.send(flow, actor, id, 0, parts.get(0));
         Path file = fileOf(ctx, id);
         long stored = Files.size(file);
@@ -440,7 +458,7 @@ class AttachmentServiceTest {
             assertThat(lock).isNotNull();
 
             assertThat(Uploads.readAll(flow, actor, keptAttachment.attachmentId(), 100)).as("a read of another attachment").isEqualTo(kept);
-            Status status = flow.status(actor, id);
+            Status status = flow.uploadStatus(actor, id);
             assertThat(status.state()).as("the status of the same upload").isEqualTo("STAGING");
             assertThat(status.received()).isEqualTo(200);
             Expect.failure(() -> Uploads.send(flow, actor, id, 1, parts.get(1)), ConflictCode.ARTIFACT_BUSY);
@@ -449,7 +467,7 @@ class AttachmentServiceTest {
 
         assertThat(Uploads.send(flow, actor, id, 1, parts.get(1))).as("the lock is gone: the same chunk is applied").isEqualTo(new Received(1, 350));
         assertThat(Uploads.send(flow, actor, id, 2, parts.get(2))).isEqualTo(new Received(2, 500));
-        assertThat(Uploads.readAll(flow, actor, flow.finish(actor, id).attachmentId(), 500)).isEqualTo(body);
+        assertThat(Uploads.readAll(flow, actor, flow.finish(actor, begun.attachmentId()).attachmentId(), 500)).isEqualTo(body);
     }
 
     // ------------------------------------------------------------------------------------------------ ATA-012 (the check of a record)
@@ -499,13 +517,58 @@ class AttachmentServiceTest {
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] body = Uploads.body(200, 95);
         List<byte[]> parts = Uploads.parts(body, 100);
-        String id = flow.begin(actor, Uploads.begin(body)).uploadId();
+        Begun begun = flow.begin(actor, Uploads.begin(body));
+        String id = begun.files().getFirst().uploadId();
         Uploads.send(flow, actor, id, 0, parts.get(0));
 
         ctx.clock().set(Uploads.row(ctx, id).expiresAt());
 
         Expect.failure(() -> Uploads.send(flow, actor, id, 1, parts.get(1)), ConflictCode.ARTIFACT_EXPIRED);
-        Expect.failure(() -> flow.finish(actor, id), ConflictCode.ARTIFACT_EXPIRED);
+        Expect.failure(() -> flow.finish(actor, begun.attachmentId()), ConflictCode.ARTIFACT_EXPIRED);
         assertThat(s.bean(UploadStagingRepository.class).findById(id)).isPresent();
+    }
+
+    // ------------------------------------------------------------------------------------------------ ATA-044
+
+    @Test
+    @DisplayName("ATA-044: multi-file bundle extends sibling expiry, fails atomically if any file is incomplete, and commits all files together")
+    void ata044_multiFileBundleLifecycleAtomicityAndExpiryExtension(Scenario s) {
+        LedgerAppContext ctx = s.ctx();
+        String actor = s.actorWith("defect");
+        AttachmentFlow flow = s.bean(AttachmentFlow.class);
+        byte[] report = Uploads.body(300, 101);
+        byte[] trace = Uploads.body(250, 102);
+
+        Begun begun = flow.begin(actor, Uploads.beginBundle("op-bundle-" + Scenario.uuid(), List.of(
+                Uploads.beginFile("review.md", "text/markdown", report),
+                Uploads.beginFile("trace.log", "text/plain", trace))));
+        assertThat(begun.files()).hasSize(2);
+        BegunFile f0 = begun.files().get(0);
+        BegunFile f1 = begun.files().get(1);
+        assertThat(f0.seq()).isZero();
+        assertThat(f1.seq()).isEqualTo(1);
+
+        // Sending a chunk on file 0 extends expiry for file 1 too
+        ctx.clock().set(TestClock.START.plus(Duration.ofMinutes(4)));
+        Uploads.send(flow, null, f0.uploadId(), 0, report);
+        assertThat(Uploads.row(ctx, f1.uploadId()).expiresAt()).isEqualTo(TestClock.START.plus(Duration.ofMinutes(14)));
+
+        // Finishing while file 1 is incomplete leaves zero rows in attachment/attachment_file/attachment_storage
+        Expect.failure(() -> flow.finish(actor, begun.attachmentId()), ConflictCode.ARTIFACT_INCOMPLETE);
+        assertThat(s.count("SELECT COUNT(*) FROM attachment WHERE id = ?", begun.attachmentId())).isZero();
+        assertThat(s.count("SELECT COUNT(*) FROM attachment_file WHERE attachment_id = ?", begun.attachmentId())).isZero();
+        assertThat(s.count("SELECT COUNT(*) FROM attachment_storage WHERE attachment_id = ?", begun.attachmentId())).isZero();
+
+        // Send remaining file via null-actor uploadId capability (editions 9/12), then finish
+        assertThat(flow.uploadStatus(null, f1.uploadId()).received()).isZero();
+        Uploads.send(flow, null, f1.uploadId(), 0, trace);
+        Finished finished = flow.finish(actor, begun.attachmentId());
+        assertThat(finished.files()).containsExactly(
+                new KeptFile(0, "review.md", "text/markdown", report.length, Uploads.sha(report)),
+                new KeptFile(1, "trace.log", "text/plain", trace.length, Uploads.sha(trace)));
+
+        assertThat(Uploads.readAll(flow, actor, begun.attachmentId(), 0, 100)).isEqualTo(report);
+        assertThat(Uploads.readAll(flow, actor, begun.attachmentId(), 1, 100)).isEqualTo(trace);
+        assertThat(flow.attachmentStatus(actor, begun.attachmentId()).files()).isEqualTo(finished.files());
     }
 }

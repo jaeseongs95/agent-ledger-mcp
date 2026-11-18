@@ -90,6 +90,7 @@ class InterruptedInstallTest {
     void ins039_whichCommandsUseTheDatabase() {
         for (CliCommand command : CliCommand.values()) {
             boolean without = command == CliCommand.SECRET_SET || command == CliCommand.TOKEN_GENERATE
+                    || command == CliCommand.ATTACHMENTS_PREPARE || command == CliCommand.ATTACHMENTS_SEND
                     || command == CliCommand.MCP_CHECK
                     || command == CliCommand.RENDER_DEPLOY || command == CliCommand.PREPARE_HOST
                     || command == CliCommand.INSTALL_DEFAULT;

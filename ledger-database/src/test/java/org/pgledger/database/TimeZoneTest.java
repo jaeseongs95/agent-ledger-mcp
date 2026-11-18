@@ -22,11 +22,13 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.pgledger.database.repository.AttachmentFileRepository;
 import org.pgledger.database.repository.AttachmentRepository;
+import org.pgledger.database.repository.AttachmentStorageRepository;
 import org.pgledger.database.repository.PasskeyCodeRepository;
 import org.pgledger.database.repository.PasskeyRepository;
 import org.pgledger.database.repository.UploadStagingRepository;
 import org.pgledger.domain.model.Attachment;
 import org.pgledger.domain.model.AttachmentFile;
+import org.pgledger.domain.model.AttachmentStorage;
 import org.pgledger.domain.model.OwnerPasskey;
 import org.pgledger.domain.model.UploadStaging;
 import org.pgledger.domain.rule.UploadState;
@@ -210,7 +212,7 @@ class TimeZoneTest {
             expected.put("upload_staging.created_at", I);
             expected.put("upload_staging.updated_at", I.plusSeconds(10));
             expected.put("attachment.created_at", I);
-            expected.put("attachment_file.created_at", I.plusSeconds(11));
+            expected.put("attachment_storage.created_at", I.plusSeconds(11));
             // the list of the columns is SchemaCatalogTest.TIMESTAMP_COLUMNS (the columns of the catalogue); here each one also
             // has the value it was written with
             assertThat(expected.keySet()).containsExactlyInAnyOrderElementsOf(SchemaCatalogTest.TIMESTAMP_COLUMNS);
@@ -272,17 +274,19 @@ class TimeZoneTest {
             codes.insert("h".repeat(64), "owner", I, I.plusSeconds(900));
             return codes.spend("h".repeat(64), I.plusSeconds(8));
         });
+        String attachmentId = java.util.UUID.randomUUID().toString();
         String uploadId = java.util.UUID.randomUUID().toString();
         StorageKey uploadKey = StorageKey.of("a".repeat(32));
         StorageKey fileKey = StorageKey.of("b".repeat(32));
         Sha256 sha = Sha256.of("c".repeat(64));
         ctx.tx(() -> {
-            ctx.bean(UploadStagingRepository.class).insert(new UploadStaging(uploadId, Seed.ALICE, "op-tz", "f.txt",
-                    "text/plain", 1, sha, 0, 0, 0, null, uploadKey, "k1", UploadState.STAGING, I.plusSeconds(600), I,
-                    I.plusSeconds(10)));
-            ctx.bean(AttachmentRepository.class).insert(new Attachment(uploadId, "f.txt", "text/plain", 1, sha,
-                    Seed.ALICE, I));
-            ctx.bean(AttachmentFileRepository.class).insert(new AttachmentFile(uploadId, 1, fileKey, "k1",
+            ctx.bean(UploadStagingRepository.class).insert(new UploadStaging(uploadId, attachmentId, 0, Seed.ALICE,
+                    "op-tz", "f.txt", "text/plain", 1, sha, 0, 0, 0, null, uploadKey, "k1", UploadState.STAGING,
+                    I.plusSeconds(600), I, I.plusSeconds(10)));
+            ctx.bean(AttachmentRepository.class).insert(new Attachment(attachmentId, Seed.ALICE, I));
+            ctx.bean(AttachmentFileRepository.class).insert(new AttachmentFile(attachmentId, 0, "f.txt", "text/plain",
+                    1, sha));
+            ctx.bean(AttachmentStorageRepository.class).insert(new AttachmentStorage(attachmentId, 0, 0, fileKey, "k1",
                     I.plusSeconds(11)));
             return null;
         });

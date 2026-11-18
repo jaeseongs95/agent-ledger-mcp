@@ -2,373 +2,553 @@ package org.pgledger.application.attachment;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.regex.Pattern;
 import org.pgledger.application.attachment.UploadCommands.Begin;
+import org.pgledger.application.attachment.UploadCommands.BeginFile;
 import org.pgledger.application.attachment.UploadCommands.Begun;
+import org.pgledger.application.attachment.UploadCommands.BegunFile;
 import org.pgledger.application.attachment.UploadCommands.Finished;
-import org.pgledger.application.attachment.UploadCommands.Received;
+import org.pgledger.application.attachment.UploadCommands.KeptFile;
 import org.pgledger.application.attachment.UploadCommands.Status;
-import org.pgledger.application.gate.GateSession;
 import org.pgledger.application.gate.WriteGate;
 import org.pgledger.database.repository.AttachmentFileRepository;
 import org.pgledger.database.repository.AttachmentRepository;
+import org.pgledger.database.repository.AttachmentStorageRepository;
 import org.pgledger.database.repository.UploadStagingRepository;
 import org.pgledger.domain.error.ArtifactRetry;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ConflictException;
-import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.LedgerException;
-import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.domain.error.LookupCode;
 import org.pgledger.domain.error.LookupException;
 import org.pgledger.domain.error.ValidationCode;
 import org.pgledger.domain.error.ValidationException;
+import org.pgledger.domain.error.ValidationIssue;
 import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.model.Attachment;
 import org.pgledger.domain.model.AttachmentFile;
+import org.pgledger.domain.model.AttachmentStorage;
 import org.pgledger.domain.model.UploadStaging;
 import org.pgledger.domain.rule.Channel;
 import org.pgledger.domain.rule.UploadState;
 import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.Sha256;
+import org.pgledger.domain.value.StorageKey;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.IdGenerator;
 
 /**
- * The database half of the five upload operations. Every method is one use case and one transaction (principle 4.4): it opens the
- * gate (host attestation, live key, at least one live grant), reads and writes the rows, and does no file I/O; the file work
- * between two methods is done by the entry point, {@link AttachmentFlow}. A race is decided by the affected rows of one conditional
- * statement, nothing is locked by hand and nothing is retried; the begin of an operation key is decided by the unique key
- * ({@code UNIQUE(owner, operation_key)}), and the request receipt is not used for these operations, so there is one decision point.
- *
- * <p>The id of the attachment is the id of the upload: a finish that is repeated finds its attachment by the same id.
+ * Database transactions of the bundle upload lifecycle (design 6): each public method is a single transaction and never
+ * touches files on disk. File encryption/verification happens in {@link AttachmentFlow} outside transactions.
  */
 @Service
 @Transactional
 @ConditionalOnAttachments
 public class UploadService {
 
-    /** What {@link #planChunk} decided: the chunk was received before (idempotent), or the entry point appends it. */
-    public sealed interface ChunkPlan {
+    /** Contract cap on the number of files in one bundle attachment. */
+    public static final int MAX_FILES = 64;
+    static final String PURPOSE_EVIDENCE = "evidence";
 
-        /** The same chunk was recorded already: its answer. */
-        record AlreadyHeld(Received received) implements ChunkPlan {
+    private static final int MAX_OPERATION_KEY = 128;
+    private static final int MAX_FILE_NAME = 512;
+    private static final int MAX_MEDIA_TYPE = 255;
+    private static final Pattern MEDIA_TYPE =
+            Pattern.compile("[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*(;[ -~]*)?");
+
+    /** Decision for {@link AttachmentFlow#chunk}: already applied idempotently, or ready to append to {@code row}. */
+    public sealed interface ChunkPlan {
+        record AlreadyApplied(UploadCommands.Received received) implements ChunkPlan {
         }
 
-        /** The chunk is the next one: the file work follows, for this row. */
         record Append(UploadStaging row) implements ChunkPlan {
         }
     }
 
-    /** What {@link #planFinish} decided: the attachment exists already, or the entry point closes the file. */
+    /** Decision for {@link AttachmentFlow#finish}: already finished, or rows ordered by {@code seq} to verify and close. */
     public sealed interface FinishPlan {
-
-        /** The upload was finished before: its attachment. */
         record Done(Finished finished) implements FinishPlan {
         }
 
-        /** The file is to be verified and closed, for this row. */
-        record Close(UploadStaging row) implements FinishPlan {
+        record Close(List<UploadStaging> rows) implements FinishPlan {
         }
     }
 
-    /** An attachment with the file that holds its body now (its latest row of attachment_file). */
-    public record Source(Attachment attachment, AttachmentFile file) {
+    /** One closed and verified file of a pending bundle, passed into {@link #completeUpload}. */
+    public record ClosedFile(String uploadId, long storedBytes) {
     }
 
-    private static final String EVIDENCE = "evidence";
-    private static final Pattern FILE_NAME_FORBIDDEN = Pattern.compile("[/\\\\\\p{Cntrl}]");
-    private static final Pattern MEDIA_TYPE = Pattern
-            .compile("[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*(;[ -~]*)?");
+    /** Resolved file view for reading an attachment page. */
+    public record FileView(Attachment attachment, AttachmentFile file, AttachmentStorage current) {
+    }
 
     private final WriteGate gate;
     private final UploadStagingRepository uploads;
     private final AttachmentRepository attachments;
     private final AttachmentFileRepository files;
+    private final AttachmentStorageRepository storages;
     private final AttachmentProperties properties;
-    private final IdGenerator ids;
     private final StorageKeys storageKeys;
     private final Clock clock;
 
-    public UploadService(WriteGate gate, UploadStagingRepository uploads, AttachmentRepository attachments,
-            AttachmentFileRepository files, AttachmentProperties properties, IdGenerator ids, StorageKeys storageKeys,
+    public UploadService(
+            WriteGate gate,
+            UploadStagingRepository uploads,
+            AttachmentRepository attachments,
+            AttachmentFileRepository files,
+            AttachmentStorageRepository storages,
+            AttachmentProperties properties,
+            StorageKeys storageKeys,
             Clock clock) {
         this.gate = gate;
         this.uploads = uploads;
         this.attachments = attachments;
         this.files = files;
+        this.storages = storages;
         this.properties = properties;
-        this.ids = ids;
         this.storageKeys = storageKeys;
         this.clock = clock;
     }
 
-    // ------------------------------------------------------------------------------------------------ begin
+    private Instant now() {
+        return clock.instant().truncatedTo(ChronoUnit.MILLIS);
+    }
 
-    /**
-     * Only the gate (host attestation, live key, a live grant): the entry point asks it before it reads the free space of the disk, so a
-     * caller that cannot prove its author learns nothing of the disk.
-     */
+    /** Verifies host attestation, live session key, and at least one live grant before touching disk. */
     public void admit(String actor) {
         gate.openWithAnyGrant(actor, Channel.AUTHOR);
     }
 
-    /**
-     * {@code artifact-begin}. The same author and operation key with the same file name, size and SHA-256 gives the upload that
-     * exists; other content under the key is ARTIFACT_OPERATION_CONFLICT. A new upload is refused, never cut, when it is over the
-     * file size limit, the budget of all open uploads or the number of open uploads of the author.
-     */
+    private AuthorId requireOwner(String actor) {
+        return gate.openWithAnyGrant(actor, Channel.AUTHOR).author();
+    }
+
+    private AuthorId optionalOwner(String actor) {
+        return actor == null ? null : gate.openWithAnyGrant(actor, Channel.AUTHOR).author();
+    }
+
     public Begun begin(String actor, Begin command) {
-        GateSession session = gate.openWithAnyGrant(actor, Channel.AUTHOR);
-        if (command.purpose() != null && !EVIDENCE.equals(command.purpose())) {
-            throw new ValidationException(ValidationCode.ARTIFACT_UNSUPPORTED_PURPOSE, List.of(command.purpose()), List.of(),
-                    java.util.Map.of());
+        AuthorId owner = requireOwner(actor);
+        List<ValidationIssue> issues = new ArrayList<>();
+        if (command == null) {
+            throw ValidationException.invalid("request", ValidationReason.REQUIRED);
         }
-        requireText("operationKey", command.operationKey(), 1, 128);
-        requireFileName(command.fileName());
-        requireMediaType(command.mediaType());
-        if (command.size() < 0) {
-            throw ValidationException.invalid("size", ValidationReason.MUST_NOT_BE_NEGATIVE);
+        String operationKey = command.operationKey();
+        if (operationKey == null || operationKey.isBlank()) {
+            issues.add(new ValidationIssue("operationKey", ValidationReason.REQUIRED, List.of()));
+        } else if (operationKey.length() > MAX_OPERATION_KEY) {
+            issues.add(new ValidationIssue("operationKey", ValidationReason.MUST_BE_AT_MOST_CHARS,
+                    List.of(Integer.toString(MAX_OPERATION_KEY))));
         }
-        Sha256 declared = declaredSha(command.sha256());
-        AuthorId owner = session.author();
-        return uploads.findByOperation(owner, command.operationKey()).map(row -> replay(row, command, declared))
-                .orElseGet(() -> create(owner, command, declared));
+        List<BeginFile> declared = command.files();
+        if (declared == null || declared.isEmpty()) {
+            issues.add(new ValidationIssue("files", ValidationReason.MUST_HOLD_ITEMS,
+                    List.of("1", Integer.toString(MAX_FILES))));
+        } else if (declared.size() > MAX_FILES) {
+            throw limitConflict("file-count", "Too many files in one bundle: " + declared.size() + " (max " + MAX_FILES + ")");
+        } else {
+            for (int seq = 0; seq < declared.size(); seq++) {
+                validateFile("files[" + seq + "]", declared.get(seq), issues);
+            }
+        }
+        if (!issues.isEmpty()) {
+            throw validation(issues);
+        }
+        String purpose = command.purpose();
+        if (purpose != null && !PURPOSE_EVIDENCE.equals(purpose)) {
+            throw new ValidationException(ValidationCode.ARTIFACT_UNSUPPORTED_PURPOSE, List.of(purpose),
+                    List.of(new ValidationIssue("purpose", ValidationReason.UNKNOWN_VALUE, List.of(purpose),
+                            List.of(PURPOSE_EVIDENCE))),
+                    Map.of());
+        }
+        List<ValidatedFile> checkedFiles = declared.stream().map(UploadService::toValidated).toList();
+        List<UploadStaging> existing = uploads.findByOwnerAndOperationKey(owner.value(), operationKey);
+        if (!existing.isEmpty()) {
+            return replayOrConflict(existing, checkedFiles, operationKey);
+        }
+        long totalDeclared = totalDeclaredBytes(checkedFiles);
+        long openBundles = uploads.countOpenBundles(owner.value());
+        if (openBundles >= properties.maxOpenPerOwner()) {
+            throw limitConflict("open-uploads",
+                    "Author has too many open upload bundles (" + openBundles + ", max " + properties.maxOpenPerOwner() + ")");
+        }
+        long declaredOpen = uploads.declaredOpenBytes();
+        long stagingBudget = properties.stagingBudgetBytes().toBytes();
+        if (addSaturating(declaredOpen, totalDeclared) > stagingBudget) {
+            throw limitConflict("staging-budget",
+                    "Staging upload budget exceeded (" + addSaturating(declaredOpen, totalDeclared) + " > " + stagingBudget + ")");
+        }
+        long keptBytes = files.totalBytes();
+        long attachmentBudget = properties.attachmentBudgetBytes().toBytes();
+        if (addSaturating(keptBytes, addSaturating(declaredOpen, totalDeclared)) > attachmentBudget) {
+            throw limitConflict("attachment-budget",
+                    "Total kept attachments plus open uploads budget exceeded");
+        }
+        Instant now = now();
+        Instant expiresAt = now.plus(properties.uploadTtl());
+        String attachmentId = UUID.randomUUID().toString();
+        String keyId = activeKeyId();
+        List<BegunFile> begunFiles = new ArrayList<>(checkedFiles.size());
+        for (int seq = 0; seq < checkedFiles.size(); seq++) {
+            ValidatedFile file = checkedFiles.get(seq);
+            String uploadId = UUID.randomUUID().toString();
+            StorageKey storageKey = storageKeys.next();
+            uploads.insert(new UploadStaging(
+                    uploadId,
+                    attachmentId,
+                    seq,
+                    owner,
+                    operationKey,
+                    file.fileName(),
+                    file.mediaType(),
+                    file.size(),
+                    file.sha256(),
+                    0L,
+                    0L,
+                    0L,
+                    null,
+                    storageKey,
+                    keyId,
+                    UploadState.STAGING,
+                    expiresAt,
+                    now,
+                    now));
+            begunFiles.add(new BegunFile(seq, uploadId));
+        }
+        return new Begun(attachmentId, List.copyOf(begunFiles), AttachmentProperties.CHUNK_BYTES, expiresAt);
     }
 
-    private Begun replay(UploadStaging row, Begin command, Sha256 declared) {
-        boolean same = Objects.equals(row.fileName(), command.fileName()) && row.declaredSize() == command.size()
-                && Objects.equals(row.declaredSha256(), declared);
-        if (!same) {
-            throw new ConflictException(ConflictCode.ARTIFACT_OPERATION_CONFLICT, List.of(command.operationKey()));
+    @Transactional(readOnly = true)
+    public ChunkPlan planChunk(String actor, String uploadId, long sequence, int chunkBytes, Sha256 chunkSha256) {
+        if (sequence < 0) {
+            throw ValidationException.invalid("sequence", ValidationReason.MUST_NOT_BE_NEGATIVE);
         }
-        return new Begun(row.id(), AttachmentProperties.CHUNK_BYTES, row.expiresAt());
-    }
-
-    /** ARTIFACT_LIMIT whose detail {@code limit} names which limit it is (file-size, open-uploads, staging-budget, attachment-budget). */
-    private static LedgerException limit(String kind, String text) {
-        return new ConflictException(ConflictCode.ARTIFACT_LIMIT, List.of(text))
-                .withDetails(Map.of(ArtifactRetry.LIMIT_KEY, List.of(kind)));
-    }
-
-    private Begun create(AuthorId owner, Begin command, Sha256 declared) {
-        if (command.size() > properties.maxFileBytes().toBytes()) {
-            throw limit("file-size", "the file is larger than the limit");
-        }
-        if (uploads.openCount(owner) >= properties.maxOpenPerOwner()) {
-            throw limit("open-uploads", "too many open uploads");
-        }
-        long open = uploads.openDeclaredBytes();
-        if (open + command.size() > properties.stagingBudgetBytes().toBytes()) {
-            throw limit("staging-budget", "the budget of the open uploads is used");
-        }
-        if (attachments.keptBytes() + open + command.size() > properties.attachmentBudgetBytes().toBytes()) {
-            throw limit("attachment-budget", "the budget of the kept attachments is used");
-        }
-        Instant now = clock.instant();
-        UploadStaging row = new UploadStaging(ids.generateId().toString(), owner, command.operationKey(), command.fileName(),
-                command.mediaType(), command.size(), declared, 0, 0, 0, null, storageKeys.next(), properties.activeKeyId(),
-                UploadState.STAGING, now.plus(properties.uploadTtl()), now, now);
-        uploads.insert(row);
-        return new Begun(row.id(), AttachmentProperties.CHUNK_BYTES, row.expiresAt());
-    }
-
-    // ------------------------------------------------------------------------------------------------ chunk
-
-    /**
-     * The step before the file work of {@code artifact-chunk} (design 4.4, step 1): the row of the author's upload, and whether
-     * the chunk is the one that was recorded last (idempotent), the next one, or a conflict.
-     */
-    public ChunkPlan planChunk(String actor, String uploadId, long sequence, int plainBytes, Sha256 chunkSha256) {
-        AuthorId author = gate.openWithAnyGrant(actor, Channel.AUTHOR).author();
-        UploadStaging row = ownedUpload(author, uploadId);
+        AuthorId caller = optionalOwner(actor);
+        UploadStaging row = findOwnedUpload(caller, uploadId);
         if (row.state() != UploadState.STAGING) {
-            throw new ConflictException(ConflictCode.ARTIFACT_CHUNK_CONFLICT, List.of());
+            throw new ConflictException(ConflictCode.ARTIFACT_CHUNK_CONFLICT,
+                    List.of("Upload is already completed"));
         }
-        requireNotExpired(row);
-        if (isRecordedLast(row, sequence, chunkSha256)) {
-            return new ChunkPlan.AlreadyHeld(new Received(sequence, row.receivedBytes()));
+        Instant now = now();
+        if (!now.isBefore(row.expiresAt())) {
+            throw new ConflictException(ConflictCode.ARTIFACT_EXPIRED, List.of(uploadId));
+        }
+        if (row.nextSequence() > 0 && sequence == row.nextSequence() - 1) {
+            if (Objects.equals(row.lastChunkSha256(), chunkSha256)) {
+                return new ChunkPlan.AlreadyApplied(new UploadCommands.Received(sequence, row.receivedBytes()));
+            }
+            throw new ConflictException(ConflictCode.ARTIFACT_CHUNK_CONFLICT,
+                    List.of("Different chunk content for already applied sequence " + sequence));
         }
         if (sequence != row.nextSequence()) {
-            throw new ConflictException(ConflictCode.ARTIFACT_CHUNK_CONFLICT, List.of());
+            throw new ConflictException(ConflictCode.ARTIFACT_CHUNK_CONFLICT,
+                    List.of("Expected sequence " + row.nextSequence() + " but got " + sequence));
         }
-        if (plainBytes < 1 || plainBytes > AttachmentProperties.CHUNK_BYTES) {
-            throw ValidationException.invalid("data", ValidationReason.OUT_OF_RANGE, "1",
-                    Integer.toString(AttachmentProperties.CHUNK_BYTES));
-        }
-        if (row.receivedBytes() + plainBytes > row.declaredSize()) {
+        if (addSaturating(row.receivedBytes(), chunkBytes) > row.declaredSize()) {
             throw new ConflictException(ConflictCode.ARTIFACT_HASH_MISMATCH,
-                    List.of("the chunk passes the declared size " + row.declaredSize()));
+                    List.of("Chunk bytes exceed declared size " + row.declaredSize()));
         }
         return new ChunkPlan.Append(row);
     }
 
-    /**
-     * The step after the file work (design 4.4, step 4): one conditional UPDATE that moves the row from the chunk number the
-     * caller read. Of two requests for the same chunk one gets the row; the other reads it again and answers idempotently when the
-     * chunk is the one that was recorded, and with a conflict when it is not. The expiry is counted again from this chunk.
-     */
-    public Received recordChunk(String actor, UploadStaging row, long newStoredBytes, int plainBytes, Sha256 chunkSha256) {
-        AuthorId author = gate.openWithAnyGrant(actor, Channel.AUTHOR).author();
-        Instant now = clock.instant();
-        long sequence = row.nextSequence();
-        if (uploads.advance(row.id(), sequence, newStoredBytes, plainBytes, chunkSha256, now.plus(properties.uploadTtl()),
-                now)) {
-            return new Received(sequence, row.receivedBytes() + plainBytes);
+    @Transactional
+    public UploadCommands.Received recordChunk(String actor, UploadStaging row, long storedBytes, int chunkBytes,
+            Sha256 chunkSha256) {
+        AuthorId caller = optionalOwner(actor);
+        Instant now = now();
+        Instant expiresAt = now.plus(properties.uploadTtl());
+        if (uploads.advance(row.id(), row.nextSequence(), storedBytes, row.receivedBytes() + chunkBytes,
+                chunkSha256, expiresAt, now)) {
+            uploads.extendBundle(row.attachmentId(), expiresAt, now);
+            return new UploadCommands.Received(row.nextSequence(), row.receivedBytes() + chunkBytes);
         }
-        UploadStaging current = ownedUpload(author, row.id());
-        if (current.state() == UploadState.STAGING && isRecordedLast(current, sequence, chunkSha256)) {
-            return new Received(sequence, current.receivedBytes());
+        UploadStaging current = findOwnedUpload(caller, row.id());
+        if (current.state() == UploadState.STAGING
+                && current.nextSequence() == row.nextSequence() + 1
+                && Objects.equals(current.lastChunkSha256(), chunkSha256)) {
+            return new UploadCommands.Received(row.nextSequence(), current.receivedBytes());
         }
-        throw new ConflictException(ConflictCode.ARTIFACT_CHUNK_CONFLICT, List.of());
-    }
-
-    private static boolean isRecordedLast(UploadStaging row, long sequence, Sha256 chunkSha256) {
-        return row.nextSequence() > 0 && sequence == row.nextSequence() - 1
-                && Objects.equals(chunkSha256, row.lastChunkSha256());
-    }
-
-    // ------------------------------------------------------------------------------------------------ finish
-
-    /**
-     * The step before the file work of {@code artifact-finish}: the attachment when the upload was finished before (the same id
-     * again gives the same attachment), otherwise the row the entry point verifies and closes.
-     */
-    public FinishPlan planFinish(String actor, String uploadId) {
-        AuthorId author = gate.openWithAnyGrant(actor, Channel.AUTHOR).author();
-        return attachments.findById(uploadId).filter(found -> Objects.equals(found.createdBy(), author))
-                .<FinishPlan>map(found -> new FinishPlan.Done(finished(found)))
-                .orElseGet(() -> new FinishPlan.Close(openUpload(author, uploadId)));
-    }
-
-    /**
-     * The step after the file work of finish: the state of the upload moves to COMPLETED by one conditional UPDATE, and then the
-     * attachment is inserted. When the UPDATE affects no row another finish won (its attachment is answered), or the reaper removed
-     * the row (the upload is gone).
-     */
-    public Finished completeUpload(String actor, UploadStaging row, long finishedFileBytes) {
-        AuthorId author = gate.openWithAnyGrant(actor, Channel.AUTHOR).author();
-        Instant now = clock.instant();
-        if (!uploads.complete(row.id(), row.nextSequence(), finishedFileBytes, now)) {
-            return attachments.findById(row.id()).filter(found -> Objects.equals(found.createdBy(), author))
-                    .map(UploadService::finished).orElseThrow(() -> new LookupException(LookupCode.ARTIFACT_NOT_FOUND,
-                            List.of(row.id())));
+        if (!now.isBefore(current.expiresAt())) {
+            throw new ConflictException(ConflictCode.ARTIFACT_EXPIRED, List.of(row.id()));
         }
-        Attachment attachment = new Attachment(row.id(), row.fileName(), row.mediaType(), row.declaredSize(),
-                row.declaredSha256(), author, now);
-        attachments.insert(attachment);
-        files.insert(new AttachmentFile(row.id(), 1, row.storageKey(), row.keyId(), now));
-        return finished(attachment);
+        throw new ConflictException(ConflictCode.ARTIFACT_CHUNK_CONFLICT,
+                List.of("Upload state changed concurrently"));
     }
 
-    private static Finished finished(Attachment attachment) {
-        return new Finished(attachment.id(), attachment.sizeBytes(), attachment.contentSha256().hex());
-    }
-
-    // ------------------------------------------------------------------------------------------------ status and read
-
-    /**
-     * {@code artifact-status}: an attachment, or an upload of the author; no path and no storage key. The attachment is looked up
-     * first: finish keeps the upload row under the same id (state COMPLETED), and a finished upload is answered in the attachment
-     * form (no expiry, no sequence), not from that row.
-     */
-    public Status status(String actor, String id) {
-        AuthorId author = gate.openWithAnyGrant(actor, Channel.AUTHOR).author();
-        requireUuid("id", id);
-        return attachments.findById(id)
-                .map(found -> new Status(found.id(), UploadState.COMPLETED.name(), found.fileName(), found.mediaType(),
-                        found.sizeBytes(), found.contentSha256().hex(), null, found.sizeBytes(), null))
-                .orElseGet(() -> uploads.findById(id).filter(row -> Objects.equals(row.owner(), author))
-                        .map(row -> new Status(row.id(), row.state().name(), row.fileName(), row.mediaType(),
-                                row.declaredSize(), row.declaredSha256().hex(), row.expiresAt(), row.receivedBytes(),
-                                row.nextSequence()))
-                        .orElseThrow(() -> new LookupException(LookupCode.ARTIFACT_NOT_FOUND, List.of(id))));
-    }
-
-    /**
-     * The step before the file work of {@code artifact-read}: the attachment with its current file (any author that passes the gate
-     * may read an attachment, like the history that points to it) and the page the caller asks for, checked against its size.
-     */
-    public Source planRead(String actor, String attachmentId, long offsetBytes, long maxBytes) {
-        gate.openWithAnyGrant(actor, Channel.AUTHOR);
-        requireUuid("attachmentId", attachmentId);
-        Attachment attachment = attachments.findById(attachmentId)
-                .orElseThrow(() -> new LookupException(LookupCode.ARTIFACT_NOT_FOUND, List.of(attachmentId)));
-        AttachmentFile file = files.currentOf(attachmentId).orElseThrow(() -> new InfrastructureException(
-                InfrastructureCode.ARTIFACT_CORRUPTED, List.of()));
-        if (offsetBytes < 0 || offsetBytes > attachment.sizeBytes()) {
-            throw ValidationException.invalid("offsetBytes", ValidationReason.OUT_OF_RANGE, "0",
-                    Long.toString(attachment.sizeBytes()));
+    @Transactional(readOnly = true)
+    public FinishPlan planFinish(String actor, String attachmentId) {
+        AuthorId caller = requireOwner(actor);
+        if (!isUuid(attachmentId)) {
+            throw notFound(attachmentId);
         }
-        if (maxBytes < 1 || maxBytes > AttachmentProperties.CHUNK_BYTES) {
-            throw ValidationException.invalid("maxBytes", ValidationReason.OUT_OF_RANGE, "1",
-                    Integer.toString(AttachmentProperties.CHUNK_BYTES));
+        List<UploadStaging> rows = uploads.findByAttachmentId(attachmentId);
+        if (rows.isEmpty()) {
+            Attachment kept = attachments.findById(attachmentId).orElseThrow(() -> notFound(attachmentId));
+            if (!Objects.equals(kept.createdBy(), caller)) {
+                throw notFound(attachmentId);
+            }
+            return new FinishPlan.Done(finishedOf(kept.id()));
         }
-        return new Source(attachment, file);
+        if (!Objects.equals(rows.getFirst().owner(), caller)) {
+            throw notFound(attachmentId);
+        }
+        if (rows.getFirst().state() == UploadState.COMPLETED) {
+            return new FinishPlan.Done(finishedOf(attachmentId));
+        }
+        Instant now = now();
+        for (int seq = 0; seq < rows.size(); seq++) {
+            UploadStaging row = rows.get(seq);
+            if (row.seq() != seq || row.state() != UploadState.STAGING || !now.isBefore(row.expiresAt())) {
+                throw new ConflictException(ConflictCode.ARTIFACT_EXPIRED, List.of(attachmentId));
+            }
+        }
+        return new FinishPlan.Close(rows);
     }
 
-    // ------------------------------------------------------------------------------------------------ details
-
-    /** The upload of the author that still receives bytes: not finished and not expired (an expired one waits only for the reaper). */
-    private UploadStaging openUpload(AuthorId author, String uploadId) {
-        UploadStaging row = ownedUpload(author, uploadId);
-        if (row.state() != UploadState.STAGING) {
-            throw new ConflictException(ConflictCode.ARTIFACT_CHUNK_CONFLICT, List.of());
+    @Transactional
+    public Finished completeUpload(String actor, String attachmentId, List<ClosedFile> closed) {
+        AuthorId caller = requireOwner(actor);
+        List<UploadStaging> rows = uploads.findByAttachmentId(attachmentId);
+        if (rows.isEmpty()) {
+            return attachments.findById(attachmentId)
+                    .filter(kept -> Objects.equals(kept.createdBy(), caller))
+                    .map(kept -> finishedOf(kept.id()))
+                    .orElseThrow(() -> notFound(attachmentId));
         }
-        requireNotExpired(row);
+        if (!Objects.equals(rows.getFirst().owner(), caller)) {
+            throw notFound(attachmentId);
+        }
+        if (rows.getFirst().state() == UploadState.COMPLETED) {
+            return finishedOf(attachmentId);
+        }
+        if (closed == null || closed.size() != rows.size()) {
+            throw notFound(attachmentId);
+        }
+        Instant now = now();
+        for (int seq = 0; seq < rows.size(); seq++) {
+            UploadStaging row = rows.get(seq);
+            ClosedFile closedFile = closed.get(seq);
+            if (!Objects.equals(row.id(), closedFile.uploadId()) || !uploads.complete(row.id(), closedFile.storedBytes(), now)) {
+                List<UploadStaging> current = uploads.findByAttachmentId(attachmentId);
+                if (!current.isEmpty() && current.getFirst().state() == UploadState.COMPLETED) {
+                    return finishedOf(attachmentId);
+                }
+                throw notFound(attachmentId);
+            }
+        }
+        AuthorId owner = rows.getFirst().owner();
+        attachments.insert(new Attachment(attachmentId, owner, now));
+        for (UploadStaging row : rows) {
+            files.insert(new AttachmentFile(attachmentId, row.seq(), row.fileName(), row.mediaType(),
+                    row.declaredSize(), row.declaredSha256()));
+            storages.insert(new AttachmentStorage(attachmentId, row.seq(), 0, row.storageKey(), row.keyId(), now));
+        }
+        return finishedOf(attachmentId);
+    }
+
+    @Transactional(readOnly = true)
+    public Status uploadStatus(String actor, String uploadId) {
+        AuthorId caller = optionalOwner(actor);
+        UploadStaging row = findOwnedUpload(caller, uploadId);
+        return new Status(
+                "upload",
+                row.id(),
+                row.attachmentId(),
+                row.seq(),
+                row.state().name(),
+                row.fileName(),
+                row.mediaType(),
+                row.declaredSize(),
+                row.declaredSha256().hex(),
+                row.expiresAt(),
+                row.receivedBytes(),
+                row.nextSequence(),
+                null);
+    }
+
+    @Transactional(readOnly = true)
+    public Status attachmentStatus(String actor, String attachmentId) {
+        requireOwner(actor);
+        return readAttachmentStatus(attachmentId);
+    }
+
+    @Transactional(readOnly = true)
+    public Status readAttachmentStatus(String attachmentId) {
+        if (!isUuid(attachmentId)) {
+            throw notFound(attachmentId);
+        }
+        Attachment attachment = attachments.findById(attachmentId).orElseThrow(() -> notFound(attachmentId));
+        return new Status(
+                "attachment",
+                null,
+                attachment.id(),
+                null,
+                UploadState.COMPLETED.name(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                keptFiles(attachment.id()));
+    }
+
+    @Transactional(readOnly = true)
+    public FileView fileView(String actor, String attachmentId, int seq) {
+        requireOwner(actor);
+        return readFileView(attachmentId, seq);
+    }
+
+    @Transactional(readOnly = true)
+    public FileView readFileView(String attachmentId, int seq) {
+        if (!isUuid(attachmentId) || seq < 0) {
+            throw notFound(attachmentId);
+        }
+        Attachment attachment = attachments.findById(attachmentId).orElseThrow(() -> notFound(attachmentId));
+        AttachmentFile file = files.at(attachmentId, seq).orElseThrow(() -> notFound(attachmentId));
+        AttachmentStorage current = storages.current(attachmentId, seq).orElseThrow(() -> notFound(attachmentId));
+        return new FileView(attachment, file, current);
+    }
+
+    private UploadStaging findOwnedUpload(AuthorId caller, String uploadId) {
+        if (!isUuid(uploadId)) {
+            throw notFound(uploadId);
+        }
+        UploadStaging row = uploads.findById(uploadId).orElseThrow(() -> notFound(uploadId));
+        if (caller != null && !Objects.equals(row.owner(), caller)) {
+            throw notFound(uploadId);
+        }
         return row;
     }
 
-    private void requireNotExpired(UploadStaging row) {
-        if (!row.expiresAt().isAfter(clock.instant())) {
-            throw new ConflictException(ConflictCode.ARTIFACT_EXPIRED, List.of(row.id()));
+    private Finished finishedOf(String attachmentId) {
+        return new Finished(attachmentId, keptFiles(attachmentId));
+    }
+
+    private List<KeptFile> keptFiles(String attachmentId) {
+        return files.ofAttachment(attachmentId).stream()
+                .map(f -> new KeptFile(f.seq(), f.fileName(), f.mediaType(), f.sizeBytes(), f.contentSha256().hex()))
+                .toList();
+    }
+
+    private String activeKeyId() {
+        String keyId = properties.activeKeyId();
+        if (keyId == null || keyId.isBlank()) {
+            throw new IllegalStateException("ledger.attachments.active-key-id is not set");
         }
+        return keyId;
     }
 
-    private UploadStaging ownedUpload(AuthorId author, String uploadId) {
-        requireUuid("uploadId", uploadId);
-        return uploads.findById(uploadId).filter(row -> Objects.equals(row.owner(), author))
-                .orElseThrow(() -> new LookupException(LookupCode.ARTIFACT_NOT_FOUND, List.of(uploadId)));
+    private Begun replayOrConflict(List<UploadStaging> existing, List<ValidatedFile> declared, String operationKey) {
+        if (existing.size() != declared.size()) {
+            throw new ConflictException(ConflictCode.ARTIFACT_OPERATION_CONFLICT, List.of(operationKey));
+        }
+        for (int seq = 0; seq < declared.size(); seq++) {
+            UploadStaging row = existing.get(seq);
+            ValidatedFile file = declared.get(seq);
+            if (row.seq() != seq
+                    || !Objects.equals(row.fileName(), file.fileName())
+                    || !Objects.equals(row.mediaType(), file.mediaType())
+                    || row.declaredSize() != file.size()
+                    || !Objects.equals(row.declaredSha256(), file.sha256())) {
+                throw new ConflictException(ConflictCode.ARTIFACT_OPERATION_CONFLICT, List.of(operationKey));
+            }
+        }
+        List<BegunFile> begunFiles = existing.stream().map(r -> new BegunFile(r.seq(), r.id())).toList();
+        return new Begun(existing.getFirst().attachmentId(), begunFiles, AttachmentProperties.CHUNK_BYTES,
+                existing.getFirst().expiresAt());
     }
 
-    private static Sha256 declaredSha(String text) {
+    private long totalDeclaredBytes(List<ValidatedFile> files) {
+        long maxFile = properties.maxFileBytes().toBytes();
+        long total = 0L;
+        for (ValidatedFile file : files) {
+            if (file.size() > maxFile) {
+                throw limitConflict("file-size",
+                        "File is larger than the limit (" + file.size() + " > " + maxFile + ")");
+            }
+            total = addSaturating(total, file.size());
+        }
+        return total;
+    }
+
+    private static long addSaturating(long a, long b) {
+        return a > Long.MAX_VALUE - b ? Long.MAX_VALUE : a + b;
+    }
+
+    private record ValidatedFile(String fileName, String mediaType, long size, Sha256 sha256) {
+    }
+
+    private static ValidatedFile toValidated(BeginFile file) {
+        return new ValidatedFile(file.fileName(), file.mediaType(), file.size(), Sha256.of(file.sha256()));
+    }
+
+    private static void validateFile(String prefix, BeginFile file, List<ValidationIssue> issues) {
+        if (file == null) {
+            issues.add(new ValidationIssue(prefix, ValidationReason.REQUIRED, List.of()));
+            return;
+        }
+        if (file.fileName() == null || file.fileName().isBlank()) {
+            issues.add(new ValidationIssue(prefix + ".fileName", ValidationReason.REQUIRED, List.of()));
+        } else if (file.fileName().length() > MAX_FILE_NAME || hasControlOrBackslash(file.fileName())) {
+            issues.add(new ValidationIssue(prefix + ".fileName", ValidationReason.MUST_BE_AT_MOST_CHARS,
+                    List.of(Integer.toString(MAX_FILE_NAME))));
+        }
+        if (file.mediaType() == null || file.mediaType().length() > MAX_MEDIA_TYPE
+                || !MEDIA_TYPE.matcher(file.mediaType()).matches()) {
+            issues.add(new ValidationIssue(prefix + ".mediaType", ValidationReason.MUST_MATCH,
+                    List.of("type/subtype")));
+        }
+        if (file.size() < 0) {
+            issues.add(new ValidationIssue(prefix + ".size", ValidationReason.MUST_NOT_BE_NEGATIVE, List.of()));
+        }
         try {
-            return Sha256.of(text);
-        } catch (ValidationException invalid) {
-            throw ValidationException.invalid("sha256", ValidationReason.MUST_BE_LOWER_CASE_HEX, invalid, "64");
+            Sha256.of(file.sha256());
+        } catch (RuntimeException invalid) {
+            issues.add(new ValidationIssue(prefix + ".sha256", ValidationReason.MUST_BE_LOWER_CASE_HEX, List.of("64")));
         }
     }
 
-    private static void requireUuid(String path, String value) {
+    private static boolean hasControlOrBackslash(String text) {
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c < 0x20 || c == 0x7F || c == '\\') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isUuid(String id) {
+        if (id == null) {
+            return false;
+        }
         try {
-            java.util.UUID.fromString(value == null ? "" : value);
-        } catch (IllegalArgumentException notAUuid) {
-            throw ValidationException.invalid(path, ValidationReason.MUST_BE_UUID, notAUuid);
+            UUID.fromString(id);
+            return true;
+        } catch (IllegalArgumentException notUuid) {
+            return false;
         }
     }
 
-    private static void requireText(String path, String value, int min, int max) {
-        if (value == null || value.length() < min || value.length() > max || value.isBlank()) {
-            throw ValidationException.invalid(path, ValidationReason.MUST_BE_CHARS_RANGE, Integer.toString(min),
-                    Integer.toString(max));
-        }
+    private static LedgerException limitConflict(String limitKind, String message) {
+        return new ConflictException(ConflictCode.ARTIFACT_LIMIT, List.of(message))
+                .withDetails(Map.of(ArtifactRetry.LIMIT_KEY, List.of(limitKind)));
     }
 
-    private static void requireFileName(String name) {
-        requireText("fileName", name, 1, 255);
-        if (FILE_NAME_FORBIDDEN.matcher(name).find()) {
-            throw ValidationException.invalid("fileName", ValidationReason.MUST_MATCH, "a name without a path or a control character");
-        }
+    private static LookupException notFound(String id) {
+        return new LookupException(LookupCode.ARTIFACT_NOT_FOUND, List.of(id == null ? "" : id));
     }
 
-    private static void requireMediaType(String type) {
-        requireText("mediaType", type, 3, 127);
-        if (!MEDIA_TYPE.matcher(type).matches()) {
-            throw ValidationException.invalid("mediaType", ValidationReason.MUST_MATCH, "type/subtype");
-        }
+    private static ValidationException validation(List<ValidationIssue> issues) {
+        return new ValidationException(ValidationCode.VALIDATION_FAILED,
+                List.of(issues.getFirst().path()), issues, Map.of());
     }
 }

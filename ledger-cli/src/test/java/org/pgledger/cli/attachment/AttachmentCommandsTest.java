@@ -89,10 +89,12 @@ class AttachmentCommandsTest {
 
     private String addAttachment(StorageKey key, long size, String sha256, String keyId) {
         String id = UUID.randomUUID().toString();
-        database.update("INSERT INTO attachment (id, file_name, media_type, size_bytes, content_sha256, created_by, created_at) "
-                + "VALUES (?, 'report.md', 'text/markdown', ?, ?, ?, ?)", id, size, sha256, AUTHOR, utc(LONG_AGO));
-        database.update("INSERT INTO attachment_file (attachment_id, seq, storage_key, key_id, created_at) VALUES (?, 1, ?, ?, ?)",
-                id, key.hex(), keyId, utc(LONG_AGO));
+        database.update("INSERT INTO attachment (id, created_by, created_at) VALUES (?, ?, ?)",
+                id, AUTHOR, utc(LONG_AGO));
+        database.update("INSERT INTO attachment_file (attachment_id, seq, file_name, media_type, size_bytes, content_sha256) "
+                + "VALUES (?, 0, 'report.md', 'text/markdown', ?, ?)", id, size, sha256);
+        database.update("INSERT INTO attachment_storage (attachment_id, seq, rev, storage_key, key_id, created_at) "
+                + "VALUES (?, 0, 0, ?, ?, ?)", id, key.hex(), keyId, utc(LONG_AGO));
         return id;
     }
 
@@ -291,9 +293,9 @@ class AttachmentCommandsTest {
         assertThat(output.info()).contains("Wrote 1 attachment file(s) again, from the key " + fixture.keyId()
                 + " to the active key " + newKeyId + "; skipped 0").contains("attachments-check");
         List<Map<String, Object>> rows = database.rows(
-                "SELECT seq, storage_key, key_id FROM attachment_file WHERE attachment_id = ? ORDER BY seq", id);
+                "SELECT rev, storage_key, key_id FROM attachment_storage WHERE attachment_id = ? AND seq = 0 ORDER BY rev", id);
         assertThat(rows).hasSize(2);
-        assertThat(((Number) rows.get(1).get("seq")).longValue()).isEqualTo(2);
+        assertThat(((Number) rows.get(1).get("rev")).longValue()).isEqualTo(1);
         assertThat(rows.get(1).get("key_id")).isEqualTo(newKeyId);
         assertThat(rows.get(1).get("storage_key")).isNotEqualTo(stored.key().hex());
         StorageKey fresh = StorageKey.of((String) rows.get(1).get("storage_key"));
@@ -308,7 +310,7 @@ class AttachmentCommandsTest {
         assertThat(output.info()).doesNotContainPattern("[0-9a-f]{32}").doesNotContain(tmp.toString());
         // the old file is a replaced file now, and stays in place until the grace has passed since the new row
         assertThat(fixture.fileOf(stored.key())).exists();
-        database.update("UPDATE attachment_file SET created_at = ? WHERE attachment_id = ? AND seq = 2", utc(LONG_AGO), id);
+        database.update("UPDATE attachment_storage SET created_at = ? WHERE attachment_id = ? AND seq = 0 AND rev = 1", utc(LONG_AGO), id);
 
         RecordingOutput checked = new RecordingOutput();
         Outcome check = run(cli, checked, newKeyId, "attachments-check");
@@ -330,7 +332,7 @@ class AttachmentCommandsTest {
 
         assertThat(result.exitCode()).isEqualTo(ExitStatus.USAGE.code());
         assertThat(result.code()).contains(ErrorCode.ATTACHMENTS_REKEY_FROM_ACTIVE);
-        assertThat(database.rows("SELECT attachment_id FROM attachment_file")).hasSize(1);
+        assertThat(database.rows("SELECT attachment_id FROM attachment_storage")).hasSize(1);
         assertThat(database.rows(AUDIT, "ATTACHMENT_REKEY")).isEmpty();
         assertThat(Files.exists(fixture.fileOf(stored.key()))).isTrue();
     }

@@ -26,6 +26,7 @@ import org.pgledger.mcp.error.ToolError;
 import org.pgledger.mcp.support.Args;
 import org.pgledger.mcp.support.AttachmentCalls;
 import org.pgledger.mcp.support.AttachmentCalls.Begin;
+import org.pgledger.mcp.support.AttachmentCalls.BeginFile;
 import org.pgledger.mcp.support.AttachmentCalls.Chunk;
 import org.pgledger.mcp.support.AttachmentCalls.Finish;
 import org.pgledger.mcp.support.AttachmentCalls.Read;
@@ -40,15 +41,12 @@ import org.springframework.core.env.Environment;
 import tools.jackson.core.type.TypeReference;
 
 /**
- * ATA-001 and ATA-032 through the real server and the real tool calls: the five attachment tools with the attestation of the hook
- * (signed for the hyphenated tool name, with an empty operation key in the claim). The upload goes through begin, three chunks, finish, status and read;
- * the cases of the storage itself (tampering, budgets, races) are those of the application tests.
+ * ATA-001, ATA-032, and bundle round-trip tests through the real MCP server and tools.
  */
 @McpServerTest
 class AttachmentToolsTest {
 
     private static final int CHUNK = AttachmentProperties.CHUNK_BYTES;
-    /** The base64 text of a full chunk: {@code ceil(262144 / 3) * 4}. */
     private static final int FULL_CHUNK_TEXT = 349_528;
 
     private static byte[] textBody(int length) {
@@ -68,22 +66,21 @@ class AttachmentToolsTest {
         return StandardCharsets.ISO_8859_1.decode(ByteBuffer.wrap(bytes)).toString();
     }
 
-    /** Uploads the body whole through the tools and returns the id of its attachment. */
     private static String upload(McpSession session, String author, String mediaType, byte[] body) {
         AttachmentOutputs.Begun begun = session.ok("artifact-begin",
                 Begin.of(UUID.randomUUID().toString(), "evidence.bin", mediaType, body, author),
                 AttachmentOutputs.Begun.class);
+        String uploadId = begun.files().getFirst().uploadId();
         for (int number = 0; number * CHUNK < body.length; number++) {
-            session.ok("artifact-chunk", Chunk.of(begun.uploadId(), number, slice(body, number), author),
+            session.ok("artifact-chunk", Chunk.of(uploadId, number, slice(body, number), author),
                     AttachmentOutputs.Received.class);
         }
-        return session.ok("artifact-finish", new Finish(begun.uploadId(), author), AttachmentOutputs.Finished.class)
-                .attachmentId();
+        return session.ok("artifact-finish", new Finish(begun.attachmentId(), author),
+                AttachmentOutputs.Finished.class).attachmentId();
     }
 
-    /** One page of the attachment. */
     private static AttachmentOutputs.Page page(McpSession session, String author, String attachmentId, long offset) {
-        return session.ok("artifact-read", new Read(attachmentId, offset, (long) CHUNK, author),
+        return session.ok("artifact-read", Read.of(attachmentId, offset, CHUNK, author),
                 AttachmentOutputs.Page.class);
     }
 
@@ -96,8 +93,7 @@ class AttachmentToolsTest {
     }
 
     @Test
-    @DisplayName("ATA-001: begin, three chunks, finish, status and read through the server: the pages joined are the body with the "
-            + "declared SHA-256; status shows no path and no storage key; the stored file shows nothing of the body")
+    @DisplayName("ATA-001: begin, three chunks, finish, status and read through the server")
     void aBodyOfThreeChunksIsUploadedAndReadBack(McpSession session, Scenario scenario, @Autowired Clock clock,
             @Autowired Environment environment) {
         String author = scenario.actorWith("ata1", "defect");
@@ -109,57 +105,57 @@ class AttachmentToolsTest {
         AttachmentOutputs.Begun begun = session.ok("artifact-begin", begin, AttachmentOutputs.Begun.class);
         assertThat(begun.maxChunkBytes()).isEqualTo(CHUNK);
         assertThat(begun.expiresAt()).isAfter(clock.instant());
-        // the same operationKey with the same content is the same upload
-        assertThat(session.ok("artifact-begin", begin, AttachmentOutputs.Begun.class).uploadId())
-                .isEqualTo(begun.uploadId());
+        assertThat(begun.files()).hasSize(1);
+        String uploadId = begun.files().getFirst().uploadId();
+        // same operationKey with same files returns the same attachmentId and uploadIds
+        assertThat(session.ok("artifact-begin", begin, AttachmentOutputs.Begun.class)).isEqualTo(begun);
 
         long received = 0;
         for (int number = 0; number < 3; number++) {
             byte[] bytes = slice(body, number);
             received += bytes.length;
-            assertThat(session.ok("artifact-chunk", Chunk.of(begun.uploadId(), number, bytes, author),
+            assertThat(session.ok("artifact-chunk", Chunk.of(uploadId, number, bytes, author),
                     AttachmentOutputs.Received.class)).isEqualTo(new AttachmentOutputs.Received(number, received));
         }
-        // the last applied chunk sent again is answered with the current state; an earlier one is a conflict
-        assertThat(session.ok("artifact-chunk", Chunk.of(begun.uploadId(), 2, slice(body, 2), author),
+        assertThat(session.ok("artifact-chunk", Chunk.of(uploadId, 2, slice(body, 2), author),
                 AttachmentOutputs.Received.class)).isEqualTo(new AttachmentOutputs.Received(2, received));
-        assertThat(session.failed("artifact-chunk", Chunk.of(begun.uploadId(), 0, slice(body, 0), author)).code())
+        assertThat(session.failed("artifact-chunk", Chunk.of(uploadId, 0, slice(body, 0), author)).code())
                 .isEqualTo("ARTIFACT_CHUNK_CONFLICT");
-        // a chunk whose bytes are not the ones its hash was made for
-        Chunk wrong = new Chunk(begun.uploadId(), 3L, Chunk.of(begun.uploadId(), 3, new byte[] {1}, author).data(),
+        Chunk wrong = new Chunk(uploadId, 3L, Chunk.of(uploadId, 3, new byte[] {1}, author).data(),
                 AttachmentCalls.sha256(new byte[] {2}), author);
         assertThat(session.failed("artifact-chunk", wrong).code()).isEqualTo("CHUNK_HASH_MISMATCH");
 
-        AttachmentOutputs.Status open = session.ok("artifact-status", Status.ofUpload(begun.uploadId(), author),
+        AttachmentOutputs.Status open = session.ok("artifact-status", Status.ofUpload(uploadId, author),
                 AttachmentOutputs.Status.class);
-        assertThat(open.id()).isEqualTo(begun.uploadId());
+        assertThat(open.kind()).isEqualTo("upload");
+        assertThat(open.uploadId()).isEqualTo(uploadId);
+        assertThat(open.attachmentId()).isEqualTo(begun.attachmentId());
+        assertThat(open.seq()).isZero();
         assertThat(open.state()).isEqualTo("STAGING");
         assertThat(open.received()).isEqualTo(body.length);
         assertThat(open.sequence()).isEqualTo(3L);
         assertThat(open.expiresAt()).isNotNull();
 
-        AttachmentOutputs.Finished finished = session.ok("artifact-finish", new Finish(begun.uploadId(), author),
+        AttachmentOutputs.Finished finished = session.ok("artifact-finish", new Finish(begun.attachmentId(), author),
                 AttachmentOutputs.Finished.class);
-        assertThat(finished.size()).isEqualTo(body.length);
-        assertThat(finished.sha256()).isEqualTo(begin.sha256());
-        assertThat(session.ok("artifact-finish", new Finish(begun.uploadId(), author), AttachmentOutputs.Finished.class))
-                .isEqualTo(finished);
+        assertThat(finished.attachmentId()).isEqualTo(begun.attachmentId());
+        assertThat(finished.files()).containsExactly(
+                new AttachmentOutputs.KeptFile(0, "review.md", "text/markdown", body.length,
+                        AttachmentCalls.sha256(body)));
+        assertThat(session.ok("artifact-finish", new Finish(begun.attachmentId(), author),
+                AttachmentOutputs.Finished.class)).isEqualTo(finished);
 
-        CallToolResult statusResult = session.call("artifact-status", Status.ofAttachment(finished.attachmentId(), author));
+        CallToolResult statusResult = session.call("artifact-status",
+                Status.ofAttachment(finished.attachmentId(), author));
         assertThat(statusResult.isError()).isFalse();
         Map<String, Object> wire = session.mapper().convertValue(statusResult.structuredContent(),
                 new TypeReference<Map<String, Object>>() {
                 });
-        assertThat(wire.keySet()).containsExactlyInAnyOrder("id", "state", "fileName", "mediaType", "size", "sha256",
-                "expiresAt", "received", "sequence");
+        assertThat(wire.keySet()).containsExactlyInAnyOrder("kind", "attachmentId", "state", "files");
         AttachmentOutputs.Status kept = session.read(statusResult, AttachmentOutputs.Status.class);
+        assertThat(kept.kind()).isEqualTo("attachment");
         assertThat(kept.state()).isEqualTo("COMPLETED");
-        assertThat(kept.fileName()).isEqualTo("review.md");
-        assertThat(kept.mediaType()).isEqualTo("text/markdown");
-        assertThat(kept.size()).isEqualTo(body.length);
-        assertThat(kept.sha256()).isEqualTo(begin.sha256());
-        assertThat(kept.expiresAt()).isNull();
-        assertThat(kept.sequence()).isNull();
+        assertThat(kept.files()).isEqualTo(finished.files());
 
         ByteArrayOutputStream joined = new ByteArrayOutputStream();
         long offset = 0;
@@ -167,6 +163,7 @@ class AttachmentToolsTest {
         while (offset < body.length) {
             AttachmentOutputs.Page page = page(session, author, finished.attachmentId(), offset);
             byte[] bytes = java.util.Base64.getDecoder().decode(page.data());
+            assertThat(page.seq()).isZero();
             assertThat(page.offsetBytes()).isEqualTo(offset);
             assertThat(page.totalBytes()).isEqualTo(body.length);
             assertThat(page.size()).isEqualTo(bytes.length);
@@ -179,7 +176,7 @@ class AttachmentToolsTest {
         }
         assertThat(pages).isEqualTo(3);
         assertThat(joined.toByteArray()).isEqualTo(body);
-        assertThat(AttachmentCalls.sha256(joined.toByteArray())).isEqualTo(begin.sha256());
+        assertThat(AttachmentCalls.sha256(joined.toByteArray())).isEqualTo(AttachmentCalls.sha256(body));
 
         Set<Path> added = filesOf(directory);
         added.removeAll(before);
@@ -187,6 +184,44 @@ class AttachmentToolsTest {
             assertThat(file.getFileName().toString()).doesNotContain(".").doesNotContain("review");
             assertThat(ascii(read(file))).doesNotContain("evidence of the review");
         });
+    }
+
+    @Test
+    @DisplayName("ATA-044: multi-file bundle via MCP tools supports unsigned uploadId-capability chunks/status and reads both files by seq")
+    void multiFileBundleAndUploadIdCapabilityRoundTrip(McpSession session, Scenario scenario) {
+        String author = scenario.actorWith("ata44", "defect");
+        byte[] doc = "bundle primary review\n".getBytes(StandardCharsets.UTF_8);
+        byte[] raw = new byte[] {1, 2, 3, 4, 5};
+        Begin begin = Begin.ofBundle(UUID.randomUUID().toString(), List.of(
+                BeginFile.of("review.md", "text/markdown", doc),
+                BeginFile.of("trace.bin", "application/octet-stream", raw)), author);
+
+        AttachmentOutputs.Begun begun = session.ok("artifact-begin", begin, AttachmentOutputs.Begun.class);
+        assertThat(begun.files()).hasSize(2);
+        String u0 = begun.files().get(0).uploadId();
+        String u1 = begun.files().get(1).uploadId();
+
+        // Call artifact-status and artifact-chunk WITHOUT _hostAttestation (simulating external attachments-send CLI)
+        AttachmentOutputs.Status s0 = session.read(session.callUnsigned("artifact-status",
+                Status.ofUpload(u0, null)), AttachmentOutputs.Status.class);
+        assertThat(s0.kind()).isEqualTo("upload");
+        assertThat(s0.seq()).isZero();
+        session.callUnsigned("artifact-chunk", Chunk.of(u0, 0, doc, null));
+        session.callUnsigned("artifact-chunk", Chunk.of(u1, 0, raw, null));
+
+        AttachmentOutputs.Finished finished = session.ok("artifact-finish", new Finish(begun.attachmentId(), author),
+                AttachmentOutputs.Finished.class);
+        assertThat(finished.files()).hasSize(2);
+
+        AttachmentOutputs.Page p0 = session.ok("artifact-read",
+                new Read(begun.attachmentId(), null, 0L, 100L, author), AttachmentOutputs.Page.class);
+        AttachmentOutputs.Page p1 = session.ok("artifact-read",
+                new Read(begun.attachmentId(), 1, 0L, 100L, author), AttachmentOutputs.Page.class);
+        assertThat(p0.fileName()).isEqualTo("review.md");
+        assertThat(p0.text()).isEqualTo("bundle primary review\n");
+        assertThat(p1.fileName()).isEqualTo("trace.bin");
+        assertThat(p1.seq()).isEqualTo(1);
+        assertThat(java.util.Base64.getDecoder().decode(p1.data())).isEqualTo(raw);
     }
 
     private static byte[] read(Path file) {
@@ -205,7 +240,8 @@ class AttachmentToolsTest {
         byte[] cut = {(byte) 0xC3, 0x28};
 
         AttachmentOutputs.Page asJson = page(session, author, upload(session, author, "application/json", json), 0);
-        AttachmentOutputs.Page asBinary = page(session, author, upload(session, author, "application/octet-stream", json), 0);
+        AttachmentOutputs.Page asBinary = page(session, author,
+                upload(session, author, "application/octet-stream", json), 0);
         AttachmentOutputs.Page notUtf8 = page(session, author, upload(session, author, "text/plain", cut), 0);
 
         assertThat(asJson.text()).isEqualTo("{\"verdict\":\"ok\"}");
@@ -224,14 +260,12 @@ class AttachmentToolsTest {
 
         assertThat(full.data()).hasSize(FULL_CHUNK_TEXT);
         assertThat(properties.maxRequestSize().toBytes()).isGreaterThan(FULL_CHUNK_TEXT + 4096L);
-        // and the real round trip of a body of full chunks passes the limit
         String attachmentId = upload(session, author, "text/plain", body);
         assertThat(page(session, author, attachmentId, 0).size()).isEqualTo(CHUNK);
     }
 
     @Test
-    @DisplayName("ATA-032: begin without an operationKey, and with an empty one, is VALIDATION_FAILED at the path operationKey; the "
-            + "server makes up no key (the open uploads of the author are not used up by the refused calls)")
+    @DisplayName("ATA-032: begin without an operationKey, and with an empty one, is VALIDATION_FAILED at the path operationKey")
     void beginNeedsAnOperationKey(McpSession session, Scenario scenario, @Autowired AttachmentProperties properties) {
         String author = scenario.actorWith("ata32", "defect");
         byte[] body = textBody(100);
@@ -251,8 +285,7 @@ class AttachmentToolsTest {
     }
 
     @Test
-    @DisplayName("ATA-032: chunk and finish are bound to the upload by uploadId: the upload of another author is not found, and a "
-            + "missing uploadId is VALIDATION_FAILED at the path uploadId")
+    @DisplayName("ATA-032: chunk and finish enforce owner isolation when attested, and finish requires attachmentId")
     void chunkAndFinishAreBoundToTheUpload(McpSession session, Scenario scenario) {
         String owner = scenario.actorWith("ata32o", "defect");
         String other = scenario.actorWith("ata32x", "defect");
@@ -260,13 +293,13 @@ class AttachmentToolsTest {
         AttachmentOutputs.Begun begun = session.ok("artifact-begin",
                 Begin.of(UUID.randomUUID().toString(), "a.txt", "text/plain", body, owner), AttachmentOutputs.Begun.class);
 
-        assertThat(session.failed("artifact-chunk", Chunk.of(begun.uploadId(), 0, body, other)).code())
+        assertThat(session.failed("artifact-chunk", Chunk.of(begun.files().getFirst().uploadId(), 0, body, other)).code())
                 .isEqualTo("ARTIFACT_NOT_FOUND");
-        assertThat(session.failed("artifact-finish", new Finish(begun.uploadId(), other)).code())
+        assertThat(session.failed("artifact-finish", new Finish(begun.attachmentId(), other)).code())
                 .isEqualTo("ARTIFACT_NOT_FOUND");
         ToolError missing = session.failed("artifact-finish", new Finish(null, owner));
         assertThat(missing.code()).isEqualTo("VALIDATION_FAILED");
-        assertThat(missing.issues()).extracting(ToolError.Issue::path).containsExactly("uploadId");
+        assertThat(missing.issues()).extracting(ToolError.Issue::path).containsExactly("attachmentId");
     }
 
     @Test

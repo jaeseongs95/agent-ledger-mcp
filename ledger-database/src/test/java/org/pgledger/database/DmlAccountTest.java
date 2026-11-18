@@ -143,18 +143,21 @@ class DmlAccountTest {
                 "INSERT INTO owner_audit (id, occurred_at, actor, operation, subject) VALUES (1, TIMESTAMP '2026-11-05 10:00:00', "
                         + "'token:owner', 'GRANT_ISSUED', 'claude:a|p')", "SELECT COUNT(*) FROM owner_audit",
                 "SELECT COUNT(*) FROM schema_history",
-                // ATA-016: an attachment is read and inserted; an upload that is not finished is read, inserted, changed and deleted
-                "INSERT INTO attachment (id, file_name, media_type, size_bytes, content_sha256, created_by, created_at) "
-                        + "VALUES ('11111111-1111-1111-1111-111111111111', 'f.txt', 'text/plain', 1, "
-                        + "'" + "a".repeat(64) + "', 'claude:a', TIMESTAMP '2026-11-05 10:00:00')",
-                "INSERT INTO attachment_file (attachment_id, seq, storage_key, key_id, created_at) VALUES "
-                        + "('11111111-1111-1111-1111-111111111111', 1, '"
-                        + "1".repeat(32) + "', 'k1', TIMESTAMP '2026-11-05 10:00:00')",
+                // ATA-016: an attachment bundle, file and storage copy are read and inserted; an upload that is not finished is read, inserted, changed and deleted
+                "INSERT INTO attachment (id, created_by, created_at) "
+                        + "VALUES ('11111111-1111-1111-1111-111111111111', 'claude:a', TIMESTAMP '2026-11-05 10:00:00')",
+                "INSERT INTO attachment_file (attachment_id, seq, file_name, media_type, size_bytes, content_sha256) VALUES "
+                        + "('11111111-1111-1111-1111-111111111111', 0, 'f.txt', 'text/plain', 1, '" + "a".repeat(64) + "')",
+                "INSERT INTO attachment_storage (attachment_id, seq, rev, storage_key, key_id, created_at) VALUES "
+                        + "('11111111-1111-1111-1111-111111111111', 0, 0, '" + "1".repeat(32)
+                        + "', 'k1', TIMESTAMP '2026-11-05 10:00:00')",
                 "SELECT COUNT(*) FROM attachment",
                 "SELECT COUNT(*) FROM attachment_file",
-                "INSERT INTO upload_staging (id, owner, operation_key, file_name, media_type, declared_size, declared_sha256, "
-                        + "received_bytes, stored_bytes, next_sequence, storage_key, key_id, state, expires_at, created_at, "
-                        + "updated_at) VALUES ('22222222-2222-2222-2222-222222222222', 'claude:a', 'op', 'f.txt', 'text/plain', 1, "
+                "SELECT COUNT(*) FROM attachment_storage",
+                "INSERT INTO upload_staging (id, attachment_id, seq, owner, operation_key, file_name, media_type, "
+                        + "declared_size, declared_sha256, received_bytes, stored_bytes, next_sequence, storage_key, key_id, "
+                        + "state, expires_at, created_at, updated_at) VALUES ('22222222-2222-2222-2222-222222222222', "
+                        + "'11111111-1111-1111-1111-111111111111', 0, 'claude:a', 'op', 'f.txt', 'text/plain', 1, "
                         + "'" + "a".repeat(64) + "', 0, 0, 0, '" + "2".repeat(32) + "', 'k1', 'STAGING', "
                         + "TIMESTAMP '2026-11-05 10:00:00', TIMESTAMP '2026-11-05 10:00:00', TIMESTAMP '2026-11-05 10:00:00')",
                 "UPDATE upload_staging SET next_sequence = 1 WHERE id = '22222222-2222-2222-2222-222222222222'",
@@ -170,11 +173,15 @@ class DmlAccountTest {
                 "TRUNCATE TABLE owner_audit",
                 "DELETE FROM history",
                 "TRUNCATE TABLE history",
-                "UPDATE attachment SET file_name = 'changed by the application'",
+                "UPDATE attachment SET created_by = 'changed by the application'",
                 "DELETE FROM attachment",
                 "TRUNCATE TABLE attachment",
-                "UPDATE attachment_file SET key_id = 'changed by the application'",
+                "UPDATE attachment_file SET file_name = 'changed by the application'",
                 "DELETE FROM attachment_file",
+                "TRUNCATE TABLE attachment_file",
+                "UPDATE attachment_storage SET key_id = 'changed by the application'",
+                "DELETE FROM attachment_storage",
+                "TRUNCATE TABLE attachment_storage",
                 "UPDATE schema_history SET outcome = 'FAILED'",
                 "DELETE FROM schema_history",
                 "CREATE TABLE stolen (id INTEGER)",

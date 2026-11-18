@@ -34,7 +34,7 @@ import org.pgledger.application.support.Uploads;
 import org.pgledger.database.repository.UploadStagingRepository;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ConflictException;
-import org.pgledger.domain.model.AttachmentFile;
+import org.pgledger.domain.model.AttachmentStorage;
 import org.pgledger.domain.model.UploadStaging;
 import org.pgledger.domain.value.Sha256;
 import org.pgledger.domain.value.StorageKey;
@@ -64,7 +64,7 @@ class AttachmentRaceTest {
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] body = Uploads.body(2 * CHUNK, seed);
         List<byte[]> parts = Uploads.parts(body, CHUNK);
-        String id = flow.begin(actor, Uploads.begin(body)).uploadId();
+        String id = flow.begin(actor, Uploads.begin(body)).files().getFirst().uploadId();
         Uploads.send(flow, actor, id, 0, parts.get(0));
         return new Upload(actor, id, body, parts);
     }
@@ -101,7 +101,7 @@ class AttachmentRaceTest {
 
             // the first request: its segment is in the file and its conditional UPDATE has moved the row, not committed yet
             HeldTransaction<Boolean> first = HeldTransaction.start(ctx,
-                    () -> uploads.advance(u.id(), 1, stored, CHUNK, sha, now.plus(Duration.ofMinutes(10)), now));
+                    () -> uploads.advance(u.id(), 1, stored, 2 * CHUNK, sha, now.plus(Duration.ofMinutes(10)), now));
             int holder = first.awaitHeld();
             Future<Received> second = Parallel.start(() -> Uploads.send(flow, u.actor(), u.id(), 1, part));
             LockWaits.awaitWaitingFor(ctx, holder);
@@ -110,8 +110,8 @@ class AttachmentRaceTest {
             Received applied = new Received(1, 2 * CHUNK);
             assertThat(second.get(60, TimeUnit.SECONDS)).as("the loser answers with the state (round %d)", round).isEqualTo(applied);
             assertAppliedOnce(s, u);
-            Finished finished = flow.finish(u.actor(), u.id());
-            assertThat(finished.sha256()).isEqualTo(Uploads.sha(u.body()));
+            Finished finished = flow.finish(u.actor(), Uploads.row(ctx, u.id()).attachmentId());
+            assertThat(finished.files().getFirst().sha256()).isEqualTo(Uploads.sha(u.body()));
             assertThat(Uploads.readAll(flow, u.actor(), finished.attachmentId(), 150)).isEqualTo(u.body());
         }
     }
@@ -131,15 +131,15 @@ class AttachmentRaceTest {
             Instant now = ctx.clock().instant();
 
             HeldTransaction<Boolean> first = HeldTransaction.start(ctx,
-                    () -> uploads.advance(u.id(), 1, stored, CHUNK, sha, now.plus(Duration.ofMinutes(10)), now));
+                    () -> uploads.advance(u.id(), 1, stored, 2 * CHUNK, sha, now.plus(Duration.ofMinutes(10)), now));
             first.awaitHeld();
             Expect.failure(() -> Uploads.send(flow, u.actor(), u.id(), 1, other), ConflictCode.ARTIFACT_CHUNK_CONFLICT);
             assertThat(first.release()).isTrue();
 
             Expect.failure(() -> Uploads.send(flow, u.actor(), u.id(), 1, other), ConflictCode.ARTIFACT_CHUNK_CONFLICT);
             assertAppliedOnce(s, u);
-            Finished finished = flow.finish(u.actor(), u.id());
-            assertThat(finished.sha256()).isEqualTo(Uploads.sha(u.body()));
+            Finished finished = flow.finish(u.actor(), Uploads.row(ctx, u.id()).attachmentId());
+            assertThat(finished.files().getFirst().sha256()).isEqualTo(Uploads.sha(u.body()));
         }
     }
 
@@ -169,8 +169,8 @@ class AttachmentRaceTest {
                         .isEqualTo(new Received(1, 2 * CHUNK));
             }
             assertAppliedOnce(s, u);
-            Finished finished = flow.finish(u.actor(), u.id());
-            assertThat(finished.sha256()).isEqualTo(Uploads.sha(u.body()));
+            Finished finished = flow.finish(u.actor(), Uploads.row(s.ctx(), u.id()).attachmentId());
+            assertThat(finished.files().getFirst().sha256()).isEqualTo(Uploads.sha(u.body()));
         }
     }
 
@@ -192,11 +192,12 @@ class AttachmentRaceTest {
             assertThat(loser.failure()).isInstanceOfSatisfying(ConflictException.class,
                     failure -> assertThat(failure.code()).isIn(ConflictCode.ARTIFACT_CHUNK_CONFLICT, ConflictCode.ARTIFACT_BUSY));
             assertAppliedOnce(s, u);
+            String attachmentId = Uploads.row(s.ctx(), u.id()).attachmentId();
             if (outcomes.getFirst().succeeded()) {
-                Finished finished = flow.finish(u.actor(), u.id());
-                assertThat(finished.sha256()).as("the declared content won").isEqualTo(Uploads.sha(u.body()));
+                Finished finished = flow.finish(u.actor(), attachmentId);
+                assertThat(finished.files().getFirst().sha256()).as("the declared content won").isEqualTo(Uploads.sha(u.body()));
             } else {
-                Expect.failure(() -> flow.finish(u.actor(), u.id()), ConflictCode.ARTIFACT_HASH_MISMATCH);
+                Expect.failure(() -> flow.finish(u.actor(), attachmentId), ConflictCode.ARTIFACT_HASH_MISMATCH);
             }
         }
     }
@@ -206,9 +207,9 @@ class AttachmentRaceTest {
     private static final class Rekeyed {
 
         private final String attachmentId;
-        private final AttachmentFile first;
+        private final AttachmentStorage first;
 
-        Rekeyed(String attachmentId, AttachmentFile first) {
+        Rekeyed(String attachmentId, AttachmentStorage first) {
             this.attachmentId = attachmentId;
             this.first = first;
         }
@@ -217,7 +218,7 @@ class AttachmentRaceTest {
     private static Rekeyed attachment(Scenario s, long seed) {
         String actor = s.actorWith("defect");
         String id = Uploads.upload(s.bean(AttachmentFlow.class), actor, Uploads.body(250, seed)).attachmentId();
-        return new Rekeyed(id, Uploads.currentFile(s.ctx(), id));
+        return new Rekeyed(id, Uploads.currentStorage(s.ctx(), id));
     }
 
     @Test
@@ -232,26 +233,28 @@ class AttachmentRaceTest {
             StorageKey loserKey = s.bean(StorageKeys.class).next();
 
             HeldTransaction<Boolean> winner = HeldTransaction.start(ctx,
-                    () -> maintenance.addRekeyedFile(TestOwners.OWNER, target.attachmentId, target.first.storageKey(), winnerKey, keyId));
+                    () -> maintenance.addRekeyedFile(target.attachmentId, 0, target.first.storageKey(), winnerKey,
+                            keyId, TestOwners.OWNER));
             int holder = winner.awaitHeld();
             Future<Boolean> loser = Parallel.start(
-                    () -> maintenance.addRekeyedFile(TestOwners.OWNER, target.attachmentId, target.first.storageKey(), loserKey, keyId));
+                    () -> maintenance.addRekeyedFile(target.attachmentId, 0, target.first.storageKey(), loserKey,
+                            keyId, TestOwners.OWNER));
             LockWaits.awaitWaitingFor(ctx, holder);
             assertThat(winner.release()).isTrue();
 
             assertThatThrownBy(() -> loser.get(60, TimeUnit.SECONDS)).isInstanceOf(ExecutionException.class)
                     .hasCauseInstanceOf(DuplicateKeyException.class);
-            AttachmentFile current = Uploads.currentFile(ctx, target.attachmentId);
-            assertThat(current.seq()).isEqualTo(2);
+            AttachmentStorage current = Uploads.currentStorage(ctx, target.attachmentId);
+            assertThat(current.rev()).isEqualTo(1);
             assertThat(current.storageKey()).as("the current file is the winner's").isEqualTo(winnerKey);
-            assertThat(s.count("SELECT COUNT(*) FROM attachment_file WHERE attachment_id = ?", target.attachmentId)).isEqualTo(2);
+            assertThat(s.count("SELECT COUNT(*) FROM attachment_storage WHERE attachment_id = ?", target.attachmentId)).isEqualTo(2);
             assertThat(s.count("SELECT COUNT(*) FROM owner_audit WHERE operation = 'ATTACHMENT_REKEY' AND subject = ?",
                     target.attachmentId)).as("the failed rekey left no audit row").isEqualTo(1);
         }
     }
 
     @Test
-    @DisplayName("ATA-033: two rekeys of the same current file at one barrier, many rounds: exactly one adds the row; the other answers false or ends with DuplicateKeyException; never two rows of the same number")
+    @DisplayName("ATA-033: two rekeys of the same current file at one barrier, many rounds: exactly one adds the row; the other answers false or ends with DuplicateKeyException; never two rows of the same rev")
     void ata033_atOneBarrier(Scenario s) throws Exception {
         LedgerAppContext ctx = s.ctx();
         AttachmentMaintenanceService maintenance = s.bean(AttachmentMaintenanceService.class);
@@ -262,8 +265,10 @@ class AttachmentRaceTest {
             StorageKey secondKey = s.bean(StorageKeys.class).next();
 
             List<Outcome<Boolean>> outcomes = Parallel.<Boolean>all(List.of(
-                    () -> maintenance.addRekeyedFile(TestOwners.OWNER, target.attachmentId, target.first.storageKey(), firstKey, keyId),
-                    () -> maintenance.addRekeyedFile(TestOwners.OWNER, target.attachmentId, target.first.storageKey(), secondKey, keyId)));
+                    () -> maintenance.addRekeyedFile(target.attachmentId, 0, target.first.storageKey(), firstKey,
+                            keyId, TestOwners.OWNER),
+                    () -> maintenance.addRekeyedFile(target.attachmentId, 0, target.first.storageKey(), secondKey,
+                            keyId, TestOwners.OWNER)));
 
             long winners = outcomes.stream().filter(outcome -> outcome.succeeded() && Boolean.TRUE.equals(outcome.value())).count();
             assertThat(winners).as("exactly one rekey added its row (round %d)", round).isEqualTo(1);
@@ -271,12 +276,12 @@ class AttachmentRaceTest {
                 if (!outcome.succeeded()) {
                     assertThat(outcome.failure()).isInstanceOf(DuplicateKeyException.class);
                 } else if (!Boolean.TRUE.equals(outcome.value())) {
-                    assertThat(outcome.value()).as("a rekey that found the current file changed adds nothing").isFalse();
+                    assertThat(outcome.value()).as("a rekey that found the current copy changed adds nothing").isFalse();
                 }
             }
             StorageKey winner = Boolean.TRUE.equals(outcomes.getFirst().value()) ? firstKey : secondKey;
-            assertThat(Uploads.currentFile(ctx, target.attachmentId).storageKey()).isEqualTo(winner);
-            assertThat(s.count("SELECT COUNT(*) FROM attachment_file WHERE attachment_id = ?", target.attachmentId)).isEqualTo(2);
+            assertThat(Uploads.currentStorage(ctx, target.attachmentId).storageKey()).isEqualTo(winner);
+            assertThat(s.count("SELECT COUNT(*) FROM attachment_storage WHERE attachment_id = ?", target.attachmentId)).isEqualTo(2);
             assertThat(s.count("SELECT COUNT(*) FROM owner_audit WHERE operation = 'ATTACHMENT_REKEY' AND subject = ?",
                     target.attachmentId)).isEqualTo(1);
         }

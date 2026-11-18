@@ -12,8 +12,10 @@ import org.pgledger.admin.support.AdminTest;
 import org.pgledger.admin.support.Browser;
 import org.pgledger.admin.support.Seeds;
 import org.pgledger.admin.support.Seeds.Seeded;
+import org.pgledger.database.repository.AttachmentFileRepository;
 import org.pgledger.database.repository.AttachmentRepository;
 import org.pgledger.domain.model.Attachment;
+import org.pgledger.domain.model.AttachmentFile;
 import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.Sha256;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +37,9 @@ class AttachmentsNotConfiguredTest {
 
     @Autowired
     private AttachmentRepository attachments;
+
+    @Autowired
+    private AttachmentFileRepository files;
 
     @Autowired
     private ApplicationContext context;
@@ -59,8 +64,8 @@ class AttachmentsNotConfiguredTest {
         String defect = seeds.defect(project, "defect with an attachment row only");
         String id = UUID.randomUUID().toString();
         byte[] body = "report".getBytes(StandardCharsets.UTF_8);
-        attachments.insert(new Attachment(id, "report.txt", "text/plain", body.length, Sha256.ofBytes(body),
-                AuthorId.of(Seeds.AUTHOR), Instant.parse("2026-11-15T00:00:00Z")));
+        attachments.insert(new Attachment(id, AuthorId.of(Seeds.AUTHOR), Instant.parse("2026-11-15T00:00:00Z")));
+        files.insert(new AttachmentFile(id, 0, "report.txt", "text/plain", body.length, Sha256.ofBytes(body)));
         seeds.disputeWithAttachment(defect, id);
         Browser browser = Browser.signedIn(mvc);
 

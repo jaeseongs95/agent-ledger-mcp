@@ -1,5 +1,8 @@
 package org.pgledger.mcp.tool;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyDescription;
+import java.util.List;
 import org.pgledger.application.attachment.AttachmentFlow;
 import org.pgledger.application.attachment.ConditionalOnAttachments;
 import org.pgledger.application.attachment.UploadCommands;
@@ -10,25 +13,20 @@ import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
 
 /**
- * The five attachment tools (the common design of the three products, section 3). Each method turns the flat arguments of the tool
- * into the input of {@link AttachmentFlow}, which is the entry point of the operation (the file work is done there, between its
- * database steps), and the result into its output record; the gate, the validation and the transactions belong to the flow and its
- * service. The host attestation of the call is the actor: it is signed for the tool name below (with a hyphen) and for the exact
- * arguments, with an empty operation key in the claim (an upload is made repeatable by the {@code operationKey} of the begin, which
- * the digest of the arguments covers, and by the numbers of its chunks, not by a write receipt).
- *
- * <p>{@code artifact-chunk} and {@code artifact-finish} take no {@code operationKey}: they are the one exception to the rule that
- * every write tool takes one. An upload starts with the {@code operationKey} of {@code artifact-begin}; a chunk is idempotent by
- * {@code uploadId} + {@code sequence} (+ {@code chunkSha256}: the same content again is idempotent, other content is a conflict), and
- * finish by {@code uploadId} (the same upload always returns the same attachment).
- *
- * <p>The parameter names are the wire keys of the design ({@code operationKey}, {@code uploadId}, {@code _hostAttestation}, ...), which
- * is why they are camel case here while some keys of the write tools are snake case. The descriptions are message keys that the tool
- * catalog resolves from the message bundle. The tools exist when the attachments are configured, like the flow they call.
+ * The five bundle attachment MCP tools: {@code artifact-begin}, {@code artifact-chunk}, {@code artifact-finish},
+ * {@code artifact-status}, and {@code artifact-read}.
  */
 @Component
 @ConditionalOnAttachments
 public class AttachmentTools implements ToolAdapter {
+
+    /** One declared file entry in an {@code artifact-begin} request. */
+    public record BeginFileInput(
+            @JsonProperty("fileName") @JsonPropertyDescription("param.artifact_file_name") String fileName,
+            @JsonProperty("mediaType") @JsonPropertyDescription("param.artifact_media_type") String mediaType,
+            @JsonProperty("size") @JsonPropertyDescription("param.artifact_size") long size,
+            @JsonProperty("sha256") @JsonPropertyDescription("param.artifact_sha256") String sha256) {
+    }
 
     private final AttachmentFlow flow;
 
@@ -39,14 +37,14 @@ public class AttachmentTools implements ToolAdapter {
     @McpTool(name = "artifact-begin", description = "tool.artifact_begin", generateOutputSchema = true)
     public AttachmentOutputs.Begun begin(
             @McpToolParam(description = "param.artifact_operation_key", required = true) String operationKey,
-            @McpToolParam(description = "param.artifact_file_name", required = true) String fileName,
-            @McpToolParam(description = "param.artifact_media_type", required = true) String mediaType,
-            @McpToolParam(description = "param.artifact_size", required = true) Long size,
-            @McpToolParam(description = "param.artifact_sha256", required = true) String sha256,
+            @McpToolParam(description = "param.artifact_files", required = true) List<BeginFileInput> files,
             @McpToolParam(description = "param.artifact_purpose", required = false) String purpose,
             @McpToolParam(description = "param.host_attestation", required = false) String _hostAttestation) {
+        List<UploadCommands.BeginFile> commandFiles = files == null ? null : files.stream()
+                .map(f -> f == null ? null : new UploadCommands.BeginFile(f.fileName(), f.mediaType(), f.size(), f.sha256()))
+                .toList();
         return AttachmentOutputs.of(flow.begin(_hostAttestation,
-                new UploadCommands.Begin(operationKey, fileName, mediaType, size, sha256, purpose)));
+                new UploadCommands.Begin(operationKey, commandFiles, purpose)));
     }
 
     @McpTool(name = "artifact-chunk", description = "tool.artifact_chunk", generateOutputSchema = true)
@@ -56,15 +54,18 @@ public class AttachmentTools implements ToolAdapter {
             @McpToolParam(description = "param.artifact_data", required = true) String data,
             @McpToolParam(description = "param.artifact_chunk_sha256", required = true) String chunkSha256,
             @McpToolParam(description = "param.host_attestation", required = false) String _hostAttestation) {
+        if (sequence == null) {
+            throw ValidationException.invalid("sequence", ValidationReason.REQUIRED);
+        }
         return AttachmentOutputs.of(flow.chunk(_hostAttestation,
                 new UploadCommands.Chunk(uploadId, sequence, data, chunkSha256)));
     }
 
     @McpTool(name = "artifact-finish", description = "tool.artifact_finish", generateOutputSchema = true)
     public AttachmentOutputs.Finished finish(
-            @McpToolParam(description = "param.artifact_upload_id", required = true) String uploadId,
+            @McpToolParam(description = "param.artifact_attachment_id", required = true) String attachmentId,
             @McpToolParam(description = "param.host_attestation", required = false) String _hostAttestation) {
-        return AttachmentOutputs.of(flow.finish(_hostAttestation, uploadId));
+        return AttachmentOutputs.of(flow.finish(_hostAttestation, attachmentId));
     }
 
     @McpTool(name = "artifact-status", description = "tool.artifact_status", generateOutputSchema = true)
@@ -76,15 +77,24 @@ public class AttachmentTools implements ToolAdapter {
             throw ValidationException.invalid("uploadId", ValidationReason.MUST_BE_EXACTLY_ONE_OF, "uploadId",
                     "attachmentId");
         }
-        return AttachmentOutputs.of(flow.status(_hostAttestation, uploadId == null ? attachmentId : uploadId));
+        return AttachmentOutputs.of(flow.status(_hostAttestation, uploadId, attachmentId));
     }
 
     @McpTool(name = "artifact-read", description = "tool.artifact_read", generateOutputSchema = true)
     public AttachmentOutputs.Page read(
             @McpToolParam(description = "param.artifact_attachment_id", required = true) String attachmentId,
+            @McpToolParam(description = "param.artifact_seq", required = false) Integer seq,
             @McpToolParam(description = "param.artifact_offset_bytes", required = true) Long offsetBytes,
             @McpToolParam(description = "param.artifact_max_bytes", required = true) Long maxBytes,
             @McpToolParam(description = "param.host_attestation", required = false) String _hostAttestation) {
-        return AttachmentOutputs.of(flow.read(_hostAttestation, attachmentId, offsetBytes, maxBytes));
+        int fileSeq = seq == null ? 0 : seq;
+        if (offsetBytes == null || offsetBytes < 0) {
+            throw ValidationException.invalid("offsetBytes", ValidationReason.MUST_NOT_BE_NEGATIVE);
+        }
+        if (maxBytes == null || maxBytes < 1 || maxBytes > Integer.MAX_VALUE) {
+            throw ValidationException.invalid("maxBytes", ValidationReason.OUT_OF_RANGE, "1", "262144");
+        }
+        return AttachmentOutputs.of(flow.read(_hostAttestation, attachmentId, fileSeq, offsetBytes,
+                maxBytes.intValue()));
     }
 }

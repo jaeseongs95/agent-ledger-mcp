@@ -3,40 +3,48 @@ package org.pgledger.mcp.support;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Base64;
+import java.util.List;
 import org.pgledger.domain.value.Sha256;
 
 /**
- * The arguments of the five attachment tools as the tests send them: one record per tool, its components the camel case wire keys
- * of the common design (section 3), {@code _hostAttestation} as written; a key left null is left out of the call. The attestation of
- * a call is the plain author, which the {@link Attester} signs (the way the hook does, with an empty operation key in the claim), or null for a call that
- * carries none.
+ * Arguments for the five bundle attachment tools sent in server tests. Null fields are omitted from JSON; a non-null
+ * {@code hostAttestation} holds the session author id that {@link Attester} signs for the tool call.
  */
 public final class AttachmentCalls {
 
     private AttachmentCalls() {
     }
 
-    /** The SHA-256 of the bytes as the design writes it: 64 lowercase hex characters. */
     public static String sha256(byte[] bytes) {
         return Sha256.ofBytes(bytes).hex();
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record Begin(String operationKey, String fileName, String mediaType, Long size, String sha256,
-            String purpose, @JsonProperty("_hostAttestation") String hostAttestation) {
+    public record BeginFile(String fileName, String mediaType, Long size, String sha256) {
 
-        /** A begin for exactly these bytes. */
+        public static BeginFile of(String fileName, String mediaType, byte[] body) {
+            return new BeginFile(fileName, mediaType, (long) body.length, AttachmentCalls.sha256(body));
+        }
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record Begin(String operationKey, List<BeginFile> files, String purpose,
+            @JsonProperty("_hostAttestation") String hostAttestation) {
+
         public static Begin of(String operationKey, String fileName, String mediaType, byte[] body, String author) {
-            return new Begin(operationKey, fileName, mediaType, (long) body.length, AttachmentCalls.sha256(body), null,
-                    author);
+            return new Begin(operationKey, List.of(BeginFile.of(fileName, mediaType, body)), null, author);
+        }
+
+        public static Begin ofBundle(String operationKey, List<BeginFile> files, String author) {
+            return new Begin(operationKey, files, null, author);
         }
 
         public Begin withOperationKey(String key) {
-            return new Begin(key, fileName, mediaType, size, sha256, purpose, hostAttestation);
+            return new Begin(key, files, purpose, hostAttestation);
         }
 
         public Begin withPurpose(String newPurpose) {
-            return new Begin(operationKey, fileName, mediaType, size, sha256, newPurpose, hostAttestation);
+            return new Begin(operationKey, files, newPurpose, hostAttestation);
         }
     }
 
@@ -44,7 +52,6 @@ public final class AttachmentCalls {
     public record Chunk(String uploadId, Long sequence, String data, String chunkSha256,
             @JsonProperty("_hostAttestation") String hostAttestation) {
 
-        /** The chunk with this number made of exactly these bytes. */
         public static Chunk of(String uploadId, long sequence, byte[] bytes, String author) {
             return new Chunk(uploadId, sequence, Base64.getEncoder().encodeToString(bytes),
                     AttachmentCalls.sha256(bytes), author);
@@ -52,7 +59,7 @@ public final class AttachmentCalls {
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record Finish(String uploadId, @JsonProperty("_hostAttestation") String hostAttestation) {
+    public record Finish(String attachmentId, @JsonProperty("_hostAttestation") String hostAttestation) {
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -69,7 +76,11 @@ public final class AttachmentCalls {
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    public record Read(String attachmentId, Long offsetBytes, Long maxBytes,
+    public record Read(String attachmentId, Integer seq, Long offsetBytes, Long maxBytes,
             @JsonProperty("_hostAttestation") String hostAttestation) {
+
+        public static Read of(String attachmentId, long offsetBytes, long maxBytes, String author) {
+            return new Read(attachmentId, null, offsetBytes, maxBytes, author);
+        }
     }
 }

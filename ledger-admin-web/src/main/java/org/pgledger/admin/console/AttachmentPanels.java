@@ -7,6 +7,7 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -22,6 +23,7 @@ import org.pgledger.domain.error.LookupCode;
 import org.pgledger.domain.error.LookupException;
 import org.pgledger.domain.model.Attachment;
 import org.pgledger.domain.model.AttachmentFile;
+import org.pgledger.domain.model.AttachmentStorage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -59,9 +61,9 @@ public class AttachmentPanels {
         NOT_FOUND
     }
 
-    /** One attachment as the page shows it; {@code text} is empty unless the state is TEXT. */
-    public record Panel(String id, State state, String fileName, String mediaType, long sizeBytes, String sha256,
-            String uploadedBy, Instant uploadedAt, String text, boolean truncated) {
+    /** One file inside an attachment bundle as the page shows it; {@code text} is empty unless the state is TEXT. */
+    public record FilePanel(int seq, State state, String fileName, String mediaType, long sizeBytes, String sha256,
+            String text, boolean truncated) {
 
         public boolean isText() {
             return state == State.TEXT;
@@ -72,23 +74,27 @@ public class AttachmentPanels {
         }
     }
 
+    /** One attachment bundle as the page shows it. */
+    public record Panel(String id, State state, String uploadedBy, Instant uploadedAt, List<FilePanel> files) {
+    }
+
     /** What a download needs; the place of the file stays inside. */
     public static final class Download {
 
-        private final Attachment attachment;
         private final AttachmentFile file;
+        private final AttachmentStorage storage;
 
-        private Download(Attachment attachment, AttachmentFile file) {
-            this.attachment = attachment;
+        private Download(AttachmentFile file, AttachmentStorage storage) {
             this.file = file;
+            this.storage = storage;
         }
 
         public String fileName() {
-            return attachment.fileName();
+            return file.fileName();
         }
 
         public long sizeBytes() {
-            return attachment.sizeBytes();
+            return file.sizeBytes();
         }
     }
 
@@ -116,39 +122,58 @@ public class AttachmentPanels {
 
     private Panel panel(String attachmentId) {
         return read.find(attachmentId).map(attachment -> panel(attachment, stores.getIfAvailable()))
-                .orElseGet(() -> new Panel(attachmentId, State.NOT_FOUND, "", "", 0, "", "", null, "", false));
+                .orElseGet(() -> new Panel(attachmentId, State.NOT_FOUND, "", null, List.of()));
     }
 
     private Panel panel(Attachment attachment, AttachmentStore store) {
+        List<AttachmentFile> bundleFiles = read.filesOf(attachment.id());
+        if (bundleFiles.isEmpty()) {
+            State fallback = store == null ? State.NOT_CONFIGURED : State.UNAVAILABLE;
+            return new Panel(attachment.id(), fallback, attachment.createdBy().value(), attachment.createdAt(),
+                    List.of());
+        }
+        List<FilePanel> panels = new ArrayList<>(bundleFiles.size());
+        for (AttachmentFile file : bundleFiles) {
+            panels.add(filePanel(attachment.id(), file, store));
+        }
+        State overall = panels.stream().anyMatch(f -> f.state() == State.TEXT || f.state() == State.DOWNLOAD)
+                ? panels.getFirst().state()
+                : panels.getFirst().state();
+        return new Panel(attachment.id(), overall, attachment.createdBy().value(), attachment.createdAt(),
+                List.copyOf(panels));
+    }
+
+    private FilePanel filePanel(String attachmentId, AttachmentFile file, AttachmentStore store) {
         if (store == null) {
-            return of(attachment, State.NOT_CONFIGURED, "", false);
+            return ofFile(file, State.NOT_CONFIGURED, "", false);
         }
-        return read.currentFile(attachment.id()).map(file -> content(attachment, store, file))
-                .orElseGet(() -> of(attachment, State.UNAVAILABLE, "", false));
+        return read.currentStorage(attachmentId, file.seq())
+                .map(storage -> content(attachmentId, file, store, storage))
+                .orElseGet(() -> ofFile(file, State.UNAVAILABLE, "", false));
     }
 
-    private Panel content(Attachment attachment, AttachmentStore store, AttachmentFile file) {
-        if (!isText(attachment.mediaType())) {
-            return of(attachment, State.DOWNLOAD, "", false);
+    private FilePanel content(String attachmentId, AttachmentFile file, AttachmentStore store, AttachmentStorage storage) {
+        if (!isText(file.mediaType())) {
+            return ofFile(file, State.DOWNLOAD, "", false);
         }
-        if (attachment.sizeBytes() == 0) {
-            return of(attachment, State.TEXT, "", false);
+        if (file.sizeBytes() == 0) {
+            return ofFile(file, State.TEXT, "", false);
         }
-        boolean cut = attachment.sizeBytes() > TEXT_BYTES;
+        boolean cut = file.sizeBytes() > TEXT_BYTES;
         try {
-            AttachmentStore.Page page = store.read(file.storageKey(), file.keyId(), 0,
-                    (int) Math.min(attachment.sizeBytes(), TEXT_BYTES));
-            return decode(page.data(), cut).map(text -> of(attachment, State.TEXT, text, cut))
-                    .orElseGet(() -> of(attachment, State.DOWNLOAD, "", false));
+            AttachmentStore.Page page = store.read(storage.storageKey(), storage.keyId(), 0,
+                    (int) Math.min(file.sizeBytes(), TEXT_BYTES));
+            return decode(page.data(), cut).map(text -> ofFile(file, State.TEXT, text, cut))
+                    .orElseGet(() -> ofFile(file, State.DOWNLOAD, "", false));
         } catch (InfrastructureException damaged) {
-            LOG.warn("The attachment {} cannot be read: {}", attachment.id(), damaged.code());
-            return of(attachment, State.UNAVAILABLE, "", false);
+            LOG.warn("The attachment {} seq {} cannot be read: {}", attachmentId, file.seq(), damaged.code());
+            return ofFile(file, State.UNAVAILABLE, "", false);
         }
     }
 
-    private static Panel of(Attachment attachment, State state, String text, boolean truncated) {
-        return new Panel(attachment.id(), state, attachment.fileName(), attachment.mediaType(), attachment.sizeBytes(),
-                attachment.contentSha256().hex(), attachment.createdBy().value(), attachment.createdAt(), text, truncated);
+    private static FilePanel ofFile(AttachmentFile file, State state, String text, boolean truncated) {
+        return new FilePanel(file.seq(), state, file.fileName(), file.mediaType(), file.sizeBytes(),
+                file.contentSha256().hex(), text, truncated);
     }
 
     /** text/* and application/json (a parameter such as a charset does not matter). */
@@ -176,12 +201,12 @@ public class AttachmentPanels {
     }
 
     /**
-     * The attachment to download.
+     * The attachment file to download.
      *
-     * @throws LookupException ARTIFACT_NOT_FOUND when the id is no attachment, when it has no file, or when the attachments are not configured
+     * @throws LookupException ARTIFACT_NOT_FOUND when the id is no attachment, when the file index is missing, or when attachments are not configured
      */
-    public Download download(String attachmentId) {
-        if (stores.getIfAvailable() == null) {
+    public Download download(String attachmentId, int seq) {
+        if (stores.getIfAvailable() == null || seq < 0) {
             throw notFound(attachmentId);
         }
         try {
@@ -189,9 +214,10 @@ public class AttachmentPanels {
         } catch (IllegalArgumentException notAnId) {
             throw notFound(attachmentId);
         }
-        Attachment attachment = read.find(attachmentId).orElseThrow(() -> notFound(attachmentId));
-        AttachmentFile file = read.currentFile(attachmentId).orElseThrow(() -> notFound(attachmentId));
-        return new Download(attachment, file);
+        read.find(attachmentId).orElseThrow(() -> notFound(attachmentId));
+        AttachmentFile file = read.fileAt(attachmentId, seq).orElseThrow(() -> notFound(attachmentId));
+        AttachmentStorage storage = read.currentStorage(attachmentId, seq).orElseThrow(() -> notFound(attachmentId));
+        return new Download(file, storage);
     }
 
     /**
@@ -203,15 +229,15 @@ public class AttachmentPanels {
     public void copy(Download download, OutputStream out) throws IOException {
         AttachmentStore store = stores.getIfAvailable();
         if (store == null) {
-            throw notFound(download.attachment.id());
+            throw notFound(download.file.attachmentId());
         }
         long offset = 0;
-        long size = download.attachment.sizeBytes();
+        long size = download.file.sizeBytes();
         while (offset < size) {
-            AttachmentStore.Page page = store.read(download.file.storageKey(), download.file.keyId(), offset,
+            AttachmentStore.Page page = store.read(download.storage.storageKey(), download.storage.keyId(), offset,
                     (int) Math.min(DOWNLOAD_PAGE, size - offset));
             if (page.data().length == 0) {
-                throw new IOException("the attachment " + download.attachment.id() + " ended early");
+                throw new IOException("the attachment " + download.file.attachmentId() + " ended early");
             }
             out.write(page.data());
             offset += page.data().length;

@@ -44,7 +44,7 @@ class SchemaCatalogTest {
             "defect_relation", "release_condition", "condition_link", "session_grant", "session_key", "owner_audit", "history",
             "request_receipt", "common_code", "code_revision", "id_counter", "schema_history", "driver_audit_key",
             "owner_passkey_user", "owner_passkey", "owner_passkey_revocation", "owner_passkey_code", "upload_staging",
-            "attachment", "attachment_file");
+            "attachment", "attachment_file", "attachment_storage");
 
     /** The timestamp columns of the schema, exactly as the catalogue lists them (SCH-018). */
     static final Set<String> TIMESTAMP_COLUMNS = Set.of("defect.created_at", "defect.updated_at", "task.created_at",
@@ -55,7 +55,7 @@ class SchemaCatalogTest {
             "schema_history.applied_at", "owner_passkey.registered_at", "owner_passkey_revocation.revoked_at",
             "owner_passkey_code.issued_at", "owner_passkey_code.expires_at", "owner_passkey_code.used_at",
             "upload_staging.expires_at", "upload_staging.created_at", "upload_staging.updated_at",
-            "attachment.created_at", "attachment_file.created_at");
+            "attachment.created_at", "attachment_storage.created_at");
 
     private LedgerTestContext ctx;
     private JdbcClient jdbc;
@@ -401,28 +401,25 @@ class SchemaCatalogTest {
     @Test
     void ata015_theAttachmentTablesHoldMetadataOnly() {
         List<Column> own = columns().stream().filter(c -> Objects.equals(c.table(), "upload_staging")
-                || Objects.equals(c.table(), "attachment") || Objects.equals(c.table(), "attachment_file")).toList();
-        assertThat(own.stream().map(Column::key)).contains("upload_staging.owner", "upload_staging.operation_key",
-                "upload_staging.declared_sha256", "upload_staging.stored_bytes", "upload_staging.next_sequence",
-                "upload_staging.last_chunk_sha256", "upload_staging.storage_key", "upload_staging.key_id",
-                "upload_staging.state", "attachment.size_bytes", "attachment.content_sha256", "attachment.created_by",
-                "attachment_file.attachment_id", "attachment_file.seq", "attachment_file.storage_key",
-                "attachment_file.key_id");
+                || Objects.equals(c.table(), "attachment") || Objects.equals(c.table(), "attachment_file")
+                || Objects.equals(c.table(), "attachment_storage")).toList();
+        assertThat(own.stream().map(Column::key)).contains("upload_staging.attachment_id", "upload_staging.seq",
+                "upload_staging.owner", "upload_staging.operation_key", "upload_staging.declared_sha256",
+                "upload_staging.stored_bytes", "upload_staging.next_sequence", "upload_staging.last_chunk_sha256",
+                "upload_staging.storage_key", "upload_staging.key_id", "upload_staging.state",
+                "attachment.id", "attachment.created_by", "attachment.created_at",
+                "attachment_file.attachment_id", "attachment_file.seq", "attachment_file.file_name",
+                "attachment_file.media_type", "attachment_file.size_bytes", "attachment_file.content_sha256",
+                "attachment_storage.attachment_id", "attachment_storage.seq", "attachment_storage.rev",
+                "attachment_storage.storage_key", "attachment_storage.key_id", "attachment_storage.created_at");
         assertThat(own.stream().map(Column::key)).as("the key of a file is (attachment_id, seq): no id column")
-                .doesNotContain("attachment_file.id");
-        // the primary key of attachment_file is the composite (attachment_id, seq), in this order
-        List<String> primaryKey = withConnection(c -> {
-            List<String> columns = new ArrayList<>();
-            try (ResultSet rs = c.getMetaData().getPrimaryKeys(c.getCatalog(), c.getSchema(), "attachment_file")) {
-                while (rs.next()) {
-                    columns.add(rs.getInt("KEY_SEQ") + ":" + rs.getString("COLUMN_NAME").toLowerCase(Locale.ROOT));
-                }
-            }
-            return columns.stream().sorted().toList();
-        });
-        assertThat(primaryKey).containsExactly("1:attachment_id", "2:seq");
-        assertThat(own.stream().map(Column::key)).as("the location and the key moved to attachment_file")
-                .doesNotContain("attachment.storage_key", "attachment.key_id");
+                .doesNotContain("attachment_file.id", "attachment_storage.id");
+        // primary keys: attachment_file (attachment_id, seq) and attachment_storage (attachment_id, seq, rev)
+        assertThat(primaryKeyColumns("attachment_file")).containsExactly("1:attachment_id", "2:seq");
+        assertThat(primaryKeyColumns("attachment_storage")).containsExactly("1:attachment_id", "2:seq", "3:rev");
+        assertThat(own.stream().map(Column::key)).as("the location and the key live in attachment_storage")
+                .doesNotContain("attachment.storage_key", "attachment.key_id",
+                        "attachment_file.storage_key", "attachment_file.key_id");
         assertThat(own).as("no body column of any kind")
                 .noneMatch(c -> c.type() == Types.BLOB || c.type() == Types.CLOB || c.type() == Types.BINARY
                         || c.type() == Types.VARBINARY || c.type() == Types.LONGVARBINARY || c.type() == Types.LONGVARCHAR
@@ -432,10 +429,10 @@ class SchemaCatalogTest {
                     assertThat(c.type()).isEqualTo(Types.VARCHAR);
                     assertThat(c.nullable()).isTrue();
                 });
-        // no foreign key: neither of the two tables nor the history column is the side of one (JDBC metadata)
+        // no foreign key: none of the four tables nor history.attachment_id has one
         long foreignKeys = withConnection(c -> {
             long count = 0;
-            for (String table : List.of("upload_staging", "attachment", "attachment_file")) {
+            for (String table : List.of("upload_staging", "attachment", "attachment_file", "attachment_storage")) {
                 try (ResultSet rs = c.getMetaData().getImportedKeys(c.getCatalog(), c.getSchema(), table)) {
                     while (rs.next()) {
                         count++;
@@ -457,23 +454,39 @@ class SchemaCatalogTest {
             return count;
         });
         assertThat(foreignKeys).isZero();
-        // the key of an operation is unique per owner, and the state is checked
-        String insert = "INSERT INTO upload_staging (id, owner, operation_key, file_name, media_type, declared_size, "
-                + "declared_sha256, received_bytes, stored_bytes, next_sequence, storage_key, key_id, state, expires_at, "
-                + "created_at, updated_at) VALUES (:id, 'claude:a', 'op-1', 'f.txt', 'text/plain', 1, :sha, 0, 0, 0, :sk, "
-                + "'k1', :state, TIMESTAMP '2026-11-05 10:00:00', TIMESTAMP '2026-11-05 10:00:00', "
+        // (owner, operation_key, seq) is unique and state is checked
+        String insert = "INSERT INTO upload_staging (id, attachment_id, seq, owner, operation_key, file_name, media_type, "
+                + "declared_size, declared_sha256, received_bytes, stored_bytes, next_sequence, storage_key, key_id, state, "
+                + "expires_at, created_at, updated_at) VALUES (:id, :att, 0, 'claude:a', 'op-1', 'f.txt', 'text/plain', 1, "
+                + ":sha, 0, 0, 0, :sk, 'k1', :state, TIMESTAMP '2026-11-05 10:00:00', TIMESTAMP '2026-11-05 10:00:00', "
                 + "TIMESTAMP '2026-11-05 10:00:00')";
         String sha = "a".repeat(64);
-        jdbc.sql(insert).param("id", "11111111-1111-1111-1111-111111111111").param("sha", sha)
+        jdbc.sql(insert).param("id", "11111111-1111-1111-1111-111111111111")
+                .param("att", "aaaaaaaa-1111-1111-1111-111111111111").param("sha", sha)
                 .param("sk", uniqueKey()).param("state", "STAGING").update();
-        Throwable sameOperation = catchThrowable(() -> jdbc.sql(insert).param("id", "22222222-2222-2222-2222-222222222222")
+        Throwable sameOperation = catchThrowable(() -> jdbc.sql(insert)
+                .param("id", "22222222-2222-2222-2222-222222222222")
+                .param("att", "bbbbbbbb-2222-2222-2222-222222222222")
                 .param("sha", sha).param("sk", uniqueKey()).param("state", "STAGING").update());
         assertThat(sameOperation).isInstanceOf(org.springframework.dao.DuplicateKeyException.class);
         Throwable badState = catchThrowable(() -> jdbc.sql(insert.replace("'op-1'", "'op-2'"))
-                .param("id", "33333333-3333-3333-3333-333333333333").param("sha", sha).param("sk", uniqueKey())
+                .param("id", "33333333-3333-3333-3333-333333333333")
+                .param("att", "cccccccc-3333-3333-3333-333333333333").param("sha", sha).param("sk", uniqueKey())
                 .param("state", "DELETING").update());
         assertThat(badState).isInstanceOf(DataIntegrityViolationException.class);
         assertThat(sqlState(badState)).startsWith("23");
+    }
+
+    private List<String> primaryKeyColumns(String table) {
+        return withConnection(c -> {
+            List<String> columns = new ArrayList<>();
+            try (ResultSet rs = c.getMetaData().getPrimaryKeys(c.getCatalog(), c.getSchema(), table)) {
+                while (rs.next()) {
+                    columns.add(rs.getInt("KEY_SEQ") + ":" + rs.getString("COLUMN_NAME").toLowerCase(Locale.ROOT));
+                }
+            }
+            return columns.stream().sorted().toList();
+        });
     }
 
     @Test

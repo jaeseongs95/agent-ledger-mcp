@@ -1,46 +1,75 @@
 package org.pgledger.application.attachment;
 
 import java.time.Instant;
+import java.util.List;
 
-/** The inputs and outputs of the five upload operations (the common design, section 3), in plain types. */
+/** Value records exchanged by {@link AttachmentFlow}, {@link UploadService}, MCP tools, and admin panels. */
 public final class UploadCommands {
 
     private UploadCommands() {
     }
 
-    /** {@code artifact-begin}; {@code purpose} is optional and the ledger supports only {@code evidence}. */
-    public record Begin(String operationKey, String fileName, String mediaType, long size, String sha256, String purpose) {
+    /** One file declared in an {@code artifact-begin} request. */
+    public record BeginFile(String fileName, String mediaType, long size, String sha256) {
     }
 
-    /** What begin answers: the upload and what the client needs to send it. */
-    public record Begun(String uploadId, long maxChunkBytes, Instant expiresAt) {
+    /** Start a multi-file bundle upload. */
+    public record Begin(String operationKey, List<BeginFile> files, String purpose) {
     }
 
-    /** {@code artifact-chunk}: the chunk as the tool received it (base64 is decoded by the entry point). */
+    /** One staged file upload created by {@code artifact-begin}. */
+    public record BegunFile(int seq, String uploadId) {
+    }
+
+    /** Result of {@code artifact-begin}: shared {@code attachmentId} plus ordered per-file {@code uploadId}s. */
+    public record Begun(String attachmentId, List<BegunFile> files, int maxChunkBytes, Instant expiresAt) {
+    }
+
+    /** Upload one chunk of a staged file. */
     public record Chunk(String uploadId, long sequence, String data, String chunkSha256) {
     }
 
-    /** What a chunk answers: its number and the plain bytes the upload holds now. */
+    /** Acknowledgement of one chunk. */
     public record Received(long sequence, long received) {
     }
 
-    /** What finish answers. */
-    public record Finished(String attachmentId, long size, String sha256) {
+    /** Immutable facts of one file inside a finished bundle. */
+    public record KeptFile(int seq, String fileName, String mediaType, long size, String sha256) {
+    }
+
+    /** Result of {@code artifact-finish}: kept bundle id and ordered file list. */
+    public record Finished(String attachmentId, List<KeptFile> files) {
     }
 
     /**
-     * What status answers for an upload or an attachment; no path and no storage key.
-     *
-     * @param state     STAGING or COMPLETED
-     * @param expiresAt null for an attachment
-     * @param sequence  the number of the next chunk; null for an attachment
+     * Status answer for either an open upload ({@code kind = "upload"}) or a kept attachment bundle ({@code kind = "attachment"}).
+     * Never contains a path or storage key.
      */
-    public record Status(String id, String state, String fileName, String mediaType, long size, String sha256,
-            Instant expiresAt, long received, Long sequence) {
+    public record Status(
+            String kind,
+            String uploadId,
+            String attachmentId,
+            Integer seq,
+            String state,
+            String fileName,
+            String mediaType,
+            Long size,
+            String sha256,
+            Instant expiresAt,
+            Long received,
+            Long sequence,
+            List<KeptFile> files) {
     }
 
-    /** One page of a body. */
-    public record ReadPage(String attachmentId, long offsetBytes, long totalBytes, byte[] data, String mediaType,
+    /** One verified plain page of file {@code seq} inside a kept attachment bundle. */
+    public record Page(
+            String attachmentId,
+            int seq,
+            long offsetBytes,
+            long totalBytes,
+            int size,
+            byte[] data,
+            String mediaType,
             String fileName) {
     }
 }

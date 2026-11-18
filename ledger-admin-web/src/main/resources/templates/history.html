@@ -55,24 +55,37 @@
         <td colspan="8">
           <section th:attr="aria-label=#{history.attachment}">
             <h2 class="attachment-title" th:text="#{history.attachment}">Attachment</h2>
-            <dl class="facts" th:if="${a.state().name() != 'NOT_FOUND'}">
-              <dt th:text="#{history.attachment.name}">File name</dt><dd th:text="${a.fileName()}">report.txt</dd>
-              <dt th:text="#{history.attachment.type}">Media type</dt><dd th:text="${a.mediaType()}">text/plain</dd>
-              <dt th:text="#{history.attachment.size}">Size</dt><dd th:text="${a.sizeBytes()}">0</dd>
-              <dt th:text="#{history.attachment.sha256}">SHA-256</dt><dd class="code" th:text="${a.sha256()}">abc</dd>
-              <dt th:text="#{history.attachment.uploadedBy}">Uploaded by</dt><dd th:text="${a.uploadedBy()}">author</dd>
-              <dt th:text="#{history.attachment.uploadedAt}">Uploaded at</dt><dd><time th:replace="~{fragments :: time(${a.uploadedAt()})}">t</time></dd>
-            </dl>
             <p th:if="${a.state().name() == 'NOT_FOUND'}" th:text="#{history.attachment.notFound}">None</p>
-            <p th:if="${a.state().name() == 'NOT_CONFIGURED'}" th:text="#{history.attachment.notConfigured}">Not configured</p>
-            <p th:if="${a.state().name() == 'UNAVAILABLE'}" th:text="#{history.attachment.unavailable}">Unavailable</p>
-            <p th:if="${a.state().name() == 'DOWNLOAD'}" th:text="#{history.attachment.notText}">Not shown</p>
-            <th:block th:if="${a.isText()}">
-              <h3 th:text="#{history.attachment.text}">Content</h3>
-              <pre class="attachment-text" th:text="${a.text()}">text</pre>
-              <p class="hint" th:if="${a.truncated()}" th:text="#{history.attachment.truncated}">Cut</p>
+            <th:block th:if="${a.state().name() != 'NOT_FOUND'}">
+              <dl class="facts" th:if="${#lists.isEmpty(a.files())}">
+                <dt th:text="#{history.attachment.uploadedBy}">Uploaded by</dt><dd th:text="${a.uploadedBy()}">author</dd>
+                <dt th:text="#{history.attachment.uploadedAt}">Uploaded at</dt><dd><time th:replace="~{fragments :: time(${a.uploadedAt()})}">t</time></dd>
+              </dl>
+              <p th:if="${#lists.isEmpty(a.files()) and a.state().name() == 'NOT_CONFIGURED'}" th:text="#{history.attachment.notConfigured}">Not configured</p>
+              <p th:if="${#lists.isEmpty(a.files()) and a.state().name() != 'NOT_CONFIGURED'}" th:text="#{history.attachment.unavailable}">Unavailable</p>
+              <div class="attachment-file" th:each="f : ${a.files()}">
+                <dl class="facts">
+                  <dt th:text="#{history.attachment.name}">File name</dt><dd th:text="${f.fileName()}">report.txt</dd>
+                  <dt th:text="#{history.attachment.type}">Media type</dt><dd th:text="${f.mediaType()}">text/plain</dd>
+                  <dt th:text="#{history.attachment.size}">Size</dt><dd th:text="${f.sizeBytes()}">0</dd>
+                  <dt th:text="#{history.attachment.sha256}">SHA-256</dt><dd class="code" th:text="${f.sha256()}">abc</dd>
+                  <dt th:text="#{history.attachment.uploadedBy}">Uploaded by</dt><dd th:text="${a.uploadedBy()}">author</dd>
+                  <dt th:text="#{history.attachment.uploadedAt}">Uploaded at</dt><dd><time th:replace="~{fragments :: time(${a.uploadedAt()})}">t</time></dd>
+                </dl>
+                <p th:if="${f.state().name() == 'NOT_CONFIGURED'}" th:text="#{history.attachment.notConfigured}">Not configured</p>
+                <p th:if="${f.state().name() == 'UNAVAILABLE'}" th:text="#{history.attachment.unavailable}">Unavailable</p>
+                <p th:if="${f.state().name() == 'DOWNLOAD'}" th:text="#{history.attachment.notText}">Not shown</p>
+                <th:block th:if="${f.isText()}">
+                  <h3 th:text="#{history.attachment.text}">Content</h3>
+                  <pre class="attachment-text" th:text="${f.text()}">text</pre>
+                  <p class="hint" th:if="${f.truncated()}" th:text="#{history.attachment.truncated}">Cut</p>
+                </th:block>
+                <p th:if="${f.isDownload()}">
+                  <a th:if="${a.files().size() == 1}" th:href="@{/attachments/{id}/download(id=${a.id()})}" th:text="#{history.attachment.download}">Download</a>
+                  <a th:if="${a.files().size() > 1}" th:href="@{/attachments/{id}/download(id=${a.id()}, seq=${f.seq()})}" th:text="#{history.attachment.download}">Download</a>
+                </p>
+              </div>
             </th:block>
-            <p th:if="${a.isDownload()}"><a th:href="@{/attachments/{id}/download(id=${a.id()})}" th:text="#{history.attachment.download}">Download</a></p>
           </section>
         </td>
       </tr></th:block>

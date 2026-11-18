@@ -39,7 +39,7 @@ import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.domain.error.ValidationCode;
 import org.pgledger.domain.error.ValidationException;
-import org.pgledger.domain.model.AttachmentFile;
+import org.pgledger.domain.model.AttachmentStorage;
 import org.pgledger.domain.value.StorageKey;
 import org.pgledger.testing.TestOwners;
 
@@ -73,27 +73,28 @@ class AttachmentKeyTest {
         byte[] newBody = Uploads.body(500, 2);
 
         Finished old = Uploads.upload(flow, actor, oldBody, 200);
-        assertThat(Uploads.currentFile(ctx, old.attachmentId()).keyId()).isEqualTo(keyA);
+        assertThat(Uploads.currentStorage(ctx, old.attachmentId()).keyId()).isEqualTo(keyA);
 
         String keyB = keys.create();
         UploadService afterTheSwitch = Uploads.serviceWithActiveKey(ctx, keyB);
         Begun begun = ctx.tx(() -> afterTheSwitch.begin(actor, Uploads.begin(newBody)));
-        assertThat(Uploads.row(ctx, begun.uploadId()).keyId()).as("the new upload is written under B").isEqualTo(keyB);
-        Uploads.sendParts(flow, actor, begun.uploadId(), Uploads.parts(newBody, 200), 0);
-        Finished fresh = flow.finish(actor, begun.uploadId());
+        String uploadId = begun.files().getFirst().uploadId();
+        assertThat(Uploads.row(ctx, uploadId).keyId()).as("the new upload is written under B").isEqualTo(keyB);
+        Uploads.sendParts(flow, actor, uploadId, Uploads.parts(newBody, 200), 0);
+        Finished fresh = flow.finish(actor, begun.attachmentId());
 
-        assertThat(Uploads.currentFile(ctx, fresh.attachmentId()).keyId()).isEqualTo(keyB);
-        assertThat(Uploads.currentFile(ctx, old.attachmentId()).keyId()).as("the old row still names A").isEqualTo(keyA);
+        assertThat(Uploads.currentStorage(ctx, fresh.attachmentId()).keyId()).isEqualTo(keyB);
+        assertThat(Uploads.currentStorage(ctx, old.attachmentId()).keyId()).as("the old row still names A").isEqualTo(keyA);
         assertThat(Uploads.readAll(flow, actor, old.attachmentId(), 128)).as("read with key A").isEqualTo(oldBody);
         assertThat(Uploads.readAll(flow, actor, fresh.attachmentId(), 128)).as("read with key B").isEqualTo(newBody);
     }
 
     // ------------------------------------------------------------------------------------------------ ATA-031
 
-    private static AttachmentFile uploadedWith(Scenario s, String actor, String keyId, byte[] body, String... idOut) {
+    private static AttachmentStorage uploadedWith(Scenario s, String actor, String keyId, byte[] body, String... idOut) {
         Finished finished = Uploads.uploadWithKey(s.ctx(), s.bean(AttachmentFlow.class), actor, keyId, body, 150);
         idOut[0] = finished.attachmentId();
-        return Uploads.currentFile(s.ctx(), finished.attachmentId());
+        return Uploads.currentStorage(s.ctx(), finished.attachmentId());
     }
 
     @Test
@@ -107,22 +108,22 @@ class AttachmentKeyTest {
         String keyA = s.bean(AttachmentKeys.class).create();
         byte[] body = Uploads.body(700, 3);
         String[] id = new String[1];
-        AttachmentFile before = uploadedWith(s, actor, keyA, body, id);
+        AttachmentStorage before = uploadedWith(s, actor, keyA, body, id);
         assertThat(before.keyId()).isEqualTo(keyA);
-        assertThat(before.seq()).isEqualTo(1);
+        assertThat(before.rev()).isEqualTo(0);
         Finished finished = flow.finish(actor, id[0]);
         byte[] oldBytes = Files.readAllBytes(Uploads.fileOf(ctx, before.storageKey()));
 
         AttachmentRekey.Result result = s.bean(AttachmentRekey.class).rekey(TestOwners.OWNER, keyA);
 
         assertThat(result).isEqualTo(new AttachmentRekey.Result(1, 0));
-        AttachmentFile after = Uploads.currentFile(ctx, id[0]);
-        assertThat(after.seq()).as("the next number of the attachment").isEqualTo(2);
+        AttachmentStorage after = Uploads.currentStorage(ctx, id[0]);
+        assertThat(after.rev()).as("the next revision of the file").isEqualTo(1);
         assertThat(after.keyId()).isEqualTo(properties.activeKeyId());
         assertThat(after.storageKey()).isNotEqualTo(before.storageKey());
         byte[] read = Uploads.readAll(flow, actor, id[0], 200);
         assertThat(read).isEqualTo(body);
-        assertThat(Uploads.sha(read)).as("the same plain SHA-256").isEqualTo(finished.sha256());
+        assertThat(Uploads.sha(read)).as("the same plain SHA-256").isEqualTo(finished.files().getFirst().sha256());
         assertThat(Files.readAllBytes(Uploads.fileOf(ctx, before.storageKey()))).as("the old file is not touched").isEqualTo(oldBytes);
         assertThat(s.count("SELECT COUNT(*) FROM owner_audit WHERE operation = 'ATTACHMENT_REKEY' AND subject = ?", id[0])).isEqualTo(1);
         assertThat(ctx.jdbc().sql("SELECT detail FROM owner_audit WHERE operation = 'ATTACHMENT_REKEY' AND subject = ?").param(id[0])
@@ -160,7 +161,7 @@ class AttachmentKeyTest {
         String keyA = s.bean(AttachmentKeys.class).create();
         byte[] body = Uploads.body(400, 4);
         String[] id = new String[1];
-        AttachmentFile before = uploadedWith(s, actor, keyA, body, id);
+        AttachmentStorage before = uploadedWith(s, actor, keyA, body, id);
         Set<StorageKey> strays = withoutRow(store, maintenance);
         AttachmentRekey failing = new AttachmentRekey(new FailingMaintenanceService(ctx), store, s.bean(StorageKeys.class),
                 s.bean(AttachmentProperties.class));
@@ -168,7 +169,7 @@ class AttachmentKeyTest {
         assertThatThrownBy(() -> failing.rekey(TestOwners.OWNER, keyA)).isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("injected failure");
 
-        assertThat(Uploads.currentFile(ctx, id[0])).as("the old row is still the current one").isEqualTo(before);
+        assertThat(Uploads.currentStorage(ctx, id[0])).as("the old row is still the current one").isEqualTo(before);
         assertThat(Uploads.readAll(flow, actor, id[0], 100)).as("read from the old file").isEqualTo(body);
         Set<StorageKey> now = withoutRow(store, maintenance);
         now.removeAll(strays);
@@ -186,7 +187,7 @@ class AttachmentKeyTest {
         // the same rekey again, without a failure
         AttachmentRekey.Result again = s.bean(AttachmentRekey.class).rekey(TestOwners.OWNER, keyA);
         assertThat(again).isEqualTo(new AttachmentRekey.Result(1, 0));
-        assertThat(Uploads.currentFile(ctx, id[0]).seq()).isEqualTo(2);
+        assertThat(Uploads.currentStorage(ctx, id[0]).rev()).isEqualTo(1);
         assertThat(Uploads.readAll(flow, actor, id[0], 100)).isEqualTo(body);
     }
 

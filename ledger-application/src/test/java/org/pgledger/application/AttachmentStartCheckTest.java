@@ -61,7 +61,7 @@ class AttachmentStartCheckTest {
             assertThat(Expect.message(failure)).contains(keyA).doesNotContain(HexFormat.of().formatHex(keyBytes));
             assertThat(failure.getMessage()).doesNotContain(HexFormat.of().formatHex(keyBytes));
         });
-        Expect.failure(() -> flow.read(actor, finished.attachmentId(), 0, 10).data(), InfrastructureCode.ARTIFACT_KEY_MISSING);
+        Expect.failure(() -> flow.read(actor, finished.attachmentId(), 0, 0, 10).data(), InfrastructureCode.ARTIFACT_KEY_MISSING);
 
         // the key comes back (the same bytes), the body is written again under the active key, and the old key is not needed any more
         PrivateFiles files = s.bean(PrivateFiles.class);
@@ -73,6 +73,6 @@ class AttachmentStartCheckTest {
 
         startCheck.verify();
         assertThat(Uploads.readAll(flow, actor, finished.attachmentId(), 100)).isEqualTo(body);
-        assertThat(Uploads.currentFile(ctx, finished.attachmentId()).keyId()).isEqualTo(properties.activeKeyId());
+        assertThat(Uploads.currentStorage(ctx, finished.attachmentId()).keyId()).isEqualTo(properties.activeKeyId());
     }
 }

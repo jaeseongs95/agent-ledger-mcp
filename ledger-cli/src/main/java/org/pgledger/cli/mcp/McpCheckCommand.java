@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import org.pgledger.cli.CliCommand;
 import org.pgledger.cli.CliMessages;
@@ -137,25 +138,64 @@ public class McpCheckCommand implements Command {
     }
 
     private List<String> listTools(URI uri, String token, String shown) {
+        try (McpSyncClient client = openClient(uri, token, TIMEOUT)) {
+            return callTool(client, shown, () -> {
+                List<String> names = new ArrayList<>();
+                ListToolsResult page = client.listTools();
+                names.addAll(page.tools().stream().map(Tool::name).toList());
+                while (page.nextCursor() != null) {
+                    page = client.listTools(page.nextCursor());
+                    names.addAll(page.tools().stream().map(Tool::name).toList());
+                }
+                return names;
+            });
+        }
+    }
+
+    /** Resolves {@code --url} when non-null or the default loopback MCP endpoint from {@link InstallDefaults}. */
+    public URI resolveEndpoint(String urlOption) {
+        return endpoint(urlOption == null ? defaultUrl() : urlOption);
+    }
+
+    /** Returns the configured bearer token or fails with {@link ErrorCode#MCP_TOKEN_MISSING}. */
+    public String requireToken() {
+        String token = properties.token();
+        if (token == null || token.isBlank()) {
+            throw new FailureException(ErrorCode.MCP_TOKEN_MISSING);
+        }
+        return token;
+    }
+
+    /** Formats {@code uri} for log/error messages without query, fragment, or user info. */
+    public String shown(URI uri) {
+        return uri.getScheme() + "://" + uri.getRawAuthority() + path(uri);
+    }
+
+    /** Opens and initializes an authenticated {@link McpSyncClient} against {@code uri}. */
+    public McpSyncClient openClient(URI uri, String token, Duration timeout) {
         String base = uri.getScheme() + "://" + uri.getRawAuthority();
+        String shown = shown(uri);
         HttpClientStreamableHttpTransport transport = HttpClientStreamableHttpTransport.builder(base)
                 .endpoint(path(uri))
                 .jsonMapper(new JacksonMcpJsonMapper(json))
-                .connectTimeout(TIMEOUT)
+                .connectTimeout(timeout)
                 .addHttpRequestCustomizer((request, method, target, body, context) ->
                         request.header("Authorization", "Bearer " + token))
                 .build();
-        try (McpSyncClient client = McpClient.sync(transport).requestTimeout(TIMEOUT).initializationTimeout(TIMEOUT)
-                .build()) {
+        try {
+            McpSyncClient client = McpClient.sync(transport).requestTimeout(timeout).initializationTimeout(timeout)
+                    .build();
             client.initialize();
-            List<String> names = new ArrayList<>();
-            ListToolsResult page = client.listTools();
-            names.addAll(page.tools().stream().map(Tool::name).toList());
-            while (page.nextCursor() != null) {
-                page = client.listTools(page.nextCursor());
-                names.addAll(page.tools().stream().map(Tool::name).toList());
-            }
-            return names;
+            return client;
+        } catch (RuntimeException failure) {
+            throw translate(failure, shown);
+        }
+    }
+
+    /** Executes an MCP client call and translates any SDK/transport failure to a safe {@link FailureException}. */
+    public <T> T callTool(McpSyncClient client, String shown, Supplier<T> action) {
+        try {
+            return action.get();
         } catch (RuntimeException failure) {
             throw translate(failure, shown);
         }

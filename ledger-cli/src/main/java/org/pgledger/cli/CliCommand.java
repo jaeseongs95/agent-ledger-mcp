@@ -23,6 +23,8 @@ public enum CliCommand implements CommandName {
     ATTACHMENTS_CHECK("attachments-check"),
     ATTACHMENTS_REKEY("attachments-rekey"),
     ATTACHMENTS_KEY_CREATE("attachments-key-create"),
+    ATTACHMENTS_PREPARE("attachments-prepare"),
+    ATTACHMENTS_SEND("attachments-send"),
     MCP_CHECK("mcp-check"),
     RENDER_DEPLOY("render-deploy"),
     PREPARE_HOST("prepare-host"),
@@ -45,7 +47,8 @@ public enum CliCommand implements CommandName {
      */
     public boolean usesDatabase() {
         return switch (this) {
-            case SECRET_SET, TOKEN_GENERATE, MCP_CHECK, RENDER_DEPLOY, PREPARE_HOST, INSTALL_DEFAULT -> false;
+            case SECRET_SET, TOKEN_GENERATE, ATTACHMENTS_PREPARE, ATTACHMENTS_SEND, MCP_CHECK, RENDER_DEPLOY,
+                    PREPARE_HOST, INSTALL_DEFAULT -> false;
             default -> true;
         };
     }

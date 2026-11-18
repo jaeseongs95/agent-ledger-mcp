@@ -45,20 +45,20 @@ class AttachmentCatalogTest {
 
     static Stream<Expected> expected() {
         return Stream.of(
-                new Expected("artifact-begin", List.of("operationKey", "fileName", "mediaType", "size", "sha256", "purpose"),
-                        List.of("operationKey", "fileName", "mediaType", "size", "sha256"),
-                        List.of("uploadId", "maxChunkBytes", "expiresAt")),
+                new Expected("artifact-begin", List.of("operationKey", "files", "purpose"),
+                        List.of("operationKey", "files"),
+                        List.of("attachmentId", "files", "maxChunkBytes", "expiresAt")),
                 new Expected("artifact-chunk", List.of("uploadId", "sequence", "data", "chunkSha256"),
                         List.of("uploadId", "sequence", "data", "chunkSha256"), List.of("sequence", "received")),
-                new Expected("artifact-finish", List.of("uploadId"), List.of("uploadId"),
-                        List.of("attachmentId", "size", "sha256")),
+                new Expected("artifact-finish", List.of("attachmentId"), List.of("attachmentId"),
+                        List.of("attachmentId", "files")),
                 new Expected("artifact-status", List.of("uploadId", "attachmentId"), List.of(),
-                        List.of("id", "state", "fileName", "mediaType", "size", "sha256", "expiresAt", "received",
-                                "sequence")),
-                new Expected("artifact-read", List.of("attachmentId", "offsetBytes", "maxBytes"),
+                        List.of("kind", "uploadId", "attachmentId", "seq", "state", "fileName", "mediaType", "size",
+                                "sha256", "expiresAt", "received", "sequence", "files")),
+                new Expected("artifact-read", List.of("attachmentId", "seq", "offsetBytes", "maxBytes"),
                         List.of("attachmentId", "offsetBytes", "maxBytes"),
-                        List.of("attachmentId", "offsetBytes", "totalBytes", "size", "data", "mediaType", "fileName",
-                                "text")));
+                        List.of("attachmentId", "seq", "offsetBytes", "totalBytes", "size", "data", "mediaType",
+                                "fileName", "text")));
     }
 
     private static List<String> withAttestation(List<String> keys) {
@@ -94,16 +94,22 @@ class AttachmentCatalogTest {
     @Test
     @DisplayName("ATA-020: the numbers of the contract are integers and the data of a chunk is a string")
     void theTypesAreThoseOfTheDesign(McpSession session) {
-        Map<String, SchemaView> begin = SchemaView.of(session.mapper(), session.tool("artifact-begin").inputSchema())
-                .properties();
+        SchemaView beginSchema = SchemaView.of(session.mapper(), session.tool("artifact-begin").inputSchema());
+        Map<String, SchemaView> begin = beginSchema.properties();
         Map<String, SchemaView> chunk = SchemaView.of(session.mapper(), session.tool("artifact-chunk").inputSchema())
                 .properties();
         Map<String, SchemaView> read = SchemaView.of(session.mapper(), session.tool("artifact-read").inputSchema())
                 .properties();
 
-        assertThat(begin.get("size").type()).isEqualTo("integer");
+        assertThat(begin.get("files").type()).isEqualTo("array");
+        SchemaView beginItem = beginSchema.at("files[]").orElseThrow();
+        SchemaView beginFileSize = beginItem.properties().containsKey("size")
+                ? beginItem.properties().get("size")
+                : beginSchema.defs().get("BeginFileInput").properties().get("size");
+        assertThat(beginFileSize.type()).isEqualTo("integer");
         assertThat(chunk.get("sequence").type()).isEqualTo("integer");
         assertThat(chunk.get("data").type()).isEqualTo("string");
+        assertThat(read.get("seq").type()).isEqualTo("integer");
         assertThat(read.get("offsetBytes").type()).isEqualTo("integer");
         assertThat(read.get("maxBytes").type()).isEqualTo("integer");
     }
@@ -162,7 +168,7 @@ class AttachmentCatalogTest {
         assertThat(session.tool("artifact-chunk").description()).contains("takes no operationKey")
                 .contains("the one exception").contains("uploadId, sequence and chunkSha256");
         assertThat(session.tool("artifact-finish").description()).contains("takes no operationKey")
-                .contains("the one exception").contains("repeatable by its uploadId");
+                .contains("the one exception").contains("repeatable by its attachmentId");
     }
 
     @Test
