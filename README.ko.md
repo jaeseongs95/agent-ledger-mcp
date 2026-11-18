@@ -329,9 +329,7 @@ sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<dri
 `127.0.0.1:8865`(관리 웹)로 연결하고 클라이언트의 `Host` 헤더를 그대로 넘깁니다. 각 서비스에는 프록시가 그 서비스를 위해 넘기는 호스트 이름 하나를
 `--mcp-host=<host>`와 `--admin-host=<host>`로 줍니다. 그 이름은 해당 서비스의 `Host` 검사에서 `127.0.0.1`과 `localhost`(항상 허용)에 더해 허용됩니다.
 관리 웹의 이름이 있으면 설치기가 그에 맞는 passkey 설정도 씁니다(위의 옵션 참조). 관리 웹은 루프백 주소에서 온 `X-Forwarded-For`와 `X-Forwarded-Proto`만
-신뢰하므로, 프록시는 이 두 헤더를 자신이 받은 연결의 주소와 스킴으로 덮어써야 합니다. 이는 로그인 실패 뒤의 잠금과 이어져 있습니다. 관리 웹은 시도를
-클라이언트 주소별로 세므로, `X-Forwarded-For`를 넘기지 않는 프록시는 모든 클라이언트를 프록시의 루프백 주소 하나로 보이게 하고, 그러면 누군가의 실패한
-시도가 소유자까지 함께 잠급니다. 오래 유지되는 MCP 연결(Streamable HTTP)에는 충분히 긴 프록시 타임아웃이
+신뢰하므로, 프록시는 이 두 헤더를 자신이 받은 연결의 주소와 스킴으로 덮어써야 합니다(리다이렉트와 WebAuthn 출처 확인 및 요청 기록에 쓰이며, 자격 증명 속도 제한은 `ledger.admin.lockout.global-delay`를 쓰므로 클라이언트 주소별로 잠그지 않습니다). 오래 유지되는 MCP 연결(Streamable HTTP)에는 충분히 긴 프록시 타임아웃이
 필요합니다. 인증서, 그 갱신, 방화벽도 운영자의 몫입니다.
 
 ### Windows: 개인 PC 또는 서버
@@ -472,7 +470,7 @@ JDBC 드라이버의 타입 정보는 드라이버가 판단할 수 없는 형�
 - **구성.** 인증 절차는 Spring Security의 WebAuthn 지원(`spring-security-webauthn`과 WebAuthn4J, 둘 다 Apache-2.0)이 하고, 패스키는 장부 데이터베이스에 저장합니다(V7: base64url 텍스트,
   BLOB 없음, 자격 증명은 바꾸거나 삭제하지 않고 닫는 것도 별도의 행입니다).
 - **브라우저 보안.** Spring Security가 CSRF 토큰, 기본으로 `Secure`인 `SameSite=Strict` 세션 쿠키, `Host` 허용 목록, 콘텐츠 보안 정책을 제공합니다.
-- **화면.** 개요(주의 항목 건수와 MCP 서버 상태), 프로젝트, 결함, 작업, 조건, 이력(읽기 전용), 공통코드, 세션 키가 있는 부여, JDBC 드라이버 화면입니다.
+- **화면.** 개요(주의 항목 건수와 MCP 서버 상태), 프로젝트, 이슈, 명세, 작업, 기준, 이력(읽기 전용), 첨부, 공통코드, 세션 키와 세션 토큰이 있는 부여, JDBC 드라이버 화면입니다.
   시각은 UTC로 보내며 브라우저의 지역 시각으로 표시합니다.
 - **부여.** 소유자가 세션이 출력한 공개 키를 붙여 넣고, 화면에 보이는 지문을 세션이 보여 준 지문과 대조한 뒤에야 키가 등록되고 부여가 발급됩니다.
   유효한 키는 바로 그 키를 명시적으로 확인해야 교체됩니다.
@@ -483,7 +481,7 @@ JDBC 드라이버의 타입 정보는 드라이버가 판단할 수 없는 형�
 `java -jar ledger-client-hook.jar claude`, `codex`, `antigravity`. 플러그인 디렉터리는 `clients/claude`, `clients/codex`, `clients/antigravity`에 있습니다(각 README 참조).
 훅에는 클라이언트 호스트의 `PATH`에 Java 25 런타임이 필요하며, 훅이 없거나 실패하면 쓰기는 `HOST_ATTESTATION_REQUIRED`로 거절됩니다.
 
-훅은 쓰기 도구 10종에만 서명하며, 도구 이름은 `mcp__<server>__ledger_<op>` 또는 `mcp__<server>__<server>_ledger_<op>`입니다
+훅은 쓰기 도구 13종과 첨부 도구 5종에만 서명하며, 도구 이름은 `mcp__<server>__ledger_<op>` 또는 `mcp__<server>__<server>_ledger_<op>`입니다
 (Codex Apps는 `mcp__codex_apps__app_<app>_ledger_<op>`). `_hostAttestation`의 값은
 `pgla2.<author>.<tool>.<operation key>.<arguments digest>.<issued at>.<signature>`이며, 작성자, 도구, 호출의 `operationKey`(`ledger_whoami`와 첨부 도구는 빈 값), 인자의 RFC 8785 정규형(`_hostAttestation` 제외, 배치는 모든 연산과 그 내용, 순서, 배치의 키)의
 SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인자에서 `operationKey`를 읽을 뿐 키를 만들어 넣지 않으며, 키가 없는 호출은 서버가 거절합니다. 가로챈 토큰으로 다른 내용을 보낼 수 없습니다.
@@ -506,7 +504,7 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인�
 - `request_id`와 `batch_request_id`는 모든 쓰기 도구의 필수 인자 `operationKey`(1자 이상 128자 이하)로 바뀝니다. 옛 키는 알 수 없는 인자로 거절되고, `operationKey`가 없는 호출도 거절되며,
   서버는 키를 대신 만들지 않습니다. `ledger_batch` 안의 연산에는 자체 키가 없습니다.
 - `author_id` 인자는 없어졌습니다. 작성자는 호스트 증명입니다.
-- 객체나 배열 인자(`fields`, `ops`)는 문자열에 담은 JSON 문서가 아니라 JSON 객체나 배열로 보내야 합니다.
+- 1.x의 `fields` 맵은 평탄한 도구 파라미터로 바뀌며, 객체나 배열 인자(`ops`, `files`)는 문자열에 담은 JSON 문서가 아니라 JSON 객체나 배열로 보내야 합니다.
 - 텍스트 `null`은 인자가 없다는 뜻이 아니라 하나의 텍스트입니다. 값이 없는 인자는 생략합니다.
 
 2.0 자체는 1.x를 전혀 알지 못합니다. 서비스, 설치 프로그램, `ledger-cli`는 1.x의 설정, 파일, 표를 읽지 않습니다. 이전은 별도의 도구인
@@ -682,7 +680,7 @@ JDK 25와 Gradle 래퍼만 있으면 되며, 래퍼가 Gradle을 직접 내려�
 두 번째 로그인인 최소 권한 응용 계정은 계정 권한을 다루는 시험이 사용합니다. 각 시험은 자기만의 스키마를 만들어 쓰고 끝나면 삭제하므로 그 데이터베이스 밖에는 아무것도 남지 않으며,
 시험 JVM 하나는 연결을 최대 10개까지만 유지합니다. 데이터베이스에 접속할 수 없는 시험은 접속 오류로 실패하며, 건너뛰지도 않고 다른 데이터베이스로 대체하지도 않습니다.
 
-접속 정보는 명령줄 또는 `gradle.properties`의 Gradle 속성으로 지정합니다. 아래 값이 기본값이며, 두 비밀번호 파일 속성만은 기본값이 루트 `build.gradle.kts`에 적힌 시험 컴퓨터의 파일입니다.
+접속 정보는 명령줄 또는 `gradle.properties`의 Gradle 속성으로 지정합니다. 아래 JDBC URL과 계정 이름은 기본값이며, 두 비밀번호 파일 속성에는 저장소 기본값이 없습니다(`build.gradle.kts`에 특정 기기 경로를 하드코딩하지 않습니다).
 
 ```sh
 ./gradlew test \
@@ -729,7 +727,7 @@ JVM이 인식하는 프로세서 수를 제한할 수 있습니다. 속성은 �
 
 ## 라이선스
 
-pg-ledger-mcp는 2.0 버전부터 GNU Affero General Public License v3.0 또는 (선택에 따라) 그 이후 판(`AGPL-3.0-or-later`)에 따라 배포합니다. 자세한 내용은 [LICENSE](LICENSE)를 참조하십시오.
+pg-ledger-mcp는 2.0 버전부터 GNU Affero General Public License v3.0 또는 (선택에 따라) 그 이후 판(`AGPL-3.0-or-later`)에 따라 배포합니다. 자세한 내용은 [LICENSE](LICENSE), [ADDITIONAL-TERMS.ko.md](ADDITIONAL-TERMS.ko.md), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)를 참조하십시오.
 
 Copyright (C) 2026 Jaeseong Song
 

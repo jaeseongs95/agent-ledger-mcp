@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.domain.value;
 
 /** A closed-set constant that has a wire token (the value the external contract uses). */

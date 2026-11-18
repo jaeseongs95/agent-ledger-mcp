@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.cli.deploy;
 
 /** What the renderers of the deployment files share: the generated-file notice and how a line is written. */

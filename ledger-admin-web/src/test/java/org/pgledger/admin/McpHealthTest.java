@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.admin;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -120,8 +122,9 @@ class McpHealthTest {
         try (ServerSocket socket = new ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())) {
             closedPort = Integer.toString(socket.getLocalPort());
         }
-        McpHealthClient client = new McpHealthClient(properties("http://localhost:" + closedPort + "/healthz",
-                Duration.ofSeconds(1)), RestClient.builder());
+        LedgerAdminProperties props = properties("http://localhost:" + closedPort + "/healthz", Duration.ofSeconds(1));
+        McpHealthClient client = new McpHealthClient(props,
+                org.pgledger.admin.console.ConsoleConfiguration.mcpHealthRestClient(props, RestClient.builder()));
 
         assertThat(client.status()).isEqualTo(new McpStatus(McpStatus.State.DOWN, McpStatus.Reason.UNREACHABLE));
     }
@@ -129,7 +132,9 @@ class McpHealthTest {
     @Test
     @DisplayName("ADM-046: without a configured URL the indicator says not configured and no request is made")
     void adm046_notConfigured() {
-        McpHealthClient client = new McpHealthClient(properties(null, Duration.ofSeconds(1)), RestClient.builder());
+        LedgerAdminProperties props = properties(null, Duration.ofSeconds(1));
+        McpHealthClient client = new McpHealthClient(props,
+                org.pgledger.admin.console.ConsoleConfiguration.mcpHealthRestClient(props, RestClient.builder()));
         int before = MCP.seen().size();
 
         assertThat(client.status()).isEqualTo(new McpStatus(McpStatus.State.NOT_CONFIGURED, McpStatus.Reason.NONE));

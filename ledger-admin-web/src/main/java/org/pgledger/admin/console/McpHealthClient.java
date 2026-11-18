@@ -1,13 +1,13 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.admin.console;
 
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpTimeoutException;
-import java.time.Duration;
 import org.pgledger.admin.app.LedgerAdminProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
@@ -16,8 +16,8 @@ import org.springframework.web.client.RestClientResponseException;
 
 /**
  * Asks the MCP server whether it is up: one {@code GET} of exactly the configured health URL (never a URL from a
- * request) with a Spring {@code RestClient}, connect and read time limits from the configuration, and nothing secret
- * in the request. Whatever happens, the answer is a {@link McpStatus}; the page still renders.
+ * request) with the configured Spring {@code RestClient} bean, connect and read time limits from the configuration, and
+ * nothing secret in the request. Whatever happens, the answer is a {@link McpStatus}; the page still renders.
  */
 @Component
 public class McpHealthClient {
@@ -31,14 +31,11 @@ public class McpHealthClient {
     private final URI url;
     private final RestClient client;
 
-    public McpHealthClient(LedgerAdminProperties properties, RestClient.Builder builder) {
+    public McpHealthClient(LedgerAdminProperties properties,
+            @Qualifier("mcpHealthRestClient") RestClient client) {
         String configured = properties.mcp().healthUrl();
         this.url = configured == null || configured.isBlank() ? null : URI.create(configured);
-        Duration timeout = properties.mcp().timeout();
-        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(
-                HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).connectTimeout(timeout).build());
-        factory.setReadTimeout(timeout);
-        this.client = builder.requestFactory(factory).build();
+        this.client = client;
     }
 
     public McpStatus status() {

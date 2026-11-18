@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.hook;
 
 /** Why a ledger call is denied. The wording is shown to the user by the host. */

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.application.write;
 
 /** What every write request carries: the operation key (the idempotency key, required) and the reason. */

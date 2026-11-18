@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.database.repository;
 
 /** Whether a search needs any keyword or all keywords to be found. */

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.application.history;
 
 import org.pgledger.domain.rule.HistoryEntity;

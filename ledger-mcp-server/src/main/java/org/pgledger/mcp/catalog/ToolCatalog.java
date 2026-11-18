@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.mcp.catalog;
 
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
@@ -98,12 +100,6 @@ public class ToolCatalog implements SmartInitializingSingleton {
             adapters.forEach(this::take);
             registerAll();
         }
-    }
-
-    /** Adds the tools of a new adapter bean to the running server (the server announces {@code list_changed}). */
-    public synchronized void register(ToolAdapter adapter) {
-        take(adapter);
-        registerAll();
     }
 
     /** The definitions that the annotations of the adapter give, and how to call each of its tools. */

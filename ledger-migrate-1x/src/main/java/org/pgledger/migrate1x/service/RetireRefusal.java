@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.migrate1x.service;
 
 /** Why {@link LegacyRetireService} refuses to list or to remove the objects of the 1.x schema. */

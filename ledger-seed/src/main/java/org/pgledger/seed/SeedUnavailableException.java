@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.seed;
 
 /** The seed bundle cannot be built or read (a bad source file, a missing or damaged bundle); the message says which and why. */

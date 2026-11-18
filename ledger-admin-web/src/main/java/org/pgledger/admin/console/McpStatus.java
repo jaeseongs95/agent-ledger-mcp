@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.admin.console;
 
 /** The MCP server as the overview shows it: up, down (and why) or not configured. */

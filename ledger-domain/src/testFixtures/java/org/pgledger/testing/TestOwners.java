@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.testing;
 
 import org.pgledger.domain.value.OwnerIdentity;

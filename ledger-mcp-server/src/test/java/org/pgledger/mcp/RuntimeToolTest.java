@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.mcp;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -16,7 +18,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.pgledger.application.admin.CommonCodeService;
-import org.pgledger.mcp.catalog.ToolCatalog;
 import org.pgledger.mcp.error.ToolError;
 import org.pgledger.mcp.support.Calls;
 import org.pgledger.mcp.support.CodeChanges;
@@ -27,40 +28,57 @@ import org.pgledger.mcp.support.ProbeTools.Pong;
 import org.pgledger.mcp.support.SchemaView;
 import org.pgledger.mcp.tool.ToolAdapter;
 import org.pgledger.mcp.tool.WriteOutputs.Whoami;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.system.CapturedOutput;
 import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.util.StringUtils;
 
 /**
- * MCC cases that change the running server: a tool added at run time, the database that is gone for a poll, tools
- * that fail. The server of this class is a context of its own because it keeps the tools that the cases add.
+ * MCC cases for extra test-only {@link ToolAdapter} beans, tools that fail, and a database outage during a code-revision
+ * poll. This test class runs in a context of its own so the extra probe tools stay isolated from the main catalogue tests.
  */
 @McpServerTest
+@Import(RuntimeToolTest.TestProbes.class)
 @ExtendWith(OutputCaptureExtension.class)
 @TestPropertySource(properties = "ledger.test.context=runtime-tools")
 class RuntimeToolTest {
 
+    @TestConfiguration(proxyBeanMethods = false)
+    static class TestProbes {
+
+        @Bean
+        ToolAdapter workingProbe() {
+            return new ProbeTools.Working();
+        }
+
+        @Bean
+        ToolAdapter defectiveProbe() {
+            return new ProbeTools.Defective();
+        }
+
+        @Bean
+        ToolAdapter violatingProbe() {
+            return new ProbeTools.Violating();
+        }
+    }
+
     private static final Duration NOTIFICATION = Duration.ofSeconds(5);
 
     @Test
-    @DisplayName("MCC-002: a tool added at run time is announced with list_changed, listed and callable")
-    void aToolAddedAtRunTimeIsAnnounced(McpSession session, ApplicationContext context) {
-        int before = session.tools().size();
-
-        context.getBean(ToolCatalog.class).register(new ProbeTools.Working());
-        List<Tool> announced = session.awaitListChange(NOTIFICATION);
-
-        assertThat(announced).hasSize(before + 1);
-        assertThat(session.tools()).hasSize(before + 1).extracting(Tool::name).contains("probe_ping");
+    @DisplayName("MCC-002: an extra ToolAdapter bean registered in the test context is listed with closed schema and callable")
+    void anExtraAdapterBeanIsListedAndCallable(McpSession session) {
+        assertThat(session.tools()).extracting(Tool::name).contains("probe_ping");
         assertThat(session.ok("probe_ping", new Calls.Nothing(), Pong.class)).isEqualTo(new Pong("pong"));
         assertThat(SchemaView.of(session.mapper(), session.tool("probe_ping").inputSchema()).closed()).isTrue();
     }
 
-    /** A failing tool, the adapter that holds it, the token of the error and what must not reach the model. */
-    private record Failing(String tool, ToolAdapter adapter, String token, List<String> secrets) {
+    /** A failing tool, the token of the error and what must not reach the model. */
+    private record Failing(String tool, String token, List<String> secrets) {
 
         @Override
         public String toString() {
@@ -70,9 +88,9 @@ class RuntimeToolTest {
 
     static Stream<Failing> failingTools() {
         return Stream.of(
-                new Failing("probe_defect", new ProbeTools.Defective(), "INTERNAL_ERROR",
+                new Failing("probe_defect", "INTERNAL_ERROR",
                         List.of("boom", "SELECT", "vault", "IllegalStateException")),
-                new Failing("probe_integrity", new ProbeTools.Violating(), "INTEGRITY_VIOLATION",
+                new Failing("probe_integrity", "INTEGRITY_VIOLATION",
                         List.of("insert into", "HISTORY_PK", "DataIntegrityViolationException", "statement")));
     }
 
@@ -80,11 +98,7 @@ class RuntimeToolTest {
     @MethodSource("failingTools")
     @DisplayName("MCC-020: an unexpected exception and an integrity error are INTERNAL_ERROR and "
             + "INTEGRITY_VIOLATION without SQL or class names, and are logged once")
-    void anUnexpectedFailureIsConvertedOnce(Failing failing, McpSession session, ApplicationContext context,
-            CapturedOutput output) {
-        context.getBean(ToolCatalog.class).register(failing.adapter());
-        session.awaitListChange(NOTIFICATION);
-
+    void anUnexpectedFailureIsConvertedOnce(Failing failing, McpSession session, CapturedOutput output) {
         CallToolResult result = session.call(failing.tool(), new Calls.Nothing());
         ToolError error = session.error(result);
 

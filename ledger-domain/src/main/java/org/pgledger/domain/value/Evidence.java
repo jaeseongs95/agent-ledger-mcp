@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.domain.value;
 
 /** Evidence that comes with a transition: a uri (a blank one equals none) and an optional digest of the content. */

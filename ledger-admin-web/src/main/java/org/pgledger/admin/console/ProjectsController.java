@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.admin.console;
 
 import org.pgledger.application.admin.ProjectService;

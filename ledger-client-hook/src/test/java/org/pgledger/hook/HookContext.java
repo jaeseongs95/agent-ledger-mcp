@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.hook;
 
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;

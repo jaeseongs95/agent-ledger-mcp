@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.database;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -163,30 +165,18 @@ class SqlBuilderTest {
     }
 
     @Test
-    @DisplayName("SQB-005 an alternative group of n parts, of one part, and of none (which matches nothing)")
-    void anOrGroupHoldsTheAlternativesOrMatchesNothing() throws SQLException {
+    @DisplayName("SQB-005 applyLimit appends the row-limit clause of the resolved product after an ORDER BY statement")
+    void applyLimitAppendsTheRowLimitClause() throws SQLException {
         SqlBuilder builder = new SqlBuilder(Reporting.of("PostgreSQL").source());
-        String pattern = "(host = :host%1$d AND session_id = :session%1$d)";
-        assertThat(builder.query("SELECT * FROM prompt WHERE ").orGroup(pattern, 1).orderBy("received_at DESC")
-                .limit(":row_count")).isEqualTo("SELECT * FROM prompt WHERE ((host = :host0 AND session_id = :session0)) "
-                        + "ORDER BY received_at DESC FETCH FIRST :row_count ROWS ONLY");
-        assertThat(builder.query("SELECT * FROM prompt WHERE ").orGroup(pattern, 3).and("text = :text")
-                .orderBy("received_at DESC").limit(":row_count")).isEqualTo(
-                        "SELECT * FROM prompt WHERE ((host = :host0 AND session_id = :session0) OR "
-                                + "(host = :host1 AND session_id = :session1) OR "
-                                + "(host = :host2 AND session_id = :session2)) AND text = :text "
-                                + "ORDER BY received_at DESC FETCH FIRST :row_count ROWS ONLY");
-        assertThat(builder.query("SELECT ").orGroup("event = ?", 0).build()).isEqualTo("SELECT (1 = 0)");
-        assertThat(builder.query("SELECT ").orGroup("event = ?", 2).build()).isEqualTo("SELECT (event = ? OR event = ?)");
-        assertThat(builder.query("SELECT id FROM item").append(" WHERE id > ?").build())
-                .isEqualTo("SELECT id FROM item WHERE id > ?");
+        assertThat(builder.applyLimit("SELECT id FROM item ORDER BY id DESC", ":row_count"))
+                .isEqualTo("SELECT id FROM item ORDER BY id DESC FETCH FIRST :row_count ROWS ONLY");
     }
 
     @Test
-    @DisplayName("SQB-006 the statements the builder gives for a product it has no clause for are never made (build fails first)")
-    void buildingAStatementResolvesTheProduct() throws SQLException {
+    @DisplayName("SQB-006 applyLimit on a product with no SQL fails with DATABASE_PRODUCT_UNSUPPORTED")
+    void applyLimitResolvesTheProduct() throws SQLException {
         SqlBuilder builder = new SqlBuilder(Reporting.of("Apache Derby").source());
-        assertThatThrownBy(() -> builder.query("SELECT 1 FROM t").build()).isInstanceOf(InfrastructureException.class);
-        assertThatThrownBy(() -> builder.query("SELECT 1 FROM t").limit("?")).isInstanceOf(InfrastructureException.class);
+        assertThatThrownBy(() -> builder.applyLimit("SELECT 1 FROM t ORDER BY 1", "?"))
+                .isInstanceOf(InfrastructureException.class);
     }
 }

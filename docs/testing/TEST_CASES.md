@@ -82,8 +82,8 @@ Test support of the application module (SERVICE level, §6 and §8): the service
 | `ledger.test.jdbc-url` | the same name | `jdbc:postgresql://127.0.0.1:55432/ledger_test` |
 | `ledger.test.jdbc-user` | the same name | `ledger_test` |
 | `ledger.test.app-user` | the same name | `ledger_test_app` |
-| `ledger.test.jdbc-password-file` | the same name; carries the path only | the pass file of the test PC (the path is set in the root `build.gradle.kts`) |
-| `ledger.test.app-password-file` | the same name; carries the path only | the pass file of the test PC (the path is set in the root `build.gradle.kts`) |
+| `ledger.test.jdbc-password-file` | the same name; carries the path only | none in the repository (omitted falls back to `pgpass`) |
+| `ledger.test.app-password-file` | the same name; carries the path only | none in the repository (omitted falls back to `pgpass`) |
 | (resolved by Gradle) | `ledger.test.postgres-jar` | the path of the PostgreSQL JDBC driver jar of the test-only configuration |
 
 A password is never a property value, never in code, logs, test names or messages. When a password file property is set, the test support reads the file (one line, UTF-8) and sets its content as the password of the data source; when it is unset it sets no password and the PostgreSQL driver falls back to the user's own pass file. At most 10 connections are open at the same time from one test JVM.

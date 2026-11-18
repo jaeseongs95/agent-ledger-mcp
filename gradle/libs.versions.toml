@@ -16,6 +16,12 @@ springSecurity = "7.1.2"
 # manages 3.1.7. Gradle would resolve the family to 3.2.1 by conflict resolution anyway; this makes that explicit in one place
 # (3.1.7 is not forced, WebAuthn4J is not pinned).
 jackson = "3.2.1"
+spotless = "8.10.4"
+licenseReport = "3.1.5"
+
+[plugins]
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+license-report = { id = "com.github.jk1.dependency-license-report", version.ref = "licenseReport" }
 
 [libraries]
 # The Jackson 3 BOM at the version of the comment of jackson above, declared next to the Boot BOM in build.gradle.kts.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.database;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -167,8 +169,7 @@ class SqlBuilderConnectionTest {
     void aQueryWithTheLimitReturnsAtMostTheRowsAskedFor() {
         DataSource pool = TestDatabase.shared().pool();
         SqlBuilder builder = new SqlBuilder(pool);
-        String sql = builder.query("SELECT n FROM (VALUES (1), (2), (3), (4), (5)) AS v(n)").orderBy("n")
-                .limit(":row_count");
+        String sql = builder.applyLimit("SELECT n FROM (VALUES (1), (2), (3), (4), (5)) AS v(n) ORDER BY n", ":row_count");
         assertThat(sql).endsWith("ORDER BY n FETCH FIRST :row_count ROWS ONLY");
         JdbcClient jdbc = JdbcClient.create(pool);
         for (int max : new int[] {1, 3, 5, 6, 1000}) {

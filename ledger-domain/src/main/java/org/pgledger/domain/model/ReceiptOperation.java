@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.domain.model;
 
 /** The operation a receipt was issued for; an operation key may be reused only for the same operation. */

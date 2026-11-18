@@ -1,3 +1,8 @@
+import com.github.jk1.license.filter.DependencyFilter
+import com.github.jk1.license.filter.LicenseBundleNormalizer
+import com.github.jk1.license.render.InventoryMarkdownReportRenderer
+import com.github.jk1.license.render.JsonReportRenderer
+import com.github.jk1.license.render.ReportRenderer
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.services.BuildService
 import org.gradle.api.services.BuildServiceParameters
@@ -5,6 +10,52 @@ import org.gradle.process.CommandLineArgumentProvider
 
 plugins {
     base
+    alias(libs.plugins.spotless)
+    alias(libs.plugins.license.report)
+}
+
+group = "org.pgledger"
+version = "2.0.0"
+
+spotless {
+    java {
+        target("*/src/**/*.java")
+        licenseHeader("// SPDX-License-Identifier: AGPL-3.0-or-later\n\n", "package ")
+    }
+}
+
+licenseReport {
+    outputDir = layout.buildDirectory.dir("reports/dependency-license").get().asFile.absolutePath
+    projects = arrayOf(project) + subprojects.toTypedArray()
+    configurations = arrayOf("runtimeClasspath")
+    renderers = arrayOf<ReportRenderer>(JsonReportRenderer("index.json", false), InventoryMarkdownReportRenderer())
+    filters = arrayOf<DependencyFilter>(LicenseBundleNormalizer())
+    allowedLicensesFile = layout.projectDirectory.file("docs/allowed-licenses.json").asFile
+}
+
+tasks.matching { it.name in setOf("generateLicenseReport", "checkLicense", "checkLicensePreparation") }.configureEach {
+    notCompatibleWithConfigurationCache("dependency-license-report 3.1.5 tasks retain Project references")
+}
+
+abstract class VerifyThirdPartyNotices : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val noticesFile: RegularFileProperty
+
+    @get:Input
+    abstract val runtimeGroups: SetProperty<String>
+
+    @TaskAction
+    fun verify() {
+        val content = noticesFile.get().asFile.readText(Charsets.UTF_8)
+        require(content.contains("AGPL-3.0-or-later")) { "THIRD_PARTY_NOTICES.md must state the project license AGPL-3.0-or-later" }
+        val missing = runtimeGroups.get().sorted().filter { group ->
+            group != "org.pgledger" && !content.contains(group)
+        }
+        if (missing.isNotEmpty()) {
+            throw GradleException("THIRD_PARTY_NOTICES.md is missing runtime dependency groups: $missing")
+        }
+    }
 }
 
 // Reads an optional Gradle project property (-P or gradle.properties); a malformed value fails the configuration with a clear message.
@@ -16,14 +67,17 @@ fun positiveInt(name: String, value: String): Int {
     return number
 }
 
-// The settings of the test database (property name -> default). The defaults of the two password files are the files of the
-// test PC; only the paths are here, the files are read by the test JVM and nothing else.
+// Portable defaults of the local test PostgreSQL instance. Password file paths are never hardcoded in the repository:
+// when omitted, the PostgreSQL JDBC driver reads the user's pgpass file, or callers pass -Pledger.test.jdbc-password-file /
+// -Pledger.test.app-password-file on the command line or in ~/.gradle/gradle.properties.
 val ledgerTestDatabase = linkedMapOf(
     "ledger.test.jdbc-url" to "jdbc:postgresql://127.0.0.1:55432/ledger_test",
     "ledger.test.jdbc-user" to "ledger_test",
     "ledger.test.app-user" to "ledger_test_app",
-    "ledger.test.jdbc-password-file" to "C:/ags-test-secrets/ags-dbms-ledger_test.pw",
-    "ledger.test.app-password-file" to "C:/ags-test-secrets/ags-dbms-ledger_test_app.pw",
+)
+val ledgerTestPasswordFiles = listOf(
+    "ledger.test.jdbc-password-file",
+    "ledger.test.app-password-file",
 )
 
 // The modules whose tests use the test database. Their test tasks are never up to date and never taken from, or stored in, the
@@ -107,7 +161,7 @@ subprojects {
     apply(plugin = "java-library")
 
     group = "org.pgledger"
-    version = "0.1.0-SNAPSHOT"
+    version = "2.0.0"
 
     val projectName = project.name
     val usesDatabase = projectName in databaseModules
@@ -184,6 +238,9 @@ subprojects {
             ledgerTestDatabase.forEach { (name, fallback) ->
                 systemProperty(name, ledgerTestProperty(name) ?: fallback)
             }
+            ledgerTestPasswordFiles.forEach { name ->
+                ledgerTestProperty(name)?.let { systemProperty(name, it) }
+            }
             // The path of the PostgreSQL JDBC driver jar (test-only configuration), for the tests that register a driver. The version
             // comes from the Boot BOM (a platform needs the transitive resolution); the driver jar is the file named
             // postgresql-<version>.jar among the resolved files.
@@ -220,4 +277,22 @@ subprojects {
             })
     }
     tasks.named("check") { dependsOn(verifyRuntimeClasspath) }
+}
+
+val checkThirdPartyNotices = tasks.register<VerifyThirdPartyNotices>("checkThirdPartyNotices") {
+    group = "verification"
+    description = "Verifies that THIRD_PARTY_NOTICES.md covers every external runtime dependency group."
+    noticesFile = layout.projectDirectory.file("THIRD_PARTY_NOTICES.md")
+    subprojects.forEach { sub ->
+        runtimeGroups.addAll(sub.configurations.named("runtimeClasspath").flatMap { cfg ->
+            cfg.incoming.artifactView { componentFilter { it is ModuleComponentIdentifier } }
+                .artifacts.resolvedArtifacts.map { artifacts ->
+                    artifacts.map { (it.id.componentIdentifier as ModuleComponentIdentifier).group }
+                }
+        })
+    }
+}
+
+tasks.named("check") {
+    dependsOn(checkThirdPartyNotices, "spotlessCheck")
 }

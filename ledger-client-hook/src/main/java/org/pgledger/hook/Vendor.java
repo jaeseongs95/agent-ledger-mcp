@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.hook;
 
 /** The vendor part of the author that the attestation is signed for: {@code <vendor>:<host id>} (see {@link Author}). */

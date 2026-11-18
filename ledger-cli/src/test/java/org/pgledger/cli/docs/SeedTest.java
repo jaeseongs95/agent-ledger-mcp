@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.cli.docs;
 
 import static org.assertj.core.api.Assertions.assertThat;

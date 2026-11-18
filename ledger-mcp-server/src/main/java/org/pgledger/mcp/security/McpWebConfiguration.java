@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.mcp.security;
 
 import org.springframework.boot.security.autoconfigure.web.servlet.SecurityFilterProperties;

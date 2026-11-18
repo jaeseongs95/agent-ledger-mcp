@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.mcp.support;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -6,9 +8,9 @@ import org.springframework.ai.mcp.annotation.McpTool;
 import org.springframework.dao.DataIntegrityViolationException;
 
 /**
- * Tool adapters of the tests, registered at run time with {@code ToolCatalog.register}. They are real adapters (the
- * same kind of class as the tools of the server), not stand-ins: one that works and two that fail in the way a defect
- * or the database fails, with texts that must never reach a model.
+ * Tool adapters of the tests, wired as Spring {@link ToolAdapter} beans in {@code RuntimeToolTest}. They are real
+ * adapters (the same kind of class as the tools of the server), not stand-ins: one that works and two that fail in the
+ * way an unexpected runtime exception or the database fails, with texts that must never reach a model.
  */
 public final class ProbeTools {
 

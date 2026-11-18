@@ -420,9 +420,8 @@ configuration, order no certificate and install no renewal. The proxy connects t
 passes for it, `--mcp-host=<host>` and `--admin-host=<host>`: the name is allowed in the `Host` check of that service, besides
 `127.0.0.1` and `localhost`, which are always allowed. With a name for the admin web, the installer also writes the passkey settings
 for it (see the options above). The admin web trusts `X-Forwarded-For` and `X-Forwarded-Proto` from the loopback address only, so the
-proxy has to overwrite them with the address and the scheme of the connection it received. This is tied to the lock after failed sign-in
-attempts: the admin web counts the attempts per client address, so a proxy that does not pass `X-Forwarded-For` makes every client look like the
-proxy's loopback address, and the failed attempts of anyone then lock the owner out together with them. Long-lived MCP connections (Streamable
+proxy has to overwrite them with the address and the scheme of the connection it received (for redirect and WebAuthn origin checks and
+request logging; credential throttling uses `ledger.admin.lockout.global-delay` and never locks per client address). Long-lived MCP connections (Streamable
 HTTP) need a timeout of the proxy that is long enough. The certificate, its renewal and the firewall are the operator's too.
 
 ### Windows: a personal PC or a server
@@ -593,8 +592,8 @@ the service account of the installation and never as root.
   is a row of its own).
 - **Browser hardening.** Spring Security provides CSRF tokens, a `SameSite=Strict` session cookie that is `Secure` by default, the
   `Host` allow list and a Content Security Policy.
-- **Pages.** Overview (attention counts and the state of the MCP server), projects, defects, tasks, conditions and history
-  (read only), common codes, grants with their session keys, and the JDBC driver page. Times are sent as UTC and shown in the local
+- **Pages.** Overview (attention counts and the state of the MCP server), projects, issues, specifications, tasks, criteria and history
+  (read only), attachments, common codes, grants with their session keys and session tokens, and the JDBC driver page. Times are sent as UTC and shown in the local
   time of the browser.
 - **Grants.** The owner pastes the public key a session printed, compares the fingerprint shown with the one the session showed, and
   only then the key is registered and the grants are issued. A live key is replaced only on an explicit confirmation of that exact key.
@@ -606,7 +605,7 @@ One executable jar, `ledger-client-hook.jar`, serves all clients; the first argu
 `clients/codex` and `clients/antigravity` (see the README of each). The hook needs a Java 25 runtime on the `PATH` of the client
 host; with no hook, or a failing hook, a write is refused with `HOST_ATTESTATION_REQUIRED`.
 
-The hook signs only the ten write tools, named `mcp__<server>__ledger_<op>` or `mcp__<server>__<server>_ledger_<op>`
+The hook signs only the thirteen write tools and five attachment tools, named `mcp__<server>__ledger_<op>` or `mcp__<server>__<server>_ledger_<op>`
 (Codex Apps: `mcp__codex_apps__app_<app>_ledger_<op>`). The value of `_hostAttestation` is
 `pgla2.<author>.<tool>.<operation key>.<arguments digest>.<issued at>.<signature>`: an Ed25519 signature over the author, the tool, the
 `operationKey` of the call (empty for `ledger_whoami` and the attachment tools), the SHA-256 of the RFC 8785 canonical form of the arguments (without
@@ -637,7 +636,7 @@ A caller of 1.x has to make these changes to its tool calls; 2.0 accepts no old 
   keys are refused as unknown arguments, a call without `operationKey` is refused, and the server never makes a key up. An operation inside
   `ledger_batch` carries no key of its own.
 - The `author_id` argument is gone; the author is the host attestation.
-- An object or an array argument (`fields`, `ops`) must be sent as a JSON object or array, not as a JSON document in a string.
+- 1.x `fields` maps are replaced by flat tool parameters, and an object or array argument (`ops`, `files`) must be sent as a JSON object or array, not as a JSON document in a string.
 - The text `null` is a text, not a missing argument; omit an argument that has no value.
 
 Version 2.0 itself knows nothing of 1.x: its services, its installers and `ledger-cli` read no 1.x setting, file or table. The move is
@@ -846,9 +845,8 @@ is used by the tests of the account rights. Each test works in a schema of its o
 except inside that database, and one test JVM holds at most 10 connections. A test that cannot reach the database fails with a
 connection error; it is not skipped and does not fall back to another database.
 
-The connection is set with Gradle properties, on the command line or in `gradle.properties`. The values below are the defaults,
-except the two password file properties, whose defaults are the files of the test machine that are named in the root
-`build.gradle.kts`:
+The connection is set with Gradle properties, on the command line or in `gradle.properties`. The JDBC URL and account names below are
+the defaults; the two password file properties have no repository default (no machine path is hardcoded in `build.gradle.kts`):
 
 ```sh
 ./gradlew test \
@@ -900,7 +898,7 @@ together with the properties above.
 
 ## License
 
-From version 2.0, pg-ledger-mcp is licensed under the GNU Affero General Public License v3.0 or (at your option) any later version (`AGPL-3.0-or-later`); see [LICENSE](LICENSE).
+From version 2.0, pg-ledger-mcp is licensed under the GNU Affero General Public License v3.0 or (at your option) any later version (`AGPL-3.0-or-later`); see [LICENSE](LICENSE), [ADDITIONAL-TERMS.md](ADDITIONAL-TERMS.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 Copyright (C) 2026 Jaeseong Song
 

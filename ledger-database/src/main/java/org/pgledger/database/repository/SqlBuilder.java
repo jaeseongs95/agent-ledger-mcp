@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.database.repository;
 
 import java.sql.Connection;
@@ -242,65 +244,6 @@ public class SqlBuilder {
     /** Appends the dialect's row limit to an otherwise complete query (it must end with an ORDER BY). */
     public String applyLimit(String statement, String parameter) {
         return statement + " " + generateLimit(parameter);
-    }
-
-    /** Starts a short-lived statement from fixed SQL. */
-    public Statement query(String sql) {
-        return new Statement(sql);
-    }
-
-    /** A statement under construction: fixed fragments only, every value is a placeholder the caller binds. */
-    public final class Statement {
-        private final StringBuilder sql;
-
-        private Statement(String base) {
-            sql = new StringBuilder(base);
-        }
-
-        /**
-         * A parenthesised group of alternatives joined with OR; an empty group is {@code (1 = 0)}, which matches nothing.
-         * The fixed pattern may use {@code %1$d} for the zero-based parameter suffix.
-         */
-        public Statement orGroup(String pattern, int count) {
-            sql.append('(');
-            if (count == 0) {
-                sql.append("1 = 0");
-            }
-            for (int index = 0; index < count; index++) {
-                if (index > 0) {
-                    sql.append(" OR ");
-                }
-                sql.append(pattern.formatted(index));
-            }
-            sql.append(')');
-            return this;
-        }
-
-        public Statement and(String condition) {
-            sql.append(" AND ").append(condition);
-            return this;
-        }
-
-        public Statement orderBy(String columns) {
-            sql.append(" ORDER BY ").append(columns);
-            return this;
-        }
-
-        public Statement append(String fixedSql) {
-            sql.append(fixedSql);
-            return this;
-        }
-
-        /** The statement without a row limit; the product is resolved here, so an unsupported one fails at once. */
-        public String build() {
-            database();
-            return sql.toString();
-        }
-
-        /** The statement with the row limit of the actual database. */
-        public String limit(String parameter) {
-            return applyLimit(build(), parameter);
-        }
     }
 
     /**

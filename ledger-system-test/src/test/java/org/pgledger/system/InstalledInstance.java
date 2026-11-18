@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.system;
 
 import static org.junit.jupiter.api.Assumptions.assumeTrue;

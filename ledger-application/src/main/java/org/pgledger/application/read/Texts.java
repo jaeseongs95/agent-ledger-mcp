@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.application.read;
 
 /** The one meaning of a blank text in a filter of a read call (the filter is not given), and of a NULL long text (it is empty). */

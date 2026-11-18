@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.database.fake;
 
 /** First of two drivers in one jar; its class initialisation leaves a mark in the JVM (proves it was loaded). */

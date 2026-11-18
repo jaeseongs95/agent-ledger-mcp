@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.cli.secret;
 
 /** Boundary to the hidden terminal input; the product implementation is {@link ConsoleSecretInput} only. */

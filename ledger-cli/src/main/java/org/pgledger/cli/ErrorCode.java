@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.cli;
 
 /** Every reason a command can be refused; each code has a message under {@link #messageKey()} in the message bundles. */

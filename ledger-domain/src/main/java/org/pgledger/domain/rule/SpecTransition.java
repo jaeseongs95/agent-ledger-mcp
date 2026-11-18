@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.domain.rule;
 
 import org.pgledger.domain.value.ActorId;

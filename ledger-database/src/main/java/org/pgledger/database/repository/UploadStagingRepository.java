@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.database.repository;
 
 import java.time.Instant;
@@ -159,14 +161,16 @@ public class UploadStagingRepository {
     }
 
     public List<UploadStaging> expired(Instant now, int limit) {
-        String statement = sql.query("SELECT " + COLUMNS + " FROM upload_staging WHERE state = 'STAGING' AND expires_at <= :now")
-                .orderBy("expires_at, id").limit(":row_count");
+        String statement = sql.applyLimit(
+                "SELECT " + COLUMNS + " FROM upload_staging WHERE state = 'STAGING' AND expires_at <= :now ORDER BY expires_at, id",
+                ":row_count");
         return jdbc.sql(statement).param("now", UtcTime.toDb(now)).param("row_count", limit).query(MAPPER).list();
     }
 
     public List<UploadStaging> completed(int limit) {
-        String statement = sql.query("SELECT " + COLUMNS + " FROM upload_staging WHERE state = 'COMPLETED'")
-                .orderBy("updated_at, id").limit(":row_count");
+        String statement = sql.applyLimit(
+                "SELECT " + COLUMNS + " FROM upload_staging WHERE state = 'COMPLETED' ORDER BY updated_at, id",
+                ":row_count");
         return jdbc.sql(statement).param("row_count", limit).query(MAPPER).list();
     }
 

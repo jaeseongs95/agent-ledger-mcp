@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - "feature/**"
+      - "release/**"
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ubuntu:
+    name: check (ubuntu-latest, JDK 25, PostgreSQL 18)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_postgres_root_pw
+          POSTGRES_DB: postgres
+          TZ: UTC
+          PGTZ: UTC
+        ports:
+          - 127.0.0.1:55432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Provision test PostgreSQL roles and database
+        env:
+          PGPASSWORD: ci_postgres_root_pw
+        run: |
+          OWNER_PW="ci_ledger_owner_pw_2026"
+          APP_PW="ci_ledger_app_pw_2026"
+          printf '%s\n' "$OWNER_PW" > "$RUNNER_TEMP/owner.pw"
+          printf '%s\n' "$APP_PW" > "$RUNNER_TEMP/app.pw"
+          chmod 600 "$RUNNER_TEMP/owner.pw" "$RUNNER_TEMP/app.pw"
+          psql -h 127.0.0.1 -p 55432 -U postgres -v ON_ERROR_STOP=1 <<SQL
+          ALTER SYSTEM SET timezone = 'UTC';
+          SELECT pg_reload_conf();
+          CREATE ROLE ledger_test LOGIN PASSWORD '${OWNER_PW}';
+          CREATE ROLE ledger_test_app LOGIN PASSWORD '${APP_PW}';
+          CREATE DATABASE ledger_test OWNER ledger_test ENCODING 'UTF8' TEMPLATE template0 LC_COLLATE 'C' LC_CTYPE 'C';
+          ALTER ROLE ledger_test SET timezone = 'UTC';
+          ALTER ROLE ledger_test_app SET timezone = 'UTC';
+          SQL
+
+      - name: Check Third-Party Dependency Licenses
+        run: |
+          ./gradlew --no-daemon --no-configuration-cache --max-workers=2 checkLicense
+
+      - name: Run Spotless, Third-Party Notices, and Full Check
+        run: |
+          ./gradlew --no-daemon --max-workers=2 \
+            -Pledger.test.forks=1 \
+            -Pledger.test.maxHeapSize=1g \
+            -Pledger.test.activeProcessorCount=2 \
+            -Pledger.test.jdbc-password-file="$RUNNER_TEMP/owner.pw" \
+            -Pledger.test.app-password-file="$RUNNER_TEMP/app.pw" \
+            spotlessCheck check
+
+  windows:
+    name: check (windows-latest, JDK 25, PostgreSQL 18)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install and start PostgreSQL 18 on port 55432 (UTC)
+        shell: pwsh
+        run: |
+          $rootPw = "ci_postgres_root_pw"
+          $ownerPw = "ci_ledger_owner_pw_2026"
+          $appPw = "ci_ledger_app_pw_2026"
+          [System.IO.File]::WriteAllText("$env:RUNNER_TEMP\owner.pw", "$ownerPw`n")
+          [System.IO.File]::WriteAllText("$env:RUNNER_TEMP\app.pw", "$appPw`n")
+          choco install postgresql18 --params "/Password:$rootPw /Port:55432" -y --no-progress
+          $pgBin = Get-ChildItem "C:\Program Files\PostgreSQL\*\bin\psql.exe" | Select-Object -First 1 -ExpandProperty DirectoryName
+          if (-not $pgBin) { throw "PostgreSQL bin directory not found after install" }
+          $env:PGPASSWORD = $rootPw
+          & "$pgBin\psql.exe" -h 127.0.0.1 -p 55432 -U postgres -v ON_ERROR_STOP=1 -c "ALTER SYSTEM SET timezone = 'UTC';"
+          & "$pgBin\psql.exe" -h 127.0.0.1 -p 55432 -U postgres -v ON_ERROR_STOP=1 -c "SELECT pg_reload_conf();"
+          & "$pgBin\psql.exe" -h 127.0.0.1 -p 55432 -U postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE ledger_test LOGIN PASSWORD '$ownerPw';"
+          & "$pgBin\psql.exe" -h 127.0.0.1 -p 55432 -U postgres -v ON_ERROR_STOP=1 -c "CREATE ROLE ledger_test_app LOGIN PASSWORD '$appPw';"
+          & "$pgBin\psql.exe" -h 127.0.0.1 -p 55432 -U postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE ledger_test OWNER ledger_test ENCODING 'UTF8' TEMPLATE template0 LC_COLLATE 'C' LC_CTYPE 'C';"
+          & "$pgBin\psql.exe" -h 127.0.0.1 -p 55432 -U postgres -v ON_ERROR_STOP=1 -c "ALTER ROLE ledger_test SET timezone = 'UTC';"
+          & "$pgBin\psql.exe" -h 127.0.0.1 -p 55432 -U postgres -v ON_ERROR_STOP=1 -c "ALTER ROLE ledger_test_app SET timezone = 'UTC';"
+
+      - name: Check Third-Party Dependency Licenses
+        shell: pwsh
+        run: |
+          .\gradlew.bat --no-daemon --no-configuration-cache --max-workers=2 checkLicense
+
+      - name: Run Spotless, Third-Party Notices, and Full Check
+        shell: pwsh
+        run: |
+          $ownerPwFile = ("$env:RUNNER_TEMP\owner.pw" -replace '\\', '/')
+          $appPwFile = ("$env:RUNNER_TEMP\app.pw" -replace '\\', '/')
+          .\gradlew.bat --no-daemon --max-workers=2 `
+            "-Pledger.test.forks=1" `
+            "-Pledger.test.maxHeapSize=1g" `
+            "-Pledger.test.activeProcessorCount=2" `
+            "-Pledger.test.jdbc-password-file=$ownerPwFile" `
+            "-Pledger.test.app-password-file=$appPwFile" `
+            spotlessCheck check

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
 package org.pgledger.cli;
 
 /** The command line is fine but the work was refused or failed (exit code 1). */
