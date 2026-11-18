@@ -511,7 +511,7 @@ public class UploadService {
         }
         try {
             Sha256.of(file.sha256());
-        } catch (RuntimeException invalid) {
+        } catch (ValidationException invalid) {
             issues.add(new ValidationIssue(prefix + ".sha256", ValidationReason.MUST_BE_LOWER_CASE_HEX, List.of("64")));
         }
     }

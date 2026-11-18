@@ -156,7 +156,7 @@ public class AttachmentFlow {
     private static Sha256 parseChunkSha(String text) {
         try {
             return Sha256.of(text);
-        } catch (RuntimeException invalid) {
+        } catch (ValidationException invalid) {
             throw ValidationException.invalid("chunkSha256", ValidationReason.MUST_BE_LOWER_CASE_HEX, invalid, "64");
         }
     }

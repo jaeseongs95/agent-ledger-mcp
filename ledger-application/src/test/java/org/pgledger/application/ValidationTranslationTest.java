@@ -70,8 +70,8 @@ class ValidationTranslationTest {
         BatchOpInput empty = switch (kind) {
             case SAVE -> new BatchOpInput.Save(null, null, null, null, null);
             case TRANSITION -> new BatchOpInput.Transition(null, null, null, null, null, null, null, null, null);
-            case RECORD_FIX -> new BatchOpInput.RecordFix(null, null, null, null, null, null, null, null, null,
-                    null);
+            case RECORD_DELIVERABLE -> new BatchOpInput.RecordDeliverable(null, null, null, null, null, null, null,
+                    null, null, null, null, null);
             case RECORD_CASE -> new BatchOpInput.RecordCase(null, null, null, null, null, null, null);
             case LINK -> new BatchOpInput.Link(null, null, null, null, null);
             case CORRECT -> new BatchOpInput.Correct(null, null, null);

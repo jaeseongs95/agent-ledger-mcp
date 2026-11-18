@@ -81,7 +81,7 @@ class SessionKeyTest {
     @DisplayName("SVC-KEY-03: a confirmed replacement (registerReplacing naming the live fingerprint) closes the live key; the closed row stays, the old key no longer verifies and the new one does")
     void key03_replace(Scenario s) {
         SessionKeyService keys = s.bean(SessionKeyService.class);
-        String author = s.actorWith("defect");
+        String author = s.actorWith("issue");
         KeyPair replacement = TestKeyRing.newPair();
         long old = keys.live(author).orElseThrow().id();
         s.ctx().clock().set(s.ctx().clock().instant().plusSeconds(60));
@@ -105,7 +105,7 @@ class SessionKeyTest {
         return ScopedValue.where(org.pgledger.domain.context.ToolScope.CURRENT, "ledger_save")
                 .where(org.pgledger.domain.context.ToolScope.ARGUMENTS_DIGEST, TestKeyRing.DIRECT_DIGEST).call(
                 () -> s.bean(SaveService.class).save(token, new org.pgledger.application.write.SaveCommand(request,
-                        "defect", null, 0L, org.pgledger.application.support.Fields.of(s.defectFields("by key")), Scenario.REASON)));
+                        "issue", null, 0L, org.pgledger.application.support.Fields.of(s.issueFields("by key")), Scenario.REASON)));
     }
 
     @Test
@@ -151,7 +151,7 @@ class SessionKeyTest {
     @DisplayName("SVC-KEY-06: revoking closes the live key and keeps its row; the author cannot write until a key is registered again; revoking twice is false")
     void key06_revoke(Scenario s) {
         SessionKeyService keys = s.bean(SessionKeyService.class);
-        String author = s.actorWith("defect");
+        String author = s.actorWith("issue");
         assertThat(keys.revoke(author, TestOwners.OWNER)).isTrue();
         assertThat(keys.revoke(author, TestOwners.OWNER)).isFalse();
         assertThat(keys.revoke(newAuthor(), TestOwners.OWNER)).isFalse();
@@ -231,7 +231,7 @@ class SessionKeyTest {
     @DisplayName("SVC-KEY-18 (TXA-01): two confirmed replacements of the same live key with different new keys at the same time: the conditional close decides, exactly one new key is live, the old row is closed once, the loser is refused KEY_REPLACEMENT_NOT_CONFIRMED naming the live key of the winner, and one KEY_REPLACED audit row exists")
     void key18_parallelReplacement(Scenario s) {
         SessionKeyService keys = s.bean(SessionKeyService.class);
-        String author = s.actorWith("defect");
+        String author = s.actorWith("issue");
         String liveFingerprint = keys.live(author).orElseThrow().fingerprint();
         List<Callable<Registered>> calls = IntStream.range(0, 2).<Callable<Registered>>mapToObj(i -> () -> keys.registerReplacing(
                 new RegisterCommand(author, publicKey(TestKeyRing.newPair()), "r" + i), TestOwners.OWNER, liveFingerprint)).toList();

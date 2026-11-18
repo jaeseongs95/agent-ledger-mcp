@@ -1,29 +1,46 @@
 package org.pgledger.application.history;
 
 import java.time.Instant;
-import org.pgledger.domain.model.Condition;
-import org.pgledger.domain.model.ConditionLink;
-import org.pgledger.domain.model.Defect;
-import org.pgledger.domain.model.DefectFix;
-import org.pgledger.domain.model.DefectRelation;
-import org.pgledger.domain.model.DefectTaskLink;
+import org.pgledger.domain.model.Criterion;
+import org.pgledger.domain.model.CriterionLink;
+import org.pgledger.domain.model.Deliverable;
+import org.pgledger.domain.model.Issue;
+import org.pgledger.domain.model.IssueRelation;
+import org.pgledger.domain.model.IssueSpecLink;
+import org.pgledger.domain.model.IssueTaskLink;
+import org.pgledger.domain.model.Spec;
+import org.pgledger.domain.model.SpecTaskLink;
 import org.pgledger.domain.model.Task;
 
 /**
- * The full row as it was just before a change: what the {@code before_data} column of a history row holds. The
- * component names are the column names (snake_case once written as JSON); instants are UTC.
+ * The full row as it was just before a change: what the {@code before_data} column of a history row holds.
+ * Component names match column names (written in snake_case JSON); instants are UTC.
  */
 public sealed interface Snapshot {
 
-    record DefectRow(String id, String projectId, String title, String category, String severity, String status,
-            String mergedInto, String behavior, String rootCause, String ownerActorId, long caseSeq, long version,
+    record IssueRow(String id, String projectId, String title, String category, String severity, String status,
+            String mergedInto, String symptom, String rootCause, String ownerActorId, long caseSeq, long version,
             Instant createdAt, Instant updatedAt, String createdBy) implements Snapshot {
 
-        public static DefectRow of(Defect d) {
-            return new DefectRow(d.id().value(), d.projectId().value(), d.title(), d.category().value(),
-                    d.severity().value(), d.status().name(), d.mergedInto() == null ? null : d.mergedInto().value(),
-                    d.behavior(), d.rootCause(), d.ownerActorId() == null ? null : d.ownerActorId().value(),
-                    d.caseSeq(), d.version(), d.createdAt(), d.updatedAt(), d.createdBy().value());
+        public static IssueRow of(Issue i) {
+            return new IssueRow(i.id().value(), i.projectId().value(), i.title(), i.category().value(),
+                    i.severity().value(), i.status().name(), i.mergedInto() == null ? null : i.mergedInto().value(),
+                    i.symptom(), i.rootCause(), i.ownerActorId() == null ? null : i.ownerActorId().value(),
+                    i.caseSeq(), i.version(), i.createdAt(), i.updatedAt(), i.createdBy().value());
+        }
+    }
+
+    record SpecRow(String id, String projectId, String parentId, String title, String summary,
+            String acceptanceCriteria, String priority, String status, String ownerActorId, String originRef,
+            String originQuote, long version, Instant createdAt, Instant updatedAt, String createdBy)
+            implements Snapshot {
+
+        public static SpecRow of(Spec s) {
+            return new SpecRow(s.id().value(), s.projectId().value(),
+                    s.parentId() == null ? null : s.parentId().value(), s.title(), s.summary(),
+                    s.acceptanceCriteria(), s.priority(), s.status().name(),
+                    s.ownerActorId() == null ? null : s.ownerActorId().value(), s.originRef(), s.originQuote(),
+                    s.version(), s.createdAt(), s.updatedAt(), s.createdBy().value());
         }
     }
 
@@ -38,47 +55,63 @@ public sealed interface Snapshot {
         }
     }
 
-    record ConditionRow(String id, String projectId, String releaseName, String goalLabel, String code,
-            String conditionText, String state, long version, String createdBy) implements Snapshot {
+    record CriterionRow(String id, String projectId, String milestoneName, String goalLabel, String code,
+            String criterionText, String state, long version, String createdBy) implements Snapshot {
 
-        public static ConditionRow of(Condition c) {
-            return new ConditionRow(c.id().value(), c.projectId().value(), c.release(), c.goalLabel(), c.code(),
-                    c.conditionText(), c.state().name(), c.version(), c.createdBy().value());
+        public static CriterionRow of(Criterion c) {
+            return new CriterionRow(c.id().value(), c.projectId().value(), c.milestone(), c.goalLabel(), c.code(),
+                    c.criterionText(), c.state().name(), c.version(), c.createdBy().value());
         }
     }
 
-    record FixRow(long id, String defectId, String repo, String commitSha, String branch, String ciRef,
-            String ciConclusion, Instant ciCompletedAt, String recordedBy, Instant recordedAt, String origin)
-            implements Snapshot {
+    record DeliverableRow(long id, String targetEntity, String targetId, String kind, String deliverableRef,
+            String location, String summary, String checkRef, String checkResult, Instant checkedAt,
+            String attachmentId, String recordedBy, Instant recordedAt, String origin) implements Snapshot {
 
-        public static FixRow of(DefectFix f) {
-            return new FixRow(f.id(), f.defectId().value(), f.repo(), f.commitSha().value(), f.branch(), f.ciRef(),
-                    f.ciConclusion() == null ? null : f.ciConclusion().name(), f.ciCompletedAt(),
-                    f.recordedBy().value(), f.recordedAt(), f.origin().name());
+        public static DeliverableRow of(Deliverable d) {
+            return new DeliverableRow(d.id(), d.targetEntity().name(), d.targetId(), d.kind().value(),
+                    d.deliverableRef(), d.location(), d.summary(), d.checkRef(),
+                    d.checkResult() == null ? null : d.checkResult().name(), d.checkedAt(), d.attachmentId(),
+                    d.recordedBy().value(), d.recordedAt(), d.origin().name());
         }
     }
 
-    record DefectTaskRow(String defectId, String taskId, String createdBy) implements Snapshot {
+    record IssueTaskRow(String issueId, String taskId, String createdBy) implements Snapshot {
 
-        public static DefectTaskRow of(DefectTaskLink l) {
-            return new DefectTaskRow(l.defectId().value(), l.taskId().value(), l.createdBy().value());
+        public static IssueTaskRow of(IssueTaskLink l) {
+            return new IssueTaskRow(l.issueId().value(), l.taskId().value(), l.createdBy().value());
         }
     }
 
-    record DefectRelationRow(String a, String b, String kind, String createdBy) implements Snapshot {
+    record IssueSpecRow(String issueId, String specId, String createdBy) implements Snapshot {
 
-        public static DefectRelationRow of(DefectRelation r) {
-            return new DefectRelationRow(r.a().value(), r.b().value(), r.relation().value(), r.createdBy().value());
+        public static IssueSpecRow of(IssueSpecLink l) {
+            return new IssueSpecRow(l.issueId().value(), l.specId().value(), l.createdBy().value());
         }
     }
 
-    record ConditionLinkRow(String linkKey, String conditionId, String taskId, String defectId, String createdBy)
-            implements Snapshot {
+    record SpecTaskRow(String specId, String taskId, String createdBy) implements Snapshot {
 
-        public static ConditionLinkRow of(ConditionLink l) {
-            return new ConditionLinkRow(l.linkKey(), l.conditionId().value(),
+        public static SpecTaskRow of(SpecTaskLink l) {
+            return new SpecTaskRow(l.specId().value(), l.taskId().value(), l.createdBy().value());
+        }
+    }
+
+    record IssueRelationRow(String a, String b, String kind, String createdBy) implements Snapshot {
+
+        public static IssueRelationRow of(IssueRelation r) {
+            return new IssueRelationRow(r.a().value(), r.b().value(), r.relation().value(), r.createdBy().value());
+        }
+    }
+
+    record CriterionLinkRow(String linkKey, String criterionId, String taskId, String issueId, String specId,
+            String createdBy) implements Snapshot {
+
+        public static CriterionLinkRow of(CriterionLink l) {
+            return new CriterionLinkRow(l.linkKey(), l.criterionId().value(),
                     l.taskId() == null ? null : l.taskId().value(),
-                    l.defectId() == null ? null : l.defectId().value(), l.createdBy().value());
+                    l.issueId() == null ? null : l.issueId().value(),
+                    l.specId() == null ? null : l.specId().value(), l.createdBy().value());
         }
     }
 }

@@ -10,22 +10,20 @@ import org.pgledger.domain.value.Tokens;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** The defects and tasks that need a look: five kinds, of one project or of all, in pages ordered by kind and id. */
+/** Issues, specifications, and tasks needing attention, ordered by kind and id in keyset pages. */
 @Service
 @Transactional(readOnly = true)
 public class AttentionService {
 
-    /** Optional filters. */
     public record AttentionQuery(String project, String kind, Number maxRows, String cursor) {
 
-        /** A blank filter is a filter that is not given. */
         public AttentionQuery {
             project = Texts.nullIfBlank(project);
             kind = Texts.nullIfBlank(kind);
         }
     }
 
-    /** One item; {@code entity} is defect or task. */
+    /** One attention item; {@code entity} is {@code issue}, {@code spec}, or {@code task}. */
     public record Item(String kind, String entity, String id, String projectId) {
     }
 
@@ -42,13 +40,11 @@ public class AttentionService {
         AttentionKind kind = q.kind() == null ? null : Tokens.parseName("kind", q.kind(), AttentionKind.values());
         MaxRows maxRows = cursors.maxRows(q.maxRows());
         Object criteria = List.of(String.valueOf(project), String.valueOf(kind));
-        // a cursor holds the position of the last row; without one the page is the first (null is the first page to the repository)
         var page = cursors.decode(q.cursor(), PageCursor.Kind.ATTENTION, criteria)
                 .map(position -> new AttentionQueryRepository.Position(
                         Tokens.parseName("cursor", position.sortKey(), AttentionKind.values()), position.id()))
                 .map(after -> attention.page(project, kind, maxRows, after))
                 .orElseGet(() -> attention.page(project, kind, maxRows, null));
-        // the kind of item says which kind of row it is about; its token is the name of that kind in the responses
         return cursors.page(page, PageCursor.Kind.ATTENTION, criteria,
                 i -> new Item(i.kind().name(), i.kind().entity().token(), i.id(), i.projectId()),
                 i -> i.kind().name(), AttentionQueryRepository.Item::id);

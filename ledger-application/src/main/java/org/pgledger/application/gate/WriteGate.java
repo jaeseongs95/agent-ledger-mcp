@@ -28,12 +28,12 @@ import org.springframework.stereotype.Component;
 @Component
 public class WriteGate {
 
-    private final AttestationVerifier attestation;
+    private final McpCallerResolver callerResolver;
     private final GrantStateRepository grants;
     private final Clock clock;
 
-    public WriteGate(AttestationVerifier attestation, GrantStateRepository grants, Clock clock) {
-        this.attestation = attestation;
+    public WriteGate(McpCallerResolver callerResolver, GrantStateRepository grants, Clock clock) {
+        this.callerResolver = callerResolver;
         this.grants = grants;
         this.clock = clock;
     }
@@ -41,7 +41,7 @@ public class WriteGate {
     /**
      * Runs the checks and returns the trusted session.
      *
-     * @param actor     the host attestation as the caller sent it
+     * @param actor        the host attestation or caller token as the caller sent it
      * @param operationKey the operation key the attestation must be bound to (the key of the call; of a batch, the one
      *                     of the whole batch), as the caller sent it
      */
@@ -55,7 +55,7 @@ public class WriteGate {
             }
         });
         // outside a tool call there is no tool and no digest: that is the call ToolCall.Outside, which matches nothing signed
-        AuthorId author = attestation.verifyForWrite(actor, ToolCall.current(), operationKey);
+        AuthorId author = callerResolver.verifyForWrite(actor, ToolCall.current(), operationKey);
         Resolution resolution = early.orElseGet(lookup.find());
         return switch (resolution) {
             case Resolution.Unresolved unresolved -> throw unresolved.failure();
@@ -73,26 +73,22 @@ public class WriteGate {
     }
 
     /**
-     * Only the attestation of the call, for a write that has to know its author before it looks at a project (the
+     * Only the caller check of the call, for a write that has to know its author before it looks at a project (the
      * batch reserves the receipt of its key first; each of its operations then passes {@link #open} with its own grants).
-     * The checks and their order are those of {@link #open} up to the attestation.
+     * The checks and their order are those of {@link #open} up to caller verification.
      *
      * @param operationKey the operation key the attestation must be bound to, as the caller sent it
      */
     public AuthorId verifyAuthor(String actor, String operationKey) {
-        return attestation.verifyForWrite(actor, ToolCall.current(), operationKey);
+        return callerResolver.verifyForWrite(actor, ToolCall.current(), operationKey);
     }
 
     /**
-     * The gate of a call that touches no project (the upload tools of the attachments): the host attestation is checked like
-     * for every write (signed token, live key of the author, bound to the tool and the arguments, inside the time window; the key
-     * is held until the transaction ends), and the author needs at least one live grant. Which project the evidence is for is not
-     * known when it is uploaded; the record that points to it is a write of its own and passes its own gate. The call carries no
-     * operation key in its claim (the begin has its own {@code operationKey}, which the digest of the arguments covers): its
-     * attestation is signed with an empty one.
+     * The gate of a call that touches no project (the upload tools of the attachments): caller identity is checked like
+     * for every write, and the author needs at least one live grant.
      */
     public GateSession openWithAnyGrant(String actor, Channel channel) {
-        AuthorId author = attestation.verifyForWrite(actor, ToolCall.current(), "");
+        AuthorId author = callerResolver.verifyForWrite(actor, ToolCall.current(), "");
         if (grants.findLive(author, clock.instant()).isEmpty()) {
             throw new TrustException(TrustCode.SESSION_NOT_GRANTED, List.of(author.value(), "any", "any"),
                     Map.of("author", List.of(author.value())));

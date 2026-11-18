@@ -86,7 +86,7 @@ class AttachmentReaperTest {
     @DisplayName("ATA-007: the expiry is counted from the last chunk; before it the reaper leaves the row and the file, after it one conditional DELETE removes the row and then the file")
     void ata007_theExpiryIsCountedFromTheLastChunk(Scenario s) {
         LedgerAppContext ctx = s.ctx();
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         AttachmentReaper reaper = s.bean(AttachmentReaper.class);
         UploadStagingRepository uploads = s.bean(UploadStagingRepository.class);
@@ -119,7 +119,7 @@ class AttachmentReaperTest {
     @DisplayName("ATA-007: the row of a finished upload is removed by the reaper and the file stays, because it belongs to the attachment")
     void ata007_aFinishedUploadKeepsItsFile(Scenario s) {
         LedgerAppContext ctx = s.ctx();
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] body = Uploads.body(300, 2);
         Begun begun = Uploads.sendAll(flow, actor, body, 100);
@@ -146,7 +146,7 @@ class AttachmentReaperTest {
     }
 
     private Prepared prepared(Scenario s, int round, int chunksSent) {
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] body = Uploads.body(400, 1000L + round);
         List<byte[]> parts = Uploads.parts(body, 200);

@@ -28,7 +28,7 @@ class AttachmentBudgetTest {
     @Test
     @DisplayName("ATA-030: with kept attachments of 3 KiB a begin of 2 KiB is refused with ARTIFACT_LIMIT and no row; the kept attachments still read and nothing is deleted; a begin of 1 KiB still fits")
     void ata030_theBudgetOfTheKeptAttachments(Scenario s) {
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         List<byte[]> bodies = List.of(Uploads.body(KIB, 11), Uploads.body(KIB, 12), Uploads.body(KIB, 13));
         List<String> kept = bodies.stream().map(body -> Uploads.upload(flow, actor, body, 512).attachmentId()).toList();

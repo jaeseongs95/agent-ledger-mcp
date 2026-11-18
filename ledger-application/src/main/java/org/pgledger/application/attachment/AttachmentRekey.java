@@ -63,9 +63,11 @@ public class AttachmentRekey {
                         activeKeyId, actor)) {
                     rewritten++;
                 } else {
+                    store.remove(freshKey);
                     skipped++;
                 }
             } catch (DuplicateKeyException lostRace) {
+                store.remove(freshKey);
                 skipped++;
             }
         }

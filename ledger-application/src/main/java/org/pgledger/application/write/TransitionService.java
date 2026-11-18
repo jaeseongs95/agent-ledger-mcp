@@ -5,7 +5,7 @@ import org.pgledger.domain.rule.Channel;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Change the state of a defect, task or condition through the author channel (no verifications here). */
+/** Change the state of an issue, specification, task, or milestone criterion through the author channel. */
 @Service
 @Transactional
 public class TransitionService {

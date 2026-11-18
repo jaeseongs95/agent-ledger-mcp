@@ -150,10 +150,11 @@ class ArchitectureTest {
             + "the system actor")
     void arc038_ownerOperationsNameTheirActor() throws java.io.IOException {
         Set<String> operations = Set.of("grant", "revoke", "set", "register", "registerReplacing", "grantWithKey",
-                "grantReplacingKey", "seed");
+                "grantReplacingKey", "seed", "issue");
         for (Class<?> service : List.of(org.pgledger.application.admin.GrantService.class,
                 org.pgledger.application.admin.CommonCodeService.class,
-                org.pgledger.application.admin.SessionKeyService.class)) {
+                org.pgledger.application.admin.SessionKeyService.class,
+                org.pgledger.application.admin.SessionTokenService.class)) {
             for (java.lang.reflect.Method method : service.getDeclaredMethods()) {
                 if (java.lang.reflect.Modifier.isPublic(method.getModifiers()) && operations.contains(method.getName())) {
                     assertThat(method.getParameterTypes()).as(method.toString())

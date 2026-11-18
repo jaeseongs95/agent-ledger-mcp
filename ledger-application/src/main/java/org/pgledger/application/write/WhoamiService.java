@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import org.pgledger.application.gate.AttestationVerifier;
+import org.pgledger.application.gate.McpCallerResolver;
 import org.pgledger.application.gate.ToolCall;
 import org.pgledger.database.repository.GrantStateRepository;
 import org.pgledger.domain.model.SessionGrant;
@@ -29,26 +30,22 @@ public class WhoamiService {
         }
     }
 
-    private final AttestationVerifier attestation;
+    private final McpCallerResolver callerResolver;
     private final GrantStateRepository grants;
     private final Clock clock;
 
-    public WhoamiService(AttestationVerifier attestation, GrantStateRepository grants, Clock clock) {
-        this.attestation = attestation;
+    public WhoamiService(McpCallerResolver callerResolver, GrantStateRepository grants, Clock clock) {
+        this.callerResolver = callerResolver;
         this.grants = grants;
         this.clock = clock;
     }
 
     /**
-     * @param actor the host attestation; null is HOST_ATTESTATION_REQUIRED. A whoami call carries no operation key, so
-     *        the attestation must have been signed with an empty one. A value whose author has no valid format is
-     *        answered with {@code authorFormatOk=false} and no grants; every other
-     *        failure of the attestation (unsigned, unknown key, bad signature, wrong tool, outside the window) is
-     *        the error of the gate, so a session finds out here why it cannot write.
+     * @param actor the host attestation or bearer proof; null is HOST_ATTESTATION_REQUIRED in ATTESTED mode.
      */
     public Whoami whoami(String actor, Channel channel) {
         // outside a tool call there is no tool and no digest: that is the call ToolCall.Outside, which matches nothing signed
-        return switch (attestation.prove(actor, ToolCall.current(), "")) {
+        return switch (callerResolver.prove(actor, ToolCall.current(), "")) {
             case AttestationVerifier.Proof.MalformedAuthor malformed ->
                 new Whoami(malformed.text(), false, channel.mayVerify(), channel.login(), List.of());
             case AttestationVerifier.Proof.Proven proven -> {

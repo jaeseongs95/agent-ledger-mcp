@@ -65,7 +65,7 @@ class AttachmentKeyTest {
     @DisplayName("ATA-014: an attachment written with key A reads after the active key is B; a new upload is written with B (its key_id is B) and reads")
     void ata014_theKeySwitch(Scenario s) {
         LedgerAppContext ctx = s.ctx();
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         AttachmentKeys keys = s.bean(AttachmentKeys.class);
         String keyA = s.bean(AttachmentProperties.class).activeKeyId();
@@ -101,7 +101,7 @@ class AttachmentKeyTest {
     @DisplayName("ATA-031: rekey --from A writes the body again under the active key: the same plain SHA-256, a new storage key, the old file is untouched, kept for the grace and then moved under orphans/")
     void ata031_rekeyAndTheReplacedFile(Scenario s) throws IOException {
         LedgerAppContext ctx = s.ctx();
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         AttachmentProperties properties = s.bean(AttachmentProperties.class);
         AttachmentCheck check = s.bean(AttachmentCheck.class);
@@ -153,7 +153,7 @@ class AttachmentKeyTest {
     @DisplayName("ATA-031: a failure after the new file was written and before its row is added: the old row is still current, the attachment reads from the old file, the new file is a file without a row that the check moves after the grace; a second run succeeds")
     void ata031_aFailureBeforeTheRowLeavesTheOldFileCurrent(Scenario s) throws IOException {
         LedgerAppContext ctx = s.ctx();
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         AttachmentStore store = s.bean(AttachmentStore.class);
         AttachmentMaintenanceService maintenance = s.bean(AttachmentMaintenanceService.class);
@@ -222,7 +222,7 @@ class AttachmentKeyTest {
     @Test
     @DisplayName("ATA-014: the start check of the context passes while every needed key file is there")
     void ata014_theStartCheckPassesWhileTheKeysAreThere(Scenario s) {
-        Uploads.upload(s.bean(AttachmentFlow.class), s.actorWith("defect"), Uploads.body(100, 5));
+        Uploads.upload(s.bean(AttachmentFlow.class), s.actorWith("issue"), Uploads.body(100, 5));
 
         s.bean(AttachmentStartCheck.class).verify();
     }

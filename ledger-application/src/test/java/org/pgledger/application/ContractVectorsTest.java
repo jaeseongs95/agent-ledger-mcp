@@ -44,7 +44,7 @@ class ContractVectorsTest {
             assertThat(AuthorId.matches(text)).as(text).isTrue();
             AuthorId author = AuthorId.of(text);
             assertThat(author.value()).isEqualTo(text);
-            assertThat(author.vendor() + ":" + author.session()).as(text).isEqualTo(text);
+            assertThat(author.client() + ":" + author.session()).as(text).isEqualTo(text);
         }
     }
 

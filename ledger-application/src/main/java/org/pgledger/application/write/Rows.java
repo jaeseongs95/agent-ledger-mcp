@@ -4,133 +4,152 @@ import java.util.List;
 import java.util.Optional;
 import org.pgledger.application.gate.Resolution;
 import org.pgledger.application.gate.Target;
-import org.pgledger.database.repository.ConditionRepository;
-import org.pgledger.database.repository.DefectRepository;
+import org.pgledger.database.repository.CriterionRepository;
+import org.pgledger.database.repository.IssueRepository;
 import org.pgledger.database.repository.ProjectRepository;
+import org.pgledger.database.repository.SpecRepository;
 import org.pgledger.database.repository.TaskRepository;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ConflictException;
 import org.pgledger.domain.error.LookupCode;
 import org.pgledger.domain.error.LookupException;
-import org.pgledger.domain.model.Condition;
-import org.pgledger.domain.model.Defect;
+import org.pgledger.domain.model.Criterion;
+import org.pgledger.domain.model.Issue;
 import org.pgledger.domain.model.Project;
+import org.pgledger.domain.model.Spec;
 import org.pgledger.domain.model.Task;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.Scope;
-import org.pgledger.domain.value.ConditionId;
-import org.pgledger.domain.value.DefectId;
+import org.pgledger.domain.value.CriterionId;
+import org.pgledger.domain.value.IssueId;
 import org.pgledger.domain.value.ProjectId;
+import org.pgledger.domain.value.SpecId;
 import org.pgledger.domain.value.TaskId;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
 
 /**
- * Loads the rows a write works on. A load for a write reads the row and compares its version with the version the caller
- * expects; the save that follows replaces the row only if it still has the version that was read (Spring Data JDBC
- * {@code @Version}), so a write that lost the race to another one ends with VERSION_CONFLICT. There is no lock statement
- * (principle 4.4): the conditional save is the statement that decides.
+ * Loads rows for write operations and performs optimistic-locking saves ({@code @Version}) without explicit locks.
  */
 @Component
 public class Rows {
 
     private final ProjectRepository projects;
-    private final DefectRepository defects;
+    private final IssueRepository issues;
+    private final SpecRepository specs;
     private final TaskRepository tasks;
-    private final ConditionRepository conditions;
+    private final CriterionRepository criteria;
 
-    public Rows(ProjectRepository projects, DefectRepository defects, TaskRepository tasks,
-            ConditionRepository conditions) {
+    public Rows(ProjectRepository projects, IssueRepository issues, SpecRepository specs, TaskRepository tasks,
+            CriterionRepository criteria) {
         this.projects = projects;
-        this.defects = defects;
+        this.issues = issues;
+        this.specs = specs;
         this.tasks = tasks;
-        this.conditions = conditions;
+        this.criteria = criteria;
     }
 
-    public Optional<Defect> findDefect(DefectId id) {
-        return defects.findById(id);
+    public Optional<Issue> findIssue(IssueId id) {
+        return issues.findById(id);
+    }
+
+    public Optional<Spec> findSpec(SpecId id) {
+        return specs.findById(id);
     }
 
     public Optional<Task> findTask(TaskId id) {
         return tasks.findById(id);
     }
 
-    public Optional<Condition> findCondition(ConditionId id) {
-        return conditions.findById(id);
+    public Optional<Criterion> findCriterion(CriterionId id) {
+        return criteria.findById(id);
     }
 
-    /** The project of a defect as the one target of a write; a defect that is not there is the failure, as a value. */
-    public Resolution defectTarget(DefectId id, Scope scope) {
-        return defects.findById(id).map(row -> Resolution.of(new Target(row.projectId(), scope)))
-                .orElseGet(() -> Resolution.unresolved(notFound(HistoryEntity.DEFECT.token(),id.value())));
+    public Resolution issueTarget(IssueId id, Scope scope) {
+        return issues.findById(id).map(row -> Resolution.of(new Target(row.projectId(), scope)))
+                .orElseGet(() -> Resolution.unresolved(notFound(HistoryEntity.ISSUE.token(), id.value())));
+    }
+
+    public Resolution specTarget(SpecId id, Scope scope) {
+        return specs.findById(id).map(row -> Resolution.of(new Target(row.projectId(), scope)))
+                .orElseGet(() -> Resolution.unresolved(notFound(HistoryEntity.SPEC.token(), id.value())));
     }
 
     public Resolution taskTarget(TaskId id, Scope scope) {
         return tasks.findById(id).map(row -> Resolution.of(new Target(row.projectId(), scope)))
-                .orElseGet(() -> Resolution.unresolved(notFound(HistoryEntity.TASK.token(),id.value())));
+                .orElseGet(() -> Resolution.unresolved(notFound(HistoryEntity.TASK.token(), id.value())));
     }
 
-    public Resolution conditionTarget(ConditionId id, Scope scope) {
-        return conditions.findById(id).map(row -> Resolution.of(new Target(row.projectId(), scope)))
-                .orElseGet(() -> Resolution.unresolved(notFound(HistoryEntity.CONDITION.token(),id.value())));
+    public Resolution criterionTarget(CriterionId id, Scope scope) {
+        return criteria.findById(id).map(row -> Resolution.of(new Target(row.projectId(), scope)))
+                .orElseGet(() -> Resolution.unresolved(notFound(HistoryEntity.CRITERION.token(), id.value())));
     }
 
     public Project project(ProjectId id) {
         return projects.findById(id).orElseThrow(() -> notFound("project", id.value()));
     }
 
-    public Defect defect(DefectId id) {
-        return defects.findById(id).orElseThrow(() -> notFound(HistoryEntity.DEFECT.token(),id.value()));
+    public Issue issue(IssueId id) {
+        return issues.findById(id).orElseThrow(() -> notFound(HistoryEntity.ISSUE.token(), id.value()));
+    }
+
+    public Spec spec(SpecId id) {
+        return specs.findById(id).orElseThrow(() -> notFound(HistoryEntity.SPEC.token(), id.value()));
     }
 
     public Task task(TaskId id) {
-        return tasks.findById(id).orElseThrow(() -> notFound(HistoryEntity.TASK.token(),id.value()));
+        return tasks.findById(id).orElseThrow(() -> notFound(HistoryEntity.TASK.token(), id.value()));
     }
 
-    public Condition condition(ConditionId id) {
-        return conditions.findById(id).orElseThrow(() -> notFound(HistoryEntity.CONDITION.token(),id.value()));
+    public Criterion criterion(CriterionId id) {
+        return criteria.findById(id).orElseThrow(() -> notFound(HistoryEntity.CRITERION.token(), id.value()));
     }
 
-    /**
-     * Reads the defect for a write; with a non-null expected version a different current version is a VERSION_CONFLICT. Nothing
-     * is locked (principle 4.4): the save that follows is conditional on the version read here ({@link #saveDefect}), and that
-     * statement decides a race.
-     */
-    public Defect defectForWrite(DefectId id, Long expectedVersion) {
-        Defect row = defects.findById(id).orElseThrow(() -> notFound(HistoryEntity.DEFECT.token(),id.value()));
-        requireVersion(HistoryEntity.DEFECT.token(),id.value(), expectedVersion, row.version());
+    public Issue issueForWrite(IssueId id, Long expectedVersion) {
+        Issue row = issues.findById(id).orElseThrow(() -> notFound(HistoryEntity.ISSUE.token(), id.value()));
+        requireVersion(HistoryEntity.ISSUE.token(), id.value(), expectedVersion, row.version());
         return row;
     }
 
-    /** As {@link #defectForWrite} for a task. */
+    public Spec specForWrite(SpecId id, Long expectedVersion) {
+        Spec row = specs.findById(id).orElseThrow(() -> notFound(HistoryEntity.SPEC.token(), id.value()));
+        requireVersion(HistoryEntity.SPEC.token(), id.value(), expectedVersion, row.version());
+        return row;
+    }
+
     public Task taskForWrite(TaskId id, Long expectedVersion) {
-        Task row = tasks.findById(id).orElseThrow(() -> notFound(HistoryEntity.TASK.token(),id.value()));
-        requireVersion(HistoryEntity.TASK.token(),id.value(), expectedVersion, row.version());
+        Task row = tasks.findById(id).orElseThrow(() -> notFound(HistoryEntity.TASK.token(), id.value()));
+        requireVersion(HistoryEntity.TASK.token(), id.value(), expectedVersion, row.version());
         return row;
     }
 
-    /** As {@link #defectForWrite} for a condition. */
-    public Condition conditionForWrite(ConditionId id, Long expectedVersion) {
-        Condition row = conditions.findById(id).orElseThrow(() -> notFound(HistoryEntity.CONDITION.token(),id.value()));
-        requireVersion(HistoryEntity.CONDITION.token(),id.value(), expectedVersion, row.version());
+    public Criterion criterionForWrite(CriterionId id, Long expectedVersion) {
+        Criterion row = criteria.findById(id)
+                .orElseThrow(() -> notFound(HistoryEntity.CRITERION.token(), id.value()));
+        requireVersion(HistoryEntity.CRITERION.token(), id.value(), expectedVersion, row.version());
         return row;
     }
 
-    /**
-     * Stores a changed defect. The update is conditional on the version the row carries, which is the version it was
-     * read at; a lost race is a VERSION_CONFLICT that names that version and the one in the database now.
-     */
-    public Defect saveDefect(Defect after) {
+    public Issue saveIssue(Issue after) {
         try {
-            return defects.save(after);
+            return issues.save(after);
         } catch (OptimisticLockingFailureException e) {
-            throw versionConflict(HistoryEntity.DEFECT.token(), after.id().value(), after.version(), defects
-                    .findById(after.id()).map(Defect::version)
-                    .orElseThrow(() -> notFound(HistoryEntity.DEFECT.token(), after.id().value())), e);
+            throw versionConflict(HistoryEntity.ISSUE.token(), after.id().value(), after.version(), issues
+                    .findById(after.id()).map(Issue::version)
+                    .orElseThrow(() -> notFound(HistoryEntity.ISSUE.token(), after.id().value())), e);
         }
     }
 
-    /** As {@link #saveDefect} for a task. */
+    public Spec saveSpec(Spec after) {
+        try {
+            return specs.save(after);
+        } catch (OptimisticLockingFailureException e) {
+            throw versionConflict(HistoryEntity.SPEC.token(), after.id().value(), after.version(), specs
+                    .findById(after.id()).map(Spec::version)
+                    .orElseThrow(() -> notFound(HistoryEntity.SPEC.token(), after.id().value())), e);
+        }
+    }
+
     public Task saveTask(Task after) {
         try {
             return tasks.save(after);
@@ -141,18 +160,16 @@ public class Rows {
         }
     }
 
-    /** As {@link #saveDefect} for a condition. */
-    public Condition saveCondition(Condition after) {
+    public Criterion saveCriterion(Criterion after) {
         try {
-            return conditions.save(after);
+            return criteria.save(after);
         } catch (OptimisticLockingFailureException e) {
-            throw versionConflict(HistoryEntity.CONDITION.token(), after.id().value(), after.version(), conditions
-                    .findById(after.id()).map(Condition::version)
-                    .orElseThrow(() -> notFound(HistoryEntity.CONDITION.token(), after.id().value())), e);
+            throw versionConflict(HistoryEntity.CRITERION.token(), after.id().value(), after.version(), criteria
+                    .findById(after.id()).map(Criterion::version)
+                    .orElseThrow(() -> notFound(HistoryEntity.CRITERION.token(), after.id().value())), e);
         }
     }
 
-    /** The one place that makes the VERSION_CONFLICT of a save: the arguments are the real versions, in order. */
     private static ConflictException versionConflict(String entity, String id, long expected, long current,
             Throwable cause) {
         return new ConflictException(ConflictCode.VERSION_CONFLICT,

@@ -18,23 +18,23 @@ import org.pgledger.application.admin.ProjectService;
 import org.pgledger.application.admin.ProjectService.ProjectCommand;
 import org.pgledger.application.admin.SessionKeyService;
 import org.pgledger.application.admin.SessionKeyService.RegisterCommand;
-import org.pgledger.apptest.TestKeyRing;
-import org.pgledger.attestation.PublicKeys;
 import org.pgledger.application.support.Expect;
 import org.pgledger.application.support.LedgerServiceTest;
 import org.pgledger.application.support.Scenario;
 import org.pgledger.application.write.WhoamiService;
 import org.pgledger.application.write.WhoamiService.GrantView;
+import org.pgledger.apptest.TestKeyRing;
+import org.pgledger.attestation.PublicKeys;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ErrorCode;
-import org.pgledger.domain.error.LookupCode;
 import org.pgledger.domain.error.LedgerException;
+import org.pgledger.domain.error.LookupCode;
 import org.pgledger.domain.error.TrustCode;
 import org.pgledger.domain.error.ValidationCode;
 import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.rule.Channel;
 
-/** SVC-GRT-01 .. SVC-GRT-05 (SVC-GRT-06 needs both databases and is in the race test). */
+/** SVC-GRT-01 .. SVC-GRT-05, 11 .. 15 (SVC-GRT-06 needs both databases and is in the race test). */
 @LedgerServiceTest
 class GrantProjectTest {
 
@@ -43,13 +43,14 @@ class GrantProjectTest {
     void grt01_grant(Scenario s) {
         String author = "claude:grt01";
         s.ctx().enroll(author);
-        s.bean(GrantService.class).grant(new GrantCommand(author, s.projectId(), List.of("defect"), null, "first"), TestOwners.OWNER);
+        s.bean(GrantService.class).grant(new GrantCommand(author, s.projectId(), List.of("issue"), null, "first"),
+                TestOwners.OWNER);
         List<Long> ids = s.bean(GrantService.class).grant(new GrantCommand(author, s.projectId(),
-                List.of("defect", "task"), "2030-01-01T00:00:00Z", "second"), TestOwners.OWNER);
+                List.of("issue", "task"), "2030-01-01T00:00:00Z", "second"), TestOwners.OWNER);
         assertThat(ids).hasSize(2);
-        assertThat(s.count("SELECT COUNT(*) FROM session_grant WHERE author_id = ? AND grant_scope = 'DEFECT'", author))
+        assertThat(s.count("SELECT COUNT(*) FROM session_grant WHERE author_id = ? AND grant_scope = 'ISSUE'", author))
                 .isEqualTo(2);
-        assertThat(s.count("SELECT COUNT(*) FROM session_grant WHERE author_id = ? AND grant_scope = 'DEFECT' "
+        assertThat(s.count("SELECT COUNT(*) FROM session_grant WHERE author_id = ? AND grant_scope = 'ISSUE' "
                 + "AND revoked_at IS NULL", author)).isEqualTo(1);
         assertThat(s.count("SELECT COUNT(*) FROM session_grant WHERE author_id = ? AND granted_by = 'user:owner'",
                 author)).isEqualTo(3);
@@ -68,7 +69,7 @@ class GrantProjectTest {
     void grt11_noKeyNoGrant(Scenario s) {
         String author = "claude:grt11";
         LedgerException refused = Expect.failure(() -> s.bean(GrantService.class).grant(
-                new GrantCommand(author, s.projectId(), List.of("defect", "task"), null, null), TestOwners.OWNER),
+                new GrantCommand(author, s.projectId(), List.of("issue", "task"), null, null), TestOwners.OWNER),
                 ConflictCode.SESSION_KEY_REQUIRED);
         assertThat(refused.args()).containsExactly(author);
         assertThat(rows(s, GRANT_ROWS, author)).isZero();
@@ -83,7 +84,7 @@ class GrantProjectTest {
         keys.register(new RegisterCommand(author, PublicKeys.encode(TestKeyRing.newPair().getPublic()), null),
                 TestOwners.OWNER);
         keys.revoke(author, TestOwners.OWNER);
-        GrantCommand command = new GrantCommand(author, s.projectId(), List.of("defect"), null, null);
+        GrantCommand command = new GrantCommand(author, s.projectId(), List.of("issue"), null, null);
         Expect.failure(() -> s.bean(GrantService.class).grant(command, TestOwners.OWNER),
                 ConflictCode.SESSION_KEY_REQUIRED);
         assertThat(rows(s, GRANT_ROWS, author)).isZero();
@@ -100,7 +101,7 @@ class GrantProjectTest {
     void grt13_earlierRefusalsKeepTheirCodes(Scenario s) {
         String author = "claude:grt13";
         GrantService grants = s.bean(GrantService.class);
-        Expect.failure(() -> grants.grant(new GrantCommand(author, "nowhere", List.of("defect"), null, null),
+        Expect.failure(() -> grants.grant(new GrantCommand(author, "nowhere", List.of("issue"), null, null),
                 TestOwners.OWNER), LookupCode.NOT_FOUND);
         Expect.failure(() -> grants.grant(new GrantCommand(author, s.projectId(), List.of(), null, null),
                 TestOwners.OWNER), ValidationCode.VALIDATION_FAILED);
@@ -116,13 +117,13 @@ class GrantProjectTest {
         SessionKeyService keys = s.bean(SessionKeyService.class);
         String key = PublicKeys.encode(TestKeyRing.newPair().getPublic());
 
-        Expect.failure(() -> grants.grantWithKey(new GrantCommand(author, "nowhere", List.of("defect"), null, null), key,
+        Expect.failure(() -> grants.grantWithKey(new GrantCommand(author, "nowhere", List.of("issue"), null, null), key,
                 TestOwners.OWNER), LookupCode.NOT_FOUND);
         assertThat(keys.history(author)).as("the key was rolled back with the refused grant").isEmpty();
         assertThat(rows(s, SUBJECT_AUDIT_ROWS, author)).isZero();
         assertThat(rows(s, GRANT_ROWS, author)).isZero();
 
-        GrantCommand command = new GrantCommand(author, s.projectId(), List.of("defect", "task"), null, null);
+        GrantCommand command = new GrantCommand(author, s.projectId(), List.of("issue", "task"), null, null);
         assertThat(grants.grantWithKey(command, key, TestOwners.OWNER)).hasSize(2);
         assertThat(keys.live(author)).isPresent();
         assertThat(rows(s, GRANT_ROWS, author)).isEqualTo(2);
@@ -139,18 +140,18 @@ class GrantProjectTest {
     void grt15_replacementAndGrantsAreOneTransaction(Scenario s) {
         GrantService grants = s.bean(GrantService.class);
         SessionKeyService keys = s.bean(SessionKeyService.class);
-        String author = s.actorWith("defect");
+        String author = s.actorWith("issue");
         String oldFingerprint = keys.live(author).orElseThrow().fingerprint();
         String replacement = PublicKeys.encode(TestKeyRing.newPair().getPublic());
         long grantRows = rows(s, GRANT_ROWS, author);
 
-        Expect.failure(() -> grants.grantReplacingKey(new GrantCommand(author, "nowhere", List.of("fix"), null, null),
-                replacement, oldFingerprint, TestOwners.OWNER), LookupCode.NOT_FOUND);
+        Expect.failure(() -> grants.grantReplacingKey(new GrantCommand(author, "nowhere", List.of("deliverable"),
+                null, null), replacement, oldFingerprint, TestOwners.OWNER), LookupCode.NOT_FOUND);
         assertThat(keys.live(author).orElseThrow().fingerprint()).isEqualTo(oldFingerprint);
         assertThat(keys.history(author)).as("the close of the old key was rolled back").hasSize(1);
         assertThat(rows(s, GRANT_ROWS, author)).isEqualTo(grantRows);
 
-        GrantCommand command = new GrantCommand(author, s.projectId(), List.of("fix"), null, null);
+        GrantCommand command = new GrantCommand(author, s.projectId(), List.of("deliverable"), null, null);
         Expect.failure(() -> grants.grantReplacingKey(command, replacement, "0".repeat(64), TestOwners.OWNER),
                 ConflictCode.KEY_REPLACEMENT_NOT_CONFIRMED);
         assertThat(keys.live(author).orElseThrow().fingerprint()).isEqualTo(oldFingerprint);
@@ -173,20 +174,20 @@ class GrantProjectTest {
     }
 
     static Stream<Bad> badGrants() {
-        List<String> defect = List.of("defect");
+        List<String> issue = List.of("issue");
         ErrorCode invalid = ValidationCode.VALIDATION_FAILED;
         return Stream.of(
-                new Bad("author without a vendor", new GrantCommand("someone", "P", defect, null, null),
+                new Bad("author without a vendor", new GrantCommand("someone", "P", issue, null, null),
                         TrustCode.AUTHOR_ID_FORMAT),
                 new Bad("no scope", new GrantCommand("claude:x", "P", List.of(), null, null), invalid),
                 new Bad("unknown scope", new GrantCommand("claude:x", "P", List.of("write"), null, null), invalid),
-                new Bad("unknown project", new GrantCommand("claude:x", "nowhere", defect, null, null),
+                new Bad("unknown project", new GrantCommand("claude:x", "nowhere", issue, null, null),
                         LookupCode.NOT_FOUND),
-                new Bad("note of 501 characters", new GrantCommand("claude:x", "P", defect, null, "n".repeat(501)),
+                new Bad("note of 501 characters", new GrantCommand("claude:x", "P", issue, null, "n".repeat(501)),
                         invalid),
-                new Bad("an expiry in the past", new GrantCommand("claude:x", "P", defect, "2020-01-01T00:00:00Z",
+                new Bad("an expiry in the past", new GrantCommand("claude:x", "P", issue, "2020-01-01T00:00:00Z",
                         null), invalid),
-                new Bad("an expiry without a zone", new GrantCommand("claude:x", "P", defect, "2030-01-01T00:00:00",
+                new Bad("an expiry without a zone", new GrantCommand("claude:x", "P", issue, "2030-01-01T00:00:00",
                         null), invalid));
     }
 
@@ -196,7 +197,6 @@ class GrantProjectTest {
     void grt02_validation(Bad bad, Scenario s) {
         GrantCommand c = bad.command();
         if ("claude:x".equals(c.author())) {
-            // the refusals of the content come before the key rule only for the request checks; the author has a key here
             s.ctx().enroll(c.author());
         }
         GrantCommand onProject = new GrantCommand(c.author(), "P".equals(c.project()) ? s.projectId() : c.project(),
@@ -211,10 +211,10 @@ class GrantProjectTest {
         String author = "claude:grt03";
         s.ctx().enroll(author);
         String other = s.otherProject();
-        s.bean(GrantService.class).grant(new GrantCommand(author, s.projectId(), List.of("defect", "task"), null,
+        s.bean(GrantService.class).grant(new GrantCommand(author, s.projectId(), List.of("issue", "task"), null,
                 null), TestOwners.OWNER);
-        s.bean(GrantService.class).grant(new GrantCommand(author, other, List.of("defect"), null, null), TestOwners.OWNER);
-        assertThat(s.bean(GrantService.class).revoke(new RevokeCommand(author, s.projectId(), "defect"), TestOwners.OWNER))
+        s.bean(GrantService.class).grant(new GrantCommand(author, other, List.of("issue"), null, null), TestOwners.OWNER);
+        assertThat(s.bean(GrantService.class).revoke(new RevokeCommand(author, s.projectId(), "issue"), TestOwners.OWNER))
                 .isEqualTo(1);
         assertThat(s.bean(GrantService.class).revoke(new RevokeCommand(author, s.projectId(), null), TestOwners.OWNER)).isEqualTo(1);
         assertThat(s.bean(GrantService.class).revoke(new RevokeCommand(author, null, null), TestOwners.OWNER)).isEqualTo(1);
@@ -225,7 +225,7 @@ class GrantProjectTest {
     @Test
     @DisplayName("SVC-GRT-03: a scope without a project is refused")
     void grt03_scopeNeedsAProject(Scenario s) {
-        Expect.failure(() -> s.bean(GrantService.class).revoke(new RevokeCommand("claude:x", null, "defect"), TestOwners.OWNER),
+        Expect.failure(() -> s.bean(GrantService.class).revoke(new RevokeCommand("claude:x", null, "issue"), TestOwners.OWNER),
                 ValidationCode.VALIDATION_FAILED);
     }
 
@@ -236,14 +236,14 @@ class GrantProjectTest {
         s.ctx().enroll(author);
         String other = s.otherProject();
         s.bean(GrantService.class).grant(new GrantCommand(author, other, List.of("task"), null, null), TestOwners.OWNER);
-        s.bean(GrantService.class).grant(new GrantCommand(author, s.projectId(), List.of("task", "defect"),
+        s.bean(GrantService.class).grant(new GrantCommand(author, s.projectId(), List.of("task", "issue"),
                 "2030-01-01T00:00:00Z", null), TestOwners.OWNER);
-        s.bean(GrantService.class).grant(new GrantCommand(author, s.projectId(), List.of("fix"), "2026-11-05T10:30:00Z",
-                null), TestOwners.OWNER);
+        s.bean(GrantService.class).grant(new GrantCommand(author, s.projectId(), List.of("deliverable"),
+                "2026-11-05T10:30:00Z", null), TestOwners.OWNER);
         s.bean(GrantService.class).revoke(new RevokeCommand(author, other, "task"), TestOwners.OWNER);
         s.ctx().clock().set(Instant.parse("2026-11-05T11:00:00Z"));
         var whoami = s.bean(WhoamiService.class).whoami(author, Channel.AUTHOR);
-        assertThat(whoami.grants()).containsExactly(new GrantView(s.projectId(), "defect",
+        assertThat(whoami.grants()).containsExactly(new GrantView(s.projectId(), "issue",
                 Instant.parse("2030-01-01T00:00:00Z")), new GrantView(s.projectId(), "task",
                 Instant.parse("2030-01-01T00:00:00Z")));
         assertThat(whoami.authorFormatOk()).isTrue();
@@ -287,13 +287,12 @@ class GrantProjectTest {
         assertThat(Expect.outcome(() -> s.bean(ProjectService.class).add(project.command(), TestOwners.OWNER)))
                 .isEqualTo(Optional.ofNullable(project.expected()));
         if (project.expected() == null) {
-            // the id and the code are required; the violation names the property as the callers know it
-            LedgerException noId = Expect.failure(() -> s.bean(ProjectService.class).add(new ProjectCommand(null, "PRJN", "t"), TestOwners.OWNER),
-                    ValidationCode.VALIDATION_FAILED);
+            LedgerException noId = Expect.failure(() -> s.bean(ProjectService.class).add(
+                    new ProjectCommand(null, "PRJN", "t"), TestOwners.OWNER), ValidationCode.VALIDATION_FAILED);
             assertThat(noId.args()).containsExactly("id");
             assertThat(Expect.firstIssue(noId).reason()).isEqualTo(ValidationReason.REQUIRED);
-            LedgerException noCode = Expect.failure(() -> s.bean(ProjectService.class).add(new ProjectCommand("prj-n", null, "t"), TestOwners.OWNER),
-                    ValidationCode.VALIDATION_FAILED);
+            LedgerException noCode = Expect.failure(() -> s.bean(ProjectService.class).add(
+                    new ProjectCommand("prj-n", null, "t"), TestOwners.OWNER), ValidationCode.VALIDATION_FAILED);
             assertThat(noCode.args()).containsExactly("code");
             assertThat(Expect.firstIssue(noCode).reason()).isEqualTo(ValidationReason.REQUIRED);
         }
@@ -302,7 +301,8 @@ class GrantProjectTest {
     @Test
     @DisplayName("SVC-GRT-05: a new project starts at zero and is stamped user:owner")
     void grt05_counters(Scenario s) {
-        assertThat(s.count("SELECT next_defect_no FROM project WHERE id = ?", s.projectId())).isZero();
+        assertThat(s.count("SELECT next_issue_no FROM project WHERE id = ?", s.projectId())).isZero();
+        assertThat(s.count("SELECT next_spec_no FROM project WHERE id = ?", s.projectId())).isZero();
         assertThat(s.count("SELECT next_task_no FROM project WHERE id = ?", s.projectId())).isZero();
         assertThat(s.count("SELECT COUNT(*) FROM project WHERE id = ? AND created_by = 'user:owner'",
                 s.projectId())).isEqualTo(1);

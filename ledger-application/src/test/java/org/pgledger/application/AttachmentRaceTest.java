@@ -60,7 +60,7 @@ class AttachmentRaceTest {
     }
 
     private static Upload started(Scenario s, long seed) {
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] body = Uploads.body(2 * CHUNK, seed);
         List<byte[]> parts = Uploads.parts(body, CHUNK);
@@ -216,7 +216,7 @@ class AttachmentRaceTest {
     }
 
     private static Rekeyed attachment(Scenario s, long seed) {
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         String id = Uploads.upload(s.bean(AttachmentFlow.class), actor, Uploads.body(250, seed)).attachmentId();
         return new Rekeyed(id, Uploads.currentStorage(s.ctx(), id));
     }

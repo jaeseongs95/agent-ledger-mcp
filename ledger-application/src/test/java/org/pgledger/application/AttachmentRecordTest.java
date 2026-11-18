@@ -24,13 +24,13 @@ import org.pgledger.application.write.CorrectCommand;
 import org.pgledger.application.write.CorrectService;
 import org.pgledger.application.write.RecordCaseCommand;
 import org.pgledger.application.write.RecordCaseService;
-import org.pgledger.application.write.RecordFixCommand;
-import org.pgledger.application.write.RecordFixService;
+import org.pgledger.application.write.RecordDeliverableCommand;
+import org.pgledger.application.write.RecordDeliverableService;
 import org.pgledger.application.write.ReviewService;
 import org.pgledger.application.write.TransitionCommand;
 import org.pgledger.application.write.TransitionService;
 import org.pgledger.application.write.WriteResult;
-import org.pgledger.application.write.WriteResult.RecordFixResult;
+import org.pgledger.application.write.WriteResult.RecordDeliverableResult;
 import org.pgledger.application.write.WriteResult.SaveResult;
 import org.pgledger.application.write.WriteResult.TransitionResult;
 import org.pgledger.database.repository.AttachmentRepository;
@@ -42,27 +42,22 @@ import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.model.Attachment;
 import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.OperationKey;
-import org.pgledger.domain.value.Sha256;
 
 /**
- * ATA-012 (the service side): the optional {@code attachment_id} of the record tools. The attachment rows are inserted through
- * the repository (the body is not needed: the check of a record reads the row only). Each case below is one write: a tool of
- * the author or reviewer channel, or one operation of a batch. Where the id lands: the row the operation writes for its entity.
+ * ATA-012 (the service side): optional {@code attachment_id} across author, reviewer, and batch write operations.
  */
 @LedgerServiceTest
 class AttachmentRecordTest {
 
     private static final Instant WHEN = Instant.parse("2026-11-05T09:00:00Z");
 
-    /** What a case has made ready: the defect it works on and the call (attachment id, operation key) that writes. */
     private interface Call {
         Object run(String attachmentId, String operationKey);
     }
 
-    private record Prepared(String defectId, Call call) {
+    private record Prepared(String issueId, Call call) {
     }
 
-    /** One write path; {@code actor} writes it, {@code stranger} is another author whose attachment must be refused. */
     private record Case(String name, String actor, String stranger, Function<Scenario, Prepared> prepare) {
 
         @Override
@@ -79,84 +74,81 @@ class AttachmentRecordTest {
         return new Case(name, Scenario.REVIEWER, Scenario.AUTHOR, prepare);
     }
 
-    private static TransitionCommand dispute(Scenario s, String defectId, String attachmentId, String operationKey) {
-        return new TransitionCommand(operationKey, "defect", defectId, 1L, "DISPUTED", Scenario.REASON, Scenario.EVIDENCE,
-                null, null, attachmentId);
+    private static TransitionCommand dispute(String issueId, String attachmentId, String operationKey) {
+        return new TransitionCommand(operationKey, "issue", issueId, 1L, "DISPUTED", Scenario.REASON,
+                Scenario.EVIDENCE, null, null, attachmentId);
     }
 
-    private static RecordFixCommand fix(String defectId, String attachmentId, String operationKey) {
-        return new RecordFixCommand(operationKey, defectId, "repo/e2e", Scenario.commit('a'), Scenario.REASON, null, null,
-                null, null, null, attachmentId);
+    private static RecordDeliverableCommand deliverable(String issueId, String attachmentId, String operationKey) {
+        return new RecordDeliverableCommand(operationKey, "issue", issueId, "code_change", Scenario.ref('a'),
+                Scenario.REASON, "repo/e2e", "Deliverable summary", null, null, null, null, attachmentId);
     }
 
-    private static RecordCaseCommand observe(String defectId, String attachmentId, String operationKey) {
-        return new RecordCaseCommand(operationKey, defectId, "seen", Scenario.REASON, null, null, null, attachmentId);
+    private static RecordCaseCommand observe(String issueId, String attachmentId, String operationKey) {
+        return new RecordCaseCommand(operationKey, issueId, "seen", Scenario.REASON, null, null, null, attachmentId);
     }
 
-    /** The six tools (the reviewer channel's two are review and review_correct) and one batch operation of each kind that a batch holds. */
     static Stream<Case> cases() {
         return Stream.of(
                 author("ledger_transition", s -> {
-                    SaveResult d = s.newDefect("d");
-                    return new Prepared(d.id(), (att, rid) -> s.bean(TransitionService.class).transition(Scenario.AUTHOR,
-                            dispute(s, d.id(), att, rid)));
+                    SaveResult i = s.newIssue("i");
+                    return new Prepared(i.id(), (att, rid) -> s.bean(TransitionService.class).transition(
+                            Scenario.AUTHOR, dispute(i.id(), att, rid)));
                 }),
                 reviewer("ledger_review", s -> {
-                    SaveResult d = s.sourceFixedDefect("d");
-                    return new Prepared(d.id(), (att, rid) -> s.bean(ReviewService.class).review(Scenario.REVIEWER,
-                            new TransitionCommand(rid, "defect", d.id(), 2L, "VERIFIED", Scenario.REASON,
+                    SaveResult i = s.resolvedIssue("i");
+                    return new Prepared(i.id(), (att, rid) -> s.bean(ReviewService.class).review(Scenario.REVIEWER,
+                            new TransitionCommand(rid, "issue", i.id(), 2L, "VERIFIED", Scenario.REASON,
                                     Scenario.EVIDENCE, null, null, att)));
                 }),
                 reviewer("ledger_review_correct", s -> {
-                    SaveResult d = s.sourceFixedDefect("d");
+                    SaveResult i = s.resolvedIssue("i");
                     TransitionResult verified = s.bean(ReviewService.class).review(Scenario.REVIEWER,
-                            s.move("defect", d.id(), 2, "VERIFIED", Scenario.EVIDENCE));
-                    return new Prepared(d.id(), (att, rid) -> s.bean(ReviewService.class).reviewCorrect(
+                            s.move("issue", i.id(), 2, "VERIFIED", Scenario.EVIDENCE));
+                    return new Prepared(i.id(), (att, rid) -> s.bean(ReviewService.class).reviewCorrect(
                             Scenario.REVIEWER, new CorrectCommand(rid, verified.historyId(), Scenario.REASON, att)));
                 }),
                 author("ledger_correct", s -> {
-                    SaveResult d = s.newDefect("d");
-                    return new Prepared(d.id(), (att, rid) -> s.bean(CorrectService.class).correct(Scenario.AUTHOR,
-                            new CorrectCommand(rid, d.historyId(), Scenario.REASON, att)));
+                    SaveResult i = s.newIssue("i");
+                    return new Prepared(i.id(), (att, rid) -> s.bean(CorrectService.class).correct(Scenario.AUTHOR,
+                            new CorrectCommand(rid, i.historyId(), Scenario.REASON, att)));
                 }),
-                author("ledger_record_fix", s -> {
-                    SaveResult d = s.newDefect("d");
-                    return new Prepared(d.id(), (att, rid) -> s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR,
-                            fix(d.id(), att, rid)));
+                author("ledger_record_deliverable", s -> {
+                    SaveResult i = s.newIssue("i");
+                    return new Prepared(i.id(), (att, rid) -> s.bean(RecordDeliverableService.class)
+                            .recordDeliverable(Scenario.AUTHOR, deliverable(i.id(), att, rid)));
                 }),
                 author("ledger_record_case", s -> {
-                    SaveResult d = s.newDefect("d");
-                    return new Prepared(d.id(), (att, rid) -> s.bean(RecordCaseService.class).recordCase(
-                            Scenario.AUTHOR, observe(d.id(), att, rid)));
+                    SaveResult i = s.newIssue("i");
+                    return new Prepared(i.id(), (att, rid) -> s.bean(RecordCaseService.class).recordCase(
+                            Scenario.AUTHOR, observe(i.id(), att, rid)));
                 }),
                 author("ledger_batch: transition", s -> {
-                    SaveResult d = s.newDefect("d");
-                    return new Prepared(d.id(), (att, rid) -> s.bean(BatchService.class).batch(Scenario.AUTHOR, rid,
-                            List.of(new BatchOpInput.Transition("defect", d.id(), 1L, "DISPUTED", Scenario.REASON,
+                    SaveResult i = s.newIssue("i");
+                    return new Prepared(i.id(), (att, rid) -> s.bean(BatchService.class).batch(Scenario.AUTHOR, rid,
+                            List.of(new BatchOpInput.Transition("issue", i.id(), 1L, "DISPUTED", Scenario.REASON,
                                     Scenario.EVIDENCE, null, null, att))));
                 }),
-                author("ledger_batch: record_fix", s -> {
-                    SaveResult d = s.newDefect("d");
-                    return new Prepared(d.id(), (att, rid) -> s.bean(BatchService.class).batch(Scenario.AUTHOR, rid,
-                            List.of(new BatchOpInput.RecordFix(d.id(), "repo/e2e", Scenario.commit('a'),
-                                    Scenario.REASON, null, null, null, null, null, att))));
+                author("ledger_batch: record_deliverable", s -> {
+                    SaveResult i = s.newIssue("i");
+                    return new Prepared(i.id(), (att, rid) -> s.bean(BatchService.class).batch(Scenario.AUTHOR, rid,
+                            List.of(new BatchOpInput.RecordDeliverable("issue", i.id(), "code_change",
+                                    Scenario.ref('a'), Scenario.REASON, "repo/e2e", "Deliverable summary", null, null,
+                                    null, null, att))));
                 }),
                 author("ledger_batch: record_case", s -> {
-                    SaveResult d = s.newDefect("d");
-                    return new Prepared(d.id(), (att, rid) -> s.bean(BatchService.class).batch(Scenario.AUTHOR, rid,
-                            List.of(new BatchOpInput.RecordCase(d.id(), "seen", Scenario.REASON, null, null, null,
+                    SaveResult i = s.newIssue("i");
+                    return new Prepared(i.id(), (att, rid) -> s.bean(BatchService.class).batch(Scenario.AUTHOR, rid,
+                            List.of(new BatchOpInput.RecordCase(i.id(), "seen", Scenario.REASON, null, null, null,
                                     att))));
                 }),
                 author("ledger_batch: correct", s -> {
-                    SaveResult d = s.newDefect("d");
-                    return new Prepared(d.id(), (att, rid) -> s.bean(BatchService.class).batch(Scenario.AUTHOR, rid,
-                            List.of(new BatchOpInput.Correct(d.historyId(), Scenario.REASON, att))));
+                    SaveResult i = s.newIssue("i");
+                    return new Prepared(i.id(), (att, rid) -> s.bean(BatchService.class).batch(Scenario.AUTHOR, rid,
+                            List.of(new BatchOpInput.Correct(i.historyId(), Scenario.REASON, att))));
                 }));
     }
 
-    // ------------------------------------------------------------------ helpers
-
-    /** An attachment row of {@code author}, as a finished upload leaves it; returns its id. */
     private static String attachmentOf(Scenario s, String author) {
         String id = UUID.randomUUID().toString();
         Attachment row = new Attachment(id, AuthorId.of(author), WHEN);
@@ -167,11 +159,10 @@ class AttachmentRecordTest {
         return id;
     }
 
-    /** The history row that an operation wrote for its entity (the first operation of a batch). */
     private static long historyId(Object result) {
         return switch (result) {
             case TransitionResult r -> r.historyId();
-            case RecordFixResult r -> r.historyId();
+            case RecordDeliverableResult r -> r.historyId();
             case WriteResult.RecordCaseResult r -> r.historyId();
             case WriteResult.CorrectResult r -> r.historyId();
             case BatchResult r -> historyId(r.results().getFirst());
@@ -179,15 +170,10 @@ class AttachmentRecordTest {
         };
     }
 
-    /** The key of the first operation when the call is a batch of one: derived from the key of the batch. */
     private static String derived(String operationKey) {
         return OperationKey.parse(operationKey).derive(0).toString();
     }
 
-    /**
-     * Receipts bound to the key (a plain write, or the receipt of a batch under its own key) or to the key derived for the
-     * first operation (a batch). Only ever compared with zero here: a refused call leaves neither.
-     */
     private static long receipts(Scenario s, String operationKey) {
         return s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key IN (?, ?)", operationKey,
                 derived(operationKey));
@@ -198,22 +184,23 @@ class AttachmentRecordTest {
                 derived(operationKey));
     }
 
-    private static long historyOf(Scenario s, String defectId) {
+    private static long historyOf(Scenario s, String issueId) {
         return s.count("SELECT COUNT(*) FROM history WHERE entity_id = ? OR entity_id LIKE ? OR entity_id LIKE ?",
-                defectId, defectId + "@%", defectId + "|%");
+                issueId, "issue:" + issueId + "@%", issueId + "|%");
     }
 
     private static long referencing(Scenario s, String attachmentId) {
         return s.count("SELECT COUNT(*) FROM history WHERE attachment_id = ?", attachmentId);
     }
 
-    /** What a failed record must leave as it was: the defect, its fixes and cases, its history rows. */
-    private record State(long version, long fixes, long cases, long history) {
+    private record State(long version, long deliverables, long cases, long history) {
 
-        static State of(Scenario s, String defectId) {
-            return new State(s.defect(defectId).version(),
-                    s.count("SELECT COUNT(*) FROM defect_fix WHERE defect_id = ?", defectId),
-                    s.count("SELECT COUNT(*) FROM defect_case WHERE defect_id = ?", defectId), historyOf(s, defectId));
+        static State of(Scenario s, String issueId) {
+            return new State(s.issue(issueId).version(),
+                    s.count("SELECT COUNT(*) FROM deliverable WHERE target_entity = 'ISSUE' AND target_id = ?",
+                            issueId),
+                    s.count("SELECT COUNT(*) FROM issue_case WHERE issue_id = ?", issueId),
+                    historyOf(s, issueId));
         }
     }
 
@@ -224,11 +211,9 @@ class AttachmentRecordTest {
         return rows.getFirst();
     }
 
-    // ------------------------------------------------------------------ round trip
-
     @ParameterizedTest
     @MethodSource("cases")
-    @DisplayName("ATA-012: an attachment of the writing author is stored in history.attachment_id on the row of the operation's entity, and the history read returns it")
+    @DisplayName("ATA-012: an attachment of the writing author is stored in history.attachment_id")
     void ata012_roundTrip(Case c, Scenario s) {
         Prepared work = c.prepare().apply(s);
         String attachment = attachmentOf(s, c.actor());
@@ -238,47 +223,47 @@ class AttachmentRecordTest {
         long row = historyId(result);
         assertThat(s.historyRow(row).attachmentId()).isEqualTo(attachment);
         assertThat(read(s, row).attachmentId()).isEqualTo(attachment);
-        assertThat(referencing(s, attachment)).as("only the main row of the operation carries it").isEqualTo(1);
+        assertThat(referencing(s, attachment)).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("ATA-012: record_fix puts the id on the DEFECT_FIX row, not on the defect's own TRANSITION row that the same call writes")
-    void ata012_recordFixCarriesItOnTheFixRow(Scenario s) {
-        SaveResult d = s.newDefect("d");
+    @DisplayName("ATA-012: record_deliverable puts the id on the DELIVERABLE row, not on the target's TRANSITION row")
+    void ata012_recordDeliverableCarriesItOnTheDeliverableRow(Scenario s) {
+        SaveResult i = s.newIssue("i");
         String attachment = attachmentOf(s, Scenario.AUTHOR);
 
-        RecordFixResult result = s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR,
-                fix(d.id(), attachment, Scenario.uuid()));
+        RecordDeliverableResult result = s.bean(RecordDeliverableService.class).recordDeliverable(Scenario.AUTHOR,
+                deliverable(i.id(), attachment, Scenario.uuid()));
 
-        assertThat(result.transitionHistoryId()).as("the defect moved to SOURCE_FIXED").isNotNull();
+        assertThat(result.transitionHistoryId()).isNotNull();
         assertThat(s.historyRow(result.historyId()).attachmentId()).isEqualTo(attachment);
         assertThat(s.historyRow(result.transitionHistoryId()).attachmentId()).isNull();
     }
 
     @Test
-    @DisplayName("ATA-012: a record without attachment_id has none, and the history read shows null")
+    @DisplayName("ATA-012: a record without attachment_id has none")
     void ata012_withoutAttachmentIsNull(Scenario s) {
-        SaveResult d = s.newDefect("d");
+        SaveResult i = s.newIssue("i");
 
         TransitionResult moved = s.bean(TransitionService.class).transition(Scenario.AUTHOR,
-                s.move("defect", d.id(), 1, "DISPUTED", Scenario.EVIDENCE));
+                s.move("issue", i.id(), 1, "DISPUTED", Scenario.EVIDENCE));
 
         assertThat(s.historyRow(moved.historyId()).attachmentId()).isNull();
         assertThat(read(s, moved.historyId()).attachmentId()).isNull();
-        assertThat(read(s, d.historyId()).attachmentId()).isNull();
+        assertThat(read(s, i.historyId()).attachmentId()).isNull();
     }
 
     @Test
     @DisplayName("ATA-012: the operations of one batch each carry their own id on their own row")
     void ata012_batchOperationsCarryIt(Scenario s) {
-        SaveResult d = s.newDefect("d");
+        SaveResult i = s.newIssue("i");
         String first = attachmentOf(s, Scenario.AUTHOR);
         String second = attachmentOf(s, Scenario.AUTHOR);
 
         BatchResult result = s.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(), List.of(
-                new BatchOpInput.RecordCase(d.id(), "seen", Scenario.REASON, null, null, null, first),
-                new BatchOpInput.RecordCase(d.id(), "again", Scenario.REASON, null, null, null, second),
-                new BatchOpInput.RecordCase(d.id(), "no file", Scenario.REASON, null, null, null, null)));
+                new BatchOpInput.RecordCase(i.id(), "seen", Scenario.REASON, null, null, null, first),
+                new BatchOpInput.RecordCase(i.id(), "again", Scenario.REASON, null, null, null, second),
+                new BatchOpInput.RecordCase(i.id(), "no file", Scenario.REASON, null, null, null, null)));
 
         assertThat(result.count()).isEqualTo(3);
         assertThat(s.historyRow(historyId(result.results().get(0))).attachmentId()).isEqualTo(first);
@@ -286,14 +271,12 @@ class AttachmentRecordTest {
         assertThat(s.historyRow(historyId(result.results().get(2))).attachmentId()).isNull();
     }
 
-    // ------------------------------------------------------------------ refusals write nothing
-
     @ParameterizedTest
     @MethodSource("cases")
-    @DisplayName("ATA-012: an id that does not exist fails the whole record with ARTIFACT_NOT_FOUND and writes nothing: no state change, no history row, no receipt")
+    @DisplayName("ATA-012: an id that does not exist fails with ARTIFACT_NOT_FOUND and writes nothing")
     void ata012_missingAttachment(Case c, Scenario s) {
         Prepared work = c.prepare().apply(s);
-        State before = State.of(s, work.defectId());
+        State before = State.of(s, work.issueId());
         String operationKey = Scenario.uuid();
         String missing = Scenario.uuid();
 
@@ -301,23 +284,23 @@ class AttachmentRecordTest {
                 LookupCode.ARTIFACT_NOT_FOUND);
 
         assertThat(failure.args()).containsExactly(missing);
-        assertThat(State.of(s, work.defectId())).isEqualTo(before);
+        assertThat(State.of(s, work.issueId())).isEqualTo(before);
         assertThat(receipts(s, operationKey)).isZero();
         assertThat(historyRows(s, operationKey)).isZero();
     }
 
     @ParameterizedTest
     @MethodSource("cases")
-    @DisplayName("ATA-012: the attachment of another author fails the whole record with ARTIFACT_NOT_FOUND and writes nothing")
+    @DisplayName("ATA-012: the attachment of another author fails with ARTIFACT_NOT_FOUND and writes nothing")
     void ata012_attachmentOfAnotherAuthor(Case c, Scenario s) {
         Prepared work = c.prepare().apply(s);
         String foreign = attachmentOf(s, c.stranger());
-        State before = State.of(s, work.defectId());
+        State before = State.of(s, work.issueId());
         String operationKey = Scenario.uuid();
 
         Expect.failure(() -> work.call().run(foreign, operationKey), LookupCode.ARTIFACT_NOT_FOUND);
 
-        assertThat(State.of(s, work.defectId())).isEqualTo(before);
+        assertThat(State.of(s, work.issueId())).isEqualTo(before);
         assertThat(receipts(s, operationKey)).isZero();
         assertThat(historyRows(s, operationKey)).isZero();
         assertThat(referencing(s, foreign)).isZero();
@@ -328,7 +311,7 @@ class AttachmentRecordTest {
     @DisplayName("ATA-012: an id that is not a UUID is a validation failure and writes nothing")
     void ata012_notAUuid(Case c, Scenario s) {
         Prepared work = c.prepare().apply(s);
-        State before = State.of(s, work.defectId());
+        State before = State.of(s, work.issueId());
         String operationKey = Scenario.uuid();
 
         LedgerException failure = Expect.failure(() -> work.call().run("not-a-uuid", operationKey),
@@ -336,49 +319,50 @@ class AttachmentRecordTest {
 
         assertThat(failure).isInstanceOf(ValidationException.class);
         assertThat(Expect.firstIssue(failure).path()).isEqualTo("attachment_id");
-        assertThat(State.of(s, work.defectId())).isEqualTo(before);
+        assertThat(State.of(s, work.issueId())).isEqualTo(before);
         assertThat(receipts(s, operationKey)).isZero();
+        assertThat(historyRows(s, operationKey)).isZero();
     }
 
     @Test
-    @DisplayName("ATA-012: in a batch the bad id of a later operation rolls the earlier operations back and names the operation")
+    @DisplayName("ATA-012: in a batch a bad attachment id rolls back earlier operations")
     void ata012_batchIsOneTransaction(Scenario s) {
-        SaveResult d = s.newDefect("d");
+        SaveResult i = s.newIssue("i");
         String mine = attachmentOf(s, Scenario.AUTHOR);
-        State before = State.of(s, d.id());
+        State before = State.of(s, i.id());
         String batchKey = Scenario.uuid();
 
-        LedgerException failure = Expect.failure(() -> s.bean(BatchService.class).batch(Scenario.AUTHOR, batchKey, List.of(
-                new BatchOpInput.RecordCase(d.id(), "seen", Scenario.REASON, null, null, null, mine),
-                new BatchOpInput.RecordCase(d.id(), "bad", Scenario.REASON, null, null, null, Scenario.uuid()))),
+        LedgerException failure = Expect.failure(() -> s.bean(BatchService.class).batch(Scenario.AUTHOR, batchKey,
+                List.of(
+                        new BatchOpInput.RecordCase(i.id(), "seen", Scenario.REASON, null, null, null, mine),
+                        new BatchOpInput.RecordCase(i.id(), "bad", Scenario.REASON, null, null, null, Scenario.uuid()))),
                 LookupCode.ARTIFACT_NOT_FOUND);
 
-        assertThat(failure.details()).containsEntry("op_index", List.of("2")).containsEntry("op", List.of("record_case"));
-        assertThat(State.of(s, d.id())).isEqualTo(before);
+        assertThat(failure.details()).containsEntry("op_index", List.of("2"))
+                .containsEntry("op", List.of("record_case"));
+        assertThat(State.of(s, i.id())).isEqualTo(before);
         assertThat(referencing(s, mine)).isZero();
         assertThat(receipts(s, batchKey)).isZero();
     }
 
-    // ------------------------------------------------------------------ receipt digest
-
     @ParameterizedTest
     @MethodSource("cases")
-    @DisplayName("ATA-012: the same operation key with the same attachment replays the stored response; with another attachment, or without one, it is OPERATION_CONFLICT")
+    @DisplayName("ATA-012: replay returns stored response; differing attachment is OPERATION_CONFLICT")
     void ata012_replay(Case c, Scenario s) {
         Prepared work = c.prepare().apply(s);
         String attachment = attachmentOf(s, c.actor());
         String other = attachmentOf(s, c.actor());
         String operationKey = Scenario.uuid();
         Object first = work.call().run(attachment, operationKey);
-        long rows = historyOf(s, work.defectId());
+        long rows = historyOf(s, work.issueId());
 
         Object again = work.call().run(attachment, operationKey);
 
         assertThat(again).isEqualTo(first);
-        assertThat(historyOf(s, work.defectId())).as("a replay writes nothing").isEqualTo(rows);
+        assertThat(historyOf(s, work.issueId())).isEqualTo(rows);
         Expect.failure(() -> work.call().run(other, operationKey), ConflictCode.OPERATION_CONFLICT);
         Expect.failure(() -> work.call().run(null, operationKey), ConflictCode.OPERATION_CONFLICT);
         assertThat(referencing(s, other)).isZero();
-        assertThat(historyOf(s, work.defectId())).isEqualTo(rows);
+        assertThat(historyOf(s, work.issueId())).isEqualTo(rows);
     }
 }

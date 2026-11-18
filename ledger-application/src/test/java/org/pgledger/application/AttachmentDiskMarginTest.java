@@ -40,7 +40,7 @@ class AttachmentDiskMarginTest {
     @Test
     @DisplayName("ATA-039: a begin with a margin that the disk cannot keep is refused with ARTIFACT_STORAGE_FULL (the three numbers in the details), no row; a caller without an attestation gets the gate's answer, not the disk's")
     void ata039_beginOnAFullDisk(Scenario s) {
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
 
         LedgerException full = Expect.failure(() -> flow.begin(actor, Uploads.begin(Uploads.body(600, 51))),

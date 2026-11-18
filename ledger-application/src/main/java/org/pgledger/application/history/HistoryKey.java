@@ -3,23 +3,38 @@ package org.pgledger.application.history;
 import org.pgledger.domain.rule.HistoryEntity;
 
 /**
- * What a history row is about: the kind of row and its id as the history keeps it. The row of a link, a fix or a case
- * has no id of its own that a lookup can use: its id is composed of the id of the defect or condition it hangs on and
- * the rest ({@code defect|task}, {@code defect@commit}, {@code defect|case-number}, {@code condition|link-key}), so the
- * first part is the id of the row that owns it, and this is the one place that reads the composition.
+ * Extracts the owning entity id from a history row's {@code entity_id}.
+ *
+ * <p>Deliverables use {@code <targetEntity>:<targetId>@<kind>:<ref>}, links and cases use {@code |} composition.
  */
 public record HistoryKey(HistoryEntity entity, String id) {
 
-    private static final char FIX_SEPARATOR = '@';
+    private static final char DELIVERABLE_SEPARATOR = '@';
+    private static final char ENTITY_PREFIX_SEPARATOR = ':';
     private static final char LINK_SEPARATOR = '|';
 
-    /** The id of the defect, task or condition the row hangs on (the id itself for the row of one of these). */
+    /** The primary owning entity id of this history row. */
     public String ownerId() {
         return switch (entity) {
-            case DEFECT, TASK, CONDITION -> id;
-            case DEFECT_FIX -> before(FIX_SEPARATOR);
-            case DEFECT_TASK, DEFECT_RELATION, DEFECT_CASE, CONDITION_LINK -> before(LINK_SEPARATOR);
+            case ISSUE, SPEC, TASK, CRITERION -> id;
+            case DELIVERABLE -> deliverableTargetId(id);
+            case ISSUE_TASK, ISSUE_SPEC, SPEC_TASK, ISSUE_RELATION, ISSUE_CASE, CRITERION_LINK ->
+                before(LINK_SEPARATOR);
         };
+    }
+
+    /** Formats the composite history id of a deliverable row. */
+    public static String deliverableEntityId(String targetEntityToken, String targetId, String kind,
+            String deliverableRef) {
+        return targetEntityToken + ENTITY_PREFIX_SEPARATOR + targetId + DELIVERABLE_SEPARATOR + kind
+                + ENTITY_PREFIX_SEPARATOR + deliverableRef;
+    }
+
+    private static String deliverableTargetId(String raw) {
+        int at = raw.indexOf(DELIVERABLE_SEPARATOR);
+        String left = at < 0 ? raw : raw.substring(0, at);
+        int colon = left.indexOf(ENTITY_PREFIX_SEPARATOR);
+        return colon < 0 ? left : left.substring(colon + 1);
     }
 
     private String before(char separator) {

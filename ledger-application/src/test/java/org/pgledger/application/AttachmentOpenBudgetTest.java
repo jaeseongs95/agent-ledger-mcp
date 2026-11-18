@@ -30,7 +30,7 @@ class AttachmentOpenBudgetTest {
     @Test
     @DisplayName("ATA-042: kept 2 KiB + an open upload of 1 KiB + a new begin of 2 KiB is over the attachment budget of 4 KiB: ARTIFACT_LIMIT (attachment-budget); a begin of 1 KiB fits")
     void ata042_theBudgetCountsTheOpenUploads(Scenario s) {
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] keptBody = Uploads.body(2 * KIB, 61);
         String kept = Uploads.upload(flow, actor, keptBody, 512).attachmentId();

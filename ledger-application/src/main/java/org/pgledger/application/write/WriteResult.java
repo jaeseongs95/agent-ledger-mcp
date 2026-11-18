@@ -1,8 +1,7 @@
 package org.pgledger.application.write;
 
 /**
- * The result of a write, stored in the receipt and returned again on a replay. Keys are the external contract
- * (written in snake_case); {@code login} is the channel's login name.
+ * Result of a write operation, persisted in {@code request_receipt} and replayed idempotently.
  */
 public sealed interface WriteResult {
 
@@ -14,12 +13,12 @@ public sealed interface WriteResult {
             long historyId, String author, String login) implements WriteResult {
     }
 
-    record RecordFixResult(WriteStatus status, String defect, long fixId, String defectStatus, String ownerActorId,
-            long version, long historyId, Long transitionHistoryId, String author, String login)
-            implements WriteResult {
+    record RecordDeliverableResult(WriteStatus status, String targetEntity, String targetId, long deliverableId,
+            String targetState, String ownerActorId, long version, long historyId, Long transitionHistoryId,
+            String author, String login) implements WriteResult {
     }
 
-    record RecordCaseResult(WriteStatus status, String entity, String id, long caseId, String defect,
+    record RecordCaseResult(WriteStatus status, String entity, String id, long caseId, String issue,
             long historyId, String author, String login) implements WriteResult {
     }
 

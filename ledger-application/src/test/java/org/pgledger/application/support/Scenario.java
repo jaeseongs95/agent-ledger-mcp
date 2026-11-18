@@ -8,34 +8,42 @@ import org.pgledger.application.admin.GrantService;
 import org.pgledger.application.admin.GrantService.GrantCommand;
 import org.pgledger.application.admin.ProjectService;
 import org.pgledger.application.admin.ProjectService.ProjectCommand;
-import org.pgledger.application.write.RecordFixCommand;
-import org.pgledger.application.write.RecordFixService;
+import org.pgledger.application.history.ChangeSet;
+import org.pgledger.application.json.LedgerJson;
+import org.pgledger.application.write.RecordDeliverableCommand;
+import org.pgledger.application.write.RecordDeliverableService;
+import org.pgledger.application.write.ReviewService;
 import org.pgledger.application.write.SaveCommand;
 import org.pgledger.application.write.SaveService;
 import org.pgledger.application.write.TransitionCommand;
-import org.pgledger.application.write.WriteResult.RecordFixResult;
+import org.pgledger.application.write.WriteResult.RecordDeliverableResult;
 import org.pgledger.application.write.WriteResult.SaveResult;
-import org.pgledger.database.repository.DefectRepository;
+import org.pgledger.database.repository.CriterionRepository;
 import org.pgledger.database.repository.HistoryRepository;
+import org.pgledger.database.repository.IssueRepository;
+import org.pgledger.database.repository.SpecRepository;
 import org.pgledger.database.repository.TaskRepository;
-import org.pgledger.domain.model.Defect;
+import org.pgledger.domain.model.Criterion;
 import org.pgledger.domain.model.HistoryEntry;
+import org.pgledger.domain.model.Issue;
+import org.pgledger.domain.model.Spec;
 import org.pgledger.domain.model.Task;
 import org.pgledger.domain.rule.HistoryEntity;
-import org.pgledger.domain.value.DefectId;
+import org.pgledger.domain.value.CriterionId;
+import org.pgledger.domain.value.IssueId;
+import org.pgledger.domain.value.SpecId;
 import org.pgledger.domain.value.TaskId;
 import org.pgledger.testing.TestOwners;
 
 /**
- * A project of its own with the actors of the catalogue (project {@code e2e}-style fixtures): an author with the
- * defect, task, fix and verify grants, a reviewer with fix and verify, an author with only the defect grant, and
- * one without any grant. Built through the real services, so every scenario starts the way an installation does.
+ * Isolated project fixture with enrolled actors and universal 2.0 scopes ({@code issue}, {@code spec}, {@code task},
+ * {@code deliverable}, {@code verify}).
  */
 public final class Scenario {
 
     public static final String AUTHOR = "claude:e2e-author";
     public static final String REVIEWER = "codex:e2e-reviewer";
-    public static final String DEFECT_ONLY = "codex:defect-only";
+    public static final String ISSUE_ONLY = "codex:issue-only";
     public static final String NOGRANT = "gemini:e2e-nogrant";
     public static final String REASON = "a reason that is long enough";
     public static final String EVIDENCE = "https://evidence.example/1";
@@ -44,7 +52,6 @@ public final class Scenario {
     private final String projectId;
     private final String code;
 
-    /** A scenario in a project of its own on this context. */
     public Scenario(LedgerAppContext ctx) {
         this.ctx = ctx;
         int number = ctx.nextProjectNumber();
@@ -53,13 +60,13 @@ public final class Scenario {
         ctx.clock().set(TestClock.START);
         ProjectService.ProjectCommand project = new ProjectCommand(projectId, code, "Project " + number);
         ctx.bean(ProjectService.class).add(project, TestOwners.OWNER);
-        // the actors of the catalogue have a registered key (the owner registered it when it granted them), the one
-        // without a grant has a key as well: it is refused for the missing grant, not for the missing key
-        List.of(AUTHOR, REVIEWER, DEFECT_ONLY, NOGRANT).forEach(ctx::enroll);
+        List.of(AUTHOR, REVIEWER, ISSUE_ONLY, NOGRANT).forEach(ctx::enroll);
         GrantService grants = ctx.bean(GrantService.class);
-        grants.grant(new GrantCommand(AUTHOR, projectId, List.of("defect", "task", "fix", "verify"), null, null), TestOwners.OWNER);
-        grants.grant(new GrantCommand(REVIEWER, projectId, List.of("fix", "verify"), null, null), TestOwners.OWNER);
-        grants.grant(new GrantCommand(DEFECT_ONLY, projectId, List.of("defect"), null, null), TestOwners.OWNER);
+        grants.grant(new GrantCommand(AUTHOR, projectId,
+                List.of("issue", "spec", "task", "deliverable", "verify"), null, null), TestOwners.OWNER);
+        grants.grant(new GrantCommand(REVIEWER, projectId, List.of("deliverable", "verify"), null, null),
+                TestOwners.OWNER);
+        grants.grant(new GrantCommand(ISSUE_ONLY, projectId, List.of("issue"), null, null), TestOwners.OWNER);
     }
 
     public LedgerAppContext ctx() {
@@ -74,20 +81,23 @@ public final class Scenario {
         return projectId;
     }
 
-    /** The project code that prefixes defect and task ids. */
     public String code() {
         return code;
     }
 
-    public String defectId(int number) {
-        return code + "-D-" + "0".repeat(Math.max(0, 4 - Integer.toString(number).length())) + number;
+    public String issueId(int number) {
+        return code + "-I-" + "0".repeat(Math.max(0, 4 - Integer.toString(number).length())) + number;
+    }
+
+    public String specId(int number) {
+        return code + "-S-" + "0".repeat(Math.max(0, 4 - Integer.toString(number).length())) + number;
     }
 
     public String taskId(int number) {
         return code + "-T-" + "0".repeat(Math.max(0, 4 - Integer.toString(number).length())) + number;
     }
 
-    public String conditionId(String suffix) {
+    public String criterionId(String suffix) {
         return code + "-C-" + suffix;
     }
 
@@ -95,21 +105,27 @@ public final class Scenario {
         return UUID.randomUUID().toString();
     }
 
-    /** A 40 character lower-case hex commit id made of one digit. */
-    public static String commit(char digit) {
-        return String.valueOf(digit).repeat(40);
+    public static String ref(char ch) {
+        return String.valueOf(ch).repeat(40);
     }
 
-    // ----------------------------------------------------------------- field maps
-
-    public Map<String, String> defectFields(String title) {
+    public Map<String, String> issueFields(String title) {
         Map<String, String> fields = new LinkedHashMap<>();
         fields.put("project_id", projectId);
         fields.put("title", title);
         fields.put("category", "ARC");
         fields.put("severity", "P2");
-        fields.put("behavior", "behavior of " + title);
+        fields.put("symptom", "symptom of " + title);
         fields.put("root_cause", "cause of " + title);
+        return fields;
+    }
+
+    public Map<String, String> specFields(String title) {
+        Map<String, String> fields = new LinkedHashMap<>();
+        fields.put("project_id", projectId);
+        fields.put("title", title);
+        fields.put("summary", "summary of " + title);
+        fields.put("acceptance_criteria", "acceptance of " + title);
         return fields;
     }
 
@@ -122,18 +138,14 @@ public final class Scenario {
         return fields;
     }
 
-    public Map<String, String> conditionFields(String release, String conditionCode) {
+    public Map<String, String> criterionFields(String milestone, String criterionCode) {
         Map<String, String> fields = new LinkedHashMap<>();
         fields.put("project_id", projectId);
-        fields.put("release", release);
-        fields.put("code", conditionCode);
-        fields.put("condition_text", "condition " + conditionCode);
+        fields.put("milestone_name", milestone);
+        fields.put("code", criterionCode);
+        fields.put("criterion_text", "criterion " + criterionCode);
         return fields;
     }
-
-    // ------------------------------------------------------------------ commands
-
-    // Every command built here carries a fresh operation key: the server never makes one up (a write needs a key).
 
     public SaveCommand create(String entity, String id, Map<String, String> fields) {
         return new SaveCommand(uuid(), entity, id, 0L, Fields.of(fields), REASON);
@@ -147,53 +159,55 @@ public final class Scenario {
         return new TransitionCommand(uuid(), entity, id, version, to, REASON, evidence, null, null);
     }
 
-    public RecordFixCommand fixCommand(String defectId, String commit) {
-        return new RecordFixCommand(uuid(), defectId, "repo/e2e", commit, REASON, null, null, null, null, null);
+    public RecordDeliverableCommand deliverableCommand(String targetEntity, String targetId, String deliverableRef) {
+        return new RecordDeliverableCommand(uuid(), targetEntity, targetId, "code_change", deliverableRef, REASON,
+                "repo/e2e", "Deliverable for " + targetId, null, null, null, null);
     }
 
-    // --------------------------------------------------------------- shortcuts
+    public RecordDeliverableCommand deliverableCommand(String issueId, String deliverableRef) {
+        return deliverableCommand("issue", issueId, deliverableRef);
+    }
 
-    public SaveResult newDefect(String title) {
-        return bean(SaveService.class).save(AUTHOR, create("defect", null, defectFields(title)));
+    public SaveResult newIssue(String title) {
+        return bean(SaveService.class).save(AUTHOR, create("issue", null, issueFields(title)));
+    }
+
+    public SaveResult newSpec(String title) {
+        return bean(SaveService.class).save(AUTHOR, create("spec", null, specFields(title)));
     }
 
     public SaveResult newTask(String title) {
         return bean(SaveService.class).save(AUTHOR, create("task", null, taskFields(title)));
     }
 
-    public SaveResult newCondition(String suffix, String release, String conditionCode) {
+    public SaveResult newCriterion(String suffix, String milestone, String criterionCode) {
         return bean(SaveService.class).save(AUTHOR,
-                create("condition", conditionId(suffix), conditionFields(release, conditionCode)));
+                create("criterion", criterionId(suffix), criterionFields(milestone, criterionCode)));
     }
 
-    /** Records a fix commit as {@code actor}; an OPEN defect becomes SOURCE_FIXED. */
-    public RecordFixResult fix(String actor, String defectId, String commit) {
-        return bean(RecordFixService.class).recordFix(actor, fixCommand(defectId, commit));
+    public RecordDeliverableResult deliver(String actor, String issueId, String deliverableRef) {
+        return bean(RecordDeliverableService.class).recordDeliverable(actor,
+                deliverableCommand("issue", issueId, deliverableRef));
     }
 
-    /** A defect that the author has fixed (SOURCE_FIXED, version 2). */
-    public SaveResult sourceFixedDefect(String title) {
-        SaveResult defect = newDefect(title);
-        fix(AUTHOR, defect.id(), commit('a'));
-        return defect;
+    public SaveResult resolvedIssue(String title) {
+        SaveResult issue = newIssue(title);
+        deliver(AUTHOR, issue.id(), ref('a'));
+        return issue;
     }
 
-    /** A defect that the reviewer verified (VERIFIED, version 3). */
-    public SaveResult verifiedDefect(String title) {
-        SaveResult defect = sourceFixedDefect(title);
-        bean(org.pgledger.application.write.ReviewService.class).review(REVIEWER,
-                move("defect", defect.id(), 2, "VERIFIED", EVIDENCE));
-        return defect;
+    public SaveResult verifiedIssue(String title) {
+        SaveResult issue = resolvedIssue(title);
+        bean(ReviewService.class).review(REVIEWER, move("issue", issue.id(), 2, "VERIFIED", EVIDENCE));
+        return issue;
     }
 
-    /** A new author id with live grants of exactly these scopes on this project. */
     public String actorWith(String... scopes) {
         String actor = "claude:t" + UUID.randomUUID().toString().substring(0, 8);
         grant(actor, projectId, scopes);
         return actor;
     }
 
-    /** A new author id that holds no grant. */
     public String actorWithoutGrants() {
         String actor = "claude:n" + UUID.randomUUID().toString().substring(0, 8);
         ctx.enroll(actor);
@@ -205,21 +219,27 @@ public final class Scenario {
         bean(GrantService.class).grant(new GrantCommand(actor, project, List.of(scopes), null, null), TestOwners.OWNER);
     }
 
-    /** A second project (codes and ids of its own) for cross-project cases. */
     public String otherProject() {
         int number = ctx.nextProjectNumber();
-        bean(ProjectService.class).add(new ProjectCommand("p" + number, "E2E" + number, "Project " + number), TestOwners.OWNER);
+        bean(ProjectService.class).add(new ProjectCommand("p" + number, "E2E" + number, "Project " + number),
+                TestOwners.OWNER);
         return "p" + number;
     }
 
-    // ------------------------------------------------------------------ reading
+    public Issue issue(String id) {
+        return bean(IssueRepository.class).findById(IssueId.of(id)).orElseThrow();
+    }
 
-    public Defect defect(String id) {
-        return bean(DefectRepository.class).findById(DefectId.of(id)).orElseThrow();
+    public Spec spec(String id) {
+        return bean(SpecRepository.class).findById(SpecId.of(id)).orElseThrow();
     }
 
     public Task task(String id) {
         return bean(TaskRepository.class).findById(TaskId.of(id)).orElseThrow();
+    }
+
+    public Criterion criterion(String id) {
+        return bean(CriterionRepository.class).findById(CriterionId.of(id)).orElseThrow();
     }
 
     public List<HistoryEntry> history(HistoryEntity entity, String entityId) {
@@ -230,15 +250,12 @@ public final class Scenario {
         return bean(HistoryRepository.class).findById(id).orElseThrow();
     }
 
-    /** The {@code changes} of a history row. */
-    public org.pgledger.application.history.ChangeSet changes(long historyId) {
-        return bean(org.pgledger.application.json.LedgerJson.class).read(historyRow(historyId).changes(),
-                org.pgledger.application.history.ChangeSet.class);
+    public ChangeSet changes(long historyId) {
+        return bean(LedgerJson.class).read(historyRow(historyId).changes(), ChangeSet.class);
     }
 
-    /** The {@code before_data} of a history row, read into the record of its entity. */
     public <T> T before(long historyId, Class<T> type) {
-        return bean(org.pgledger.application.json.LedgerJson.class).read(historyRow(historyId).beforeData(), type);
+        return bean(LedgerJson.class).read(historyRow(historyId).beforeData(), type);
     }
 
     public long count(String sql, String... values) {

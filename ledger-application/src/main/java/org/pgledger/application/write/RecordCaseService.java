@@ -5,7 +5,7 @@ import org.pgledger.domain.rule.Channel;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Record an observed case of a defect through the author channel. */
+/** Record an observed case of an issue through the author channel. */
 @Service
 @Transactional
 public class RecordCaseService {

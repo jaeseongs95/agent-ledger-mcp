@@ -5,201 +5,294 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.pgledger.application.support.Expect;
 import org.pgledger.application.support.Fields;
 import org.pgledger.application.support.LedgerServiceTest;
 import org.pgledger.application.support.MergeFixture;
+import org.pgledger.application.support.Parallel;
 import org.pgledger.application.support.Scenario;
 import org.pgledger.application.write.BatchOpInput;
 import org.pgledger.application.write.BatchService;
 import org.pgledger.application.write.RecordCaseCommand;
 import org.pgledger.application.write.RecordCaseService;
-import org.pgledger.application.write.RecordFixCommand;
-import org.pgledger.application.write.RecordFixService;
+import org.pgledger.application.write.RecordDeliverableCommand;
+import org.pgledger.application.write.RecordDeliverableService;
 import org.pgledger.application.write.ReviewService;
+import org.pgledger.application.write.Rows;
 import org.pgledger.application.write.SaveService;
 import org.pgledger.application.write.TransitionService;
-import org.pgledger.application.write.WriteResult.RecordFixResult;
+import org.pgledger.application.write.WriteResult.RecordDeliverableResult;
 import org.pgledger.application.write.WriteResult.SaveResult;
 import org.pgledger.application.write.WriteResult.TransitionResult;
 import org.pgledger.domain.context.ActorScope;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.LedgerException;
 import org.pgledger.domain.error.TransitionCode;
-import org.pgledger.domain.rule.DefectStatus;
+import org.pgledger.domain.error.ValidationCode;
+import org.pgledger.domain.rule.CriterionState;
+import org.pgledger.domain.rule.IssueStatus;
 import org.pgledger.domain.rule.TaskState;
 import org.pgledger.domain.value.AuthorId;
+import org.pgledger.domain.value.CriterionId;
 
 /**
- * VRF-002 .. VRF-006, VRF-009, VRF-012, VRF-015 and VRF-016: a VERIFIED defect is changed by no record_fix and no save until a
- * reviewer reopens it (D-0023), and the verifier is none of the sessions that took part in the defect or the task (D-0029).
+ * VRF-002 .. VRF-050, F6, D-0023, D-0029: verified items (issue, spec, task, criterion) refuse edits, deliverables,
+ * cases, and merges until reopened by a reviewer, and independent verification blocks every contributor/amender/owner.
  */
 @LedgerServiceTest
 class VerifyRulesTest {
 
-    /** What a refused write must leave as it was. */
-    private record State(long version, String status, String owner, long fixes, long history, long historyCounter) {
+    private record State(long version, String status, String owner, long deliverables, long history,
+            long historyCounter) {
     }
 
-    private static State state(Scenario s, String defectId) {
-        var defect = s.defect(defectId);
-        return new State(defect.version(), defect.status().name(),
-                defect.ownerActorId() == null ? null : defect.ownerActorId().value(),
-                s.count("SELECT COUNT(*) FROM defect_fix WHERE defect_id = ?", defectId),
-                s.count("SELECT COUNT(*) FROM history WHERE entity_id LIKE ?", defectId + "%"),
+    private static State state(Scenario s, String issueId) {
+        var issue = s.issue(issueId);
+        return new State(issue.version(), issue.status().name(),
+                issue.ownerActorId() == null ? null : issue.ownerActorId().value(),
+                s.count("SELECT COUNT(*) FROM deliverable WHERE target_entity = 'ISSUE' AND target_id = ?", issueId),
+                s.count("SELECT COUNT(*) FROM history WHERE entity_id LIKE ?", issueId + "%"),
                 s.count("SELECT issued_no FROM id_counter WHERE name = 'HISTORY'"));
     }
 
-    private static RecordFixCommand fix(String defect, String commit, String ciRef, String conclusion, Boolean mark) {
-        return new RecordFixCommand(Scenario.uuid(), defect, "repo/e2e", commit, Scenario.REASON, "main", ciRef,
-                conclusion, null, mark);
+    private static RecordDeliverableCommand deliverable(String targetEntity, String targetId, String ref,
+            String checkRef, String checkResult, Boolean mark) {
+        return new RecordDeliverableCommand(Scenario.uuid(), targetEntity, targetId, "code_change", ref,
+                Scenario.REASON, "repo/e2e", "summary", checkRef, checkResult, null, mark);
+    }
+
+    private static RecordDeliverableCommand deliverable(String issue, String ref, String checkRef, String checkResult,
+            Boolean mark) {
+        return deliverable("issue", issue, ref, checkRef, checkResult, mark);
     }
 
     private static TransitionResult review(Scenario s, String actor, String entity, String id, long version, String to) {
         return s.bean(ReviewService.class).review(actor, s.move(entity, id, version, to, Scenario.EVIDENCE));
     }
 
-    // ------------------------------------------------------------------------------------------------ D-0023
-
     @Test
-    @DisplayName("VRF-002: record_fix of a VERIFIED defect (a new commit, new CI data of a known one, no mark) is VERIFIED_DEFECT and writes nothing")
-    void vrf002_recordFixIsRefused(Scenario s) {
-        SaveResult d = s.verifiedDefect("d");
-        State before = state(s, d.id());
+    @DisplayName("VRF-002: record_deliverable of a VERIFIED issue (a new deliverable, check update, no mark) is VERIFIED_ENTITY and writes nothing")
+    void vrf002_recordDeliverableIsRefused(Scenario s) {
+        SaveResult i = s.verifiedIssue("i");
+        State before = state(s, i.id());
         assertThat(before.status()).isEqualTo("VERIFIED");
-        String fixer = s.actorWith("fix");
-        List<RecordFixCommand> refused = List.of(fix(d.id(), Scenario.commit('b'), null, null, null),
-                fix(d.id(), Scenario.commit('a'), "ci-1", "success", null),
-                fix(d.id(), Scenario.commit('c'), null, null, false));
-        for (RecordFixCommand command : refused) {
-            LedgerException e = Expect.failure(() -> s.bean(RecordFixService.class).recordFix(fixer, command),
-                    TransitionCode.VERIFIED_DEFECT);
-            assertThat(e.args()).containsExactly(d.id());
-            assertThat(Expect.message(e)).contains(d.id(), "reviewer", "reopen");
-            assertThat(state(s, d.id())).isEqualTo(before);
+        String recorder = s.actorWith("deliverable");
+        List<RecordDeliverableCommand> refused = List.of(
+                deliverable(i.id(), Scenario.ref('b'), null, null, null),
+                deliverable(i.id(), Scenario.ref('a'), "ci-1", "passed", null),
+                deliverable(i.id(), Scenario.ref('c'), null, null, false));
+        for (RecordDeliverableCommand command : refused) {
+            LedgerException e = Expect.failure(() -> s.bean(RecordDeliverableService.class)
+                    .recordDeliverable(recorder, command), TransitionCode.VERIFIED_ENTITY);
+            assertThat(e.args()).containsExactly(i.id());
+            assertThat(state(s, i.id())).isEqualTo(before);
         }
     }
 
     @Test
-    @DisplayName("VRF-003: save of a VERIFIED defect (title, owner, unchanged values) is VERIFIED_DEFECT before NOTHING_CHANGES, a stale version is VERSION_CONFLICT first")
+    @DisplayName("VRF-003: save of a VERIFIED issue (title, owner, unchanged values) is VERIFIED_ENTITY before NOTHING_CHANGES, a stale version is VERSION_CONFLICT first")
     void vrf003_saveIsRefused(Scenario s) {
-        SaveResult d = s.verifiedDefect("d");
-        State before = state(s, d.id());
+        SaveResult i = s.verifiedIssue("i");
+        State before = state(s, i.id());
         for (Map<String, String> fields : List.of(Map.of("title", "changed"),
-                Map.of("owner_actor_id", "codex:someone"), Map.of("title", "d"))) {
+                Map.of("owner_actor_id", "codex:someone"), Map.of("title", "i"))) {
             LedgerException e = Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR,
-                    s.edit("defect", d.id(), before.version(), fields)), TransitionCode.VERIFIED_DEFECT);
-            assertThat(e.args()).containsExactly(d.id());
-            assertThat(state(s, d.id())).isEqualTo(before);
+                    s.edit("issue", i.id(), before.version(), fields)), TransitionCode.VERIFIED_ENTITY);
+            assertThat(e.args()).containsExactly(i.id());
+            assertThat(state(s, i.id())).isEqualTo(before);
         }
         Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR,
-                s.edit("defect", d.id(), before.version() + 40, Map.of("title", "changed"))),
+                s.edit("issue", i.id(), before.version() + 40, Map.of("title", "changed"))),
                 ConflictCode.VERSION_CONFLICT);
-        assertThat(state(s, d.id())).isEqualTo(before);
+        assertThat(state(s, i.id())).isEqualTo(before);
     }
 
     @Test
-    @DisplayName("VRF-004: a VERIFIED defect that a reviewer reopened takes record_fix and save again")
-    void vrf004_reopenedDefectIsChangeableAgain(Scenario s) {
-        SaveResult d = s.verifiedDefect("d");
-        assertThat(review(s, Scenario.REVIEWER, "defect", d.id(), 3, "OPEN").to()).isEqualTo("OPEN");
-        RecordFixResult fixed = s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR,
-                fix(d.id(), Scenario.commit('b'), null, null, null));
-        assertThat(fixed.defectStatus()).isEqualTo("SOURCE_FIXED");
+    @DisplayName("F6: save and record_deliverable of a VERIFIED spec or task, and save of a MET/NOT_MET criterion, are refused with VERIFIED_ENTITY until reopened")
+    void f6_verifiedSpecTaskAndCriterionRefuseEditsUntilReopened(Scenario s) {
+        SaveResult sp = s.newSpec("sp");
+        s.bean(TransitionService.class).transition(Scenario.AUTHOR, s.move("spec", sp.id(), 1, "COMPLETED",
+                Scenario.EVIDENCE));
+        review(s, Scenario.REVIEWER, "spec", sp.id(), 2, "VERIFIED");
+
+        SaveResult t = s.newTask("t");
+        s.bean(TransitionService.class).transition(Scenario.AUTHOR, s.move("task", t.id(), 1, "COMPLETED",
+                Scenario.EVIDENCE));
+        review(s, Scenario.REVIEWER, "task", t.id(), 2, "VERIFIED");
+
+        SaveResult cMet = s.newCriterion("1", "m1", "c1");
+        review(s, Scenario.REVIEWER, "criterion", cMet.id(), 1, "MET");
+        SaveResult cNotMet = s.newCriterion("2", "m1", "c2");
+        review(s, Scenario.REVIEWER, "criterion", cNotMet.id(), 1, "NOT_MET");
+
+        Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR,
+                s.edit("spec", sp.id(), 3, Map.of("title", "edited"))), TransitionCode.VERIFIED_ENTITY);
+        Expect.failure(() -> s.bean(RecordDeliverableService.class).recordDeliverable(Scenario.AUTHOR,
+                deliverable("spec", sp.id(), Scenario.ref('s'), null, null, null)), TransitionCode.VERIFIED_ENTITY);
+
+        Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR,
+                s.edit("task", t.id(), 3, Map.of("title", "edited"))), TransitionCode.VERIFIED_ENTITY);
+        Expect.failure(() -> s.bean(RecordDeliverableService.class).recordDeliverable(Scenario.AUTHOR,
+                deliverable("task", t.id(), Scenario.ref('t'), null, null, null)), TransitionCode.VERIFIED_ENTITY);
+
+        Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR,
+                s.edit("criterion", cMet.id(), 2, Map.of("criterion_text", "edited"))), TransitionCode.VERIFIED_ENTITY);
+        Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR,
+                s.edit("criterion", cNotMet.id(), 2, Map.of("criterion_text", "edited"))),
+                TransitionCode.VERIFIED_ENTITY);
+
+        review(s, Scenario.REVIEWER, "spec", sp.id(), 3, "ACTIVE");
+        review(s, Scenario.REVIEWER, "task", t.id(), 3, "ACTIVE");
+        s.bean(ReviewService.class).review(Scenario.REVIEWER, s.move("criterion", cMet.id(), 2, "UNKNOWN", null));
+
+        assertThat(s.bean(SaveService.class).save(Scenario.AUTHOR,
+                s.edit("spec", sp.id(), 4, Map.of("title", "reopened spec"))).version()).isEqualTo(5);
+        assertThat(s.bean(SaveService.class).save(Scenario.AUTHOR,
+                s.edit("task", t.id(), 4, Map.of("title", "reopened task"))).version()).isEqualTo(5);
+        assertThat(s.bean(SaveService.class).save(Scenario.AUTHOR,
+                s.edit("criterion", cMet.id(), 3, Map.of("criterion_text", "reopened criterion"))).version())
+                .isEqualTo(4);
+    }
+
+    @Test
+    @DisplayName("VRF-004: a VERIFIED issue that a reviewer reopened takes record_deliverable and save again")
+    void vrf004_reopenedIssueIsChangeableAgain(Scenario s) {
+        SaveResult i = s.verifiedIssue("i");
+        assertThat(review(s, Scenario.REVIEWER, "issue", i.id(), 3, "OPEN").to()).isEqualTo("OPEN");
+        RecordDeliverableResult delivered = s.bean(RecordDeliverableService.class).recordDeliverable(Scenario.AUTHOR,
+                deliverable(i.id(), Scenario.ref('b'), null, null, null));
+        assertThat(delivered.targetState()).isEqualTo("RESOLVED");
         SaveResult edited = s.bean(SaveService.class).save(Scenario.AUTHOR,
-                s.edit("defect", d.id(), fixed.version(), Map.of("title", "after the reopening")));
-        assertThat(edited.version()).isEqualTo(fixed.version() + 1);
-        assertThat(s.defect(d.id()).title()).isEqualTo("after the reopening");
+                s.edit("issue", i.id(), delivered.version(), Map.of("title", "after the reopening")));
+        assertThat(edited.version()).isEqualTo(delivered.version() + 1);
+        assertThat(s.issue(i.id()).title()).isEqualTo("after the reopening");
     }
 
     @Test
-    @DisplayName("VRF-005: every status but VERIFIED takes record_fix and save as before, MERGED included")
+    @DisplayName("VRF-005: every status but VERIFIED takes record_deliverable and save as before, MERGED included")
     void vrf005_otherStatusesAreUnchanged(Scenario s) {
-        SaveResult open = s.newDefect("open");
-        SaveResult sourceFixed = s.sourceFixedDefect("fixed");
-        SaveResult notDefect = s.newDefect("not a defect");
+        SaveResult open = s.newIssue("open");
+        SaveResult resolved = s.resolvedIssue("resolved");
+        SaveResult notAnIssue = s.newIssue("not an issue");
         s.bean(TransitionService.class).transition(Scenario.AUTHOR,
-                s.move("defect", notDefect.id(), 1, "NOT_DEFECT", Scenario.EVIDENCE));
-        SaveResult disputed = s.newDefect("disputed");
+                s.move("issue", notAnIssue.id(), 1, "NOT_AN_ISSUE", Scenario.EVIDENCE));
+        SaveResult disputed = s.newIssue("disputed");
         s.bean(TransitionService.class).transition(Scenario.AUTHOR,
-                s.move("defect", disputed.id(), 1, "DISPUTED", Scenario.EVIDENCE));
-        SaveResult merged = s.newDefect("merged");
+                s.move("issue", disputed.id(), 1, "DISPUTED", Scenario.EVIDENCE));
+        SaveResult merged = s.newIssue("merged");
         MergeFixture.merge(s, merged.id(), 1, open.id());
-        Map<SaveResult, DefectStatus> expected = Map.of(open, DefectStatus.SOURCE_FIXED,
-                sourceFixed, DefectStatus.SOURCE_FIXED, notDefect, DefectStatus.NOT_DEFECT,
-                disputed, DefectStatus.DISPUTED, merged, DefectStatus.MERGED);
-        for (Map.Entry<SaveResult, DefectStatus> entry : expected.entrySet()) {
+        Map<SaveResult, IssueStatus> expected = Map.of(open, IssueStatus.RESOLVED,
+                resolved, IssueStatus.RESOLVED, notAnIssue, IssueStatus.NOT_AN_ISSUE,
+                disputed, IssueStatus.DISPUTED, merged, IssueStatus.MERGED);
+        for (Map.Entry<SaveResult, IssueStatus> entry : expected.entrySet()) {
             String id = entry.getKey().id();
-            s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR, fix(id, Scenario.commit('b'), null, null, null));
+            s.bean(RecordDeliverableService.class).recordDeliverable(Scenario.AUTHOR,
+                    deliverable(id, Scenario.ref('b'), null, null, null));
             s.bean(SaveService.class).save(Scenario.AUTHOR,
-                    s.edit("defect", id, s.defect(id).version(), Map.of("title", "edited " + id)));
-            assertThat(s.defect(id).title()).isEqualTo("edited " + id);
-            assertThat(s.defect(id).status()).as(id).isEqualTo(entry.getValue());
+                    s.edit("issue", id, s.issue(id).version(), Map.of("title", "edited " + id)));
+            assertThat(s.issue(id).title()).isEqualTo("edited " + id);
+            assertThat(s.issue(id).status()).as(id).isEqualTo(entry.getValue());
         }
     }
 
     @Test
-    @DisplayName("VRF-006: a batch with a record_fix of a VERIFIED defect fails as a whole and names the operation")
+    @DisplayName("VRF-006: a batch with a record_deliverable of a VERIFIED issue fails as a whole and names the operation")
     void vrf006_batch(Scenario s) {
-        SaveResult d = s.verifiedDefect("d");
-        State before = state(s, d.id());
-        long defects = s.count("SELECT COUNT(*) FROM defect WHERE project_id = ?", s.projectId());
+        SaveResult i = s.verifiedIssue("i");
+        State before = state(s, i.id());
+        long issues = s.count("SELECT COUNT(*) FROM issue WHERE project_id = ?", s.projectId());
         LedgerException e = Expect.failure(() -> s.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(),
-                List.of(new BatchOpInput.Save("defect", Fields.of(s.defectFields("new")), Scenario.REASON, null, null),
-                        new BatchOpInput.RecordFix(d.id(), "repo/e2e", Scenario.commit('b'), Scenario.REASON, null,
-                                null, null, null, null, null))),
-                TransitionCode.VERIFIED_DEFECT);
-        assertThat(e.details()).containsEntry("op_index", List.of("2")).containsEntry("op", List.of("record_fix"));
-        assertThat(s.count("SELECT COUNT(*) FROM defect WHERE project_id = ?", s.projectId())).isEqualTo(defects);
-        assertThat(state(s, d.id())).isEqualTo(before);
+                List.of(new BatchOpInput.Save("issue", Fields.of(s.issueFields("new")), Scenario.REASON, null, null),
+                        new BatchOpInput.RecordDeliverable("issue", i.id(), "code_change", Scenario.ref('b'),
+                                Scenario.REASON, "repo/e2e", "Deliverable summary", null, null, null, null, null))),
+                TransitionCode.VERIFIED_ENTITY);
+        assertThat(e.details()).containsEntry("op_index", List.of("2"))
+                .containsEntry("op", List.of("record_deliverable"));
+        assertThat(s.count("SELECT COUNT(*) FROM issue WHERE project_id = ?", s.projectId())).isEqualTo(issues);
+        assertThat(state(s, i.id())).isEqualTo(before);
     }
 
     @Test
-    @DisplayName("VRF-009: the replay of a fix that was recorded before the defect was verified returns the stored answer")
+    @DisplayName("VRF-009: the replay of a deliverable that was recorded before the issue was verified returns the stored answer")
     void vrf009_replayComesBeforeTheStateCheck(Scenario s) {
-        SaveResult d = s.newDefect("d");
-        RecordFixCommand command = fix(d.id(), Scenario.commit('a'), null, null, null);
-        RecordFixResult first = s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR, command);
-        review(s, Scenario.REVIEWER, "defect", d.id(), 2, "VERIFIED");
-        State before = state(s, d.id());
-        assertThat(s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR, command)).isEqualTo(first);
-        assertThat(state(s, d.id())).isEqualTo(before);
+        SaveResult i = s.newIssue("i");
+        RecordDeliverableCommand command = deliverable(i.id(), Scenario.ref('a'), null, null, null);
+        RecordDeliverableResult first = s.bean(RecordDeliverableService.class).recordDeliverable(Scenario.AUTHOR,
+                command);
+        review(s, Scenario.REVIEWER, "issue", i.id(), 2, "VERIFIED");
+        State before = state(s, i.id());
+        assertThat(s.bean(RecordDeliverableService.class).recordDeliverable(Scenario.AUTHOR, command)).isEqualTo(first);
+        assertThat(state(s, i.id())).isEqualTo(before);
     }
 
-    // ------------------------------------------------------------------------------------------------ D-0029
-
     @Test
-    @DisplayName("VRF-012: the verifier is none of the session that registered the defect, recorded a case or recorded a fix")
-    void vrf012_everyParticipantIsRefused(Scenario s) {
-        SaveResult d = s.newDefect("d");
-        String fixer = s.actorWith("fix", "verify");
-        String observer = s.actorWith("defect", "verify");
+    @DisplayName("VRF-012 / D-0029: the verifier is none of the registrant, owner, case observer, deliverable recorder or deliverable check amender")
+    void vrf012_everyParticipantAndAmenderIsRefused(Scenario s) {
+        String owner = s.actorWith("issue", "verify");
+        String recorder = s.actorWith("deliverable", "verify");
+        String amender = s.actorWith("deliverable", "verify");
+        String observer = s.actorWith("issue", "verify");
         String independent = s.actorWith("verify");
-        s.fix(fixer, d.id(), Scenario.commit('a'));
+
+        var issueFields = s.issueFields("i");
+        issueFields.put("owner_actor_id", owner);
+        SaveResult i = s.bean(SaveService.class).save(Scenario.AUTHOR, s.create("issue", null, issueFields));
+
+        s.deliver(recorder, i.id(), Scenario.ref('a'));
+        s.bean(RecordDeliverableService.class).recordDeliverable(amender,
+                deliverable(i.id(), Scenario.ref('a'), "check-1", "passed", null));
         s.bean(RecordCaseService.class).recordCase(observer,
-                new RecordCaseCommand(Scenario.uuid(), d.id(), "seen", Scenario.REASON, null, null, null));
-        long version = s.defect(d.id()).version();
-        for (String participant : List.of(Scenario.AUTHOR, fixer, observer)) {
-            Expect.failure(() -> review(s, participant, "defect", d.id(), version, "VERIFIED"),
+                new RecordCaseCommand(Scenario.uuid(), i.id(), "seen", Scenario.REASON, null, null, null));
+
+        long version = s.issue(i.id()).version();
+        for (String participant : List.of(Scenario.AUTHOR, owner, recorder, amender, observer)) {
+            Expect.failure(() -> review(s, participant, "issue", i.id(), version, "VERIFIED"),
                     TransitionCode.SAME_SESSION);
         }
-        assertThat(s.defect(d.id()).status()).isEqualTo(DefectStatus.SOURCE_FIXED);
-        assertThat(review(s, independent, "defect", d.id(), version, "VERIFIED").to()).isEqualTo("VERIFIED");
-        assertThat(s.defect(d.id()).status()).isEqualTo(DefectStatus.VERIFIED);
-
-        // a mix of the fixes of the registering session and of another one: the other one cannot verify either
-        SaveResult mixed = s.newDefect("mixed");
-        s.fix(Scenario.AUTHOR, mixed.id(), Scenario.commit('a'));
-        s.fix(fixer, mixed.id(), Scenario.commit('b'));
-        long mixedVersion = s.defect(mixed.id()).version();
-        Expect.failure(() -> review(s, fixer, "defect", mixed.id(), mixedVersion, "VERIFIED"),
-                TransitionCode.SAME_SESSION);
-        assertThat(review(s, independent, "defect", mixed.id(), mixedVersion, "VERIFIED").to()).isEqualTo("VERIFIED");
+        assertThat(s.issue(i.id()).status()).isEqualTo(IssueStatus.RESOLVED);
+        assertThat(review(s, independent, "issue", i.id(), version, "VERIFIED").to()).isEqualTo("VERIFIED");
+        assertThat(s.issue(i.id()).status()).isEqualTo(IssueStatus.VERIFIED);
     }
 
     @Test
-    @DisplayName("VRF-015: a task is verified by none of the sessions that registered it, own it or reported it done at any time")
+    @DisplayName("D-0029: spec and task deliverable amenders and owners cannot self-verify")
+    void d0029_specAndTaskDeliverableAmendersCannotVerify(Scenario s) {
+        String owner = s.actorWith("spec", "task", "verify");
+        String recorder = s.actorWith("deliverable", "verify");
+        String amender = s.actorWith("deliverable", "verify");
+        String independent = s.actorWith("verify");
+
+        var specFields = s.specFields("sp");
+        specFields.put("owner_actor_id", owner);
+        SaveResult sp = s.bean(SaveService.class).save(Scenario.AUTHOR, s.create("spec", null, specFields));
+        s.bean(RecordDeliverableService.class).recordDeliverable(recorder,
+                deliverable("spec", sp.id(), Scenario.ref('s'), null, null, null));
+        s.bean(RecordDeliverableService.class).recordDeliverable(amender,
+                deliverable("spec", sp.id(), Scenario.ref('s'), "chk-1", "passed", null));
+        long specVer = s.spec(sp.id()).version();
+        for (String participant : List.of(Scenario.AUTHOR, owner, recorder, amender)) {
+            Expect.failure(() -> review(s, participant, "spec", sp.id(), specVer, "VERIFIED"),
+                    TransitionCode.SAME_SESSION);
+        }
+        assertThat(review(s, independent, "spec", sp.id(), specVer, "VERIFIED").to()).isEqualTo("VERIFIED");
+
+        SaveResult t = s.newTask("t");
+        s.bean(RecordDeliverableService.class).recordDeliverable(recorder,
+                deliverable("task", t.id(), Scenario.ref('t'), null, null, null));
+        s.bean(RecordDeliverableService.class).recordDeliverable(amender,
+                deliverable("task", t.id(), Scenario.ref('t'), "chk-2", "passed", null));
+        long taskVer = s.task(t.id()).version();
+        for (String participant : List.of(Scenario.AUTHOR, recorder, amender)) {
+            Expect.failure(() -> review(s, participant, "task", t.id(), taskVer, "VERIFIED"),
+                    TransitionCode.SAME_SESSION);
+        }
+        assertThat(review(s, independent, "task", t.id(), taskVer, "VERIFIED").to()).isEqualTo("VERIFIED");
+    }
+
+    @Test
+    @DisplayName("VRF-015: a task is verified by none of the sessions that registered it, own it or completed it at any time")
     void vrf015_taskParticipantsAreRefused(Scenario s) {
         String owner = s.actorWith("task", "verify");
         String first = s.actorWith("task", "verify");
@@ -208,185 +301,178 @@ class VerifyRulesTest {
         var fields = s.taskFields("t");
         fields.put("owner_actor_id", owner);
         SaveResult t = s.bean(SaveService.class).save(Scenario.AUTHOR, s.create("task", null, fields));
-        // first reports it, the task goes back to work (by the registering session), second reports it again
-        s.bean(TransitionService.class).transition(first, s.move("task", t.id(), 1, "REPORTED_DONE", Scenario.EVIDENCE));
+        s.bean(TransitionService.class).transition(first, s.move("task", t.id(), 1, "COMPLETED", Scenario.EVIDENCE));
         s.bean(TransitionService.class).transition(Scenario.AUTHOR, s.move("task", t.id(), 2, "ACTIVE", null));
-        s.bean(TransitionService.class).transition(second, s.move("task", t.id(), 3, "REPORTED_DONE", Scenario.EVIDENCE));
+        s.bean(TransitionService.class).transition(second, s.move("task", t.id(), 3, "COMPLETED", Scenario.EVIDENCE));
         assertThat(s.task(t.id()).version()).isEqualTo(4);
-        // the registering session (it reported nothing), the owner, the earlier and the latest reporter
         for (String participant : List.of(Scenario.AUTHOR, owner, first, second)) {
             Expect.failure(() -> review(s, participant, "task", t.id(), 4, "VERIFIED"), TransitionCode.SAME_SESSION);
         }
-        assertThat(s.task(t.id()).state()).isEqualTo(TaskState.REPORTED_DONE);
+        assertThat(s.task(t.id()).state()).isEqualTo(TaskState.COMPLETED);
         assertThat(review(s, independent, "task", t.id(), 4, "VERIFIED").to()).isEqualTo("VERIFIED");
     }
 
     @Test
-    @DisplayName("VRF-016: a release condition is judged (MET, NOT_MET) by none of the session that registered it; leaving MET needs no such check")
-    void vrf016_conditionsFollowTheSamePrinciple(Scenario s) {
-        SaveResult c = s.newCondition("1", "r1", "c1");
+    @DisplayName("VRF-016: a milestone criterion is judged (MET, NOT_MET) by none of the registrant or completion reporter; leaving MET needs no such check")
+    void vrf016_criteriaFollowTheSamePrinciple(Scenario s) {
+        String completer = s.actorWith("task", "verify");
+        SaveResult c = s.newCriterion("1", "r1", "c1");
+        s.bean(TransitionService.class).transition(completer, s.move("criterion", c.id(), 1, "COMPLETED",
+                Scenario.EVIDENCE));
         for (String to : List.of("MET", "NOT_MET")) {
-            Expect.failure(() -> review(s, Scenario.AUTHOR, "condition", c.id(), 1, to), TransitionCode.SAME_SESSION);
+            Expect.failure(() -> review(s, Scenario.AUTHOR, "criterion", c.id(), 2, to), TransitionCode.SAME_SESSION);
+            Expect.failure(() -> review(s, completer, "criterion", c.id(), 2, to), TransitionCode.SAME_SESSION);
         }
-        assertThat(s.bean(org.pgledger.application.write.Rows.class).condition(
-                org.pgledger.domain.value.ConditionId.of(c.id())).state()).isEqualTo(
-                        org.pgledger.domain.rule.ConditionState.UNKNOWN);
+        assertThat(s.bean(Rows.class).criterion(CriterionId.of(c.id())).state()).isEqualTo(CriterionState.COMPLETED);
         String independent = s.actorWith("verify");
-        assertThat(review(s, independent, "condition", c.id(), 1, "MET").to()).isEqualTo("MET");
-        assertThat(review(s, Scenario.AUTHOR, "condition", c.id(), 2, "UNKNOWN").to()).isEqualTo("UNKNOWN");
+        assertThat(review(s, independent, "criterion", c.id(), 2, "MET").to()).isEqualTo("MET");
+        assertThat(s.bean(ReviewService.class).review(Scenario.AUTHOR,
+                s.move("criterion", c.id(), 3, "UNKNOWN", null)).to()).isEqualTo("UNKNOWN");
     }
 
     @Test
-    @DisplayName("VRF-018: the registrant and the case sessions of a defect that was merged into this one count as reporters of it, the fixes of the merged defect do not")
-    void vrf018_mergedDefectsAreReported(Scenario s) {
-        String registrarOfB = s.actorWith("defect", "verify");
-        String observerOfB = s.actorWith("defect", "verify");
-        String fixerOfA = s.actorWith("fix", "verify");
-        String fixerOfB = s.actorWith("fix", "verify");
-        SaveResult a = s.newDefect("a");
-        var fieldsOfB = s.defectFields("b");
-        SaveResult b = s.bean(SaveService.class).save(registrarOfB, s.create("defect", null, fieldsOfB));
+    @DisplayName("VRF-018: the registrant and the case sessions of an issue merged into this one count as reporters of it, the deliverables of the merged issue do not")
+    void vrf018_mergedIssuesAreReported(Scenario s) {
+        String registrarOfB = s.actorWith("issue", "verify");
+        String observerOfB = s.actorWith("issue", "verify");
+        String recorderOfA = s.actorWith("deliverable", "verify");
+        String recorderOfB = s.actorWith("deliverable", "verify");
+        SaveResult a = s.newIssue("a");
+        var fieldsOfB = s.issueFields("b");
+        SaveResult b = s.bean(SaveService.class).save(registrarOfB, s.create("issue", null, fieldsOfB));
         s.bean(RecordCaseService.class).recordCase(observerOfB,
                 new RecordCaseCommand(Scenario.uuid(), b.id(), "seen", Scenario.REASON, null, null, null));
-        s.fix(fixerOfA, a.id(), Scenario.commit('a'));
-        s.fix(fixerOfB, b.id(), Scenario.commit('b'));
-        MergeFixture.merge(s, b.id(), s.defect(b.id()).version(), a.id());
-        long version = s.defect(a.id()).version();
-        for (String refused : List.of(Scenario.AUTHOR, registrarOfB, observerOfB, fixerOfA)) {
-            Expect.failure(() -> review(s, refused, "defect", a.id(), version, "VERIFIED"),
+        s.deliver(recorderOfA, a.id(), Scenario.ref('a'));
+        s.deliver(recorderOfB, b.id(), Scenario.ref('b'));
+        MergeFixture.merge(s, b.id(), s.issue(b.id()).version(), a.id());
+        long version = s.issue(a.id()).version();
+        for (String refused : List.of(Scenario.AUTHOR, registrarOfB, observerOfB, recorderOfA)) {
+            Expect.failure(() -> review(s, refused, "issue", a.id(), version, "VERIFIED"),
                     TransitionCode.SAME_SESSION);
         }
-        // a session whose only part is a fix of the merged defect: the detail of A does not show that fix as one of A
-        assertThat(review(s, fixerOfB, "defect", a.id(), version, "VERIFIED").to()).isEqualTo("VERIFIED");
+        assertThat(review(s, recorderOfB, "issue", a.id(), version, "VERIFIED").to()).isEqualTo("VERIFIED");
     }
 
     @Test
-    @DisplayName("VRF-019: every record_fix saves the defect row with its version: the version moves, and a read of the row from before the fix cannot be saved")
-    void vrf019_recordFixAlwaysWritesTheDefect(Scenario s) {
-        SaveResult d = s.sourceFixedDefect("d");
-        var staleRead = s.defect(d.id());
+    @DisplayName("VRF-019: every record_deliverable saves the target row with its version")
+    void vrf019_recordDeliverableAlwaysWritesTheIssue(Scenario s) {
+        SaveResult i = s.resolvedIssue("i");
+        var staleRead = s.issue(i.id());
         assertThat(staleRead.version()).isEqualTo(2);
-        // a new commit by the owner (the owner and the status stay) and new CI data of a known commit
-        RecordFixResult sameOwner = s.fix(Scenario.AUTHOR, d.id(), Scenario.commit('b'));
+        RecordDeliverableResult sameOwner = s.deliver(Scenario.AUTHOR, i.id(), Scenario.ref('b'));
         assertThat(sameOwner.version()).isEqualTo(3);
         assertThat(sameOwner.transitionHistoryId()).isNull();
-        RecordFixResult ci = s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR,
-                fix(d.id(), Scenario.commit('a'), "ci-1", "success", null));
-        assertThat(ci.version()).isEqualTo(4);
-        assertThat(ci.transitionHistoryId()).isNull();
-        assertThat(s.defect(d.id()).version()).isEqualTo(4);
-        // the verification that read the defect before the fixes loses against them: its conditional save conflicts
-        var stale = staleRead.transitioned(DefectStatus.VERIFIED, null, java.time.Instant.parse("2026-11-16T00:00:00Z"));
+        RecordDeliverableResult checkUpdate = s.bean(RecordDeliverableService.class).recordDeliverable(Scenario.AUTHOR,
+                deliverable(i.id(), Scenario.ref('a'), "ci-1", "passed", null));
+        assertThat(checkUpdate.version()).isEqualTo(4);
+        assertThat(checkUpdate.transitionHistoryId()).isNull();
+        assertThat(s.issue(i.id()).version()).isEqualTo(4);
+        var stale = staleRead.transitioned(IssueStatus.VERIFIED, null, java.time.Instant.parse("2026-11-16T00:00:00Z"));
         Expect.failure(() -> s.ctx().tx(() -> ScopedValue.where(ActorScope.CURRENT, AuthorId.OWNER)
-                .call(() -> s.bean(org.pgledger.application.write.Rows.class).saveDefect(stale))),
-                ConflictCode.VERSION_CONFLICT);
-        assertThat(s.defect(d.id()).status()).isEqualTo(DefectStatus.SOURCE_FIXED);
+                .call(() -> s.bean(Rows.class).saveIssue(stale))), ConflictCode.VERSION_CONFLICT);
+        assertThat(s.issue(i.id()).status()).isEqualTo(IssueStatus.RESOLVED);
     }
 
     @Test
-    @DisplayName("VRF-049: record_fix runs no code check: a defect with the retired severity UNRATED is fixed, by the owner, by another session and with new CI data")
-    void vrf049_unratedDefectIsFixed(Scenario s) {
-        SaveResult open = s.newDefect("open");
-        SaveResult fixed = s.sourceFixedDefect("fixed");
-        // SQL, because no service makes this state: UNRATED is the severity of an imported defect
-        for (SaveResult d : List.of(open, fixed)) {
-            s.ctx().jdbc().sql("UPDATE defect SET severity = 'UNRATED' WHERE id = ?").param(d.id()).update();
+    @DisplayName("VRF-049: record_deliverable runs no severity code check: an issue with retired severity UNRATED takes deliverables")
+    void vrf049_unratedIssueTakesDeliverables(Scenario s) {
+        SaveResult open = s.newIssue("open");
+        SaveResult resolved = s.resolvedIssue("resolved");
+        for (SaveResult i : List.of(open, resolved)) {
+            s.ctx().jdbc().sql("UPDATE issue SET severity = 'UNRATED' WHERE id = ?").param(i.id()).update();
         }
-        // an OPEN defect becomes SOURCE_FIXED
-        assertThat(s.fix(Scenario.AUTHOR, open.id(), Scenario.commit('a')).defectStatus()).isEqualTo("SOURCE_FIXED");
-        // by another session (the owner changes), by the owner (nothing but the version moves), CI data of a known commit
-        String other = s.actorWith("fix");
-        assertThat(s.fix(other, fixed.id(), Scenario.commit('b')).ownerActorId()).isEqualTo(other);
-        assertThat(s.fix(other, fixed.id(), Scenario.commit('c')).transitionHistoryId()).isNull();
-        s.bean(RecordFixService.class).recordFix(other, fix(fixed.id(), Scenario.commit('c'), "ci-1", "success", null));
-        for (SaveResult d : List.of(open, fixed)) {
-            assertThat(s.defect(d.id()).severity().value()).isEqualTo("UNRATED");
+        assertThat(s.deliver(Scenario.AUTHOR, open.id(), Scenario.ref('a')).targetState()).isEqualTo("RESOLVED");
+        String other = s.actorWith("deliverable");
+        assertThat(s.deliver(other, resolved.id(), Scenario.ref('b')).ownerActorId()).isEqualTo(other);
+        assertThat(s.deliver(other, resolved.id(), Scenario.ref('c')).transitionHistoryId()).isNull();
+        s.bean(RecordDeliverableService.class).recordDeliverable(other,
+                deliverable(resolved.id(), Scenario.ref('c'), "ci-1", "passed", null));
+        for (SaveResult i : List.of(open, resolved)) {
+            assertThat(s.issue(i.id()).severity().value()).isEqualTo("UNRATED");
         }
-        // a save of such a defect without a rating is still refused: UNRATED is never active
         Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR,
-                s.edit("defect", open.id(), s.defect(open.id()).version(), Map.of("title", "changed"))),
-                org.pgledger.domain.error.ValidationCode.CODE_INVALID);
+                s.edit("issue", open.id(), s.issue(open.id()).version(), Map.of("title", "changed"))),
+                ValidationCode.CODE_INVALID);
     }
 
     @Test
-    @DisplayName("VRF-050: a state change runs no code check: a defect with the retired severity UNRATED is moved, verified and merged; only the edit of a save forces the rating")
-    void vrf050_unratedDefectChangesState(Scenario s) {
-        SaveResult toFixed = s.newDefect("to fixed");
-        SaveResult toVerified = s.newDefect("to verified");
-        SaveResult notDefect = s.newDefect("not a defect");
-        SaveResult disputed = s.newDefect("disputed");
-        SaveResult merged = s.newDefect("merged");
-        SaveResult target = s.newDefect("target");
-        // SQL, because no service makes this state: UNRATED is the severity of an imported defect
-        for (SaveResult d : List.of(toFixed, toVerified, notDefect, disputed, merged)) {
-            s.ctx().jdbc().sql("UPDATE defect SET severity = 'UNRATED' WHERE id = ?").param(d.id()).update();
+    @DisplayName("VRF-050: a state change runs no severity code check: an issue with retired severity UNRATED is moved, verified and merged")
+    void vrf050_unratedIssueChangesState(Scenario s) {
+        SaveResult toResolved = s.newIssue("to resolved");
+        SaveResult toVerified = s.newIssue("to verified");
+        SaveResult notAnIssue = s.newIssue("not an issue");
+        SaveResult disputed = s.newIssue("disputed");
+        SaveResult merged = s.newIssue("merged");
+        SaveResult target = s.newIssue("target");
+        for (SaveResult i : List.of(toResolved, toVerified, notAnIssue, disputed, merged)) {
+            s.ctx().jdbc().sql("UPDATE issue SET severity = 'UNRATED' WHERE id = ?").param(i.id()).update();
         }
         TransitionService transitions = s.bean(TransitionService.class);
-        // a fix that leaves the defect OPEN, then the move to SOURCE_FIXED
-        s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR, fix(toFixed.id(), Scenario.commit('a'), null, null, false));
+        s.bean(RecordDeliverableService.class).recordDeliverable(Scenario.AUTHOR,
+                deliverable(toResolved.id(), Scenario.ref('a'), null, null, false));
         assertThat(transitions.transition(Scenario.AUTHOR,
-                s.move("defect", toFixed.id(), s.defect(toFixed.id()).version(), "SOURCE_FIXED", null)).to())
-                .isEqualTo("SOURCE_FIXED");
+                s.move("issue", toResolved.id(), s.issue(toResolved.id()).version(), "RESOLVED", null)).to())
+                .isEqualTo("RESOLVED");
         assertThat(transitions.transition(Scenario.AUTHOR,
-                s.move("defect", notDefect.id(), 1, "NOT_DEFECT", Scenario.EVIDENCE)).to()).isEqualTo("NOT_DEFECT");
+                s.move("issue", notAnIssue.id(), 1, "NOT_AN_ISSUE", Scenario.EVIDENCE)).to())
+                .isEqualTo("NOT_AN_ISSUE");
         assertThat(transitions.transition(Scenario.AUTHOR,
-                s.move("defect", disputed.id(), 1, "DISPUTED", Scenario.EVIDENCE)).to()).isEqualTo("DISPUTED");
+                s.move("issue", disputed.id(), 1, "DISPUTED", Scenario.EVIDENCE)).to()).isEqualTo("DISPUTED");
         MergeFixture.merge(s, merged.id(), 1, target.id());
-        // verification by an independent session
-        s.fix(Scenario.AUTHOR, toVerified.id(), Scenario.commit('b'));
+        s.deliver(Scenario.AUTHOR, toVerified.id(), Scenario.ref('b'));
         String independent = s.actorWith("verify");
-        assertThat(review(s, independent, "defect", toVerified.id(), s.defect(toVerified.id()).version(), "VERIFIED").to())
+        assertThat(review(s, independent, "issue", toVerified.id(), s.issue(toVerified.id()).version(), "VERIFIED").to())
                 .isEqualTo("VERIFIED");
-        for (SaveResult d : List.of(toFixed, toVerified, notDefect, disputed, merged)) {
-            assertThat(s.defect(d.id()).severity().value()).as(d.id()).isEqualTo("UNRATED");
+        for (SaveResult i : List.of(toResolved, toVerified, notAnIssue, disputed, merged)) {
+            assertThat(s.issue(i.id()).severity().value()).as(i.id()).isEqualTo("UNRATED");
         }
-        assertThat(s.defect(merged.id()).status()).isEqualTo(DefectStatus.MERGED);
-        // the edit of a save still has to give the rating
+        assertThat(s.issue(merged.id()).status()).isEqualTo(IssueStatus.MERGED);
         Expect.failure(() -> s.bean(SaveService.class).save(Scenario.AUTHOR,
-                s.edit("defect", notDefect.id(), s.defect(notDefect.id()).version(), Map.of("title", "changed"))),
-                org.pgledger.domain.error.ValidationCode.CODE_INVALID);
+                s.edit("issue", notAnIssue.id(), s.issue(notAnIssue.id()).version(), Map.of("title", "changed"))),
+                ValidationCode.CODE_INVALID);
     }
 
-    @org.junit.jupiter.api.RepeatedTest(20)
-    @DisplayName("VRF-028: a record_fix of the owner and a verification of the same defect at the same time never both succeed, and no fix row lands on the verified defect")
-    void vrf028_fixAgainstVerification(Scenario s) {
-        SaveResult d = s.sourceFixedDefect("d");
+    @RepeatedTest(20)
+    @DisplayName("VRF-028: a record_deliverable of the owner and a verification of the same issue at the same time never both succeed")
+    void vrf028_deliverableAgainstVerification(Scenario s) {
+        SaveResult i = s.resolvedIssue("i");
         String independent = s.actorWith("verify");
         List<java.util.concurrent.Callable<Object>> calls = List.of(
-                () -> s.fix(Scenario.AUTHOR, d.id(), Scenario.commit('b')),
-                () -> review(s, independent, "defect", d.id(), 2, "VERIFIED"));
-        var outcomes = org.pgledger.application.support.Parallel.all(calls);
-        assertThat(outcomes.stream().filter(o -> o.succeeded())).hasSizeLessThan(2);
+                () -> s.deliver(Scenario.AUTHOR, i.id(), Scenario.ref('b')),
+                () -> review(s, independent, "issue", i.id(), 2, "VERIFIED"));
+        var outcomes = Parallel.all(calls);
+        assertThat(outcomes.stream().filter(Parallel.Outcome::succeeded)).hasSizeLessThan(2);
         for (var outcome : outcomes) {
             if (!outcome.succeeded()) {
                 assertThat(outcome.failure()).isInstanceOf(LedgerException.class);
                 assertThat(((LedgerException) outcome.failure()).code()).isIn(ConflictCode.VERSION_CONFLICT,
-                        TransitionCode.TRANSITION_INVALID, TransitionCode.VERIFIED_DEFECT);
+                        TransitionCode.TRANSITION_INVALID, TransitionCode.VERIFIED_ENTITY);
             }
         }
         if (outcomes.get(1).succeeded()) {
-            assertThat(s.count("SELECT COUNT(*) FROM defect_fix WHERE defect_id = ?", d.id())).isEqualTo(1);
+            assertThat(s.count("SELECT COUNT(*) FROM deliverable WHERE target_entity = 'ISSUE' AND target_id = ?",
+                    i.id())).isEqualTo(1);
         }
     }
 
     @Test
-    @DisplayName("REM-004 (D-0023 / BLOCKING-L1): a VERIFIED defect refuses incoming MERGED targets and record_case until a reviewer reopens it")
-    void rem004_verifiedDefectRefusesMergeTargetAndRecordCase(Scenario s) {
-        SaveResult target = s.sourceFixedDefect("verified-target");
+    @DisplayName("REM-004 (D-0023 / BLOCKING-L1): a VERIFIED issue refuses incoming MERGED targets and record_case until a reviewer reopens it")
+    void rem004_verifiedIssueRefusesMergeTargetAndRecordCase(Scenario s) {
+        SaveResult target = s.resolvedIssue("verified-target");
         String reviewer = s.actorWith("verify");
-        assertThat(review(s, reviewer, "defect", target.id(), 2, "VERIFIED").to()).isEqualTo("VERIFIED");
+        assertThat(review(s, reviewer, "issue", target.id(), 2, "VERIFIED").to()).isEqualTo("VERIFIED");
 
-        SaveResult source = s.newDefect("source");
+        SaveResult source = s.newIssue("source");
         Expect.failure(() -> MergeFixture.merge(s, source.id(), 1, target.id()), TransitionCode.MERGE_TARGET_INVALID);
-        assertThat(s.defect(source.id()).status()).isEqualTo(DefectStatus.OPEN);
+        assertThat(s.issue(source.id()).status()).isEqualTo(IssueStatus.OPEN);
 
         Expect.failure(() -> s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR,
                 new RecordCaseCommand(Scenario.uuid(), target.id(), "reopened case after verify",
                         Scenario.REASON, null, null, null)),
-                TransitionCode.VERIFIED_DEFECT);
-        assertThat(s.count("SELECT COUNT(*) FROM defect_case WHERE defect_id = ?", target.id())).isZero();
+                TransitionCode.VERIFIED_ENTITY);
+        assertThat(s.count("SELECT COUNT(*) FROM issue_case WHERE issue_id = ?", target.id())).isZero();
 
-        assertThat(review(s, reviewer, "defect", target.id(), 3, "OPEN").to()).isEqualTo("OPEN");
+        assertThat(review(s, reviewer, "issue", target.id(), 3, "OPEN").to()).isEqualTo("OPEN");
         assertThat(MergeFixture.merge(s, source.id(), 1, target.id()).to()).isEqualTo("MERGED");
         assertThat(s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR,
                 new RecordCaseCommand(Scenario.uuid(), target.id(), "case after reopen",

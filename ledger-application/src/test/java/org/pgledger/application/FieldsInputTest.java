@@ -15,8 +15,7 @@ import tools.jackson.databind.MapperFeature;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * SVC-DIG-02: the fields of a save read by the JSON mapper. The mapper is made like the one of the tool binding (an
- * unknown key is refused, a text is not coerced), because that is the one that reads them in production; no database.
+ * SVC-DIG-02: JSON binding of {@link FieldsInput} (three-state patches: set, empty-to-clear, absent).
  */
 class FieldsInputTest {
 
@@ -25,7 +24,7 @@ class FieldsInputTest {
             .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS).build();
 
     @Test
-    @DisplayName("SVC-DIG-02 (OPK-021, changed: a JSON null used to be set to nothing and cleared the field, now it counts as not given): a text is set, an empty text is set (the one way to clear), a JSON null and a key that is left out are absent")
+    @DisplayName("SVC-DIG-02: text is set, empty text clears, JSON null and omitted keys are absent")
     void threeStates() {
         FieldsInput fields = MAPPER.readValue("{\"title\":\"x\",\"owner_actor_id\":null,\"root_cause\":\"\"}",
                 FieldsInput.class);
@@ -36,25 +35,24 @@ class FieldsInputTest {
         assertThat(fields.rootCause()).isEqualTo(Patch.set(""));
         assertThat(fields.rootCause().mentioned()).isTrue();
         assertThat(fields.projectId()).isEqualTo(Patch.absent());
-        assertThat(fields.behavior()).isEqualTo(Patch.absent());
-        assertThat(fields.conditionText()).isEqualTo(Patch.absent());
+        assertThat(fields.symptom()).isEqualTo(Patch.absent());
+        assertThat(fields.criterionText()).isEqualTo(Patch.absent());
     }
 
     @Test
-    @DisplayName("SVC-DIG-02 (OPK-021, changed: the JSON null and a missing key used to differ, now they are the same): an empty object leaves every key absent; a JSON null is absent too, only an empty text differs from a missing key")
+    @DisplayName("SVC-DIG-02: empty object leaves every key absent; JSON null equals omitted")
     void emptyObject() {
         FieldsInput fields = MAPPER.readValue("{}", FieldsInput.class);
 
         assertThat(fields).isEqualTo(new FieldsInput(null, null, null, null, null, null, null, null, null, null, null,
-                null, null, null, null));
+                null, null, null, null, null, null, null, null));
         assertThat(fields.title().mentioned()).isFalse();
         assertThat(MAPPER.readValue("{\"title\":null}", FieldsInput.class)).isEqualTo(fields);
         assertThat(MAPPER.readValue("{\"title\":\"\"}", FieldsInput.class).title()).isNotEqualTo(fields.title());
     }
 
     @Test
-    @DisplayName("SVC-DIG-02 (OPK-021, changed: a null value is absent now, not a clearing patch): the object a tool call carries "
-            + "(a map with null values, converted) binds the same way as its text, and the keys keep their wire names")
+    @DisplayName("SVC-DIG-02: map with null values converts identically to JSON text")
     void aMapIsConvertedLikeItsText() {
         Map<String, Object> written = new LinkedHashMap<>();
         written.put("project_id", "p1");
@@ -68,11 +66,12 @@ class FieldsInputTest {
         assertThat(fields.originQuote()).isEqualTo(Patch.set("the words"));
         assertThat(fields.originRef()).isEqualTo(Patch.absent());
         assertThat(fields).isEqualTo(MAPPER.readValue(
-                "{\"project_id\":\"p1\",\"success_condition\":null,\"origin_quote\":\"the words\"}", FieldsInput.class));
+                "{\"project_id\":\"p1\",\"success_condition\":null,\"origin_quote\":\"the words\"}",
+                FieldsInput.class));
     }
 
     @Test
-    @DisplayName("SVC-DIG-02: an unknown key and an object where a text is expected are refused")
+    @DisplayName("SVC-DIG-02: unknown keys and non-scalar values are refused")
     void unknownKeyAndWrongType() {
         assertThatThrownBy(() -> MAPPER.readValue("{\"titel\":\"x\"}", FieldsInput.class))
                 .isInstanceOf(JacksonException.class);
@@ -81,10 +80,10 @@ class FieldsInputTest {
     }
 
     @Test
-    @DisplayName("SVC-DIG-02: a record made in code and given null for a key means the key is left out")
+    @DisplayName("SVC-DIG-02: null passed to constructor component means absent")
     void nullInCodeMeansAbsent() {
-        FieldsInput fields = new FieldsInput(Patch.set("p"), null, null, null, null, null, Patch.set(null), null, null,
-                null, null, null, null, null, null);
+        FieldsInput fields = new FieldsInput(Patch.set("p"), null, null, null, null, null, null, null, null, null,
+                Patch.set(null), null, null, null, null, null, null, null, null);
 
         assertThat(fields.title()).isEqualTo(Patch.absent());
         assertThat(fields.projectId().mentioned()).isTrue();

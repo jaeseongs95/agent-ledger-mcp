@@ -27,50 +27,48 @@ import org.pgledger.application.support.LedgerServiceTest;
 import org.pgledger.application.support.Scenario;
 import org.pgledger.application.write.BatchOpInput;
 import org.pgledger.application.write.BatchService;
+import org.pgledger.application.write.ReviewService;
 import org.pgledger.application.write.Rows;
 import org.pgledger.application.write.SaveService;
 import org.pgledger.application.write.TransitionService;
-import org.pgledger.application.write.ReviewService;
 import org.pgledger.application.write.WhoamiService;
 import org.pgledger.application.write.WriteResult.SaveResult;
-import org.pgledger.database.repository.ConditionRepository;
 import org.pgledger.database.repository.Counter;
+import org.pgledger.database.repository.CriterionRepository;
 import org.pgledger.database.repository.HistoryQueryRepository;
 import org.pgledger.database.repository.HistoryRepository;
 import org.pgledger.database.repository.IdAllocator;
 import org.pgledger.domain.context.ActorScope;
 import org.pgledger.domain.error.ConflictCode;
-import org.pgledger.domain.error.ConflictException;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.TransitionCode;
+import org.pgledger.domain.error.ValidationCode;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationReason;
-import org.pgledger.domain.model.Condition;
-import org.pgledger.domain.model.Defect;
+import org.pgledger.domain.model.Criterion;
 import org.pgledger.domain.model.HistoryEntry;
+import org.pgledger.domain.model.Issue;
+import org.pgledger.domain.model.Spec;
 import org.pgledger.domain.model.Task;
 import org.pgledger.domain.rule.ActorAssurance;
 import org.pgledger.domain.rule.Channel;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
 import org.pgledger.domain.value.AuthorId;
-import org.pgledger.domain.value.ConditionId;
-import org.pgledger.domain.value.JsonDocument;
+import org.pgledger.domain.value.CriterionId;
 import org.pgledger.domain.value.ImportedActorId;
-import org.pgledger.domain.value.PageCursor;
+import org.pgledger.domain.value.JsonDocument;
 import org.pgledger.domain.value.OperationKey;
-import org.pgledger.domain.error.ValidationCode;
+import org.pgledger.domain.value.PageCursor;
 
 /**
- * SVC-PRN-01 .. SVC-PRN-07, -11, -12: the correctness defects that the audit of the development principles found in the
- * application module (plan 2, F1, F4, F5) and the refactors of its 2.5 items, on the PostgreSQL of the test PC.
+ * SVC-PRN-01 .. SVC-PRN-07, -10 .. -12: correctness invariants in the application module (F1, F4, F5, 2.5, 2.6).
  */
 @LedgerServiceTest
 class PrinciplesTest {
 
     private static final String IMPORTED_AUTHOR = "claude:old";
 
-    /** Puts an imported TRANSITION row of the task into the history, as an import does (the states are text). */
     private static void importedTransition(Scenario s, String taskId, String from, String to) {
         IdAllocator ids = s.bean(IdAllocator.class);
         s.ctx().tx(() -> s.bean(HistoryRepository.class).insert(new HistoryEntry(ids.next(Counter.HISTORY),
@@ -80,23 +78,20 @@ class PrinciplesTest {
                 new OperationKey(UUID.randomUUID().toString()), "import-" + UUID.randomUUID())));
     }
 
-    // --------------------------------------------------------------------------------------------------- F1
-
     @Test
     @DisplayName("SVC-PRN-01: an imported transition whose state is NULL or none of the task states is not a report: the detail of the task reads it and names the real reporter")
     void prn01_detailIgnoresImportedTransitionsOfUnknownStates(Scenario s) {
         SaveResult task = s.newTask("t");
         s.bean(TransitionService.class).transition(Scenario.AUTHOR,
-                s.move("task", task.id(), 1, "REPORTED_DONE", Scenario.EVIDENCE));
-        // later rows than the real report: were they reports, they would be the latest one
-        importedTransition(s, task.id(), null, "REPORTED_DONE");
-        importedTransition(s, task.id(), "WEIRD", "REPORTED_DONE");
+                s.move("task", task.id(), 1, "COMPLETED", Scenario.EVIDENCE));
+        importedTransition(s, task.id(), null, "COMPLETED");
+        importedTransition(s, task.id(), "WEIRD", "COMPLETED");
         importedTransition(s, task.id(), "PLANNED", "WEIRD2");
 
         assertThat(s.bean(DetailService.class).task(task.id()).completedBy()).isEqualTo(Scenario.AUTHOR);
 
         SaveResult onlyImported = s.newTask("t2");
-        importedTransition(s, onlyImported.id(), null, "REPORTED_DONE");
+        importedTransition(s, onlyImported.id(), null, "COMPLETED");
         importedTransition(s, onlyImported.id(), "WEIRD", "WEIRD2");
         assertThat(s.bean(DetailService.class).task(onlyImported.id()).completedBy()).isNull();
     }
@@ -106,20 +101,16 @@ class PrinciplesTest {
     void prn02_transitionIgnoresImportedTransitionsOfUnknownStates(Scenario s) {
         SaveResult task = s.newTask("t");
         s.bean(TransitionService.class).transition(Scenario.AUTHOR,
-                s.move("task", task.id(), 1, "REPORTED_DONE", Scenario.EVIDENCE));
-        importedTransition(s, task.id(), null, "REPORTED_DONE");
+                s.move("task", task.id(), 1, "COMPLETED", Scenario.EVIDENCE));
+        importedTransition(s, task.id(), null, "COMPLETED");
         importedTransition(s, task.id(), "WEIRD", "WEIRD2");
 
-        // the real report still counts: the reporter cannot verify the task himself ...
         Expect.failure(() -> s.bean(ReviewService.class).review(Scenario.AUTHOR,
                 s.move("task", task.id(), 2, "VERIFIED", Scenario.EVIDENCE)), TransitionCode.SAME_SESSION);
-        // ... and another session can
         var verified = s.bean(ReviewService.class).review(Scenario.REVIEWER,
                 s.move("task", task.id(), 2, "VERIFIED", Scenario.EVIDENCE));
         assertThat(verified.to()).isEqualTo("VERIFIED");
     }
-
-    // --------------------------------------------------------------------------------------------------- F4
 
     @Test
     @DisplayName("SVC-PRN-03 (changed by VRF-026): a free task id with a number of 19 digits has no number and raises no counter; one of 18 digits is a number above the next number and is refused (ID_NUMBER_AHEAD), so it cannot stop the automatic ids; neither is a NumberFormatException")
@@ -154,7 +145,6 @@ class PrinciplesTest {
         assertThat(page.items()).isEmpty();
     }
 
-    /** A history call whose cursor is the one of the call without criteria, carrying {@code id} as its position. */
     private static HistoryQuery query(LedgerAppContext ctx, String id) {
         HistoryQueryRepository.Filter none = new HistoryQueryRepository.Filter(null, null, null, null, null, null,
                 null, null, null, null);
@@ -162,40 +152,42 @@ class PrinciplesTest {
         return new HistoryQuery(null, null, null, null, null, null, null, null, null, null, null, null, cursor);
     }
 
-    // --------------------------------------------------------------------------------------------------- F5
-
     @Test
-    @DisplayName("SVC-PRN-06: the stale save of a defect, a task and a condition is a VERSION_CONFLICT with the version the row was read at and the version in the database now")
+    @DisplayName("SVC-PRN-06: the stale save of an issue, a spec, a task and a criterion is a VERSION_CONFLICT with the version the row was read at and the version in the database now")
     void prn06_staleSaves(Scenario s) {
-        SaveResult defect = s.newDefect("d");
+        SaveResult issue = s.newIssue("i");
+        SaveResult spec = s.newSpec("sp");
         SaveResult task = s.newTask("t");
-        SaveResult condition = s.newCondition("1", "r", "c");
-        Defect staleDefect = s.defect(defect.id());
+        SaveResult criterion = s.newCriterion("1", "r", "c");
+        Issue staleIssue = s.issue(issue.id());
+        Spec staleSpec = s.spec(spec.id());
         Task staleTask = s.task(task.id());
-        Condition staleCondition = s.bean(ConditionRepository.class).findById(ConditionId.of(condition.id()))
+        Criterion staleCriterion = s.bean(CriterionRepository.class).findById(CriterionId.of(criterion.id()))
                 .orElseThrow();
         SaveService save = s.bean(SaveService.class);
-        save.save(Scenario.AUTHOR, s.edit("defect", defect.id(), 1, Map.of("title", "d2")));
+        save.save(Scenario.AUTHOR, s.edit("issue", issue.id(), 1, Map.of("title", "i2")));
+        save.save(Scenario.AUTHOR, s.edit("spec", spec.id(), 1, Map.of("title", "sp2")));
         save.save(Scenario.AUTHOR, s.edit("task", task.id(), 1, Map.of("title", "t2")));
-        save.save(Scenario.AUTHOR, s.edit("condition", condition.id(), 1, Map.of("condition_text", "changed")));
+        save.save(Scenario.AUTHOR, s.edit("criterion", criterion.id(), 1, Map.of("criterion_text", "changed")));
         Rows rows = s.bean(Rows.class);
 
-        // a write runs inside the scope of its actor (the rows are audited with it)
         assertThat(Expect.failure(() -> ScopedValue.where(ActorScope.CURRENT, AuthorId.of(Scenario.AUTHOR))
-                .call(() -> rows.saveDefect(staleDefect)), ConflictCode.VERSION_CONFLICT).args())
-                .containsExactly("defect", defect.id(), "1", "2");
+                .call(() -> rows.saveIssue(staleIssue)), ConflictCode.VERSION_CONFLICT).args())
+                .containsExactly("issue", issue.id(), "1", "2");
+        assertThat(Expect.failure(() -> ScopedValue.where(ActorScope.CURRENT, AuthorId.of(Scenario.AUTHOR))
+                .call(() -> rows.saveSpec(staleSpec)), ConflictCode.VERSION_CONFLICT).args())
+                .containsExactly("spec", spec.id(), "1", "2");
         assertThat(Expect.failure(() -> ScopedValue.where(ActorScope.CURRENT, AuthorId.of(Scenario.AUTHOR))
                 .call(() -> rows.saveTask(staleTask)), ConflictCode.VERSION_CONFLICT).args())
                 .containsExactly("task", task.id(), "1", "2");
         assertThat(Expect.failure(() -> ScopedValue.where(ActorScope.CURRENT, AuthorId.of(Scenario.AUTHOR))
-                .call(() -> rows.saveCondition(staleCondition)), ConflictCode.VERSION_CONFLICT).args())
-                .containsExactly("condition", condition.id(), "1", "2");
-        // nothing was written by the refused saves
-        assertThat(s.defect(defect.id()).title()).isEqualTo("d2");
+                .call(() -> rows.saveCriterion(staleCriterion)), ConflictCode.VERSION_CONFLICT).args())
+                .containsExactly("criterion", criterion.id(), "1", "2");
+        assertThat(s.issue(issue.id()).title()).isEqualTo("i2");
     }
 
     @Test
-    @DisplayName("SVC-PRN-07: only the one save of the rows makes a VERSION_CONFLICT of a save: no operation has a copy that could put a placeholder in its arguments; the one other maker is CommonCodeService (TXF-002), whose conditional update of a common_code row is no row of Rows (defect, task, condition) and whose arguments are another shape (common_code, group/code, versions)")
+    @DisplayName("SVC-PRN-07: only Rows.java and CommonCodeService.java make a VERSION_CONFLICT")
     void prn07_oneVersionConflictOfASave() throws java.io.IOException {
         try (Stream<Path> files = Files.walk(Path.of("src", "main", "java"))) {
             List<String> makers = files.filter(file -> file.toString().endsWith(".java")).filter(file -> {
@@ -209,29 +201,26 @@ class PrinciplesTest {
         }
     }
 
-    // ------------------------------------------------------------------------------------------ 2.6 input checks
-
     static Stream<Arguments> batchOperationsWithoutAKey() {
         String reason = Scenario.REASON;
-        // changed: the operations are the records of the one entry (the text form of ops is gone), and a missing key and a
-        // JSON null are the same null of the record (the former pair of cases of a missing and a null "to" is one case)
         return Stream.of(
                 Arguments.of(new BatchOpInput.Transition("task", "X-T-0001", 1L, null, reason, null, null, null, null),
                         "ops[0].to", "transition"),
-                Arguments.of(new BatchOpInput.Transition("task", "X-T-0001", null, "REPORTED_DONE", reason, null, null,
+                Arguments.of(new BatchOpInput.Transition("task", "X-T-0001", null, "COMPLETED", reason, null, null,
                         null, null), "ops[0].expected_version", "transition"),
-                Arguments.of(new BatchOpInput.RecordFix("X-D-0001", "r", null, reason, null, null, null, null, null,
-                        null), "ops[0].commit_sha", "record_fix"),
-                Arguments.of(new BatchOpInput.RecordCase("X-D-0001", null, reason, null, null, null, null),
+                Arguments.of(new BatchOpInput.RecordDeliverable("issue", "X-I-0001", "code_change", null, reason, null,
+                        "Deliverable summary", null, null, null, null, null), "ops[0].deliverable_ref",
+                        "record_deliverable"),
+                Arguments.of(new BatchOpInput.RecordCase("X-I-0001", null, reason, null, null, null, null),
                         "ops[0].observation", "record_case"),
-                Arguments.of(new BatchOpInput.Link("defect_task", "X-D-0001", null, reason, null), "ops[0].b", "link"),
+                Arguments.of(new BatchOpInput.Link("issue_task", "X-I-0001", null, reason, null), "ops[0].b", "link"),
                 Arguments.of(new BatchOpInput.Correct(null, reason, null), "ops[0].history_id", "correct"),
-                Arguments.of(new BatchOpInput.Save("defect", null, reason, null, null), "ops[0].fields", "save"));
+                Arguments.of(new BatchOpInput.Save("issue", null, reason, null, null), "ops[0].fields", "save"));
     }
 
     @ParameterizedTest(name = "{1} of a {2}")
     @MethodSource("batchOperationsWithoutAKey")
-    @DisplayName("SVC-PRN-10: a required key that is missing (null) is REQUIRED on its path in the request, the failure names the operation, and nothing is written (changed: the operations are built as records with a null for the missing key)")
+    @DisplayName("SVC-PRN-10: a required key that is missing (null) is REQUIRED on its path in the request, the failure names the operation, and nothing is written")
     void prn10_missingKey(BatchOpInput operation, String path, String op, Scenario s) {
         ValidationException refused = (ValidationException) Expect.failure(() -> s.bean(BatchService.class)
                 .batch(Scenario.AUTHOR, Scenario.uuid(), List.of(operation)), ValidationCode.VALIDATION_FAILED);
@@ -240,8 +229,6 @@ class PrinciplesTest {
         assertThat(refused.issues().getFirst().reason()).isEqualTo(ValidationReason.REQUIRED);
         assertThat(refused.details()).containsEntry("op_index", List.of("1")).containsEntry("op", List.of(op));
     }
-
-    // ------------------------------------------------------------------------------------------ 2.5 exceptions
 
     @Test
     @DisplayName("SVC-PRN-11: finishing a receipt that was never reserved is an INTEGRITY_VIOLATION of the infrastructure, not an IllegalStateException")
@@ -267,9 +254,8 @@ class PrinciplesTest {
         var granted = whoami.whoami(Scenario.AUTHOR, Channel.AUTHOR);
         assertThat(granted.authorFormatOk()).isTrue();
         assertThat(granted.author()).isEqualTo(Scenario.AUTHOR);
-        // the author of the scenarios has the grants of every scenario of the context: those of this project are four
         assertThat(granted.grants().stream().filter(grant -> Objects.equals(grant.project(), s.projectId()))
-                .map(WhoamiService.GrantView::scope).toList()).containsExactlyInAnyOrder("defect", "task", "fix",
-                        "verify");
+                .map(WhoamiService.GrantView::scope).toList()).containsExactlyInAnyOrder("issue", "spec", "task",
+                        "deliverable", "verify");
     }
 }

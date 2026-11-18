@@ -41,7 +41,7 @@ class AttachmentStartCheckTest {
     @DisplayName("ATA-014: the start check fails when the key file of a current row is missing, naming the key id and never the key; after the body is written under the active key the old key file is not needed")
     void ata014_theStartCheckAndTheKeyFiles(Scenario s) throws IOException {
         LedgerAppContext ctx = s.ctx();
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         AttachmentStartCheck startCheck = s.bean(AttachmentStartCheck.class);
         AttachmentProperties properties = s.bean(AttachmentProperties.class);

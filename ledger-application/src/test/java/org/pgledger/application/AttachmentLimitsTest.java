@@ -34,8 +34,8 @@ class AttachmentLimitsTest {
     @Test
     @DisplayName("ATA-010: a file over the limit, a third open upload and a begin over the budget of the open uploads are refused with ARTIFACT_LIMIT and no row; the accepted ones keep their size")
     void ata010_limitsAndTheStagingBudget(Scenario s) {
-        String actor = s.actorWith("defect");
-        String other = s.actorWith("defect");
+        String actor = s.actorWith("issue");
+        String other = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] first = Uploads.body(KIB, 1);
         byte[] second = Uploads.body(KIB, 2);

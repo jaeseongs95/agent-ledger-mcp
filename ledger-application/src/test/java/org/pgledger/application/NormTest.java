@@ -23,8 +23,8 @@ import org.pgledger.application.support.LedgerServiceTest;
 import org.pgledger.application.support.Scenario;
 import org.pgledger.application.write.RecordCaseCommand;
 import org.pgledger.application.write.RecordCaseService;
-import org.pgledger.application.write.RecordFixCommand;
-import org.pgledger.application.write.RecordFixService;
+import org.pgledger.application.write.RecordDeliverableCommand;
+import org.pgledger.application.write.RecordDeliverableService;
 import org.pgledger.application.write.ReviewService;
 import org.pgledger.application.write.SaveCommand;
 import org.pgledger.application.write.SaveService;
@@ -53,12 +53,23 @@ class NormTest {
 
     static Stream<Blank> blankOptionalFields() {
         return Stream.of(
-                new Blank("defect owner_actor_id", s -> {
-                    var fields = s.defectFields("d");
+                new Blank("issue owner_actor_id", s -> {
+                    var fields = s.issueFields("i");
                     fields.put("owner_actor_id", "  ");
-                    s.bean(SaveService.class).save(Scenario.AUTHOR, s.create("defect", null, fields));
+                    s.bean(SaveService.class).save(Scenario.AUTHOR, s.create("issue", null, fields));
                     return s.projectId();
-                }, "SELECT COUNT(*) FROM defect WHERE project_id = ? AND owner_actor_id IS NULL"),
+                }, "SELECT COUNT(*) FROM issue WHERE project_id = ? AND owner_actor_id IS NULL"),
+                new Blank("spec parent_id, priority, owner, origin_ref, origin_quote", s -> {
+                    var fields = s.specFields("sp");
+                    fields.put("parent_id", " ");
+                    fields.put("priority", "");
+                    fields.put("owner_actor_id", " ");
+                    fields.put("origin_ref", "");
+                    fields.put("origin_quote", "  ");
+                    s.bean(SaveService.class).save(Scenario.AUTHOR, s.create("spec", null, fields));
+                    return s.projectId();
+                }, "SELECT COUNT(*) FROM spec WHERE project_id = ? AND parent_id IS NULL AND priority IS NULL "
+                        + "AND owner_actor_id IS NULL AND origin_ref IS NULL AND origin_quote IS NULL"),
                 new Blank("task owner, origin_ref, origin_quote", s -> {
                     var fields = s.taskFields("t");
                     fields.put("owner_actor_id", "");
@@ -68,36 +79,37 @@ class NormTest {
                     return s.projectId();
                 }, "SELECT COUNT(*) FROM task WHERE project_id = ? AND owner_actor_id IS NULL "
                         + "AND origin_ref IS NULL AND origin_quote IS NULL"),
-                new Blank("condition goal_label", s -> {
-                    var fields = s.conditionFields("r", "c");
+                new Blank("criterion goal_label", s -> {
+                    var fields = s.criterionFields("r", "c");
                     fields.put("goal_label", " ");
-                    s.bean(SaveService.class).save(Scenario.AUTHOR, s.create("condition", s.conditionId("1"), fields));
+                    s.bean(SaveService.class).save(Scenario.AUTHOR, s.create("criterion", s.criterionId("1"), fields));
                     return s.projectId();
-                }, "SELECT COUNT(*) FROM release_condition WHERE project_id = ? AND goal_label IS NULL"),
-                new Blank("case evidence and user_quote", s -> {
-                    SaveResult d = s.newDefect("d");
-                    s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(Scenario.uuid(), d.id(),
-                            "seen", Scenario.REASON, " ", "", null));
-                    return d.id();
-                }, "SELECT COUNT(*) FROM defect_case WHERE defect_id = ? AND evidence IS NULL AND user_quote IS NULL"),
-                new Blank("fix branch and ci_ref", s -> {
-                    SaveResult d = s.newDefect("d");
-                    s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR, new RecordFixCommand(Scenario.uuid(), d.id(),
-                            "repo/e2e", Scenario.commit('a'), Scenario.REASON, "  ", "", "", "", null));
-                    return d.id();
-                }, "SELECT COUNT(*) FROM defect_fix WHERE defect_id = ? AND branch IS NULL AND ci_ref IS NULL "
-                        + "AND ci_conclusion IS NULL"),
+                }, "SELECT COUNT(*) FROM milestone_criterion WHERE project_id = ? AND goal_label IS NULL"),
+                new Blank("case evidence and source_quote", s -> {
+                    SaveResult i = s.newIssue("i");
+                    s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(Scenario.uuid(),
+                            i.id(), "seen", Scenario.REASON, " ", "", null));
+                    return i.id();
+                }, "SELECT COUNT(*) FROM issue_case WHERE issue_id = ? AND evidence IS NULL AND source_quote IS NULL"),
+                new Blank("deliverable location and check_ref", s -> {
+                    SaveResult i = s.newIssue("i");
+                    s.bean(RecordDeliverableService.class).recordDeliverable(Scenario.AUTHOR,
+                            new RecordDeliverableCommand(Scenario.uuid(), "issue", i.id(), "code_change",
+                                    Scenario.ref('a'), Scenario.REASON, "  ", "Deliverable summary", "", "", "", null));
+                    return i.id();
+                }, "SELECT COUNT(*) FROM deliverable WHERE target_entity = 'ISSUE' AND target_id = ? "
+                        + "AND location IS NULL AND check_ref IS NULL AND check_result IS NULL"),
                 new Blank("transition evidence_sha256 and merged_into", s -> {
-                    SaveResult d = s.newDefect("d");
-                    s.bean(TransitionService.class).transition(Scenario.AUTHOR, new TransitionCommand(Scenario.uuid(), "defect",
-                            d.id(), 1L, "DISPUTED", Scenario.REASON, Scenario.EVIDENCE, " ", " "));
-                    return d.id();
-                }, "SELECT COUNT(*) FROM history WHERE entity = 'DEFECT' AND entity_id = ? AND op = 'TRANSITION' "
+                    SaveResult i = s.newIssue("i");
+                    s.bean(TransitionService.class).transition(Scenario.AUTHOR, new TransitionCommand(Scenario.uuid(),
+                            "issue", i.id(), 1L, "DISPUTED", Scenario.REASON, Scenario.EVIDENCE, " ", " "));
+                    return i.id();
+                }, "SELECT COUNT(*) FROM history WHERE entity = 'ISSUE' AND entity_id = ? AND op = 'TRANSITION' "
                         + "AND evidence_sha256 IS NULL"),
                 new Blank("grant note", s -> {
                     s.ctx().enroll("claude:note");
                     s.bean(GrantService.class).grant(new GrantService.GrantCommand("claude:note", s.projectId(),
-                            List.of("defect"), null, "   "), TestOwners.OWNER);
+                            List.of("issue"), null, "   "), TestOwners.OWNER);
                     return "claude:note";
                 }, "SELECT COUNT(*) FROM session_grant WHERE author_id = ? AND note IS NULL"));
     }
@@ -111,13 +123,14 @@ class NormTest {
     }
 
     @Test
-    @DisplayName("SVC-NORM-01: a blank ci_ref with a ci_conclusion is a validation failure")
-    void norm01_conclusionNeedsAReference(Scenario s) {
-        SaveResult d = s.newDefect("d");
-        ValidationException e = (ValidationException) Expect.failure(() -> s.bean(RecordFixService.class).recordFix(
-                Scenario.AUTHOR, new RecordFixCommand(Scenario.uuid(), d.id(), "repo/e2e", Scenario.commit('a'), Scenario.REASON,
-                        null, "   ", "success", null, null)), ValidationCode.VALIDATION_FAILED);
-        assertThat(e.issues().get(0).path()).isEqualTo("ci_ref");
+    @DisplayName("SVC-NORM-01: a blank check_ref with a check_result is a validation failure")
+    void norm01_resultNeedsAReference(Scenario s) {
+        SaveResult i = s.newIssue("i");
+        ValidationException e = (ValidationException) Expect.failure(() -> s.bean(RecordDeliverableService.class)
+                .recordDeliverable(Scenario.AUTHOR, new RecordDeliverableCommand(Scenario.uuid(), "issue", i.id(),
+                        "code_change", Scenario.ref('a'), Scenario.REASON, "repo/e2e", "Deliverable summary", "   ",
+                        "passed", null, null)), ValidationCode.VALIDATION_FAILED);
+        assertThat(e.issues().get(0).path()).isEqualTo("check_ref");
     }
 
     /** A required field given blank: the write fails with this code and names this path. */
@@ -136,43 +149,53 @@ class NormTest {
 
     static Stream<Required> blankRequiredFields() {
         return Stream.of(
-                new Required("defect title", s -> s.bean(SaveService.class).save(Scenario.AUTHOR,
-                        s.create("defect", null, with(s.defectFields("d"), "title", "  "))),
+                new Required("issue title", s -> s.bean(SaveService.class).save(Scenario.AUTHOR,
+                        s.create("issue", null, with(s.issueFields("i"), "title", "  "))),
                         ValidationCode.VALIDATION_FAILED, "title"),
-                // revised by REH3: behavior, root_cause, purpose, success_condition and condition_text may be empty (REH3-TXT-01)
-                new Required("condition release", s -> s.bean(SaveService.class).save(Scenario.AUTHOR,
-                        s.create("condition", s.conditionId("1"), with(s.conditionFields("r", "c"), "release", ""))),
-                        ValidationCode.VALIDATION_FAILED, "release"),
-                new Required("condition code", s -> s.bean(SaveService.class).save(Scenario.AUTHOR,
-                        s.create("condition", s.conditionId("1"), with(s.conditionFields("r", "c"), "code", " "))),
-                        ValidationCode.VALIDATION_FAILED, "condition_code"),
+                new Required("spec title", s -> s.bean(SaveService.class).save(Scenario.AUTHOR,
+                        s.create("spec", null, with(s.specFields("sp"), "title", "  "))),
+                        ValidationCode.VALIDATION_FAILED, "title"),
+                new Required("criterion milestone_name", s -> s.bean(SaveService.class).save(Scenario.AUTHOR,
+                        s.create("criterion", s.criterionId("1"),
+                                with(s.criterionFields("r", "c"), "milestone_name", ""))),
+                        ValidationCode.VALIDATION_FAILED, "milestone_name"),
+                new Required("criterion code", s -> s.bean(SaveService.class).save(Scenario.AUTHOR,
+                        s.create("criterion", s.criterionId("1"), with(s.criterionFields("r", "c"), "code", " "))),
+                        ValidationCode.VALIDATION_FAILED, "criterion_code"),
                 new Required("case observation", s -> s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR,
-                        new RecordCaseCommand(Scenario.uuid(), s.newDefect("d").id(), "   ", Scenario.REASON, null, null, null)),
-                        ValidationCode.VALIDATION_FAILED, "observation"),
-                new Required("fix repo", s -> s.bean(RecordFixService.class).recordFix(Scenario.AUTHOR,
-                        new RecordFixCommand(Scenario.uuid(), s.newDefect("d").id(), " ", Scenario.commit('a'), Scenario.REASON,
-                                null, null, null, null, null)), ValidationCode.VALIDATION_FAILED, "repo"),
+                        new RecordCaseCommand(Scenario.uuid(), s.newIssue("i").id(), "   ", Scenario.REASON, null, null,
+                                null)), ValidationCode.VALIDATION_FAILED, "observation"),
+                new Required("deliverable ref", s -> s.bean(RecordDeliverableService.class).recordDeliverable(
+                        Scenario.AUTHOR, new RecordDeliverableCommand(Scenario.uuid(), "issue", s.newIssue("i").id(),
+                                "code_change", "   ", Scenario.REASON, null, "Deliverable summary", null, null, null,
+                                null)),
+                        ValidationCode.VALIDATION_FAILED, "deliverable_ref"),
+                new Required("deliverable summary", s -> s.bean(RecordDeliverableService.class).recordDeliverable(
+                        Scenario.AUTHOR, new RecordDeliverableCommand(Scenario.uuid(), "issue", s.newIssue("i").id(),
+                                "code_change", Scenario.ref('a'), Scenario.REASON, null, "   ", null, null, null,
+                                null)),
+                        ValidationCode.VALIDATION_FAILED, "deliverable_summary"),
                 new Required("reason", s -> s.bean(SaveService.class).save(Scenario.AUTHOR,
-                        new SaveCommand(Scenario.uuid(), "defect", null, 0L, Fields.of(s.defectFields("d")), "          ")),
-                        ValidationCode.REASON_INVALID, "reason"));
+                        new SaveCommand(Scenario.uuid(), "issue", null, 0L, Fields.of(s.issueFields("i")),
+                                "          ")), ValidationCode.REASON_INVALID, "reason"));
     }
 
     @ParameterizedTest
     @MethodSource("blankRequiredFields")
-    @DisplayName("SVC-NORM-02: a blank required field (title, release, code, observation, repo, reason) is refused and named; the five long texts that may be empty follow REH3-TXT-01")
+    @DisplayName("SVC-NORM-02: a blank required field is refused and named; long descriptive texts that may be empty follow REH3-TXT-01")
     void norm02_blankRequiredFields(Required required, Scenario s) {
         LedgerException e = Expect.failure(() -> required.write().accept(s), required.code());
         assertThat(((ValidationException) e).issues().get(0).path()).isEqualTo(required.path());
-        assertThat(s.count("SELECT COUNT(*) FROM defect_case WHERE defect_id IN (SELECT id FROM defect "
+        assertThat(s.count("SELECT COUNT(*) FROM issue_case WHERE issue_id IN (SELECT id FROM issue "
                 + "WHERE project_id = ?)", s.projectId())).isZero();
     }
 
     @Test
     @DisplayName("SVC-NORM-03: a blank evidence_uri equals none")
     void norm03_blankEvidence(Scenario s) {
-        SaveResult d = s.sourceFixedDefect("d");
-        Expect.failure(() -> s.bean(ReviewService.class).review(Scenario.REVIEWER, new TransitionCommand(Scenario.uuid(),
-                "defect", d.id(), 2L, "VERIFIED", Scenario.REASON, "   ", null, null)),
+        SaveResult i = s.resolvedIssue("i");
+        Expect.failure(() -> s.bean(ReviewService.class).review(Scenario.REVIEWER, new TransitionCommand(
+                Scenario.uuid(), "issue", i.id(), 2L, "VERIFIED", Scenario.REASON, "   ", null, null)),
                 TransitionCode.EVIDENCE_REQUIRED);
     }
 

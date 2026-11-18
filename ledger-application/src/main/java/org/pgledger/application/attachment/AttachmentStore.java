@@ -662,7 +662,11 @@ public class AttachmentStore {
                 posix.setPermissions(PosixFilePermissions.fromString(READ_ONLY_MODE));
             }
         } else if (views.contains("dos")) {
-            Files.getFileAttributeView(file, DosFileAttributeView.class, LinkOption.NOFOLLOW_LINKS).setReadOnly(true);
+            DosFileAttributeView dos = Files.getFileAttributeView(file, DosFileAttributeView.class,
+                    LinkOption.NOFOLLOW_LINKS);
+            if (dos != null) {
+                dos.setReadOnly(true);
+            }
         }
     }
 
@@ -675,7 +679,11 @@ public class AttachmentStore {
                 posix.setPermissions(PosixFilePermissions.fromString(WRITABLE_MODE));
             }
         } else if (views.contains("dos")) {
-            Files.getFileAttributeView(file, DosFileAttributeView.class, LinkOption.NOFOLLOW_LINKS).setReadOnly(false);
+            DosFileAttributeView dos = Files.getFileAttributeView(file, DosFileAttributeView.class,
+                    LinkOption.NOFOLLOW_LINKS);
+            if (dos != null) {
+                dos.setReadOnly(false);
+            }
         }
     }
 

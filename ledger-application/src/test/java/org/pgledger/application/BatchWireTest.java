@@ -12,7 +12,7 @@ import org.pgledger.domain.model.BatchOpKind;
 import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.json.JsonMapper;
 
-/** DOM-025 (the application's side): the wire records of a batch carry exactly the keys the domain lists per kind. */
+/** DOM-025 (application side): wire records of a batch carry the exact keys of {@link BatchOpKind}. */
 class BatchWireTest {
 
     private static final JsonMapper JSON = JsonMapper.builder()
@@ -20,12 +20,12 @@ class BatchWireTest {
 
     private static BatchOpInput filled(BatchOpKind kind) {
         return switch (kind) {
-            case SAVE -> new BatchOpInput.Save("defect", Fields.of("title", "x"), "reason", "id", 1L);
-            case TRANSITION -> new BatchOpInput.Transition("defect", "id", 1L, "OPEN", "reason", "uri", "sha",
+            case SAVE -> new BatchOpInput.Save("issue", Fields.of("title", "x"), "reason", "id", 1L);
+            case TRANSITION -> new BatchOpInput.Transition("issue", "id", 1L, "OPEN", "reason", "uri", "sha",
                     "target", "attachment");
-            case RECORD_FIX -> new BatchOpInput.RecordFix("defect", "repo", "commit", "reason", "branch", "ci",
-                    "success", "time", true, "attachment");
-            case RECORD_CASE -> new BatchOpInput.RecordCase("defect", "seen", "reason", "evidence", "quote", "time",
+            case RECORD_DELIVERABLE -> new BatchOpInput.RecordDeliverable("issue", "id", "code_change", "ref", "reason",
+                    "loc", "summary", "check", "passed", "time", true, "attachment");
+            case RECORD_CASE -> new BatchOpInput.RecordCase("issue", "seen", "reason", "evidence", "quote", "time",
                     "attachment");
             case LINK -> new BatchOpInput.Link("kind", "a", "b", "reason", false);
             case CORRECT -> new BatchOpInput.Correct(1L, "reason", "attachment");

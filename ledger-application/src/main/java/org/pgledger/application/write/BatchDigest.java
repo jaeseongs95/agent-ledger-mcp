@@ -8,10 +8,7 @@ import org.pgledger.domain.value.Patch;
 import org.pgledger.domain.value.Sha256;
 
 /**
- * The digest of the whole content of a batch, which the receipt of the batch key compares: the operations in their order, each
- * with its kind and every value as the caller sent it. The same key with the same operations is the same batch again; an
- * operation added, removed, changed or moved, or another tool under the key, is another request (OPERATION_CONFLICT). A key of
- * {@code fields} that is written as a cleared field is told apart from a key that is left out.
+ * Canonical digest of all operations in a {@code ledger_batch} request for receipt idempotency.
  */
 final class BatchDigest {
 
@@ -37,14 +34,15 @@ final class BatchDigest {
                     .text("to", t.to()).text("reason", t.reason()).text("evidence_uri", t.evidenceUri())
                     .text("evidence_sha256", t.evidenceSha256()).text("merged_into", t.mergedInto())
                     .text("attachment_id", t.attachmentId());
-            case BatchOpInput.RecordFix f -> CanonicalPayload.Fields.empty().text("op", "record_fix")
-                    .text("defect_id", f.defectId()).text("repo", f.repo()).text("commit_sha", f.commitSha())
-                    .text("reason", f.reason()).text("branch", f.branch()).text("ci_ref", f.ciRef())
-                    .text("ci_conclusion", f.ciConclusion()).text("ci_completed_at", f.ciCompletedAt())
-                    .text("mark_source_fixed", text(f.markSourceFixed())).text("attachment_id", f.attachmentId());
+            case BatchOpInput.RecordDeliverable d -> CanonicalPayload.Fields.empty().text("op", "record_deliverable")
+                    .text("target_entity", d.targetEntity()).text("target_id", d.targetId()).text("kind", d.kind())
+                    .text("deliverable_ref", d.deliverableRef()).text("reason", d.reason())
+                    .text("location", d.location()).text("summary", d.summary()).text("check_ref", d.checkRef())
+                    .text("check_result", d.checkResult()).text("checked_at", d.checkedAt())
+                    .text("mark_done", text(d.markDone())).text("attachment_id", d.attachmentId());
             case BatchOpInput.RecordCase c -> CanonicalPayload.Fields.empty().text("op", "record_case")
-                    .text("defect_id", c.defectId()).text("observation", c.observation()).text("reason", c.reason())
-                    .text("evidence", c.evidence()).text("user_quote", c.userQuote())
+                    .text("issue_id", c.issueId()).text("observation", c.observation()).text("reason", c.reason())
+                    .text("evidence", c.evidence()).text("source_quote", c.sourceQuote())
                     .text("observed_at", c.observedAt()).text("attachment_id", c.attachmentId());
             case BatchOpInput.Link l -> CanonicalPayload.Fields.empty().text("op", "link").text("kind", l.kind())
                     .text("a", l.a()).text("b", l.b()).text("reason", l.reason()).text("remove", text(l.remove()));
@@ -61,7 +59,6 @@ final class BatchDigest {
         CanonicalPayload.Fields fields = CanonicalPayload.Fields.empty();
         for (Map.Entry<String, Patch<String>> key : input.mentioned().entrySet()) {
             String value = key.getValue().orNull();
-            // a field written as cleared has an empty list, a field with a text has the text
             fields = value == null ? fields.with(key.getKey(), new CanonicalPayload.Items(List.of()))
                     : fields.text(key.getKey(), value);
         }

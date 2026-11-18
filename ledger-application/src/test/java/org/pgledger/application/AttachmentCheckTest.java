@@ -67,7 +67,7 @@ class AttachmentCheckTest {
     @DisplayName("ATA-008: orphans after and before the grace, a restore, a missing, a damaged and an unreferenced attachment, the purge and its audit row")
     void ata008_theCheck(Scenario s) throws IOException {
         LedgerAppContext ctx = s.ctx();
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         AttachmentCheck check = s.bean(AttachmentCheck.class);
         AttachmentStore store = s.bean(AttachmentStore.class);

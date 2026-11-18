@@ -73,7 +73,7 @@ class AttachmentServiceTest {
     @DisplayName("ATA-001: begin, three chunks of 256, 256 and 88 KiB, finish, status and read in pages give the body and its declared SHA-256")
     void ata001_theNormalUpload(Scenario s) {
         LedgerAppContext ctx = s.ctx();
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] body = Uploads.body(600 * 1024, 11);
 
@@ -124,7 +124,7 @@ class AttachmentServiceTest {
     @Test
     @DisplayName("ATA-001: an empty body and a body of one byte are uploads like any other")
     void ata001_smallBodies(Scenario s) {
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
 
         Finished empty = flow.finish(actor, flow.begin(actor, Uploads.begin(new byte[0])).attachmentId());
@@ -140,7 +140,7 @@ class AttachmentServiceTest {
     @Test
     @DisplayName("ATA-001: any author with a live grant may read an attachment; an upload of another author is not found")
     void ata001_readersAndOwners(Scenario s) {
-        String owner = s.actorWith("defect");
+        String owner = s.actorWith("issue");
         String other = s.actorWith("task");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] body = Uploads.body(500, 12);
@@ -163,7 +163,7 @@ class AttachmentServiceTest {
     @DisplayName("ATA-002: out of order, the last chunk again (idempotent), another content for it, an earlier sequence, a wrong chunk hash")
     void ata002_theRulesOfTheSequence(Scenario s) throws IOException {
         LedgerAppContext ctx = s.ctx();
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] body = Uploads.body(1000, 21);
         List<byte[]> parts = Uploads.parts(body, 100, 200, 300);
@@ -204,7 +204,7 @@ class AttachmentServiceTest {
     @DisplayName("ATA-003: a declared SHA-256 that is not the bytes' fails the finish with ARTIFACT_HASH_MISMATCH; the bytes and the row stay and the finish fails again the same way")
     void ata003_aWrongDeclaredHash(Scenario s) throws IOException {
         LedgerAppContext ctx = s.ctx();
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] body = Uploads.body(600, 31);
         Begin wrong = new Begin("op-" + Scenario.uuid(),
@@ -229,7 +229,7 @@ class AttachmentServiceTest {
     @DisplayName("ATA-003: fewer bytes than declared fail the finish with ARTIFACT_INCOMPLETE; after the missing chunk is sent the same upload finishes")
     void ata003_aMissingChunkCanBeSentAfterTheFailedFinish(Scenario s) throws IOException {
         LedgerAppContext ctx = s.ctx();
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] body = Uploads.body(600, 33);
         List<byte[]> parts = Uploads.parts(body, 200, 200, 200);
@@ -252,7 +252,7 @@ class AttachmentServiceTest {
     @DisplayName("ATA-003: a chunk that would pass the declared size is refused with ARTIFACT_HASH_MISMATCH and nothing is appended")
     void ata003_aChunkPastTheDeclaredSizeIsRefused(Scenario s) {
         LedgerAppContext ctx = s.ctx();
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] declared = Uploads.body(300, 34);
         String id = flow.begin(actor, Uploads.begin(declared)).files().getFirst().uploadId();
@@ -269,7 +269,7 @@ class AttachmentServiceTest {
     @DisplayName("ATA-013: a chunk appended and not recorded (the record step failed once): finish answers ARTIFACT_INCOMPLETE, the same chunk is applied once, finish passes")
     void ata013_theTailOfAFailedChunk(Scenario s) throws IOException {
         LedgerAppContext ctx = s.ctx();
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         AttachmentFlow failing = new AttachmentFlow(new FailingUploadService(ctx, Step.RECORD_CHUNK),
                 s.bean(AttachmentStore.class));
@@ -305,7 +305,7 @@ class AttachmentServiceTest {
     @DisplayName("ATA-013: a tail that is another chunk is not the one sent again: ARTIFACT_CHUNK_CONFLICT, and the tail is not cut off")
     void ata013_anotherChunkOverATail(Scenario s) throws IOException {
         LedgerAppContext ctx = s.ctx();
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         AttachmentFlow failing = new AttachmentFlow(new FailingUploadService(ctx, Step.RECORD_CHUNK),
                 s.bean(AttachmentStore.class));
@@ -330,7 +330,7 @@ class AttachmentServiceTest {
     @DisplayName("ATA-028: the end segment was appended and the transaction of the finish failed: finish again finds the tail to be the end segment, appends nothing and passes with the same attachment id")
     void ata028_theEndSegmentTail(Scenario s) throws IOException {
         LedgerAppContext ctx = s.ctx();
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         AttachmentFlow failing = new AttachmentFlow(new FailingUploadService(ctx, Step.COMPLETE_UPLOAD),
                 s.bean(AttachmentStore.class));
@@ -362,7 +362,7 @@ class AttachmentServiceTest {
     @DisplayName("ATA-025: the same operation key with the same content gives the same upload; other content is ARTIFACT_OPERATION_CONFLICT; the request receipt is not used")
     void ata025_beginTwiceWithTheSameOperationKey(Scenario s) {
         LedgerAppContext ctx = s.ctx();
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         String other = s.actorWith("task");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] body = Uploads.body(300, 61);
@@ -392,7 +392,7 @@ class AttachmentServiceTest {
     @Test
     @DisplayName("ATA-025: an operation key is required, and a blank or too long one is refused")
     void ata025_theOperationKeyIsRequired(Scenario s) {
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] body = Uploads.body(10, 64);
 
@@ -408,7 +408,7 @@ class AttachmentServiceTest {
     @Test
     @DisplayName("ATA-026: no purpose and the purpose evidence are accepted; upload, staged and x are refused with ARTIFACT_UNSUPPORTED_PURPOSE and no row")
     void ata026_thePurpose(Scenario s) {
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] body = Uploads.body(10, 71);
 
@@ -440,7 +440,7 @@ class AttachmentServiceTest {
     @DisplayName("ATA-029: while an append holds the lock past the end of the file, the read of another attachment and the status of the same upload answer, and a second chunk gets ARTIFACT_BUSY without waiting")
     void ata029_anAppendDoesNotBlockReadsAndStatus(Scenario s) throws IOException {
         LedgerAppContext ctx = s.ctx();
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] kept = Uploads.body(400, 81);
         Finished keptAttachment = Uploads.upload(flow, actor, kept, 150);
@@ -476,8 +476,8 @@ class AttachmentServiceTest {
     @DisplayName("ATA-012: the check of a record that points to an attachment: an attachment of the writing author passes, one that does not exist or is another author's is ARTIFACT_NOT_FOUND, no id passes")
     void ata012_theAttachmentCheckOfARecord(Scenario s) {
         LedgerAppContext ctx = s.ctx();
-        String actor = s.actorWith("defect");
-        String other = s.actorWith("defect");
+        String actor = s.actorWith("issue");
+        String other = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         AttachmentLinks links = s.bean(AttachmentLinks.class);
         String mine = Uploads.upload(flow, actor, Uploads.body(100, 91)).attachmentId();
@@ -513,7 +513,7 @@ class AttachmentServiceTest {
     @DisplayName("an upload that has expired and was not yet removed takes no chunk and no finish: ARTIFACT_EXPIRED")
     void anExpiredUploadTakesNothing(Scenario s) {
         LedgerAppContext ctx = s.ctx();
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] body = Uploads.body(200, 95);
         List<byte[]> parts = Uploads.parts(body, 100);
@@ -534,7 +534,7 @@ class AttachmentServiceTest {
     @DisplayName("ATA-044: multi-file bundle extends sibling expiry, fails atomically if any file is incomplete, and commits all files together")
     void ata044_multiFileBundleLifecycleAtomicityAndExpiryExtension(Scenario s) {
         LedgerAppContext ctx = s.ctx();
-        String actor = s.actorWith("defect");
+        String actor = s.actorWith("issue");
         AttachmentFlow flow = s.bean(AttachmentFlow.class);
         byte[] report = Uploads.body(300, 101);
         byte[] trace = Uploads.body(250, 102);

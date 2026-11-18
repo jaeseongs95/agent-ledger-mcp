@@ -1,11 +1,11 @@
 package org.pgledger.application.read;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
-import java.util.stream.Collectors;
+import java.util.Set;
 import org.pgledger.database.repository.EntityLookupRepository;
 import org.pgledger.database.repository.EntityLookupRepository.Found;
 import org.pgledger.domain.error.ValidationException;
@@ -15,27 +15,19 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * The state and version of many ids at once, whatever their kind (the check after a write, and the way to get an
- * {@code expected_version}). An id that is both a defect id and a task id gives both items.
+ * Fetches issues, specifications, tasks, and milestone criteria by exact IDs in caller-requested order without
+ * erroring on unknown IDs.
  */
 @Service
 @Transactional(readOnly = true)
 public class GetService {
 
-    /** The most ids one call may ask for. */
     public static final int MAX_IDS = 200;
 
-    /** One found item: its kind (defect, task, condition) and its lifecycle state. */
-    public record Item(String entity, String id, String state, long version, String projectId, String mergedInto) {
+    public record Item(String entity, String id, String projectId, String state, long version, String mergedInto) {
     }
 
-    /** The items in the order of the request, and the ids that are no defect, task or condition. */
     public record Result(List<Item> items, List<String> notFound) {
-
-        public Result {
-            items = List.copyOf(items);
-            notFound = List.copyOf(notFound);
-        }
     }
 
     private final EntityLookupRepository lookup;
@@ -46,34 +38,62 @@ public class GetService {
 
     public Result get(List<String> ids) {
         if (ids == null || ids.isEmpty() || ids.size() > MAX_IDS) {
-            throw ValidationException.invalid("ids", ValidationReason.MUST_HOLD_ITEMS, "1", String.valueOf(MAX_IDS));
+            throw ValidationException.invalid("ids", ValidationReason.MUST_HOLD_ITEMS, "1",
+                    Integer.toString(MAX_IDS));
         }
-        List<String> distinct = List.copyOf(new LinkedHashSet<>(ids));
-        Map<String, Found> defects = byId(lookup.defects(distinct));
-        Map<String, Found> tasks = byId(lookup.tasks(distinct));
-        Map<String, Found> conditions = byId(lookup.conditions(distinct));
+        Set<String> distinct = new LinkedHashSet<>();
+        for (String raw : ids) {
+            if (raw == null || raw.isBlank()) {
+                throw ValidationException.invalid("ids", ValidationReason.MUST_NOT_BE_BLANK);
+            }
+            distinct.add(raw);
+        }
+        List<String> keys = List.copyOf(distinct);
+        Map<String, Found> issues = byId(lookup.issues(keys));
+        Map<String, Found> specs = byId(lookup.specs(keys));
+        Map<String, Found> tasks = byId(lookup.tasks(keys));
+        Map<String, Found> criteria = byId(lookup.criteria(keys));
+
         List<Item> items = new ArrayList<>();
         List<String> missing = new ArrayList<>();
-        for (String id : distinct) {
-            int before = items.size();
-            add(items, HistoryEntity.DEFECT, defects.get(id));
-            add(items, HistoryEntity.TASK, tasks.get(id));
-            add(items, HistoryEntity.CONDITION, conditions.get(id));
-            if (items.size() == before) {
+        for (String id : keys) {
+            boolean found = false;
+            Found issue = issues.get(id);
+            if (issue != null) {
+                items.add(toItem(HistoryEntity.ISSUE, issue));
+                found = true;
+            }
+            Found spec = specs.get(id);
+            if (spec != null) {
+                items.add(toItem(HistoryEntity.SPEC, spec));
+                found = true;
+            }
+            Found task = tasks.get(id);
+            if (task != null) {
+                items.add(toItem(HistoryEntity.TASK, task));
+                found = true;
+            }
+            Found crit = criteria.get(id);
+            if (crit != null) {
+                items.add(toItem(HistoryEntity.CRITERION, crit));
+                found = true;
+            }
+            if (!found) {
                 missing.add(id);
             }
         }
         return new Result(items, missing);
     }
 
-    private static Map<String, Found> byId(List<Found> found) {
-        return found.stream().collect(Collectors.toMap(Found::id, Function.identity()));
+    private static Item toItem(HistoryEntity entity, Found row) {
+        return new Item(entity.token(), row.id(), row.projectId(), row.state(), row.version(), row.mergedInto());
     }
 
-    private static void add(List<Item> items, HistoryEntity entity, Found found) {
-        if (found != null) {
-            items.add(new Item(entity.token(), found.id(), found.state(), found.version(), found.projectId(),
-                    found.mergedInto()));
+    private static Map<String, Found> byId(List<Found> rows) {
+        Map<String, Found> map = new LinkedHashMap<>();
+        for (Found row : rows) {
+            map.put(row.id(), row);
         }
+        return map;
     }
 }

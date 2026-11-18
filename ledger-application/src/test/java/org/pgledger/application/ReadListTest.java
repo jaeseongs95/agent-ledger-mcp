@@ -27,16 +27,17 @@ import org.pgledger.application.read.CatalogService.ProjectsQuery;
 import org.pgledger.application.read.HistoryService;
 import org.pgledger.application.read.HistoryService.HistoryQuery;
 import org.pgledger.application.read.ListService;
-import org.pgledger.application.read.ListService.ConditionsQuery;
-import org.pgledger.application.read.ListService.DefectsQuery;
+import org.pgledger.application.read.ListService.CriteriaQuery;
+import org.pgledger.application.read.ListService.IssuesQuery;
+import org.pgledger.application.read.ListService.SpecsQuery;
 import org.pgledger.application.read.ListService.TasksQuery;
 import org.pgledger.application.read.Page;
 import org.pgledger.application.read.SearchService;
 import org.pgledger.application.read.SearchService.SearchQuery;
 import org.pgledger.application.support.Expect;
 import org.pgledger.application.support.Fields;
-import org.pgledger.application.support.LedgerServiceTest;
 import org.pgledger.application.support.LedgerAppContext;
+import org.pgledger.application.support.LedgerServiceTest;
 import org.pgledger.application.support.Scenario;
 import org.pgledger.application.write.BatchOpInput;
 import org.pgledger.application.write.BatchService;
@@ -46,17 +47,16 @@ import org.pgledger.domain.error.ValidationException;
 
 /**
  * SVC side of MCR-002 .. MCR-009: every list of the read tools pages the same way (row limit, truncated, next
- * cursor, stability, damaged cursors). One fixture of 137 rows per kind is built once for the whole class (the
- * database context keeps it).
+ * cursor, stability, damaged cursors). One fixture of 137 rows per kind is built once for the whole class.
  */
 @LedgerServiceTest
 class ReadListTest {
 
     private static final int ROWS = 137;
 
-    /** The eight list tools. */
+    /** The nine list tools. */
     enum Tool {
-        DEFECTS, TASKS, CONDITIONS, HISTORY, SEARCH, ATTENTION, PROJECTS, CODES
+        ISSUES, SPECS, TASKS, CRITERIA, HISTORY, SEARCH, ATTENTION, PROJECTS, CODES
     }
 
     /** How a cursor is damaged. */
@@ -69,7 +69,9 @@ class ReadListTest {
             Scenario s = new Scenario(ctx);
             List<BatchOpInput> ops = new ArrayList<>();
             IntStream.rangeClosed(1, ROWS).forEach(i -> {
-                ops.add(new BatchOpInput.Save("defect", Fields.of(s.defectFields("row " + i)), Scenario.REASON, null,
+                ops.add(new BatchOpInput.Save("issue", Fields.of(s.issueFields("row " + i)), Scenario.REASON, null,
+                        null));
+                ops.add(new BatchOpInput.Save("spec", Fields.of(s.specFields("row " + i)), Scenario.REASON, null,
                         null));
                 ops.add(new BatchOpInput.Save("task", Fields.of(s.taskFields("row " + i)), Scenario.REASON, null, null));
             });
@@ -77,12 +79,13 @@ class ReadListTest {
                 s.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(), ops.subList(from, Math.min(from + 100,
                         ops.size())));
             }
-            List<BatchOpInput> conditions = IntStream.rangeClosed(1, ROWS).mapToObj(i -> (BatchOpInput)
-                    new BatchOpInput.Save("condition", Fields.of(s.conditionFields("r1", "c" + i)), Scenario.REASON,
-                            s.conditionId(String.format("%04d", i)), null)).toList();
-            s.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(), conditions);
+            List<BatchOpInput> criteria = IntStream.rangeClosed(1, ROWS).mapToObj(i -> (BatchOpInput)
+                    new BatchOpInput.Save("criterion", Fields.of(s.criterionFields("r1", "c" + i)), Scenario.REASON,
+                            s.criterionId(String.format("%04d", i)), null)).toList();
+            s.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(), criteria);
             IntStream.rangeClosed(1, ROWS).forEach(i -> s.bean(ProjectService.class).add(new ProjectCommand(
-                    "list-" + s.code().toLowerCase() + "-" + i, "L" + s.code() + "X" + i, "list project " + i), TestOwners.OWNER));
+                    "list-" + s.code().toLowerCase() + "-" + i, "L" + s.code() + "X" + i, "list project " + i),
+                    TestOwners.OWNER));
             IntStream.rangeClosed(1, ROWS).forEach(i -> s.bean(CommonCodeService.class).set(new CodeCommand(
                     "RELATION_KIND", "LST_" + s.code() + "_" + i, "목록 " + i, null, null, null, 500 + i,
                     "INACTIVE"), TestOwners.OWNER));
@@ -90,18 +93,19 @@ class ReadListTest {
         });
     }
 
-    /** Calls the list of a tool; {@code narrowed} adds one filter, which changes the meaning of a cursor. */
     private static Page<?> call(Scenario s, Tool tool, Number maxRows, String cursor, boolean narrowed) {
         String project = s.projectId();
         return switch (tool) {
-            case DEFECTS -> s.bean(ListService.class).defects(new DefectsQuery(project, narrowed ? "OPEN" : null, null,
+            case ISSUES -> s.bean(ListService.class).issues(new IssuesQuery(project, narrowed ? "OPEN" : null, null,
+                    null, null, null, maxRows, cursor));
+            case SPECS -> s.bean(ListService.class).specs(new SpecsQuery(project, narrowed ? "PLANNED" : null, null,
                     null, null, null, maxRows, cursor));
             case TASKS -> s.bean(ListService.class).tasks(new TasksQuery(project, narrowed ? "PLANNED" : null, null,
                     null, maxRows, cursor));
-            case CONDITIONS -> s.bean(ListService.class).conditions(new ConditionsQuery(project, narrowed ? "UNKNOWN"
+            case CRITERIA -> s.bean(ListService.class).criteria(new CriteriaQuery(project, narrowed ? "UNKNOWN"
                     : null, null, maxRows, cursor));
             case HISTORY -> s.bean(HistoryService.class).history(new HistoryQuery(null, null, null, narrowed
-                    ? "defect" : null, null, project, null, null, null, null, null, maxRows, cursor));
+                    ? "issue" : null, null, project, null, null, null, null, null, maxRows, cursor));
             case SEARCH -> s.bean(SearchService.class).search(new SearchQuery(project, null, List.of("row"), null,
                     narrowed ? List.of("MERGED") : null, null, null, maxRows, cursor));
             case ATTENTION -> s.bean(AttentionService.class).attention(new AttentionQuery(project, narrowed
@@ -113,13 +117,14 @@ class ReadListTest {
 
     private static int total(Scenario s, Tool tool) {
         return (int) switch (tool) {
-            case DEFECTS, TASKS, CONDITIONS, ATTENTION -> ROWS;
-            case HISTORY -> s.count("SELECT COUNT(*) FROM history WHERE entity_id IN (SELECT id FROM defect "
+            case ISSUES, SPECS, TASKS, CRITERIA, ATTENTION -> ROWS;
+            case HISTORY -> s.count("SELECT COUNT(*) FROM history WHERE entity_id IN (SELECT id FROM issue "
                     + "WHERE project_id = ?)", s.projectId()) + s.count("SELECT COUNT(*) FROM history WHERE "
-                    + "entity_id IN (SELECT id FROM task WHERE project_id = ?)", s.projectId()) + s.count(
-                    "SELECT COUNT(*) FROM history WHERE entity_id IN (SELECT id FROM release_condition "
-                    + "WHERE project_id = ?)", s.projectId());
-            case SEARCH -> 2L * ROWS;
+                    + "entity_id IN (SELECT id FROM spec WHERE project_id = ?)", s.projectId()) + s.count(
+                    "SELECT COUNT(*) FROM history WHERE entity_id IN (SELECT id FROM task WHERE project_id = ?)",
+                    s.projectId()) + s.count("SELECT COUNT(*) FROM history WHERE entity_id IN (SELECT id FROM "
+                    + "milestone_criterion WHERE project_id = ?)", s.projectId());
+            case SEARCH -> 3L * ROWS;
             case PROJECTS -> s.count("SELECT COUNT(*) FROM project");
             case CODES -> s.count("SELECT COUNT(*) FROM common_code WHERE code_group = 'RELATION_KIND'");
         };
@@ -176,7 +181,6 @@ class ReadListTest {
     @DisplayName("MCR-006: one row more than the limit is truncated and has a cursor")
     void mcr006_oneMore(Tool tool, LedgerAppContext ctx) {
         Scenario s = fixture(ctx);
-        // the schema of the context is shared by the test classes, so the projects may be more than the largest limit (1000)
         int limit = Math.min(total(s, tool) - 1, 1000);
         Page<?> page = call(s, tool, limit, null, false);
         assertThat(page.items()).hasSize(limit);
@@ -203,28 +207,33 @@ class ReadListTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = Tool.class, names = {"DEFECTS", "TASKS", "HISTORY", "SEARCH"})
+    @EnumSource(value = Tool.class, names = {"ISSUES", "SPECS", "TASKS", "HISTORY", "SEARCH"})
     @DisplayName("MCR-008: new rows and edits between two pages cause no duplicate and no repeated row")
     void mcr008_cursorStability(Tool tool, LedgerAppContext ctx) {
         Scenario s = ctx.once("read-list-stability", () -> {
             Scenario own = new Scenario(ctx);
             List<BatchOpInput> ops = new ArrayList<>();
             IntStream.rangeClosed(1, 40).forEach(i -> {
-                ops.add(new BatchOpInput.Save("defect", Fields.of(own.defectFields("row " + i)), Scenario.REASON, null,
+                ops.add(new BatchOpInput.Save("issue", Fields.of(own.issueFields("row " + i)), Scenario.REASON, null,
+                        null));
+                ops.add(new BatchOpInput.Save("spec", Fields.of(own.specFields("row " + i)), Scenario.REASON, null,
                         null));
                 ops.add(new BatchOpInput.Save("task", Fields.of(own.taskFields("row " + i)), Scenario.REASON, null, null));
             });
-            own.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(), ops);
+            for (int from = 0; from < ops.size(); from += 100) {
+                own.bean(BatchService.class).batch(Scenario.AUTHOR, Scenario.uuid(), ops.subList(from, Math.min(
+                        from + 100, ops.size())));
+            }
             return own;
         });
         Page<?> first = call(s, tool, 10, null, false);
         List<Object> original = new ArrayList<>(first.items());
         String cursor = first.nextCursor();
         String marker = Scenario.uuid();
-        IntStream.range(0, 5).forEach(i -> s.bean(SaveService.class).save(Scenario.AUTHOR, s.create("defect", null,
-                s.defectFields("row new " + i))));
-        IntStream.rangeClosed(1, 5).mapToObj(s::defectId).forEach(id -> s.bean(SaveService.class).save(
-                Scenario.AUTHOR, s.edit("defect", id, s.defect(id).version(), Map.of("title", "row " + marker))));
+        IntStream.range(0, 5).forEach(i -> s.bean(SaveService.class).save(Scenario.AUTHOR, s.create("issue", null,
+                s.issueFields("row new " + i))));
+        IntStream.rangeClosed(1, 5).mapToObj(s::issueId).forEach(id -> s.bean(SaveService.class).save(
+                Scenario.AUTHOR, s.edit("issue", id, s.issue(id).version(), Map.of("title", "row " + marker))));
         List<Object> later = new ArrayList<>();
         Page<?> page = first;
         while (page.truncated()) {
@@ -248,7 +257,7 @@ class ReadListTest {
     void mcr009_damagedCursors(Tool tool, Damage damage, LedgerAppContext ctx) {
         Scenario s = fixture(ctx);
         String valid = call(s, tool, 10, null, false).nextCursor();
-        String foreign = call(s, tool == Tool.DEFECTS ? Tool.TASKS : Tool.DEFECTS, 10, null, false).nextCursor();
+        String foreign = call(s, tool == Tool.ISSUES ? Tool.TASKS : Tool.ISSUES, 10, null, false).nextCursor();
         String bad = switch (damage) {
             case GARBAGE -> "%%%garbage%%%";
             case CUT -> valid.substring(0, valid.length() / 2);

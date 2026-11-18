@@ -5,23 +5,19 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import jakarta.validation.constraints.NotNull;
 
 /**
- * One operation of a batch as it arrives: the {@code op} key picks the record, the other keys are the keys of
- * {@code BatchOpKind}. Reading is strict: an unknown key or an unknown {@code op} is refused. The required keys are
- * the constraints of the records (a missing key and a JSON {@code null} are the same refusal, REQUIRED, with the path
- * {@code ops[i].<key>}); {@code BatchService} validates an operation just before it runs it, in the order of the
- * operations.
+ * One operation inside {@code ledger_batch}; {@code op} selects the concrete record.
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "op")
 @JsonSubTypes({
     @JsonSubTypes.Type(value = BatchOpInput.Save.class, name = "save"),
     @JsonSubTypes.Type(value = BatchOpInput.Transition.class, name = "transition"),
-    @JsonSubTypes.Type(value = BatchOpInput.RecordFix.class, name = "record_fix"),
+    @JsonSubTypes.Type(value = BatchOpInput.RecordDeliverable.class, name = "record_deliverable"),
     @JsonSubTypes.Type(value = BatchOpInput.RecordCase.class, name = "record_case"),
     @JsonSubTypes.Type(value = BatchOpInput.Link.class, name = "link"),
-    @JsonSubTypes.Type(value = BatchOpInput.Correct.class, name = "correct")})
+    @JsonSubTypes.Type(value = BatchOpInput.Correct.class, name = "correct")
+})
 public sealed interface BatchOpInput {
 
-    /** The message template of every required key: the reason REQUIRED. */
     String REQUIRED = "{reason.REQUIRED}";
 
     record Save(@NotNull(message = REQUIRED) String entity, @NotNull(message = REQUIRED) FieldsInput fields,
@@ -34,14 +30,15 @@ public sealed interface BatchOpInput {
             String attachmentId) implements BatchOpInput {
     }
 
-    record RecordFix(@NotNull(message = REQUIRED) String defectId, @NotNull(message = REQUIRED) String repo,
-            @NotNull(message = REQUIRED) String commitSha, @NotNull(message = REQUIRED) String reason, String branch,
-            String ciRef, String ciConclusion, String ciCompletedAt, Boolean markSourceFixed, String attachmentId)
-            implements BatchOpInput {
+    record RecordDeliverable(@NotNull(message = REQUIRED) String targetEntity,
+            @NotNull(message = REQUIRED) String targetId, @NotNull(message = REQUIRED) String kind,
+            @NotNull(message = REQUIRED) String deliverableRef, @NotNull(message = REQUIRED) String reason,
+            String location, @NotNull(message = REQUIRED) String summary, String checkRef, String checkResult,
+            String checkedAt, Boolean markDone, String attachmentId) implements BatchOpInput {
     }
 
-    record RecordCase(@NotNull(message = REQUIRED) String defectId, @NotNull(message = REQUIRED) String observation,
-            @NotNull(message = REQUIRED) String reason, String evidence, String userQuote, String observedAt,
+    record RecordCase(@NotNull(message = REQUIRED) String issueId, @NotNull(message = REQUIRED) String observation,
+            @NotNull(message = REQUIRED) String reason, String evidence, String sourceQuote, String observedAt,
             String attachmentId) implements BatchOpInput {
     }
 

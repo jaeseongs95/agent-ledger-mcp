@@ -4,15 +4,14 @@ import org.pgledger.application.write.TransitionCommand;
 import org.pgledger.application.write.TransitionService;
 import org.pgledger.application.write.WriteResult.TransitionResult;
 
-/** Merges a defect into another one through the author channel (the setup of the merge cases). */
+/** Merges an issue into another issue through the author channel. */
 public final class MergeFixture {
 
     private MergeFixture() {
     }
 
-    /** Moves {@code source} (at {@code version}) to MERGED with {@code target} as the merge target. */
     public static TransitionResult merge(Scenario s, String source, long version, String target) {
-        return s.bean(TransitionService.class).transition(Scenario.AUTHOR, new TransitionCommand(Scenario.uuid(), "defect",
-                source, version, "MERGED", Scenario.REASON, null, null, target));
+        return s.bean(TransitionService.class).transition(Scenario.AUTHOR, new TransitionCommand(Scenario.uuid(),
+                "issue", source, version, "MERGED", Scenario.REASON, null, null, target));
     }
 }

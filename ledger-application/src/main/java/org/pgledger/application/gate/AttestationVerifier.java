@@ -6,7 +6,7 @@ import org.pgledger.domain.error.TrustException;
 import org.pgledger.domain.value.AuthorId;
 
 /** Turns what a caller presented as {@code _hostAttestation} into the author it proves, or refuses it. */
-public interface AttestationVerifier {
+public interface AttestationVerifier extends McpCallerResolver {
 
     /**
      * What {@link #prove} found: the author the attestation proves, or an author without the ledger format (the one

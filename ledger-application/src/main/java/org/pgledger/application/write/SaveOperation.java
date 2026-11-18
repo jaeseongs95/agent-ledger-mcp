@@ -15,9 +15,10 @@ import org.pgledger.application.history.HistoryWriter;
 import org.pgledger.application.history.Snapshot;
 import org.pgledger.application.receipt.ReceiptService;
 import org.pgledger.application.write.WriteResult.SaveResult;
-import org.pgledger.database.repository.ConditionRepository;
-import org.pgledger.database.repository.DefectRepository;
+import org.pgledger.database.repository.CriterionRepository;
 import org.pgledger.database.repository.IdAllocator;
+import org.pgledger.database.repository.IssueRepository;
+import org.pgledger.database.repository.SpecRepository;
 import org.pgledger.database.repository.TaskRepository;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ConflictException;
@@ -25,56 +26,60 @@ import org.pgledger.domain.error.TransitionCode;
 import org.pgledger.domain.error.TransitionException;
 import org.pgledger.domain.error.ValidationCode;
 import org.pgledger.domain.error.ValidationException;
-import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.error.ValidationIssue;
-import org.pgledger.domain.model.Condition;
-import org.pgledger.domain.model.ConditionFields;
-import org.pgledger.domain.model.Defect;
-import org.pgledger.domain.model.DefectFields;
+import org.pgledger.domain.error.ValidationReason;
+import org.pgledger.domain.model.Criterion;
+import org.pgledger.domain.model.CriterionFields;
 import org.pgledger.domain.model.EntityFields;
+import org.pgledger.domain.model.Issue;
+import org.pgledger.domain.model.IssueFields;
 import org.pgledger.domain.model.Project;
 import org.pgledger.domain.model.ReceiptOperation;
+import org.pgledger.domain.model.Spec;
+import org.pgledger.domain.model.SpecFields;
 import org.pgledger.domain.model.Task;
 import org.pgledger.domain.model.TaskFields;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
 import org.pgledger.domain.rule.Scope;
 import org.pgledger.domain.value.CanonicalPayload;
-import org.pgledger.domain.value.ConditionId;
-import org.pgledger.domain.value.DefectId;
+import org.pgledger.domain.value.CriterionId;
+import org.pgledger.domain.value.IssueId;
 import org.pgledger.domain.value.ProjectId;
+import org.pgledger.domain.value.SpecId;
 import org.pgledger.domain.value.TaskId;
 import org.pgledger.domain.value.Tokens;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
 
-/** Creates (expected version 0) or edits a defect, task or condition. */
+/** Creates (expected version 0) or edits an issue, specification, task, or milestone criterion. */
 @Component
 public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
 
-    /** Marks a field that an edit clears; it differs from a field that is not mentioned. */
     private static final String CLEARED = "\u0000";
 
     private final EntityEditors editors;
     private final Rows rows;
     private final CodeRules codeRules;
-    private final DefectRepository defects;
+    private final IssueRepository issues;
+    private final SpecRepository specs;
     private final TaskRepository tasks;
-    private final ConditionRepository conditions;
+    private final CriterionRepository criteria;
     private final IdAllocator ids;
     private final HistoryWriter history;
     private final Clock clock;
 
     public SaveOperation(WriteGate gate, ReceiptService receipts, EntityEditors editors, Rows rows,
-            CodeRules codeRules, DefectRepository defects, TaskRepository tasks, ConditionRepository conditions,
-            IdAllocator ids, HistoryWriter history, Clock clock) {
+            CodeRules codeRules, IssueRepository issues, SpecRepository specs, TaskRepository tasks,
+            CriterionRepository criteria, IdAllocator ids, HistoryWriter history, Clock clock) {
         super(gate, receipts, ReceiptOperation.SAVE, SaveResult.class);
         this.editors = editors;
         this.rows = rows;
         this.codeRules = codeRules;
-        this.defects = defects;
+        this.issues = issues;
+        this.specs = specs;
         this.tasks = tasks;
-        this.conditions = conditions;
+        this.criteria = criteria;
         this.ids = ids;
         this.history = history;
         this.clock = clock;
@@ -99,14 +104,15 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
         }
         String id = c.requireId();
         ProjectId current = switch (entity) {
-            case DEFECT -> rows.defect(DefectId.of(id)).projectId();
+            case ISSUE -> rows.issue(IssueId.of(id)).projectId();
+            case SPEC -> rows.spec(SpecId.of(id)).projectId();
             case TASK -> rows.task(TaskId.of(id)).projectId();
-            case CONDITION -> rows.condition(ConditionId.of(id)).projectId();
-            case DEFECT_FIX, DEFECT_TASK, DEFECT_RELATION, CONDITION_LINK, DEFECT_CASE ->
+            case CRITERION -> rows.criterion(CriterionId.of(id)).projectId();
+            case DELIVERABLE, ISSUE_TASK, ISSUE_SPEC, SPEC_TASK, ISSUE_RELATION, CRITERION_LINK, ISSUE_CASE ->
                 throw new IllegalStateException("entity() refused it");
         };
         String moved = c.mentionedProject();
-        if (entity == HistoryEntity.DEFECT || moved == null || moved.isBlank() || Objects.equals(moved, current.value())) {
+        if (entity == HistoryEntity.ISSUE || moved == null || moved.isBlank() || Objects.equals(moved, current.value())) {
             return List.of(new Target(current, scope));
         }
         ProjectId target = ProjectId.of(moved);
@@ -127,7 +133,7 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
             fields.requireCreatable();
         } else {
             fields.requireEditable();
-            if (fields instanceof DefectFields d && d.projectId().mentioned()) {
+            if (fields instanceof IssueFields i && i.projectId().mentioned()) {
                 throw new TransitionException(TransitionCode.PROJECT_MOVE_FORBIDDEN, List.of());
             }
         }
@@ -145,8 +151,6 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
                 : edit(ctx, entity, fields, c.requireId(), c.expectedVersion(), mentioned));
     }
 
-    // ---------------------------------------------------------------- create
-
     private SaveResult create(WriteContext ctx, HistoryEntity entity, EntityFields fields, String explicitId,
             Map<String, String> mentioned) {
         Instant now = clock.instant();
@@ -154,11 +158,19 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
         String id;
         long version;
         switch (fields) {
-            case DefectFields f -> {
-                DefectId defectId = defectId(project, explicitId);
-                codeRules.checkDefect(null, f.category().orNull(), f.severity().orNull());
-                Defect saved = inserted(() -> defects.save(Defect.open(defectId, f, now)), HistoryEntity.DEFECT,
-                        defectId.value());
+            case IssueFields f -> {
+                IssueId issueId = issueId(project, explicitId);
+                codeRules.checkIssue(null, f.category().orNull(), f.severity().orNull());
+                Issue saved = inserted(() -> issues.save(Issue.open(issueId, f, now)), HistoryEntity.ISSUE,
+                        issueId.value());
+                id = saved.id().value();
+                version = saved.version();
+            }
+            case SpecFields f -> {
+                SpecId specId = specId(project, explicitId);
+                validateSpecParent(specId, f.parentId().orNull());
+                Spec saved = inserted(() -> specs.save(Spec.create(specId, f, now)), HistoryEntity.SPEC,
+                        specId.value());
                 id = saved.id().value();
                 version = saved.version();
             }
@@ -169,28 +181,26 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
                 id = saved.id().value();
                 version = saved.version();
             }
-            case ConditionFields f -> {
+            case CriterionFields f -> {
                 if (explicitId == null || explicitId.isBlank()) {
-                    throw ValidationException.invalid("id", ValidationReason.REQUIRED_FOR_CONDITION);
+                    throw ValidationException.invalid("id", ValidationReason.REQUIRED_FOR_CRITERION);
                 }
-                ConditionId conditionId = ConditionId.of(explicitId);
-                // the id of another case is the same id (the key is UNIQUE); the refusal names the id that exists
-                conditions.findByIdKey(conditionId.key()).ifPresent(existing -> {
-                    throw duplicate(HistoryEntity.CONDITION, existing.id().value());
+                CriterionId criterionId = CriterionId.of(explicitId);
+                criteria.findByIdKey(criterionId.key()).ifPresent(existing -> {
+                    throw duplicate(HistoryEntity.CRITERION, existing.id().value());
                 });
-                if (conditions.findByProjectIdAndReleaseAndCode(project.id(), f.release().orNull(), f.code().orNull())
-                        .isPresent()) {
-                    throw duplicate(HistoryEntity.CONDITION, conditionId.value());
+                if (criteria.findByProjectIdAndMilestoneAndCode(project.id(), f.milestone().orNull(),
+                        f.code().orNull()).isPresent()) {
+                    throw duplicate(HistoryEntity.CRITERION, criterionId.value());
                 }
-                Condition saved = inserted(() -> conditions.save(Condition.open(conditionId, f)), HistoryEntity.CONDITION,
-                        conditionId.value());
+                Criterion saved = inserted(() -> criteria.save(Criterion.open(criterionId, f)),
+                        HistoryEntity.CRITERION, criterionId.value());
                 id = saved.id().value();
                 version = saved.version();
             }
         }
         ChangeSet changes = ChangeSet.empty();
         for (Map.Entry<String, String> field : mentioned.entrySet()) {
-            // an empty text (purpose, behavior ...) is no value: the row holds NULL, so there is nothing to record
             if (!"".equals(field.getValue())) {
                 changes = changes.with(field.getKey(), null, field.getValue());
             }
@@ -200,53 +210,53 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
                 ctx.login());
     }
 
-    private DefectId defectId(Project project, String explicit) {
+    private IssueId issueId(Project project, String explicit) {
         if (explicit == null || explicit.isBlank()) {
-            DefectId candidate;
+            IssueId candidate;
             do {
-                candidate = DefectId.of(project.code(), ids.nextDefectNo(project.code()));
-            } while (defects.existsById(candidate));
+                candidate = IssueId.of(project.code(), ids.nextIssueNo(project.code()));
+            } while (issues.existsById(candidate));
             return candidate;
         }
-        DefectId candidate = DefectId.of(explicit);
+        IssueId candidate = IssueId.of(explicit);
         if (!Objects.equals(candidate.projectCode(), project.code())) {
-            String prefix = project.code().value() + "-D-";
+            String prefix = project.code().value() + "-I-";
             throw new ValidationException(ValidationCode.ID_PREFIX_MISMATCH, List.of(explicit, prefix),
                     List.of(new ValidationIssue("id", ValidationReason.MUST_START_WITH, List.of(prefix))), Map.of());
         }
-        requireCanonical(explicit, candidate.number(), number -> DefectId.of(project.code(), number).value());
-        if (defects.existsById(candidate)) {
-            throw duplicate(HistoryEntity.DEFECT, explicit);
+        requireCanonical(explicit, candidate.number(), number -> IssueId.of(project.code(), number).value());
+        if (issues.existsById(candidate)) {
+            throw duplicate(HistoryEntity.ISSUE, explicit);
         }
-        // the number is taken only up to the next number of the project (a free past number is accepted, a larger one refused)
-        ids.takeDefectNo(project.code(), candidate.number()).ifPresent(next -> {
-            throw idAhead(explicit, DefectId.of(project.code(), next).value());
+        ids.takeIssueNo(project.code(), candidate.number()).ifPresent(next -> {
+            throw idAhead(explicit, IssueId.of(project.code(), next).value());
         });
         return candidate;
     }
 
-    /**
-     * An explicit id that has a number is stored only in the form the server writes it (D-0049): the number is at least 1 and
-     * the text is the one of {@code canonical}. The pattern of {@link DefectId} is wider on purpose (reads and the lookup
-     * use it), but in a save {@code P-D-0002} and {@code P-D-00002} would be two rows of one number, and the
-     * number 0 would be a past number that is always free; so only the save refuses them.
-     *
-     * @param canonical the id that the server writes for a number
-     */
-    private static void requireCanonical(String explicit, long number, LongFunction<String> canonical) {
-        if (number < 1) {
-            throw ValidationException.invalid("id", ValidationReason.MUST_BE_POSITIVE);
+    private SpecId specId(Project project, String explicit) {
+        if (explicit == null || explicit.isBlank()) {
+            SpecId candidate;
+            do {
+                candidate = SpecId.issue(project.code(), ids.nextSpecNo(project.code()));
+            } while (specs.findByIdKey(candidate.key()).isPresent());
+            return candidate;
         }
-        String written = canonical.apply(number);
-        if (!Objects.equals(written, explicit)) {
-            throw ValidationException.invalid("id", ValidationReason.ID_NOT_CANONICAL, written);
+        SpecId candidate = SpecId.of(explicit);
+        if (candidate.number().isPresent() && candidate.numberIn(project.code()).isEmpty()) {
+            String prefix = project.code().value() + "-S-";
+            throw new ValidationException(ValidationCode.ID_PREFIX_MISMATCH, List.of(explicit, prefix),
+                    List.of(new ValidationIssue("id", ValidationReason.MUST_START_WITH, List.of(prefix))), Map.of());
         }
-    }
-
-    /** The refusal of an explicit id whose number is above the next number of the project; {@code nextId} is the id to give. */
-    private static ValidationException idAhead(String explicit, String nextId) {
-        return new ValidationException(ValidationCode.ID_NUMBER_AHEAD, List.of(explicit, nextId),
-                List.of(new ValidationIssue("id", ValidationReason.NUMBER_ABOVE_NEXT, List.of(nextId))), Map.of());
+        candidate.numberIn(project.code()).ifPresent(number -> requireCanonical(explicit, number,
+                numberOfId -> SpecId.issue(project.code(), numberOfId).value()));
+        specs.findByIdKey(candidate.key()).ifPresent(existing -> {
+            throw duplicate(HistoryEntity.SPEC, existing.id().value());
+        });
+        candidate.numberIn(project.code()).ifPresent(number -> ids.takeSpecNo(project.code(), number).ifPresent(next -> {
+            throw idAhead(explicit, SpecId.issue(project.code(), next).value());
+        }));
+        return candidate;
     }
 
     private TaskId taskId(Project project, String explicit) {
@@ -258,23 +268,46 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
             return candidate;
         }
         TaskId candidate = TaskId.of(explicit);
-        // an id of the issued form has a number and is written the way the server writes it (a free text has none)
+        if (candidate.number().isPresent() && candidate.numberIn(project.code()).isEmpty()) {
+            String prefix = project.code().value() + "-T-";
+            throw new ValidationException(ValidationCode.ID_PREFIX_MISMATCH, List.of(explicit, prefix),
+                    List.of(new ValidationIssue("id", ValidationReason.MUST_START_WITH, List.of(prefix))), Map.of());
+        }
         candidate.numberIn(project.code()).ifPresent(number -> requireCanonical(explicit, number,
                 numberOfId -> TaskId.issue(project.code(), numberOfId).value()));
-        // the id of another case is the same id (the key is UNIQUE): the refusal names the id that exists, and a create that
-        // races with the one of another case is stopped by the key itself (see inserted)
         tasks.findByIdKey(candidate.key()).ifPresent(existing -> {
             throw duplicate(HistoryEntity.TASK, existing.id().value());
         });
-        // a free id has a number only in the form the server issues (at most 18 digits), and that number is taken only up to the
-        // next number of the project like a defect number; any other id has no number and takes nothing
         candidate.numberIn(project.code()).ifPresent(number -> ids.takeTaskNo(project.code(), number).ifPresent(next -> {
             throw idAhead(explicit, TaskId.issue(project.code(), next).value());
         }));
         return candidate;
     }
 
-    // ------------------------------------------------------------------ edit
+    private void validateSpecParent(SpecId selfId, SpecId parentId) {
+        if (parentId == null) {
+            return;
+        }
+        if (Objects.equals(selfId.key(), parentId.key())) {
+            throw ValidationException.invalid("parent_id", ValidationReason.MUST_DIFFER_FROM, "id");
+        }
+        rows.spec(parentId);
+    }
+
+    private static void requireCanonical(String explicit, long number, LongFunction<String> canonical) {
+        if (number < 1) {
+            throw ValidationException.invalid("id", ValidationReason.MUST_BE_POSITIVE);
+        }
+        String written = canonical.apply(number);
+        if (!Objects.equals(written, explicit)) {
+            throw ValidationException.invalid("id", ValidationReason.ID_NOT_CANONICAL, written);
+        }
+    }
+
+    private static ValidationException idAhead(String explicit, String nextId) {
+        return new ValidationException(ValidationCode.ID_NUMBER_AHEAD, List.of(explicit, nextId),
+                List.of(new ValidationIssue("id", ValidationReason.NUMBER_ABOVE_NEXT, List.of(nextId))), Map.of());
+    }
 
     private SaveResult edit(WriteContext ctx, HistoryEntity entity, EntityFields fields, String id,
             Long expectedVersion, Map<String, String> mentioned) {
@@ -284,38 +317,65 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
         Snapshot before;
         long version;
         switch (fields) {
-            case DefectFields f -> {
-                Defect row = rows.defectForWrite(DefectId.of(id), expectedVersion);
-                // the rule of record_fix: a VERIFIED defect is reopened by a reviewer before its content changes
+            case IssueFields f -> {
+                Issue row = rows.issueForWrite(IssueId.of(id), expectedVersion);
                 row.requireNotVerified();
-                Defect after = row.edited(f, now);
+                Issue after = row.edited(f, now);
                 if (after.category() == null || after.severity() == null) {
-                    codeRules.checkDefect(row, after.category(), after.severity());
+                    codeRules.checkIssue(row, after.category(), after.severity());
                 }
                 beforeColumns = editors.columns(row);
                 afterColumns = editors.columns(after);
                 requireChange(mentioned, beforeColumns, afterColumns);
-                codeRules.checkDefect(row, after.category(), after.severity());
-                before = Snapshot.DefectRow.of(row);
-                version = rows.saveDefect(after).version();
+                codeRules.checkIssue(row, after.category(), after.severity());
+                before = Snapshot.IssueRow.of(row);
+                version = rows.saveIssue(after).version();
+            }
+            case SpecFields f -> {
+                Spec row = rows.specForWrite(SpecId.of(id), expectedVersion);
+                row.requireNotVerified();
+                Spec after = row.edited(f, now);
+                if (!Objects.equals(row.projectId(), after.projectId()) && row.id().number().isPresent()) {
+                    throw new TransitionException(TransitionCode.PROJECT_MOVE_FORBIDDEN, List.of());
+                }
+                validateSpecParent(row.id(), after.parentId());
+                beforeColumns = editors.columns(row);
+                afterColumns = editors.columns(after);
+                requireChange(mentioned, beforeColumns, afterColumns);
+                before = Snapshot.SpecRow.of(row);
+                version = rows.saveSpec(after).version();
             }
             case TaskFields f -> {
                 Task row = rows.taskForWrite(TaskId.of(id), expectedVersion);
+                row.requireNotVerified();
                 Task after = row.edited(f, now);
+                if (!Objects.equals(row.projectId(), after.projectId()) && row.id().number().isPresent()) {
+                    throw new TransitionException(TransitionCode.PROJECT_MOVE_FORBIDDEN, List.of());
+                }
                 beforeColumns = editors.columns(row);
                 afterColumns = editors.columns(after);
                 requireChange(mentioned, beforeColumns, afterColumns);
                 before = Snapshot.TaskRow.of(row);
                 version = rows.saveTask(after).version();
             }
-            case ConditionFields f -> {
-                Condition row = rows.conditionForWrite(ConditionId.of(id), expectedVersion);
-                Condition after = row.edited(f);
+            case CriterionFields f -> {
+                Criterion row = rows.criterionForWrite(CriterionId.of(id), expectedVersion);
+                row.requireOpenForEdit();
+                Criterion after = row.edited(f);
                 beforeColumns = editors.columns(row);
                 afterColumns = editors.columns(after);
                 requireChange(mentioned, beforeColumns, afterColumns);
-                before = Snapshot.ConditionRow.of(row);
-                version = rows.saveCondition(after).version();
+                if (!Objects.equals(row.projectId(), after.projectId())
+                        || !Objects.equals(row.milestone(), after.milestone())
+                        || !Objects.equals(row.code(), after.code())) {
+                    criteria.findByProjectIdAndMilestoneAndCode(after.projectId(), after.milestone(), after.code())
+                            .filter(existing -> !Objects.equals(existing.id(), row.id()))
+                            .ifPresent(existing -> {
+                                throw duplicate(HistoryEntity.CRITERION, after.id().value());
+                            });
+                }
+                before = Snapshot.CriterionRow.of(row);
+                version = rows.saveCriterion(after).version();
             }
         }
         ChangeSet changes = ChangeSet.empty();
@@ -337,10 +397,6 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
         }
     }
 
-    /**
-     * Runs an insert; a duplicate key becomes the contract's error, never a raw one. (A lost version race of an update
-     * is the VERSION_CONFLICT of {@link Rows#saveDefect}.)
-     */
     private static <T> T inserted(Supplier<T> insert, HistoryEntity entity, String id) {
         try {
             return insert.get();

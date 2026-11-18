@@ -7,11 +7,13 @@ import java.util.Set;
 import java.util.function.Function;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationReason;
-import org.pgledger.domain.model.Condition;
-import org.pgledger.domain.model.ConditionFields;
-import org.pgledger.domain.model.Defect;
-import org.pgledger.domain.model.DefectFields;
+import org.pgledger.domain.model.Criterion;
+import org.pgledger.domain.model.CriterionFields;
 import org.pgledger.domain.model.EntityFields;
+import org.pgledger.domain.model.Issue;
+import org.pgledger.domain.model.IssueFields;
+import org.pgledger.domain.model.Spec;
+import org.pgledger.domain.model.SpecFields;
 import org.pgledger.domain.model.Task;
 import org.pgledger.domain.model.TaskFields;
 import org.pgledger.domain.rule.HistoryEntity;
@@ -19,43 +21,43 @@ import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.CodeValue;
 import org.pgledger.domain.value.Patch;
 import org.pgledger.domain.value.ProjectId;
+import org.pgledger.domain.value.SpecId;
 import org.pgledger.domain.value.Tokens;
 import org.springframework.stereotype.Component;
 
 /**
- * Reads the {@code fields} of a save into the typed field records of the domain, and shows an entity (or the
- * fields of a request) as {@code field name -> text} for the history diff and the receipt digest. The key sets are
- * the editable sets of the contract; anything else is refused.
+ * Parses editable {@link FieldsInput} into typed domain {@link EntityFields} and projects rows/patches to canonical
+ * {@code field_name -> text} maps for history diffs and receipt digests.
  */
 @Component
 public class EntityEditors {
 
-    private static final List<String> DEFECT_KEYS = List.of("project_id", "title", "category", "severity",
-            "behavior", "root_cause", "owner_actor_id");
+    private static final List<String> ISSUE_KEYS = List.of("project_id", "title", "category", "severity",
+            "symptom", "root_cause", "owner_actor_id");
+    private static final List<String> SPEC_KEYS = List.of("project_id", "parent_id", "title", "summary",
+            "acceptance_criteria", "priority", "owner_actor_id", "origin_ref", "origin_quote");
     private static final List<String> TASK_KEYS = List.of("project_id", "title", "purpose", "success_condition",
             "owner_actor_id", "origin_ref", "origin_quote");
-    private static final List<String> CONDITION_KEYS = List.of("project_id", "release", "goal_label", "code",
-            "condition_text");
+    private static final List<String> CRITERION_KEYS = List.of("project_id", "milestone_name", "goal_label", "code",
+            "criterion_text");
 
-    /** The kinds of row that a save writes: the ones that have fields to edit. */
-    static final HistoryEntity[] SAVEABLE = {HistoryEntity.DEFECT, HistoryEntity.TASK, HistoryEntity.CONDITION};
+    /** Entity kinds writable via save operations. */
+    static final HistoryEntity[] SAVEABLE = {
+        HistoryEntity.ISSUE, HistoryEntity.SPEC, HistoryEntity.TASK, HistoryEntity.CRITERION
+    };
 
-    /** The editable keys of an entity kind. */
     public List<String> keys(HistoryEntity entity) {
         return switch (entity) {
-            case DEFECT -> DEFECT_KEYS;
+            case ISSUE -> ISSUE_KEYS;
+            case SPEC -> SPEC_KEYS;
             case TASK -> TASK_KEYS;
-            case CONDITION -> CONDITION_KEYS;
-            case DEFECT_FIX, DEFECT_TASK, DEFECT_RELATION, CONDITION_LINK, DEFECT_CASE ->
+            case CRITERION -> CRITERION_KEYS;
+            case DELIVERABLE, ISSUE_TASK, ISSUE_SPEC, SPEC_TASK, ISSUE_RELATION, CRITERION_LINK, ISSUE_CASE ->
                 throw ValidationException.invalid("entity", ValidationReason.CANNOT_BE_SAVED,
                         Tokens.allowed(SAVEABLE), entity.token());
         };
     }
 
-    /**
-     * Refuses a key that belongs to another kind of row (the editable keys are those of {@link #keys}) and builds the typed
-     * fields; a missing input is a failure. A key that no kind has never gets here: the JSON reading refuses it.
-     */
     public EntityFields parse(HistoryEntity entity, FieldsInput input) {
         if (input == null) {
             throw ValidationException.invalid("fields", ValidationReason.REQUIRED);
@@ -68,29 +70,42 @@ public class EntityEditors {
             }
         }
         return switch (entity) {
-            case DEFECT -> DefectFields.of(input.projectId(), input.title(), input.category(), input.severity(),
-                    input.behavior(), input.rootCause(), input.ownerActorId());
+            case ISSUE -> IssueFields.of(input.projectId(), input.title(), input.category(), input.severity(),
+                    input.symptom(), input.rootCause(), input.ownerActorId());
+            case SPEC -> SpecFields.of(input.projectId(), input.parentId(), input.title(), input.summary(),
+                    input.acceptanceCriteria(), input.priority(), input.ownerActorId(), input.originRef(),
+                    input.originQuote());
             case TASK -> TaskFields.of(input.projectId(), input.title(), input.purpose(), input.successCondition(),
                     input.ownerActorId(), input.originRef(), input.originQuote());
-            case CONDITION -> ConditionFields.of(input.projectId(), input.release(), input.goalLabel(), input.code(),
-                    input.conditionText());
-            case DEFECT_FIX, DEFECT_TASK, DEFECT_RELATION, CONDITION_LINK, DEFECT_CASE ->
+            case CRITERION -> CriterionFields.of(input.projectId(), input.milestoneName(), input.goalLabel(),
+                    input.code(), input.criterionText());
+            case DELIVERABLE, ISSUE_TASK, ISSUE_SPEC, SPEC_TASK, ISSUE_RELATION, CRITERION_LINK, ISSUE_CASE ->
                 throw new IllegalStateException("keys() refused it");
         };
     }
 
-    /** The mentioned fields of a request as text (null for a field that is cleared). */
     public Map<String, String> mentioned(EntityFields fields) {
         Map<String, String> out = new LinkedHashMap<>();
         switch (fields) {
-            case DefectFields f -> {
+            case IssueFields f -> {
                 put(out, "project_id", f.projectId(), ProjectId::value);
                 put(out, "title", f.title(), Function.identity());
                 put(out, "category", f.category(), CodeValue::value);
                 put(out, "severity", f.severity(), CodeValue::value);
-                put(out, "behavior", f.behavior(), Function.identity());
+                put(out, "symptom", f.symptom(), Function.identity());
                 put(out, "root_cause", f.rootCause(), Function.identity());
                 put(out, "owner_actor_id", f.ownerActorId(), AuthorId::value);
+            }
+            case SpecFields f -> {
+                put(out, "project_id", f.projectId(), ProjectId::value);
+                put(out, "parent_id", f.parentId(), SpecId::value);
+                put(out, "title", f.title(), Function.identity());
+                put(out, "summary", f.summary(), Function.identity());
+                put(out, "acceptance_criteria", f.acceptanceCriteria(), Function.identity());
+                put(out, "priority", f.priority(), Function.identity());
+                put(out, "owner_actor_id", f.ownerActorId(), AuthorId::value);
+                put(out, "origin_ref", f.originRef(), Function.identity());
+                put(out, "origin_quote", f.originQuote(), Function.identity());
             }
             case TaskFields f -> {
                 put(out, "project_id", f.projectId(), ProjectId::value);
@@ -101,18 +116,17 @@ public class EntityEditors {
                 put(out, "origin_ref", f.originRef(), Function.identity());
                 put(out, "origin_quote", f.originQuote(), Function.identity());
             }
-            case ConditionFields f -> {
+            case CriterionFields f -> {
                 put(out, "project_id", f.projectId(), ProjectId::value);
-                put(out, "release", f.release(), Function.identity());
+                put(out, "milestone_name", f.milestone(), Function.identity());
                 put(out, "goal_label", f.goalLabel(), Function.identity());
                 put(out, "code", f.code(), Function.identity());
-                put(out, "condition_text", f.conditionText(), Function.identity());
+                put(out, "criterion_text", f.criterionText(), Function.identity());
             }
         }
         return out;
     }
 
-    /** Adds the field when the request mentions it; a field that is set to nothing is the text null. */
     private static <T> void put(Map<String, String> out, String key, Patch<T> patch, Function<T, String> text) {
         if (patch.mentioned()) {
             T value = patch.orNull();
@@ -120,15 +134,29 @@ public class EntityEditors {
         }
     }
 
-    public Map<String, String> columns(Defect d) {
+    public Map<String, String> columns(Issue i) {
         Map<String, String> out = new LinkedHashMap<>();
-        out.put("project_id", d.projectId().value());
-        out.put("title", d.title());
-        out.put("category", d.category().value());
-        out.put("severity", d.severity().value());
-        out.put("behavior", d.behavior());
-        out.put("root_cause", d.rootCause());
-        out.put("owner_actor_id", d.ownerActorId() == null ? null : d.ownerActorId().value());
+        out.put("project_id", i.projectId().value());
+        out.put("title", i.title());
+        out.put("category", i.category().value());
+        out.put("severity", i.severity().value());
+        out.put("symptom", i.symptom());
+        out.put("root_cause", i.rootCause());
+        out.put("owner_actor_id", i.ownerActorId() == null ? null : i.ownerActorId().value());
+        return out;
+    }
+
+    public Map<String, String> columns(Spec s) {
+        Map<String, String> out = new LinkedHashMap<>();
+        out.put("project_id", s.projectId().value());
+        out.put("parent_id", s.parentId() == null ? null : s.parentId().value());
+        out.put("title", s.title());
+        out.put("summary", s.summary());
+        out.put("acceptance_criteria", s.acceptanceCriteria());
+        out.put("priority", s.priority());
+        out.put("owner_actor_id", s.ownerActorId() == null ? null : s.ownerActorId().value());
+        out.put("origin_ref", s.originRef());
+        out.put("origin_quote", s.originQuote());
         return out;
     }
 
@@ -144,17 +172,16 @@ public class EntityEditors {
         return out;
     }
 
-    public Map<String, String> columns(Condition c) {
+    public Map<String, String> columns(Criterion c) {
         Map<String, String> out = new LinkedHashMap<>();
         out.put("project_id", c.projectId().value());
-        out.put("release", c.release());
+        out.put("milestone_name", c.milestone());
         out.put("goal_label", c.goalLabel());
         out.put("code", c.code());
-        out.put("condition_text", c.conditionText());
+        out.put("criterion_text", c.criterionText());
         return out;
     }
 
-    /** The keys of the editable set, as a set. */
     public Set<String> keySet(HistoryEntity entity) {
         return Set.copyOf(keys(entity));
     }

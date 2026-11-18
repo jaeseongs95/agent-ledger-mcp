@@ -59,10 +59,10 @@ class OwnerAuditTest {
         GrantService grants = s.bean(GrantService.class);
         String author = newAuthor();
         s.ctx().enroll(author);
-        List<Long> ids = grants.grant(new GrantCommand(author, s.projectId(), List.of("defect", "task"), null, null), OWNER);
+        List<Long> ids = grants.grant(new GrantCommand(author, s.projectId(), List.of("issue", "task"), null, null), OWNER);
 
         assertThat(audit(s, author + "|" + s.projectId())).singleElement().satisfies(row -> assertThat(row)
-                .startsWith("GRANT_ISSUED token:owner scopes=defect,task expires=never grants=" + ids.get(0) + ","
+                .startsWith("GRANT_ISSUED token:owner scopes=issue,task expires=never grants=" + ids.get(0) + ","
                         + ids.get(1)));
         assertThat(grants.revoke(new RevokeCommand(author, s.projectId(), "task"), OWNER)).isEqualTo(1);
         assertThat(grants.revoke(new RevokeCommand(author, null, null), OWNER)).isEqualTo(1);
@@ -81,8 +81,8 @@ class OwnerAuditTest {
         GrantService grants = s.bean(GrantService.class);
         String author = newAuthor();
         s.ctx().enroll(author);
-        grants.grant(new GrantCommand(author, s.projectId(), List.of("fix"), null, null), OTHER_OWNER);
-        Expect.failure(() -> grants.grant(new GrantCommand(author, "nowhere", List.of("fix"), null, null), OWNER),
+        grants.grant(new GrantCommand(author, s.projectId(), List.of("deliverable"), null, null), OTHER_OWNER);
+        Expect.failure(() -> grants.grant(new GrantCommand(author, "nowhere", List.of("deliverable"), null, null), OWNER),
                 LookupCode.NOT_FOUND);
 
         assertThat(audit(s, author + "|" + s.projectId())).singleElement().satisfies(row -> assertThat(row)
