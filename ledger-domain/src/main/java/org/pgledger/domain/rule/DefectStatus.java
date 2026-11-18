@@ -56,7 +56,8 @@ public enum DefectStatus implements LifecycleState {
                 }
             }
             case MERGED -> {
-                if (target == null || Objects.equals(target.id(), self) || target.status() == MERGED) {
+                if (target == null || Objects.equals(target.id(), self)
+                        || target.status() == MERGED || target.status() == VERIFIED) {
                     throw new TransitionException(TransitionCode.MERGE_TARGET_INVALID, List.of());
                 }
             }

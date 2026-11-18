@@ -1,6 +1,9 @@
 spring:
   application:
     name: ledger-admin-web
+  threads:
+    virtual:
+      enabled: true
   messages:
     # the bundles of the domain (error codes, validation reasons) and of this application (the pages)
     basename: messages/ledger-errors,messages/ledger-reasons,messages/admin

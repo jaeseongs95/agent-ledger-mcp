@@ -368,4 +368,29 @@ class VerifyRulesTest {
             assertThat(s.count("SELECT COUNT(*) FROM defect_fix WHERE defect_id = ?", d.id())).isEqualTo(1);
         }
     }
+
+    @Test
+    @DisplayName("REM-004 (D-0023 / BLOCKING-L1): a VERIFIED defect refuses incoming MERGED targets and record_case until a reviewer reopens it")
+    void rem004_verifiedDefectRefusesMergeTargetAndRecordCase(Scenario s) {
+        SaveResult target = s.sourceFixedDefect("verified-target");
+        String reviewer = s.actorWith("verify");
+        assertThat(review(s, reviewer, "defect", target.id(), 2, "VERIFIED").to()).isEqualTo("VERIFIED");
+
+        SaveResult source = s.newDefect("source");
+        Expect.failure(() -> MergeFixture.merge(s, source.id(), 1, target.id()), TransitionCode.MERGE_TARGET_INVALID);
+        assertThat(s.defect(source.id()).status()).isEqualTo(DefectStatus.OPEN);
+
+        Expect.failure(() -> s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR,
+                new RecordCaseCommand(Scenario.uuid(), target.id(), "reopened case after verify",
+                        Scenario.REASON, null, null, null)),
+                TransitionCode.VERIFIED_DEFECT);
+        assertThat(s.count("SELECT COUNT(*) FROM defect_case WHERE defect_id = ?", target.id())).isZero();
+
+        assertThat(review(s, reviewer, "defect", target.id(), 3, "OPEN").to()).isEqualTo("OPEN");
+        assertThat(MergeFixture.merge(s, source.id(), 1, target.id()).to()).isEqualTo("MERGED");
+        assertThat(s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR,
+                new RecordCaseCommand(Scenario.uuid(), target.id(), "case after reopen",
+                        Scenario.REASON, null, null, null)).caseId())
+                .isPositive();
+    }
 }

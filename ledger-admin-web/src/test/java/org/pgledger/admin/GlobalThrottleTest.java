@@ -53,6 +53,9 @@ class GlobalThrottleTest {
     @Autowired
     private MockMvc mvc;
 
+    @Autowired
+    private org.springframework.core.env.Environment environment;
+
     private record Answer(int status, Duration took) {
     }
 
@@ -130,5 +133,11 @@ class GlobalThrottleTest {
         assertThat(answers).extracting(Answer::status).containsOnly(401);
         assertThat(answers.stream().filter(answer -> answer.took().compareTo(DELAYED_AT_LEAST) >= 0).count())
                 .isGreaterThanOrEqualTo(THREADS - BUDGET);
+    }
+
+    @Test
+    @DisplayName("REM-006 (D-0013 / BLOCKING-L3): virtual threads are enabled so blocking LoginDelay.await does not tie up platform threads")
+    void rem006_virtualThreadsEnabled() {
+        assertThat(environment.getProperty("spring.threads.virtual.enabled", Boolean.class)).isTrue();
     }
 }

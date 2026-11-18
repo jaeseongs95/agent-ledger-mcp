@@ -34,6 +34,7 @@ public final class Main {
     public static void main(String[] args) {
         SpringApplication application = new SpringApplication(HookApplication.class);
         application.setAddCommandLineProperties(false);
+        application.setRegisterShutdownHook(false);
         application.setDefaultProperties(CONFIG_ONLY_FROM_THE_JAR);
         System.exit(SpringApplication.exit(application.run(args)));
     }

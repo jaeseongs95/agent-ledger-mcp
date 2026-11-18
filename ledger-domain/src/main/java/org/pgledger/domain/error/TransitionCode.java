@@ -8,7 +8,7 @@ public enum TransitionCode implements ErrorCode {
     EVIDENCE_REQUIRED,
     MERGE_TARGET_INVALID,
     MERGED_DEFECT,
-    /** {@code record_fix} or {@code save} of a VERIFIED defect: a reviewer has to reopen it first. Argument: the defect id. */
+    /** {@code record_fix}, {@code save}, or {@code record_case} of a VERIFIED defect: a reviewer has to reopen it first. Argument: the defect id. */
     VERIFIED_DEFECT,
     SAME_SESSION,
     PROJECT_MOVE_FORBIDDEN,

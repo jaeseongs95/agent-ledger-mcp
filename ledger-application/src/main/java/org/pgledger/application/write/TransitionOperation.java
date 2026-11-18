@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import org.pgledger.application.attachment.AttachmentLinks;
 import org.pgledger.application.gate.Lookup;
@@ -182,6 +183,18 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
     private TransitionResult defect(WriteContext ctx, DefectId id, long expected, DefectStatus to,
             Evidence evidence, DefectId mergedInto, String attachment) {
         Instant now = clock.instant();
+        // Pin defect rows in canonical DefectId order before reading so concurrent mutual merges and verify/merge pairs serialize cleanly.
+        if (to == DefectStatus.MERGED && mergedInto != null && !Objects.equals(id, mergedInto)) {
+            if (id.value().compareTo(mergedInto.value()) <= 0) {
+                mergeChain.pinMergeSource(id);
+                mergeChain.pinMergeTarget(mergedInto);
+            } else {
+                mergeChain.pinMergeTarget(mergedInto);
+                mergeChain.pinMergeSource(id);
+            }
+        } else if (to == DefectStatus.VERIFIED) {
+            mergeChain.pinVerifyCandidate(id);
+        }
         Defect row = rows.defectForWrite(id, expected);
         recheck(ctx, HistoryEntity.DEFECT, row.projectId(), row.status(), to);
         FixHistory fixHistory = new FixHistory(fixes.findByDefectIdOrderById(id).stream()

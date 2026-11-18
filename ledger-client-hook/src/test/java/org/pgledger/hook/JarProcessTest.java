@@ -200,4 +200,28 @@ class JarProcessTest {
         // the launcher is a Java 17 class file: a JDK of 17 to 24 refuses the hook class (69.0), an older one the launcher (61.0)
         assertThat(run.err()).contains("UnsupportedClassVersionError").containsPattern("class file version (69|61)\\.0");
     }
+
+    @Test
+    @DisplayName("REM-008 (D-0048 / BLOCKING-L4): 4 concurrent cold java -jar starts stay well below the 5 s host limit")
+    void rem008_concurrentColdStartsStayWithinHostLimit(HookJar jar) throws Exception {
+        CodexHost codex = new CodexHost();
+        byte[] stdin = codex.event(codex.toolName("save"), KOREAN_INPUT);
+        int starts = 4;
+        java.util.concurrent.CyclicBarrier ready = new java.util.concurrent.CyclicBarrier(starts);
+        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(starts)) {
+            List<java.util.concurrent.Future<HookJar.Timed>> futures = new java.util.ArrayList<>();
+            for (int i = 0; i < starts; i++) {
+                futures.add(pool.submit(() -> {
+                    ready.await();
+                    return jar.start(stdin, "codex");
+                }));
+            }
+            for (var future : futures) {
+                HookJar.Timed timed = future.get();
+                assertThat(timed.run().err()).isEmpty();
+                assertThat(timed.run().exit()).isZero();
+                assertThat(timed.millis()).isLessThan(HOST_LIMIT_MILLIS);
+            }
+        }
+    }
 }

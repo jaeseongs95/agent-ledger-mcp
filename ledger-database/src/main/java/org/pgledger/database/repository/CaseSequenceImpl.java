@@ -14,7 +14,7 @@ public class CaseSequenceImpl implements CaseSequence {
 
     @Override
     public boolean nextCaseSeq(DefectId defect) {
-        return jdbc.sql("UPDATE defect SET case_seq = case_seq + 1 WHERE id = :id AND status <> 'MERGED'")
+        return jdbc.sql("UPDATE defect SET case_seq = case_seq + 1 WHERE id = :id AND status NOT IN ('MERGED', 'VERIFIED')")
                 .param("id", defect.value()).update() == 1;
     }
 }

@@ -416,4 +416,84 @@ class RaceTest {
                 c.id(), t.id(), Scenario.REASON, null)), TrustCode.SESSION_NOT_GRANTED);
         assertThat(s.count("SELECT COUNT(*) FROM condition_link WHERE condition_id = ?", c.id())).isZero();
     }
+
+    @RepeatedTest(5)
+    @DisplayName("REM-005 (D-0024 / BLOCKING-L2): concurrent mutual merges A->B and B->A never both succeed and never create a cycle")
+    void rem005_mutualMergeSerializesWithoutCycle(Scenario s) {
+        SaveResult a = s.newDefect("cycle-a");
+        SaveResult b = s.newDefect("cycle-b");
+        var outcomes = Parallel.all(List.of(
+                () -> MergeFixture.merge(s, a.id(), 1, b.id()),
+                () -> MergeFixture.merge(s, b.id(), 1, a.id())));
+        assertThat(outcomes.stream().filter(o -> o.succeeded())).hasSizeLessThan(2);
+        for (var outcome : outcomes) {
+            if (!outcome.succeeded()) {
+                assertThat(outcome.failure()).isInstanceOf(LedgerException.class);
+                assertThat(((LedgerException) outcome.failure()).code()).isIn(
+                        TransitionCode.MERGE_TARGET_INVALID, ConflictCode.VERSION_CONFLICT);
+            }
+        }
+        var rowA = s.defect(a.id());
+        var rowB = s.defect(b.id());
+        assertThat(rowA.status() == DefectStatus.MERGED && rowB.status() == DefectStatus.MERGED).isFalse();
+    }
+
+    @Test
+    @DisplayName("REM-005 (D-0024 / BLOCKING-L2): an uncommitted A->B merge holds B so a concurrent B->A waits and fails MERGE_TARGET_INVALID (no READ COMMITTED write skew cycle)")
+    void rem005_uncommittedMutualMergeIsSerialized(Scenario s) throws Exception {
+        SaveResult a = s.newDefect("skew-a");
+        SaveResult b = s.newDefect("skew-b");
+        CountDownLatch merged = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger holderPid = new java.util.concurrent.atomic.AtomicInteger();
+        Future<?> first = holdingTransaction(s, () -> {
+            holderPid.set(s.ctx().jdbc().sql("SELECT pg_backend_pid()").query(Integer.class).single());
+            return MergeFixture.merge(s, a.id(), 1, b.id());
+        }, merged, release);
+        assertThat(merged.await(60, TimeUnit.SECONDS)).isTrue();
+
+        Future<Optional<ErrorCode>> second = Parallel.start(() -> Expect.outcome(() ->
+                MergeFixture.merge(s, b.id(), 1, a.id())));
+        org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(15))
+                .pollInterval(java.time.Duration.ofMillis(10))
+                .until(() -> second.isDone()
+                        || org.pgledger.application.support.LockWaits.waitingFor(s.ctx(), holderPid.get()) > 0);
+        release.countDown();
+        first.get(60, TimeUnit.SECONDS);
+        assertThat(second.get(60, TimeUnit.SECONDS)).contains(TransitionCode.MERGE_TARGET_INVALID);
+        assertThat(s.defect(a.id()).status()).isEqualTo(DefectStatus.MERGED);
+        assertThat(s.defect(b.id()).status()).isEqualTo(DefectStatus.OPEN);
+        assertThat(s.defect(b.id()).mergedInto()).isNull();
+    }
+
+    @Test
+    @DisplayName("REM-005 (D-0024 / BLOCKING-L2): merging A into B across a concurrent B->VERIFIED transition cannot leave A merged into a VERIFIED defect without B seeing A")
+    void rem005_mergeIntoConcurrentVerify(Scenario s) throws Exception {
+        SaveResult a = s.newDefect("src");
+        s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR, new RecordCaseCommand(Scenario.uuid(), a.id(),
+                "case on src", Scenario.REASON, null, null, null));
+        SaveResult b = s.sourceFixedDefect("target");
+        String reviewer = s.actorWith("verify");
+
+        CountDownLatch pinned = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger holderPid = new java.util.concurrent.atomic.AtomicInteger();
+        Future<?> verifying = holdingTransaction(s, () -> {
+            holderPid.set(s.ctx().jdbc().sql("SELECT pg_backend_pid()").query(Integer.class).single());
+            return s.bean(ReviewService.class).review(reviewer, s.move("defect", b.id(), 2L, "VERIFIED",
+                    Scenario.EVIDENCE));
+        }, pinned, release);
+        assertThat(pinned.await(60, TimeUnit.SECONDS)).isTrue();
+
+        Future<Optional<ErrorCode>> merging = Parallel.start(() -> Expect.outcome(() ->
+                MergeFixture.merge(s, a.id(), 1, b.id())));
+        org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(15))
+                .pollInterval(java.time.Duration.ofMillis(10))
+                .until(() -> merging.isDone()
+                        || org.pgledger.application.support.LockWaits.waitingFor(s.ctx(), holderPid.get()) > 0);
+        release.countDown();
+        verifying.get(60, TimeUnit.SECONDS);
+        assertThat(merging.get(60, TimeUnit.SECONDS)).contains(TransitionCode.MERGE_TARGET_INVALID);
+        assertThat(s.defect(a.id()).status()).isEqualTo(DefectStatus.OPEN);
+    }
 }

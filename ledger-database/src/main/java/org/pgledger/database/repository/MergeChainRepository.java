@@ -41,4 +41,31 @@ public class MergeChainRepository {
         }
         return found;
     }
+
+    /**
+     * Conditionally enforces that a defect entering {@code MERGED} is not already {@code MERGED} and has no stale merge
+     * target, acquiring a PostgreSQL row lock in canonical order without altering {@code version} or {@code updated_at}.
+     */
+    public int pinMergeSource(DefectId id) {
+        return jdbc.sql("UPDATE defect SET merged_into = NULL WHERE id = :id AND status <> 'MERGED'")
+                .param("id", id.value()).update();
+    }
+
+    /**
+     * Conditionally enforces that a merge target is neither {@code MERGED} nor {@code VERIFIED}, acquiring a row lock
+     * on the target so concurrent mutual merges and verify-vs-merge races serialize under {@code READ COMMITTED}.
+     */
+    public int pinMergeTarget(DefectId id) {
+        return jdbc.sql("UPDATE defect SET merged_into = NULL WHERE id = :id AND status NOT IN ('MERGED', 'VERIFIED')")
+                .param("id", id.value()).update();
+    }
+
+    /**
+     * Conditionally enforces that a defect being verified is still {@code SOURCE_FIXED} before scanning its merge chain,
+     * serializing incoming merges onto the verified row.
+     */
+    public int pinVerifyCandidate(DefectId id) {
+        return jdbc.sql("UPDATE defect SET merged_into = NULL WHERE id = :id AND status = 'SOURCE_FIXED'")
+                .param("id", id.value()).update();
+    }
 }

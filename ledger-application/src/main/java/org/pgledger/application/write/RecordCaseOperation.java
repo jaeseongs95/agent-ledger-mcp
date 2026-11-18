@@ -20,6 +20,7 @@ import org.pgledger.domain.error.TransitionException;
 import org.pgledger.domain.model.Defect;
 import org.pgledger.domain.model.DefectCase;
 import org.pgledger.domain.model.ReceiptOperation;
+import org.pgledger.domain.rule.DefectStatus;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
 import org.pgledger.domain.rule.Scope;
@@ -86,6 +87,9 @@ public class RecordCaseOperation extends WriteOperation<RecordCaseCommand, Recor
         attachments.requireOwnedBy(attachment, ctx.author());
         if (!defects.nextCaseSeq(defectId)) {
             Defect defect = rows.defect(defectId);
+            if (defect.status() == DefectStatus.VERIFIED) {
+                throw new TransitionException(TransitionCode.VERIFIED_DEFECT, List.of(defectId.value()));
+            }
             throw new TransitionException(TransitionCode.MERGED_DEFECT,
                     List.of(defectId.value(), defect.mergedInto() == null ? "?" : defect.mergedInto().value()));
         }
