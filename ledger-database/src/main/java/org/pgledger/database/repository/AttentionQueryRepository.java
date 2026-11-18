@@ -9,13 +9,12 @@ import org.springframework.stereotype.Repository;
 
 /**
  * The items that need a look, of one project or of all, optionally of one kind, in keyset pages ordered by kind and
- * id ({@code kind > ? OR (kind = ? AND id > ?)}). There are five kinds; a verified fix
- * without CI data is never one of them.
+ * id ({@code kind > ? OR (kind = ? AND id > ?)}). There are six kinds across issues, specs, and tasks.
  */
 @Repository
 public class AttentionQueryRepository {
 
-    /** One item: its kind, the id of the defect or task and its project. */
+    /** One item: its kind, the id of the issue, spec, or task and its project. */
     public record Item(AttentionKind kind, String id, String projectId) {
     }
 

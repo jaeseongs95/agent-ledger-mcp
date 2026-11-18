@@ -17,7 +17,7 @@ public enum ValidationReason {
     REQUIRED_WHEN_SET,
     REQUIRED_WITH_SCOPE,
     REQUIRED_TO_EDIT,
-    REQUIRED_FOR_CONDITION,
+    REQUIRED_FOR_CRITERION,
     REQUIRED_FOR_IMPORTED_OPERATIONS,
     /** {0} = the longest length in characters. */
     MUST_BE_AT_MOST_CHARS,
@@ -49,7 +49,8 @@ public enum ValidationReason {
     SET_EXACTLY_WHEN_STATUS_IS,
     /** {0} = the operation for which the property is set. */
     SET_EXACTLY_FOR,
-    MUST_NOT_BE_THE_DEFECT_ITSELF,
+    MUST_NOT_BE_THE_ISSUE_ITSELF,
+    MUST_NOT_BE_THE_SPEC_ITSELF,
     /** {0} = the property it must differ from. */
     MUST_DIFFER_FROM,
     MUST_MENTION_A_FIELD,
@@ -64,9 +65,9 @@ public enum ValidationReason {
     MUST_MATCH,
     /** {0} = the number of hex characters. */
     MUST_BE_LOWER_CASE_HEX,
-    DEFECT_ID_FORMAT,
+    ISSUE_ID_FORMAT,
     MUST_BE_POSITIVE,
-    /** {0} = the longest length in characters: an id of a task or condition has 1 to {0} characters, no whitespace, no control character. */
+    /** {0} = the longest length in characters: an id of a spec, task or criterion has 1 to {0} characters, no whitespace, no control character. */
     MUST_BE_ID,
     /** {0} = the id of the same kind that this id equals when the case is ignored (an import reports the later one). */
     ID_DIFFERS_ONLY_IN_CASE,

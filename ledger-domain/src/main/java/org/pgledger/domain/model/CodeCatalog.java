@@ -38,7 +38,7 @@ public record CodeCatalog(CodeGroup group, List<CommonCode> entries) {
     /**
      * Checks the code of a required column about to be written.
      *
-     * @param column    the column, for the message, for example {@code defect.severity}
+     * @param column    the column, for the message, for example {@code issue.severity}
      * @param candidate the code the write wants to store
      * @param current   the code the row holds now, or {@code null} for an insert
      * @throws ValidationException CODE_REQUIRED for none, CODE_INVALID for an unknown or retired code. A retired

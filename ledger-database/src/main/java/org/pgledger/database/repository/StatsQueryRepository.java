@@ -21,25 +21,34 @@ public class StatsQueryRepository {
         this.jdbc = jdbc;
     }
 
-    public Map<String, Long> defectsByStatus(ProjectId project) {
-        return counts("defect", "status", project);
+    public Map<String, Long> issuesByStatus(ProjectId project) {
+        return counts("issue", "status", project);
     }
 
-    public Map<String, Long> defectsBySeverity(ProjectId project) {
-        return counts("defect", "severity", project);
+    public Map<String, Long> issuesBySeverity(ProjectId project) {
+        return counts("issue", "severity", project);
+    }
+
+    public Map<String, Long> specsByStatus(ProjectId project) {
+        return counts("spec", "status", project);
     }
 
     public Map<String, Long> tasksByState(ProjectId project) {
         return counts("task", "state", project);
     }
 
-    public Map<String, Long> conditionsByState(ProjectId project) {
-        return counts("release_condition", "state", project);
+    public Map<String, Long> criteriaByState(ProjectId project) {
+        return counts("milestone_criterion", "state", project);
     }
 
-    /** New defects per UTC day, oldest day first. */
-    public Map<LocalDate, Long> defectsCreatedPerDay(ProjectId project) {
-        return perDay("defect", project);
+    /** New issues per UTC day, oldest day first. */
+    public Map<LocalDate, Long> issuesCreatedPerDay(ProjectId project) {
+        return perDay("issue", project);
+    }
+
+    /** New specs per UTC day, oldest day first. */
+    public Map<LocalDate, Long> specsCreatedPerDay(ProjectId project) {
+        return perDay("spec", project);
     }
 
     /** New tasks per UTC day, oldest day first. */

@@ -11,14 +11,16 @@ import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.model.CodeCatalog;
 import org.pgledger.domain.model.CommonCode;
 import org.pgledger.domain.rule.Channel;
-import org.pgledger.domain.rule.CiConclusion;
+import org.pgledger.domain.rule.CheckResult;
 import org.pgledger.domain.rule.CodeDirection;
 import org.pgledger.domain.rule.CodeGroup;
 import org.pgledger.domain.rule.CodeState;
-import org.pgledger.domain.rule.ConditionState;
-import org.pgledger.domain.rule.DefectStatus;
+import org.pgledger.domain.rule.CriterionState;
+import org.pgledger.domain.rule.DeliverableTarget;
+import org.pgledger.domain.rule.IssueStatus;
 import org.pgledger.domain.rule.LinkKind;
 import org.pgledger.domain.rule.Scope;
+import org.pgledger.domain.rule.SpecStatus;
 import org.pgledger.domain.rule.TaskState;
 import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.CodeValue;
@@ -32,20 +34,24 @@ class EnumsAndCodesTest {
     }
 
     @Test
-    void dom020_enumsEqualTheOldCheckSets() {
-        assertThat(names(DefectStatus.class)).containsExactlyInAnyOrder("OPEN", "SOURCE_FIXED", "VERIFIED",
-                "NOT_DEFECT", "DISPUTED", "MERGED");
+    void dom020_enumsCoverAllUniversalLedgerStates() {
+        assertThat(names(IssueStatus.class)).containsExactlyInAnyOrder("OPEN", "RESOLVED", "VERIFIED",
+                "NOT_AN_ISSUE", "DISPUTED", "MERGED");
+        assertThat(names(SpecStatus.class)).containsExactlyInAnyOrder("DRAFT", "PLANNED", "ACTIVE", "BLOCKED",
+                "COMPLETED", "VERIFIED", "CANCELLED");
         assertThat(names(TaskState.class)).containsExactlyInAnyOrder("UNKNOWN", "PLANNED", "ACTIVE", "BLOCKED",
-                "REPORTED_DONE", "VERIFIED", "CANCELLED");
-        assertThat(names(ConditionState.class)).containsExactlyInAnyOrder("UNKNOWN", "MET", "NOT_MET");
-        assertThat(Tokens.allowed(Scope.values())).containsExactly("defect", "task", "fix", "verify");
+                "COMPLETED", "VERIFIED", "CANCELLED");
+        assertThat(names(CriterionState.class)).containsExactlyInAnyOrder("UNKNOWN", "PLANNED", "ACTIVE",
+                "COMPLETED", "MET", "NOT_MET");
+        assertThat(Tokens.allowed(Scope.values())).containsExactly("issue", "spec", "task", "deliverable", "verify");
         assertThat(names(Channel.class)).containsExactlyInAnyOrder("AUTHOR", "REVIEWER");
-        assertThat(Tokens.allowed(CiConclusion.values())).containsExactly("success", "failure", "cancelled");
+        assertThat(Tokens.allowed(CheckResult.values())).containsExactly("passed", "failed", "cancelled");
+        assertThat(Tokens.allowed(DeliverableTarget.values())).containsExactly("issue", "spec", "task");
         assertThat(Tokens.allowed(CodeState.values())).containsExactly("ACTIVE", "INACTIVE");
-        assertThat(Tokens.allowed(CodeGroup.values())).containsExactly("DEFECT_CATEGORY", "DEFECT_SEVERITY",
-                "RELATION_KIND");
+        assertThat(Tokens.allowed(CodeGroup.values())).containsExactly("ISSUE_CATEGORY", "ISSUE_SEVERITY",
+                "DELIVERABLE_KIND", "RELATION_KIND");
         assertThat(Tokens.parse("scope", "verify", Scope.values())).isEqualTo(Scope.VERIFY);
-        assertThat(Tokens.parse("ci_conclusion", "success", CiConclusion.values())).isEqualTo(CiConclusion.SUCCESS);
+        assertThat(Tokens.parse("check_result", "passed", CheckResult.values())).isEqualTo(CheckResult.PASSED);
     }
 
     @Test
@@ -53,12 +59,15 @@ class EnumsAndCodesTest {
         ValidationException e = org.assertj.core.api.Assertions.catchThrowableOfType(ValidationException.class,
                 () -> Tokens.parse("scope", "FIXED", Scope.values()));
         assertThat(e.code()).isEqualTo(ValidationCode.VALIDATION_FAILED);
-        assertThat(e.issues().getFirst().allowed()).containsExactly("defect", "task", "fix", "verify");
-        Expect.invalid(() -> Tokens.parse("ci_conclusion", "passed", CiConclusion.values()));
+        assertThat(e.issues().getFirst().allowed()).containsExactly("issue", "spec", "task", "deliverable", "verify");
+        Expect.invalid(() -> Tokens.parse("check_result", "unknown", CheckResult.values()));
         Expect.invalid(() -> Tokens.parse("scope", null, Scope.values()));
-        // any token that is not structural names a relation kind, which is data (checked against the common codes)
-        assertThat(LinkKind.ofToken("defect_task")).isEqualTo(LinkKind.DEFECT_TASK);
-        assertThat(LinkKind.ofToken("condition_defect")).isEqualTo(LinkKind.CONDITION_DEFECT);
+        // structural link kinds vs common-code relation kinds
+        assertThat(LinkKind.ofToken("issue_task")).isEqualTo(LinkKind.ISSUE_TASK);
+        assertThat(LinkKind.ofToken("issue_spec")).isEqualTo(LinkKind.ISSUE_SPEC);
+        assertThat(LinkKind.ofToken("spec_task")).isEqualTo(LinkKind.SPEC_TASK);
+        assertThat(LinkKind.ofToken("criterion_issue")).isEqualTo(LinkKind.CRITERION_ISSUE);
+        assertThat(LinkKind.ofToken("criterion_spec")).isEqualTo(LinkKind.CRITERION_SPEC);
         assertThat(LinkKind.ofToken("related")).isEqualTo(LinkKind.RELATION);
     }
 
@@ -84,49 +93,43 @@ class EnumsAndCodesTest {
                 .contains(CodeDirection.GIVEN);
         assertThat(kinds.directionOf(CodeValue.of("unknown_kind"))).isEmpty();
         assertThat(Tokens.allowed(CodeDirection.values())).containsExactly("GIVEN", "CANONICAL");
-        // a code of another group has no relation, so it cannot be directed
-        Expect.invalid(() -> new CommonCode(CodeGroup.DEFECT_CATEGORY, CodeValue.of("UI"), "ui", null, null, null, 1,
+        Expect.invalid(() -> new CommonCode(CodeGroup.ISSUE_CATEGORY, CodeValue.of("UI"), "ui", null, null, null, 1,
                 CodeState.ACTIVE, CodeDirection.GIVEN, AuthorId.OWNER));
-        assertThat(new CommonCode(CodeGroup.DEFECT_CATEGORY, CodeValue.of("UI"), "ui", null, null, null, 1,
+        assertThat(new CommonCode(CodeGroup.ISSUE_CATEGORY, CodeValue.of("UI"), "ui", null, null, null, 1,
                 CodeState.ACTIVE, CodeDirection.CANONICAL, AuthorId.OWNER).direction())
                 .isEqualTo(CodeDirection.CANONICAL);
     }
 
     private static CodeCatalog severity() {
-        return new CodeCatalog(CodeGroup.DEFECT_SEVERITY, List.of(code(CodeGroup.DEFECT_SEVERITY, "P3", 3,
-                CodeState.ACTIVE), code(CodeGroup.DEFECT_SEVERITY, "P1", 1, CodeState.ACTIVE),
-                code(CodeGroup.DEFECT_SEVERITY, "P2", 2, CodeState.ACTIVE),
-                code(CodeGroup.DEFECT_SEVERITY, "UNRATED", 9, CodeState.INACTIVE)));
+        return new CodeCatalog(CodeGroup.ISSUE_SEVERITY, List.of(code(CodeGroup.ISSUE_SEVERITY, "P3", 3,
+                CodeState.ACTIVE), code(CodeGroup.ISSUE_SEVERITY, "P1", 1, CodeState.ACTIVE),
+                code(CodeGroup.ISSUE_SEVERITY, "P2", 2, CodeState.ACTIVE),
+                code(CodeGroup.ISSUE_SEVERITY, "UNRATED", 9, CodeState.INACTIVE)));
     }
 
     private static CodeCatalog category() {
-        return new CodeCatalog(CodeGroup.DEFECT_CATEGORY, List.of(code(CodeGroup.DEFECT_CATEGORY, "ARC", 0,
-                CodeState.ACTIVE), code(CodeGroup.DEFECT_CATEGORY, "RETIRED", 0, CodeState.INACTIVE)));
+        return new CodeCatalog(CodeGroup.ISSUE_CATEGORY, List.of(code(CodeGroup.ISSUE_CATEGORY, "PROCESS", 0,
+                CodeState.ACTIVE), code(CodeGroup.ISSUE_CATEGORY, "RETIRED", 0, CodeState.INACTIVE)));
     }
 
     @Test
     void dom021_codePolicy() {
         CodeValue p2 = CodeValue.of("P2");
-        // unknown and missing
         Expect.failsWith(ValidationCode.CODE_INVALID,
-                () -> severity().check("defect.severity", CodeValue.of("P9"), null));
-        Expect.failsWith(ValidationCode.CODE_REQUIRED, () -> severity().check("defect.severity", null, null));
-        Expect.failsWith(ValidationCode.CODE_REQUIRED, () -> category().check("defect.category", null, null));
-        // active
-        severity().check("defect.severity", p2, null);
-        // inactive: refused on insert and when changed
+                () -> severity().check("issue.severity", CodeValue.of("P9"), null));
+        Expect.failsWith(ValidationCode.CODE_REQUIRED, () -> severity().check("issue.severity", null, null));
+        Expect.failsWith(ValidationCode.CODE_REQUIRED, () -> category().check("issue.category", null, null));
+        severity().check("issue.severity", p2, null);
         Expect.failsWith(ValidationCode.CODE_INVALID,
-                () -> category().check("defect.category", CodeValue.of("RETIRED"), null));
+                () -> category().check("issue.category", CodeValue.of("RETIRED"), null));
         Expect.failsWith(ValidationCode.CODE_INVALID,
-                () -> category().check("defect.category", CodeValue.of("RETIRED"), CodeValue.of("ARC")));
-        // retained when unchanged on a column that is not always-active
-        category().check("defect.category", CodeValue.of("RETIRED"), CodeValue.of("RETIRED"));
-        // always-active: refused on every write, and the details flag the retired value
+                () -> category().check("issue.category", CodeValue.of("RETIRED"), CodeValue.of("PROCESS")));
+        category().check("issue.category", CodeValue.of("RETIRED"), CodeValue.of("RETIRED"));
         var retired = Expect.failsWith(ValidationCode.CODE_INVALID,
-                () -> severity().check("defect.severity", CodeValue.of("UNRATED"), CodeValue.of("UNRATED")));
+                () -> severity().check("issue.severity", CodeValue.of("UNRATED"), CodeValue.of("UNRATED")));
         assertThat(retired.details().get("holdsRetiredValue")).containsExactly("true");
         var notRetired = Expect.failsWith(ValidationCode.CODE_INVALID,
-                () -> severity().check("defect.severity", CodeValue.of("P9"), null));
+                () -> severity().check("issue.severity", CodeValue.of("P9"), null));
         assertThat(notRetired.details().get("holdsRetiredValue")).containsExactly("false");
     }
 
@@ -134,12 +137,11 @@ class EnumsAndCodesTest {
     void dom022_validListHoldsActiveCodesInSortOrder() {
         assertThat(severity().validCodes()).extracting(CodeValue::value).containsExactly("P1", "P2", "P3");
         var failure = Expect.failsWith(ValidationCode.CODE_INVALID,
-                () -> severity().check("defect.severity", CodeValue.of("UNRATED"), null));
+                () -> severity().check("issue.severity", CodeValue.of("UNRATED"), null));
         assertThat(failure.details().get("valid")).containsExactly("P1", "P2", "P3");
-        // equal sort order: ordered by code
-        CodeCatalog tied = new CodeCatalog(CodeGroup.DEFECT_CATEGORY, List.of(
-                code(CodeGroup.DEFECT_CATEGORY, "ZED", 1, CodeState.ACTIVE),
-                code(CodeGroup.DEFECT_CATEGORY, "ALPHA", 1, CodeState.ACTIVE)));
+        CodeCatalog tied = new CodeCatalog(CodeGroup.ISSUE_CATEGORY, List.of(
+                code(CodeGroup.ISSUE_CATEGORY, "ZED", 1, CodeState.ACTIVE),
+                code(CodeGroup.ISSUE_CATEGORY, "ALPHA", 1, CodeState.ACTIVE)));
         assertThat(tied.validCodes()).extracting(CodeValue::value).containsExactly("ALPHA", "ZED");
     }
 }

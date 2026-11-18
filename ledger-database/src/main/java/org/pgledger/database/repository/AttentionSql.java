@@ -13,19 +13,21 @@ import org.pgledger.domain.rule.HistoryEntity;
  */
 final class AttentionSql {
 
-    private static final String HAS_FIX = "EXISTS (SELECT 1 FROM defect_fix x WHERE x.defect_id = defect.id)";
+    private static final String HAS_DELIVERABLE = "EXISTS (SELECT 1 FROM deliverable x "
+            + "WHERE x.target_entity = 'ISSUE' AND x.target_id = issue.id)";
 
     private AttentionSql() {
     }
 
-    /** The condition on one row of the table the kind is about (a defect or a task). */
+    /** The condition on one row of the table the kind is about (an issue, spec, or task). */
     static String condition(AttentionKind kind) {
         return switch (kind) {
-            case OPEN_WITH_FIX -> "status = 'OPEN' AND " + HAS_FIX;
-            case FIXED_WITHOUT_COMMIT -> "status IN ('SOURCE_FIXED', 'VERIFIED') AND NOT " + HAS_FIX;
+            case OPEN_WITH_DELIVERABLE -> "status = 'OPEN' AND " + HAS_DELIVERABLE;
+            case RESOLVED_WITHOUT_DELIVERABLE -> "status IN ('RESOLVED', 'VERIFIED') AND NOT " + HAS_DELIVERABLE;
             case OPEN_NO_OWNER -> "status = 'OPEN' AND owner_actor_id IS NULL";
+            case SPEC_COMPLETED_NOT_VERIFIED -> "status = 'COMPLETED'";
             case TASK_UNKNOWN -> "state = 'UNKNOWN'";
-            case DONE_NOT_VERIFIED -> "state = 'REPORTED_DONE'";
+            case DONE_NOT_VERIFIED -> "state = 'COMPLETED'";
         };
     }
 

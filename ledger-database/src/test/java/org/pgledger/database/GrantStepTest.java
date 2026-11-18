@@ -82,7 +82,10 @@ class GrantStepTest {
                     Set<String> once = privileges(pool, account, schema.name());
                     applier.apply(account);
 
-                    assertThat(once).contains("defect:SELECT", "defect:INSERT", "defect:UPDATE",
+                    assertThat(once).contains("issue:SELECT", "issue:INSERT", "issue:UPDATE",
+                            "spec:SELECT", "spec:INSERT", "spec:UPDATE",
+                            "deliverable:SELECT", "deliverable:INSERT", "deliverable:UPDATE",
+                            "session_token:SELECT", "session_token:INSERT", "session_token:UPDATE",
                             "driver_audit_key:INSERT", "history:SELECT", "history:INSERT");
                     assertThat(once).contains("attachment:SELECT", "attachment:INSERT", "attachment_file:SELECT",
                             "attachment_file:INSERT", "upload_staging:UPDATE", "upload_staging:DELETE");

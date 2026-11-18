@@ -25,7 +25,7 @@ import java.util.regex.Pattern;
  */
 public final class SeedSources {
 
-    public static final String CATEGORIES = "defect-categories.tsv";
+    public static final String CATEGORIES = "issue-categories.tsv";
     public static final String DEFAULTS = "install-defaults.properties";
 
     /** The distance between two sort orders, so that the owner can put a code between two of the seed. */

@@ -4,14 +4,17 @@ import org.pgledger.domain.value.Token;
 
 /** The kind of row a history entry is about. */
 public enum HistoryEntity implements Token {
-    DEFECT("defect"),
+    ISSUE("issue"),
+    SPEC("spec"),
     TASK("task"),
-    CONDITION("condition"),
-    DEFECT_FIX("defect_fix"),
-    DEFECT_TASK("defect_task"),
-    DEFECT_RELATION("defect_relation"),
-    CONDITION_LINK("condition_link"),
-    DEFECT_CASE("defect_case");
+    CRITERION("criterion"),
+    DELIVERABLE("deliverable"),
+    ISSUE_TASK("issue_task"),
+    ISSUE_SPEC("issue_spec"),
+    SPEC_TASK("spec_task"),
+    ISSUE_RELATION("issue_relation"),
+    CRITERION_LINK("criterion_link"),
+    ISSUE_CASE("issue_case");
 
     private final String token;
 
@@ -24,16 +27,13 @@ public enum HistoryEntity implements Token {
         return token;
     }
 
-    /**
-     * The grant scope that writes this kind of row: the scope a session needs on the project of the row (a link or a
-     * case is written with the scope of the defect or the task it hangs on; a verification needs {@link Scope#VERIFY}
-     * on top of this, see {@link Scope#forTransition}).
-     */
+    /** The grant scope required to write this kind of history row on a project. */
     public Scope writeScope() {
         return switch (this) {
-            case DEFECT, DEFECT_TASK, DEFECT_RELATION, DEFECT_CASE -> Scope.DEFECT;
-            case TASK, CONDITION, CONDITION_LINK -> Scope.TASK;
-            case DEFECT_FIX -> Scope.FIX;
+            case ISSUE, ISSUE_TASK, ISSUE_RELATION, ISSUE_CASE -> Scope.ISSUE;
+            case SPEC, ISSUE_SPEC, SPEC_TASK -> Scope.SPEC;
+            case TASK, CRITERION, CRITERION_LINK -> Scope.TASK;
+            case DELIVERABLE -> Scope.DELIVERABLE;
         };
     }
 }

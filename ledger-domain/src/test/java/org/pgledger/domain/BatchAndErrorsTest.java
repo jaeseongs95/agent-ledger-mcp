@@ -39,7 +39,7 @@ class BatchAndErrorsTest {
 
     @Test
     void dom025_batchOperationKindsCarryTheOldKeySets() {
-        assertThat(Tokens.allowed(BatchOpKind.values())).containsExactly("save", "transition", "record_fix",
+        assertThat(Tokens.allowed(BatchOpKind.values())).containsExactly("save", "transition", "record_deliverable",
                 "record_case", "link", "correct");
         assertThat(BatchOpKind.SAVE.requiredKeys()).containsExactlyInAnyOrder("entity", "fields", "reason");
         assertThat(BatchOpKind.SAVE.allowedKeys()).containsExactlyInAnyOrder("entity", "fields", "reason", "id",
@@ -50,15 +50,15 @@ class BatchAndErrorsTest {
         }
         assertThat(BatchOpKind.TRANSITION.requiredKeys()).containsExactlyInAnyOrder("entity", "id",
                 "expected_version", "to", "reason");
-        assertThat(BatchOpKind.RECORD_FIX.allowedKeys()).contains("branch", "ci_ref", "ci_conclusion",
-                "ci_completed_at", "mark_source_fixed");
-        assertThat(BatchOpKind.RECORD_CASE.requiredKeys()).containsExactlyInAnyOrder("defect_id", "observation",
+        assertThat(BatchOpKind.RECORD_DELIVERABLE.allowedKeys()).contains("location", "check_ref", "check_result",
+                "checked_at", "mark_done");
+        assertThat(BatchOpKind.RECORD_CASE.requiredKeys()).containsExactlyInAnyOrder("issue_id", "observation",
                 "reason");
         assertThat(BatchOpKind.LINK.allowedKeys()).contains("remove");
         assertThat(BatchOpKind.CORRECT.allowedKeys()).containsExactlyInAnyOrder("history_id", "reason", "op",
                 "attachment_id");
         // ATA-012: the four operations that write a history row of their own entity take an optional attachment_id
-        assertThat(List.of(BatchOpKind.TRANSITION, BatchOpKind.RECORD_FIX, BatchOpKind.RECORD_CASE,
+        assertThat(List.of(BatchOpKind.TRANSITION, BatchOpKind.RECORD_DELIVERABLE, BatchOpKind.RECORD_CASE,
                 BatchOpKind.CORRECT)).allSatisfy(kind -> {
                     assertThat(kind.allowedKeys()).contains("attachment_id");
                     assertThat(kind.requiredKeys()).doesNotContain("attachment_id");
@@ -122,7 +122,7 @@ class BatchAndErrorsTest {
         assertThat(codes).hasSize(88);
         assertThat(codes.stream().map(ErrorCode::token)).doesNotHaveDuplicates();
         assertThat(codes.stream().map(ErrorCode::token)).contains("AUTHOR_ID_FORMAT", "SESSION_NOT_GRANTED",
-                "HOST_ATTESTATION_REQUIRED", "VERSION_CONFLICT", "SAME_SESSION", "MERGED_DEFECT", "VERIFIED_DEFECT",
+                "HOST_ATTESTATION_REQUIRED", "VERSION_CONFLICT", "SAME_SESSION", "MERGED_ISSUE", "VERIFIED_ENTITY",
                 "ID_NUMBER_AHEAD", "CODE_REQUIRED",
                 "CODE_INVALID", "ATTESTATION_UNSIGNED", "ATTESTATION_MALFORMED",
                 "ATTESTATION_SIGNATURE_INVALID", "ATTESTATION_BINDING_MISMATCH",
@@ -162,29 +162,29 @@ class BatchAndErrorsTest {
     void vrf008_theMessagesOfTheVerificationRulesAndTheIdsSayWhatToDo() {
         ResourceBundle en = ResourceBundle.getBundle("messages/ledger-errors", Locale.ROOT);
         ResourceBundle ko = ResourceBundle.getBundle("messages/ledger-errors", Locale.of("ko"));
-        assertThat(new MessageFormat(en.getString("error.VERIFIED_DEFECT")).format(new Object[] {"X-D-0001"}))
-                .contains("X-D-0001", "reviewer", "ledger_review", "reopen");
-        assertThat(new MessageFormat(ko.getString("error.VERIFIED_DEFECT")).format(new Object[] {"X-D-0001"}))
-                .contains("X-D-0001", "검토자", "ledger_review", "다시 열");
+        assertThat(new MessageFormat(en.getString("error.VERIFIED_ENTITY")).format(new Object[] {"X-I-0001"}))
+                .contains("X-I-0001", "reviewer", "ledger_review", "reopen");
+        assertThat(new MessageFormat(ko.getString("error.VERIFIED_ENTITY")).format(new Object[] {"X-I-0001"}))
+                .contains("X-I-0001", "검토자", "ledger_review", "다시 열");
         for (ResourceBundle bundle : List.of(en, ko)) {
             assertThat(new MessageFormat(bundle.getString("error.ID_NUMBER_AHEAD"))
-                    .format(new Object[] {"X-D-0100", "X-D-0004"})).contains("X-D-0100", "X-D-0004");
+                    .format(new Object[] {"X-I-0100", "X-I-0004"})).contains("X-I-0100", "X-I-0004");
         }
         assertThat(new MessageFormat(en.getString("error.ID_COUNTER_CHANGED")).format(new Object[] {"E2E"}))
                 .contains("E2E", "again");
         assertThat(new MessageFormat(ko.getString("error.ID_COUNTER_CHANGED")).format(new Object[] {"E2E"}))
                 .contains("E2E", "다시 보내");
-        assertThat(en.getString("error.SAME_SESSION")).contains("registered", "case", "fix", "reported");
-        assertThat(ko.getString("error.SAME_SESSION")).contains("등록", "사례", "수정", "보고");
+        assertThat(en.getString("error.SAME_SESSION")).contains("registered", "deliverables", "reports", "completed");
+        assertThat(ko.getString("error.SAME_SESSION")).contains("등록", "산출물", "사례", "완료 보고");
         ResourceBundle enReasons = ResourceBundle.getBundle("messages/ledger-reasons", Locale.ROOT);
         ResourceBundle koReasons = ResourceBundle.getBundle("messages/ledger-reasons", Locale.of("ko"));
-        assertThat(new MessageFormat(enReasons.getString("reason.NUMBER_ABOVE_NEXT")).format(new Object[] {"X-D-0004"}))
-                .contains("X-D-0004");
-        assertThat(new MessageFormat(koReasons.getString("reason.NUMBER_ABOVE_NEXT")).format(new Object[] {"X-D-0004"}))
-                .contains("X-D-0004");
+        assertThat(new MessageFormat(enReasons.getString("reason.NUMBER_ABOVE_NEXT")).format(new Object[] {"X-I-0004"}))
+                .contains("X-I-0004");
+        assertThat(new MessageFormat(koReasons.getString("reason.NUMBER_ABOVE_NEXT")).format(new Object[] {"X-I-0004"}))
+                .contains("X-I-0004");
         for (ResourceBundle reasons : List.of(enReasons, koReasons)) {
-            assertThat(new MessageFormat(reasons.getString("reason.ID_NOT_CANONICAL")).format(new Object[] {"X-D-0004"}))
-                    .contains("X-D-0004");
+            assertThat(new MessageFormat(reasons.getString("reason.ID_NOT_CANONICAL")).format(new Object[] {"X-I-0004"}))
+                    .contains("X-I-0004");
         }
     }
 

@@ -11,8 +11,11 @@ import org.pgledger.domain.error.ValidationReason;
  */
 public enum TextRule {
     TITLE(300, false),
-    BEHAVIOR(4000, false),
+    SYMPTOM(4000, false),
     ROOT_CAUSE(4000, false),
+    SUMMARY(4000, false),
+    ACCEPTANCE_CRITERIA(4000, false),
+    PRIORITY(32, true),
     PURPOSE(4000, false),
     SUCCESS_CONDITION(4000, false),
     /**
@@ -21,19 +24,20 @@ public enum TextRule {
      */
     ORIGIN_REF(20000, false),
     ORIGIN_QUOTE(2000, false),
-    RELEASE(100, false),
+    MILESTONE_NAME(100, false),
     GOAL_LABEL(200, false),
-    /** 200: room for the long codes of imported conditions. */
-    CONDITION_CODE(200, false),
-    CONDITION_TEXT(4000, false),
+    /** 200: room for the long codes of imported milestone criteria. */
+    CRITERION_CODE(200, false),
+    CRITERION_TEXT(4000, false),
     OBSERVATION(4000, true),
     EVIDENCE(2000, true),
-    USER_QUOTE(2000, false),
+    SOURCE_QUOTE(2000, false),
     GRANT_NOTE(500, false),
-    REPO(300, false),
-    BRANCH(300, false),
-    /** 2000: room for the long CI references of imported rows (a build URL with its query). */
-    CI_REF(2000, true),
+    DELIVERABLE_REF(300, true),
+    LOCATION(300, true),
+    DELIVERABLE_SUMMARY(1000, true),
+    /** 2000: room for external check references (review report links, pipeline URLs, approval sheets). */
+    CHECK_REF(2000, true),
     EVIDENCE_URI(2000, true),
     PROJECT_TITLE(200, true),
     CODE_NAME(200, true),
@@ -65,9 +69,9 @@ public enum TextRule {
     }
 
     /**
-     * The value of a field that has to be given and may be empty (the NOT NULL fields that allow {@code ''}: purpose,
-     * success condition, behavior, root cause, condition text): {@code null} is a validation failure (REQUIRED), a blank text is
-     * the empty text {@code ""}, which the row stores as NULL (see {@link #emptyToNull}); too long is a validation failure.
+     * The value of a field that has to be given and may be empty (purpose, success condition, symptom, root cause,
+     * summary, acceptance criteria, criterion text): {@code null} fails with REQUIRED; blank becomes {@code ""},
+     * which the row stores as NULL via {@link #emptyToNull}.
      */
     public String givenOrEmpty(String raw) {
         if (raw == null) {
@@ -76,15 +80,12 @@ public enum TextRule {
         return raw.isBlank() ? "" : optional(raw);
     }
 
-    /**
-     * The text a row stores: NULL for an empty text (no column holds {@code ''}: a DBMS of the Oracle kind cannot, and the
-     * two would be different values otherwise). The tools show such a field as {@code ""} again.
-     */
+    /** Stores NULL for an empty string (portability across DBMSes that distinguish '' vs NULL). */
     public static String emptyToNull(String text) {
         return text == null || text.isEmpty() ? null : text;
     }
 
-    /** The value, or {@code null} when it is absent or blank; too long is a validation failure. */
+    /** The value, or {@code null} when it is absent or blank; too long fails validation. */
     public String optional(String raw) {
         if (raw == null || raw.isBlank()) {
             return null;

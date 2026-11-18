@@ -1,22 +1,22 @@
 package org.pgledger.domain.model;
 
 import java.time.Instant;
-import org.springframework.data.annotation.CreatedBy;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.annotation.Version;
-import org.springframework.data.relational.core.mapping.InsertOnlyProperty;
-import org.springframework.data.relational.core.mapping.Table;
+import java.util.List;
+import org.pgledger.domain.error.TransitionCode;
+import org.pgledger.domain.error.TransitionException;
 import org.pgledger.domain.rule.TaskState;
 import org.pgledger.domain.value.ActorId;
 import org.pgledger.domain.value.ProjectId;
 import org.pgledger.domain.value.TaskId;
 import org.pgledger.domain.value.TextRule;
+import org.springframework.data.annotation.CreatedBy;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
+import org.springframework.data.relational.core.mapping.InsertOnlyProperty;
+import org.springframework.data.relational.core.mapping.Table;
 
 /**
- * A task. {@code version} is 0 until the first save, which stores 1. {@code purpose} and {@code successCondition} may be empty:
- * the row holds NULL then (no column of this schema holds {@code ''}) and the tools show
- * {@code ""}. {@code idKey} is the id in upper case, the column under the UNIQUE constraint that refuses ids that differ only
- * in case; it is derived from the id, whatever is passed.
+ * A work task in any domain. {@code idKey} is the upper-case unique key preserving exact case in {@code id}.
  */
 @Table("task")
 public record Task(@Id TaskId id, ProjectId projectId, String title, String purpose, String successCondition,
@@ -27,7 +27,16 @@ public record Task(@Id TaskId id, ProjectId projectId, String title, String purp
     public Task {
         purpose = TextRule.emptyToNull(purpose);
         successCondition = TextRule.emptyToNull(successCondition);
+        originRef = TextRule.emptyToNull(originRef);
+        originQuote = TextRule.emptyToNull(originQuote);
         idKey = id == null ? null : id.key();
+    }
+
+    /** Verified tasks cannot be edited or receive deliverables until reopened by a reviewer. */
+    public void requireNotVerified() {
+        if (state == TaskState.VERIFIED) {
+            throw new TransitionException(TransitionCode.VERIFIED_ENTITY, List.of(id.value()));
+        }
     }
 
     /** A new PLANNED task from complete fields. */

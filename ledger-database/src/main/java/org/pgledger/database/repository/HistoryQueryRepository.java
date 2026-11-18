@@ -35,14 +35,23 @@ public class HistoryQueryRepository {
             + "AND SUBSTRING(h.entity_id FROM CHAR_LENGTH(p.id) + 1 FOR 1) IN ('@', '|')";
 
     private static final String IN_PROJECT = "("
-            + "(h.entity = 'DEFECT' AND h.entity_id IN (SELECT d.id FROM defect d WHERE d.project_id = :project)) "
+            + "(h.entity = 'ISSUE' AND h.entity_id IN (SELECT i.id FROM issue i WHERE i.project_id = :project)) "
+            + "OR (h.entity = 'SPEC' AND h.entity_id IN (SELECT s.id FROM spec s WHERE s.project_id = :project)) "
             + "OR (h.entity = 'TASK' AND h.entity_id IN (SELECT t.id FROM task t WHERE t.project_id = :project)) "
-            + "OR (h.entity = 'CONDITION' AND h.entity_id IN (SELECT c.id FROM release_condition c "
+            + "OR (h.entity = 'CRITERION' AND h.entity_id IN (SELECT c.id FROM milestone_criterion c "
             + "WHERE c.project_id = :project)) "
-            + "OR (h.entity IN ('DEFECT_FIX', 'DEFECT_CASE', 'DEFECT_TASK', 'DEFECT_RELATION') AND EXISTS "
-            + "(SELECT 1 FROM defect p WHERE p.project_id = :project AND " + CHILD_OF + ")) "
-            + "OR (h.entity = 'CONDITION_LINK' AND EXISTS "
-            + "(SELECT 1 FROM release_condition p WHERE p.project_id = :project AND " + CHILD_OF + ")))";
+            + "OR (h.entity IN ('ISSUE_CASE', 'ISSUE_TASK', 'ISSUE_RELATION') AND EXISTS "
+            + "(SELECT 1 FROM issue p WHERE p.project_id = :project AND " + CHILD_OF + ")) "
+            + "OR (h.entity = 'ISSUE_SPEC' AND EXISTS "
+            + "(SELECT 1 FROM issue p WHERE p.project_id = :project AND " + CHILD_OF + ")) "
+            + "OR (h.entity = 'SPEC_TASK' AND EXISTS "
+            + "(SELECT 1 FROM spec p WHERE p.project_id = :project AND " + CHILD_OF + ")) "
+            + "OR (h.entity = 'DELIVERABLE' AND ("
+            + "EXISTS (SELECT 1 FROM issue p WHERE p.project_id = :project AND " + CHILD_OF + ") "
+            + "OR EXISTS (SELECT 1 FROM spec p WHERE p.project_id = :project AND " + CHILD_OF + ") "
+            + "OR EXISTS (SELECT 1 FROM task p WHERE p.project_id = :project AND " + CHILD_OF + "))) "
+            + "OR (h.entity = 'CRITERION_LINK' AND EXISTS "
+            + "(SELECT 1 FROM milestone_criterion p WHERE p.project_id = :project AND " + CHILD_OF + ")))";
 
     private final JdbcClient jdbc;
     private final SqlBuilder sqlBuilder;

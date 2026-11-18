@@ -4,32 +4,29 @@ import java.util.List;
 import java.util.stream.Stream;
 
 /**
- * The names of the tools of the ledger MCP server: the external contract that every client relies on (the ten write tools,
- * the five attachment tools and the twelve read tools). The list is written once, here. The server tests list the tools of
- * the real server and require exactly these names, and the CLI command {@code mcp-check} requires the same names from a
- * running server, so a tool added to or removed from the server fails a test until this list follows.
+ * The canonical snake_case tool names of the ledger MCP server, aligned with Sennard {@code ApiResult.v1} and
+ * {@code artifact_*} contracts. Checked by both server tests and {@code ledger-cli mcp-check}.
  */
 public final class ToolContract {
 
-    public static final List<String> WRITE = List.of("ledger_save", "ledger_transition", "ledger_record_fix",
-            "ledger_record_case", "ledger_link", "ledger_correct", "ledger_batch", "ledger_review",
-            "ledger_review_correct", "ledger_whoami");
+    public static final List<String> WRITE = List.of(
+            "ledger_issue_save", "ledger_spec_save", "ledger_task_save", "ledger_criterion_save",
+            "ledger_transition", "ledger_record_deliverable", "ledger_record_case", "ledger_link",
+            "ledger_correct", "ledger_batch", "ledger_review", "ledger_review_correct", "ledger_whoami");
 
-    /**
-     * The upload and read tools of the attachments (the common design of the three products, section 3): the names are those of
-     * the SSH contract, with a hyphen, which is also the name an attestation is signed for.
-     */
-    public static final List<String> ATTACHMENT = List.of("artifact-begin", "artifact-chunk", "artifact-finish",
-            "artifact-status", "artifact-read");
+    /** Bundle attachment tools aligned 1:1 with Sennard {@code ArtifactTools}. */
+    public static final List<String> ATTACHMENT = List.of(
+            "artifact_begin", "artifact_chunk", "artifact_finish", "artifact_status", "artifact_read");
 
-    public static final List<String> READ = List.of("ledger_get", "ledger_defect", "ledger_task", "ledger_history",
-            "ledger_search", "ledger_defects", "ledger_tasks", "ledger_conditions", "ledger_attention",
-            "ledger_stats", "ledger_projects", "ledger_codes");
+    public static final List<String> READ = List.of(
+            "ledger_get", "ledger_issue", "ledger_spec", "ledger_task", "ledger_criterion",
+            "ledger_history", "ledger_search", "ledger_issues", "ledger_specs", "ledger_tasks",
+            "ledger_criteria", "ledger_attention", "ledger_stats", "ledger_projects", "ledger_codes");
 
     private ToolContract() {
     }
 
-    /** Every tool name: the write tools, the attachment tools, the read tools. */
+    /** Every tool name: write tools, attachment tools, and read tools. */
     public static List<String> all() {
         return Stream.of(WRITE, ATTACHMENT, READ).flatMap(List::stream).toList();
     }

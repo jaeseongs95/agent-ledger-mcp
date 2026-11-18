@@ -23,7 +23,7 @@ public class SearchQueryRepository {
 
     /** What is searched. */
     public enum Kind {
-        DEFECT, TASK, CONDITION
+        ISSUE, SPEC, TASK, CRITERION
     }
 
     /** The criteria; {@code project} and the time limits may be null, {@code excludeStatuses} are state names. */
@@ -57,18 +57,22 @@ public class SearchQueryRepository {
 
     public KeysetPage<Hit> page(Filter filter, MaxRows maxRows, Position after) {
         List<String> selects = new ArrayList<>();
-        if (filter.kinds().contains(Kind.DEFECT)) {
-            selects.add(select("'DEFECT'", "id", "project_id", "title", "status", "created_at", "defect", "status",
-                    List.of("title", "behavior", "root_cause"), filter));
+        if (filter.kinds().contains(Kind.ISSUE)) {
+            selects.add(select("'ISSUE'", "id", "project_id", "title", "status", "created_at", "issue", "status",
+                    List.of("title", "symptom", "root_cause"), filter));
+        }
+        if (filter.kinds().contains(Kind.SPEC)) {
+            selects.add(select("'SPEC'", "id", "project_id", "title", "status", "created_at", "spec", "status",
+                    List.of("title", "summary", "acceptance_criteria"), filter));
         }
         if (filter.kinds().contains(Kind.TASK)) {
             selects.add(select("'TASK'", "id", "project_id", "title", "state", "created_at", "task", "state",
-                    List.of("title", "purpose"), filter));
+                    List.of("title", "purpose", "success_condition"), filter));
         }
         boolean timed = filter.createdFrom() != null || filter.createdTo() != null;
-        if (filter.kinds().contains(Kind.CONDITION) && !timed) {
-            selects.add(select("'CONDITION'", "id", "project_id", "condition_text", "state", EPOCH,
-                    "release_condition", "state", List.of("condition_text"), filter));
+        if (filter.kinds().contains(Kind.CRITERION) && !timed) {
+            selects.add(select("'CRITERION'", "id", "project_id", "criterion_text", "state", EPOCH,
+                    "milestone_criterion", "state", List.of("criterion_text"), filter));
         }
         if (selects.isEmpty()) {
             return new KeysetPage<>(List.of(), false);
@@ -107,7 +111,7 @@ public class SearchQueryRepository {
             Kind kind = Kind.valueOf(rs.getString("kind"));
             Instant createdAt = UtcTime.read(rs, "created_at");
             return new Hit(kind, rs.getString("id"), rs.getString("project_id"), rs.getString("title"),
-                    rs.getString("state"), kind == Kind.CONDITION ? null : createdAt);
+                    rs.getString("state"), kind == Kind.CRITERION ? null : createdAt);
         }).list();
         return KeysetPage.of(fetched, maxRows.value());
     }

@@ -3,25 +3,29 @@ package org.pgledger.database.support;
 import java.time.Instant;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
-import org.springframework.context.ApplicationContext;
-import org.pgledger.database.repository.ConditionRepository;
-import org.pgledger.database.repository.DefectRepository;
+import org.pgledger.database.repository.CriterionRepository;
+import org.pgledger.database.repository.IssueRepository;
 import org.pgledger.database.repository.ProjectRepository;
+import org.pgledger.database.repository.SpecRepository;
 import org.pgledger.database.repository.TaskRepository;
-import org.pgledger.domain.model.Condition;
-import org.pgledger.domain.model.ConditionFields;
-import org.pgledger.domain.model.Defect;
-import org.pgledger.domain.model.DefectFields;
+import org.pgledger.domain.model.Criterion;
+import org.pgledger.domain.model.CriterionFields;
+import org.pgledger.domain.model.Issue;
+import org.pgledger.domain.model.IssueFields;
 import org.pgledger.domain.model.Project;
+import org.pgledger.domain.model.Spec;
+import org.pgledger.domain.model.SpecFields;
 import org.pgledger.domain.model.Task;
 import org.pgledger.domain.model.TaskFields;
 import org.pgledger.domain.value.AuthorId;
-import org.pgledger.domain.value.ConditionId;
-import org.pgledger.domain.value.DefectId;
+import org.pgledger.domain.value.CriterionId;
+import org.pgledger.domain.value.IssueId;
 import org.pgledger.domain.value.Patch;
 import org.pgledger.domain.value.ProjectCode;
 import org.pgledger.domain.value.ProjectId;
+import org.pgledger.domain.value.SpecId;
 import org.pgledger.domain.value.TaskId;
+import org.springframework.context.ApplicationContext;
 
 /** Creates unique projects and rows for a test, so tests of one database do not collide. */
 public final class Seed {
@@ -31,12 +35,10 @@ public final class Seed {
 
     private static final AtomicInteger SEQUENCE = new AtomicInteger();
 
-    /** Where the repositories come from. */
     private interface Beans {
         <T> T get(Class<T> type);
     }
 
-    /** How a write is run: in a transaction of its own (committed), or in the one that the test already has. */
     private interface Transactions {
         <T> T run(Supplier<T> work);
     }
@@ -44,34 +46,17 @@ public final class Seed {
     private final Beans beans;
     private final Transactions transactions;
 
-    /** A seed that commits every row in a transaction of its own (the shared database of {@link LedgerTestContext}). */
     public Seed(LedgerTestContext ctx) {
-        this.beans = new Beans() {
-            @Override
-            public <T> T get(Class<T> type) {
-                return ctx.bean(type);
-            }
-        };
-        this.transactions = new Transactions() {
-            @Override
-            public <T> T run(Supplier<T> work) {
-                return ctx.tx(work);
-            }
-        };
+        this.beans = ctx::bean;
+        this.transactions = ctx::tx;
     }
 
-    /** A seed for a slice test: the repositories are beans of the context, and the rows go into the transaction of the test. */
     public Seed(ApplicationContext context) {
         this.beans = context::getBean;
-        this.transactions = new Transactions() {
-            @Override
-            public <T> T run(Supplier<T> work) {
-                return work.get();
-            }
-        };
+        this.transactions = Supplier::get;
     }
 
-    /** A project with a code no other test uses; counters at 0. */
+    /** A project with a unique code; counters start at 0. */
     public Project project() {
         int n = SEQUENCE.incrementAndGet();
         Project project = Project.open(ProjectId.of("p" + n), ProjectCode.of("P" + n), "Project " + n);
@@ -79,11 +64,23 @@ public final class Seed {
                 .insert(project)));
     }
 
-    public Defect defect(Project project, long number, String title, Instant createdAt) {
-        DefectFields fields = DefectFields.of(Patch.set(project.id().value()), Patch.set(title), Patch.set("ARC"),
-                Patch.set("P2"), Patch.set("behavior of " + title), Patch.set("cause of " + title), Patch.absent());
-        Defect defect = Defect.open(DefectId.of(project.code(), number), fields, createdAt);
-        return LedgerTestContext.as(ALICE, () -> transactions.run(() -> beans.get(DefectRepository.class).save(defect)));
+    public Issue issue(Project project, long number, String title, Instant createdAt) {
+        IssueFields fields = IssueFields.of(Patch.set(project.id().value()), Patch.set(title), Patch.set("PROCESS"),
+                Patch.set("P2"), Patch.set("symptom of " + title), Patch.set("cause of " + title), Patch.absent());
+        Issue issue = Issue.open(IssueId.of(project.code(), number), fields, createdAt);
+        return LedgerTestContext.as(ALICE, () -> transactions.run(() -> beans.get(IssueRepository.class).save(issue)));
+    }
+
+    public Spec spec(Project project, long number, String title, Instant createdAt) {
+        return spec(project, SpecId.issue(project.code(), number), title, createdAt);
+    }
+
+    public Spec spec(Project project, SpecId id, String title, Instant createdAt) {
+        SpecFields fields = SpecFields.of(Patch.set(project.id().value()), Patch.absent(), Patch.set(title),
+                Patch.set("summary of " + title), Patch.set("acceptance criteria of " + title), Patch.set("P2"),
+                Patch.absent(), Patch.absent(), Patch.absent());
+        Spec spec = Spec.create(id, fields, createdAt);
+        return LedgerTestContext.as(ALICE, () -> transactions.run(() -> beans.get(SpecRepository.class).save(spec)));
     }
 
     public Task task(Project project, long number, String title) {
@@ -97,10 +94,11 @@ public final class Seed {
         return LedgerTestContext.as(ALICE, () -> transactions.run(() -> beans.get(TaskRepository.class).save(task)));
     }
 
-    public Condition condition(Project project, String id, String release, String code) {
-        ConditionFields fields = ConditionFields.of(Patch.set(project.id().value()), Patch.set(release),
-                Patch.absent(), Patch.set(code), Patch.set("condition text"));
-        Condition condition = Condition.open(ConditionId.of(id), fields);
-        return LedgerTestContext.as(ALICE, () -> transactions.run(() -> beans.get(ConditionRepository.class).save(condition)));
+    public Criterion criterion(Project project, String id, String milestone, String code) {
+        CriterionFields fields = CriterionFields.of(Patch.set(project.id().value()), Patch.set(milestone),
+                Patch.absent(), Patch.set(code), Patch.set("criterion text"));
+        Criterion criterion = Criterion.open(CriterionId.of(id), fields);
+        return LedgerTestContext.as(ALICE, () -> transactions.run(() -> beans.get(CriterionRepository.class)
+                .save(criterion)));
     }
 }

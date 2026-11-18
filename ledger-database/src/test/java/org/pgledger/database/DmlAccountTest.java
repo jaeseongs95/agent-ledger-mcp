@@ -28,11 +28,11 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.pgledger.database.repository.CodeRevisionRepository;
 import org.pgledger.database.repository.CommonCodeRepository;
 import org.pgledger.database.repository.Counter;
-import org.pgledger.database.repository.DefectFixRepository;
-import org.pgledger.database.repository.DefectRepository;
+import org.pgledger.database.repository.DeliverableRepository;
 import org.pgledger.database.repository.GrantStateRepository;
 import org.pgledger.database.repository.HistoryRepository;
 import org.pgledger.database.repository.IdAllocator;
+import org.pgledger.database.repository.IssueRepository;
 import org.pgledger.database.repository.LinkRepository;
 import org.pgledger.database.repository.ReceiptCompletionRepository;
 import org.pgledger.database.repository.ReceiptRepository;
@@ -46,10 +46,10 @@ import org.pgledger.database.support.LedgerDatabaseExtension;
 import org.pgledger.database.support.LedgerTestContext;
 import org.pgledger.database.support.Seed;
 import org.pgledger.domain.model.CommonCode;
-import org.pgledger.domain.model.Defect;
-import org.pgledger.domain.model.DefectFix;
-import org.pgledger.domain.model.DefectTaskLink;
+import org.pgledger.domain.model.Deliverable;
 import org.pgledger.domain.model.HistoryEntry;
+import org.pgledger.domain.model.Issue;
+import org.pgledger.domain.model.IssueTaskLink;
 import org.pgledger.domain.model.Project;
 import org.pgledger.domain.model.Receipt;
 import org.pgledger.domain.model.ReceiptOperation;
@@ -58,12 +58,13 @@ import org.pgledger.domain.rule.ActorAssurance;
 import org.pgledger.domain.rule.Channel;
 import org.pgledger.domain.rule.CodeGroup;
 import org.pgledger.domain.rule.CodeState;
+import org.pgledger.domain.rule.DeliverableTarget;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
+import org.pgledger.domain.rule.IssueStatus;
 import org.pgledger.domain.rule.Scope;
 import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.CodeValue;
-import org.pgledger.domain.value.CommitSha;
 import org.pgledger.domain.value.JsonDocument;
 import org.pgledger.domain.value.OperationKey;
 import org.pgledger.domain.value.Sha256;
@@ -138,7 +139,7 @@ class DmlAccountTest {
     static Stream<String> statementsTheApplicationAccountMayRun() {
         return Stream.of("INSERT INTO history (id, occurred_at, author_id, login, actor_assurance, entity, entity_id, op, "
                 + "changes, reason, operation_key) VALUES (1, TIMESTAMP '2026-11-05 10:00:00', 'claude:a', "
-                + "'ledger_author', 'DECLARED', 'DEFECT', 'X', 'CREATE', '{}', 'a reason of length', "
+                + "'ledger_author', 'DECLARED', 'ISSUE', 'X', 'CREATE', '{}', 'a reason of length', "
                 + "'11111111-1111-1111-1111-111111111111')",
                 "INSERT INTO owner_audit (id, occurred_at, actor, operation, subject) VALUES (1, TIMESTAMP '2026-11-05 10:00:00', "
                         + "'token:owner', 'GRANT_ISSUED', 'claude:a|p')", "SELECT COUNT(*) FROM owner_audit",
@@ -223,38 +224,36 @@ class DmlAccountTest {
         try (Env env = environment(true, true); LedgerTestContext ctx = LedgerTestContext.onMigrated(env.app(), env.name())) {
             Seed seed = new Seed(ctx);
             Project project = seed.project();
-            Defect defect = seed.defect(project, 1, "as the application account", LedgerTestContext.START);
+            Issue issue = seed.issue(project, 1, "as the application account", LedgerTestContext.START);
             IdAllocator ids = ctx.bean(IdAllocator.class);
             Instant now = LedgerTestContext.START;
-            // update of a defect and a fix, inserts of history and receipt, receipt completion
-            LedgerTestContext.as(Seed.ALICE, () -> ctx.tx(() -> ctx.bean(DefectRepository.class)
-                    .save(defect.transitioned(org.pgledger.domain.rule.DefectStatus.DISPUTED, null, now))));
-            DefectFix fix = ctx.tx(() -> ctx.bean(DefectFixRepository.class).insert(DefectFix.record(
-                    ids.next(Counter.DEFECT_FIX), defect.id(), "repo", CommitSha.of("a".repeat(40)), null, null, null,
-                    null, Seed.ALICE, now)));
-            ctx.tx(() -> ctx.bean(DefectFixRepository.class).update(fix.withCi("ref", null, null)));
+            LedgerTestContext.as(Seed.ALICE, () -> ctx.tx(() -> ctx.bean(IssueRepository.class)
+                    .save(issue.transitioned(IssueStatus.DISPUTED, null, now))));
+            Deliverable deliverable = ctx.tx(() -> ctx.bean(DeliverableRepository.class).insert(Deliverable.record(
+                    ids.next(Counter.DELIVERABLE), DeliverableTarget.ISSUE, issue.id().value(),
+                    CodeValue.of("CODE_PATCH"), "a".repeat(40), null, "sum", null, null, null, null, Seed.ALICE, now)));
+            ctx.tx(() -> ctx.bean(DeliverableRepository.class).update(deliverable.withCheck("ref", null, null)));
             OperationKey request = new OperationKey(UUID.randomUUID().toString());
             ctx.tx(() -> {
                 ctx.bean(ReceiptRepository.class).insert(Receipt.reserve(request, ReceiptOperation.SAVE,
                         Sha256.of("b".repeat(64)), Seed.ALICE, Channel.AUTHOR, now));
                 ctx.bean(HistoryRepository.class).insert(new HistoryEntry(ids.next(Counter.HISTORY), now,
-                        Seed.ALICE, Channel.AUTHOR.login(), ActorAssurance.DECLARED, HistoryEntity.DEFECT,
-                        defect.id().value(), HistoryOp.CREATE, null, null, JsonDocument.EMPTY_OBJECT, null,
-                        "a reason of enough length", null, null, null, request, null));
+                        Seed.ALICE, Channel.AUTHOR.login(), ActorAssurance.DECLARED, HistoryEntity.ISSUE,
+                        issue.id().value(), HistoryOp.CREATE, null, null, JsonDocument.EMPTY_OBJECT, null,
+                        "a reason of enough length", null, null, null, request, null, null));
                 return ctx.bean(ReceiptCompletionRepository.class).finish(Seed.ALICE, request, JsonDocument.EMPTY_OBJECT);
             });
-            // grants, links (the only deletes), common codes with their revision
             SessionGrant grant = ctx.tx(() -> ctx.bean(SessionGrantRepository.class).insert(SessionGrant.issue(
-                    ids.next(Counter.SESSION_GRANT), Seed.ALICE, project.id(), Scope.DEFECT, AuthorId.OWNER, now, null,
+                    ids.next(Counter.SESSION_GRANT), Seed.ALICE, project.id(), Scope.ISSUE, AuthorId.OWNER, now, null,
                     null)));
             assertThat(ctx.tx(() -> ctx.bean(GrantStateRepository.class).markUsed(Seed.ALICE, project.id(),
-                    Scope.DEFECT, now))).isTrue();
+                    Scope.ISSUE, now))).isTrue();
             assertThat(ctx.tx(() -> ctx.bean(GrantStateRepository.class).revoke(grant.id(), now))).isTrue();
             var task = seed.task(project, 1, "linked task");
-            DefectTaskLink link = new DefectTaskLink(defect.id(), task.id(), Seed.ALICE);
+            IssueTaskLink link = new IssueTaskLink(issue.id(), task.id(), Seed.ALICE);
             assertThat(ctx.tx(() -> ctx.bean(LinkRepository.class).add(link))).isTrue();
-            assertThat(ctx.tx(() -> ctx.bean(LinkRepository.class).remove(defect.id(), task.id()))).isTrue();
-            CommonCode code = new CommonCode(CodeGroup.DEFECT_CATEGORY, CodeValue.of("UI_" + project.code().value()),
+            assertThat(ctx.tx(() -> ctx.bean(LinkRepository.class).remove(issue.id(), task.id()))).isTrue();
+            CommonCode code = new CommonCode(CodeGroup.ISSUE_CATEGORY, CodeValue.of("UI_" + project.code().value()),
                     "화면", null, null, null, 25, CodeState.ACTIVE, null, AuthorId.OWNER);
             ctx.tx(() -> {
                 ctx.bean(CommonCodeRepository.class).insert(code);
@@ -263,9 +262,9 @@ class DmlAccountTest {
                 ctx.bean(CodeRevisionRepository.class).bump();
                 return null;
             });
-            assertThat(ctx.bean(CommonCodeRepository.class).find(CodeGroup.DEFECT_CATEGORY, code.code()))
+            assertThat(ctx.bean(CommonCodeRepository.class).find(CodeGroup.ISSUE_CATEGORY, code.code()))
                     .hasValueSatisfying(c -> assertThat(c.state()).isEqualTo(CodeState.INACTIVE));
-            assertThat(List.of(Counter.values())).hasSize(6);
+            assertThat(List.of(Counter.values())).hasSize(7);
         }
     }
 

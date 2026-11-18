@@ -17,7 +17,7 @@ public record TaskFields(Patch<ProjectId> projectId, Patch<String> title, Patch<
         return new TaskFields(projectId.map(ProjectId::of), title.map(TextRule.TITLE::required),
                 purpose.map(TextRule.PURPOSE::givenOrEmpty),
                 successCondition.map(TextRule.SUCCESS_CONDITION::givenOrEmpty),
-                ownerActorId.map(DefectFields::author), originRef.map(TextRule.ORIGIN_REF::optional),
+                ownerActorId.map(IssueFields::author), originRef.map(TextRule.ORIGIN_REF::optional),
                 originQuote.map(TextRule.ORIGIN_QUOTE::optional));
     }
 

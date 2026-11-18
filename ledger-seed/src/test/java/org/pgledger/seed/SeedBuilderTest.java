@@ -48,8 +48,8 @@ class SeedBuilderTest {
 
         assertThat(file).isEqualTo(output.resolve(SeedBundle.RESOURCE)).isRegularFile();
         assertThat(bundle.codes()).containsExactly(
-                new SeedCode("DEFECT_CATEGORY", "AAA", "첫째", "First", "첫째 설명", "The first one.", 10, "ACTIVE"),
-                new SeedCode("DEFECT_CATEGORY", "BBB", "둘째", "Second", "둘째 설명", "The second one.", 20, "ACTIVE"));
+                new SeedCode("ISSUE_CATEGORY", "AAA", "첫째", "First", "첫째 설명", "The first one.", 10, "ACTIVE"),
+                new SeedCode("ISSUE_CATEGORY", "BBB", "둘째", "Second", "둘째 설명", "The second one.", 20, "ACTIVE"));
         assertThat(bundle.installDefaults()).isEqualTo(Map.of("instance-name", "demo", "mcp-port", "9000"));
         assertThat(bundle.installDefault("mcp-port")).isEqualTo("9000");
         assertThat(bundle.digest()).isEqualTo(SeedDigest.of(bundle.codes())).hasSize(64);
@@ -71,12 +71,12 @@ class SeedBuilderTest {
 
     static Stream<Arguments> badSources() {
         return Stream.of(
-                Arguments.of(HEADER + "\nAAA\t첫째\tFirst\t설명", "defect-categories.tsv:2", "5 columns"),
-                Arguments.of(HEADER + "\n" + GOOD_ROW + "\n" + GOOD_ROW, "defect-categories.tsv:3", "twice"),
-                Arguments.of(HEADER + "\nAAA\t\tFirst\t설명\tDescription", "defect-categories.tsv:2", "empty"),
-                Arguments.of(HEADER + "\n1AA\t이름\tName\t설명\tDescription", "defect-categories.tsv:2", "code must be"),
-                Arguments.of("code\tname\n" + GOOD_ROW, "defect-categories.tsv:1", "header"),
-                Arguments.of(HEADER, "defect-categories.tsv:1", "no code"));
+                Arguments.of(HEADER + "\nAAA\t첫째\tFirst\t설명", "issue-categories.tsv:2", "5 columns"),
+                Arguments.of(HEADER + "\n" + GOOD_ROW + "\n" + GOOD_ROW, "issue-categories.tsv:3", "twice"),
+                Arguments.of(HEADER + "\nAAA\t\tFirst\t설명\tDescription", "issue-categories.tsv:2", "empty"),
+                Arguments.of(HEADER + "\n1AA\t이름\tName\t설명\tDescription", "issue-categories.tsv:2", "code must be"),
+                Arguments.of("code\tname\n" + GOOD_ROW, "issue-categories.tsv:1", "header"),
+                Arguments.of(HEADER, "issue-categories.tsv:1", "no code"));
     }
 
     @ParameterizedTest

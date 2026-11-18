@@ -21,9 +21,9 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.pgledger.database.repository.CodeRevisionRepository;
 import org.pgledger.database.repository.Counter;
-import org.pgledger.database.repository.DefectRepository;
 import org.pgledger.database.repository.HistoryRepository;
 import org.pgledger.database.repository.IdAllocator;
+import org.pgledger.database.repository.IssueRepository;
 import org.pgledger.database.support.DatabaseTest;
 import org.pgledger.database.support.LedgerTestContext;
 import org.pgledger.database.support.Parallel;
@@ -32,8 +32,8 @@ import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ConflictException;
 import org.pgledger.domain.error.LookupCode;
 import org.pgledger.domain.error.LookupException;
-import org.pgledger.domain.model.Defect;
 import org.pgledger.domain.model.HistoryEntry;
+import org.pgledger.domain.model.Issue;
 import org.pgledger.domain.model.Project;
 import org.pgledger.domain.rule.ActorAssurance;
 import org.pgledger.domain.rule.Channel;
@@ -70,19 +70,21 @@ class CounterTest {
     @Test
     void repo009_theNextNumberIsPreviousPlusOneAndAnUnknownProjectUpdatesNothing() {
         Project project = seed.project();
-        assertThat(ctx.tx(() -> ids.nextDefectNo(project.code()))).isEqualTo(1);
-        assertThat(ctx.tx(() -> ids.nextDefectNo(project.code()))).isEqualTo(2);
+        assertThat(ctx.tx(() -> ids.nextIssueNo(project.code()))).isEqualTo(1);
+        assertThat(ctx.tx(() -> ids.nextIssueNo(project.code()))).isEqualTo(2);
+        assertThat(ctx.tx(() -> ids.nextSpecNo(project.code()))).isEqualTo(1);
         assertThat(ctx.tx(() -> ids.nextTaskNo(project.code()))).isEqualTo(1);
-        // an explicit number is taken only up to the next one (VRF-020, D-0022)
-        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 3))).isEmpty();
-        assertThat(ctx.tx(() -> ids.nextDefectNo(project.code()))).isEqualTo(4);
+        assertThat(ctx.tx(() -> ids.takeIssueNo(project.code(), 3))).isEmpty();
+        assertThat(ctx.tx(() -> ids.nextIssueNo(project.code()))).isEqualTo(4);
+        assertThat(ctx.tx(() -> ids.takeSpecNo(project.code(), 2))).isEmpty();
+        assertThat(ctx.tx(() -> ids.nextSpecNo(project.code()))).isEqualTo(3);
         LookupException unknown = catchThrowableOfType(LookupException.class,
-                () -> ctx.tx(() -> ids.nextDefectNo(ProjectCode.of("NOSUCH"))));
+                () -> ctx.tx(() -> ids.nextIssueNo(ProjectCode.of("NOSUCH"))));
         assertThat(unknown.code()).isEqualTo(LookupCode.NOT_FOUND);
     }
 
-    private long defectCounter(Project project) {
-        return JdbcClient.create(ctx.pool()).sql("SELECT next_defect_no FROM project WHERE code = :code")
+    private long issueCounter(Project project) {
+        return JdbcClient.create(ctx.pool()).sql("SELECT next_issue_no FROM project WHERE code = :code")
                 .param("code", project.code().value()).query(Long.class).single();
     }
 
@@ -92,30 +94,25 @@ class CounterTest {
     }
 
     @Test
-    void vrf020_anExplicitDefectNumberIsTakenUpToTheNextNumberOnly() {
+    void vrf020_anExplicitIssueNumberIsTakenUpToTheNextNumberOnly() {
         Project project = seed.project();
-        ctx.tx(() -> ids.nextDefectNo(project.code()));
-        ctx.tx(() -> ids.nextDefectNo(project.code()));
-        assertThat(defectCounter(project)).isEqualTo(2);
-        // the next number: accepted, the counter is set to it
-        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 3))).isEmpty();
-        assertThat(defectCounter(project)).isEqualTo(3);
-        // past numbers: accepted, the counter stays
-        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 2))).isEmpty();
-        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 1))).isEmpty();
-        assertThat(defectCounter(project)).isEqualTo(3);
-        // above the next number: refused with the next number, the counter stays
-        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 5))).hasValue(4);
-        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 999_999_999_999_999_999L))).hasValue(4);
-        assertThat(defectCounter(project)).isEqualTo(3);
-        // then 4 is the next number
-        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 4))).isEmpty();
-        assertThat(defectCounter(project)).isEqualTo(4);
-        assertThat(ctx.tx(() -> ids.nextDefectNo(project.code()))).isEqualTo(5);
-        // the task counter was never touched
+        ctx.tx(() -> ids.nextIssueNo(project.code()));
+        ctx.tx(() -> ids.nextIssueNo(project.code()));
+        assertThat(issueCounter(project)).isEqualTo(2);
+        assertThat(ctx.tx(() -> ids.takeIssueNo(project.code(), 3))).isEmpty();
+        assertThat(issueCounter(project)).isEqualTo(3);
+        assertThat(ctx.tx(() -> ids.takeIssueNo(project.code(), 2))).isEmpty();
+        assertThat(ctx.tx(() -> ids.takeIssueNo(project.code(), 1))).isEmpty();
+        assertThat(issueCounter(project)).isEqualTo(3);
+        assertThat(ctx.tx(() -> ids.takeIssueNo(project.code(), 5))).hasValue(4);
+        assertThat(ctx.tx(() -> ids.takeIssueNo(project.code(), 999_999_999_999_999_999L))).hasValue(4);
+        assertThat(issueCounter(project)).isEqualTo(3);
+        assertThat(ctx.tx(() -> ids.takeIssueNo(project.code(), 4))).isEmpty();
+        assertThat(issueCounter(project)).isEqualTo(4);
+        assertThat(ctx.tx(() -> ids.nextIssueNo(project.code()))).isEqualTo(5);
         assertThat(taskCounter(project)).isZero();
         LookupException unknown = catchThrowableOfType(LookupException.class,
-                () -> ctx.tx(() -> ids.takeDefectNo(ProjectCode.of("NOSUCH"), 1)));
+                () -> ctx.tx(() -> ids.takeIssueNo(ProjectCode.of("NOSUCH"), 1)));
         assertThat(unknown.code()).isEqualTo(LookupCode.NOT_FOUND);
     }
 
@@ -123,12 +120,12 @@ class CounterTest {
     void vrf036_aNumberTakenAndNotCommittedIsNotWaitedFor() throws InterruptedException {
         Project project = seed.project();
         for (int i = 0; i < 3; i++) {
-            ctx.tx(() -> ids.nextDefectNo(project.code()));
+            ctx.tx(() -> ids.nextIssueNo(project.code()));
         }
         CountDownLatch holding = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         Thread holder = new Thread(() -> ctx.tx(() -> {
-            ids.nextDefectNo(project.code());
+            ids.nextIssueNo(project.code());
             holding.countDown();
             try {
                 release.await(30, TimeUnit.SECONDS);
@@ -140,16 +137,14 @@ class CounterTest {
         holder.start();
         try {
             assertThat(holding.await(30, TimeUnit.SECONDS)).isTrue();
-            // the number 4 is taken by a transaction that has not committed: the statement does not see it and does not wait;
-            // the number after it is ahead of what is committed, and the answer names the committed next number
-            assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 5))).hasValue(4);
+            assertThat(ctx.tx(() -> ids.takeIssueNo(project.code(), 5))).hasValue(4);
         } finally {
             release.countDown();
             holder.join();
         }
-        assertThat(defectCounter(project)).isEqualTo(4);
-        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 5))).isEmpty();
-        assertThat(defectCounter(project)).isEqualTo(5);
+        assertThat(issueCounter(project)).isEqualTo(4);
+        assertThat(ctx.tx(() -> ids.takeIssueNo(project.code(), 5))).isEmpty();
+        assertThat(issueCounter(project)).isEqualTo(5);
     }
 
     /**
@@ -196,26 +191,24 @@ class CounterTest {
     void vrf039_aCounterThatChangesBetweenTheTwoStatementsIsAConflict() {
         Project project = seed.project();
         for (int i = 0; i < 3; i++) {
-            ctx.tx(() -> ids.nextDefectNo(project.code()));
+            ctx.tx(() -> ids.nextIssueNo(project.code()));
         }
-        // the update for 5 (it needs the counter at 4) writes no row; then another transaction takes 4 and commits; the read sees 4
         IdAllocator allocator = allocatorWithHook(() -> CompletableFuture.runAsync(
-                () -> ctx.tx(() -> ids.nextDefectNo(project.code()))).join());
+                () -> ctx.tx(() -> ids.nextIssueNo(project.code()))).join());
         ConflictException conflict = catchThrowableOfType(ConflictException.class,
-                () -> ctx.tx(() -> allocator.takeDefectNo(project.code(), 5)));
+                () -> ctx.tx(() -> allocator.takeIssueNo(project.code(), 5)));
         assertThat(conflict).isNotNull();
         assertThat(conflict.code()).isEqualTo(ConflictCode.ID_COUNTER_CHANGED);
         assertThat(conflict.args()).containsExactly(project.code().value());
-        assertThat(defectCounter(project)).isEqualTo(4);
-        // sent again, the number is the next one and is accepted
-        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 5))).isEmpty();
-        assertThat(defectCounter(project)).isEqualTo(5);
+        assertThat(issueCounter(project)).isEqualTo(4);
+        assertThat(ctx.tx(() -> ids.takeIssueNo(project.code(), 5))).isEmpty();
+        assertThat(issueCounter(project)).isEqualTo(5);
     }
 
     @Test
     void vrf021_anExplicitTaskNumberIsTakenUpToTheNextNumberOnly() {
         Project project = seed.project();
-        ctx.tx(() -> ids.nextDefectNo(project.code()));
+        ctx.tx(() -> ids.nextIssueNo(project.code()));
         ctx.tx(() -> ids.nextTaskNo(project.code()));
         assertThat(ctx.tx(() -> ids.takeTaskNo(project.code(), 2))).isEmpty();
         assertThat(taskCounter(project)).isEqualTo(2);
@@ -224,8 +217,7 @@ class CounterTest {
         assertThat(ctx.tx(() -> ids.takeTaskNo(project.code(), 123_456_789_012_345_678L))).hasValue(3);
         assertThat(taskCounter(project)).isEqualTo(2);
         assertThat(ctx.tx(() -> ids.nextTaskNo(project.code()))).isEqualTo(3);
-        // the defect counter is independent of the task counter
-        assertThat(defectCounter(project)).isEqualTo(1);
+        assertThat(issueCounter(project)).isEqualTo(1);
         LookupException unknown = catchThrowableOfType(LookupException.class,
                 () -> ctx.tx(() -> ids.takeTaskNo(ProjectCode.of("NOSUCH"), 1)));
         assertThat(unknown.code()).isEqualTo(LookupCode.NOT_FOUND);
@@ -235,7 +227,7 @@ class CounterTest {
     void repo010_640ConcurrentAllocationsGiveEverySingleNumber() {
         Project project = seed.project();
         Callable<List<Long>> twentyAllocations = () -> IntStream.range(0, 20)
-                .mapToObj(i -> ctx.tx(() -> ids.nextDefectNo(project.code()))).toList();
+                .mapToObj(i -> ctx.tx(() -> ids.nextIssueNo(project.code()))).toList();
         List<Long> all = Parallel.all(times(32, twentyAllocations)).stream().flatMap(List::stream).sorted().toList();
         assertThat(all).isEqualTo(oneTo(640));
     }
@@ -243,12 +235,12 @@ class CounterTest {
     @Test
     void repo011_aRolledBackNumberIsIssuedAgain() {
         Project project = seed.project();
-        assertThat(ctx.tx(() -> ids.nextDefectNo(project.code()))).isEqualTo(1);
+        assertThat(ctx.tx(() -> ids.nextIssueNo(project.code()))).isEqualTo(1);
         assertThatThrownBy(() -> ctx.tx(() -> {
-            ids.nextDefectNo(project.code());
+            ids.nextIssueNo(project.code());
             throw new IllegalStateException("fail after allocating");
         })).hasMessageContaining("fail after allocating");
-        assertThat(ctx.tx(() -> ids.nextDefectNo(project.code()))).isEqualTo(2);
+        assertThat(ctx.tx(() -> ids.nextIssueNo(project.code()))).isEqualTo(2);
     }
 
     private record Issued(String kind, long number) {
@@ -259,49 +251,50 @@ class CounterTest {
         Project a = seed.project();
         Project b = seed.project();
         List<Callable<Issued>> work = IntStream.range(0, 20).boxed().flatMap(i -> Stream.<Callable<Issued>>of(
-                () -> new Issued("A-D", ctx.tx(() -> ids.nextDefectNo(a.code()))),
+                () -> new Issued("A-I", ctx.tx(() -> ids.nextIssueNo(a.code()))),
+                () -> new Issued("A-S", ctx.tx(() -> ids.nextSpecNo(a.code()))),
                 () -> new Issued("A-T", ctx.tx(() -> ids.nextTaskNo(a.code()))),
-                () -> new Issued("B-D", ctx.tx(() -> ids.nextDefectNo(b.code()))),
+                () -> new Issued("B-I", ctx.tx(() -> ids.nextIssueNo(b.code()))),
                 () -> new Issued("B-T", ctx.tx(() -> ids.nextTaskNo(b.code()))))).toList();
         var byKind = Parallel.all(work).stream().collect(Collectors.groupingBy(Issued::kind,
                 Collectors.mapping(Issued::number, Collectors.toList())));
-        assertThat(byKind.keySet()).containsExactlyInAnyOrder("A-D", "A-T", "B-D", "B-T");
+        assertThat(byKind.keySet()).containsExactlyInAnyOrder("A-I", "A-S", "A-T", "B-I", "B-T");
         assertThat(byKind.values()).allSatisfy(numbers -> assertThat(numbers).containsExactlyInAnyOrderElementsOf(
                 oneTo(20)));
     }
 
-    private static HistoryEntry historyRow(long id, Defect defect, int n) {
+    private static HistoryEntry historyRow(long id, Issue issue, int n) {
         return new HistoryEntry(id, LedgerTestContext.START, Seed.ALICE, Channel.AUTHOR.login(),
-                ActorAssurance.DECLARED, HistoryEntity.DEFECT, defect.id().value(), HistoryOp.CREATE, null, null,
+                ActorAssurance.DECLARED, HistoryEntity.ISSUE, issue.id().value(), HistoryOp.CREATE, null, null,
                 JsonDocument.EMPTY_OBJECT, null, "writer " + n + " wrote this", null, null, null,
-                new OperationKey(UUID.randomUUID().toString()), null);
+                new OperationKey(UUID.randomUUID().toString()), null, null);
     }
 
     @Test
     void repo013_surrogateKeysAreUniqueGaplessAndOrderedByInsertion() {
         Project project = seed.project();
-        Defect defect = seed.defect(project, 1, "counter target", LedgerTestContext.START);
+        Issue issue = seed.issue(project, 1, "counter target", LedgerTestContext.START);
         long before = JdbcClient.create(ctx.pool()).sql("SELECT issued_no FROM id_counter WHERE name = 'HISTORY'")
                 .query(Long.class).single();
         List<Callable<Long>> writers = IntStream.rangeClosed(1, 64).<Callable<Long>>mapToObj(n -> () -> {
             if (n % 8 == 0) {
                 assertThatThrownBy(() -> ctx.tx(() -> {
                     long id = ids.next(Counter.HISTORY);
-                    ctx.bean(HistoryRepository.class).insert(historyRow(id, defect, n));
+                    ctx.bean(HistoryRepository.class).insert(historyRow(id, issue, n));
                     throw new IllegalStateException("roll back writer " + n);
                 })).isInstanceOf(IllegalStateException.class).hasMessage("roll back writer " + n);
                 return -1L;
             }
             return ctx.tx(() -> {
                 long id = ids.next(Counter.HISTORY);
-                ctx.bean(HistoryRepository.class).insert(historyRow(id, defect, n));
+                ctx.bean(HistoryRepository.class).insert(historyRow(id, issue, n));
                 return id;
             });
         }).toList();
         List<Long> committed = Parallel.all(writers).stream().filter(id -> id > 0).sorted().toList();
         assertThat(committed).hasSize(56);
         assertThat(committed).isEqualTo(LongStream.rangeClosed(before + 1, before + 56).boxed().toList());
-        List<Long> inOrder = ctx.tx(() -> Stream.generate(() -> ids.next(Counter.DEFECT_FIX)).limit(3).toList());
+        List<Long> inOrder = ctx.tx(() -> Stream.generate(() -> ids.next(Counter.DELIVERABLE)).limit(3).toList());
         assertThat(inOrder.get(2) - inOrder.get(0)).isEqualTo(2);
         assertThat(inOrder).isSorted();
     }
@@ -329,17 +322,16 @@ class CounterTest {
     @Test
     void repo014_mixedWorkloadInTheFixedLockOrderNeverDeadlocks() {
         Project project = seed.project();
-        Defect defect = seed.defect(project, 1, "lock order", LedgerTestContext.START);
-        DefectRepository defects = ctx.bean(DefectRepository.class);
-        // the order is always: project counter, then the defect row (the case counter), then the history counter
+        Issue issue = seed.issue(project, 1, "lock order", LedgerTestContext.START);
+        IssueRepository issues = ctx.bean(IssueRepository.class);
         List<Callable<Integer>> work = IntStream.range(0, 100).<Callable<Integer>>mapToObj(i -> () -> ctx.tx(() -> {
             Runnable first = switch (i % 4) {
-                case 0, 3 -> () -> ids.nextDefectNo(project.code());
+                case 0, 3 -> () -> ids.nextIssueNo(project.code());
                 case 1 -> () -> ids.nextTaskNo(project.code());
-                default -> () -> defects.nextCaseSeq(defect.id());
+                default -> () -> issues.nextCaseSeq(issue.id());
             };
             first.run();
-            ctx.bean(HistoryRepository.class).insert(historyRow(ids.next(Counter.HISTORY), defect, i));
+            ctx.bean(HistoryRepository.class).insert(historyRow(ids.next(Counter.HISTORY), issue, i));
             return i;
         })).toList();
         assertThat(Parallel.all(work)).hasSize(100);

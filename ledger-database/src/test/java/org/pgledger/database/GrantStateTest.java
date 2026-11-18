@@ -73,14 +73,14 @@ class GrantStateTest {
 
     static Stream<Admission> admissions() {
         return Stream.of(
-                new Admission("live", NOW.plusSeconds(3600), Scope.DEFECT, Seed.ALICE, false, true),
-                new Admission("never expires", null, Scope.DEFECT, Seed.ALICE, false, true),
-                new Admission("expired", NOW.minusSeconds(1), Scope.DEFECT, Seed.ALICE, false, false),
-                new Admission("expires exactly now", NOW, Scope.DEFECT, Seed.ALICE, false, false),
+                new Admission("live", NOW.plusSeconds(3600), Scope.ISSUE, Seed.ALICE, false, true),
+                new Admission("never expires", null, Scope.ISSUE, Seed.ALICE, false, true),
+                new Admission("expired", NOW.minusSeconds(1), Scope.ISSUE, Seed.ALICE, false, false),
+                new Admission("expires exactly now", NOW, Scope.ISSUE, Seed.ALICE, false, false),
                 new Admission("other scope", null, Scope.VERIFY, Seed.ALICE, false, false),
-                new Admission("other project", null, Scope.DEFECT, Seed.ALICE, true, false),
-                new Admission("other author", null, Scope.DEFECT, Seed.BOB, false, false),
-                new Admission("author ids are case sensitive", null, Scope.DEFECT, AuthorId.of("claude:ALICE"),
+                new Admission("other project", null, Scope.ISSUE, Seed.ALICE, true, false),
+                new Admission("other author", null, Scope.ISSUE, Seed.BOB, false, false),
+                new Admission("author ids are case sensitive", null, Scope.ISSUE, AuthorId.of("claude:ALICE"),
                         false, false));
     }
 
@@ -89,7 +89,7 @@ class GrantStateTest {
     void repo015_theConditionalUpdateAdmitsOnlyLiveGrants(Admission admission) {
         Project project = seed.project();
         Project other = seed.project();
-        SessionGrant granted = grant(project, Seed.ALICE, Scope.DEFECT, admission.expiresAt());
+        SessionGrant granted = grant(project, Seed.ALICE, Scope.ISSUE, admission.expiresAt());
         Project asked = admission.otherProject() ? other : project;
         assertThat(ctx.tx(() -> grants.markUsed(admission.asker(), asked.id(), admission.asked(), NOW)))
                 .isEqualTo(admission.admitted());
@@ -101,10 +101,10 @@ class GrantStateTest {
     void repo015_liveGrantsOfAnAuthorAreListedByProjectAndScope() {
         Project project = seed.project();
         grant(project, Seed.ALICE, Scope.TASK, null);
-        grant(project, Seed.ALICE, Scope.DEFECT, NOW.plusSeconds(60));
-        grant(project, Seed.ALICE, Scope.FIX, NOW);
+        grant(project, Seed.ALICE, Scope.ISSUE, NOW.plusSeconds(60));
+        grant(project, Seed.ALICE, Scope.DELIVERABLE, NOW);
         assertThat(grants.findLive(Seed.ALICE, NOW)).filteredOn(g -> g.projectId().equals(project.id()))
-                .extracting(SessionGrant::scope).containsExactly(Scope.DEFECT, Scope.TASK);
+                .extracting(SessionGrant::scope).containsExactly(Scope.ISSUE, Scope.TASK);
     }
 
     /** A grant that expires at {@code expiresAt}, asked at {@code now}. */
@@ -124,22 +124,22 @@ class GrantStateTest {
     @MethodSource("expiries")
     void svcTz03_expiryDependsOnUtcInstantsOnly(Expiry expiry) {
         Project project = seed.project();
-        grant(project, Seed.ALICE, Scope.DEFECT, expiry.expiresAt());
-        assertThat(ctx.tx(() -> grants.markUsed(Seed.ALICE, project.id(), Scope.DEFECT, expiry.now())))
+        grant(project, Seed.ALICE, Scope.ISSUE, expiry.expiresAt());
+        assertThat(ctx.tx(() -> grants.markUsed(Seed.ALICE, project.id(), Scope.ISSUE, expiry.now())))
                 .isEqualTo(expiry.admitted());
     }
 
     @Test
     void repo016_aRevocationWaitsForTheWriterThatUsedTheGrant() throws Exception {
         Project project = seed.project();
-        SessionGrant grant = grant(project, Seed.ALICE, Scope.DEFECT, null);
+        SessionGrant grant = grant(project, Seed.ALICE, Scope.ISSUE, null);
         TransactionTemplate tx = ctx.bean(TransactionTemplate.class);
         JdbcClient jdbc = ctx.bean(JdbcClient.class);
         CountDownLatch used = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
         AtomicInteger holderPid = new AtomicInteger();
         Future<Boolean> writer = Parallel.start(() -> tx.execute(status -> {
-            boolean ok = grants.markUsed(Seed.ALICE, project.id(), Scope.DEFECT, NOW);
+            boolean ok = grants.markUsed(Seed.ALICE, project.id(), Scope.ISSUE, NOW);
             holderPid.set(LockWaits.backendPid(jdbc));
             used.countDown();
             await(release);
@@ -151,16 +151,16 @@ class GrantStateTest {
         release.countDown();
         assertThat(writer.get(10, TimeUnit.SECONDS)).isTrue();
         assertThat(revoker.get(10, TimeUnit.SECONDS)).isTrue();
-        assertThat(ctx.tx(() -> grants.markUsed(Seed.ALICE, project.id(), Scope.DEFECT, NOW))).isFalse();
+        assertThat(ctx.tx(() -> grants.markUsed(Seed.ALICE, project.id(), Scope.ISSUE, NOW))).isFalse();
     }
 
     @Test
     void repo016_aCommittedRevocationMakesTheCheckFail() {
         Project project = seed.project();
-        SessionGrant grant = grant(project, Seed.ALICE, Scope.DEFECT, null);
+        SessionGrant grant = grant(project, Seed.ALICE, Scope.ISSUE, null);
         assertThat(ctx.tx(() -> grants.revoke(grant.id(), NOW))).isTrue();
         assertThat(ctx.tx(() -> grants.revoke(grant.id(), NOW))).as("already revoked").isFalse();
-        assertThat(ctx.tx(() -> grants.markUsed(Seed.ALICE, project.id(), Scope.DEFECT, NOW))).isFalse();
+        assertThat(ctx.tx(() -> grants.markUsed(Seed.ALICE, project.id(), Scope.ISSUE, NOW))).isFalse();
     }
 
     private static void await(CountDownLatch latch) {
@@ -178,13 +178,13 @@ class GrantStateTest {
     void repo020_aLiveGrantExistsOncePerKeyAndRevokedOnesPileUp() {
         Project project = seed.project();
         AuthorId me = AuthorId.of("claude:own" + project.id().value());
-        SessionGrant first = grant(project, me, Scope.DEFECT, null);
-        assertThatThrownBy(() -> grant(project, me, Scope.DEFECT, null)).isInstanceOf(DuplicateKeyException.class);
+        SessionGrant first = grant(project, me, Scope.ISSUE, null);
+        assertThatThrownBy(() -> grant(project, me, Scope.ISSUE, null)).isInstanceOf(DuplicateKeyException.class);
         assertThat(ctx.tx(() -> grants.revoke(first.id(), NOW))).isTrue();
         assertThat(store.findById(first.id()).orElseThrow().activeKey()).isEqualTo("revoked:" + first.id());
-        SessionGrant second = grant(project, me, Scope.DEFECT, null);
+        SessionGrant second = grant(project, me, Scope.ISSUE, null);
         assertThat(ctx.tx(() -> grants.revoke(second.id(), NOW))).isTrue();
-        grant(project, me, Scope.DEFECT, null);
+        grant(project, me, Scope.ISSUE, null);
         assertThat(JdbcClient.create(ctx.pool()).sql("SELECT COUNT(*) FROM session_grant WHERE project_id = :p AND "
                 + "revoked_at IS NOT NULL").param("p", project.id().value()).query(Integer.class).single())
                 .isEqualTo(2);

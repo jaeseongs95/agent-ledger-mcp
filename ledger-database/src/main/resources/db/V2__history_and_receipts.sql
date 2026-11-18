@@ -24,8 +24,8 @@ CREATE TABLE history (
   CONSTRAINT fk_history_corrects FOREIGN KEY (corrects_id) REFERENCES history (id),
   CONSTRAINT ck_history_assurance CHECK (actor_assurance IN ('DECLARED', 'IMPORTED_LOGIN', 'IMPORTED_SHARED',
     'IMPORTED_UNKNOWN')),
-  CONSTRAINT ck_history_entity CHECK (entity IN ('DEFECT', 'TASK', 'CONDITION', 'DEFECT_FIX', 'DEFECT_TASK',
-    'DEFECT_RELATION', 'CONDITION_LINK', 'DEFECT_CASE')),
+  CONSTRAINT ck_history_entity CHECK (entity IN ('ISSUE', 'SPEC', 'TASK', 'CRITERION', 'DELIVERABLE',
+    'ISSUE_TASK', 'ISSUE_SPEC', 'SPEC_TASK', 'ISSUE_RELATION', 'CRITERION_LINK', 'ISSUE_CASE')),
   CONSTRAINT ck_history_op CHECK (op IN ('CREATE', 'EDIT', 'TRANSITION', 'LINK', 'UNLINK', 'CORRECT', 'IMPORT',
     'IMPORTED_NOTE', 'IMPORTED_CHANGE')),
   CONSTRAINT ck_history_transition CHECK ((op = 'TRANSITION' AND to_state IS NOT NULL)
@@ -51,6 +51,6 @@ CREATE TABLE request_receipt (
   response ${long_text},
   created_at TIMESTAMP NOT NULL,
   CONSTRAINT pk_request_receipt PRIMARY KEY (author_id, operation_key),
-  CONSTRAINT ck_receipt_operation CHECK (operation IN ('SAVE', 'TRANSITION', 'RECORD_FIX', 'RECORD_CASE', 'LINK',
-    'CORRECT', 'BATCH'))
+  CONSTRAINT ck_receipt_operation CHECK (operation IN ('SAVE', 'TRANSITION', 'RECORD_DELIVERABLE', 'RECORD_CASE',
+    'LINK', 'CORRECT', 'BATCH'))
 );

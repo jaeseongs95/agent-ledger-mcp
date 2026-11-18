@@ -5,23 +5,25 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.pgledger.domain.error.ValidationException;
-import org.pgledger.domain.model.Condition;
-import org.pgledger.domain.model.ConditionFields;
-import org.pgledger.domain.model.Defect;
-import org.pgledger.domain.model.DefectFields;
+import org.pgledger.domain.model.Criterion;
+import org.pgledger.domain.model.CriterionFields;
+import org.pgledger.domain.model.Issue;
+import org.pgledger.domain.model.IssueFields;
+import org.pgledger.domain.model.Spec;
+import org.pgledger.domain.model.SpecFields;
 import org.pgledger.domain.model.Task;
 import org.pgledger.domain.model.TaskFields;
-import org.pgledger.domain.value.ConditionId;
-import org.pgledger.domain.value.DefectId;
+import org.pgledger.domain.value.CriterionId;
+import org.pgledger.domain.value.IssueId;
 import org.pgledger.domain.value.Patch;
+import org.pgledger.domain.value.SpecId;
 import org.pgledger.domain.value.TaskId;
 import org.pgledger.domain.value.TextRule;
 
 /**
- * REH3-TXT-01 .. 04 at the level of the domain: {@code purpose}, {@code success_condition}, {@code behavior},
- * {@code root_cause} and {@code condition_text} are fields that may be empty: the field has to be given, and may be
- * empty; an empty text is the value NULL in the row (no column holds {@code ''}), and the lengths of the code of a
- * condition (200) and of a CI reference (2000) leave room for imported values.
+ * REH3-TXT-01 .. 04 at the domain level: {@code purpose}, {@code success_condition}, {@code symptom},
+ * {@code root_cause}, {@code summary}, {@code acceptance_criteria}, and {@code criterion_text} may be empty (stored
+ * as SQL NULL); check references and codes leave room for imported values.
  */
 class EmptyTextTest {
 
@@ -51,29 +53,37 @@ class EmptyTextTest {
         TaskFields withoutPurpose = TaskFields.of(Patch.set("p1"), Patch.set("title"), Patch.absent(), Patch.set("s"),
                 Patch.absent(), Patch.absent(), Patch.absent());
         Expect.invalid(withoutPurpose::requireCreatable);
-        Expect.invalid(() -> DefectFields.of(Patch.set("p1"), Patch.set("t"), Patch.set("ARC"), Patch.set("P2"),
+        Expect.invalid(() -> IssueFields.of(Patch.set("p1"), Patch.set("t"), Patch.set("PROCESS"), Patch.set("P2"),
                 Patch.absent(), Patch.set("c"), Patch.absent()).requireCreatable());
-        Expect.invalid(() -> ConditionFields.of(Patch.set("p1"), Patch.set("1.0"), Patch.absent(), Patch.set("C1"),
+        Expect.invalid(() -> CriterionFields.of(Patch.set("p1"), Patch.set("1.0"), Patch.absent(), Patch.set("C1"),
                 Patch.absent()).requireCreatable());
-        // a title and a release are still required to have text
+        // a title and a milestone name are still required to have text
         Expect.invalid(() -> TaskFields.of(Patch.set("p1"), Patch.set(""), Patch.set("p"), Patch.set("s"),
                 Patch.absent(), Patch.absent(), Patch.absent()));
-        Expect.invalid(() -> ConditionFields.of(Patch.set("p1"), Patch.set(""), Patch.absent(), Patch.set("C1"),
+        Expect.invalid(() -> CriterionFields.of(Patch.set("p1"), Patch.set(""), Patch.absent(), Patch.set("C1"),
                 Patch.set("t")));
+        Expect.invalid(() -> SpecFields.of(Patch.set("p1"), Patch.absent(), Patch.set(""), Patch.set("s"),
+                Patch.set("ac"), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent()));
     }
 
     @Test
-    void reh3Txt04_aDefectAndAConditionMayHaveEmptyText() {
-        DefectFields defect = DefectFields.of(Patch.set("p1"), Patch.set("t"), Patch.set("ARC"), Patch.set("P2"),
+    void reh3Txt04_anIssueSpecAndCriterionMayHaveEmptyText() {
+        IssueFields issue = IssueFields.of(Patch.set("p1"), Patch.set("t"), Patch.set("PROCESS"), Patch.set("P2"),
                 Patch.set(""), Patch.set(" "), Patch.absent());
-        Defect row = Defect.open(DefectId.of("AGS-D-0001"), defect, NOW);
-        assertThat(row.behavior()).isNull();
+        Issue row = Issue.open(IssueId.of("AGS-I-0001"), issue, NOW);
+        assertThat(row.symptom()).isNull();
         assertThat(row.rootCause()).isNull();
 
-        ConditionFields condition = ConditionFields.of(Patch.set("p1"), Patch.set("1.0"), Patch.absent(),
+        SpecFields specFields = SpecFields.of(Patch.set("p1"), Patch.absent(), Patch.set("Spec Title"),
+                Patch.set(""), Patch.set("  "), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent());
+        Spec spec = Spec.create(SpecId.of("AGS-S-0001"), specFields, NOW);
+        assertThat(spec.summary()).isNull();
+        assertThat(spec.acceptanceCriteria()).isNull();
+
+        CriterionFields criterion = CriterionFields.of(Patch.set("p1"), Patch.set("1.0"), Patch.absent(),
                 Patch.set("C1"), Patch.set(""));
-        Condition open = Condition.open(ConditionId.of("ags:c1"), condition);
-        assertThat(open.conditionText()).isNull();
+        Criterion open = Criterion.open(CriterionId.of("ags:c1"), criterion);
+        assertThat(open.criterionText()).isNull();
     }
 
     @Test
@@ -86,14 +96,14 @@ class EmptyTextTest {
 
     @Test
     void reh3Len01_theLimitsLeaveRoomForImportedValues() {
-        assertThat(TextRule.CONDITION_CODE.max()).isEqualTo(200);
-        assertThat(TextRule.CI_REF.max()).isEqualTo(2000);
-        assertThat(TextRule.CONDITION_CODE.required("c".repeat(200))).hasSize(200);
-        assertThat(TextRule.CI_REF.optional("r".repeat(2000))).hasSize(2000);
-        Expect.invalid(() -> TextRule.CONDITION_CODE.required("c".repeat(201)));
-        Expect.invalid(() -> TextRule.CI_REF.optional("r".repeat(2001)));
+        assertThat(TextRule.CRITERION_CODE.max()).isEqualTo(200);
+        assertThat(TextRule.CHECK_REF.max()).isEqualTo(2000);
+        assertThat(TextRule.CRITERION_CODE.required("c".repeat(200))).hasSize(200);
+        assertThat(TextRule.CHECK_REF.optional("r".repeat(2000))).hasSize(2000);
+        Expect.invalid(() -> TextRule.CRITERION_CODE.required("c".repeat(201)));
+        Expect.invalid(() -> TextRule.CHECK_REF.optional("r".repeat(2001)));
         ValidationException refused = (ValidationException) Expect.invalid(
-                () -> TextRule.CI_REF.optional("r".repeat(2001)));
+                () -> TextRule.CHECK_REF.optional("r".repeat(2001)));
         assertThat(refused.issues().getFirst().reasonArgs()).containsExactly("2000");
     }
 }

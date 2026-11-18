@@ -12,13 +12,12 @@ import org.pgledger.domain.value.ProjectId;
 import org.pgledger.domain.value.TextRule;
 
 /**
- * A project. The two counters hold the last number issued for defects and tasks; they are advanced only by the
- * id allocator (a single UPDATE) and are never written by saving this record (they start at 0 in the database).
- * {@code version} is 0 until the first save, which stores 1.
+ * A project or workstream in the ledger. Sequential counters are advanced only by {@code IdAllocator}.
  */
 @Table("project")
-public record Project(@Id ProjectId id, ProjectCode code, String title, @ReadOnlyProperty long nextDefectNo,
-        @ReadOnlyProperty long nextTaskNo, @Version long version, @CreatedBy @InsertOnlyProperty ActorId createdBy) {
+public record Project(@Id ProjectId id, ProjectCode code, String title, @ReadOnlyProperty long nextIssueNo,
+        @ReadOnlyProperty long nextSpecNo, @ReadOnlyProperty long nextTaskNo, @Version long version,
+        @CreatedBy @InsertOnlyProperty ActorId createdBy) {
 
     public Project {
         title = TextRule.PROJECT_TITLE.required(title);
@@ -26,6 +25,6 @@ public record Project(@Id ProjectId id, ProjectCode code, String title, @ReadOnl
 
     /** A new project; the counters start at 0 in the database. */
     public static Project open(ProjectId id, ProjectCode code, String title) {
-        return new Project(id, code, title, 0, 0, 0, null);
+        return new Project(id, code, title, 0, 0, 0, 0, null);
     }
 }

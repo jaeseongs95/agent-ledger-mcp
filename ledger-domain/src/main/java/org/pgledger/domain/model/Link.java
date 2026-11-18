@@ -8,7 +8,7 @@ import org.pgledger.domain.value.ActorId;
  * A link between two entities. Every variant has a canonical, unambiguous history id and the structural kind;
  * links are the only rows that are deleted (an UNLINK), and the history keeps the story.
  */
-public sealed interface Link permits DefectTaskLink, DefectRelation, ConditionLink {
+public sealed interface Link permits IssueTaskLink, IssueSpecLink, SpecTaskLink, IssueRelation, CriterionLink {
 
     LinkKind kind();
 

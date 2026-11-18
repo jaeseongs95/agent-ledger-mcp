@@ -6,8 +6,8 @@ import org.pgledger.domain.error.TrustCode;
 import org.pgledger.domain.error.TrustException;
 
 /**
- * A declared author: {@code <vendor>:<session-id>} (vendor lower case, 1..32 characters; session 1..128 of
- * {@code [A-Za-z0-9._-]}) or the owner {@code user:owner}. {@code null} means the host attached no session at all.
+ * A declared author: {@code <client>:<session-id>} (client lower case, 1..32 characters; session 1..128 of
+ * {@code [A-Za-z0-9._-]}) or the owner {@code user:owner}. {@code null} means no caller session was resolved.
  */
 public record AuthorId(String value) implements ActorId {
 
@@ -38,8 +38,8 @@ public record AuthorId(String value) implements ActorId {
                 || (SESSION_FORMAT.matcher(value).matches() && !value.startsWith("user:")));
     }
 
-    /** The part before the colon: the host vendor of a session, {@code user} for the owner. */
-    public String vendor() {
+    /** The client namespace part before the colon, or {@code user} for the owner. */
+    public String client() {
         return value.substring(0, value.indexOf(SEPARATOR));
     }
 

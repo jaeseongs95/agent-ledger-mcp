@@ -175,7 +175,7 @@ class GrantTemplateTest {
 
         DataSource app = TestDatabase.scoped(database.appPool(), schema.name());
         try (Connection c = app.getConnection(); Statement s = c.createStatement()) {
-            s.execute("SELECT COUNT(*) FROM defect");
+            s.execute("SELECT COUNT(*) FROM issue");
         }
         assertThatThrownBy(() -> applier.apply("NO_SUCH_ACCOUNT"))
                 .isInstanceOfSatisfying(InfrastructureException.class, e -> {

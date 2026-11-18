@@ -1,7 +1,7 @@
 package org.pgledger.domain.rule;
 
-import org.pgledger.domain.value.DefectId;
+import org.pgledger.domain.value.IssueId;
 
-/** The defect a MERGED transition points at, with the status it has now. */
-public record MergeTarget(DefectId id, DefectStatus status) {
+/** The issue a MERGED transition points at, with the status it currently has. */
+public record MergeTarget(IssueId id, IssueStatus status) {
 }

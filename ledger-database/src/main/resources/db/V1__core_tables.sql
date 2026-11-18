@@ -8,7 +8,8 @@ CREATE TABLE project (
   id VARCHAR(64) NOT NULL,
   code VARCHAR(32) NOT NULL,
   title VARCHAR(200) NOT NULL,
-  next_defect_no BIGINT DEFAULT 0 NOT NULL,
+  next_issue_no BIGINT DEFAULT 0 NOT NULL,
+  next_spec_no BIGINT DEFAULT 0 NOT NULL,
   next_task_no BIGINT DEFAULT 0 NOT NULL,
   version BIGINT NOT NULL,
   created_by VARCHAR(200) NOT NULL,
@@ -27,7 +28,8 @@ CREATE TABLE common_code (
   state VARCHAR(10) NOT NULL,
   created_by VARCHAR(200) NOT NULL,
   CONSTRAINT pk_common_code PRIMARY KEY (code_group, code),
-  CONSTRAINT ck_common_code_group CHECK (code_group IN ('DEFECT_CATEGORY', 'DEFECT_SEVERITY', 'RELATION_KIND')),
+  CONSTRAINT ck_common_code_group CHECK (code_group IN ('ISSUE_CATEGORY', 'ISSUE_SEVERITY', 'DELIVERABLE_KIND',
+    'RELATION_KIND')),
   CONSTRAINT ck_common_code_state CHECK (state IN ('ACTIVE', 'INACTIVE'))
 );
 
@@ -42,16 +44,13 @@ CREATE TABLE id_counter (
   name VARCHAR(30) NOT NULL,
   issued_no BIGINT NOT NULL,
   CONSTRAINT pk_id_counter PRIMARY KEY (name),
-  CONSTRAINT ck_id_counter_name CHECK (name IN ('HISTORY', 'DEFECT_FIX', 'DEFECT_CASE', 'SESSION_GRANT', 'SESSION_KEY',
-    'OWNER_AUDIT'))
+  CONSTRAINT ck_id_counter_name CHECK (name IN ('HISTORY', 'DELIVERABLE', 'ISSUE_CASE', 'SESSION_GRANT', 'SESSION_KEY',
+    'SESSION_TOKEN', 'OWNER_AUDIT'))
 );
 
--- The id of a task and of a condition is free text (any case, 1 to 120 characters). id_key is that id in upper case, filled
--- by the application, and is UNIQUE, so that two ids that differ only in case are one id on every DBMS whatever its collation
--- is (no trigger, no function index: a unique key on a column is portable). The fields that may be empty (purpose,
--- success_condition, behavior, root_cause, condition_text) are nullable: no column holds '' (an Oracle-type DBMS
--- cannot), the application stores NULL for an empty text and returns an empty text again. origin_ref is a long text
--- as well (room for a long imported value).
+-- The id of a task, spec, and milestone criterion is free text (any case, 1 to 120 characters). id_key is that id in
+-- upper case, filled by the application, and is UNIQUE, so that two ids that differ only in case are one id on every
+-- DBMS whatever its collation is. Nullable long-text columns hold NULL for empty strings (never '').
 CREATE TABLE task (
   id VARCHAR(120) NOT NULL,
   id_key VARCHAR(360) NOT NULL,
@@ -70,12 +69,41 @@ CREATE TABLE task (
   CONSTRAINT pk_task PRIMARY KEY (id),
   CONSTRAINT uq_task_id_key UNIQUE (id_key),
   CONSTRAINT fk_task_project FOREIGN KEY (project_id) REFERENCES project (id),
-  CONSTRAINT ck_task_state CHECK (state IN ('UNKNOWN', 'PLANNED', 'ACTIVE', 'BLOCKED', 'REPORTED_DONE', 'VERIFIED',
+  CONSTRAINT ck_task_state CHECK (state IN ('UNKNOWN', 'PLANNED', 'ACTIVE', 'BLOCKED', 'COMPLETED', 'VERIFIED',
     'CANCELLED'))
 );
 CREATE INDEX ix_task_project ON task (project_id, created_at, id);
 
-CREATE TABLE defect (
+CREATE TABLE spec (
+  id VARCHAR(120) NOT NULL,
+  id_key VARCHAR(360) NOT NULL,
+  project_id VARCHAR(64) NOT NULL,
+  parent_id VARCHAR(120),
+  title VARCHAR(300) NOT NULL,
+  summary ${long_text},
+  acceptance_criteria ${long_text},
+  status VARCHAR(20) NOT NULL,
+  priority VARCHAR(32),
+  owner_actor_id VARCHAR(200),
+  origin_ref ${long_text},
+  origin_quote VARCHAR(2000),
+  version BIGINT NOT NULL,
+  created_at TIMESTAMP NOT NULL,
+  updated_at TIMESTAMP NOT NULL,
+  created_by VARCHAR(200) NOT NULL,
+  CONSTRAINT pk_spec PRIMARY KEY (id),
+  CONSTRAINT uq_spec_id_key UNIQUE (id_key),
+  CONSTRAINT fk_spec_project FOREIGN KEY (project_id) REFERENCES project (id),
+  CONSTRAINT fk_spec_parent FOREIGN KEY (parent_id) REFERENCES spec (id),
+  CONSTRAINT ck_spec_parent_self CHECK (parent_id IS NULL OR parent_id <> id),
+  CONSTRAINT ck_spec_status CHECK (status IN ('DRAFT', 'PLANNED', 'ACTIVE', 'BLOCKED', 'COMPLETED', 'VERIFIED',
+    'CANCELLED'))
+);
+CREATE INDEX ix_spec_project ON spec (project_id, created_at, id);
+CREATE INDEX ix_spec_status ON spec (project_id, status);
+CREATE INDEX ix_spec_parent ON spec (parent_id);
+
+CREATE TABLE issue (
   id VARCHAR(120) NOT NULL,
   project_id VARCHAR(64) NOT NULL,
   title VARCHAR(300) NOT NULL,
@@ -83,7 +111,7 @@ CREATE TABLE defect (
   severity VARCHAR(32) NOT NULL,
   status VARCHAR(20) NOT NULL,
   merged_into VARCHAR(120),
-  behavior ${long_text},
+  symptom ${long_text},
   root_cause ${long_text},
   owner_actor_id VARCHAR(200),
   case_seq BIGINT DEFAULT 0 NOT NULL,
@@ -91,111 +119,136 @@ CREATE TABLE defect (
   created_at TIMESTAMP NOT NULL,
   updated_at TIMESTAMP NOT NULL,
   created_by VARCHAR(200) NOT NULL,
-  CONSTRAINT pk_defect PRIMARY KEY (id),
-  CONSTRAINT fk_defect_project FOREIGN KEY (project_id) REFERENCES project (id),
-  CONSTRAINT fk_defect_merged_into FOREIGN KEY (merged_into) REFERENCES defect (id),
-  CONSTRAINT ck_defect_status CHECK (status IN ('OPEN', 'SOURCE_FIXED', 'VERIFIED', 'NOT_DEFECT', 'DISPUTED',
+  CONSTRAINT pk_issue PRIMARY KEY (id),
+  CONSTRAINT fk_issue_project FOREIGN KEY (project_id) REFERENCES project (id),
+  CONSTRAINT fk_issue_merged_into FOREIGN KEY (merged_into) REFERENCES issue (id),
+  CONSTRAINT ck_issue_status CHECK (status IN ('OPEN', 'RESOLVED', 'VERIFIED', 'NOT_AN_ISSUE', 'DISPUTED',
     'MERGED')),
-  CONSTRAINT ck_defect_merged CHECK ((status = 'MERGED' AND merged_into IS NOT NULL)
+  CONSTRAINT ck_issue_merged CHECK ((status = 'MERGED' AND merged_into IS NOT NULL)
     OR (status <> 'MERGED' AND merged_into IS NULL)),
-  CONSTRAINT ck_defect_merged_self CHECK (merged_into IS NULL OR merged_into <> id)
+  CONSTRAINT ck_issue_merged_self CHECK (merged_into IS NULL OR merged_into <> id)
 );
-CREATE INDEX ix_defect_project ON defect (project_id, created_at, id);
-CREATE INDEX ix_defect_status ON defect (project_id, status);
-CREATE INDEX ix_defect_merged_into ON defect (merged_into);
+CREATE INDEX ix_issue_project ON issue (project_id, created_at, id);
+CREATE INDEX ix_issue_status ON issue (project_id, status);
+CREATE INDEX ix_issue_merged_into ON issue (merged_into);
 
-CREATE TABLE defect_fix (
+CREATE TABLE deliverable (
   id BIGINT NOT NULL,
-  defect_id VARCHAR(120) NOT NULL,
-  repo VARCHAR(300) NOT NULL,
-  commit_sha VARCHAR(40) NOT NULL,
-  branch VARCHAR(300),
-  ci_ref VARCHAR(2000),
-  ci_conclusion VARCHAR(10),
-  ci_completed_at TIMESTAMP,
+  target_entity VARCHAR(10) NOT NULL,
+  target_id VARCHAR(120) NOT NULL,
+  kind VARCHAR(32) NOT NULL,
+  deliverable_ref VARCHAR(300) NOT NULL,
+  location VARCHAR(300),
+  summary VARCHAR(1000) NOT NULL,
+  check_ref VARCHAR(2000),
+  check_result VARCHAR(10),
+  checked_at TIMESTAMP,
+  attachment_id VARCHAR(36),
   recorded_by VARCHAR(200) NOT NULL,
   recorded_at TIMESTAMP NOT NULL,
   origin VARCHAR(10) NOT NULL,
-  CONSTRAINT pk_defect_fix PRIMARY KEY (id),
-  CONSTRAINT fk_defect_fix_defect FOREIGN KEY (defect_id) REFERENCES defect (id),
-  CONSTRAINT uq_defect_fix_commit UNIQUE (defect_id, repo, commit_sha),
-  CONSTRAINT ck_defect_fix_conclusion CHECK (ci_conclusion IS NULL OR ci_conclusion IN ('SUCCESS', 'FAILURE',
-    'CANCELLED')),
-  CONSTRAINT ck_defect_fix_ci CHECK (ci_conclusion IS NULL OR ci_ref IS NOT NULL),
-  CONSTRAINT ck_defect_fix_origin CHECK (origin IN ('NATIVE', 'IMPORTED'))
+  CONSTRAINT pk_deliverable PRIMARY KEY (id),
+  CONSTRAINT uq_deliverable_target_ref UNIQUE (target_entity, target_id, kind, deliverable_ref),
+  CONSTRAINT ck_deliverable_target CHECK (target_entity IN ('ISSUE', 'SPEC', 'TASK')),
+  CONSTRAINT ck_deliverable_result CHECK (check_result IS NULL OR check_result IN ('PASSED', 'FAILED', 'CANCELLED')),
+  CONSTRAINT ck_deliverable_check CHECK (check_result IS NULL OR check_ref IS NOT NULL),
+  CONSTRAINT ck_deliverable_origin CHECK (origin IN ('NATIVE', 'IMPORTED'))
 );
+CREATE INDEX ix_deliverable_target ON deliverable (target_entity, target_id, id);
 
-CREATE TABLE defect_case (
+CREATE TABLE issue_case (
   id BIGINT NOT NULL,
-  defect_id VARCHAR(120) NOT NULL,
+  issue_id VARCHAR(120) NOT NULL,
   observation ${long_text} NOT NULL,
   evidence VARCHAR(2000),
-  user_quote VARCHAR(2000),
+  source_quote VARCHAR(2000),
   observed_at TIMESTAMP,
   recorded_by VARCHAR(200) NOT NULL,
   recorded_at TIMESTAMP NOT NULL,
-  CONSTRAINT pk_defect_case PRIMARY KEY (id),
-  CONSTRAINT fk_defect_case_defect FOREIGN KEY (defect_id) REFERENCES defect (id)
+  CONSTRAINT pk_issue_case PRIMARY KEY (id),
+  CONSTRAINT fk_issue_case_issue FOREIGN KEY (issue_id) REFERENCES issue (id)
 );
-CREATE INDEX ix_defect_case_defect ON defect_case (defect_id, id);
+CREATE INDEX ix_issue_case_issue ON issue_case (issue_id, id);
 
-CREATE TABLE defect_task (
-  defect_id VARCHAR(120) NOT NULL,
+CREATE TABLE issue_task (
+  issue_id VARCHAR(120) NOT NULL,
   task_id VARCHAR(120) NOT NULL,
   created_by VARCHAR(200) NOT NULL,
-  CONSTRAINT pk_defect_task PRIMARY KEY (defect_id, task_id),
-  CONSTRAINT fk_defect_task_defect FOREIGN KEY (defect_id) REFERENCES defect (id),
-  CONSTRAINT fk_defect_task_task FOREIGN KEY (task_id) REFERENCES task (id)
+  CONSTRAINT pk_issue_task PRIMARY KEY (issue_id, task_id),
+  CONSTRAINT fk_issue_task_issue FOREIGN KEY (issue_id) REFERENCES issue (id),
+  CONSTRAINT fk_issue_task_task FOREIGN KEY (task_id) REFERENCES task (id)
 );
 
-CREATE TABLE defect_relation (
+CREATE TABLE issue_spec (
+  issue_id VARCHAR(120) NOT NULL,
+  spec_id VARCHAR(120) NOT NULL,
+  created_by VARCHAR(200) NOT NULL,
+  CONSTRAINT pk_issue_spec PRIMARY KEY (issue_id, spec_id),
+  CONSTRAINT fk_issue_spec_issue FOREIGN KEY (issue_id) REFERENCES issue (id),
+  CONSTRAINT fk_issue_spec_spec FOREIGN KEY (spec_id) REFERENCES spec (id)
+);
+
+CREATE TABLE spec_task (
+  spec_id VARCHAR(120) NOT NULL,
+  task_id VARCHAR(120) NOT NULL,
+  created_by VARCHAR(200) NOT NULL,
+  CONSTRAINT pk_spec_task PRIMARY KEY (spec_id, task_id),
+  CONSTRAINT fk_spec_task_spec FOREIGN KEY (spec_id) REFERENCES spec (id),
+  CONSTRAINT fk_spec_task_task FOREIGN KEY (task_id) REFERENCES task (id)
+);
+
+CREATE TABLE issue_relation (
   a VARCHAR(120) NOT NULL,
   b VARCHAR(120) NOT NULL,
   kind VARCHAR(32) NOT NULL,
   created_by VARCHAR(200) NOT NULL,
-  CONSTRAINT pk_defect_relation PRIMARY KEY (a, b, kind),
-  CONSTRAINT fk_defect_relation_a FOREIGN KEY (a) REFERENCES defect (id),
-  CONSTRAINT fk_defect_relation_b FOREIGN KEY (b) REFERENCES defect (id),
-  CONSTRAINT ck_defect_relation_order CHECK (a < b)
+  CONSTRAINT pk_issue_relation PRIMARY KEY (a, b, kind),
+  CONSTRAINT fk_issue_relation_a FOREIGN KEY (a) REFERENCES issue (id),
+  CONSTRAINT fk_issue_relation_b FOREIGN KEY (b) REFERENCES issue (id),
+  CONSTRAINT ck_issue_relation_order CHECK (a < b)
 );
 
-CREATE TABLE release_condition (
+CREATE TABLE milestone_criterion (
   id VARCHAR(120) NOT NULL,
   id_key VARCHAR(360) NOT NULL,
   project_id VARCHAR(64) NOT NULL,
-  release_name VARCHAR(100) NOT NULL,
+  milestone_name VARCHAR(100) NOT NULL,
   goal_label VARCHAR(200),
   code VARCHAR(200) NOT NULL,
-  condition_text ${long_text},
-  state VARCHAR(10) NOT NULL,
+  criterion_text ${long_text},
+  state VARCHAR(20) NOT NULL,
   version BIGINT NOT NULL,
   created_by VARCHAR(200) NOT NULL,
-  CONSTRAINT pk_release_condition PRIMARY KEY (id),
-  CONSTRAINT uq_condition_id_key UNIQUE (id_key),
-  CONSTRAINT fk_condition_project FOREIGN KEY (project_id) REFERENCES project (id),
-  CONSTRAINT uq_condition_code UNIQUE (project_id, release_name, code),
-  CONSTRAINT ck_condition_state CHECK (state IN ('UNKNOWN', 'MET', 'NOT_MET'))
+  CONSTRAINT pk_milestone_criterion PRIMARY KEY (id),
+  CONSTRAINT uq_criterion_id_key UNIQUE (id_key),
+  CONSTRAINT fk_criterion_project FOREIGN KEY (project_id) REFERENCES project (id),
+  CONSTRAINT uq_criterion_code UNIQUE (project_id, milestone_name, code),
+  CONSTRAINT ck_criterion_state CHECK (state IN ('UNKNOWN', 'PLANNED', 'ACTIVE', 'COMPLETED', 'MET', 'NOT_MET'))
 );
 
-CREATE TABLE condition_link (
+CREATE TABLE criterion_link (
   link_key VARCHAR(400) NOT NULL,
-  condition_id VARCHAR(120) NOT NULL,
+  criterion_id VARCHAR(120) NOT NULL,
   task_id VARCHAR(120),
-  defect_id VARCHAR(120),
+  issue_id VARCHAR(120),
+  spec_id VARCHAR(120),
   created_by VARCHAR(200) NOT NULL,
-  CONSTRAINT pk_condition_link PRIMARY KEY (link_key),
-  CONSTRAINT fk_condition_link_cond FOREIGN KEY (condition_id) REFERENCES release_condition (id),
-  CONSTRAINT fk_condition_link_task FOREIGN KEY (task_id) REFERENCES task (id),
-  CONSTRAINT fk_condition_link_defect FOREIGN KEY (defect_id) REFERENCES defect (id),
-  CONSTRAINT ck_condition_link_target CHECK ((task_id IS NOT NULL AND defect_id IS NULL)
-    OR (task_id IS NULL AND defect_id IS NOT NULL))
+  CONSTRAINT pk_criterion_link PRIMARY KEY (link_key),
+  CONSTRAINT fk_criterion_link_crit FOREIGN KEY (criterion_id) REFERENCES milestone_criterion (id),
+  CONSTRAINT fk_criterion_link_task FOREIGN KEY (task_id) REFERENCES task (id),
+  CONSTRAINT fk_criterion_link_issue FOREIGN KEY (issue_id) REFERENCES issue (id),
+  CONSTRAINT fk_criterion_link_spec FOREIGN KEY (spec_id) REFERENCES spec (id),
+  CONSTRAINT ck_criterion_link_target CHECK (
+    (task_id IS NOT NULL AND issue_id IS NULL AND spec_id IS NULL)
+    OR (task_id IS NULL AND issue_id IS NOT NULL AND spec_id IS NULL)
+    OR (task_id IS NULL AND issue_id IS NULL AND spec_id IS NOT NULL))
 );
 
 CREATE TABLE session_grant (
   id BIGINT NOT NULL,
   author_id VARCHAR(200) NOT NULL,
   project_id VARCHAR(64) NOT NULL,
-  grant_scope VARCHAR(10) NOT NULL,
+  grant_scope VARCHAR(16) NOT NULL,
   granted_by VARCHAR(200) NOT NULL,
   granted_at TIMESTAMP NOT NULL,
   expires_at TIMESTAMP,
@@ -206,7 +259,7 @@ CREATE TABLE session_grant (
   CONSTRAINT pk_session_grant PRIMARY KEY (id),
   CONSTRAINT fk_session_grant_project FOREIGN KEY (project_id) REFERENCES project (id),
   CONSTRAINT uq_session_grant_active UNIQUE (active_key),
-  CONSTRAINT ck_session_grant_scope CHECK (grant_scope IN ('DEFECT', 'TASK', 'FIX', 'VERIFY')),
+  CONSTRAINT ck_session_grant_scope CHECK (grant_scope IN ('ISSUE', 'SPEC', 'TASK', 'DELIVERABLE', 'VERIFY')),
   CONSTRAINT ck_session_grant_expiry CHECK (expires_at IS NULL OR expires_at > granted_at),
   CONSTRAINT ck_session_grant_revoked CHECK (revoked_at IS NULL OR revoked_at >= granted_at)
 );
@@ -214,8 +267,7 @@ CREATE INDEX ix_session_grant_author ON session_grant (author_id, project_id, gr
 
 -- The public key an author signs its writes with (Ed25519, X.509 DER in base64). Registered by the owner only
 -- (admin web, CLI), never through a tool. A key is replaced or revoked by closing its row: revoked_at is set and both
--- key columns become revoked:<id>; rows are never deleted. active_key (author|live) keeps one live key per author and
--- fingerprint_key (the fingerprint while live) keeps one author per live key.
+-- key columns become revoked:<id>; rows are never deleted.
 CREATE TABLE session_key (
   id BIGINT NOT NULL,
   author_id VARCHAR(200) NOT NULL,
@@ -234,10 +286,6 @@ CREATE TABLE session_key (
 );
 CREATE INDEX ix_session_key_author ON session_key (author_id, id);
 
--- The owner's audit trail: who (the identity the owner signed in with at the admin web, or the command line tool) did
--- which owner operation (grant, revoke, key registration, replacement or revocation, code change, project creation, driver
--- registration) and when. Append-only:
--- the application only inserts, and the operator's GRANT gives the application account no UPDATE or DELETE on it.
 CREATE TABLE owner_audit (
   id BIGINT NOT NULL,
   occurred_at TIMESTAMP NOT NULL,

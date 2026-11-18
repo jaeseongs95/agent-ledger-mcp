@@ -16,40 +16,42 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.pgledger.database.repository.AttentionQueryRepository;
 import org.pgledger.database.repository.Counter;
-import org.pgledger.database.repository.DefectFixRepository;
-import org.pgledger.database.repository.DefectQueryRepository;
-import org.pgledger.database.repository.DefectQueryRepository.Filter;
-import org.pgledger.database.repository.DefectQueryRepository.Order;
-import org.pgledger.database.repository.DefectQueryRepository.Position;
-import org.pgledger.database.repository.DefectRepository;
-import org.pgledger.database.repository.DefectSummary;
+import org.pgledger.database.repository.DeliverableRepository;
 import org.pgledger.database.repository.IdAllocator;
+import org.pgledger.database.repository.IssueQueryRepository;
+import org.pgledger.database.repository.IssueQueryRepository.Filter;
+import org.pgledger.database.repository.IssueQueryRepository.Order;
+import org.pgledger.database.repository.IssueQueryRepository.Position;
+import org.pgledger.database.repository.IssueRepository;
+import org.pgledger.database.repository.IssueSummary;
 import org.pgledger.database.repository.KeysetPage;
 import org.pgledger.database.repository.KeywordMatch;
 import org.pgledger.database.repository.MergeChainRepository;
+import org.pgledger.database.repository.SpecRepository;
 import org.pgledger.database.repository.StatsQueryRepository;
 import org.pgledger.database.repository.TaskRepository;
 import org.pgledger.database.support.LedgerDataJdbcTest;
 import org.pgledger.database.support.LedgerTestContext;
 import org.pgledger.database.support.RecordingDataSource;
 import org.pgledger.database.support.Seed;
-import org.pgledger.domain.model.Defect;
-import org.pgledger.domain.model.DefectFix;
+import org.pgledger.domain.model.Deliverable;
+import org.pgledger.domain.model.Issue;
 import org.pgledger.domain.model.Project;
+import org.pgledger.domain.model.Spec;
 import org.pgledger.domain.rule.AttentionKind;
-import org.pgledger.domain.rule.DefectStatus;
+import org.pgledger.domain.rule.DeliverableTarget;
+import org.pgledger.domain.rule.IssueStatus;
+import org.pgledger.domain.rule.SpecStatus;
 import org.pgledger.domain.rule.TaskState;
-import org.pgledger.domain.value.CommitSha;
-import org.pgledger.domain.value.DefectId;
+import org.pgledger.domain.value.CodeValue;
+import org.pgledger.domain.value.IssueId;
 import org.pgledger.domain.value.MaxRows;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 /**
- * REPO-025 .. REPO-028, REPO-034, REPO-036: row limits, keyset pages, search, day ranges, counts, merge chains, as a
- * {@code @DataJdbcTest} slice (W7-SLICE-01, principle 7.2): every test runs in a transaction that Spring rolls back, with a
- * project of its own.
+ * REPO-025 .. REPO-028, REPO-034, REPO-036: row limits, keyset pages, search, day ranges, counts, merge chains.
  */
 @LedgerDataJdbcTest
 class QueryRepositoryTest {
@@ -64,13 +66,16 @@ class QueryRepositoryTest {
     private JdbcClient jdbc;
 
     @Autowired
-    private DefectQueryRepository queries;
+    private IssueQueryRepository queries;
 
     @Autowired
-    private DefectRepository defects;
+    private IssueRepository issues;
 
     @Autowired
-    private DefectFixRepository fixes;
+    private SpecRepository specs;
+
+    @Autowired
+    private DeliverableRepository deliverables;
 
     @Autowired
     private TaskRepository tasks;
@@ -94,14 +99,13 @@ class QueryRepositoryTest {
         seed = new Seed(context);
     }
 
-    private Project projectWithDefects(int count, boolean distinctTimes) {
+    private Project projectWithIssues(int count, boolean distinctTimes) {
         Project project = seed.project();
-        IntStream.rangeClosed(1, count).forEach(i -> seed.defect(project, i, "row " + i,
+        IntStream.rangeClosed(1, count).forEach(i -> seed.issue(project, i, "row " + i,
                 LedgerTestContext.START.plusSeconds(distinctTimes ? i : 0)));
         return project;
     }
 
-    /** A page size and what the 30 stored rows make of it. */
     private record PageSize(int max, int rows, boolean truncated) {
     }
 
@@ -113,21 +117,19 @@ class QueryRepositoryTest {
     @ParameterizedTest
     @MethodSource("pageSizes")
     void repo025_oneRowMoreThanTheLimitTellsTheListContinuesWithTheRowLimitOfTheProduct(PageSize size) {
-        Project project = projectWithDefects(30, true);
+        Project project = projectWithIssues(30, true);
         spy.clear();
-        KeysetPage<DefectSummary> page = queries.page(project.id(), Filter.NONE, new MaxRows(size.max()),
+        KeysetPage<IssueSummary> page = queries.page(project.id(), Filter.NONE, new MaxRows(size.max()),
                 Order.NEWEST_FIRST, null);
         assertThat(page.rows()).hasSize(size.rows());
         assertThat(page.truncated()).isEqualTo(size.truncated());
-        // the limit is the clause of the product (PostgreSQL: FETCH FIRST) with a placeholder, never a number in the text
         assertThat(spy.statements()).hasSize(1).allMatch(s -> s.endsWith(" FETCH FIRST ? ROWS ONLY"));
     }
 
-    /** All ids of a list, two rows per page, following the position of each page's last row. */
-    private List<DefectId> walk(Project project, Order order, Position after) {
-        KeysetPage<DefectSummary> page = queries.page(project.id(), Filter.NONE, new MaxRows(2), order, after);
-        Stream<DefectId> here = page.rows().stream().map(DefectSummary::id);
-        DefectSummary last = page.rows().getLast();
+    private List<IssueId> walk(Project project, Order order, Position after) {
+        KeysetPage<IssueSummary> page = queries.page(project.id(), Filter.NONE, new MaxRows(2), order, after);
+        Stream<IssueId> here = page.rows().stream().map(IssueSummary::id);
+        IssueSummary last = page.rows().getLast();
         return page.truncated()
                 ? Stream.concat(here, walk(project, order, new Position(last.createdAt(), last.id())).stream())
                         .toList()
@@ -137,14 +139,13 @@ class QueryRepositoryTest {
     @ParameterizedTest
     @EnumSource(Order.class)
     void repo026_sevenRowsWithTheSameTimeAreWalkedExactlyOnceInEveryOrder(Order order) {
-        Project project = projectWithDefects(7, false);
-        List<DefectId> expected = IntStream.rangeClosed(1, 7).mapToObj(i -> DefectId.of(project.code(), i))
-                .sorted(order == Order.NEWEST_FIRST ? Comparator.comparing(DefectId::value).reversed()
-                        : Comparator.comparing(DefectId::value)).toList();
+        Project project = projectWithIssues(7, false);
+        List<IssueId> expected = IntStream.rangeClosed(1, 7).mapToObj(i -> IssueId.of(project.code(), i))
+                .sorted(order == Order.NEWEST_FIRST ? Comparator.comparing(IssueId::value).reversed()
+                        : Comparator.comparing(IssueId::value)).toList();
         assertThat(walk(project, order, null)).isEqualTo(expected);
     }
 
-    /** Keywords, how they combine, and the titles found (newest first) among the six defects of the fixture. */
     private record Search(List<String> keywords, KeywordMatch match, List<String> titles) {
         @Override
         public String toString() {
@@ -165,7 +166,7 @@ class QueryRepositoryTest {
                 new Search(List.of("a\\b"), KeywordMatch.ANY, List.of("a\\b")),
                 new Search(List.of("login", "nothing"), KeywordMatch.ANY, LOGIN_TITLES),
                 new Search(List.of("login", "nothing"), KeywordMatch.ALL, List.of()),
-                new Search(List.of("behavior of login"), KeywordMatch.ANY, LOGIN_TITLES),
+                new Search(List.of("symptom of login"), KeywordMatch.ANY, LOGIN_TITLES),
                 new Search(List.of("'; DROP TABLE project; --"), KeywordMatch.ANY, List.of()));
     }
 
@@ -173,10 +174,10 @@ class QueryRepositoryTest {
     @MethodSource("searches")
     void repo027_searchIsCaseInsensitiveAndEscapesLikeCharacters(Search search) {
         Project project = seed.project();
-        IntStream.range(0, SEARCH_TITLES.size()).forEach(i -> seed.defect(project, i + 1, SEARCH_TITLES.get(i),
+        IntStream.range(0, SEARCH_TITLES.size()).forEach(i -> seed.issue(project, i + 1, SEARCH_TITLES.get(i),
                 LedgerTestContext.START.plusSeconds(i + 1)));
         assertThat(queries.search(project.id(), search.keywords(), search.match(), MaxRows.DEFAULT).rows())
-                .extracting(DefectSummary::title).containsExactlyElementsOf(search.titles());
+                .extracting(IssueSummary::title).containsExactlyElementsOf(search.titles());
         assertThat(jdbc.sql("SELECT COUNT(*) FROM project").query(Integer.class).single())
                 .as("injection text is data: the table survives").isPositive();
     }
@@ -187,7 +188,6 @@ class QueryRepositoryTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
-    /** A creation-time range (inclusive; an open end is null) and the titles it finds, oldest first. */
     private record Range(String name, Instant from, Instant to, List<String> titles) {
         @Override
         public String toString() {
@@ -214,69 +214,74 @@ class QueryRepositoryTest {
     @MethodSource("ranges")
     void repo028_dayRangesAreInclusiveAtBothEnds(Range range) {
         Project project = seed.project();
-        IntStream.range(0, RANGE_TIMES.size()).forEach(i -> seed.defect(project, i + 1, "t" + i, RANGE_TIMES.get(i)));
-        assertThat(queries.page(project.id(), new Filter(null, null, null, range.from(), range.to()),
-                MaxRows.DEFAULT, Order.OLDEST_FIRST, null).rows()).extracting(DefectSummary::title)
+        IntStream.range(0, RANGE_TIMES.size()).forEach(i -> seed.issue(project, i + 1, "t" + i, RANGE_TIMES.get(i)));
+        assertThat(queries.page(project.id(), new Filter(null, null, null, range.from(), range.to(), null, null),
+                MaxRows.DEFAULT, Order.OLDEST_FIRST, null).rows()).extracting(IssueSummary::title)
                 .containsExactlyElementsOf(range.titles());
     }
 
     @Test
-    void repo034_countsAndTheFiveAttentionKinds() {
+    void repo034_countsAndTheSixAttentionKinds() {
         Project project = seed.project();
-        Defect openWithFix = seed.defect(project, 1, "open with fix", LedgerTestContext.START);
-        Defect openNoOwner = seed.defect(project, 2, "open no owner", LedgerTestContext.START);
-        Defect fixedNoCommit = LedgerTestContext.as(Seed.ALICE, () -> defects.save(
-                seed.defect(project, 3, "fixed", LedgerTestContext.START)
-                        .transitioned(DefectStatus.SOURCE_FIXED, null, LedgerTestContext.START)));
-        Defect verifiedWithFix = LedgerTestContext.as(Seed.ALICE, () -> defects.save(
-                seed.defect(project, 4, "verified", LedgerTestContext.START)
-                        .transitioned(DefectStatus.VERIFIED, null, LedgerTestContext.START)));
-        fixes.insert(DefectFix.record(ids.next(Counter.DEFECT_FIX), openWithFix.id(), "repo",
-                CommitSha.of("d".repeat(40)), null, null, null, null, Seed.ALICE, LedgerTestContext.START));
-        fixes.insert(DefectFix.record(ids.next(Counter.DEFECT_FIX), verifiedWithFix.id(), "repo",
-                CommitSha.of("e".repeat(40)), null, null, null, null, Seed.ALICE, LedgerTestContext.START));
+        Issue openWithDeliv = seed.issue(project, 1, "open with deliverable", LedgerTestContext.START);
+        Issue openNoOwner = seed.issue(project, 2, "open no owner", LedgerTestContext.START);
+        Issue resolvedNoDeliv = LedgerTestContext.as(Seed.ALICE, () -> issues.save(
+                seed.issue(project, 3, "resolved", LedgerTestContext.START)
+                        .transitioned(IssueStatus.RESOLVED, null, LedgerTestContext.START)));
+        Issue verifiedWithDeliv = LedgerTestContext.as(Seed.ALICE, () -> issues.save(
+                seed.issue(project, 4, "verified", LedgerTestContext.START)
+                        .transitioned(IssueStatus.VERIFIED, null, LedgerTestContext.START)));
+        deliverables.insert(Deliverable.record(ids.next(Counter.DELIVERABLE), DeliverableTarget.ISSUE,
+                openWithDeliv.id().value(), CodeValue.of("CODE_PATCH"), "d".repeat(40), null, "first deliverable",
+                null, null, null, null, Seed.ALICE, LedgerTestContext.START));
+        deliverables.insert(Deliverable.record(ids.next(Counter.DELIVERABLE), DeliverableTarget.ISSUE,
+                verifiedWithDeliv.id().value(), CodeValue.of("CODE_PATCH"), "e".repeat(40), null, "second deliverable",
+                null, null, null, null, Seed.ALICE, LedgerTestContext.START));
+        Spec completedSpec = seed.spec(project, 1, "completed spec", LedgerTestContext.START);
+        LedgerTestContext.as(Seed.ALICE, () -> specs.save(completedSpec.transitioned(SpecStatus.COMPLETED,
+                LedgerTestContext.START)));
         var unknownTask = seed.task(project, 1, "unknown task");
         LedgerTestContext.as(Seed.ALICE, () -> tasks.save(unknownTask.transitioned(TaskState.UNKNOWN,
                 LedgerTestContext.START)));
         var doneTask = seed.task(project, 2, "done task");
-        LedgerTestContext.as(Seed.ALICE, () -> tasks.save(doneTask.transitioned(TaskState.REPORTED_DONE,
+        LedgerTestContext.as(Seed.ALICE, () -> tasks.save(doneTask.transitioned(TaskState.COMPLETED,
                 LedgerTestContext.START)));
 
-        assertThat(stats.defectsByStatus(project.id())).containsEntry(DefectStatus.OPEN.name(), 2L)
-                .containsEntry(DefectStatus.SOURCE_FIXED.name(), 1L).containsEntry(DefectStatus.VERIFIED.name(), 1L);
-        assertThat(stats.defectsBySeverity(project.id())).containsEntry("P2", 4L);
+        assertThat(stats.issuesByStatus(project.id())).containsEntry(IssueStatus.OPEN.name(), 2L)
+                .containsEntry(IssueStatus.RESOLVED.name(), 1L).containsEntry(IssueStatus.VERIFIED.name(), 1L);
+        assertThat(stats.issuesBySeverity(project.id())).containsEntry("P2", 4L);
+        assertThat(stats.specsByStatus(project.id())).containsEntry(SpecStatus.COMPLETED.name(), 1L);
         List<AttentionQueryRepository.Item> attention = attentionQueries
                 .page(project.id(), null, MaxRows.DEFAULT, null).rows();
         assertThat(attention).extracting(AttentionQueryRepository.Item::kind, AttentionQueryRepository.Item::id)
-                .contains(tuple(AttentionKind.OPEN_WITH_FIX, openWithFix.id().value()),
+                .contains(tuple(AttentionKind.OPEN_WITH_DELIVERABLE, openWithDeliv.id().value()),
                         tuple(AttentionKind.OPEN_NO_OWNER, openNoOwner.id().value()),
-                        tuple(AttentionKind.OPEN_NO_OWNER, openWithFix.id().value()),
-                        tuple(AttentionKind.FIXED_WITHOUT_COMMIT, fixedNoCommit.id().value()),
+                        tuple(AttentionKind.OPEN_NO_OWNER, openWithDeliv.id().value()),
+                        tuple(AttentionKind.RESOLVED_WITHOUT_DELIVERABLE, resolvedNoDeliv.id().value()),
+                        tuple(AttentionKind.SPEC_COMPLETED_NOT_VERIFIED, completedSpec.id().value()),
                         tuple(AttentionKind.TASK_UNKNOWN, unknownTask.id().value()),
                         tuple(AttentionKind.DONE_NOT_VERIFIED, doneTask.id().value()));
-        assertThat(attention).extracting(AttentionQueryRepository.Item::id).doesNotContain(verifiedWithFix.id().value());
-        assertThat(attention).hasSize(6);
-        // the same meaning in the filter of the list: a kind selects the rows the attention list names for it
+        assertThat(attention).extracting(AttentionQueryRepository.Item::id)
+                .doesNotContain(verifiedWithDeliv.id().value());
+        assertThat(attention).hasSize(7);
         assertThat(queries.page(project.id(), new Filter(null, null, null, null, null,
-                null, AttentionKind.FIXED_WITHOUT_COMMIT), MaxRows.DEFAULT, Order.OLDEST_FIRST, null).rows())
-                .extracting(DefectSummary::id).containsExactly(fixedNoCommit.id());
-        // a kind of the other entity is a mistake of the caller
+                null, AttentionKind.RESOLVED_WITHOUT_DELIVERABLE), MaxRows.DEFAULT, Order.OLDEST_FIRST, null).rows())
+                .extracting(IssueSummary::id).containsExactly(resolvedNoDeliv.id());
         assertThatThrownBy(() -> queries.page(project.id(), new Filter(null, null, null,
                 null, null, null, AttentionKind.TASK_UNKNOWN), MaxRows.DEFAULT, Order.OLDEST_FIRST, null))
-                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("defect attention kind");
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("issue attention kind");
     }
 
     @Test
     void repo036_aMergeChainOfDepth50IsWalkedWithoutRecursiveSql() {
         Project project = seed.project();
-        Defect root = seed.defect(project, 1, "root", LedgerTestContext.START);
-        // the chain runs root <- 2 <- 3 ... <- 51: every defect is merged into the one before it
-        List<DefectId> chain = IntStream.rangeClosed(2, 51).mapToObj(i -> DefectId.of(project.code(), i)).toList();
+        Issue root = seed.issue(project, 1, "root", LedgerTestContext.START);
+        List<IssueId> chain = IntStream.rangeClosed(2, 51).mapToObj(i -> IssueId.of(project.code(), i)).toList();
         chain.stream().reduce(root.id(), (target, id) -> {
-            Defect child = seed.defect(project, DefectId.of(id.value()).number(), "link " + id.value(),
+            Issue child = seed.issue(project, IssueId.of(id.value()).number(), "link " + id.value(),
                     LedgerTestContext.START);
-            LedgerTestContext.as(Seed.ALICE, () -> defects.save(
-                    child.transitioned(DefectStatus.MERGED, target, LedgerTestContext.START)));
+            LedgerTestContext.as(Seed.ALICE, () -> issues.save(
+                    child.transitioned(IssueStatus.MERGED, target, LedgerTestContext.START)));
             return id;
         });
         spy.clear();

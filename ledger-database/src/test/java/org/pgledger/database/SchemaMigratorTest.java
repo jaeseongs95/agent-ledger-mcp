@@ -181,7 +181,8 @@ class SchemaMigratorTest {
                 succeeded(6, 1, "V6__driver_audit_key.sql", resource("db/V6__driver_audit_key.sql"), T0),
                 succeeded(7, 1, "V7__owner_passkey.sql", resource("db/V7__owner_passkey.sql"), T0),
                 succeeded(8, 1, "V8__attachments.sql", resource("db/V8__attachments.sql"), T0)));
-        assertThat(tableExists("defect")).isTrue();
+        assertThat(tableExists("issue")).isTrue();
+        assertThat(tableExists("spec")).isTrue();
     }
 
     /** RUN-004: the declaration that the dialect of SqlBuilder gives for the placeholder on the test PostgreSQL holds a long text. */
@@ -587,9 +588,10 @@ class SchemaMigratorTest {
         assertThat(history().stream().map(Row::version))
                 .containsExactlyElementsOf(shippedFiles().stream().map(MigrationFile::version).toList());
         assertThat(tableExists("request_receipt")).isTrue();
-        assertThat(tableExists("defect")).isTrue();
+        assertThat(tableExists("issue")).isTrue();
+        assertThat(tableExists("spec")).isTrue();
         assertThat(JdbcClient.create(pool).sql("SELECT COUNT(*) FROM common_code").query(Integer.class).single())
-                .isEqualTo(10);
+                .isEqualTo(18);
     }
 
     @Test

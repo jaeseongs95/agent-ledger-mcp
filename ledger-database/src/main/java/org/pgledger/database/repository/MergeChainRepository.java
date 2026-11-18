@@ -4,13 +4,12 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import org.pgledger.domain.value.DefectId;
+import org.pgledger.domain.value.IssueId;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
 /**
- * Follows the merges of defects. The chain is walked level by level with plain IN-list selects (no recursive SQL);
- * a defect already seen is not followed again, so the walk always ends.
+ * Follows the merges of issues level by level with plain IN-list selects; a seen set guarantees termination.
  */
 @Repository
 public class MergeChainRepository {
@@ -21,17 +20,17 @@ public class MergeChainRepository {
         this.jdbc = jdbc;
     }
 
-    /** Every defect that was merged into {@code root}, directly or through other merged defects. */
-    public Set<DefectId> mergedInto(DefectId root) {
-        Set<DefectId> found = new LinkedHashSet<>();
-        Set<DefectId> seen = new LinkedHashSet<>(List.of(root));
-        List<DefectId> level = List.of(root);
+    /** Every issue merged into {@code root}, directly or transitively. */
+    public Set<IssueId> mergedInto(IssueId root) {
+        Set<IssueId> found = new LinkedHashSet<>();
+        Set<IssueId> seen = new LinkedHashSet<>(List.of(root));
+        List<IssueId> level = List.of(root);
         while (!level.isEmpty()) {
-            List<String> parents = level.stream().map(DefectId::value).toList();
-            List<DefectId> next = new ArrayList<>();
-            for (String id : jdbc.sql("SELECT id FROM defect WHERE merged_into IN (:parents) ORDER BY id")
+            List<String> parents = level.stream().map(IssueId::value).toList();
+            List<IssueId> next = new ArrayList<>();
+            for (String id : jdbc.sql("SELECT id FROM issue WHERE merged_into IN (:parents) ORDER BY id")
                     .param("parents", parents).query(String.class).list()) {
-                DefectId child = DefectId.of(id);
+                IssueId child = IssueId.of(id);
                 if (seen.add(child)) {
                     found.add(child);
                     next.add(child);
@@ -43,29 +42,29 @@ public class MergeChainRepository {
     }
 
     /**
-     * Conditionally enforces that a defect entering {@code MERGED} is not already {@code MERGED} and has no stale merge
-     * target, acquiring a PostgreSQL row lock in canonical order without altering {@code version} or {@code updated_at}.
+     * Conditionally enforces that an issue entering {@code MERGED} is not already {@code MERGED}, acquiring a row lock
+     * without altering {@code version} or {@code updated_at}.
      */
-    public int pinMergeSource(DefectId id) {
-        return jdbc.sql("UPDATE defect SET merged_into = NULL WHERE id = :id AND status <> 'MERGED'")
+    public int pinMergeSource(IssueId id) {
+        return jdbc.sql("UPDATE issue SET merged_into = NULL WHERE id = :id AND status <> 'MERGED'")
                 .param("id", id.value()).update();
     }
 
     /**
      * Conditionally enforces that a merge target is neither {@code MERGED} nor {@code VERIFIED}, acquiring a row lock
-     * on the target so concurrent mutual merges and verify-vs-merge races serialize under {@code READ COMMITTED}.
+     * on the target.
      */
-    public int pinMergeTarget(DefectId id) {
-        return jdbc.sql("UPDATE defect SET merged_into = NULL WHERE id = :id AND status NOT IN ('MERGED', 'VERIFIED')")
+    public int pinMergeTarget(IssueId id) {
+        return jdbc.sql("UPDATE issue SET merged_into = NULL WHERE id = :id AND status NOT IN ('MERGED', 'VERIFIED')")
                 .param("id", id.value()).update();
     }
 
     /**
-     * Conditionally enforces that a defect being verified is still {@code SOURCE_FIXED} before scanning its merge chain,
+     * Conditionally enforces that an issue being verified is still {@code RESOLVED} before scanning its merge chain,
      * serializing incoming merges onto the verified row.
      */
-    public int pinVerifyCandidate(DefectId id) {
-        return jdbc.sql("UPDATE defect SET merged_into = NULL WHERE id = :id AND status = 'SOURCE_FIXED'")
+    public int pinVerifyCandidate(IssueId id) {
+        return jdbc.sql("UPDATE issue SET merged_into = NULL WHERE id = :id AND status = 'RESOLVED'")
                 .param("id", id.value()).update();
     }
 }

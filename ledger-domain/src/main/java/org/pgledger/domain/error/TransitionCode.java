@@ -3,13 +3,13 @@ package org.pgledger.domain.error;
 /** Error tokens of category TRANSITION. */
 public enum TransitionCode implements ErrorCode {
     TRANSITION_INVALID,
-    FIX_REQUIRED,
-    FIX_ALREADY_RECORDED,
+    DELIVERABLE_REQUIRED,
+    DELIVERABLE_ALREADY_RECORDED,
     EVIDENCE_REQUIRED,
     MERGE_TARGET_INVALID,
-    MERGED_DEFECT,
-    /** {@code record_fix}, {@code save}, or {@code record_case} of a VERIFIED defect: a reviewer has to reopen it first. Argument: the defect id. */
-    VERIFIED_DEFECT,
+    MERGED_ISSUE,
+    /** {@code record_deliverable}, {@code save}, or {@code record_case} on a VERIFIED/MET/NOT_MET item: a reviewer must reopen it first. Argument: the item id. */
+    VERIFIED_ENTITY,
     SAME_SESSION,
     PROJECT_MOVE_FORBIDDEN,
     NOTHING_CHANGES;

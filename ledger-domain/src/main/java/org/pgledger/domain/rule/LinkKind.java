@@ -5,11 +5,16 @@ import java.util.Objects;
 import org.pgledger.domain.value.Token;
 
 /**
- * The structural kinds of link. Any other kind token names a relation between two defects; the allowed relation
- * kinds are data (common codes of group RELATION_KIND), so they are not constants here.
+ * The structural kinds of link. Any other kind token names a relation between two issues; the allowed relation
+ * kinds are data (common codes of group RELATION_KIND).
  */
 public enum LinkKind implements Token {
-    DEFECT_TASK("defect_task"), CONDITION_TASK("condition_task"), CONDITION_DEFECT("condition_defect"),
+    ISSUE_TASK("issue_task"),
+    ISSUE_SPEC("issue_spec"),
+    SPEC_TASK("spec_task"),
+    CRITERION_TASK("criterion_task"),
+    CRITERION_ISSUE("criterion_issue"),
+    CRITERION_SPEC("criterion_spec"),
     RELATION("relation");
 
     private final String token;
@@ -23,7 +28,7 @@ public enum LinkKind implements Token {
         return token;
     }
 
-    /** The structural kind of a wire token; every token that is not structural is a relation kind code. */
+    /** The structural kind of a wire token; every non-structural token is treated as a RELATION_KIND code. */
     public static LinkKind ofToken(String wireToken) {
         return Arrays.stream(values())
                 .filter(kind -> kind != RELATION && Objects.equals(kind.token, wireToken))

@@ -23,8 +23,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.pgledger.database.support.DatabaseTest;
 import org.pgledger.database.support.LedgerTestContext;
 import org.pgledger.database.support.Seed;
-import org.pgledger.domain.model.Condition;
-import org.pgledger.domain.model.Defect;
+import org.pgledger.domain.model.Criterion;
+import org.pgledger.domain.model.Issue;
 import org.pgledger.domain.model.Project;
 import org.pgledger.domain.model.Task;
 import org.springframework.core.NestedExceptionUtils;
@@ -40,22 +40,26 @@ class SchemaCatalogTest {
     private static final java.util.regex.Pattern TIME_DEFAULT =
             java.util.regex.Pattern.compile("CURRENT_|LOCALTIME|NOW|SYSDATE");
 
-    static final Set<String> TABLES = Set.of("project", "task", "defect", "defect_fix", "defect_case", "defect_task",
-            "defect_relation", "release_condition", "condition_link", "session_grant", "session_key", "owner_audit", "history",
-            "request_receipt", "common_code", "code_revision", "id_counter", "schema_history", "driver_audit_key",
-            "owner_passkey_user", "owner_passkey", "owner_passkey_revocation", "owner_passkey_code", "upload_staging",
-            "attachment", "attachment_file", "attachment_storage");
+    static final Set<String> TABLES = Set.of("project", "task", "spec", "issue", "deliverable", "issue_case",
+            "issue_task", "issue_spec", "spec_task", "issue_relation", "milestone_criterion", "criterion_link",
+            "session_grant", "session_key", "session_token", "owner_audit", "history", "request_receipt", "common_code",
+            "code_revision", "id_counter", "schema_history", "driver_audit_key", "owner_passkey_user",
+            "owner_passkey", "owner_passkey_revocation", "owner_passkey_code", "upload_staging", "attachment",
+            "attachment_file", "attachment_storage");
 
     /** The timestamp columns of the schema, exactly as the catalogue lists them (SCH-018). */
-    static final Set<String> TIMESTAMP_COLUMNS = Set.of("defect.created_at", "defect.updated_at", "task.created_at",
-            "task.updated_at", "defect_fix.ci_completed_at", "defect_fix.recorded_at", "defect_case.observed_at",
-            "defect_case.recorded_at", "session_grant.granted_at", "session_grant.expires_at",
-            "session_grant.revoked_at", "session_grant.last_used_at", "session_key.registered_at",
-            "session_key.revoked_at", "owner_audit.occurred_at", "history.occurred_at", "request_receipt.created_at",
-            "schema_history.applied_at", "owner_passkey.registered_at", "owner_passkey_revocation.revoked_at",
-            "owner_passkey_code.issued_at", "owner_passkey_code.expires_at", "owner_passkey_code.used_at",
-            "upload_staging.expires_at", "upload_staging.created_at", "upload_staging.updated_at",
-            "attachment.created_at", "attachment_storage.created_at");
+    static final Set<String> TIMESTAMP_COLUMNS = Set.of("issue.created_at", "issue.updated_at", "spec.created_at",
+            "spec.updated_at", "task.created_at", "task.updated_at", "deliverable.checked_at",
+            "deliverable.recorded_at", "issue_case.observed_at", "issue_case.recorded_at",
+            "session_grant.granted_at", "session_grant.expires_at", "session_grant.revoked_at",
+            "session_grant.last_used_at", "session_key.registered_at", "session_key.revoked_at",
+            "session_token.issued_at", "session_token.expires_at", "session_token.revoked_at",
+            "session_token.last_used_at", "owner_audit.occurred_at", "history.occurred_at",
+            "request_receipt.created_at", "schema_history.applied_at", "owner_passkey.registered_at",
+            "owner_passkey_revocation.revoked_at", "owner_passkey_code.issued_at",
+            "owner_passkey_code.expires_at", "owner_passkey_code.used_at", "upload_staging.expires_at",
+            "upload_staging.created_at", "upload_staging.updated_at", "attachment.created_at",
+            "attachment_storage.created_at");
 
     private LedgerTestContext ctx;
     private JdbcClient jdbc;
@@ -124,7 +128,7 @@ class SchemaCatalogTest {
     void repo001_theTablesAreExactlyTheDesignedOnes() {
         assertThat(tableNames("TABLE")).isEqualTo(new TreeSet<>(TABLES));
         assertThat(tableNames("VIEW")).as("no views").isEmpty();
-        assertThat(columns().stream().filter(c -> "defect".equals(c.table())).map(Column::name)).contains("case_seq");
+        assertThat(columns().stream().filter(c -> "issue".equals(c.table())).map(Column::name)).contains("case_seq");
         assertThat(columns().stream().filter(c -> "history".equals(c.table())).map(Column::name))
                 .contains("source_ref");
     }
@@ -144,7 +148,7 @@ class SchemaCatalogTest {
 
     /** The enum-valued columns of REPO-002 are text; the CHECK that closes their value set is proved by REPO-003. */
     @ParameterizedTest
-    @CsvSource({"common_code.state", "defect_fix.origin", "request_receipt.operation"})
+    @CsvSource({"common_code.state", "deliverable.origin", "request_receipt.operation"})
     void repo002_anEnumColumnIsText(String column) {
         String table = column.substring(0, column.indexOf('.'));
         String name = column.substring(column.indexOf('.') + 1);
@@ -163,17 +167,20 @@ class SchemaCatalogTest {
                 "INSERT INTO common_code (code_group, code, name_ko, name_en, sort_order, state, direction, created_by) "
                         + "VALUES ('RELATION_KIND', 'zz', 'a', 'a', 1, 'ACTIVE', 'MAYBE', 'user:owner')",
                 "INSERT INTO common_code (code_group, code, name_ko, name_en, sort_order, state, direction, created_by) "
-                        + "VALUES ('DEFECT_SEVERITY', 'zz', 'a', 'a', 1, 'ACTIVE', 'GIVEN', 'user:owner')",
-                "INSERT INTO defect_relation (a, b, kind, created_by) VALUES (:defect, :defect, 'blocks', 'user:owner')",
+                        + "VALUES ('ISSUE_SEVERITY', 'zz', 'a', 'a', 1, 'ACTIVE', 'GIVEN', 'user:owner')",
+                "INSERT INTO issue_relation (a, b, kind, created_by) VALUES (:issue, :issue, 'blocks', 'user:owner')",
                 "INSERT INTO id_counter (name, issued_no) VALUES ('OTHER', 1)",
-                "UPDATE defect SET status = 'FIXED' WHERE id = :defect",
+                "UPDATE issue SET status = 'FIXED' WHERE id = :issue",
+                "UPDATE spec SET status = 'DONE' WHERE id = :spec",
                 "UPDATE task SET state = 'DONE' WHERE id = :task",
-                "UPDATE release_condition SET state = 'PASSED' WHERE id = :condition",
-                "INSERT INTO defect_fix (id, defect_id, repo, commit_sha, ci_ref, ci_conclusion, recorded_by, "
-                        + "recorded_at, origin) VALUES (900001, :defect, 'r', 'a', 'ref', 'PASSED', 'claude:a', "
+                "UPDATE milestone_criterion SET state = 'INVALID' WHERE id = :criterion",
+                "INSERT INTO deliverable (id, target_entity, target_id, kind, deliverable_ref, summary, check_ref, "
+                        + "check_result, recorded_by, recorded_at, origin) VALUES (900001, 'ISSUE', :issue, "
+                        + "'code_change', 'ref-1', 'sum', 'ref', 'SUCCESS', 'claude:a', "
                         + "TIMESTAMP '2026-11-05 10:00:00', 'NATIVE')",
-                "INSERT INTO defect_fix (id, defect_id, repo, commit_sha, recorded_by, recorded_at, origin) VALUES "
-                        + "(900003, :defect, 'r', 'b', 'claude:a', TIMESTAMP '2026-11-05 10:00:00', 'OTHER')",
+                "INSERT INTO deliverable (id, target_entity, target_id, kind, deliverable_ref, summary, recorded_by, "
+                        + "recorded_at, origin) VALUES (900003, 'ISSUE', :issue, 'code_change', 'ref-2', 'sum', "
+                        + "'claude:a', TIMESTAMP '2026-11-05 10:00:00', 'OTHER')",
                 "INSERT INTO request_receipt (operation_key, operation, payload_sha256, author_id, login, "
                         + "created_at) VALUES ('22222222-2222-2222-2222-222222222222', 'OTHER', 'aa', 'claude:a', "
                         + "'ledger_author', TIMESTAMP '2026-11-05 10:00:00')",
@@ -191,12 +198,13 @@ class SchemaCatalogTest {
     void repo003_012_valuesOutsideTheFixedSetsAreRefusedWithSqlStateClass23(String sql) {
         Seed seed = new Seed(ctx);
         Project project = seed.project();
-        Defect defect = seed.defect(project, 1, "check me", LedgerTestContext.START);
+        Issue issue = seed.issue(project, 1, "check me", LedgerTestContext.START);
+        var spec = seed.spec(project, 1, "check spec", LedgerTestContext.START);
         Task task = seed.task(project, 1, "check task");
-        Condition condition = seed.condition(project, project.code().value() + "-C-1", "1.0", "C1");
+        Criterion criterion = seed.criterion(project, project.code().value() + "-C-1", "1.0", "C1");
         Throwable thrown = catchThrowable(() -> jdbc.sql(sql).param("project", project.id().value())
-                .param("defect", defect.id().value()).param("task", task.id().value())
-                .param("condition", condition.id().value()).update());
+                .param("issue", issue.id().value()).param("spec", spec.id().value())
+                .param("task", task.id().value()).param("criterion", criterion.id().value()).update());
         assertThat(thrown).isInstanceOf(DataIntegrityViolationException.class);
         assertThat(sqlState(thrown)).startsWith("23");
     }
@@ -206,8 +214,8 @@ class SchemaCatalogTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"project", "task", "defect", "release_condition", "defect_task", "defect_relation",
-            "condition_link", "common_code"})
+    @ValueSource(strings = {"project", "task", "spec", "issue", "milestone_criterion", "issue_task", "issue_spec",
+            "spec_task", "issue_relation", "criterion_link", "common_code"})
     void repo005_createdByIsNotNull(String table) {
         assertThat(columns()).filteredOn(c -> Objects.equals(c.table(), table) && "created_by".equals(c.name()))
                 .singleElement().satisfies(c -> assertThat(c.nullable()).isFalse());
@@ -290,17 +298,20 @@ class SchemaCatalogTest {
 
     @Test
     void sch016_seedCodes() {
-        assertThat(jdbc.sql("SELECT code FROM common_code WHERE code_group = 'DEFECT_SEVERITY' AND state = 'ACTIVE' "
+        assertThat(jdbc.sql("SELECT code FROM common_code WHERE code_group = 'ISSUE_SEVERITY' AND state = 'ACTIVE' "
                 + "ORDER BY sort_order").query(String.class).list()).containsExactly("P1", "P2", "P3");
-        assertThat(jdbc.sql("SELECT code FROM common_code WHERE code_group = 'DEFECT_SEVERITY' AND state = "
+        assertThat(jdbc.sql("SELECT code FROM common_code WHERE code_group = 'ISSUE_SEVERITY' AND state = "
                 + "'INACTIVE'").query(String.class).list()).containsExactly("UNRATED");
         assertThat(jdbc.sql("SELECT code FROM common_code WHERE code_group = 'RELATION_KIND' AND state = 'ACTIVE' "
                 + "ORDER BY sort_order").query(String.class).list()).containsExactly("same_site", "caused_by",
-                "blocks", "same_family", "same_fix_unit", "regression_of");
-        assertThat(jdbc.sql("SELECT COUNT(*) FROM common_code WHERE code_group = 'DEFECT_CATEGORY'")
+                "blocks", "same_family", "same_work_unit", "regression_of");
+        assertThat(jdbc.sql("SELECT code FROM common_code WHERE code_group = 'DELIVERABLE_KIND' AND state = 'ACTIVE' "
+                + "ORDER BY sort_order").query(String.class).list()).containsExactly("code_change", "document",
+                "media", "design", "dataset", "specification", "artifact", "other");
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM common_code WHERE code_group = 'ISSUE_CATEGORY'")
                 .query(Integer.class).single()).isZero();
         assertThat(jdbc.sql("SELECT DISTINCT code_group FROM common_code").query(String.class).list())
-                .containsExactlyInAnyOrder("DEFECT_SEVERITY", "RELATION_KIND");
+                .containsExactlyInAnyOrder("ISSUE_SEVERITY", "DELIVERABLE_KIND", "RELATION_KIND");
     }
 
     /** SCH-035: V4 adds the direction to every code; only caused_by and blocks of the seed are GIVEN. */
@@ -315,7 +326,7 @@ class SchemaCatalogTest {
                 .query(String.class).list()).containsExactly("blocks", "caused_by");
         assertThat(jdbc.sql("SELECT code FROM common_code WHERE code_group = 'RELATION_KIND' AND direction = "
                 + "'CANONICAL' ORDER BY sort_order").query(String.class).list())
-                .containsExactly("same_site", "same_family", "same_fix_unit", "regression_of");
+                .containsExactly("same_site", "same_family", "same_work_unit", "regression_of");
         assertThat(jdbc.sql("SELECT COUNT(*) FROM common_code WHERE code_group <> 'RELATION_KIND' AND direction <> "
                 + "'CANONICAL'").query(Integer.class).single()).isZero();
     }
@@ -328,7 +339,7 @@ class SchemaCatalogTest {
                     assertThat(c.type()).isEqualTo(Types.BIGINT);
                     assertThat(c.nullable()).isFalse();
                 });
-        assertThat(jdbc.sql("SELECT COUNT(*) FROM common_code WHERE code_group = 'DEFECT_SEVERITY' AND code = 'P1' "
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM common_code WHERE code_group = 'ISSUE_SEVERITY' AND code = 'P1' "
                 + "AND version = 0").query(Integer.class).single())
                 .as("the seed codes start at version 0").isEqualTo(1);
     }
@@ -492,10 +503,11 @@ class SchemaCatalogTest {
     @Test
     void sch017_countersAndRevisionRow() {
         assertThat(jdbc.sql("SELECT name FROM id_counter ORDER BY name").query(String.class).list())
-                .containsExactly("DEFECT_CASE", "DEFECT_FIX", "HISTORY", "OWNER_AUDIT", "SESSION_GRANT", "SESSION_KEY");
+                .containsExactly("DELIVERABLE", "HISTORY", "ISSUE_CASE", "OWNER_AUDIT", "SESSION_GRANT",
+                        "SESSION_KEY", "SESSION_TOKEN");
         assertThat(jdbc.sql("SELECT COUNT(*) FROM code_revision").query(Integer.class).single()).isEqualTo(1);
         Project fresh = new Seed(ctx).project();
-        assertThat(jdbc.sql("SELECT next_defect_no + next_task_no FROM project WHERE id = :id")
+        assertThat(jdbc.sql("SELECT next_issue_no + next_spec_no + next_task_no FROM project WHERE id = :id")
                 .param("id", fresh.id().value()).query(Long.class).single()).isZero();
     }
 

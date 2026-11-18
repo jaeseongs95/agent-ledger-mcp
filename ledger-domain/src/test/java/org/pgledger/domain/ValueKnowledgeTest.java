@@ -9,52 +9,48 @@ import org.junit.jupiter.api.Test;
 import org.pgledger.domain.error.LedgerException;
 import org.pgledger.domain.error.ValidationCode;
 import org.pgledger.domain.error.ValidationException;
-import org.pgledger.domain.model.DefectRelation;
 import org.pgledger.domain.model.HistoryEntry;
+import org.pgledger.domain.model.IssueRelation;
 import org.pgledger.domain.rule.ActorAssurance;
 import org.pgledger.domain.rule.AttentionKind;
 import org.pgledger.domain.rule.Channel;
 import org.pgledger.domain.rule.CodeDirection;
-import org.pgledger.domain.rule.DefectStatus;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
+import org.pgledger.domain.rule.IssueStatus;
 import org.pgledger.domain.rule.LifecycleState;
 import org.pgledger.domain.rule.Scope;
 import org.pgledger.domain.value.ActorId;
 import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.CodeValue;
-import org.pgledger.domain.value.DefectId;
-import org.pgledger.domain.value.JsonDocument;
 import org.pgledger.domain.value.ImportedActorId;
+import org.pgledger.domain.value.IssueId;
+import org.pgledger.domain.value.JsonDocument;
 import org.pgledger.domain.value.OperationKey;
 import org.pgledger.domain.value.Patch;
 import org.pgledger.domain.value.Reason;
 import org.pgledger.domain.value.SessionKey;
 import org.pgledger.domain.value.Tokens;
 
-/**
- * DOM-037 .. DOM-044: knowledge that callers used to re-derive (author parts, who may verify, which scope writes an
- * entity, which entity an attention kind is about, the reason length, the canonical order of a relation, the token
- * parser of closed sets) is answered by the value or the enum itself.
- */
+/** DOM-037 .. DOM-045: domain knowledge helpers on values, rules, and entities. */
 class ValueKnowledgeTest {
 
     @Test
-    @DisplayName("DOM-037 an author answers its vendor and its session; the owner is vendor user, session owner")
+    @DisplayName("DOM-037 an author answers its client and its session; the owner is client user, session owner")
     void authorParts() {
         AuthorId session = AuthorId.of("claude:1234abcd");
-        assertThat(session.vendor()).isEqualTo("claude");
+        assertThat(session.client()).isEqualTo("claude");
         assertThat(session.session()).isEqualTo("1234abcd");
-        assertThat(AuthorId.of("my-vendor:A.b_c-9").vendor()).isEqualTo("my-vendor");
+        assertThat(AuthorId.of("my-vendor:A.b_c-9").client()).isEqualTo("my-vendor");
         assertThat(AuthorId.of("my-vendor:A.b_c-9").session()).isEqualTo("A.b_c-9");
-        assertThat(AuthorId.OWNER.vendor()).isEqualTo("user");
+        assertThat(AuthorId.OWNER.client()).isEqualTo("user");
         assertThat(AuthorId.OWNER.session()).isEqualTo("owner");
         assertThat(AuthorId.of("a:" + "s".repeat(128)).session()).hasSize(128);
     }
 
     @Test
-    @DisplayName("DOM-037 the session key of a stored actor answers the vendor as the history view showed it, and none for text without one")
-    void sessionKeyVendor() {
+    @DisplayName("DOM-037 session key extracts vendor cleanly")
+    void sessionKeyClient() {
         assertThat(new SessionKey("claude:1").vendor()).hasValue("claude");
         assertThat(new SessionKey("codex:7").vendor()).hasValue("codex");
         assertThat(ActorId.ofStored("claude:1").sessionKey().vendor()).hasValue("claude");
@@ -71,42 +67,48 @@ class ValueKnowledgeTest {
     }
 
     @Test
-    @DisplayName("DOM-039 every history entity names the scope that writes it; a state change reuses the same answer")
+    @DisplayName("DOM-039 every history entity names the scope that writes it")
     void writeScopeOfEveryEntity() {
-        assertThat(HistoryEntity.DEFECT.writeScope()).isEqualTo(Scope.DEFECT);
+        assertThat(HistoryEntity.ISSUE.writeScope()).isEqualTo(Scope.ISSUE);
+        assertThat(HistoryEntity.SPEC.writeScope()).isEqualTo(Scope.SPEC);
         assertThat(HistoryEntity.TASK.writeScope()).isEqualTo(Scope.TASK);
-        assertThat(HistoryEntity.CONDITION.writeScope()).isEqualTo(Scope.TASK);
-        assertThat(HistoryEntity.DEFECT_FIX.writeScope()).isEqualTo(Scope.FIX);
-        assertThat(HistoryEntity.DEFECT_TASK.writeScope()).isEqualTo(Scope.DEFECT);
-        assertThat(HistoryEntity.DEFECT_RELATION.writeScope()).isEqualTo(Scope.DEFECT);
-        assertThat(HistoryEntity.CONDITION_LINK.writeScope()).isEqualTo(Scope.TASK);
-        assertThat(HistoryEntity.DEFECT_CASE.writeScope()).isEqualTo(Scope.DEFECT);
-        for (HistoryEntity entity : List.of(HistoryEntity.DEFECT, HistoryEntity.TASK, HistoryEntity.CONDITION)) {
-            assertThat(Scope.forTransition(entity, DefectStatus.OPEN, DefectStatus.DISPUTED))
+        assertThat(HistoryEntity.CRITERION.writeScope()).isEqualTo(Scope.TASK);
+        assertThat(HistoryEntity.DELIVERABLE.writeScope()).isEqualTo(Scope.DELIVERABLE);
+        assertThat(HistoryEntity.ISSUE_TASK.writeScope()).isEqualTo(Scope.ISSUE);
+        assertThat(HistoryEntity.ISSUE_SPEC.writeScope()).isEqualTo(Scope.SPEC);
+        assertThat(HistoryEntity.SPEC_TASK.writeScope()).isEqualTo(Scope.SPEC);
+        assertThat(HistoryEntity.ISSUE_RELATION.writeScope()).isEqualTo(Scope.ISSUE);
+        assertThat(HistoryEntity.CRITERION_LINK.writeScope()).isEqualTo(Scope.TASK);
+        assertThat(HistoryEntity.ISSUE_CASE.writeScope()).isEqualTo(Scope.ISSUE);
+        for (HistoryEntity entity : List.of(HistoryEntity.ISSUE, HistoryEntity.SPEC, HistoryEntity.TASK,
+                HistoryEntity.CRITERION)) {
+            assertThat(Scope.forTransition(entity, IssueStatus.OPEN, IssueStatus.DISPUTED))
                     .isEqualTo(entity.writeScope());
         }
     }
 
     @Test
-    @DisplayName("DOM-040 an attention kind answers the entity it is about, and the kinds of an entity are listed once")
+    @DisplayName("DOM-040 attention kinds cover issue, spec, and task")
     void attentionKindEntity() {
-        assertThat(AttentionKind.OPEN_WITH_FIX.entity()).isEqualTo(HistoryEntity.DEFECT);
-        assertThat(AttentionKind.FIXED_WITHOUT_COMMIT.entity()).isEqualTo(HistoryEntity.DEFECT);
-        assertThat(AttentionKind.OPEN_NO_OWNER.entity()).isEqualTo(HistoryEntity.DEFECT);
+        assertThat(AttentionKind.OPEN_WITH_DELIVERABLE.entity()).isEqualTo(HistoryEntity.ISSUE);
+        assertThat(AttentionKind.RESOLVED_WITHOUT_DELIVERABLE.entity()).isEqualTo(HistoryEntity.ISSUE);
+        assertThat(AttentionKind.OPEN_NO_OWNER.entity()).isEqualTo(HistoryEntity.ISSUE);
+        assertThat(AttentionKind.SPEC_COMPLETED_NOT_VERIFIED.entity()).isEqualTo(HistoryEntity.SPEC);
         assertThat(AttentionKind.TASK_UNKNOWN.entity()).isEqualTo(HistoryEntity.TASK);
         assertThat(AttentionKind.DONE_NOT_VERIFIED.entity()).isEqualTo(HistoryEntity.TASK);
-        assertThat(AttentionKind.of(HistoryEntity.DEFECT)).containsExactly(AttentionKind.OPEN_WITH_FIX,
-                AttentionKind.FIXED_WITHOUT_COMMIT, AttentionKind.OPEN_NO_OWNER);
+        assertThat(AttentionKind.of(HistoryEntity.ISSUE)).containsExactly(AttentionKind.OPEN_WITH_DELIVERABLE,
+                AttentionKind.RESOLVED_WITHOUT_DELIVERABLE, AttentionKind.OPEN_NO_OWNER);
+        assertThat(AttentionKind.of(HistoryEntity.SPEC)).containsExactly(AttentionKind.SPEC_COMPLETED_NOT_VERIFIED);
         assertThat(AttentionKind.of(HistoryEntity.TASK)).containsExactly(AttentionKind.TASK_UNKNOWN,
                 AttentionKind.DONE_NOT_VERIFIED);
-        assertThat(AttentionKind.of(HistoryEntity.CONDITION)).isEmpty();
+        assertThat(AttentionKind.of(HistoryEntity.CRITERION)).isEmpty();
         for (AttentionKind kind : AttentionKind.values()) {
             assertThat(AttentionKind.of(kind.entity())).contains(kind);
         }
     }
 
     @Test
-    @DisplayName("DOM-041 the reason rule lives in Reason: the history entry and the value use the same bounds")
+    @DisplayName("DOM-041 the reason rule lives in Reason")
     void reasonBoundsAreOnePlace() {
         assertThat(Reason.validated("  " + "x".repeat(Reason.MIN) + "  ")).isEqualTo("x".repeat(Reason.MIN));
         Expect.failsWith(ValidationCode.REASON_INVALID, () -> Reason.validated("x".repeat(Reason.MIN - 1)));
@@ -124,38 +126,36 @@ class ValueKnowledgeTest {
 
     private static HistoryEntry create(String reason) {
         return new HistoryEntry(null, DomainFixtures.NOW, AuthorId.OWNER, Channel.AUTHOR.login(),
-                ActorAssurance.DECLARED, HistoryEntity.DEFECT, "E2E-D-0001", HistoryOp.CREATE, null, null,
-                JsonDocument.EMPTY_OBJECT, null, reason, null, null, null, new OperationKey(UUID.randomUUID().toString()), null,
-                null);
+                ActorAssurance.DECLARED, HistoryEntity.ISSUE, "E2E-I-0001", HistoryOp.CREATE, null, null,
+                JsonDocument.EMPTY_OBJECT, null, reason, null, null, null,
+                new OperationKey(UUID.randomUUID().toString()), null, null);
     }
 
     @Test
-    @DisplayName("DOM-042 the order of the two ends of a relation is one rule, decided by the direction of the kind, used by the relation and by callers that need the pair")
+    @DisplayName("DOM-042 relation pair ordering honors CodeDirection")
     void relationPairOrder() {
-        DefectId one = DefectId.of("E2E-D-0001");
-        DefectId two = DefectId.of("E2E-D-0002");
-        assertThat(DefectRelation.Pair.of(two, one, CodeDirection.CANONICAL)).isEqualTo(new DefectRelation.Pair(one, two));
-        assertThat(DefectRelation.Pair.of(one, two, CodeDirection.CANONICAL)).isEqualTo(new DefectRelation.Pair(one, two));
-        // a directed kind keeps the order of the caller
-        assertThat(DefectRelation.Pair.of(two, one, CodeDirection.GIVEN)).isEqualTo(new DefectRelation.Pair(two, one));
-        assertThat(DefectRelation.Pair.of(one, two, CodeDirection.GIVEN)).isEqualTo(new DefectRelation.Pair(one, two));
+        IssueId one = IssueId.of("E2E-I-0001");
+        IssueId two = IssueId.of("E2E-I-0002");
+        assertThat(IssueRelation.Pair.of(two, one, CodeDirection.CANONICAL)).isEqualTo(new IssueRelation.Pair(one, two));
+        assertThat(IssueRelation.Pair.of(one, two, CodeDirection.CANONICAL)).isEqualTo(new IssueRelation.Pair(one, two));
+        assertThat(IssueRelation.Pair.of(two, one, CodeDirection.GIVEN)).isEqualTo(new IssueRelation.Pair(two, one));
+        assertThat(IssueRelation.Pair.of(one, two, CodeDirection.GIVEN)).isEqualTo(new IssueRelation.Pair(one, two));
         for (CodeDirection direction : CodeDirection.values()) {
-            Expect.invalid(() -> DefectRelation.Pair.of(one, one, direction));
-            Expect.invalid(() -> DefectRelation.between(one, one, CodeValue.of("same_site"), direction, AuthorId.OWNER));
+            Expect.invalid(() -> IssueRelation.Pair.of(one, one, direction));
+            Expect.invalid(() -> IssueRelation.between(one, one, CodeValue.of("same_site"), direction, AuthorId.OWNER));
         }
-        DefectRelation relation = DefectRelation.between(two, one, CodeValue.of("same_site"), CodeDirection.CANONICAL,
+        IssueRelation relation = IssueRelation.between(two, one, CodeValue.of("same_site"), CodeDirection.CANONICAL,
                 AuthorId.OWNER);
         assertThat(relation.a()).isEqualTo(one);
         assertThat(relation.b()).isEqualTo(two);
-        DefectRelation directed = DefectRelation.between(two, one, CodeValue.of("caused_by"), CodeDirection.GIVEN,
+        IssueRelation directed = IssueRelation.between(two, one, CodeValue.of("caused_by"), CodeDirection.GIVEN,
                 AuthorId.OWNER);
         assertThat(directed.a()).isEqualTo(two);
         assertThat(directed.b()).isEqualTo(one);
-        // ids of different width order as text, as the stored pair always did
-        assertThat(DefectRelation.Pair.of(DefectId.of("E2E-D-10000"), DefectId.of("E2E-D-9999"), CodeDirection.CANONICAL)
-                .first().value()).isEqualTo("E2E-D-10000");
-        assertThat(DefectRelation.Pair.of(DefectId.of("E2E-D-9999"), DefectId.of("E2E-D-10000"), CodeDirection.GIVEN)
-                .first().value()).isEqualTo("E2E-D-9999");
+        assertThat(IssueRelation.Pair.of(IssueId.of("E2E-I-10000"), IssueId.of("E2E-I-9999"), CodeDirection.CANONICAL)
+                .first().value()).isEqualTo("E2E-I-10000");
+        assertThat(IssueRelation.Pair.of(IssueId.of("E2E-I-9999"), IssueId.of("E2E-I-10000"), CodeDirection.GIVEN)
+                .first().value()).isEqualTo("E2E-I-9999");
     }
 
     private enum Plain {
@@ -163,7 +163,7 @@ class ValueKnowledgeTest {
     }
 
     @Test
-    @DisplayName("DOM-043 closed sets are parsed by token or by constant name in one class; an unknown value lists the allowed ones")
+    @DisplayName("DOM-043 closed sets are parsed by token or constant name")
     void tokensParseByNameToo() {
         assertThat(Tokens.parseName("kind", "SECOND", Plain.values())).isEqualTo(Plain.SECOND);
         LedgerException unknown = Expect.invalid(() -> Tokens.parseName("kind", "second", Plain.values()));
@@ -171,12 +171,12 @@ class ValueKnowledgeTest {
         assertThat(((ValidationException) unknown).issues().getFirst().reasonArgs()).containsExactly("second");
         LedgerException none = Expect.invalid(() -> Tokens.parseName("kind", null, Plain.values()));
         assertThat(((ValidationException) none).issues().getFirst().reasonArgs()).containsExactly("null");
-        assertThat(Tokens.parseName("kind", "OPEN_WITH_FIX", AttentionKind.values()))
-                .isEqualTo(AttentionKind.OPEN_WITH_FIX);
+        assertThat(Tokens.parseName("kind", "OPEN_WITH_DELIVERABLE", AttentionKind.values()))
+                .isEqualTo(AttentionKind.OPEN_WITH_DELIVERABLE);
     }
 
     @Test
-    @DisplayName("DOM-044 a patch answers its value, or null when absent, without orElse(null)")
+    @DisplayName("DOM-044 patch orNull")
     void patchOrNull() {
         assertThat(Patch.<String>absent().orNull()).isNull();
         assertThat(Patch.set("x").orNull()).isEqualTo("x");
@@ -184,30 +184,31 @@ class ValueKnowledgeTest {
     }
 
     @Test
-    @DisplayName("DOM-045 a stored state text answers whether it is a verification state, and a history entry whether it changes one")
+    @DisplayName("DOM-045 verification state check across all entities")
     void verificationOfStoredStates() {
         assertThat(LifecycleState.isVerification(HistoryEntity.TASK, "VERIFIED")).isTrue();
-        assertThat(LifecycleState.isVerification(HistoryEntity.DEFECT, "VERIFIED")).isTrue();
-        assertThat(LifecycleState.isVerification(HistoryEntity.CONDITION, "MET")).isTrue();
-        assertThat(LifecycleState.isVerification(HistoryEntity.CONDITION, "NOT_MET")).isTrue();
-        assertThat(LifecycleState.isVerification(HistoryEntity.CONDITION, "UNKNOWN")).isFalse();
+        assertThat(LifecycleState.isVerification(HistoryEntity.SPEC, "VERIFIED")).isTrue();
+        assertThat(LifecycleState.isVerification(HistoryEntity.ISSUE, "VERIFIED")).isTrue();
+        assertThat(LifecycleState.isVerification(HistoryEntity.CRITERION, "MET")).isTrue();
+        assertThat(LifecycleState.isVerification(HistoryEntity.CRITERION, "NOT_MET")).isTrue();
+        assertThat(LifecycleState.isVerification(HistoryEntity.CRITERION, "UNKNOWN")).isFalse();
+        assertThat(LifecycleState.isVerification(HistoryEntity.SPEC, "COMPLETED")).isFalse();
         assertThat(LifecycleState.isVerification(HistoryEntity.TASK, "ACTIVE")).isFalse();
         assertThat(LifecycleState.isVerification(HistoryEntity.TASK, "MET")).isFalse();
         assertThat(LifecycleState.isVerification(HistoryEntity.TASK, "not a state")).isFalse();
         assertThat(LifecycleState.isVerification(HistoryEntity.TASK, null)).isFalse();
-        assertThat(LifecycleState.isVerification(HistoryEntity.DEFECT_FIX, "VERIFIED")).isFalse();
+        assertThat(LifecycleState.isVerification(HistoryEntity.DELIVERABLE, "VERIFIED")).isFalse();
 
-        assertThat(transition("SOURCE_FIXED", "VERIFIED", Channel.REVIEWER).involvesVerification()).isTrue();
+        assertThat(transition("RESOLVED", "VERIFIED", Channel.REVIEWER).involvesVerification()).isTrue();
         assertThat(transition("VERIFIED", "OPEN", Channel.AUTHOR).involvesVerification()).isTrue();
         assertThat(transition("OPEN", "DISPUTED", Channel.AUTHOR).involvesVerification()).isFalse();
         assertThat(create("a reason of enough length").involvesVerification()).isFalse();
-        // entering a verification state through the author channel is refused
-        Expect.invalid(() -> transition("SOURCE_FIXED", "VERIFIED", Channel.AUTHOR));
+        Expect.invalid(() -> transition("RESOLVED", "VERIFIED", Channel.AUTHOR));
     }
 
     private static HistoryEntry transition(String from, String to, Channel channel) {
         return new HistoryEntry(null, DomainFixtures.NOW, AuthorId.OWNER, channel.login(), ActorAssurance.DECLARED,
-                HistoryEntity.DEFECT, "E2E-D-0001", HistoryOp.TRANSITION, from, to, JsonDocument.EMPTY_OBJECT,
+                HistoryEntity.ISSUE, "E2E-I-0001", HistoryOp.TRANSITION, from, to, JsonDocument.EMPTY_OBJECT,
                 JsonDocument.EMPTY_OBJECT, "a reason of enough length", null, null, null,
                 new OperationKey(UUID.randomUUID().toString()), null, null);
     }

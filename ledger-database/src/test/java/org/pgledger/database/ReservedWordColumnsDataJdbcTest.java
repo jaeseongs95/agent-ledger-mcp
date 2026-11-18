@@ -95,17 +95,17 @@ class ReservedWordColumnsDataJdbcTest {
         jdbc.sql("INSERT INTO project (id, code, title, version, created_by) VALUES ('P1', 'P1', 'p', 1, 'user:owner')")
                 .update();
 
-        grants.insert(SessionGrant.issue(1L, AuthorId.of("claude:a"), ProjectId.of("P1"), Scope.FIX, AuthorId.OWNER,
-                WHEN, null, null));
+        grants.insert(SessionGrant.issue(1L, AuthorId.of("claude:a"), ProjectId.of("P1"), Scope.DELIVERABLE,
+                AuthorId.OWNER, WHEN, null, null));
         history.insert(new HistoryEntry(1L, WHEN, AuthorId.of("claude:a"), "ledger_author", ActorAssurance.DECLARED,
-                HistoryEntity.DEFECT, "P1-D-0001", HistoryOp.CREATE, null, null, JsonDocument.EMPTY_OBJECT, null,
+                HistoryEntity.ISSUE, "P1-I-0001", HistoryOp.CREATE, null, null, JsonDocument.EMPTY_OBJECT, null,
                 "a reason of enough length", null, null, null, new OperationKey(UUID.randomUUID().toString()),
-                null));
+                null, null));
         audit.insert(new OwnerAuditEntry(1L, WHEN, "token:owner", OwnerAction.GRANT_ISSUED, "claude:a|P1", null));
 
         assertThat(jdbc.sql("SELECT grant_scope FROM session_grant WHERE id = 1").query(String.class).single())
-                .isEqualTo("FIX");
-        assertThat(grants.findById(1L)).get().extracting(SessionGrant::scope).isEqualTo(Scope.FIX);
+                .isEqualTo("DELIVERABLE");
+        assertThat(grants.findById(1L)).get().extracting(SessionGrant::scope).isEqualTo(Scope.DELIVERABLE);
         assertThat(history.findById(1L)).get().extracting(HistoryEntry::at).isEqualTo(WHEN);
         assertThat(audit.findBySubjectOrderById("claude:a|P1")).extracting(OwnerAuditEntry::at).containsExactly(WHEN);
         assertThat(jdbc.sql("SELECT occurred_at FROM history WHERE id = 1").query(java.time.LocalDateTime.class)

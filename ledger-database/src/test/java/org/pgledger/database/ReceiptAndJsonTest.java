@@ -25,8 +25,8 @@ import org.pgledger.database.support.LedgerTestContext;
 import org.pgledger.database.support.Parallel;
 import org.pgledger.database.support.Seed;
 import org.pgledger.testing.database.LockWaits;
-import org.pgledger.domain.model.Defect;
 import org.pgledger.domain.model.HistoryEntry;
+import org.pgledger.domain.model.Issue;
 import org.pgledger.domain.model.Receipt;
 import org.pgledger.domain.model.ReceiptOperation;
 import org.pgledger.domain.rule.ActorAssurance;
@@ -198,12 +198,12 @@ class ReceiptAndJsonTest {
                 new OperationKey("not-" + key.value().substring(4)))).isEmpty();
 
         Seed seed = new Seed(ctx);
-        Defect defect = seed.defect(seed.project(), 1, "key host", LedgerTestContext.START);
+        Issue issue = seed.issue(seed.project(), 1, "key host", LedgerTestContext.START);
         long first = ctx.tx(() -> ctx.bean(IdAllocator.class).next(Counter.HISTORY));
         long second = ctx.tx(() -> ctx.bean(IdAllocator.class).next(Counter.HISTORY));
         HistoryRepository history = ctx.bean(HistoryRepository.class);
-        ctx.tx(() -> history.insert(withKey(first, defect, key)));
-        ctx.tx(() -> history.insert(withKey(second, defect, key.derive(0))));
+        ctx.tx(() -> history.insert(withKey(first, issue, key)));
+        ctx.tx(() -> history.insert(withKey(second, issue, key.derive(0))));
         assertThat(history.findById(first).orElseThrow().operationKey()).isEqualTo(key);
         assertThat(history.findByOperationKeyOrderById(key)).extracting(HistoryEntry::id).containsExactly(first);
         assertThat(history.findByOperationKeyOrderById(key.derive(0))).extracting(HistoryEntry::id)
@@ -211,10 +211,10 @@ class ReceiptAndJsonTest {
         assertThat(history.findByOperationKeyOrderById(key.derive(1))).isEmpty();
     }
 
-    private HistoryEntry withKey(long id, Defect defect, OperationKey key) {
+    private HistoryEntry withKey(long id, Issue issue, OperationKey key) {
         return new HistoryEntry(id, LedgerTestContext.START, Seed.ALICE, Channel.AUTHOR.login(),
-                ActorAssurance.DECLARED, HistoryEntity.DEFECT, defect.id().value(), HistoryOp.EDIT, null, null,
-                JsonDocument.EMPTY_OBJECT, null, "a reason of enough length", null, null, null, key, null);
+                ActorAssurance.DECLARED, HistoryEntity.ISSUE, issue.id().value(), HistoryOp.EDIT, null, null,
+                JsonDocument.EMPTY_OBJECT, null, "a reason of enough length", null, null, null, key, null, null);
     }
 
     private record Response(String status) {
@@ -241,21 +241,21 @@ class ReceiptAndJsonTest {
                 new Body("200 KB", "x".repeat(200_000), List.of("big")));
     }
 
-    private HistoryEntry entry(long id, Defect defect, JsonDocument changes, JsonDocument before) {
+    private HistoryEntry entry(long id, Issue issue, JsonDocument changes, JsonDocument before) {
         return new HistoryEntry(id, LedgerTestContext.START, Seed.ALICE, Channel.AUTHOR.login(),
-                ActorAssurance.DECLARED, HistoryEntity.DEFECT, defect.id().value(), HistoryOp.EDIT, null, null,
+                ActorAssurance.DECLARED, HistoryEntity.ISSUE, issue.id().value(), HistoryOp.EDIT, null, null,
                 changes, before, "a reason of enough length", null, null, null,
-                new OperationKey(UUID.randomUUID().toString()), null);
+                new OperationKey(UUID.randomUUID().toString()), null, null);
     }
 
     @ParameterizedTest
     @MethodSource("bodies")
     void repo019_jsonTextRoundTripsExactly(Body body) {
         Seed seed = new Seed(ctx);
-        Defect defect = seed.defect(seed.project(), 1, "json host", LedgerTestContext.START);
+        Issue issue = seed.issue(seed.project(), 1, "json host", LedgerTestContext.START);
         long id = ctx.tx(() -> ctx.bean(IdAllocator.class).next(Counter.HISTORY));
         JsonDocument document = JsonDocument.of(json(body));
-        ctx.tx(() -> ctx.bean(HistoryRepository.class).insert(entry(id, defect, document, document)));
+        ctx.tx(() -> ctx.bean(HistoryRepository.class).insert(entry(id, issue, document, document)));
         HistoryEntry read = ctx.bean(HistoryRepository.class).findById(id).orElseThrow();
         assertThat(read.changes()).isEqualTo(document);
         assertThat(read.beforeData()).isEqualTo(document);
@@ -265,9 +265,9 @@ class ReceiptAndJsonTest {
     @Test
     void repo019_aMissingBeforeDataStaysSqlNull() {
         Seed seed = new Seed(ctx);
-        Defect defect = seed.defect(seed.project(), 1, "null host", LedgerTestContext.START);
+        Issue issue = seed.issue(seed.project(), 1, "null host", LedgerTestContext.START);
         long id = ctx.tx(() -> ctx.bean(IdAllocator.class).next(Counter.HISTORY));
-        ctx.tx(() -> ctx.bean(HistoryRepository.class).insert(entry(id, defect, JsonDocument.EMPTY_OBJECT, null)));
+        ctx.tx(() -> ctx.bean(HistoryRepository.class).insert(entry(id, issue, JsonDocument.EMPTY_OBJECT, null)));
         assertThat(ctx.bean(HistoryRepository.class).findById(id).orElseThrow().beforeData()).isNull();
         assertThat(JdbcClient.create(ctx.pool()).sql("SELECT COUNT(*) FROM history WHERE id = :id AND before_data "
                 + "IS NULL").param("id", id).query(Integer.class).single()).isEqualTo(1);

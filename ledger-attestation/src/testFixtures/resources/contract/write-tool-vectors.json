@@ -1,22 +1,26 @@
 {
-  "description": "Contract vectors of the tool names: the ten ledger write tools and the five attachment tools carry the host attestation, the read tools never do. The attestation of a tool is issued for exactly the name in this file (the attachment tools are hyphenated, not ledger_...). The nine ledger write tools (all but ledger_whoami) take a required operationKey, and the claim's operation key is that argument; whoami and the attachment tools have no operation key in the claim: it is empty. The lists are machine readable: operationKeyClaim names the tools whose claim carries the operationKey argument (the hook signs it), operationKeyArgument names the tools whose published input schema has a required operationKey (the nine and artifact-begin, whose claim key is empty because the digest of the arguments covers it); artifact-chunk, artifact-finish, artifact-status, artifact-read and ledger_whoami have no operationKey. The file is kept by hand (it is not generated). The hook (WriteTool) and the server (ToolContract) are two programs, so both test against this file.",
+  "description": "Contract vectors of the 2.0 MCP tool names: 13 write tools, 5 snake_case attachment tools (aligned with Sennard ArtifactTools), and 15 read tools. Every write tool except ledger_whoami takes a required operation_key.",
   "write": [
-    "ledger_save", "ledger_transition", "ledger_record_fix", "ledger_record_case", "ledger_link", "ledger_correct",
-    "ledger_batch", "ledger_review", "ledger_review_correct", "ledger_whoami"
+    "ledger_issue_save", "ledger_spec_save", "ledger_task_save", "ledger_criterion_save",
+    "ledger_transition", "ledger_record_deliverable", "ledger_record_case", "ledger_link",
+    "ledger_correct", "ledger_batch", "ledger_review", "ledger_review_correct", "ledger_whoami"
   ],
   "attachment": [
-    "artifact-begin", "artifact-chunk", "artifact-finish", "artifact-status", "artifact-read"
+    "artifact_begin", "artifact_chunk", "artifact_finish", "artifact_status", "artifact_read"
   ],
   "operationKeyClaim": [
-    "ledger_save", "ledger_transition", "ledger_record_fix", "ledger_record_case", "ledger_link", "ledger_correct",
-    "ledger_batch", "ledger_review", "ledger_review_correct"
+    "ledger_issue_save", "ledger_spec_save", "ledger_task_save", "ledger_criterion_save",
+    "ledger_transition", "ledger_record_deliverable", "ledger_record_case", "ledger_link",
+    "ledger_correct", "ledger_batch", "ledger_review", "ledger_review_correct"
   ],
   "operationKeyArgument": [
-    "ledger_save", "ledger_transition", "ledger_record_fix", "ledger_record_case", "ledger_link", "ledger_correct",
-    "ledger_batch", "ledger_review", "ledger_review_correct", "artifact-begin"
+    "ledger_issue_save", "ledger_spec_save", "ledger_task_save", "ledger_criterion_save",
+    "ledger_transition", "ledger_record_deliverable", "ledger_record_case", "ledger_link",
+    "ledger_correct", "ledger_batch", "ledger_review", "ledger_review_correct", "artifact_begin"
   ],
   "read": [
-    "ledger_get", "ledger_defect", "ledger_task", "ledger_history", "ledger_search", "ledger_defects", "ledger_tasks",
-    "ledger_conditions", "ledger_attention", "ledger_stats", "ledger_projects", "ledger_codes"
+    "ledger_get", "ledger_issue", "ledger_spec", "ledger_task", "ledger_criterion",
+    "ledger_history", "ledger_search", "ledger_issues", "ledger_specs", "ledger_tasks",
+    "ledger_criteria", "ledger_attention", "ledger_stats", "ledger_projects", "ledger_codes"
   ]
 }

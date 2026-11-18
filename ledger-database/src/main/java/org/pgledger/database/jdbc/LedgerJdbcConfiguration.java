@@ -2,7 +2,7 @@ package org.pgledger.database.jdbc;
 
 import java.util.List;
 import java.util.Optional;
-import org.pgledger.database.repository.DefectRepository;
+import org.pgledger.database.repository.IssueRepository;
 import org.pgledger.domain.context.ActorScope;
 import org.pgledger.domain.value.ActorId;
 import org.springframework.context.annotation.Bean;
@@ -22,9 +22,9 @@ import org.springframework.data.relational.core.mapping.NamingStrategy;
  * converters of {@link LedgerConverters}, and auditing of {@code created_by} from the actor of the request.
  */
 @Configuration(proxyBeanMethods = false)
-@EnableJdbcRepositories(basePackageClasses = DefectRepository.class)
+@EnableJdbcRepositories(basePackageClasses = IssueRepository.class)
 @EnableJdbcAuditing(auditorAwareRef = "ledgerAuditorAware")
-@ComponentScan(basePackageClasses = DefectRepository.class)
+@ComponentScan(basePackageClasses = IssueRepository.class)
 public class LedgerJdbcConfiguration extends AbstractJdbcConfiguration {
 
     /**

@@ -72,15 +72,15 @@ class SearchQueryRepositoryJdbcTest {
     @Autowired
     private SearchQueryRepository search;
 
-    private void defect(String id, String status) {
-        jdbc.sql("INSERT INTO defect (id, project_id, title, category, severity, status, behavior, root_cause, version, "
+    private void issue(String id, String status) {
+        jdbc.sql("INSERT INTO issue (id, project_id, title, category, severity, status, symptom, root_cause, version, "
                 + "created_at, updated_at, created_by) VALUES (:id, 'P1', :id, 'c', 'P2', :status, 'b', 'r', 1, "
                 + "TIMESTAMP '2026-11-05 10:00:00', TIMESTAMP '2026-11-05 10:00:00', 'user:owner')")
                 .param("id", id).param("status", status).update();
     }
 
     private List<String> found(Set<String> excludedStatuses) {
-        Filter filter = new Filter(ProjectId.of("P1"), Set.of(Kind.DEFECT), List.of(), KeywordMatch.ANY,
+        Filter filter = new Filter(ProjectId.of("P1"), Set.of(Kind.ISSUE), List.of(), KeywordMatch.ANY,
                 excludedStatuses, null, null);
         return search.page(filter, MaxRows.DEFAULT, null).rows().stream().map(Hit::id).sorted().toList();
     }
@@ -90,15 +90,15 @@ class SearchQueryRepositoryJdbcTest {
     void anExcludedStatusNeverBecomesPartOfTheStatement() {
         jdbc.sql("INSERT INTO project (id, code, title, version, created_by) VALUES ('P1', 'P1', 'p', 1, 'user:owner')")
                 .update();
-        defect("P1-D-0001", "OPEN");
-        defect("P1-D-0002", "SOURCE_FIXED");
-        defect("P1-D-0003", "VERIFIED");
+        issue("P1-I-0001", "OPEN");
+        issue("P1-I-0002", "RESOLVED");
+        issue("P1-I-0003", "VERIFIED");
 
-        assertThat(found(Set.of())).containsExactly("P1-D-0001", "P1-D-0002", "P1-D-0003");
-        assertThat(found(Set.of("OPEN"))).containsExactly("P1-D-0002", "P1-D-0003");
-        assertThat(found(Set.of("OPEN", "SOURCE_FIXED"))).containsExactly("P1-D-0003");
+        assertThat(found(Set.of())).containsExactly("P1-I-0001", "P1-I-0002", "P1-I-0003");
+        assertThat(found(Set.of("OPEN"))).containsExactly("P1-I-0002", "P1-I-0003");
+        assertThat(found(Set.of("OPEN", "RESOLVED"))).containsExactly("P1-I-0003");
         // a value that is text of SQL, spaces and quotes: it is only a value that no status equals
-        assertThat(found(Set.of("OPEN", "X') OR 1 = 1 --", "a b", "x'y"))).containsExactly("P1-D-0002", "P1-D-0003");
-        assertThat(jdbc.sql("SELECT COUNT(*) FROM defect").query(Long.class).single()).isEqualTo(3L);
+        assertThat(found(Set.of("OPEN", "X') OR 1 = 1 --", "a b", "x'y"))).containsExactly("P1-I-0002", "P1-I-0003");
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM issue").query(Long.class).single()).isEqualTo(3L);
     }
 }

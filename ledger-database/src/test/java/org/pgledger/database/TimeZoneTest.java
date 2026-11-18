@@ -3,9 +3,6 @@ package org.pgledger.database;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import java.sql.Connection;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -14,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TimeZone;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
@@ -23,58 +21,72 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.pgledger.database.repository.AttachmentFileRepository;
 import org.pgledger.database.repository.AttachmentRepository;
 import org.pgledger.database.repository.AttachmentStorageRepository;
-import org.pgledger.database.repository.PasskeyCodeRepository;
-import org.pgledger.database.repository.PasskeyRepository;
-import org.pgledger.database.repository.UploadStagingRepository;
-import org.pgledger.domain.model.Attachment;
-import org.pgledger.domain.model.AttachmentFile;
-import org.pgledger.domain.model.AttachmentStorage;
-import org.pgledger.domain.model.OwnerPasskey;
-import org.pgledger.domain.model.UploadStaging;
-import org.pgledger.domain.rule.UploadState;
-import org.pgledger.domain.value.StorageKey;
 import org.pgledger.database.repository.Counter;
-import org.pgledger.database.repository.DefectCaseRepository;
-import org.pgledger.database.repository.DefectFixRepository;
-import org.pgledger.database.repository.DefectRepository;
+import org.pgledger.database.repository.DeliverableRepository;
 import org.pgledger.database.repository.GrantStateRepository;
 import org.pgledger.database.repository.HistoryRepository;
 import org.pgledger.database.repository.IdAllocator;
+import org.pgledger.database.repository.IssueCaseRepository;
+import org.pgledger.database.repository.IssueRepository;
 import org.pgledger.database.repository.OwnerAuditRepository;
+import org.pgledger.database.repository.PasskeyCodeRepository;
+import org.pgledger.database.repository.PasskeyRepository;
 import org.pgledger.database.repository.ReceiptRepository;
 import org.pgledger.database.repository.SessionGrantRepository;
 import org.pgledger.database.repository.SessionKeyRepository;
 import org.pgledger.database.repository.SessionKeyStateRepository;
+import org.pgledger.database.repository.SessionTokenRepository;
+import org.pgledger.database.repository.SessionTokenStateRepository;
+import org.pgledger.database.repository.SpecRepository;
 import org.pgledger.database.repository.TaskRepository;
+import org.pgledger.database.repository.UploadStagingRepository;
 import org.pgledger.database.schema.LedgerSchemaGuardConfiguration;
-import org.pgledger.domain.error.InfrastructureCode;
-import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.database.schema.UtcSessionCheck;
 import org.pgledger.database.support.Databases;
 import org.pgledger.database.support.LedgerDatabaseExtension;
 import org.pgledger.database.support.LedgerTestContext;
 import org.pgledger.database.support.RecordingDataSource.Binding;
 import org.pgledger.database.support.Seed;
-import org.pgledger.domain.model.Defect;
-import org.pgledger.domain.model.DefectCase;
-import org.pgledger.domain.model.DefectFix;
+import org.pgledger.domain.error.InfrastructureCode;
+import org.pgledger.domain.error.InfrastructureException;
+import org.pgledger.domain.model.Attachment;
+import org.pgledger.domain.model.AttachmentFile;
+import org.pgledger.domain.model.AttachmentStorage;
+import org.pgledger.domain.model.Deliverable;
 import org.pgledger.domain.model.HistoryEntry;
+import org.pgledger.domain.model.Issue;
+import org.pgledger.domain.model.IssueCase;
+import org.pgledger.domain.model.OwnerAuditEntry;
+import org.pgledger.domain.model.OwnerPasskey;
 import org.pgledger.domain.model.Project;
 import org.pgledger.domain.model.Receipt;
 import org.pgledger.domain.model.ReceiptOperation;
 import org.pgledger.domain.model.SessionGrant;
 import org.pgledger.domain.model.SessionPublicKey;
+import org.pgledger.domain.model.SessionToken;
+import org.pgledger.domain.model.Spec;
+import org.pgledger.domain.model.SpecFields;
+import org.pgledger.domain.model.Task;
+import org.pgledger.domain.model.TaskFields;
+import org.pgledger.domain.model.UploadStaging;
 import org.pgledger.domain.rule.ActorAssurance;
 import org.pgledger.domain.rule.Channel;
-import org.pgledger.domain.rule.CiConclusion;
+import org.pgledger.domain.rule.CheckResult;
+import org.pgledger.domain.rule.DeliverableTarget;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
+import org.pgledger.domain.rule.OwnerAction;
 import org.pgledger.domain.rule.Scope;
+import org.pgledger.domain.rule.UploadState;
 import org.pgledger.domain.value.AuthorId;
-import org.pgledger.domain.value.CommitSha;
+import org.pgledger.domain.value.CodeValue;
 import org.pgledger.domain.value.JsonDocument;
 import org.pgledger.domain.value.OperationKey;
+import org.pgledger.domain.value.Patch;
 import org.pgledger.domain.value.Sha256;
+import org.pgledger.domain.value.SpecId;
+import org.pgledger.domain.value.StorageKey;
+import org.pgledger.domain.value.TaskId;
 import org.springframework.beans.factory.BeanCreationException;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -99,13 +111,11 @@ class TimeZoneTest {
         return LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
     }
 
-    /** The stored wall clock of a single value, read raw (no zone conversion); the values are bind parameters. */
     private LocalDateTime rawWall(LedgerTestContext ctx, String sql, Object... values) {
         return JdbcClient.create(ctx.pool()).sql(sql).params(values)
                 .query((rs, row) -> rs.getObject(1, LocalDateTime.class)).single();
     }
 
-    /** What was read back for one stored instant: the instant the repository gives and the raw stored wall clock. */
     private record Stored(Instant instant, LocalDateTime wall) {
     }
 
@@ -119,10 +129,10 @@ class TimeZoneTest {
                 Seed seed = new Seed(ctx);
                 Project project = seed.project();
                 return IntStream.range(0, instants.size()).mapToObj(i -> {
-                    Defect defect = seed.defect(project, i + 1, "zone " + i, instants.get(i));
-                    Defect read = ctx.bean(DefectRepository.class).findById(defect.id()).orElseThrow();
-                    return new Stored(read.createdAt(), rawWall(ctx, "SELECT created_at FROM defect WHERE id = ?",
-                            defect.id().value()));
+                    Issue issue = seed.issue(project, i + 1, "zone " + i, instants.get(i));
+                    Issue read = ctx.bean(IssueRepository.class).findById(issue.id()).orElseThrow();
+                    return new Stored(read.createdAt(), rawWall(ctx, "SELECT created_at FROM issue WHERE id = ?",
+                            issue.id().value()));
                 }).toList();
             });
             assertThat(stored).isEqualTo(instants.stream().map(i -> new Stored(i, wall(i))).toList());
@@ -135,7 +145,6 @@ class TimeZoneTest {
         try (LedgerTestContext seoul = LedgerTestContext.create(databases, "Asia/Seoul")) {
             UtcSessionCheck check = org.pgledger.testing.database.TestSchemaServices.utcCheck(seoul.pool(),
                     Clock.systemUTC());
-            // the code is the contract; the failure carries the skew and no connection detail
             assertThatThrownBy(check::verify).isInstanceOfSatisfying(InfrastructureException.class, e -> {
                 assertThat(e.code()).isEqualTo(InfrastructureCode.SESSION_ZONE_NOT_UTC);
                 assertThat(e.args()).hasSize(1);
@@ -148,7 +157,6 @@ class TimeZoneTest {
             org.pgledger.testing.database.TestSchemaServices.utcCheck(utc.pool(), Clock.systemUTC()).verify();
             startWithGuard(utc).close();
         }
-        // the JVM zone is checked as well
         UtcSessionCheck.verifyJvmZone();
         inJvmZone("Asia/Seoul", () -> assertThatThrownBy(UtcSessionCheck::verifyJvmZone)
                 .isInstanceOfSatisfying(InfrastructureException.class,
@@ -158,7 +166,6 @@ class TimeZoneTest {
     private AnnotationConfigApplicationContext startWithGuard(LedgerTestContext ctx) {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();
         context.getBeanFactory().registerSingleton("dataSource", ctx.pool());
-        // the JdbcClient of Spring Boot, which a context without auto-configuration does not have
         context.getBeanFactory().registerSingleton("jdbcClient",
                 org.springframework.jdbc.core.simple.JdbcClient.create(ctx.pool()));
         context.getBeanFactory().registerSingleton("clock", Clock.systemUTC());
@@ -183,22 +190,27 @@ class TimeZoneTest {
             assertThat(bound).noneMatch(b -> "setTimestamp".equals(b.setter()));
             assertThat(bound.stream().filter(b -> b.type() == LocalDateTime.class).count())
                     .isGreaterThanOrEqualTo(15);
-            // the stored wall clock of every column is the UTC time that was written
             Map<String, Instant> expected = new LinkedHashMap<>();
-            expected.put("defect.created_at", I);
-            expected.put("defect.updated_at", I);
+            expected.put("issue.created_at", I);
+            expected.put("issue.updated_at", I);
+            expected.put("spec.created_at", I);
+            expected.put("spec.updated_at", I);
             expected.put("task.created_at", I);
             expected.put("task.updated_at", I);
-            expected.put("defect_fix.ci_completed_at", I.plusSeconds(1));
-            expected.put("defect_fix.recorded_at", I);
-            expected.put("defect_case.observed_at", I.plusSeconds(2));
-            expected.put("defect_case.recorded_at", I);
+            expected.put("deliverable.checked_at", I.plusSeconds(1));
+            expected.put("deliverable.recorded_at", I);
+            expected.put("issue_case.observed_at", I.plusSeconds(2));
+            expected.put("issue_case.recorded_at", I);
             expected.put("session_grant.granted_at", I);
             expected.put("session_grant.expires_at", I.plusSeconds(3600));
             expected.put("session_grant.revoked_at", I.plusSeconds(5));
             expected.put("session_grant.last_used_at", I.plusSeconds(4));
             expected.put("session_key.registered_at", I);
             expected.put("session_key.revoked_at", I.plusSeconds(6));
+            expected.put("session_token.issued_at", I);
+            expected.put("session_token.expires_at", I.plusSeconds(3600));
+            expected.put("session_token.revoked_at", I.plusSeconds(7));
+            expected.put("session_token.last_used_at", I.plusSeconds(4));
             expected.put("owner_audit.occurred_at", I);
             expected.put("history.occurred_at", I);
             expected.put("request_receipt.created_at", I);
@@ -213,8 +225,6 @@ class TimeZoneTest {
             expected.put("upload_staging.updated_at", I.plusSeconds(10));
             expected.put("attachment.created_at", I);
             expected.put("attachment_storage.created_at", I.plusSeconds(11));
-            // the list of the columns is SchemaCatalogTest.TIMESTAMP_COLUMNS (the columns of the catalogue); here each one also
-            // has the value it was written with
             assertThat(expected.keySet()).containsExactlyInAnyOrderElementsOf(SchemaCatalogTest.TIMESTAMP_COLUMNS);
             Map<String, LocalDateTime> actual = expected.keySet().stream().collect(Collectors.toMap(
                     column -> column, column -> rawWall(ctx, "SELECT MAX(" + column.substring(column.indexOf('.') + 1)
@@ -228,40 +238,49 @@ class TimeZoneTest {
         Seed seed = new Seed(ctx);
         IdAllocator ids = ctx.bean(IdAllocator.class);
         Project project = seed.project();
-        Defect defect = seed.defect(project, 1, "all columns", I);
+        Issue issue = seed.issue(project, 1, "all columns", I);
+        LedgerTestContext.as(Seed.ALICE, () -> ctx.tx(() -> ctx.bean(SpecRepository.class).save(
+                Spec.create(SpecId.issue(project.code(), 1),
+                        SpecFields.of(Patch.set(project.id().value()), Patch.absent(), Patch.set("s"), Patch.set("d"),
+                                Patch.set("ac"), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent()), I))));
         LedgerTestContext.as(Seed.ALICE, () -> ctx.tx(() -> ctx.bean(TaskRepository.class).save(
-                org.pgledger.domain.model.Task.plan(org.pgledger.domain.value.TaskId.issue(project.code(), 1),
-                        org.pgledger.domain.model.TaskFields.of(
-                                org.pgledger.domain.value.Patch.set(project.id().value()),
-                                org.pgledger.domain.value.Patch.set("t"), org.pgledger.domain.value.Patch.set("p"),
-                                org.pgledger.domain.value.Patch.set("s"), org.pgledger.domain.value.Patch.absent(),
-                                org.pgledger.domain.value.Patch.absent(), org.pgledger.domain.value.Patch.absent()),
-                        I))));
-        ctx.tx(() -> ctx.bean(DefectFixRepository.class).insert(DefectFix.record(ids.next(Counter.DEFECT_FIX),
-                defect.id(), "repo", CommitSha.of("f".repeat(40)), null, "ref", CiConclusion.SUCCESS,
-                I.plusSeconds(1), Seed.ALICE, I)));
-        ctx.tx(() -> ctx.bean(DefectCaseRepository.class).insert(DefectCase.observe(ids.next(Counter.DEFECT_CASE),
-                defect.id(), "seen", null, null, I.plusSeconds(2), Seed.ALICE, I)));
+                Task.plan(TaskId.issue(project.code(), 1),
+                        TaskFields.of(Patch.set(project.id().value()), Patch.set("t"), Patch.set("p"),
+                                Patch.set("s"), Patch.absent(), Patch.absent(), Patch.absent()), I))));
+        ctx.tx(() -> ctx.bean(DeliverableRepository.class).insert(Deliverable.record(ids.next(Counter.DELIVERABLE),
+                DeliverableTarget.ISSUE, issue.id().value(), CodeValue.of("CODE_PATCH"), "f".repeat(40), null,
+                "deliverable", "ref", CheckResult.PASSED, I.plusSeconds(1), null, Seed.ALICE, I)));
+        ctx.tx(() -> ctx.bean(IssueCaseRepository.class).insert(IssueCase.observe(ids.next(Counter.ISSUE_CASE),
+                issue.id(), "seen", null, null, I.plusSeconds(2), Seed.ALICE, I)));
         SessionGrant grant = ctx.tx(() -> ctx.bean(SessionGrantRepository.class).insert(SessionGrant.issue(
-                ids.next(Counter.SESSION_GRANT), Seed.ALICE, project.id(), Scope.DEFECT, AuthorId.OWNER, I,
+                ids.next(Counter.SESSION_GRANT), Seed.ALICE, project.id(), Scope.ISSUE, AuthorId.OWNER, I,
                 I.plusSeconds(3600), null)));
         GrantStateRepository grants = ctx.bean(GrantStateRepository.class);
-        ctx.tx(() -> grants.markUsed(Seed.ALICE, project.id(), Scope.DEFECT, I.plusSeconds(4)));
+        ctx.tx(() -> grants.markUsed(Seed.ALICE, project.id(), Scope.ISSUE, I.plusSeconds(4)));
         ctx.tx(() -> grants.revoke(grant.id(), I.plusSeconds(5)));
         SessionPublicKey key = ctx.tx(() -> ctx.bean(SessionKeyRepository.class).insert(SessionPublicKey.register(
                 ids.next(Counter.SESSION_KEY), Seed.ALICE, "MCowBQYDK2VwAyEA" + "A".repeat(43), "c".repeat(64),
                 AuthorId.OWNER, I, null)));
         ctx.tx(() -> ctx.bean(SessionKeyStateRepository.class).close(key.id(), I.plusSeconds(6)));
-        ctx.tx(() -> ctx.bean(OwnerAuditRepository.class).insert(new org.pgledger.domain.model.OwnerAuditEntry(
-                ids.next(Counter.OWNER_AUDIT), I, "owner", org.pgledger.domain.rule.OwnerAction.GRANT_ISSUED,
-                "claude:a|p", null)));
+        SessionToken token = ctx.tx(() -> ctx.bean(SessionTokenRepository.class).insert(SessionToken.issue(
+                ids.next(Counter.SESSION_TOKEN), Seed.ALICE, "d".repeat(64), "pgtk_tz", AuthorId.OWNER, I,
+                I.plusSeconds(3600), null)));
+        SessionTokenStateRepository tokenStates = ctx.bean(SessionTokenStateRepository.class);
+        ctx.tx(() -> {
+            tokenStates.touchLastUsed(token.id(), I.plusSeconds(4));
+            tokenStates.revoke(token.id(), I.plusSeconds(7));
+            return null;
+        });
+        ctx.tx(() -> ctx.bean(OwnerAuditRepository.class).insert(new OwnerAuditEntry(
+                ids.next(Counter.OWNER_AUDIT), I, "owner", OwnerAction.GRANT_ISSUED, "claude:a|p", null)));
         ctx.tx(() -> ctx.bean(HistoryRepository.class).insert(new HistoryEntry(ids.next(Counter.HISTORY), I,
-                Seed.ALICE, Channel.AUTHOR.login(), ActorAssurance.DECLARED, HistoryEntity.DEFECT,
-                defect.id().value(), HistoryOp.CREATE, null, null, JsonDocument.EMPTY_OBJECT, null,
-                "a reason of enough length", null, null, null, new OperationKey(java.util.UUID.randomUUID().toString()),
-                null)));
-        ctx.tx(() -> ctx.bean(ReceiptRepository.class).insert(Receipt.reserve(new OperationKey(java.util.UUID
-                .randomUUID().toString()), ReceiptOperation.SAVE, Sha256.of("a".repeat(64)), Seed.ALICE, Channel.AUTHOR, I)));
+                Seed.ALICE, Channel.AUTHOR.login(), ActorAssurance.DECLARED, HistoryEntity.ISSUE,
+                issue.id().value(), HistoryOp.CREATE, null, null, JsonDocument.EMPTY_OBJECT, null,
+                "a reason of enough length", null, null, null, new OperationKey(UUID.randomUUID().toString()),
+                null, null)));
+        ctx.tx(() -> ctx.bean(ReceiptRepository.class).insert(Receipt.reserve(
+                new OperationKey(UUID.randomUUID().toString()), ReceiptOperation.SAVE, Sha256.of("a".repeat(64)),
+                Seed.ALICE, Channel.AUTHOR, I)));
         PasskeyRepository passkeys = ctx.bean(PasskeyRepository.class);
         ctx.tx(() -> {
             passkeys.insert(new OwnerPasskey("credential-1", "owner", "public-key", 0, 1, 0, 0, null, "attestation",
@@ -274,8 +293,8 @@ class TimeZoneTest {
             codes.insert("h".repeat(64), "owner", I, I.plusSeconds(900));
             return codes.spend("h".repeat(64), I.plusSeconds(8));
         });
-        String attachmentId = java.util.UUID.randomUUID().toString();
-        String uploadId = java.util.UUID.randomUUID().toString();
+        String attachmentId = UUID.randomUUID().toString();
+        String uploadId = UUID.randomUUID().toString();
         StorageKey uploadKey = StorageKey.of("a".repeat(32));
         StorageKey fileKey = StorageKey.of("b".repeat(32));
         Sha256 sha = Sha256.of("c".repeat(64));
@@ -290,7 +309,7 @@ class TimeZoneTest {
                     I.plusSeconds(11)));
             return null;
         });
-        assertThat(JdbcClient.create(ctx.pool()).sql("SELECT COUNT(*) FROM defect").query(Integer.class).single())
+        assertThat(JdbcClient.create(ctx.pool()).sql("SELECT COUNT(*) FROM issue").query(Integer.class).single())
                 .isEqualTo(1);
     }
 }

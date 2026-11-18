@@ -1,7 +1,23 @@
--- V5: the version of a common code (review finding TX-04). Setting a code read the row and then wrote it without a condition, so two
--- owner actions on the same code that read the same row let the later write silently overwrite the earlier one. The row now
--- carries a version, which the update checks and raises (UPDATE ... WHERE version = <the version that was read>): an update that
--- affects no row means another action changed the code first, and the service answers with a version conflict instead of writing.
--- The codes that exist (the seed and the ones of an upgraded installation) start at 0.
+-- V5: common_code optimistic locking version and vendor-independent standard MCP session bearer tokens.
+-- session_token binds an opaque per-caller HTTP Bearer token (stored only as its SHA-256 hash) to an AuthorId
+-- so any standard MCP client can authenticate writes without a proprietary client hook.
 
 ALTER TABLE common_code ADD COLUMN version BIGINT DEFAULT 0 NOT NULL;
+
+CREATE TABLE session_token (
+  id BIGINT NOT NULL,
+  author_id VARCHAR(200) NOT NULL,
+  token_hash VARCHAR(64) NOT NULL,
+  token_prefix VARCHAR(16) NOT NULL,
+  issued_by VARCHAR(200) NOT NULL,
+  issued_at TIMESTAMP NOT NULL,
+  expires_at TIMESTAMP,
+  revoked_at TIMESTAMP,
+  last_used_at TIMESTAMP,
+  note VARCHAR(500),
+  CONSTRAINT pk_session_token PRIMARY KEY (id),
+  CONSTRAINT uq_session_token_hash UNIQUE (token_hash),
+  CONSTRAINT ck_session_token_expiry CHECK (expires_at IS NULL OR expires_at > issued_at),
+  CONSTRAINT ck_session_token_revoked CHECK (revoked_at IS NULL OR revoked_at >= issued_at)
+);
+CREATE INDEX ix_session_token_author ON session_token (author_id, id);

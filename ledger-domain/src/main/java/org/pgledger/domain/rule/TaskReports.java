@@ -35,6 +35,6 @@ public record TaskReports(List<TaskTransition> transitions) {
     }
 
     private static boolean isReport(TaskTransition t) {
-        return t.to() == TaskState.REPORTED_DONE && t.from() != TaskState.VERIFIED;
+        return t.to() == TaskState.COMPLETED && t.from() != TaskState.VERIFIED;
     }
 }

@@ -5,8 +5,8 @@ import java.util.List;
 /** The two tables of the bundle, shared by the writer ({@link SeedBuilder}) and the reader ({@link SeedBundle}). */
 final class SeedSchema {
 
-    /** The group of the codes of {@code defect-categories.tsv}: the code list of the defect categories of the ledger. */
-    static final String CATEGORY_GROUP = "DEFECT_CATEGORY";
+    /** The group of the codes of {@code issue-categories.tsv}: the code list of the issue categories of the ledger. */
+    static final String CATEGORY_GROUP = "ISSUE_CATEGORY";
     static final String ACTIVE = "ACTIVE";
 
     static final String CODE_INSERT = "INSERT INTO seed_code (code_group, code, name_ko, name_en, description_ko, "

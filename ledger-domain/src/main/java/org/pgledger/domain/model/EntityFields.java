@@ -10,7 +10,7 @@ import org.pgledger.domain.value.ProjectId;
  * The editable fields of a defect, task or condition as they arrive in a save: each field is absent, set, or set
  * to nothing. A create must set every required field; an edit must mention at least one field.
  */
-public sealed interface EntityFields permits DefectFields, TaskFields, ConditionFields {
+public sealed interface EntityFields permits IssueFields, SpecFields, TaskFields, CriterionFields {
 
     HistoryEntity entity();
 

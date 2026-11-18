@@ -24,17 +24,25 @@ public class EntityLookupRepository {
         this.jdbc = jdbc;
     }
 
-    public List<Found> defects(Collection<String> ids) {
-        return jdbc.sql("SELECT id, project_id, status, version, merged_into FROM defect WHERE id IN (:ids) "
+    public List<Found> issues(Collection<String> ids) {
+        return jdbc.sql("SELECT id, project_id, status, version, merged_into FROM issue WHERE id IN (:ids) "
                 + "ORDER BY id").param("ids", ids)
                 .query((rs, n) -> new Found(rs.getString("id"), rs.getString("project_id"), rs.getString("status"),
                         rs.getLong("version"), rs.getString("merged_into")))
                 .list();
     }
 
+    /** Exact case-sensitive lookup of specifications by id. */
+    public List<Found> specs(Collection<String> ids) {
+        return exactly(ids, jdbc.sql("SELECT id, project_id, status, version FROM spec WHERE id IN (:ids) ORDER BY id")
+                .param("ids", ids)
+                .query((rs, n) -> new Found(rs.getString("id"), rs.getString("project_id"), rs.getString("status"),
+                        rs.getLong("version"), null))
+                .list());
+    }
+
     /**
-     * The tasks of these ids. The id of a task is compared exactly: a DBMS that ignores case in {@code IN} also returns the task
-     * {@code AGS:A07-A} for {@code ags:a07-a}, so the rows are kept only when their id is one of the ids asked for.
+     * Exact case-sensitive lookup of tasks by id.
      */
     public List<Found> tasks(Collection<String> ids) {
         return exactly(ids, jdbc.sql("SELECT id, project_id, state, version FROM task WHERE id IN (:ids) ORDER BY id")
@@ -44,9 +52,9 @@ public class EntityLookupRepository {
                 .list());
     }
 
-    /** The conditions of these ids, the id compared exactly as for {@link #tasks}. */
-    public List<Found> conditions(Collection<String> ids) {
-        return exactly(ids, jdbc.sql("SELECT id, project_id, state, version FROM release_condition WHERE id IN (:ids) "
+    /** Exact case-sensitive lookup of milestone criteria by id. */
+    public List<Found> criteria(Collection<String> ids) {
+        return exactly(ids, jdbc.sql("SELECT id, project_id, state, version FROM milestone_criterion WHERE id IN (:ids) "
                 + "ORDER BY id").param("ids", ids)
                 .query((rs, n) -> new Found(rs.getString("id"), rs.getString("project_id"), rs.getString("state"),
                         rs.getLong("version"), null))

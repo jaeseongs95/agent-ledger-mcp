@@ -28,10 +28,17 @@ public class IdAllocator {
         this.jdbc = jdbc;
     }
 
-    /** The next defect number of a project (the first is 1). */
-    public long nextDefectNo(ProjectCode code) {
-        advance("UPDATE project SET next_defect_no = next_defect_no + 1 WHERE code = :code", code);
-        return jdbc.sql("SELECT next_defect_no FROM project WHERE code = :code").param("code", code.value())
+    /** The next issue number of a project (the first is 1). */
+    public long nextIssueNo(ProjectCode code) {
+        advance("UPDATE project SET next_issue_no = next_issue_no + 1 WHERE code = :code", code);
+        return jdbc.sql("SELECT next_issue_no FROM project WHERE code = :code").param("code", code.value())
+                .query(Long.class).single();
+    }
+
+    /** The next spec number of a project (the first is 1). */
+    public long nextSpecNo(ProjectCode code) {
+        advance("UPDATE project SET next_spec_no = next_spec_no + 1 WHERE code = :code", code);
+        return jdbc.sql("SELECT next_spec_no FROM project WHERE code = :code").param("code", code.value())
                 .query(Long.class).single();
     }
 
@@ -43,7 +50,7 @@ public class IdAllocator {
     }
 
     /**
-     * Takes the number of an explicit defect id. The column holds the last number that was issued, so the next number is the
+     * Takes the number of an explicit issue id. The column holds the last number that was issued, so the next number is the
      * column plus one: that number is taken (the column is set to it, by the one conditional UPDATE that decides it) and a
      * number at or below the column is a past number that nothing issued any more (a free gap), which is accepted and leaves
      * the column alone. A number above the next one is refused, so one explicit id cannot push the counter out of reach of
@@ -52,12 +59,18 @@ public class IdAllocator {
      * @return empty when the number is accepted; otherwise the next number of the project, which the caller names in its refusal
      * @throws LookupException NOT_FOUND when the project does not exist
      */
-    public OptionalLong takeDefectNo(ProjectCode code, long number) {
-        return take("UPDATE project SET next_defect_no = :n WHERE code = :code AND next_defect_no = :previous",
-                "SELECT next_defect_no FROM project WHERE code = :code", code, number);
+    public OptionalLong takeIssueNo(ProjectCode code, long number) {
+        return take("UPDATE project SET next_issue_no = :n WHERE code = :code AND next_issue_no = :previous",
+                "SELECT next_issue_no FROM project WHERE code = :code", code, number);
     }
 
-    /** As {@link #takeDefectNo} for the number of an explicit task id of the form the server issues. */
+    /** As {@link #takeIssueNo} for the number of an explicit spec id of the form the server issues. */
+    public OptionalLong takeSpecNo(ProjectCode code, long number) {
+        return take("UPDATE project SET next_spec_no = :n WHERE code = :code AND next_spec_no = :previous",
+                "SELECT next_spec_no FROM project WHERE code = :code", code, number);
+    }
+
+    /** As {@link #takeIssueNo} for the number of an explicit task id of the form the server issues. */
     public OptionalLong takeTaskNo(ProjectCode code, long number) {
         return take("UPDATE project SET next_task_no = :n WHERE code = :code AND next_task_no = :previous",
                 "SELECT next_task_no FROM project WHERE code = :code", code, number);

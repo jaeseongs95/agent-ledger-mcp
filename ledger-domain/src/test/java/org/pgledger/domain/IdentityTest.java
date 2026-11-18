@@ -13,15 +13,16 @@ import org.pgledger.domain.error.ValidationIssue;
 import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.value.ActorId;
 import org.pgledger.domain.value.AuthorId;
-import org.pgledger.domain.value.ConditionId;
-import org.pgledger.domain.value.DefectId;
+import org.pgledger.domain.value.CriterionId;
 import org.pgledger.domain.value.EntityId;
 import org.pgledger.domain.value.ImportedActorId;
+import org.pgledger.domain.value.IssueId;
 import org.pgledger.domain.value.OperationKey;
 import org.pgledger.domain.value.ProjectCode;
 import org.pgledger.domain.value.ProjectId;
 import org.pgledger.domain.value.Reason;
 import org.pgledger.domain.value.SessionKey;
+import org.pgledger.domain.value.SpecId;
 import org.pgledger.domain.value.TaskId;
 
 /** DOM-001 .. DOM-008 and DOM-036: identities and ids. */
@@ -45,8 +46,7 @@ class IdentityTest {
     }
 
     @Test
-    void dom003_sessionKeyKeepsTheVendor() {
-        // the key is the actor id as it is: no prefix is dropped, the vendor is part of it
+    void dom003_sessionKeyKeepsTheClient() {
         assertThat(new SessionKey("claude:1")).isEqualTo(new SessionKey("claude:1"));
         assertThat(new SessionKey("claude:1")).isNotEqualTo(new SessionKey("codex:1"));
         assertThat(ActorId.ofStored("someone")).isInstanceOf(ImportedActorId.class);
@@ -69,80 +69,77 @@ class IdentityTest {
     }
 
     @Test
-    void dom005_defectIds() {
-        assertThat(DefectId.of("E2E-D-0001").number()).isEqualTo(1);
-        assertThat(DefectId.of("E2E-D-10000").number()).isEqualTo(10000);
-        assertThat(DefectId.of("E2E-D-0001").projectCode()).isEqualTo(ProjectCode.of("E2E"));
-        for (String bad : List.of("E2E-D-001", "e2e-D-0001", "E2E-D-", "E2E-T-0001", "")) {
-            Expect.invalid(() -> DefectId.of(bad));
+    void dom005_issueIds() {
+        assertThat(IssueId.of("E2E-I-0001").number()).isEqualTo(1);
+        assertThat(IssueId.of("E2E-I-10000").number()).isEqualTo(10000);
+        assertThat(IssueId.of("E2E-I-0001").projectCode()).isEqualTo(ProjectCode.of("E2E"));
+        for (String bad : List.of("E2E-I-001", "e2e-I-0001", "E2E-I-", "E2E-T-0001", "")) {
+            Expect.invalid(() -> IssueId.of(bad));
         }
-        assertThat(DefectId.of(ProjectCode.of("E2E"), 1).value()).isEqualTo("E2E-D-0001");
-        assertThat(DefectId.of(ProjectCode.of("E2E"), 9999).value()).isEqualTo("E2E-D-9999");
-        assertThat(DefectId.of(ProjectCode.of("E2E"), 10000).value()).isEqualTo("E2E-D-10000");
+        assertThat(IssueId.of(ProjectCode.of("E2E"), 1).value()).isEqualTo("E2E-I-0001");
+        assertThat(IssueId.of(ProjectCode.of("E2E"), 9999).value()).isEqualTo("E2E-I-9999");
+        assertThat(IssueId.of(ProjectCode.of("E2E"), 10000).value()).isEqualTo("E2E-I-10000");
     }
 
     @Test
-    void dom006_taskIdsAreFreeTextButIssuedIdsFollowThePattern() {
+    void dom006_taskAndSpecIdsAreFreeTextWithIssuedPattern() {
         for (String ok : List.of("E2E-T-0001", "E2E-T-1", "E2E-T|PIPE")) {
             assertThat(TaskId.of(ok).value()).isEqualTo(ok);
+            assertThat(SpecId.of(ok).value()).isEqualTo(ok);
         }
         Expect.invalid(() -> TaskId.of(" "));
         Expect.invalid(() -> TaskId.of(""));
+        Expect.invalid(() -> SpecId.of(" "));
         assertThat(TaskId.issue(ProjectCode.of("E2E"), 7).value()).isEqualTo("E2E-T-0007");
+        assertThat(SpecId.issue(ProjectCode.of("E2E"), 7).value()).isEqualTo("E2E-S-0007");
     }
 
     @Test
-    void dom005_defectNumberHasAnUpperBoundOfEighteenDigits() {
-        String eighteen = "E2E-D-" + "9".repeat(18);
-        String nineteen = "E2E-D-" + "9".repeat(19);
-        assertThat(DefectId.of(eighteen).number()).isEqualTo(999_999_999_999_999_999L);
-        assertThat(DefectId.parse(eighteen)).isPresent();
-        assertThat(DefectId.FORMAT.matcher(eighteen).matches()).isTrue();
-        // too many digits is a validation failure, never a NumberFormatException of a later number()
-        Expect.invalid(() -> DefectId.of(nineteen));
-        Expect.invalid(() -> DefectId.of("E2E-D-" + "9".repeat(40)));
-        assertThat(DefectId.parse(nineteen)).isEmpty();
-        assertThat(DefectId.FORMAT.matcher(nineteen).matches()).isFalse();
-        // a number cannot be issued beyond what the format holds
-        assertThat(DefectId.of(ProjectCode.of("E2E"), 999_999_999_999_999_999L).value()).isEqualTo(eighteen);
-        Expect.invalid(() -> DefectId.of(ProjectCode.of("E2E"), 1_000_000_000_000_000_000L));
-        Expect.invalid(() -> DefectId.of(ProjectCode.of("E2E"), Long.MAX_VALUE));
+    void dom005_issueNumberHasAnUpperBoundOfEighteenDigits() {
+        String eighteen = "E2E-I-" + "9".repeat(18);
+        String nineteen = "E2E-I-" + "9".repeat(19);
+        assertThat(IssueId.of(eighteen).number()).isEqualTo(999_999_999_999_999_999L);
+        assertThat(IssueId.parse(eighteen)).isPresent();
+        assertThat(IssueId.FORMAT.matcher(eighteen).matches()).isTrue();
+        Expect.invalid(() -> IssueId.of(nineteen));
+        Expect.invalid(() -> IssueId.of("E2E-I-" + "9".repeat(40)));
+        assertThat(IssueId.parse(nineteen)).isEmpty();
+        assertThat(IssueId.FORMAT.matcher(nineteen).matches()).isFalse();
+        assertThat(IssueId.of(ProjectCode.of("E2E"), 999_999_999_999_999_999L).value()).isEqualTo(eighteen);
+        Expect.invalid(() -> IssueId.of(ProjectCode.of("E2E"), 1_000_000_000_000_000_000L));
+        Expect.invalid(() -> IssueId.of(ProjectCode.of("E2E"), Long.MAX_VALUE));
         Expect.invalid(() -> TaskId.issue(ProjectCode.of("E2E"), Long.MAX_VALUE));
+        Expect.invalid(() -> SpecId.issue(ProjectCode.of("E2E"), Long.MAX_VALUE));
     }
 
     @Test
-    void dom006_taskNumberOfAServerIssuedId() {
+    void dom006_taskAndSpecNumberOfAServerIssuedId() {
         ProjectCode e2e = ProjectCode.of("E2E");
         assertThat(TaskId.of("E2E-T-0007").number()).hasValue(7);
         assertThat(TaskId.of("E2E-T-7").number()).hasValue(7);
         assertThat(TaskId.issue(e2e, 10000).number()).hasValue(10000);
         assertThat(TaskId.of("E2E-T-" + "9".repeat(18)).number()).hasValue(999_999_999_999_999_999L);
-        // a free id that is valid text but carries no number that fits: no number, no exception
         assertThat(TaskId.of("E2E-T-" + "9".repeat(19)).number()).isEmpty();
         assertThat(TaskId.of("E2E-T|PIPE").number()).isEmpty();
-        assertThat(TaskId.of("E2E-D-0001").number()).isEmpty();
+        assertThat(TaskId.of("E2E-I-0001").number()).isEmpty();
         assertThat(TaskId.of("E2E-T-0007X").number()).isEmpty();
-        // the number of an id of a given project
         assertThat(TaskId.of("E2E-T-0007").numberIn(e2e)).hasValue(7);
         assertThat(TaskId.of("OTHER-T-0007").numberIn(e2e)).isEmpty();
         assertThat(TaskId.of("E2E-T-" + "9".repeat(19)).numberIn(e2e)).isEmpty();
-        // VRF-048 (D-0049): the form is judged by the key, so the case of the id does not hide its number
         for (String id : new String[] {"E2E-t-0005", "e2e-T-0005", "e2e-t-00005"}) {
             assertThat(TaskId.of(id).number()).as(id).hasValue(5);
             assertThat(TaskId.of(id).numberIn(e2e)).as(id).hasValue(5);
         }
         assertThat(TaskId.of("e2e-t-0005X").numberIn(e2e)).isEmpty();
         assertThat(TaskId.of("other-t-0005").numberIn(e2e)).isEmpty();
+
+        assertThat(SpecId.of("E2E-S-0003").numberIn(e2e)).hasValue(3);
+        assertThat(SpecId.of("e2e-s-00003").numberIn(e2e)).hasValue(3);
+        assertThat(SpecId.of("E2E-T-0003").numberIn(e2e)).isEmpty();
     }
 
-    /**
-     * DOM-007 as revised by OPK-014: the request id (a UUID) is replaced by the operation key, any text of 1 to 128
-     * characters that is not blank; the server never makes one up, so null is refused too. The derived keys of a
-     * batch stay deterministic.
-     */
     @Test
     void dom007_opk014_operationKeyRulesAndDerivedKeys() {
-        // null is REQUIRED, empty / blank / 129 characters are MUST_BE_CHARS_RANGE 1..128, all at the path operationKey
         ValidationIssue required = onlyIssue(Expect.invalid(() -> OperationKey.parse(null)));
         assertThat(required.path()).isEqualTo("operationKey");
         assertThat(required.reason()).isEqualTo(ValidationReason.REQUIRED);
@@ -153,14 +150,12 @@ class IdentityTest {
             assertThat(issue.reasonArgs()).containsExactly("1", "128");
             Expect.invalid(() -> new OperationKey(bad));
         }
-        // 1 and 128 characters are accepted, and the text is not limited to a UUID (the 1.x format is gone)
         for (String ok : List.of("k", "k".repeat(128), "not-a-uuid", "1-1-1-1-1", "한글 키 01",
                 UUID.randomUUID().toString())) {
             assertThat(OperationKey.parse(ok).value()).isEqualTo(ok);
             assertThat(OperationKey.parse(ok)).hasToString(ok);
         }
         assertThat(OperationKey.WIRE_NAME).isEqualTo("operationKey");
-        // derived keys: deterministic, different per index and per batch key
         OperationKey batch = OperationKey.parse(UUID.randomUUID().toString());
         assertThat(batch.derive(0)).isEqualTo(batch.derive(0));
         assertThat(batch.derive(0)).isNotEqualTo(batch.derive(1));
@@ -188,39 +183,41 @@ class IdentityTest {
         Expect.failsWith(ValidationCode.REASON_INVALID, () -> Reason.of(null));
     }
 
-    /** DOM-036 as revised by REH3: the ids of a task and a condition are free text in any case, kept as given. */
     @Test
     void dom036_reh3Id01_freeTextIdsAreKept() {
-        for (String ok : List.of("E2E-D-0001", "E2E-T-1", "E2E-T|PIPE", "OLD-PIPE-C|A", "OLD-C-1", "E2E-t-1", "Abc",
+        for (String ok : List.of("E2E-I-0001", "E2E-T-1", "E2E-T|PIPE", "OLD-PIPE-C|A", "OLD-C-1", "E2E-t-1", "Abc",
                 "AGS:A01", "AGS:A07-a", "USER_BACKLOG:revision58:task:ledger-storage-reliability-design",
-                "AGS:condition:critical-local-fixes-once-cutoff-9254f21a-20261026-r01:actual-load-verification",
+                "AGS:criterion:milestone-check-01",
                 "a#b/c.d:e_f-g|h", "x", "a".repeat(120), "가".repeat(120))) {
             assertThat(EntityId.of(ok).value()).isEqualTo(ok);
             assertThat(TaskId.of(ok).value()).isEqualTo(ok);
-            assertThat(ConditionId.of(ok).value()).isEqualTo(ok);
+            assertThat(SpecId.of(ok).value()).isEqualTo(ok);
+            assertThat(CriterionId.of(ok).value()).isEqualTo(ok);
             assertThat(TaskId.parse(ok)).isPresent();
-            assertThat(ConditionId.parse(ok)).isPresent();
+            assertThat(SpecId.parse(ok)).isPresent();
+            assertThat(CriterionId.parse(ok)).isPresent();
         }
-        String zeroWidthSpace = "A​B";
-        for (String bad : List.of("", " ", "   ", "a".repeat(121), "AGS A01", "A\tB", "A\nB", "A\r\nB", "A B",
+        String zeroWidthSpace = "A\u200BB";
+        for (String bad : List.of("", " ", "   ", "a".repeat(121), "AGS A01", "A\tB", "A\nB", "A\r\nB", "A\u00A0B",
                 zeroWidthSpace, "A\u0000B", "A\u0085B", "AGS:A01 ")) {
             ValidationException refused = (ValidationException) Expect.invalid(() -> EntityId.of(bad));
             assertThat(refused.issues().getFirst().reason().name()).as("reason for %s", bad).isEqualTo("MUST_BE_ID");
             Expect.invalid(() -> TaskId.of(bad));
-            Expect.invalid(() -> ConditionId.of(bad));
+            Expect.invalid(() -> SpecId.of(bad));
+            Expect.invalid(() -> CriterionId.of(bad));
             assertThat(TaskId.parse(bad)).isEmpty();
-            assertThat(ConditionId.parse(bad)).isEmpty();
+            assertThat(SpecId.parse(bad)).isEmpty();
+            assertThat(CriterionId.parse(bad)).isEmpty();
         }
-        // the id of a defect keeps its format
-        assertThat(DefectId.of("AGS-D-0001").value()).isEqualTo("AGS-D-0001");
-        ValidationException lower = (ValidationException) Expect.invalid(() -> DefectId.of("ags-d-0001"));
-        assertThat(lower.issues().getFirst().reason().name()).isEqualTo("DEFECT_ID_FORMAT");
+        assertThat(IssueId.of("AGS-I-0001").value()).isEqualTo("AGS-I-0001");
+        ValidationException lower = (ValidationException) Expect.invalid(() -> IssueId.of("ags-i-0001"));
+        assertThat(lower.issues().getFirst().reason().name()).isEqualTo("ISSUE_ID_FORMAT");
     }
 
-    /** REH3-ID-02: equality of ids is exact, so a lookup in Java never takes a sibling for the id. */
     @Test
     void reh3Id02_equalityOfIdsIsExact() {
         assertThat(TaskId.of("AGS:A07-a")).isNotEqualTo(TaskId.of("AGS:A07-A")).isEqualTo(TaskId.of("AGS:A07-a"));
-        assertThat(ConditionId.of("ags:c1")).isNotEqualTo(ConditionId.of("AGS:C1"));
+        assertThat(SpecId.of("ags:s1")).isNotEqualTo(SpecId.of("AGS:S1"));
+        assertThat(CriterionId.of("ags:c1")).isNotEqualTo(CriterionId.of("AGS:C1"));
     }
 }

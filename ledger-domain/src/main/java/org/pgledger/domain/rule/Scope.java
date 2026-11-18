@@ -6,7 +6,11 @@ import org.pgledger.domain.value.Token;
 
 /** What a session grant allows on a project. */
 public enum Scope implements Token {
-    DEFECT("defect"), TASK("task"), FIX("fix"), VERIFY("verify");
+    ISSUE("issue"),
+    SPEC("spec"),
+    TASK("task"),
+    DELIVERABLE("deliverable"),
+    VERIFY("verify");
 
     private final String token;
 
@@ -20,16 +24,16 @@ public enum Scope implements Token {
     }
 
     /**
-     * The scope a state change needs: VERIFY when it enters or leaves a verification state, otherwise the scope
-     * that writes the entity.
+     * The scope a state change needs: VERIFY when entering or leaving a verification state, otherwise the write scope
+     * of the entity.
      */
     public static Scope forTransition(HistoryEntity entity, LifecycleState from, LifecycleState to) {
         if (from.verification() || to.verification()) {
             return VERIFY;
         }
         return switch (entity) {
-            case DEFECT, TASK, CONDITION -> entity.writeScope();
-            case DEFECT_FIX, DEFECT_TASK, DEFECT_RELATION, CONDITION_LINK, DEFECT_CASE ->
+            case ISSUE, SPEC, TASK, CRITERION -> entity.writeScope();
+            case DELIVERABLE, ISSUE_TASK, ISSUE_SPEC, SPEC_TASK, ISSUE_RELATION, CRITERION_LINK, ISSUE_CASE ->
                 throw ValidationException.invalid("entity", ValidationReason.HAS_NO_STATE, entity.token());
         };
     }

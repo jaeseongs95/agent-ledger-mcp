@@ -1,6 +1,6 @@
 package org.pgledger.database.repository;
 
-import org.pgledger.domain.value.DefectId;
+import org.pgledger.domain.value.IssueId;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 /** Spring Data fragment implementation of {@link CaseSequence}. */
@@ -13,8 +13,8 @@ public class CaseSequenceImpl implements CaseSequence {
     }
 
     @Override
-    public boolean nextCaseSeq(DefectId defect) {
-        return jdbc.sql("UPDATE defect SET case_seq = case_seq + 1 WHERE id = :id AND status NOT IN ('MERGED', 'VERIFIED')")
-                .param("id", defect.value()).update() == 1;
+    public boolean nextCaseSeq(IssueId issue) {
+        return jdbc.sql("UPDATE issue SET case_seq = case_seq + 1 WHERE id = :id AND status NOT IN ('MERGED', 'VERIFIED')")
+                .param("id", issue.value()).update() == 1;
     }
 }
