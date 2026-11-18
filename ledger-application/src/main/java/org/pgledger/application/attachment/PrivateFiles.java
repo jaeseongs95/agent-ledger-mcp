@@ -3,29 +3,21 @@ package org.pgledger.application.attachment;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.FileSystem;
-import java.nio.file.StandardOpenOption;
 import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.NotDirectoryException;
 import java.nio.file.OpenOption;
 import java.nio.file.Path;
-import java.nio.file.attribute.AclEntry;
-import java.nio.file.attribute.AclEntryPermission;
-import java.nio.file.attribute.AclEntryType;
-import java.nio.file.attribute.AclFileAttributeView;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileAttribute;
-import java.nio.file.attribute.PosixFilePermission;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.nio.file.attribute.UserPrincipal;
 import java.nio.file.attribute.UserPrincipalNotFoundException;
-import java.util.EnumSet;
 import java.util.List;
-import java.util.Objects;
 import java.util.Set;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
+import org.pgledger.files.FileProtection;
 import org.springframework.stereotype.Component;
 
 /**
@@ -44,30 +36,12 @@ import org.springframework.stereotype.Component;
  * folder belongs (a link is followed to what it points at). The checks of the owner and of the permissions that this class once
  * made at every read were removed with the rule; there is no setting to bring them back.
  *
- * <p>The module of the command line has a store of secrets with the same rule ({@code SecretStore}); the server cannot depend on
- * that module, so the attachment storage has its own copy of the rule, here only.
+ * <p>Delegates POSIX/ACL protection and {@code NOFOLLOW_LINKS} settlement to the shared {@code ledger-files} module
+ * ({@link FileProtection}).
  */
 @Component
 @ConditionalOnAttachments
 public class PrivateFiles {
-
-    /**
-     * What another principal may hold without reaching the content: its attributes, its ACL, the wait for the handle. Used only by
-     * {@link #settle}, right after a creation, to find the entries that the parent handed down.
-     */
-    private static final Set<AclEntryPermission> HARMLESS = EnumSet.of(AclEntryPermission.READ_ATTRIBUTES,
-            AclEntryPermission.READ_ACL, AclEntryPermission.SYNCHRONIZE);
-    private static final Set<PosixFilePermission> DIRECTORY_MODE = PosixFilePermissions.fromString("rwx------");
-    private static final Set<PosixFilePermission> FILE_MODE = PosixFilePermissions.fromString("rw-------");
-
-    /** The attribute of the Windows file system provider that gives a new file or directory its ACL. */
-    private record AclAttribute(List<AclEntry> value) implements FileAttribute<List<AclEntry>> {
-
-        @Override
-        public String name() {
-            return "acl:acl";
-        }
-    }
 
     /**
      * The attributes a new directory or file is created with, so that it is private from its first moment.
@@ -76,15 +50,8 @@ public class PrivateFiles {
      * @param directory true for a directory
      */
     public FileAttribute<?>[] attributesFor(Path near, boolean directory) {
-        FileSystem fileSystem = near.getFileSystem();
-        Set<String> views = fileSystem.supportedFileAttributeViews();
-        if (views.contains("posix")) {
-            return new FileAttribute<?>[] {PosixFilePermissions.asFileAttribute(directory ? DIRECTORY_MODE : FILE_MODE)};
-        }
-        if (views.contains("acl")) {
-            return new FileAttribute<?>[] {new AclAttribute(ownerAndService(fileSystem, directory))};
-        }
-        throw unsafe("the file system has neither POSIX permissions nor ACLs");
+        FileProtection protection = protection(near.getFileSystem());
+        return directory ? protection.directoryAttributes() : protection.fileAttributes();
     }
 
     /**
@@ -167,44 +134,27 @@ public class PrivateFiles {
         }
     }
 
+    private FileProtection protection(FileSystem fileSystem) {
+        Set<String> views = fileSystem.supportedFileAttributeViews();
+        if (views.contains("posix")) {
+            return new FileProtection.Posix();
+        }
+        if (views.contains("acl")) {
+            return new FileProtection.Acl(processUser(fileSystem), serviceAccount(fileSystem), true);
+        }
+        throw unsafe("the file system has neither POSIX permissions nor ACLs");
+    }
+
     /**
      * An ACL that was merged with what the parent hands down is replaced by the owner and service one right after creation, before
      * anything is written: the only place where a protection is changed after creation, and only to the narrow one.
      */
     private void settle(Path path) throws IOException {
         FileSystem fileSystem = path.getFileSystem();
-        if (fileSystem.supportedFileAttributeViews().contains("acl") && !fileSystem.supportedFileAttributeViews().contains("posix")) {
-            UserPrincipal user = processUser(fileSystem);
-            UserPrincipal service = serviceAccount(fileSystem);
-            if (opensToOthers(path, user, service)) {
-                Files.getFileAttributeView(path, AclFileAttributeView.class)
-                        .setAcl(ServiceAccountAccess.ownerAndService(user, service, Files.isDirectory(path)));
-            }
+        if (fileSystem.supportedFileAttributeViews().contains("acl")
+                && !fileSystem.supportedFileAttributeViews().contains("posix")) {
+            protection(fileSystem).settle(path, false);
         }
-    }
-
-    private static boolean opensToOthers(Path path, UserPrincipal user, UserPrincipal service) throws IOException {
-        List<AclEntry> acl = Files.getFileAttributeView(path, AclFileAttributeView.class, LinkOption.NOFOLLOW_LINKS).getAcl();
-        if (acl.isEmpty()) {
-            return true;
-        }
-        for (AclEntry entry : acl) {
-            if (entry.type() == AclEntryType.ALLOW && !Objects.equals(entry.principal(), user) && !isAdministrative(entry.principal())
-                    && !ServiceAccountAccess.isServiceRead(entry, service) && !HARMLESS.containsAll(entry.permissions())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean isAdministrative(UserPrincipal principal) {
-        String name = principal.getName();
-        return name.endsWith("\\SYSTEM") || name.endsWith("\\Administrators");
-    }
-
-    /** The ACL of a new private path: the owner with everything and the service account with read ({@link ServiceAccountAccess}). */
-    private static List<AclEntry> ownerAndService(FileSystem fileSystem, boolean directory) {
-        return ServiceAccountAccess.ownerAndService(processUser(fileSystem), serviceAccount(fileSystem), directory);
     }
 
     /** The service account as a principal of the file system. */

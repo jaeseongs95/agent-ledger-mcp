@@ -21,6 +21,8 @@ dependencies {
     // The attestation token and the Ed25519 key text forms (pure JDK): the hook signs with them, the server verifies
     // with the same classes. bootJar packs the project jar of this module into BOOT-INF/lib.
     implementation(project(":ledger-attestation"))
+    // Owner-only POSIX/ACL key-folder and key-file protection (pure JDK), shared with the server and the CLI.
+    implementation(project(":ledger-files"))
 
     // ApplicationContextRunner and the other test support of Spring Boot (the slice tests of the beans, principle 7.2).
     testImplementation("org.springframework.boot:spring-boot-starter-test")

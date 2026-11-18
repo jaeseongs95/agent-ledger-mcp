@@ -161,6 +161,7 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 |---|---|
 | `ledger-domain` | 집합체, 값 타입, 상태 규칙, 오류 코드와 도구 이름 목록인 `ToolContract` |
 | `ledger-attestation` | `_hostAttestation` 토큰, RFC 8785 정규형 JSON, Ed25519 키 형식입니다. 훅과 서버가 함께 씁니다(JDK만 사용) |
+| `ledger-files` | 소유자 전용 POSIX/ACL 파일·폴더 보호와 `NOFOLLOW_LINKS` 검사입니다. 서버, CLI, 훅이 함께 씁니다(JDK만 사용) |
 | `ledger-database` | Spring Data JDBC 저장소, 스키마 파일 `V{n}__*.sql`과 그 적용기, 등록된 JDBC 드라이버의 적재기 |
 | `ledger-application` | 응용 서비스: 쓰기 관문, 영수증, 이력, 쓰기와 읽기 연산, 부여, 세션 키 |
 | `ledger-mcp-server` | Spring Boot MCP 서버(`ledger-mcp-server.jar`) |
@@ -707,7 +708,7 @@ JVM이 인식하는 프로세서 수를 제한할 수 있습니다. 속성은 �
 
 ## 구성
 
-- `ledger-domain`, `ledger-attestation`, `ledger-database`, `ledger-application`, `ledger-mcp-server`, `ledger-admin-web`,
+- `ledger-domain`, `ledger-attestation`, `ledger-files`, `ledger-database`, `ledger-application`, `ledger-mcp-server`, `ledger-admin-web`,
   `ledger-cli`, `ledger-client-hook`, `ledger-migrate-1x`: 위의 모듈이며 각각 `src/main`과 `src/test`를 가집니다. `ledger-system-test`는 `src/test`만 가집니다.
 - `clients/claude`, `clients/codex`, `clients/antigravity`: 클라이언트별 플러그인의 매니페스트와 README이며, 빌드가 훅 jar와 함께
   `ledger-client-hook/build/client-plugins`에 모읍니다.

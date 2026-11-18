@@ -2,6 +2,8 @@ dependencies {
     api(project(":ledger-database"))
     // The signed author attestation (token format and Ed25519 primitives, JDK only), shared with the client hook.
     implementation(project(":ledger-attestation"))
+    // Shared owner-only POSIX/ACL file protection (JDK only).
+    implementation(project(":ledger-files"))
     // Jakarta Validation (Hibernate Validator, Boot BOM): the service input records carry the constraints; the
     // records are public API of this module, so the consumers need the annotations on their compile classpath.
     api("org.springframework.boot:spring-boot-starter-validation")

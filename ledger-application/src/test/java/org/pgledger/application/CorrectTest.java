@@ -189,4 +189,49 @@ class CorrectTest {
                     Scenario.REASON)).corrects()).isEqualTo(id);
         }
     }
+
+    @Test
+    @DisplayName("REM-009: chained correction of a verification still requires reviewer channel and verify scope")
+    void rem009_chainedCorrectionOfVerificationRequiresReviewerAndVerifyScope(Scenario s) {
+        SaveResult d = s.verifiedDefect("d");
+        long verification = s.history(HistoryEntity.DEFECT, d.id()).stream()
+                .filter(h -> h.op() == HistoryOp.TRANSITION && "VERIFIED".equals(h.toState())).findFirst()
+                .orElseThrow().id();
+        long firstCorrection = s.bean(ReviewService.class).reviewCorrect(Scenario.REVIEWER,
+                new CorrectCommand(Scenario.uuid(), verification, Scenario.REASON)).historyId();
+
+        Expect.failure(() -> correct(s, firstCorrection), TrustCode.VERIFY_NEEDS_REVIEWER_LOGIN);
+        String reviewerWithoutVerify = s.actorWith("defect");
+        Expect.failure(() -> s.bean(ReviewService.class).reviewCorrect(reviewerWithoutVerify,
+                new CorrectCommand(Scenario.uuid(), firstCorrection, Scenario.REASON)), TrustCode.SESSION_NOT_GRANTED);
+
+        CorrectResult chained = s.bean(ReviewService.class).reviewCorrect(Scenario.REVIEWER,
+                new CorrectCommand(Scenario.uuid(), firstCorrection, Scenario.REASON));
+        assertThat(chained.corrects()).isEqualTo(firstCorrection);
+    }
+
+    @Test
+    @DisplayName("REM-009: correcting a CONDITION_LINK whose ConditionId and TaskId contain '|' resolves the true endpoints")
+    void rem009_conditionLinkWithPipesInIdsResolvesTrueEndpoints(Scenario s) {
+        String p2 = s.otherProject();
+        String p1Only = s.actorWith("defect", "task");
+        String both = s.actorWith("defect", "task");
+        s.grant(both, p2, "defect", "task");
+
+        var c1 = s.bean(SaveService.class).save(both, new SaveCommand(Scenario.uuid(), "condition", "C|1", 0L,
+                Fields.of(s.conditionFields("r1", "code1")), Scenario.REASON));
+        var t2Fields = s.taskFields("t2");
+        t2Fields.put("project_id", p2);
+        var t2 = s.bean(SaveService.class).save(both, new SaveCommand(Scenario.uuid(), "task", "T|2", 0L,
+                Fields.of(t2Fields), Scenario.REASON));
+
+        long linkHistoryId = s.bean(LinkService.class).link(both, new LinkCommand(Scenario.uuid(), "condition_task",
+                c1.id(), t2.id(), Scenario.REASON, null)).historyId();
+
+        LedgerException refusal = Expect.failure(() -> s.bean(CorrectService.class).correct(p1Only,
+                new CorrectCommand(Scenario.uuid(), linkHistoryId, Scenario.REASON)), TrustCode.SESSION_NOT_GRANTED);
+        assertThat(refusal.details()).containsEntry("project", List.of(p2));
+        assertThat(s.bean(CorrectService.class).correct(both, new CorrectCommand(Scenario.uuid(), linkHistoryId,
+                Scenario.REASON)).corrects()).isEqualTo(linkHistoryId);
+    }
 }

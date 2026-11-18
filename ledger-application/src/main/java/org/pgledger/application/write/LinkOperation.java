@@ -162,8 +162,9 @@ public class LinkOperation extends WriteOperation<LinkCommand, LinkResult> {
             case CONDITION_TASK -> {
                 ConditionId condition = ConditionId.of(a);
                 TaskId task = TaskId.of(b);
-                pinCondition(author, condition, Scope.TASK);
+                // Canonical entity lock order: defect -> task -> release_condition (matches BatchService save-then-link flows)
                 pinTask(author, task, Scope.TASK);
+                pinCondition(author, condition, Scope.TASK);
                 yield ConditionLink.toTask(condition, task, author);
             }
             case CONDITION_DEFECT -> {

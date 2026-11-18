@@ -214,6 +214,7 @@ The build is a Gradle multi-module project.
 |---|---|
 | `ledger-domain` | aggregates, value types, state rules, error codes and `ToolContract`, the list of tool names |
 | `ledger-attestation` | the `_hostAttestation` token, RFC 8785 canonical JSON and the Ed25519 key forms, shared by the hook and the server (JDK only) |
+| `ledger-files` | owner-only POSIX/ACL file and directory protection and `NOFOLLOW_LINKS` inspection, shared by the server, the CLI and the hook (JDK only) |
 | `ledger-database` | Spring Data JDBC repositories, the schema files `V{n}__*.sql` and their runner, the loader of the registered JDBC driver |
 | `ledger-application` | the application services: write gate, receipts, history, the write and read operations, grants, session keys |
 | `ledger-mcp-server` | the Spring Boot MCP server (`ledger-mcp-server.jar`) |
@@ -864,7 +865,7 @@ together with the properties above.
 
 ## Layout
 
-- `ledger-domain`, `ledger-attestation`, `ledger-database`, `ledger-application`, `ledger-mcp-server`, `ledger-admin-web`,
+- `ledger-domain`, `ledger-attestation`, `ledger-files`, `ledger-database`, `ledger-application`, `ledger-mcp-server`, `ledger-admin-web`,
   `ledger-cli`, `ledger-client-hook`, `ledger-migrate-1x`: the modules above, each with `src/main` and `src/test`; `ledger-system-test` has `src/test` only.
 - `clients/claude`, `clients/codex`, `clients/antigravity`: the manifests and README of each client plugin; the build stages them with
   the hook jar into `ledger-client-hook/build/client-plugins`.

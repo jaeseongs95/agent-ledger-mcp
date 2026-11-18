@@ -18,6 +18,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-validation")
     // Reads and fingerprints the public key of a session key (JDK only, shared with the hook and the server).
     implementation(project(":ledger-attestation"))
+    // Shared owner-only POSIX/ACL file protection (JDK only, shared with the server and the hook).
+    implementation(project(":ledger-files"))
     // The MCP Java SDK client of mcp-check (the SDK the server runs on) and the Jackson 3 mapper it writes JSON with (Boot BOM).
     implementation(libs.mcp.sdk)
     implementation("tools.jackson.core:jackson-databind")

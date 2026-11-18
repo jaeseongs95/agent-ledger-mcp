@@ -2,26 +2,14 @@ package org.pgledger.cli.secret;
 
 import java.io.IOException;
 import java.nio.file.FileSystem;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.attribute.AclEntry;
-import java.nio.file.attribute.AclEntryPermission;
-import java.nio.file.attribute.AclEntryType;
-import java.nio.file.attribute.AclFileAttributeView;
 import java.nio.file.attribute.FileAttribute;
-import java.nio.file.attribute.PosixFilePermission;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.nio.file.attribute.UserPrincipal;
-import java.util.Collections;
-import java.util.EnumSet;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import org.pgledger.application.attachment.ServiceAccountAccess;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.FailureException;
+import org.pgledger.files.FileProtection;
 
 /**
  * How the secret directory and its files are made usable by their owner alone on this file system. The file system decides
@@ -88,35 +76,23 @@ public sealed interface SecretProtection {
     /** POSIX permissions. */
     record Posix() implements SecretProtection {
 
-        private static final Set<PosixFilePermission> DIRECTORY_MODE = PosixFilePermissions.fromString("rwx------");
-        private static final Set<PosixFilePermission> FILE_MODE = PosixFilePermissions.fromString("rw-------");
-        private static final Set<PosixFilePermission> GROUP_AND_OTHERS = PosixFilePermissions.fromString("---rwxrwx");
+        private static final FileProtection.Posix DELEGATE = new FileProtection.Posix();
 
         @Override
         public FileAttribute<?>[] directoryAttributes() {
-            return new FileAttribute<?>[] {PosixFilePermissions.asFileAttribute(DIRECTORY_MODE)};
+            return DELEGATE.directoryAttributes();
         }
 
         @Override
         public FileAttribute<?>[] fileAttributes() {
-            return new FileAttribute<?>[] {PosixFilePermissions.asFileAttribute(FILE_MODE)};
+            return DELEGATE.fileAttributes();
         }
 
         @Override
         public void requireOwnerOnlyAccess(Path path) throws IOException {
-            Set<PosixFilePermission> mode = Files.getPosixFilePermissions(path, LinkOption.NOFOLLOW_LINKS);
-            if (!Collections.disjoint(mode, GROUP_AND_OTHERS)) {
-                throw new FailureException(ErrorCode.LOOSE_PERMISSIONS, path.toString(), PosixFilePermissions.toString(mode));
-            }
-        }
-    }
-
-    /** The {@code acl:acl} attribute of the Windows file system provider: the DACL a new file or directory gets. */
-    record AclAttribute(List<AclEntry> value) implements FileAttribute<List<AclEntry>> {
-
-        @Override
-        public String name() {
-            return "acl:acl";
+            DELEGATE.openExposure(path).ifPresent(exposure -> {
+                throw new FailureException(ErrorCode.LOOSE_PERMISSIONS, path.toString(), describe(exposure));
+            });
         }
     }
 
@@ -126,69 +102,40 @@ public sealed interface SecretProtection {
      */
     record Acl(UserPrincipal owner, UserPrincipal service) implements SecretProtection {
 
-        /** What another principal may hold without reaching a secret: its attributes, its ACL, the wait for the handle. */
-        private static final Set<AclEntryPermission> HARMLESS = EnumSet.of(AclEntryPermission.READ_ATTRIBUTES,
-                AclEntryPermission.READ_ACL, AclEntryPermission.SYNCHRONIZE);
-
-        /** The owner with everything and the service account with read; a directory's entries are inherited by what it holds. */
-        private List<AclEntry> ownerAndService(boolean directory) {
-            return ServiceAccountAccess.ownerAndService(owner, service, directory);
+        private FileProtection.Acl delegate() {
+            return new FileProtection.Acl(owner, service, false);
         }
 
         @Override
         public FileAttribute<?>[] directoryAttributes() {
-            return new FileAttribute<?>[] {new AclAttribute(ownerAndService(true))};
+            return delegate().directoryAttributes();
         }
 
         @Override
         public FileAttribute<?>[] fileAttributes() {
-            return new FileAttribute<?>[] {new AclAttribute(ownerAndService(false))};
+            return delegate().fileAttributes();
         }
 
         @Override
         public void requireOwnerOnlyAccess(Path path) throws IOException {
-            whatIsOpen(path).ifPresent(open -> {
-                throw new FailureException(ErrorCode.LOOSE_PERMISSIONS, path.toString(), open);
+            delegate().openExposure(path).ifPresent(exposure -> {
+                throw new FailureException(ErrorCode.LOOSE_PERMISSIONS, path.toString(), describe(exposure));
             });
         }
 
-        /** What the ACL of the path opens to another principal than the owner and the service account (read): a query, not a failure. */
-        private Optional<String> whatIsOpen(Path path) throws IOException {
-            List<AclEntry> acl = Files.getFileAttributeView(path, AclFileAttributeView.class, LinkOption.NOFOLLOW_LINKS)
-                    .getAcl();
-            if (acl.isEmpty()) {
-                // an ACL without any entry grants the owner nothing, and a NULL DACL (which grants everybody everything)
-                // may be reported the same way: neither is the "owner alone" that was asked for
-                return Optional.of("an ACL without an entry");
-            }
-            for (AclEntry entry : acl) {
-                // only an ALLOW entry grants anything; DENY, AUDIT and ALARM entries do not
-                boolean granting = entry.type() == AclEntryType.ALLOW && !Objects.equals(entry.principal(), owner)
-                        && !ServiceAccountAccess.isServiceRead(entry, service) && !HARMLESS.containsAll(entry.permissions());
-                if (granting) {
-                    return Optional.of("an ACL that allows " + entry.principal().getName());
-                }
-            }
-            return Optional.empty();
-        }
-
-        /**
-         * The ACL given at creation may have been merged with the entries the parent hands down: when it was, it is replaced
-         * by the ACL of the owner and the service account before a secret is written. This is the one place where a protection is changed after
-         * creation, and only ever to the narrow one.
-         */
         @Override
         public void settle(Path path) throws IOException {
-            // A process with an elevated token (the installer) creates objects that the group Administrators owns, which is
-            // Windows' default for its members; the owner check wants the account of the process, so it takes the ownership
-            // of what it has just created (it may: the creator's entry holds the right to change the owner).
-            if (!Objects.equals(Files.getOwner(path, LinkOption.NOFOLLOW_LINKS), owner)) {
-                Files.setOwner(path, owner);
-            }
-            if (whatIsOpen(path).isPresent()) {
-                Files.getFileAttributeView(path, AclFileAttributeView.class).setAcl(ownerAndService(Files.isDirectory(path)));
-            }
-            requireOwnerOnlyAccess(path);
+            delegate().settle(path, true).ifPresent(exposure -> {
+                throw new FailureException(ErrorCode.LOOSE_PERMISSIONS, path.toString(), describe(exposure));
+            });
         }
+    }
+
+    private static String describe(FileProtection.Exposure exposure) {
+        return switch (exposure) {
+            case FileProtection.Exposure.EmptyAcl _ -> "an ACL without an entry";
+            case FileProtection.Exposure.PosixMode(var mode) -> mode;
+            case FileProtection.Exposure.AclPrincipal(var principal) -> "an ACL that allows " + principal;
+        };
     }
 }

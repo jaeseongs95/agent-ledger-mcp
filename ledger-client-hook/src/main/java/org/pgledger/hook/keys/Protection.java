@@ -2,22 +2,11 @@ package org.pgledger.hook.keys;
 
 import java.io.IOException;
 import java.nio.file.FileSystem;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.AclEntry;
-import java.nio.file.attribute.AclEntryFlag;
-import java.nio.file.attribute.AclEntryPermission;
-import java.nio.file.attribute.AclEntryType;
-import java.nio.file.attribute.AclFileAttributeView;
 import java.nio.file.attribute.FileAttribute;
-import java.nio.file.attribute.PosixFilePermission;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.nio.file.attribute.UserPrincipal;
-import java.util.Collections;
-import java.util.EnumSet;
-import java.util.List;
-import java.util.Objects;
 import java.util.Set;
+import org.pgledger.files.FileProtection;
 import org.pgledger.hook.keys.SessionKeyException.Reason;
 
 /**
@@ -90,14 +79,16 @@ sealed interface Protection permits Protection.Posix, Protection.Acl, Protection
     /** Neither view: nothing to set and nothing to check. */
     record Unprotected() implements Protection {
 
+        private static final FileProtection.Unprotected DELEGATE = new FileProtection.Unprotected();
+
         @Override
         public FileAttribute<?>[] folderAttributes() {
-            return new FileAttribute<?>[0];
+            return DELEGATE.directoryAttributes();
         }
 
         @Override
         public FileAttribute<?>[] fileAttributes() {
-            return new FileAttribute<?>[0];
+            return DELEGATE.fileAttributes();
         }
 
         @Override
@@ -106,100 +97,59 @@ sealed interface Protection permits Protection.Posix, Protection.Acl, Protection
         }
     }
 
-    /** The POSIX attribute view: modes. */
+    /** The POSIX attribute view: modes (checked with {@code NOFOLLOW_LINKS} via {@code ledger-files}). */
     record Posix() implements Protection {
 
-        private static final Set<PosixFilePermission> DIRECTORY_MODE =
-                Set.copyOf(PosixFilePermissions.fromString("rwx------"));
-        private static final Set<PosixFilePermission> FILE_MODE = Set.copyOf(PosixFilePermissions.fromString("rw-------"));
-        private static final Set<PosixFilePermission> GROUP_AND_OTHERS =
-                Set.copyOf(PosixFilePermissions.fromString("---rwxrwx"));
+        private static final FileProtection.Posix DELEGATE = new FileProtection.Posix();
 
         @Override
         public FileAttribute<?>[] folderAttributes() {
-            return new FileAttribute<?>[] {PosixFilePermissions.asFileAttribute(DIRECTORY_MODE)};
+            return DELEGATE.directoryAttributes();
         }
 
         @Override
         public FileAttribute<?>[] fileAttributes() {
-            return new FileAttribute<?>[] {PosixFilePermissions.asFileAttribute(FILE_MODE)};
+            return DELEGATE.fileAttributes();
         }
 
         @Override
         public void requireOwnerOnly(Path path) throws IOException {
-            Set<PosixFilePermission> mode = Files.getPosixFilePermissions(path);
-            if (!Collections.disjoint(mode, GROUP_AND_OTHERS)) {
+            DELEGATE.openExposure(path).ifPresent(_ -> {
                 throw new SessionKeyException(Reason.TOO_OPEN);
-            }
+            });
         }
     }
 
-    /** The {@code acl:acl} attribute of the Windows file system provider: the DACL a new file or folder gets. */
-    record AclAttribute(List<AclEntry> value) implements FileAttribute<List<AclEntry>> {
-
-        private static final String ACL_ATTRIBUTE = "acl:acl";
-
-        @Override
-        public String name() {
-            return ACL_ATTRIBUTE;
-        }
-    }
-
-    /** The ACL attribute view: entries. */
+    /** The ACL attribute view: entries (inspected and settled with {@code NOFOLLOW_LINKS} via {@code ledger-files}). */
     record Acl(UserPrincipal current) implements Protection {
 
-        /** What another principal may hold without reaching the key: looking at the attributes and the ACL, waiting for the handle. */
-        private static final Set<AclEntryPermission> HARMLESS = Set.copyOf(EnumSet.of(AclEntryPermission.READ_ATTRIBUTES,
-                AclEntryPermission.READ_ACL, AclEntryPermission.SYNCHRONIZE));
-
-        /** One ALLOW entry that grants the current user everything; a folder's entry is inherited by what it holds. */
-        private List<AclEntry> ownerOnly(boolean folder) {
-            Set<AclEntryFlag> flags = folder
-                    ? EnumSet.of(AclEntryFlag.FILE_INHERIT, AclEntryFlag.DIRECTORY_INHERIT)
-                    : EnumSet.noneOf(AclEntryFlag.class);
-            return List.of(AclEntry.newBuilder().setType(AclEntryType.ALLOW).setPrincipal(current)
-                    .setPermissions(EnumSet.allOf(AclEntryPermission.class)).setFlags(flags).build());
+        private FileProtection.Acl delegate() {
+            return new FileProtection.Acl(current);
         }
 
         @Override
         public FileAttribute<?>[] folderAttributes() {
-            return new FileAttribute<?>[] {new AclAttribute(ownerOnly(true))};
+            return delegate().directoryAttributes();
         }
 
         @Override
         public FileAttribute<?>[] fileAttributes() {
-            return new FileAttribute<?>[] {new AclAttribute(ownerOnly(false))};
+            return delegate().fileAttributes();
         }
 
         @Override
         public void requireOwnerOnly(Path path) throws IOException {
-            AclFileAttributeView view = Files.getFileAttributeView(path, AclFileAttributeView.class);
-            List<AclEntry> acl = view.getAcl();
-            if (acl.isEmpty()) {
-                // an ACL without any entry grants the current user nothing, and a NULL DACL (which grants everybody
-                // everything) may be reported the same way: neither is the "owner alone" that was asked for
+            delegate().openExposure(path).ifPresent(_ -> {
                 throw new SessionKeyException(Reason.TOO_OPEN);
-            }
-            for (AclEntry entry : acl) {
-                // only an ALLOW entry grants anything; DENY, AUDIT and ALARM entries do not
-                boolean granting = entry.type() == AclEntryType.ALLOW && !Objects.equals(entry.principal(), current)
-                        && !HARMLESS.containsAll(entry.permissions());
-                if (granting) {
-                    throw new SessionKeyException(Reason.TOO_OPEN);
-                }
-            }
+            });
         }
 
         /** The ACL given at creation may have been merged with entries inherited from the parent: make it certain. */
         @Override
         public void settle(Path path) throws IOException {
-            try {
-                requireOwnerOnly(path);
-            } catch (SessionKeyException tooOpen) {
-                boolean folder = Files.isDirectory(path);
-                Files.getFileAttributeView(path, AclFileAttributeView.class).setAcl(ownerOnly(folder));
-                requireOwnerOnly(path);
-            }
+            delegate().settle(path, false).ifPresent(_ -> {
+                throw new SessionKeyException(Reason.TOO_OPEN);
+            });
         }
     }
 }

@@ -496,4 +496,35 @@ class RaceTest {
         assertThat(merging.get(60, TimeUnit.SECONDS)).contains(TransitionCode.MERGE_TARGET_INVALID);
         assertThat(s.defect(a.id()).status()).isEqualTo(DefectStatus.OPEN);
     }
+
+    @Test
+    @DisplayName("REM-009: condition_task pins task before release_condition so concurrent task move blocks without AB-BA deadlock")
+    void rem009_conditionTaskPinsTaskBeforeConditionConcurrentWithMove(Scenario s) throws Exception {
+        String p2 = s.otherProject();
+        String mover = s.actorWith("task");
+        s.grant(mover, p2, "task");
+        String p1Only = s.actorWith("task");
+        SaveResult c = s.newCondition("c1", "r1", "code1");
+        SaveResult t = s.newTask("t1");
+
+        CountDownLatch moved = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger holderPid = new java.util.concurrent.atomic.AtomicInteger();
+        Future<?> saving = holdingTransaction(s, () -> {
+            holderPid.set(s.ctx().jdbc().sql("SELECT pg_backend_pid()").query(Integer.class).single());
+            return s.bean(SaveService.class).save(mover, s.edit("task", t.id(), 1, Map.of("project_id", p2)));
+        }, moved, release);
+        assertThat(moved.await(60, TimeUnit.SECONDS)).isTrue();
+
+        Future<Optional<ErrorCode>> linking = Parallel.start(() -> Expect.outcome(() -> s.bean(LinkService.class)
+                .link(p1Only, new LinkCommand(Scenario.uuid(), "condition_task", c.id(), t.id(), Scenario.REASON, null))));
+        org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(15))
+                .pollInterval(java.time.Duration.ofMillis(10))
+                .until(() -> linking.isDone()
+                        || org.pgledger.application.support.LockWaits.waitingFor(s.ctx(), holderPid.get()) > 0);
+        release.countDown();
+        saving.get(60, TimeUnit.SECONDS);
+        assertThat(linking.get(60, TimeUnit.SECONDS)).contains(TrustCode.SESSION_NOT_GRANTED);
+        assertThat(s.count("SELECT COUNT(*) FROM condition_link WHERE condition_id = ?", c.id())).isZero();
+    }
 }

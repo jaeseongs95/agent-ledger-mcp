@@ -68,8 +68,8 @@ public class CorrectOperation extends WriteOperation<CorrectCommand, CorrectResu
 
     /** Every project and scope involved by the corrected history entry (including both ends of links/merges and chains). */
     private Resolution target(HistoryEntry row) {
-        Scope scope = row.involvesVerification() ? Scope.VERIFY : row.entity().writeScope();
         HistoryEntry origin = originRow(row);
+        Scope scope = origin.involvesVerification() ? Scope.VERIFY : origin.entity().writeScope();
         List<Resolution> parts = new ArrayList<>();
         switch (origin.entity()) {
             case TASK -> parts.add(rows.taskTarget(TaskId.of(origin.entityId()), scope));
@@ -130,11 +130,93 @@ public class CorrectOperation extends WriteOperation<CorrectCommand, CorrectResu
             }
             return;
         }
+        ConditionTargetKind targetKind = linkTargetKind(origin);
         String entityId = origin.entityId();
-        int sep = entityId.indexOf('|');
-        String condId = sep < 0 ? entityId : entityId.substring(0, sep);
-        String targetId = sep < 0 ? "" : entityId.substring(sep + 1);
-        parts.add(rows.conditionTarget(ConditionId.of(condId), scope));
+        String fallbackCondId = null;
+        String fallbackTargetId = null;
+        boolean fallbackConditionFound = false;
+        for (int sep = entityId.indexOf('|'); sep >= 0; sep = entityId.indexOf('|', sep + 1)) {
+            String condRaw = entityId.substring(0, sep);
+            String targetRaw = entityId.substring(sep + 1);
+            Optional<ConditionId> cond = ConditionId.parse(condRaw);
+            if (cond.isEmpty()) {
+                continue;
+            }
+            ConditionId conditionId = cond.orElseThrow();
+            boolean condFound = rows.findCondition(conditionId).isPresent();
+            if (condFound && resolveConditionTargetIfPresent(conditionId, targetRaw, targetKind, scope, parts)) {
+                return;
+            }
+            if (condFound && !fallbackConditionFound) {
+                fallbackConditionFound = true;
+                fallbackCondId = condRaw;
+                fallbackTargetId = targetRaw;
+            } else if (fallbackCondId == null) {
+                fallbackCondId = condRaw;
+                fallbackTargetId = targetRaw;
+            }
+        }
+        if (fallbackCondId == null) {
+            parts.add(rows.conditionTarget(ConditionId.of(entityId), scope));
+            parts.add(rows.taskTarget(TaskId.of(""), scope));
+            return;
+        }
+        parts.add(rows.conditionTarget(ConditionId.of(fallbackCondId), scope));
+        addFallbackConditionTarget(fallbackTargetId, targetKind, scope, parts);
+    }
+
+    private enum ConditionTargetKind {
+        DEFECT, TASK, EITHER
+    }
+
+    private ConditionTargetKind linkTargetKind(HistoryEntry origin) {
+        if (origin.changes() == null) {
+            return ConditionTargetKind.EITHER;
+        }
+        ChangeSet parsed = json.read(origin.changes(), ChangeSet.class);
+        Optional<String> token = Optional.ofNullable(parsed.entries().get("kind")).map(Change::after);
+        if (token.filter("condition_defect"::equals).isPresent()) {
+            return ConditionTargetKind.DEFECT;
+        }
+        if (token.filter("condition_task"::equals).isPresent()) {
+            return ConditionTargetKind.TASK;
+        }
+        return ConditionTargetKind.EITHER;
+    }
+
+    private boolean resolveConditionTargetIfPresent(ConditionId cond, String targetRaw, ConditionTargetKind targetKind,
+            Scope scope, List<Resolution> parts) {
+        boolean checkDefect = targetKind != ConditionTargetKind.TASK;
+        boolean checkTask = targetKind != ConditionTargetKind.DEFECT;
+        if (checkDefect) {
+            Optional<DefectId> defect = DefectId.parse(targetRaw).filter(id -> rows.findDefect(id).isPresent());
+            if (defect.isPresent()) {
+                parts.add(rows.conditionTarget(cond, scope));
+                parts.add(rows.defectTarget(defect.orElseThrow(), scope));
+                return true;
+            }
+        }
+        if (checkTask) {
+            Optional<TaskId> task = TaskId.parse(targetRaw).filter(id -> rows.findTask(id).isPresent());
+            if (task.isPresent()) {
+                parts.add(rows.conditionTarget(cond, scope));
+                parts.add(rows.taskTarget(task.orElseThrow(), scope));
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void addFallbackConditionTarget(String targetId, ConditionTargetKind targetKind, Scope scope,
+            List<Resolution> parts) {
+        if (targetKind == ConditionTargetKind.DEFECT) {
+            parts.add(rows.defectTarget(DefectId.of(targetId), scope));
+            return;
+        }
+        if (targetKind == ConditionTargetKind.TASK) {
+            parts.add(rows.taskTarget(TaskId.of(targetId), scope));
+            return;
+        }
         Optional<Resolution> defectTarget = DefectId.parse(targetId)
                 .flatMap(id -> rows.findDefect(id).map(found -> rows.defectTarget(found.id(), scope)));
         Optional<Resolution> taskTarget = TaskId.parse(targetId)
