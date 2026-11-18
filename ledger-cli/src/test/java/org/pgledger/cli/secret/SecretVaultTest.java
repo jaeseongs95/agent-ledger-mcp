@@ -83,7 +83,7 @@ class SecretVaultTest {
 
         assertThat(vault.exists(token)).isTrue();
         assertThat(vault.exists(agent)).as("the copy for the admin web is another secret in another folder").isFalse();
-        assertThat(new String(vault.load(token))).isEqualTo("the-value");
+        assertThat(String.valueOf(vault.load(token))).isEqualTo("the-value");
         vault.store(agent, vault.load(token));
         assertThat(Files.readString(secrets().resolve("admin").resolve("ledger.admin.agent-token"))).isEqualTo("the-value");
         assertThat(names(secrets().resolve("mcp"))).containsExactly("ledger.mcp.token");

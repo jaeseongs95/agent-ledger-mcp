@@ -109,7 +109,7 @@ class DeployRendererTest {
                 + " --spring.config.import=file:/etc/pg-ledger-mcp/application.yaml,file:/etc/pg-ledger-mcp/" + settingsFile
                 + ",optional:file:/etc/pg-ledger-mcp/local.yaml,optional:file:/etc/pg-ledger-mcp/jdbc-driver.yaml,"
                 + "optional:configtree:/etc/pg-ledger-mcp/secrets/common/,optional:configtree:/etc/pg-ledger-mcp/secrets/"
-                + (settingsFile.equals("mcp.yaml") ? "mcp" : "admin") + "/");
+                + ("mcp.yaml".equals(settingsFile) ? "mcp" : "admin") + "/");
     }
 
     static Stream<Arguments> units() {
@@ -357,7 +357,7 @@ class DeployRendererTest {
                 + " --spring.config.import=file:" + HOME + "/etc/application.yaml,file:" + HOME + "/etc/" + settingsFile
                 + ",optional:file:" + HOME + "/etc/local.yaml,optional:file:" + HOME + "/etc/jdbc-driver.yaml,"
                 + "optional:configtree:" + HOME + "/etc/secrets/common/,optional:configtree:" + HOME + "/etc/secrets/"
-                + (settingsFile.equals("mcp.yaml") ? "mcp" : "admin") + "/");
+                + ("mcp.yaml".equals(settingsFile) ? "mcp" : "admin") + "/");
         assertThat(element(configuration, "logpath")).isEqualTo("C:\\ProgramData\\pg-ledger-mcp\\logs");
         assertThat(element(configuration, "startmode")).isEqualTo("Automatic");
         assertThat(configuration.getElementsByTagName("onfailure").getLength()).isPositive();

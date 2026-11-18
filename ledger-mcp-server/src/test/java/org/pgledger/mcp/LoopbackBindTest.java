@@ -4,8 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.mockito.ArgumentCaptor.forClass;
-import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 import java.io.IOException;
 import java.net.Inet4Address;
@@ -19,7 +20,6 @@ import java.util.Locale;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InOrder;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.mcp.config.LoopbackOnly;
@@ -76,9 +76,8 @@ class LoopbackBindTest {
             customizers.forEach(customizer -> customizer.customize(factory));
 
             ArgumentCaptor<InetAddress> address = forClass(InetAddress.class);
-            InOrder order = inOrder(factory);
-            order.verify(factory).setAddress(address.capture());
-            order.verify(factory).setAddress(address.capture());
+            verify(factory, times(2)).setAddress(address.capture());
+            assertThat(address.getAllValues()).hasSize(2);
             assertThat(address.getAllValues().getFirst().getHostAddress()).as(configured).isEqualTo(
                     InetAddress.getByName(configured).getHostAddress());
             assertThat(address.getAllValues().getLast().getHostAddress()).as(configured).isEqualTo("127.0.0.1");

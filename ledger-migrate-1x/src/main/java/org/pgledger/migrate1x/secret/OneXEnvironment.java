@@ -89,6 +89,11 @@ public final class OneXEnvironment {
         return new OneXEnvironment(found);
     }
 
+    /** True when the key appears in the file, even with an empty value. */
+    public boolean has(String name) {
+        return values.containsKey(name);
+    }
+
     /** The value of the last occurrence of the key; empty when there is none or its value is empty. */
     public Optional<String> value(String name) {
         return Optional.ofNullable(values.get(name)).filter(value -> !value.isEmpty());

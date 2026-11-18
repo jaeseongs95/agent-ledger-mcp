@@ -158,7 +158,7 @@ public class ImportSecrets1xCommand implements Command {
                     name, AGENT_SETTING));
         }
         // the admin token of 1.x is not imported (see the class): said when the environment has one, whatever its value is
-        if (environment.value(ADMIN_SETTING).isPresent()) {
+        if (environment.has(ADMIN_SETTING)) {
             output.info(messages.get("import-secrets-1x.admin-ignored", ADMIN_SETTING, ADMIN_SECRET));
         }
     }

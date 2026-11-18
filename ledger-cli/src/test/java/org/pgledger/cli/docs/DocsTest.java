@@ -345,8 +345,8 @@ class DocsTest {
     @EnumSource(Language.class)
     @DisplayName("PCS-023 (replaces REH4-DOC-01) the README option table shows --mcp-host and --admin-host as one host name each, no comma list")
     void readmeShowsOneHostNameForEachService(Language language) {
-        assertThat(language.readme().codeSpans()).anyMatch(span -> span.equals("--mcp-host=<host>"))
-                .anyMatch(span -> span.equals("--admin-host=<host>"))
+        assertThat(language.readme().codeSpans()).anyMatch(span -> "--mcp-host=<host>".equals(span))
+                .anyMatch(span -> "--admin-host=<host>".equals(span))
                 .noneMatch(span -> (span.startsWith("--mcp-host=") || span.startsWith("--admin-host=")) && span.contains("[,"))
                 .noneMatch(span -> span.startsWith("render-deploy ") && span.contains("[,<host>...]"))
                 .noneMatch(span -> span.startsWith("prepare-host ") && span.contains("[,<host>...]"));

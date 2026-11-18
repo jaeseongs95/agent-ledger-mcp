@@ -625,7 +625,7 @@ class InstallScriptsTest {
         assertThat(check).as("and before the first command as that user").isLessThan(firstIndex(code, "as_svc secret"));
         assertThat(code.get(check)).contains("|| die ").contains("outside the home directories");
         assertThat(code.stream().filter(line -> line.contains("--java=\"$JAVA\"")).count()).as("render-deploy and prepare-host get it once")
-                .isGreaterThanOrEqualTo(3);
+                .isEqualTo(2);
     }
 
     // ---- helpers ----

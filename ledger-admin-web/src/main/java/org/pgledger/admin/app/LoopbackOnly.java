@@ -3,6 +3,7 @@ package org.pgledger.admin.app;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.List;
+import java.util.Objects;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 import org.springframework.boot.web.server.ConfigurableWebServerFactory;
@@ -43,7 +44,7 @@ public final class LoopbackOnly implements WebServerFactoryCustomizer<Configurab
     private void requireOnePort() {
         Integer management = environment.getProperty("management.server.port", Integer.class);
         Integer server = environment.getProperty("server.port", Integer.class, 8080);
-        if (management != null && management >= 0 && !management.equals(server)) {
+        if (management != null && management >= 0 && !Objects.equals(management, server)) {
             throw new InfrastructureException(InfrastructureCode.MANAGEMENT_PORT_SEPARATE,
                     List.of(String.valueOf(management), String.valueOf(server)));
         }

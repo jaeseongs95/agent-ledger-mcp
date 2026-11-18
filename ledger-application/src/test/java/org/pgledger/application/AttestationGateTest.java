@@ -141,7 +141,9 @@ class AttestationGateTest {
         String signature = "A".repeat(86);
         for (String text : List.of("pgla1.", "pgla1.a.b.c.1.AAAA",
                 String.join(".", "pgla1", "YQ", "bGVkZ2VyX3NhdmU", "", "1700000000", signature))) {
-            Expect.failure(() -> verifier.verify(text, CALL, ""), TrustCode.AUTHOR_ID_FORMAT);
+            LedgerException failure = Expect.failure(() -> verifier.verify(text, CALL, ""), TrustCode.AUTHOR_ID_FORMAT);
+            assertThat(failure.args()).isEmpty();
+            assertThat(Expect.message(failure)).doesNotContain(text);
         }
     }
 

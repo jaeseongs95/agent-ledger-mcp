@@ -94,13 +94,25 @@ class DeployGoldenTest {
         return content.replace("(for example ledger.admin.oidc.owner-email) belong", "(for example ledger.admin.oidc.owners) belong");
     }
 
+    /**
+     * SPL-003 (D-0031): each service imports {@code secrets/common/} and its own folder ({@code secrets/mcp/} or
+     * {@code secrets/admin/}) instead of {@code secrets/}. Putting the single tree back here proves that nothing else in the
+     * rendered service definitions or settings changed; {@code ConfigImportTest} and {@code DeployRendererTest} check the split trees.
+     */
+    private static String withSingleSecretsTree(String content) {
+        return content.replaceAll(
+                ",optional:configtree:([^,\\n<]*)/secrets/common/,optional:configtree:\\1/secrets/(?:mcp|admin)/",
+                ",optional:configtree:$1/secrets/");
+    }
+
     /** The SHA-256 of path and content of every rendered file, in the order the renderer gives them. */
     private static String digest(List<RenderedFile> files) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             for (RenderedFile file : files) {
                 digest.update((file.path() + "\u0000"
-                        + withOldOwnersExample(withRemovedLongTextLine(withoutAttachments(file.content()))) + "\u0000")
+                        + withSingleSecretsTree(withOldOwnersExample(withRemovedLongTextLine(withoutAttachments(file.content()))))
+                        + "\u0000")
                         .getBytes(StandardCharsets.UTF_8));
             }
             return HexFormat.of().formatHex(digest.digest());

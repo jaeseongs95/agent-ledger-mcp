@@ -44,8 +44,8 @@ public final class DeployForms {
 
     /**
      * Whether the value is a plain host name, the form of {@code --mcp-host} and {@code --admin-host}: lower case, no port, no list.
-     * The one place of the rule; the tool of the move from 1.x ({@code ledger-migrate-1x}, which depends on the classes of this
-     * module) asks it for its own options of the same name.
+     * The one place of the rule; the migration tool (which depends on the classes of this module) asks it for its own options of the
+     * same name.
      */
     public static boolean isHostName(String value) {
         return value != null && value.length() <= MAX_HOST && Pattern.matches(HOST, value);

@@ -5,7 +5,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Optional;
+import java.util.Objects;
 import java.util.Set;
 import org.pgledger.migrate1x.secret.OneXEnvironment;
 
@@ -52,7 +52,7 @@ public final class Hosts1x {
      * @param adminHost the name given with {@code --admin-host}, if any
      * @throws org.pgledger.cli.FailureException ENV_FILE_FAILED when the file cannot be read
      */
-    public static List<NotAccepted> notAccepted(Path file, Optional<String> mcpHost, Optional<String> adminHost) {
+    public static List<NotAccepted> notAccepted(Path file, String mcpHost, String adminHost) {
         OneXEnvironment environment = OneXEnvironment.read(file);
         List<NotAccepted> result = new ArrayList<>();
         add(result, MCP_OPTION, dropped(environment, MCP_KEY, mcpHost));
@@ -72,12 +72,12 @@ public final class Hosts1x {
      * empty setting give nothing. A value that is no plain host name (a port, a wildcard) is named as it stands, so that it is
      * never lost without a word.
      */
-    static List<String> dropped(OneXEnvironment environment, String key, Optional<String> given) {
-        Optional<String> carried = given.map(name -> name.toLowerCase(Locale.ROOT));
+    static List<String> dropped(OneXEnvironment environment, String key, String given) {
+        String carried = given == null ? "" : given.toLowerCase(Locale.ROOT);
         Set<String> dropped = new LinkedHashSet<>();
         for (String entry : environment.value(key).orElse("").split(",")) {
             String name = entry.strip().toLowerCase(Locale.ROOT);
-            if (!name.isEmpty() && !LOOPBACK.contains(name) && !carried.equals(Optional.of(name))) {
+            if (!name.isEmpty() && !LOOPBACK.contains(name) && !Objects.equals(carried, name)) {
                 dropped.add(name);
             }
         }

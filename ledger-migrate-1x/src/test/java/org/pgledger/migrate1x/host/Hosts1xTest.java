@@ -3,7 +3,6 @@ package org.pgledger.migrate1x.host;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.List;
-import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.pgledger.migrate1x.secret.OneXEnvironment;
@@ -12,11 +11,11 @@ import org.pgledger.migrate1x.secret.OneXEnvironment;
 class Hosts1xTest {
 
     private static List<String> dropped(String environment, String key) {
-        return Hosts1x.dropped(OneXEnvironment.parse(environment), key, Optional.empty());
+        return Hosts1x.dropped(OneXEnvironment.parse(environment), key, "");
     }
 
     private static List<String> dropped(String environment, String key, String given) {
-        return Hosts1x.dropped(OneXEnvironment.parse(environment), key, Optional.of(given));
+        return Hosts1x.dropped(OneXEnvironment.parse(environment), key, given);
     }
 
     @Test

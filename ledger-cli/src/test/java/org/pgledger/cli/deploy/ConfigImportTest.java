@@ -42,10 +42,11 @@ class ConfigImportTest {
     }
 
     private static String imported(Properties properties, String instance, String home) {
-        return PLACEHOLDERS.replacePlaceholders(properties.getProperty("spring.config.import"), placeholder -> switch (placeholder) {
-            case "ledger.secrets.instance" -> instance;
-            case "ledger.secrets.home" -> home;
-            default -> null;
+        return PLACEHOLDERS.replacePlaceholders(properties.getProperty("spring.config.import"), placeholder -> {
+            if ("ledger.secrets.instance".equals(placeholder)) {
+                return instance;
+            }
+            return "ledger.secrets.home".equals(placeholder) ? home : null;
         });
     }
 

@@ -26,8 +26,7 @@ import org.springframework.stereotype.Component;
  * with the attacker, or leave the attacker free to rotate. The forwarded address is kept for the records only. A token made
  * by {@code token-generate} (256 bits from {@code SecureRandom}) and a one-time code (100 bits) cannot be guessed, so a delay
  * is all the limit has to do: it makes guessing slower and costs the owner nothing but the same delay. (A token that the
- * owner chose may be weaker, which is why the admin token of 1.x is not imported by {@code import-secrets-1x}: the one the
- * installer made with {@code token-generate} is the admin token of 2.0.)
+ * owner chose by hand may be weaker, which is why the installer makes the admin token with {@code token-generate}.)
  *
  * <p>Why a delay of each check and no queue: a check beyond the budget waits by itself and is made after its delay. Serialising
  * the checks beyond the budget would let a caller that keeps the queue full keep the owner's check waiting behind it for as long

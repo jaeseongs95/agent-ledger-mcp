@@ -140,10 +140,9 @@ public class Stop1xCommand implements Command {
         Optional<String> env = CliOptions.value(arguments, ENV);
         Optional<String> mcpHost = CliOptions.value(arguments, MCP_HOST);
         Optional<String> adminHost = CliOptions.value(arguments, ADMIN_HOST);
-        for (Optional<String> name : List.of(mcpHost, adminHost)) {
-            if (name.isPresent() && !DeployForms.isHostName(name.get())) {
-                throw new UsageException(ErrorCode.INVALID_OPTION_VALUE);
-            }
+        if (mcpHost.stream().anyMatch(name -> !DeployForms.isHostName(name))
+                || adminHost.stream().anyMatch(name -> !DeployForms.isHostName(name))) {
+            throw new UsageException(ErrorCode.INVALID_OPTION_VALUE);
         }
         if (env.isEmpty()) {
             // the names have nothing to be compared with: an option that would pass silently is refused
@@ -152,7 +151,8 @@ public class Stop1xCommand implements Command {
             }
             return;
         }
-        for (Hosts1x.NotAccepted notAccepted : Hosts1x.notAccepted(Path.of(env.orElseThrow()), mcpHost, adminHost)) {
+        for (Hosts1x.NotAccepted notAccepted : Hosts1x.notAccepted(Path.of(env.orElseThrow()), mcpHost.orElse(""),
+                adminHost.orElse(""))) {
             output.info(messages.get("stop-1x.hosts-not-accepted", String.join(", ", notAccepted.names()), notAccepted.option()));
         }
     }

@@ -35,7 +35,9 @@ class OneXEnvironmentTest {
         assertThat(environment.value("DBHUB_AUTH_TOKEN")).contains(AGENT);
         assertThat(environment.value("PGLEDGER_ADMIN_TOKEN")).contains(ADMIN);
         assertThat(environment.value("DBHUB_ALLOWED_HOSTS")).as("an empty value is no value").isEmpty();
+        assertThat(environment.has("DBHUB_ALLOWED_HOSTS")).isTrue();
         assertThat(environment.value("NO_SUCH_KEY")).isEmpty();
+        assertThat(environment.has("NO_SUCH_KEY")).isFalse();
     }
 
     @Test
