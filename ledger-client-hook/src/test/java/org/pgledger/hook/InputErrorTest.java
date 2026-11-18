@@ -67,7 +67,7 @@ class InputErrorTest {
     @MethodSource("nonObjectArguments")
     @DisplayName("HK-008 non-object arguments (null, [], \"text\", 7, true, 1.5) of a ledger tool are denied")
     void nonObjectArguments(HostScenario host, JsonNode arguments, HookFixture fixture) {
-        Run run = fixture.runClean(host, host.event(host.toolName("save"), arguments));
+        Run run = fixture.runClean(host, host.event(host.toolName("issue_save"), arguments));
         assertThat(run.document()).isEqualTo(host.denied(Refusal.ARGUMENTS_NOT_OBJECT));
         assertThat(run.out()).contains("object");
     }

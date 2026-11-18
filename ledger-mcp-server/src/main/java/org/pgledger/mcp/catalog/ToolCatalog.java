@@ -3,17 +3,21 @@ package org.pgledger.mcp.catalog;
 import io.modelcontextprotocol.server.McpServerFeatures.SyncToolSpecification;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
+import io.modelcontextprotocol.spec.McpSchema.ToolAnnotations;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.pgledger.application.admin.CommonCodeService;
 import org.pgledger.domain.model.CommonCode;
 import org.pgledger.domain.rule.CodeDirection;
 import org.pgledger.domain.rule.CodeGroup;
+import org.pgledger.domain.rule.ToolContract;
 import org.pgledger.mcp.error.ToolResults;
 import org.pgledger.mcp.reflection.CodeSlot;
 import org.pgledger.mcp.reflection.ToolBinding;
@@ -57,6 +61,11 @@ public class ToolCatalog implements SmartInitializingSingleton {
     /** What the line of a relation kind ends with: the order of its two ends matters (a is the subject), or does not. */
     public static final String DIRECTED_NOTE = " [directed: a is the subject, b the object]";
     public static final String UNDIRECTED_NOTE = " [no direction: a and b are interchangeable]";
+
+    private static final Set<String> READ_ONLY_TOOLS = Stream.concat(
+            ToolContract.READ.stream(),
+            Stream.of("ledger_whoami", "artifact_status", "artifact_read"))
+            .collect(Collectors.toUnmodifiableSet());
 
     private final McpSyncServer server;
     private final List<ToolAdapter> adapters;
@@ -159,16 +168,24 @@ public class ToolCatalog implements SmartInitializingSingleton {
         binding.choiceSlots().forEach(slot -> input.restrict(slot.path(), slot.values()));
         input.rewriteDescriptions(this::text);
         binding.codeSlots().forEach(slot -> fillCodes(input, slot));
+        ToolAnnotations annotations = defaultAnnotations(original);
         Tool.Builder definition = Tool.builder(original.name(), input.toSdk()).title(original.title())
-                .description(text(original.description())).annotations(original.annotations())
+                .description(text(original.description())).annotations(annotations)
                 .meta(original.meta());
         if (original.outputSchema() != null) {
             SchemaDocument output = SchemaDocument.copyOf(original.outputSchema());
             output.rewriteDescriptions(this::text);
             output.allowNullProperties();
+            output.wrapAsApiResult();
             definition.outputSchema(output.toSdk());
         }
         return definition.build();
+    }
+
+    private static ToolAnnotations defaultAnnotations(Tool original) {
+        boolean readOnly = READ_ONLY_TOOLS.contains(original.name());
+        return new ToolAnnotations(original.title(), readOnly, Boolean.FALSE, Boolean.TRUE, Boolean.FALSE,
+                Boolean.FALSE);
     }
 
     /** The enumeration and the description of a code place: the fixed values and the active codes of the group. */

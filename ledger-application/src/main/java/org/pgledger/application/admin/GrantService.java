@@ -14,6 +14,7 @@ import org.pgledger.database.repository.IdAllocator;
 import org.pgledger.database.repository.ProjectRepository;
 import org.pgledger.database.repository.SessionGrantRepository;
 import org.pgledger.database.repository.SessionKeyStateRepository;
+import org.pgledger.database.repository.SessionTokenStateRepository;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ConflictException;
 import org.pgledger.domain.error.LookupCode;
@@ -53,6 +54,7 @@ public class GrantService {
     private final GrantStateRepository state;
     private final SessionGrantRepository grants;
     private final SessionKeyStateRepository keys;
+    private final SessionTokenStateRepository tokens;
     private final SessionKeyService sessionKeys;
     private final ProjectRepository projects;
     private final IdAllocator ids;
@@ -60,10 +62,11 @@ public class GrantService {
     private final Clock clock;
 
     public GrantService(GrantStateRepository state, SessionGrantRepository grants, SessionKeyStateRepository keys,
-            SessionKeyService sessionKeys, ProjectRepository projects, IdAllocator ids, OwnerAuditWriter audit,
-            Clock clock) {
+            SessionTokenStateRepository tokens, SessionKeyService sessionKeys, ProjectRepository projects,
+            IdAllocator ids, OwnerAuditWriter audit, Clock clock) {
         this.state = state;
         this.keys = keys;
+        this.tokens = tokens;
         this.sessionKeys = sessionKeys;
         this.grants = grants;
         this.projects = projects;
@@ -119,8 +122,8 @@ public class GrantService {
         command.scopes().forEach(token -> scopes.add(Tokens.parse("scopes", token, Scope.values())));
         Instant expiresAt = command.expiresAt() == null || command.expiresAt().isBlank() ? null
                 : UtcInstant.parse("expires_at", command.expiresAt()).value();
-        requireLiveKey(author);
         Instant now = clock.instant();
+        requireLiveKey(author, now);
         List<Long> issued = new ArrayList<>();
         for (Scope scope : scopes) {
             issued.add(issue(author, project, scope, now, expiresAt, command.note()));
@@ -143,8 +146,8 @@ public class GrantService {
      * write of the author is refused until a key is registered, and then it is the grant the owner issued), so nothing is
      * accepted that should not be.
      */
-    private void requireLiveKey(AuthorId author) {
-        if (keys.findLive(author).isEmpty()) {
+    private void requireLiveKey(AuthorId author, Instant now) {
+        if (keys.findLive(author).isEmpty() && tokens.findLiveByAuthor(author, now).isEmpty()) {
             throw new ConflictException(ConflictCode.SESSION_KEY_REQUIRED, List.of(author.value()));
         }
     }

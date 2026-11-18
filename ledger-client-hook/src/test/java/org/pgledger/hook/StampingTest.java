@@ -105,7 +105,7 @@ class StampingTest {
     @DisplayName("HK-005 an invalid host id is denied, with no fallback to an agent id or author_id")
     void deniesInvalidHostId(HostScenario host, JsonNode hostId, HookFixture fixture) {
         JsonNode input = Json.tree(Map.of("author_id", host.author("fallback")));
-        Run run = fixture.runClean(host, host.event(host.toolName("save"), input, hostId));
+        Run run = fixture.runClean(host, host.event(host.toolName("issue_save"), input, hostId));
         assertThat(run.document()).isEqualTo(host.denied(Refusal.HOST_ID_INVALID));
         assertThat(run.out()).doesNotContain("fallback").doesNotContain("child-");
     }
@@ -147,9 +147,9 @@ class StampingTest {
     @DisplayName("HK-009 each invocation uses the id it is given (A, B, A), no state between runs")
     void keepsNoStateBetweenRuns(HostScenario host, String first, String second, HookFixture fixture) {
         JsonNode input = Json.of("{}");
-        fixture.runClean(host, host.event(host.toolName("save"), input, Json.text(first)));
-        Run run = fixture.runClean(host, host.event(host.toolName("save"), input, Json.text(second)));
-        Attestations.Stamp stamp = fixture.stamp(host, second, "save", input, run);
+        fixture.runClean(host, host.event(host.toolName("issue_save"), input, Json.text(first)));
+        Run run = fixture.runClean(host, host.event(host.toolName("issue_save"), input, Json.text(second)));
+        Attestations.Stamp stamp = fixture.stamp(host, second, "issue_save", input, run);
         assertThat(stamp.claims().author()).isEqualTo(host.author(second));
         assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token()));
     }

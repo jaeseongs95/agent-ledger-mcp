@@ -3,6 +3,7 @@ package org.pgledger.mcp.config;
 import java.time.Duration;
 import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.util.unit.DataSize;
 
@@ -17,22 +18,32 @@ import org.springframework.util.unit.DataSize;
  * @param allowedOrigins   origins a browser request may carry; a request without an Origin header is not a browser request
  * @param maxRequestSize   the largest request body
  * @param codePollInterval how often the common-code revision is read to notice changes made by another process
+ * @param authMode         caller authentication mode ({@link AuthMode#STANDARD} by default, or {@link AuthMode#ATTESTED})
  */
 @ConfigurationProperties(prefix = "ledger.mcp")
 public record LedgerMcpProperties(String token,
         @DefaultValue({"127.0.0.1", "localhost"}) List<String> allowedHosts,
         @DefaultValue List<String> allowedOrigins, @DefaultValue("1MB") DataSize maxRequestSize,
-        @DefaultValue("5s") Duration codePollInterval) {
+        @DefaultValue("5s") Duration codePollInterval,
+        @DefaultValue("STANDARD") AuthMode authMode) {
 
+    @ConstructorBinding
     public LedgerMcpProperties {
         allowedHosts = List.copyOf(allowedHosts);
         allowedOrigins = List.copyOf(allowedOrigins);
+        authMode = authMode == null ? AuthMode.STANDARD : authMode;
+    }
+
+    public LedgerMcpProperties(String token, List<String> allowedHosts, List<String> allowedOrigins,
+            DataSize maxRequestSize, Duration codePollInterval) {
+        this(token, allowedHosts, allowedOrigins, maxRequestSize, codePollInterval, AuthMode.STANDARD);
     }
 
     /** The token is a secret: it never appears in a log line or a failure text made from this record. */
     @Override
     public String toString() {
         return "LedgerMcpProperties[token=<hidden>, allowedHosts=" + allowedHosts + ", allowedOrigins="
-                + allowedOrigins + ", maxRequestSize=" + maxRequestSize + ", codePollInterval=" + codePollInterval + "]";
+                + allowedOrigins + ", maxRequestSize=" + maxRequestSize + ", codePollInterval=" + codePollInterval
+                + ", authMode=" + authMode + "]";
     }
 }

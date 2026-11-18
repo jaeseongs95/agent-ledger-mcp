@@ -8,93 +8,146 @@ import tools.jackson.databind.PropertyNamingStrategies;
 import tools.jackson.databind.annotation.JsonNaming;
 
 /**
- * The arguments of the tools as the tests send them: one record per tool, its components the wire keys (snake case,
- * {@code operationKey} and {@code _hostAttestation} as written), a key left null is left out of the call. Jackson writes
- * them; nothing here is a JSON text. The server declares the same keys as the parameters of its tool methods.
- *
- * <p>Every write tool takes a required {@code operationKey} and the server never makes one up, so the factories of the
- * write records put a fresh key ({@link #freshKey()}) into the call they build: a test that sends two calls gets two
- * keys, and a test that wants a replay, a conflict or a call without a key says so ({@code withOperationKey}, a
- * {@code null} key leaves it out of the call).
+ * Typed MCP tool argument records for the 2.0 universal ledger tests.
  */
 public final class Calls {
 
     private Calls() {
     }
 
-    /** A new operation key (a UUID text) for one write call. */
     public static String freshKey() {
         return UUID.randomUUID().toString();
     }
 
-    /** The {@code fields} object of {@code ledger_save}. */
+    /** {@code fields} object used inside {@code save} operations of {@code ledger_batch}. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record Fields(String projectId, String title, String category, String severity, String behavior,
-            String rootCause, String ownerActorId, String purpose, String successCondition, String originRef,
-            String originQuote, String release, String goalLabel, String code, String conditionText) {
+    public record Fields(String projectId, String parentId, String title, String category, String severity,
+            String symptom, String rootCause, String summary, String acceptanceCriteria, String priority,
+            String ownerActorId, String purpose, String successCondition, String originRef, String originQuote,
+            String milestoneName, String goalLabel, String code, String criterionText) {
 
-        public static Fields defect(String projectId, String title) {
-            return new Fields(projectId, title, "ARC", "P2", "behavior of " + title, "cause of " + title, null, null,
-                    null, null, null, null, null, null, null);
+        public static Fields issue(String projectId, String title) {
+            return new Fields(projectId, null, title, "ARC", "P2", "symptom of " + title, "cause of " + title,
+                    null, null, null, null, null, null, null, null, null, null, null, null);
+        }
+
+        public static Fields spec(String projectId, String title) {
+            return new Fields(projectId, null, title, null, null, null, null, "summary of " + title,
+                    "criteria of " + title, "P1", null, null, null, null, null, null, null, null, null);
         }
 
         public static Fields task(String projectId, String title) {
-            return new Fields(projectId, title, null, null, null, null, null, "purpose of " + title,
-                    "success of " + title, null, null, null, null, null, null);
+            return new Fields(projectId, null, title, null, null, null, null, null, null, null, null,
+                    "purpose of " + title, "success of " + title, null, null, null, null, null, null);
         }
 
-        public static Fields condition(String projectId, String release, String code) {
-            return new Fields(projectId, null, null, null, null, null, null, null, null, null, null, release, null,
-                    code, "condition " + code);
+        public static Fields criterion(String projectId, String milestoneName, String code) {
+            return new Fields(projectId, null, null, null, null, null, null, null, null, null, null, null, null,
+                    null, null, milestoneName, null, code, "criterion " + code);
         }
 
-        /** An edit of the title only (an edit does not repeat the project). */
         public static Fields titled(String title) {
-            return new Fields(null, title, null, null, null, null, null, null, null, null, null, null, null, null,
-                    null);
-        }
-
-        public Fields withTitle(String newTitle) {
-            return new Fields(projectId, newTitle, category, severity, behavior, rootCause, ownerActorId, purpose,
-                    successCondition, originRef, originQuote, release, goalLabel, code, conditionText);
+            return new Fields(null, null, title, null, null, null, null, null, null, null, null, null, null, null,
+                    null, null, null, null, null);
         }
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record Save(String entity, Fields fields, String reason, String id, Long expectedVersion,
+    public record IssueSave(String projectId, String title, String category, String severity, String symptom,
+            String rootCause, String ownerActorId, String id, Long expectedVersion, String reason,
             @JsonProperty("operationKey") String operationKey,
             @JsonProperty("_hostAttestation") String hostAttestation) {
 
-        public static Save create(String entity, Fields fields, String author) {
-            return new Save(entity, fields, Scenario.REASON, null, null, freshKey(), author);
+        public static IssueSave create(String projectId, String title, String author) {
+            return new IssueSave(projectId, title, "ARC", "P2", "symptom of " + title, "cause of " + title,
+                    null, null, null, Scenario.REASON, freshKey(), author);
         }
 
-        public static Save edit(String entity, String id, long version, Fields fields, String author) {
-            return new Save(entity, fields, Scenario.REASON, id, version, freshKey(), author);
+        public static IssueSave editTitle(String id, long version, String title, String author) {
+            return new IssueSave(null, title, null, null, null, null, null, id, version, Scenario.REASON, freshKey(),
+                    author);
         }
 
-        /** The same call under this operation key (null leaves the key out of the call). */
-        public Save withOperationKey(String newOperationKey) {
-            return new Save(entity, fields, reason, id, expectedVersion, newOperationKey, hostAttestation);
+        public IssueSave withOperationKey(String newKey) {
+            return new IssueSave(projectId, title, category, severity, symptom, rootCause, ownerActorId, id,
+                    expectedVersion, reason, newKey, hostAttestation);
         }
 
-        public Save withAttestation(String author) {
-            return new Save(entity, fields, reason, id, expectedVersion, operationKey, author);
+        public IssueSave withCategory(String newCategory) {
+            return new IssueSave(projectId, title, newCategory, severity, symptom, rootCause, ownerActorId, id,
+                    expectedVersion, reason, operationKey, hostAttestation);
         }
 
-        public Save withId(String newId) {
-            return new Save(entity, fields, reason, newId, expectedVersion, operationKey, hostAttestation);
+        public IssueSave withOwner(String newOwner) {
+            return new IssueSave(projectId, title, category, severity, symptom, rootCause, newOwner, id,
+                    expectedVersion, reason, operationKey, hostAttestation);
         }
     }
 
-    /** {@code ledger_save} with {@code fields} written as a JSON text, which the server refuses (a text is no object). */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record TextSave(String entity, String fields, String reason,
+    public record SpecSave(String projectId, String parentId, String title, String summary, String acceptanceCriteria,
+            String priority, String ownerActorId, String originRef, String originQuote, String id,
+            Long expectedVersion, String reason, @JsonProperty("operationKey") String operationKey,
+            @JsonProperty("_hostAttestation") String hostAttestation) {
+
+        public static SpecSave create(String projectId, String title, String author) {
+            return new SpecSave(projectId, null, title, "summary of " + title, "criteria of " + title, "P1", null,
+                    null, null, null, null, Scenario.REASON, freshKey(), author);
+        }
+
+        public static SpecSave editTitle(String id, long version, String title, String author) {
+            return new SpecSave(null, null, title, null, null, null, null, null, null, id, version, Scenario.REASON,
+                    freshKey(), author);
+        }
+
+        public SpecSave withId(String newId) {
+            return new SpecSave(projectId, parentId, title, summary, acceptanceCriteria, priority, ownerActorId,
+                    originRef, originQuote, newId, expectedVersion, reason, operationKey, hostAttestation);
+        }
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record TaskSave(String projectId, String title, String purpose, String successCondition,
+            String ownerActorId, String originRef, String originQuote, String id, Long expectedVersion, String reason,
             @JsonProperty("operationKey") String operationKey,
             @JsonProperty("_hostAttestation") String hostAttestation) {
+
+        public static TaskSave create(String projectId, String title, String author) {
+            return new TaskSave(projectId, title, "purpose of " + title, "success of " + title, null, null, null,
+                    null, null, Scenario.REASON, freshKey(), author);
+        }
+
+        public static TaskSave editTitle(String id, long version, String title, String author) {
+            return new TaskSave(null, title, null, null, null, null, null, id, version, Scenario.REASON, freshKey(),
+                    author);
+        }
+
+        public TaskSave withId(String newId) {
+            return new TaskSave(projectId, title, purpose, successCondition, ownerActorId, originRef, originQuote,
+                    newId, expectedVersion, reason, operationKey, hostAttestation);
+        }
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
+    public record CriterionSave(String projectId, String id, String milestoneName, String goalLabel, String code,
+            String criterionText, Long expectedVersion, String reason,
+            @JsonProperty("operationKey") String operationKey,
+            @JsonProperty("_hostAttestation") String hostAttestation) {
+
+        public static CriterionSave create(String projectId, String id, String milestoneName, String code,
+                String author) {
+            return new CriterionSave(projectId, id, milestoneName, null, code, "criterion " + code, null,
+                    Scenario.REASON, freshKey(), author);
+        }
+
+        public static CriterionSave editText(String id, long version, String text, String author) {
+            return new CriterionSave(null, id, null, null, null, text, version, Scenario.REASON, freshKey(), author);
+        }
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -112,44 +165,36 @@ public final class Calls {
             return new Transition(entity, id, expectedVersion, to, reason, uri, evidenceSha256, mergedInto,
                     operationKey, hostAttestation);
         }
-
-        public Transition withAttestation(String author) {
-            return new Transition(entity, id, expectedVersion, to, reason, evidenceUri, evidenceSha256, mergedInto,
-                    operationKey, author);
-        }
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record RecordFix(String defectId, String repo, String commitSha, String reason, String branch,
-            String ciRef, String ciConclusion, String ciCompletedAt, Boolean markSourceFixed,
-            @JsonProperty("operationKey") String operationKey,
+    public record RecordDeliverable(String targetEntity, String targetId, String kind, String deliverableRef,
+            String summary, String reason, String location, String checkRef, String checkResult, String checkedAt,
+            Boolean markDone, @JsonProperty("operationKey") String operationKey,
             @JsonProperty("_hostAttestation") String hostAttestation) {
 
-        public static RecordFix of(String defectId, String commitSha, String author) {
-            return new RecordFix(defectId, "repo/e2e", commitSha, Scenario.REASON, null, null, null, null, null,
+        public static RecordDeliverable ofIssue(String issueId, String deliverableRef, String author) {
+            return new RecordDeliverable("issue", issueId, "document", deliverableRef,
+                    "deliverable summary for " + issueId, Scenario.REASON, "vault/docs", null, null, null, null,
                     freshKey(), author);
         }
 
-        public RecordFix withAttestation(String author) {
-            return new RecordFix(defectId, repo, commitSha, reason, branch, ciRef, ciConclusion, ciCompletedAt,
-                    markSourceFixed, operationKey, author);
+        public static RecordDeliverable ofSpec(String specId, String deliverableRef, String author) {
+            return new RecordDeliverable("spec", specId, "specification", deliverableRef,
+                    "completed specification deliverable for " + specId, Scenario.REASON, "vault/specs", null, null,
+                    null, true, freshKey(), author);
         }
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    public record RecordCase(String defectId, String observation, String reason, String evidence, String userQuote,
+    public record RecordCase(String issueId, String observation, String reason, String evidence, String sourceQuote,
             String observedAt, @JsonProperty("operationKey") String operationKey,
             @JsonProperty("_hostAttestation") String hostAttestation) {
 
-        public static RecordCase of(String defectId, String observation, String author) {
-            return new RecordCase(defectId, observation, Scenario.REASON, null, null, null, freshKey(), author);
-        }
-
-        public RecordCase withAttestation(String author) {
-            return new RecordCase(defectId, observation, reason, evidence, userQuote, observedAt, operationKey,
-                    author);
+        public static RecordCase of(String issueId, String observation, String author) {
+            return new RecordCase(issueId, observation, Scenario.REASON, null, null, null, freshKey(), author);
         }
     }
 
@@ -162,10 +207,6 @@ public final class Calls {
         public static Link of(String kind, String a, String b, String author) {
             return new Link(kind, a, b, Scenario.REASON, null, freshKey(), author);
         }
-
-        public Link withAttestation(String author) {
-            return new Link(kind, a, b, reason, remove, operationKey, author);
-        }
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -176,55 +217,50 @@ public final class Calls {
         public static Correct of(long historyId, String author) {
             return new Correct(historyId, Scenario.REASON, freshKey(), author);
         }
-
-        public Correct withAttestation(String author) {
-            return new Correct(historyId, reason, operationKey, author);
-        }
     }
 
-    /**
-     * One operation of {@code ledger_batch}: {@code op} names the single tool, the other keys are its keys. An operation
-     * carries no operation key (the batch has one); a key inside an operation is an unknown key.
-     */
+    /** One operation inside {@code ledger_batch}. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record Op(String op, String entity, String id, Long expectedVersion, String to, String reason,
-            Fields fields, String evidenceUri, String defectId, String repo, String commitSha, String observation,
-            String kind, String a, String b, Long historyId) {
+            Fields fields, String evidenceUri, String targetEntity, String targetId, String deliverableRef,
+            String summary, String location, String issueId, String observation, String kind, String a, String b,
+            Long historyId) {
 
         public static Op save(String entity, Fields fields) {
             return new Op("save", entity, null, null, null, Scenario.REASON, fields, null, null, null, null, null,
-                    null, null, null, null);
+                    null, null, null, null, null, null, null);
         }
 
         public static Op saveWithId(String entity, String id, Fields fields) {
             return new Op("save", entity, id, null, null, Scenario.REASON, fields, null, null, null, null, null,
-                    null, null, null, null);
+                    null, null, null, null, null, null, null);
         }
 
         public static Op transition(String entity, String id, long version, String to) {
-            return new Op("transition", entity, id, version, to, Scenario.REASON, null, null, null, null, null,
-                    null, null, null, null, null);
+            return new Op("transition", entity, id, version, to, Scenario.REASON, null, null, null, null, null, null,
+                    null, null, null, null, null, null, null);
         }
 
-        public static Op recordFix(String defectId, String commitSha) {
-            return new Op("record_fix", null, null, null, null, Scenario.REASON, null, null, defectId, "repo/e2e",
-                    commitSha, null, null, null, null, null);
+        public static Op recordDeliverable(String issueId, String deliverableRef) {
+            return new Op("record_deliverable", null, null, null, null, Scenario.REASON, null, null, "issue",
+                    issueId, deliverableRef, "deliverable " + deliverableRef, "vault/docs", null, null, "document",
+                    null, null, null);
         }
 
-        public static Op recordCase(String defectId, String observation) {
-            return new Op("record_case", null, null, null, null, Scenario.REASON, null, null, defectId, null, null,
-                    observation, null, null, null, null);
+        public static Op recordCase(String issueId, String observation) {
+            return new Op("record_case", null, null, null, null, Scenario.REASON, null, null, null, null, null, null,
+                    null, issueId, observation, null, null, null, null);
         }
 
         public static Op link(String kind, String a, String b) {
-            return new Op("link", null, null, null, null, Scenario.REASON, null, null, null, null, null, null, kind,
-                    a, b, null);
+            return new Op("link", null, null, null, null, Scenario.REASON, null, null, null, null, null, null, null,
+                    null, null, kind, a, b, null);
         }
 
         public static Op correct(long historyId) {
             return new Op("correct", null, null, null, null, Scenario.REASON, null, null, null, null, null, null,
-                    null, null, null, historyId);
+                    null, null, null, null, null, null, historyId);
         }
     }
 
@@ -237,13 +273,11 @@ public final class Calls {
             return new Batch(List.of(ops), freshKey(), author);
         }
 
-        /** The same batch under this operation key (null leaves the key out of the call). */
-        public Batch withOperationKey(String newOperationKey) {
-            return new Batch(ops, newOperationKey, hostAttestation);
+        public Batch withOperationKey(String newKey) {
+            return new Batch(ops, newKey, hostAttestation);
         }
     }
 
-    /** {@code ledger_batch} with {@code ops} written as a JSON text, which the server refuses (a text is no array). */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record TextBatch(String ops, @JsonProperty("operationKey") String operationKey,
@@ -264,14 +298,8 @@ public final class Calls {
             return new Review(entity, id, expectedVersion, to, reason, null, evidenceSha256, operationKey,
                     hostAttestation);
         }
-
-        public Review withAttestation(String author) {
-            return new Review(entity, id, expectedVersion, to, reason, evidenceUri, evidenceSha256, operationKey,
-                    author);
-        }
     }
 
-    /** {@code ledger_whoami}: the only key is the attestation (it has no operation key and no author id). */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     public record Whoami(@JsonProperty("_hostAttestation") String hostAttestation) {
@@ -287,7 +315,6 @@ public final class Calls {
 
     // ---------------------------------------------------------------------------------------------------- reads
 
-    /** A call without arguments. */
     public record Nothing() {
     }
 
@@ -319,5 +346,9 @@ public final class Calls {
         public static History of(String project) {
             return new History(project, null, null);
         }
+    }
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record Search(List<String> keywords) {
     }
 }

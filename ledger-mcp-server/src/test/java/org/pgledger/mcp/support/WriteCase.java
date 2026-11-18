@@ -6,9 +6,7 @@ import org.pgledger.mcp.support.Calls.Fields;
 import org.pgledger.mcp.tool.WriteOutputs;
 
 /**
- * One write tool with a call that succeeds on the {@link Seed} rows when the actor is attested: the tool, the record
- * of its result and the arguments as a function of the seed and of the attestation (null leaves it out). Every call
- * the function builds carries a fresh {@code operationKey} (see {@link Calls}).
+ * One write tool with a valid call against {@link Seed} rows when attested.
  */
 public record WriteCase(String tool, Class<?> output, String actor, BiFunction<Seed, String, Object> arguments) {
 
@@ -25,34 +23,41 @@ public record WriteCase(String tool, Class<?> output, String actor, BiFunction<S
         return arguments.apply(seed, null);
     }
 
-    /** The ten write tools. */
+    /** The thirteen write tools of the 2.0 contract. */
     public static List<WriteCase> all() {
         return List.of(
-                new WriteCase("ledger_save", WriteOutputs.Saved.class, Scenario.AUTHOR, (seed, actor) -> Calls.Save
-                        .create("defect", Fields.defect(seed.project(), "another defect"), actor)),
+                new WriteCase("ledger_issue_save", WriteOutputs.Saved.class, Scenario.AUTHOR,
+                        (seed, actor) -> Calls.IssueSave.create(seed.project(), "another issue", actor)),
+                new WriteCase("ledger_spec_save", WriteOutputs.Saved.class, Scenario.AUTHOR,
+                        (seed, actor) -> Calls.SpecSave.create(seed.project(), "another spec", actor)),
+                new WriteCase("ledger_task_save", WriteOutputs.Saved.class, Scenario.AUTHOR,
+                        (seed, actor) -> Calls.TaskSave.create(seed.project(), "another task", actor)),
+                new WriteCase("ledger_criterion_save", WriteOutputs.Saved.class, Scenario.AUTHOR,
+                        (seed, actor) -> Calls.CriterionSave.create(seed.project(), seed.project() + "-CRIT-CASE",
+                                "M1", "CODE-CASE", actor)),
                 new WriteCase("ledger_transition", WriteOutputs.Transitioned.class, Scenario.AUTHOR,
-                        (seed, actor) -> Calls.Transition.of("defect", seed.defect(), 1, "DISPUTED", actor)
+                        (seed, actor) -> Calls.Transition.of("issue", seed.issue(), 1, "DISPUTED", actor)
                                 .withEvidence(Scenario.EVIDENCE)),
-                new WriteCase("ledger_record_fix", WriteOutputs.FixRecorded.class, Scenario.AUTHOR,
-                        (seed, actor) -> Calls.RecordFix.of(seed.defect(), "c".repeat(40), actor)),
+                new WriteCase("ledger_record_deliverable", WriteOutputs.DeliverableRecorded.class, Scenario.AUTHOR,
+                        (seed, actor) -> Calls.RecordDeliverable.ofIssue(seed.issue(), "rev-case-1", actor)),
                 new WriteCase("ledger_record_case", WriteOutputs.CaseRecorded.class, Scenario.AUTHOR,
-                        (seed, actor) -> Calls.RecordCase.of(seed.defect(), "seen again", actor)),
+                        (seed, actor) -> Calls.RecordCase.of(seed.issue(), "seen again", actor)),
                 new WriteCase("ledger_link", WriteOutputs.Linked.class, Scenario.AUTHOR,
-                        (seed, actor) -> Calls.Link.of("defect_task", seed.defect(), seed.task(), actor)),
+                        (seed, actor) -> Calls.Link.of("issue_task", seed.issue(), seed.task(), actor)),
                 new WriteCase("ledger_correct", WriteOutputs.Corrected.class, Scenario.AUTHOR,
-                        (seed, actor) -> Calls.Correct.of(seed.defectHistoryId(), actor)),
+                        (seed, actor) -> Calls.Correct.of(seed.issueHistoryId(), actor)),
                 new WriteCase("ledger_batch", BatchResults.class, Scenario.AUTHOR,
                         (seed, actor) -> Calls.Batch.of(actor,
-                                Calls.Op.save("defect", Fields.defect(seed.project(), "batched defect")))),
+                                Calls.Op.save("issue", Fields.issue(seed.project(), "batched issue")))),
                 new WriteCase("ledger_review", WriteOutputs.Transitioned.class, Scenario.REVIEWER,
-                        (seed, actor) -> Calls.Review.of("defect", seed.fixed(), 2, "VERIFIED", actor)),
+                        (seed, actor) -> Calls.Review.of("issue", seed.resolved(), 2, "VERIFIED", actor)),
                 new WriteCase("ledger_review_correct", WriteOutputs.Corrected.class, Scenario.REVIEWER,
                         (seed, actor) -> Calls.Correct.of(seed.verificationRow(), actor)),
                 new WriteCase("ledger_whoami", WriteOutputs.Whoami.class, Scenario.AUTHOR,
                         (seed, actor) -> new Calls.Whoami(actor)));
     }
 
-    /** The nine write tools that take an {@code operationKey}: the ten without ledger_whoami. */
+    /** The twelve write tools that carry a required {@code operationKey} (all except {@code ledger_whoami}). */
     public static List<WriteCase> keyed() {
         return all().stream().filter(write -> !"ledger_whoami".equals(write.tool())).toList();
     }

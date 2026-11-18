@@ -149,11 +149,11 @@ class OperationKeyTest {
 
     static Stream<OpWithKey> operationsWithAKey() {
         return Stream.of(
-                new OpWithKey("save", Calls.Op.save("defect", Fields.defect("p", "t")), null),
-                new OpWithKey("transition", Calls.Op.transition("defect", "D-1", 1, "DISPUTED"), null),
-                new OpWithKey("record_fix", Calls.Op.recordFix("D-1", "a".repeat(40)), null),
-                new OpWithKey("record_case", Calls.Op.recordCase("D-1", "seen"), null),
-                new OpWithKey("link", Calls.Op.link("defect_task", "D-1", "T-1"), null),
+                new OpWithKey("save", Calls.Op.save("issue", Fields.issue("p", "t")), null),
+                new OpWithKey("transition", Calls.Op.transition("issue", "I-1", 1, "DISPUTED"), null),
+                new OpWithKey("record_deliverable", Calls.Op.recordDeliverable("I-1", "rev-1"), null),
+                new OpWithKey("record_case", Calls.Op.recordCase("I-1", "seen"), null),
+                new OpWithKey("link", Calls.Op.link("issue_task", "I-1", "T-1"), null),
                 new OpWithKey("correct", Calls.Op.correct(1), null))
                 .flatMap(op -> Stream.of(KEY, "request_id").map(key -> new OpWithKey(op.op(), op.operation(), key)));
     }
@@ -164,7 +164,7 @@ class OperationKeyTest {
             + "refused as unknown at ops[i].<key> and nothing is written")
     void anOperationCarriesNoKey(OpWithKey given, McpSession session, Scenario scenario) {
         String batchKey = Calls.freshKey();
-        List<Object> ops = List.of(Args.from(session.mapper(), Calls.Op.recordCase("D-1", "first")),
+        List<Object> ops = List.of(Args.from(session.mapper(), Calls.Op.recordCase("I-1", "first")),
                 Args.from(session.mapper(), given.operation()).with(given.key(), UUID.randomUUID().toString()));
         Args call = Args.from(session.mapper(), new Calls.Batch(List.of(), batchKey, Scenario.AUTHOR)).with("ops", ops);
 
@@ -181,7 +181,7 @@ class OperationKeyTest {
     @DisplayName("OPK-026: an element of ops that is null ([null], [operation, null]) is VALIDATION_FAILED at ops[i] (is required), "
             + "not an internal error, and nothing is written")
     void aNullOperationIsRefusedAtItsPosition(McpSession session, Scenario scenario) {
-        Object first = Args.from(session.mapper(), Calls.Op.recordCase("D-1", "first"));
+        Object first = Args.from(session.mapper(), Calls.Op.recordCase("I-1", "first"));
         List<List<Object>> lists = List.of(java.util.Arrays.asList((Object) null),
                 java.util.Arrays.asList(first, null), java.util.Arrays.asList(null, first));
         List<Integer> positions = List.of(0, 1, 0);
@@ -202,11 +202,10 @@ class OperationKeyTest {
 
     @Test
     @DisplayName("OPK-005: one operationKey for the batch: the same key with the same operations returns the stored "
-            + "results and writes once; the same key with other operations is OPERATION_CONFLICT and writes nothing more "
-            + "(changed by opkey round 2: the batch holds a receipt of its own under its key, operation BATCH)")
+            + "results and writes once; the same key with other operations is OPERATION_CONFLICT and writes nothing more")
     void theBatchKeyIsReplayed(McpSession session, Scenario scenario) {
         String batchKey = Calls.freshKey();
-        List<Calls.Op> ops = List.of(Calls.Op.save("defect", Fields.defect(scenario.projectId(), "first operation")),
+        List<Calls.Op> ops = List.of(Calls.Op.save("issue", Fields.issue(scenario.projectId(), "first operation")),
                 Calls.Op.save("task", Fields.task(scenario.projectId(), "second operation")));
 
         BatchResults first = session.ok("ledger_batch", new Calls.Batch(ops, batchKey, Scenario.AUTHOR),
@@ -214,15 +213,13 @@ class OperationKeyTest {
         BatchResults again = session.ok("ledger_batch", new Calls.Batch(ops, batchKey, Scenario.AUTHOR),
                 BatchResults.class);
         ToolError other = session.failed("ledger_batch", new Calls.Batch(
-                List.of(Calls.Op.save("defect", Fields.defect(scenario.projectId(), "another operation"))), batchKey,
+                List.of(Calls.Op.save("issue", Fields.issue(scenario.projectId(), "another operation"))), batchKey,
                 Scenario.AUTHOR));
 
         assertThat(first.count()).isEqualTo(2);
         assertThat(again).isEqualTo(first);
         assertThat(other.code()).isEqualTo("OPERATION_CONFLICT");
         assertThat(Ledger.history(session, scenario.projectId())).hasSize(2);
-        // the batch has a receipt of its own under its key (operation BATCH); the receipts of its operations are kept
-        // under the keys derived from the batch key, which are not the batch key
         assertThat(Ledger.writes(scenario, batchKey)).isOne();
         assertThat(Ledger.receiptOperations(scenario, batchKey)).containsExactly("BATCH");
         assertThat(Ledger.receipts(scenario, Scenario.AUTHOR, batchKey)).isOne();
@@ -230,8 +227,8 @@ class OperationKeyTest {
 
     // ---------------------------------------------------------------------------------------------- OPK-019 (wire)
 
-    private static Calls.Op defectA(Scenario scenario) {
-        return Calls.Op.save("defect", Fields.defect(scenario.projectId(), "operation A"));
+    private static Calls.Op issueA(Scenario scenario) {
+        return Calls.Op.save("issue", Fields.issue(scenario.projectId(), "operation A"));
     }
 
     private static Calls.Op taskB(Scenario scenario) {
@@ -244,7 +241,7 @@ class OperationKeyTest {
             + "OPERATION_CONFLICT; nothing more is written, and the key holds one BATCH receipt")
     void aBatchKeyIsBoundToItsOperations(McpSession session, Scenario scenario) {
         String project = scenario.projectId();
-        Calls.Op a = defectA(scenario);
+        Calls.Op a = issueA(scenario);
         Calls.Op b = taskB(scenario);
         String single = Calls.freshKey();
         String pair = Calls.freshKey();
@@ -272,22 +269,22 @@ class OperationKeyTest {
     }
 
     @Test
-    @DisplayName("OPK-019 (wire): one operation key is one operation: a ledger_save with the key of a batch, and a ledger_batch "
-            + "with the key of a ledger_save, is OPERATION_CONFLICT and writes nothing more")
+    @DisplayName("OPK-019 (wire): one operation key is one operation: a ledger_issue_save with the key of a batch, and a "
+            + "ledger_batch with the key of a ledger_issue_save, is OPERATION_CONFLICT and writes nothing more")
     void aBatchKeyAndASaveKeyDoNotMeet(McpSession session, Scenario scenario) {
         String project = scenario.projectId();
         String batchKey = Calls.freshKey();
         String saveKey = Calls.freshKey();
-        session.ok("ledger_batch", new Calls.Batch(List.of(defectA(scenario)), batchKey, Scenario.AUTHOR),
+        session.ok("ledger_batch", new Calls.Batch(List.of(issueA(scenario)), batchKey, Scenario.AUTHOR),
                 BatchResults.class);
-        session.ok("ledger_save", Calls.Save.create("defect", Fields.defect(project, "saved"), Scenario.AUTHOR)
+        session.ok("ledger_issue_save", Calls.IssueSave.create(project, "saved", Scenario.AUTHOR)
                 .withOperationKey(saveKey), WriteOutputs.Saved.class);
 
-        ToolError saveUnderBatchKey = session.failed("ledger_save", Calls.Save
-                .create("defect", Fields.defect(project, "saved under the key of a batch"), Scenario.AUTHOR)
-                .withOperationKey(batchKey));
+        ToolError saveUnderBatchKey = session.failed("ledger_issue_save",
+                Calls.IssueSave.create(project, "saved under the key of a batch", Scenario.AUTHOR)
+                        .withOperationKey(batchKey));
         ToolError batchUnderSaveKey = session.failed("ledger_batch",
-                new Calls.Batch(List.of(defectA(scenario)), saveKey, Scenario.AUTHOR));
+                new Calls.Batch(List.of(issueA(scenario)), saveKey, Scenario.AUTHOR));
 
         assertThat(saveUnderBatchKey.code()).isEqualTo("OPERATION_CONFLICT");
         assertThat(batchUnderSaveKey.code()).isEqualTo("OPERATION_CONFLICT");
@@ -304,21 +301,20 @@ class OperationKeyTest {
             + "the key is OPERATION_CONFLICT, and the second author's own replay returns its stored answer")
     void eachAuthorHasItsOwnKeys(McpSession session, Scenario scenario) {
         String project = scenario.projectId();
-        String second = scenario.actorWith("second", "defect");
+        String second = scenario.actorWith("second", "issue");
         String key = Calls.freshKey();
 
-        WriteOutputs.Saved byFirst = session.ok("ledger_save", Calls.Save
-                .create("defect", Fields.defect(project, "first author"), Scenario.AUTHOR).withOperationKey(key),
+        WriteOutputs.Saved byFirst = session.ok("ledger_issue_save",
+                Calls.IssueSave.create(project, "first author", Scenario.AUTHOR).withOperationKey(key),
                 WriteOutputs.Saved.class);
-        WriteOutputs.Saved bySecond = session.ok("ledger_save", Calls.Save
-                .create("defect", Fields.defect(project, "second author"), second).withOperationKey(key),
+        WriteOutputs.Saved bySecond = session.ok("ledger_issue_save",
+                Calls.IssueSave.create(project, "second author", second).withOperationKey(key),
                 WriteOutputs.Saved.class);
-        WriteOutputs.Saved replayed = session.ok("ledger_save", Calls.Save
-                .create("defect", Fields.defect(project, "second author"), second).withOperationKey(key),
+        WriteOutputs.Saved replayed = session.ok("ledger_issue_save",
+                Calls.IssueSave.create(project, "second author", second).withOperationKey(key),
                 WriteOutputs.Saved.class);
-        ToolError otherContent = session.failed("ledger_save", Calls.Save
-                .create("defect", Fields.defect(project, "second author, other content"), second)
-                .withOperationKey(key));
+        ToolError otherContent = session.failed("ledger_issue_save",
+                Calls.IssueSave.create(project, "second author, other content", second).withOperationKey(key));
 
         assertThat(byFirst.author()).isEqualTo(Scenario.AUTHOR);
         assertThat(bySecond.author()).isEqualTo(second);
@@ -337,14 +333,14 @@ class OperationKeyTest {
             + "OPERATION_CONFLICT for the same author")
     void eachAuthorHasItsOwnBatchKeys(McpSession session, Scenario scenario) {
         String project = scenario.projectId();
-        String second = scenario.actorWith("secondbatch", "defect");
+        String second = scenario.actorWith("secondbatch", "issue");
         String key = Calls.freshKey();
-        List<Calls.Op> ops = List.of(defectA(scenario));
+        List<Calls.Op> ops = List.of(issueA(scenario));
 
         BatchResults byFirst = session.ok("ledger_batch", new Calls.Batch(ops, key, Scenario.AUTHOR), BatchResults.class);
         BatchResults bySecond = session.ok("ledger_batch", new Calls.Batch(ops, key, second), BatchResults.class);
         ToolError otherOperations = session.failed("ledger_batch",
-                new Calls.Batch(List.of(defectA(scenario), defectA(scenario)), key, second));
+                new Calls.Batch(List.of(issueA(scenario), issueA(scenario)), key, second));
 
         assertThat(byFirst.count()).isOne();
         assertThat(bySecond.count()).isOne();
@@ -386,20 +382,21 @@ class OperationKeyTest {
     }
 
     @Test
-    @DisplayName("OPK-022 (server): the vectors name the nine ledger write tools and artifact-begin as the tools with an "
-            + "operationKey argument, and ledger_whoami, artifact-chunk, artifact-finish, artifact-status and "
-            + "artifact-read as the ones without; the claim list is the nine without artifact-begin")
+    @DisplayName("OPK-022 (server): the vectors name the twelve keyed ledger write tools and artifact_begin as the tools "
+            + "with an operationKey argument, and ledger_whoami, artifact_chunk, artifact_finish, artifact_status and "
+            + "artifact_read as the ones without; the claim list is the twelve without artifact_begin")
     void theVectorListsNameTheTools() {
         List<String> argument = vector("operationKeyArgument");
         List<String> without = writeAndAttachmentTools().filter(tool -> !argument.contains(tool)).toList();
 
-        assertThat(argument).containsExactlyInAnyOrder("ledger_save", "ledger_transition", "ledger_record_fix",
-                "ledger_record_case", "ledger_link", "ledger_correct", "ledger_batch", "ledger_review",
-                "ledger_review_correct", "artifact-begin");
-        assertThat(without).containsExactlyInAnyOrder("ledger_whoami", "artifact-chunk", "artifact-finish",
-                "artifact-status", "artifact-read");
+        assertThat(argument).containsExactlyInAnyOrder("ledger_issue_save", "ledger_spec_save", "ledger_task_save",
+                "ledger_criterion_save", "ledger_transition", "ledger_record_deliverable", "ledger_record_case",
+                "ledger_link", "ledger_correct", "ledger_batch", "ledger_review", "ledger_review_correct",
+                "artifact_begin");
+        assertThat(without).containsExactlyInAnyOrder("ledger_whoami", "artifact_chunk", "artifact_finish",
+                "artifact_status", "artifact_read");
         assertThat(vector("operationKeyClaim")).containsExactlyInAnyOrderElementsOf(
-                argument.stream().filter(tool -> !"artifact-begin".equals(tool)).toList());
+                argument.stream().filter(tool -> !"artifact_begin".equals(tool)).toList());
     }
 
     // ---------------------------------------------------------------------------------------------- OPK-006
@@ -467,29 +464,31 @@ class OperationKeyTest {
         }
     }
 
-    private static Args saveWith(McpSession session, Scenario scenario, Object fields) {
-        return Args.from(session.mapper(),
-                Calls.Save.create("defect", Fields.defect(scenario.projectId(), "as text"), Scenario.AUTHOR))
-                .with("fields", fields);
+    private static Args batchSaveWithFields(McpSession session, Object fields) {
+        List<Object> ops = List.of(Args.of().with("op", "save").with("entity", "issue")
+                .with("reason", Scenario.REASON).with("fields", fields));
+        return Args.from(session.mapper(), new Calls.Batch(List.of(), Calls.freshKey(), Scenario.AUTHOR))
+                .with("ops", ops);
     }
 
     private static Args batchWith(McpSession session, Scenario scenario, Object ops) {
         return Args.from(session.mapper(), Calls.Batch.of(Scenario.AUTHOR,
-                Calls.Op.save("defect", Fields.defect(scenario.projectId(), "as text")))).with("ops", ops);
+                Calls.Op.save("issue", Fields.issue(scenario.projectId(), "as text")))).with("ops", ops);
     }
 
     static Stream<TextForm> textForms() {
-        ToolError.Issue fields = new ToolError.Issue("fields", "must be of type SaveFields", List.of());
+        ToolError.Issue fields = new ToolError.Issue("ops[0].fields", "must be of type SaveFields", List.of());
         ToolError.Issue ops = new ToolError.Issue("ops", "must be of type List", List.of());
         return Stream.of(
-                new TextForm("fields as a JSON object text", "ledger_save", (session, scenario) -> saveWith(session,
-                        scenario, session.mapper().writeValueAsString(Fields.defect(scenario.projectId(), "as text"))),
+                new TextForm("ops[0].fields as a JSON object text", "ledger_batch",
+                        (session, scenario) -> batchSaveWithFields(session,
+                                session.mapper().writeValueAsString(Fields.issue(scenario.projectId(), "as text"))),
                         fields),
-                new TextForm("fields as the text null", "ledger_save",
-                        (session, scenario) -> saveWith(session, scenario, "null"), fields),
+                new TextForm("ops[0].fields as the text null", "ledger_batch",
+                        (session, scenario) -> batchSaveWithFields(session, "null"), fields),
                 new TextForm("ops as a JSON array text", "ledger_batch", (session, scenario) -> batchWith(session,
                         scenario, session.mapper().writeValueAsString(
-                                List.of(Calls.Op.save("defect", Fields.defect(scenario.projectId(), "as text"))))),
+                                List.of(Calls.Op.save("issue", Fields.issue(scenario.projectId(), "as text"))))),
                         ops),
                 new TextForm("ops as the text null", "ledger_batch",
                         (session, scenario) -> batchWith(session, scenario, "null"), ops));
@@ -497,7 +496,7 @@ class OperationKeyTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("textForms")
-    @DisplayName("OPK-008: an object or an array sent as a JSON string (fields, ops), and the text null for such a "
+    @DisplayName("OPK-008: an object or an array sent as a JSON string (ops[0].fields, ops), and the text null for such a "
             + "required parameter, is VALIDATION_FAILED with the wrong type (not a missing argument) and writes nothing")
     void anObjectAsTextIsTheWrongType(TextForm form, McpSession session, Scenario scenario) {
         Args call = form.call().apply(session, scenario);
@@ -515,10 +514,10 @@ class OperationKeyTest {
             + "characters is REASON_INVALID")
     void theTextNullIsAPlainText(McpSession session, Scenario scenario) {
         Args call = Args.from(session.mapper(),
-                Calls.Save.create("defect", Fields.defect(scenario.projectId(), "plain text"), Scenario.AUTHOR))
+                Calls.IssueSave.create(scenario.projectId(), "plain text", Scenario.AUTHOR))
                 .with("reason", "null");
 
-        ToolError error = session.failed("ledger_save", call);
+        ToolError error = session.failed("ledger_issue_save", call);
 
         assertThat(error.code()).isEqualTo("REASON_INVALID");
         assertThat(error.issues()).extracting(ToolError.Issue::path).containsExactly("reason");
@@ -534,14 +533,14 @@ class OperationKeyTest {
         String project = scenario.projectId();
         String single = Calls.freshKey();
         String batchKey = Calls.freshKey();
-        session.ok("ledger_save", Calls.Save.create("defect", Fields.defect(project, "single"), Scenario.AUTHOR)
+        session.ok("ledger_issue_save", Calls.IssueSave.create(project, "single", Scenario.AUTHOR)
                 .withOperationKey(single), WriteOutputs.Saved.class);
-        session.ok("ledger_batch", new Calls.Batch(List.of(Calls.Op.save("defect", Fields.defect(project, "batched 1")),
-                Calls.Op.save("defect", Fields.defect(project, "batched 2"))), batchKey, Scenario.AUTHOR),
+        session.ok("ledger_batch", new Calls.Batch(List.of(Calls.Op.save("issue", Fields.issue(project, "batched 1")),
+                Calls.Op.save("issue", Fields.issue(project, "batched 2"))), batchKey, Scenario.AUTHOR),
                 BatchResults.class);
 
         JsonNode items = session.mapper().valueToTree(session.call("ledger_history", Calls.History.of(project))
-                .structuredContent()).get("items");
+                .structuredContent()).path("data").get("items");
         List<String> keys = Ledger.history(session, project).stream().map(ReadOutputs.History::operationKey).toList();
 
         assertThat(items.size()).isEqualTo(3);

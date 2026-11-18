@@ -10,9 +10,7 @@ import org.pgledger.application.write.WriteResult;
 import org.pgledger.application.write.WriteStatus;
 
 /**
- * The results of the write tools as they go on the wire. The component names are the keys of the answer
- * ({@code status}, {@code entity}, {@code id}, {@code version}, {@code history_id}, ...); there is no wrapper
- * around them.
+ * Payload records placed inside {@code data} of the {@code ApiResult.v1} envelope for the thirteen write tools.
  */
 public final class WriteOutputs {
 
@@ -20,7 +18,7 @@ public final class WriteOutputs {
     }
 
     /** One result of a write; a batch lists one per operation. */
-    public sealed interface Result permits Saved, Transitioned, FixRecorded, CaseRecorded, Linked, Corrected {
+    public sealed interface Result permits Saved, Transitioned, DeliverableRecorded, CaseRecorded, Linked, Corrected {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
@@ -38,8 +36,9 @@ public final class WriteOutputs {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
-    public record FixRecorded(@JsonProperty("status") WriteStatus status, @JsonProperty("defect") String defect,
-            @JsonProperty("fix_id") long fixId, @JsonProperty("defect_status") String defectStatus,
+    public record DeliverableRecorded(@JsonProperty("status") WriteStatus status,
+            @JsonProperty("target_entity") String targetEntity, @JsonProperty("target_id") String targetId,
+            @JsonProperty("deliverable_id") long deliverableId, @JsonProperty("target_state") String targetState,
             @JsonProperty("owner_actor_id") String ownerActorId, @JsonProperty("version") long version,
             @JsonProperty("history_id") long historyId,
             @JsonProperty("transition_history_id") Long transitionHistoryId,
@@ -49,7 +48,7 @@ public final class WriteOutputs {
     @JsonInclude(JsonInclude.Include.ALWAYS)
     public record CaseRecorded(@JsonProperty("status") WriteStatus status, @JsonProperty("entity") String entity,
             @JsonProperty("id") String id, @JsonProperty("case_id") long caseId,
-            @JsonProperty("defect") String defect, @JsonProperty("history_id") long historyId,
+            @JsonProperty("issue") String issue, @JsonProperty("history_id") long historyId,
             @JsonProperty("author") String author, @JsonProperty("login") String login) implements Result {
     }
 
@@ -101,13 +100,13 @@ public final class WriteOutputs {
                 r.author(), r.login());
     }
 
-    public static FixRecorded fixRecorded(WriteResult.RecordFixResult r) {
-        return new FixRecorded(r.status(), r.defect(), r.fixId(), r.defectStatus(), r.ownerActorId(), r.version(),
-                r.historyId(), r.transitionHistoryId(), r.author(), r.login());
+    public static DeliverableRecorded deliverableRecorded(WriteResult.RecordDeliverableResult r) {
+        return new DeliverableRecorded(r.status(), r.targetEntity(), r.targetId(), r.deliverableId(), r.targetState(),
+                r.ownerActorId(), r.version(), r.historyId(), r.transitionHistoryId(), r.author(), r.login());
     }
 
     public static CaseRecorded caseRecorded(WriteResult.RecordCaseResult r) {
-        return new CaseRecorded(r.status(), r.entity(), r.id(), r.caseId(), r.defect(), r.historyId(), r.author(),
+        return new CaseRecorded(r.status(), r.entity(), r.id(), r.caseId(), r.issue(), r.historyId(), r.author(),
                 r.login());
     }
 
@@ -124,7 +123,7 @@ public final class WriteOutputs {
         return switch (result) {
             case WriteResult.SaveResult r -> saved(r);
             case WriteResult.TransitionResult r -> transitioned(r);
-            case WriteResult.RecordFixResult r -> fixRecorded(r);
+            case WriteResult.RecordDeliverableResult r -> deliverableRecorded(r);
             case WriteResult.RecordCaseResult r -> caseRecorded(r);
             case WriteResult.LinkResult r -> linked(r);
             case WriteResult.CorrectResult r -> corrected(r);

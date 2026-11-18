@@ -73,14 +73,14 @@ class KeyAuditTest {
         HostScenario codex = new CodexHost();
         HostScenario agy = AntigravityHost.INSTANCE;
         return Stream.of(
-                Arguments.argumentSet("claude prefix is not the server", claude, "mcp__a__b_ledger_save"),
-                Arguments.argumentSet("claude codex_apps namespace", claude, "mcp__codex_apps__app_ledger_ledger_save"),
-                Arguments.argumentSet("claude no server", claude, "mcp__ledger_save"),
-                Arguments.argumentSet("codex prefix is not the server", codex, "mcp__a__b_ledger_save"),
-                Arguments.argumentSet("codex no server", codex, "mcp__ledger_save"),
-                Arguments.argumentSet("codex apps: app is not an op prefix", codex, "mcp__codex_apps__app_ledger_save"),
-                Arguments.argumentSet("antigravity prefix is not the server", agy, "mcp:test:other_ledger_save"),
-                Arguments.argumentSet("antigravity no server", agy, "mcp:ledger_save"));
+                Arguments.argumentSet("claude prefix is not the server", claude, "mcp__a__b_ledger_issue_save"),
+                Arguments.argumentSet("claude codex_apps namespace", claude, "mcp__codex_apps__app_ledger_ledger_issue_save"),
+                Arguments.argumentSet("claude no server", claude, "mcp__ledger_issue_save"),
+                Arguments.argumentSet("codex prefix is not the server", codex, "mcp__a__b_ledger_issue_save"),
+                Arguments.argumentSet("codex no server", codex, "mcp__ledger_issue_save"),
+                Arguments.argumentSet("codex apps: app is not an op prefix", codex, "mcp__codex_apps__app_ledger_issue_save"),
+                Arguments.argumentSet("antigravity prefix is not the server", agy, "mcp:test:other_ledger_issue_save"),
+                Arguments.argumentSet("antigravity no server", agy, "mcp:ledger_issue_save"));
     }
 
     @ParameterizedTest
@@ -108,10 +108,10 @@ class KeyAuditTest {
         HostScenario claude = new ClaudeHost();
         JsonNode input = Json.of("{\"marker\":\"two servers\"}");
         String author = claude.author(HookFixture.HOST_ID);
-        Run first = fixture.runClean(claude, claude.event("mcp__ledger__ledger_save", input));
-        Run second = fixture.runClean(claude, claude.event("mcp__ledger-test__ledger-test_ledger_save", input));
-        Attestations.Stamp onLedger = fixture.stampCarrier("ledger", author, "save", input, claude.stampedPart(first));
-        Attestations.Stamp onTest = fixture.stampCarrier("ledger-test", author, "save", input, claude.stampedPart(second));
+        Run first = fixture.runClean(claude, claude.event("mcp__ledger__ledger_issue_save", input));
+        Run second = fixture.runClean(claude, claude.event("mcp__ledger-test__ledger-test_ledger_issue_save", input));
+        Attestations.Stamp onLedger = fixture.stampCarrier("ledger", author, "issue_save", input, claude.stampedPart(first));
+        Attestations.Stamp onTest = fixture.stampCarrier("ledger-test", author, "issue_save", input, claude.stampedPart(second));
 
         PublicKey ledgerKey = Attestations.publicKey(fixture.keyDirectory(), "ledger", author);
         PublicKey testKey = Attestations.publicKey(fixture.keyDirectory(), "ledger-test", author);
@@ -132,10 +132,10 @@ class KeyAuditTest {
         HostScenario codex = new CodexHost();
         JsonNode input = Json.of("{\"marker\":\"apps\"}");
         String author = codex.author(HookFixture.HOST_ID);
-        Run real = fixture.runClean(codex, codex.event("mcp__codex_apps__app_ledger_ledger_save", input));
-        Run evil = fixture.runClean(codex, codex.event("mcp__codex_apps__app_evil_ledger_save", input));
-        Attestations.Stamp onLedger = fixture.stampCarrier("codex_apps.ledger", author, "save", input, codex.stampedPart(real));
-        Attestations.Stamp onEvil = fixture.stampCarrier("codex_apps.evil", author, "save", input, codex.stampedPart(evil));
+        Run real = fixture.runClean(codex, codex.event("mcp__codex_apps__app_ledger_ledger_issue_save", input));
+        Run evil = fixture.runClean(codex, codex.event("mcp__codex_apps__app_evil_ledger_issue_save", input));
+        Attestations.Stamp onLedger = fixture.stampCarrier("codex_apps.ledger", author, "issue_save", input, codex.stampedPart(real));
+        Attestations.Stamp onEvil = fixture.stampCarrier("codex_apps.evil", author, "issue_save", input, codex.stampedPart(evil));
         PublicKey ledgerKey = Attestations.publicKey(fixture.keyDirectory(), "codex_apps.ledger", author);
         assertThatThrownBy(() -> AttestationToken.parse(onEvil.token()).verify(ledgerKey))
                 .isInstanceOf(AttestationException.class);
@@ -147,13 +147,13 @@ class KeyAuditTest {
     void aCopiedKeyFileIsRefused(HookFixture fixture) throws IOException {
         HostScenario claude = new ClaudeHost();
         String author = claude.author(HookFixture.HOST_ID);
-        fixture.runClean(claude, claude.event("mcp__ledger__ledger_save", EMPTY));
+        fixture.runClean(claude, claude.event("mcp__ledger__ledger_issue_save", EMPTY));
         Path copy = fixture.keyDirectory().resolve(Attestations.keyFileName("other", author));
         Files.copy(fixture.keyDirectory().resolve(Attestations.keyFileName("ledger", author)), copy,
                 java.nio.file.StandardCopyOption.COPY_ATTRIBUTES);
         byte[] before = Files.readAllBytes(copy);
 
-        Run run = fixture.runClean(claude, claude.event("mcp__other__ledger_save", EMPTY));
+        Run run = fixture.runClean(claude, claude.event("mcp__other__ledger_issue_save", EMPTY));
         assertThat(run.document()).isEqualTo(claude.denied(Refusal.SESSION_KEY_UNAVAILABLE));
         assertThat(Files.readAllBytes(copy)).isEqualTo(before);
         assertThatThrownBy(() -> TestStores.load(TestStores.open(fixture.keyDirectory()), "other", author))
@@ -168,15 +168,15 @@ class KeyAuditTest {
     void theDigestCoversTheArgumentsAsReturned(String json, HookFixture fixture) {
         HostScenario claude = new ClaudeHost();
         JsonNode input = Json.of(json);
-        Run run = fixture.runClean(claude, claude.event(claude.toolName("save"), input));
-        fixture.stamp(claude, "save", input, run);
+        Run run = fixture.runClean(claude, claude.event(claude.toolName("issue_save"), input));
+        fixture.stamp(claude, "issue_save", input, run);
     }
 
     @Test
     @DisplayName("HK-038 a number that has no double (1e999) cannot be signed: denied ARGUMENTS_NOT_SIGNABLE, no key is created")
     void aNumberBeyondTheRangeOfADoubleIsDenied(HookFixture fixture) {
         HostScenario claude = new ClaudeHost();
-        Run run = fixture.runClean(claude, claude.event(claude.toolName("save"), Json.of("{\"n\":1e999}")));
+        Run run = fixture.runClean(claude, claude.event(claude.toolName("issue_save"), Json.of("{\"n\":1e999}")));
         assertThat(run.document()).isEqualTo(claude.denied(Refusal.ARGUMENTS_NOT_SIGNABLE));
         assertThat(fixture.keyDirectory()).doesNotExist();
     }
@@ -185,7 +185,7 @@ class KeyAuditTest {
     @DisplayName("HK-038 (audit2 N2) an integer beyond 2**53-1 (12345678901234567890) cannot be signed either: denied ARGUMENTS_NOT_SIGNABLE, no key is created")
     void anIntegerBeyondTheExactRangeIsDenied(HookFixture fixture) {
         HostScenario claude = new ClaudeHost();
-        Run run = fixture.runClean(claude, claude.event(claude.toolName("save"), Json.of("{\"n\":12345678901234567890}")));
+        Run run = fixture.runClean(claude, claude.event(claude.toolName("issue_save"), Json.of("{\"n\":12345678901234567890}")));
         assertThat(run.document()).isEqualTo(claude.denied(Refusal.ARGUMENTS_NOT_SIGNABLE));
         assertThat(fixture.keyDirectory()).doesNotExist();
     }

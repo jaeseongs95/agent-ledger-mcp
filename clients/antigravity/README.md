@@ -6,12 +6,12 @@ This directory is an Antigravity plugin. It proves the author of the ledger writ
 
 ## How it works
 
-`plugin.json` and `hooks.json` are at the root of the plugin. The command of a plugin hook runs in the plugin root, so `hooks.json` runs `java -jar "./lib/ledger-client-hook.jar" antigravity` before a tool call. The matcher selects `call_mcp_tool` and the direct MCP names of the write tools (`mcp:...ledger_<op>`); the hook checks the tool name again. The hook handles only the ten write tools (`save`, `transition`, `record_fix`, `record_case`, `link`, `correct`, `batch`, `review`, `review_correct` and `whoami`) and the five attachment tools (`artifact-begin`, `artifact-chunk`, `artifact-finish`, `artifact-status` and `artifact-read`) and signs only names that show the server. The attachment tools carry no `operationKey` in the claim, like `whoami`:
+`plugin.json` and `hooks.json` are at the root of the plugin. The command of a plugin hook runs in the plugin root, so `hooks.json` runs `java -jar "./lib/ledger-client-hook.jar" antigravity` before a tool call. The matcher selects `call_mcp_tool` and the direct MCP names of the write tools (`mcp:...ledger_<op>`); the hook checks the tool name again. The hook handles only the thirteen write tools (`issue_save`, `spec_save`, `task_save`, `criterion_save`, `transition`, `record_deliverable`, `record_case`, `link`, `correct`, `batch`, `review`, `review_correct` and `whoami`) and the five attachment tools (`artifact_begin`, `artifact_chunk`, `artifact_finish`, `artifact_status` and `artifact_read`) and signs only names that show the server. The attachment tools carry no `operationKey` in the claim, like `whoami`:
 
-- a direct call, `mcp:<server><:|/|_>[<server>_]ledger_<op>` or `mcp:<server><:|/|_>[<server>_]artifact-<op>`
-- a `call_mcp_tool` call whose `ServerName` is a server name (1 to 100 characters of `A-Za-z0-9._-`) and whose `ToolName` is `ledger_<op>`, `artifact-<op>`, `<ServerName>_ledger_<op>` or `<ServerName>_artifact-<op>`
+- a direct call, `mcp:<server><:|/|_>[<server>_]ledger_<op>` or `mcp:<server><:|/|_>[<server>_]artifact_<op>`
+- a `call_mcp_tool` call whose `ServerName` is a server name (1 to 100 characters of `A-Za-z0-9._-`) and whose `ToolName` is `ledger_<op>`, `artifact_<op>`, `<ServerName>_ledger_<op>` or `<ServerName>_artifact_<op>`
 
-A name without a server, such as `mcp:ledger_save`, is not signed. Other tools and the read tools pass unchanged.
+A name without a server, such as `mcp:ledger_issue_save`, is not signed. Other tools and the read tools pass unchanged.
 
 For a write call the hook adds the reserved argument `_hostAttestation`. Its value is a signature, made with the Ed25519 session key of the author `gemini:<conversationId>` for the MCP server of the call. The signature covers the tool, the `operationKey` of the call, the SHA-256 digest of the canonical form (RFC 8785) of all arguments, and the time. The hook reads the `operationKey` of the call from its arguments and never makes one up (a call without it is refused by the server). For a direct call the hook answers with `overwrite`, which Antigravity merges into the arguments of the tool; for a `call_mcp_tool` call it returns the corrected `Arguments` only. `Arguments` is an object or a string that holds a JSON object, and its type is kept. The other arguments are kept.
 

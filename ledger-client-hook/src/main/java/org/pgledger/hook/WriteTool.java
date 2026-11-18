@@ -6,19 +6,23 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
- * The fifteen tools of the server that write and therefore carry the host attestation (the external contract): ten
- * ledger tools named {@code ledger_<operation>} and the five attachment tools named {@code artifact-<operation>}. Read
- * tools (ledger_get, ledger_history, ledger_search, ledger_defects, ...) are deliberately absent.
+ * The eighteen tools of the server that carry the host attestation (the external contract): thirteen ledger tools
+ * named {@code ledger_<operation>} and the five snake_case attachment tools named {@code artifact_<operation>}. Read
+ * tools ({@code ledger_get}, {@code ledger_history}, {@code ledger_search}, {@code ledger_issues}, ...) are
+ * deliberately absent.
  *
- * <p>The nine ledger write tools carry the {@code operationKey} of the call in the claim. whoami and the attachment tools
- * do not: their claim's operation key is empty (the begin is made idempotent by its own {@code operationKey}, which the
- * digest of the arguments covers, and chunk and finish are bound to the upload by {@code uploadId}, they take no
- * {@code operationKey}).
+ * <p>The twelve mutating ledger write tools carry the {@code operationKey} of the call in the claim. {@code ledger_whoami}
+ * and the five attachment tools do not: their claim's operation key is empty (the begin is made idempotent by its own
+ * {@code operationKey}, which the digest of the arguments covers, and chunk and finish are bound to the upload by
+ * {@code uploadId} / {@code attachmentId}, taking no {@code operationKey}).
  */
 public enum WriteTool {
-    SAVE("ledger_save", true),
+    ISSUE_SAVE("ledger_issue_save", true),
+    SPEC_SAVE("ledger_spec_save", true),
+    TASK_SAVE("ledger_task_save", true),
+    CRITERION_SAVE("ledger_criterion_save", true),
     TRANSITION("ledger_transition", true),
-    RECORD_FIX("ledger_record_fix", true),
+    RECORD_DELIVERABLE("ledger_record_deliverable", true),
     RECORD_CASE("ledger_record_case", true),
     LINK("ledger_link", true),
     CORRECT("ledger_correct", true),
@@ -26,11 +30,11 @@ public enum WriteTool {
     REVIEW("ledger_review", true),
     REVIEW_CORRECT("ledger_review_correct", true),
     WHOAMI("ledger_whoami", false),
-    ARTIFACT_BEGIN("artifact-begin", false),
-    ARTIFACT_CHUNK("artifact-chunk", false),
-    ARTIFACT_FINISH("artifact-finish", false),
-    ARTIFACT_STATUS("artifact-status", false),
-    ARTIFACT_READ("artifact-read", false);
+    ARTIFACT_BEGIN("artifact_begin", false),
+    ARTIFACT_CHUNK("artifact_chunk", false),
+    ARTIFACT_FINISH("artifact_finish", false),
+    ARTIFACT_STATUS("artifact_status", false),
+    ARTIFACT_READ("artifact_read", false);
 
     private final String canonicalName;
     private final boolean carriesOperationKey;
@@ -41,7 +45,7 @@ public enum WriteTool {
     }
 
     /**
-     * The canonical tool name of the server, {@code ledger_<operation>} or {@code artifact-<operation>}: what the
+     * The canonical tool name of the server, {@code ledger_<operation>} or {@code artifact_<operation>}: what the
      * attestation is issued for.
      */
     public String canonicalName() {
@@ -61,7 +65,7 @@ public enum WriteTool {
         return Arrays.stream(values()).map(WriteTool::canonicalName).collect(Collectors.joining("|", "(", ")"));
     }
 
-    /** The write tool of the canonical name (exactly one of the fifteen), if it is one. */
+    /** The write tool of the canonical name (exactly one of the eighteen), if it is one. */
     static Optional<WriteTool> ofName(String found) {
         return Arrays.stream(values()).filter(tool -> Objects.equals(tool.canonicalName, found)).findFirst();
     }

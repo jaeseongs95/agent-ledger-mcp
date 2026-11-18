@@ -10,28 +10,35 @@ import org.pgledger.domain.value.Patch;
 import tools.jackson.databind.annotation.JsonDeserialize;
 
 /**
- * The {@code fields} argument of {@code ledger_save} and of a {@code save} operation of {@code ledger_batch}: the editable
- * fields of a defect, a task or a condition (the kind decides which of them are valid). The component names are the wire
- * keys; the descriptions are message keys that the catalog resolves.
+ * Editable {@code fields} record of a {@code save} operation inside {@code ledger_batch}: covers issues,
+ * specifications, tasks, and milestone criteria (the entity kind determines which keys apply). Top-level saves use the
+ * flat entity-specific tools ({@code ledger_issue_save}, {@code ledger_spec_save}, {@code ledger_task_save},
+ * {@code ledger_criterion_save}).
  *
- * <p>Every field is a {@link Patch}, so the binding tells "left out or written as null" (absent: not touched) and "written
- * with a text" (an empty text clears an optional field) apart without remembering the keys of the call
- * ({@link PatchText}). The schema of the tool still shows each of them as a plain string: {@code @Schema} names the type
- * the model sees.
+ * <p>Every component is a {@link Patch} so omitted or JSON {@code null} leaves the field untouched while an empty
+ * string clears an optional field.
  */
 public record SaveFields(
         @JsonProperty("project_id") @JsonPropertyDescription("field.project_id") @Schema(implementation = String.class)
         @JsonDeserialize(using = PatchText.class) Patch<String> projectId,
+        @JsonProperty("parent_id") @JsonPropertyDescription("field.parent_id") @Schema(implementation = String.class)
+        @JsonDeserialize(using = PatchText.class) Patch<String> parentId,
         @JsonProperty("title") @JsonPropertyDescription("field.title") @Schema(implementation = String.class)
         @JsonDeserialize(using = PatchText.class) Patch<String> title,
         @JsonProperty("category") @JsonPropertyDescription("field.category") @Schema(implementation = String.class)
-        @JsonDeserialize(using = PatchText.class) @CommonCode(group = CodeGroup.DEFECT_CATEGORY) Patch<String> category,
+        @JsonDeserialize(using = PatchText.class) @CommonCode(group = CodeGroup.ISSUE_CATEGORY) Patch<String> category,
         @JsonProperty("severity") @JsonPropertyDescription("field.severity") @Schema(implementation = String.class)
-        @JsonDeserialize(using = PatchText.class) @CommonCode(group = CodeGroup.DEFECT_SEVERITY) Patch<String> severity,
-        @JsonProperty("behavior") @JsonPropertyDescription("field.behavior") @Schema(implementation = String.class)
-        @JsonDeserialize(using = PatchText.class) Patch<String> behavior,
+        @JsonDeserialize(using = PatchText.class) @CommonCode(group = CodeGroup.ISSUE_SEVERITY) Patch<String> severity,
+        @JsonProperty("symptom") @JsonPropertyDescription("field.symptom") @Schema(implementation = String.class)
+        @JsonDeserialize(using = PatchText.class) Patch<String> symptom,
         @JsonProperty("root_cause") @JsonPropertyDescription("field.root_cause") @Schema(implementation = String.class)
         @JsonDeserialize(using = PatchText.class) Patch<String> rootCause,
+        @JsonProperty("summary") @JsonPropertyDescription("field.summary") @Schema(implementation = String.class)
+        @JsonDeserialize(using = PatchText.class) Patch<String> summary,
+        @JsonProperty("acceptance_criteria") @JsonPropertyDescription("field.acceptance_criteria")
+        @Schema(implementation = String.class) @JsonDeserialize(using = PatchText.class) Patch<String> acceptanceCriteria,
+        @JsonProperty("priority") @JsonPropertyDescription("field.priority") @Schema(implementation = String.class)
+        @JsonDeserialize(using = PatchText.class) Patch<String> priority,
         @JsonProperty("owner_actor_id") @JsonPropertyDescription("field.owner_actor_id")
         @Schema(implementation = String.class) @JsonDeserialize(using = PatchText.class) Patch<String> ownerActorId,
         @JsonProperty("purpose") @JsonPropertyDescription("field.purpose") @Schema(implementation = String.class)
@@ -42,18 +49,18 @@ public record SaveFields(
         @JsonDeserialize(using = PatchText.class) Patch<String> originRef,
         @JsonProperty("origin_quote") @JsonPropertyDescription("field.origin_quote")
         @Schema(implementation = String.class) @JsonDeserialize(using = PatchText.class) Patch<String> originQuote,
-        @JsonProperty("release") @JsonPropertyDescription("field.release") @Schema(implementation = String.class)
-        @JsonDeserialize(using = PatchText.class) Patch<String> release,
+        @JsonProperty("milestone_name") @JsonPropertyDescription("field.milestone_name")
+        @Schema(implementation = String.class) @JsonDeserialize(using = PatchText.class) Patch<String> milestoneName,
         @JsonProperty("goal_label") @JsonPropertyDescription("field.goal_label") @Schema(implementation = String.class)
         @JsonDeserialize(using = PatchText.class) Patch<String> goalLabel,
         @JsonProperty("code") @JsonPropertyDescription("field.code") @Schema(implementation = String.class)
         @JsonDeserialize(using = PatchText.class) Patch<String> code,
-        @JsonProperty("condition_text") @JsonPropertyDescription("field.condition_text")
-        @Schema(implementation = String.class) @JsonDeserialize(using = PatchText.class) Patch<String> conditionText) {
+        @JsonProperty("criterion_text") @JsonPropertyDescription("field.criterion_text")
+        @Schema(implementation = String.class) @JsonDeserialize(using = PatchText.class) Patch<String> criterionText) {
 
-    /** The input of the save service: the same patches, without the annotations that only the schema of the tool needs. */
     public FieldsInput toInput() {
-        return new FieldsInput(projectId, title, category, severity, behavior, rootCause, ownerActorId, purpose,
-                successCondition, originRef, originQuote, release, goalLabel, code, conditionText);
+        return new FieldsInput(projectId, parentId, title, category, severity, symptom, rootCause, summary,
+                acceptanceCriteria, priority, ownerActorId, purpose, successCondition, originRef, originQuote,
+                milestoneName, goalLabel, code, criterionText);
     }
 }

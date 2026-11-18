@@ -5,12 +5,13 @@ import org.pgledger.application.write.BatchOpInput;
 import org.pgledger.application.write.BatchService;
 import org.pgledger.application.write.CorrectCommand;
 import org.pgledger.application.write.CorrectService;
+import org.pgledger.application.write.FieldsInput;
 import org.pgledger.application.write.LinkCommand;
 import org.pgledger.application.write.LinkService;
 import org.pgledger.application.write.RecordCaseCommand;
 import org.pgledger.application.write.RecordCaseService;
-import org.pgledger.application.write.RecordFixCommand;
-import org.pgledger.application.write.RecordFixService;
+import org.pgledger.application.write.RecordDeliverableCommand;
+import org.pgledger.application.write.RecordDeliverableService;
 import org.pgledger.application.write.ReviewService;
 import org.pgledger.application.write.SaveCommand;
 import org.pgledger.application.write.SaveService;
@@ -18,31 +19,33 @@ import org.pgledger.application.write.TransitionCommand;
 import org.pgledger.application.write.TransitionService;
 import org.pgledger.application.write.WhoamiService;
 import org.pgledger.domain.rule.Channel;
-import org.pgledger.domain.rule.CiConclusion;
-import org.pgledger.domain.rule.ConditionState;
-import org.pgledger.domain.rule.DefectStatus;
-import org.pgledger.domain.rule.HistoryEntity;
-import org.pgledger.domain.rule.TaskState;
+import org.pgledger.domain.rule.CheckResult;
 import org.pgledger.domain.rule.CodeGroup;
+import org.pgledger.domain.rule.CriterionState;
+import org.pgledger.domain.rule.DeliverableTarget;
+import org.pgledger.domain.rule.HistoryEntity;
+import org.pgledger.domain.rule.IssueStatus;
+import org.pgledger.domain.rule.SpecStatus;
+import org.pgledger.domain.rule.TaskState;
+import org.pgledger.domain.value.Patch;
 import org.springframework.ai.mcp.annotation.McpTool;
 import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
 
 /**
- * The ten write tools. Each method only turns the flat arguments of the tool into the input of its service and
- * the result into its output record; the gate, the validation and the transaction belong to the services.
+ * The thirteen write tools of the 2.0 universal ledger. Top-level creation and editing use dedicated flat tools per
+ * entity ({@code ledger_issue_save}, {@code ledger_spec_save}, {@code ledger_task_save}, {@code ledger_criterion_save})
+ * with explicit validated parameters rather than a polymorphic map or raw query.
  *
- * <p>Every write tool but {@code ledger_whoami} takes a required {@code operationKey}, the idempotency key of the call
- * (the server never makes one up). The other parameter names are the wire keys of the tool contract
- * ({@code expected_version}, {@code _hostAttestation}, ...), which is why they are not all camel case. The descriptions
- * are message keys that the tool catalog resolves from the message bundle.
+ * <p>Every write tool except {@code ledger_whoami} requires an {@code operationKey} chosen by the caller for
+ * idempotent replay. Parameter descriptions are message keys resolved by {@code ToolCatalog}.
  */
 @Component
 public class WriteTools implements ToolAdapter {
 
     private final SaveService save;
     private final TransitionService transition;
-    private final RecordFixService recordFix;
+    private final RecordDeliverableService recordDeliverable;
     private final RecordCaseService recordCase;
     private final LinkService link;
     private final CorrectService correct;
@@ -50,12 +53,12 @@ public class WriteTools implements ToolAdapter {
     private final ReviewService review;
     private final WhoamiService whoami;
 
-    public WriteTools(SaveService save, TransitionService transition, RecordFixService recordFix,
+    public WriteTools(SaveService save, TransitionService transition, RecordDeliverableService recordDeliverable,
             RecordCaseService recordCase, LinkService link, CorrectService correct, BatchService batch,
             ReviewService review, WhoamiService whoami) {
         this.save = save;
         this.transition = transition;
-        this.recordFix = recordFix;
+        this.recordDeliverable = recordDeliverable;
         this.recordCase = recordCase;
         this.link = link;
         this.correct = correct;
@@ -64,28 +67,108 @@ public class WriteTools implements ToolAdapter {
         this.whoami = whoami;
     }
 
-    @McpTool(name = "ledger_save", description = "tool.ledger_save", generateOutputSchema = true)
-    public WriteOutputs.Saved save(
-            @McpToolParam(description = "param.entity", required = true)
-            @Choice(from = HistoryEntity.class, only = {"DEFECT", "TASK", "CONDITION"}) String entity,
-            @McpToolParam(description = "param.fields", required = true) SaveFields fields,
-            @McpToolParam(description = "param.reason", required = true) String reason,
-            @McpToolParam(description = "param.save_id", required = false) String id,
+    private static Patch<String> patch(String value) {
+        return value == null ? Patch.absent() : Patch.set(value);
+    }
+
+    @McpTool(name = "ledger_issue_save", description = "tool.ledger_issue_save", generateOutputSchema = true)
+    public WriteOutputs.Saved saveIssue(
+            @McpToolParam(description = "field.project_id", required = false) String project_id,
+            @McpToolParam(description = "field.title", required = false) String title,
+            @McpToolParam(description = "field.category", required = false)
+            @CommonCode(group = CodeGroup.ISSUE_CATEGORY) String category,
+            @McpToolParam(description = "field.severity", required = false)
+            @CommonCode(group = CodeGroup.ISSUE_SEVERITY) String severity,
+            @McpToolParam(description = "field.symptom", required = false) String symptom,
+            @McpToolParam(description = "field.root_cause", required = false) String root_cause,
+            @McpToolParam(description = "field.owner_actor_id", required = false) String owner_actor_id,
+            @McpToolParam(description = "param.issue_save_id", required = false) String id,
             @McpToolParam(description = "param.save_expected_version", required = false) Long expected_version,
+            @McpToolParam(description = "param.reason", required = true) String reason,
             @McpToolParam(description = "param.operation_key", required = true) String operationKey,
             @McpToolParam(description = "param.host_attestation", required = false) String _hostAttestation) {
+        FieldsInput fields = new FieldsInput(patch(project_id), Patch.absent(), patch(title), patch(category),
+                patch(severity), patch(symptom), patch(root_cause), Patch.absent(), Patch.absent(), Patch.absent(),
+                patch(owner_actor_id), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.absent(), Patch.absent(), Patch.absent());
         return WriteOutputs.saved(save.save(_hostAttestation,
-                new SaveCommand(operationKey, entity, id, expected_version, fields.toInput(), reason)));
+                new SaveCommand(operationKey, HistoryEntity.ISSUE.token(), id, expected_version, fields, reason)));
+    }
+
+    @McpTool(name = "ledger_spec_save", description = "tool.ledger_spec_save", generateOutputSchema = true)
+    public WriteOutputs.Saved saveSpec(
+            @McpToolParam(description = "field.project_id", required = false) String project_id,
+            @McpToolParam(description = "field.parent_id", required = false) String parent_id,
+            @McpToolParam(description = "field.title", required = false) String title,
+            @McpToolParam(description = "field.summary", required = false) String summary,
+            @McpToolParam(description = "field.acceptance_criteria", required = false) String acceptance_criteria,
+            @McpToolParam(description = "field.priority", required = false) String priority,
+            @McpToolParam(description = "field.owner_actor_id", required = false) String owner_actor_id,
+            @McpToolParam(description = "field.origin_ref", required = false) String origin_ref,
+            @McpToolParam(description = "field.origin_quote", required = false) String origin_quote,
+            @McpToolParam(description = "param.spec_save_id", required = false) String id,
+            @McpToolParam(description = "param.save_expected_version", required = false) Long expected_version,
+            @McpToolParam(description = "param.reason", required = true) String reason,
+            @McpToolParam(description = "param.operation_key", required = true) String operationKey,
+            @McpToolParam(description = "param.host_attestation", required = false) String _hostAttestation) {
+        FieldsInput fields = new FieldsInput(patch(project_id), patch(parent_id), patch(title), Patch.absent(),
+                Patch.absent(), Patch.absent(), Patch.absent(), patch(summary), patch(acceptance_criteria),
+                patch(priority), patch(owner_actor_id), Patch.absent(), Patch.absent(), patch(origin_ref),
+                patch(origin_quote), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent());
+        return WriteOutputs.saved(save.save(_hostAttestation,
+                new SaveCommand(operationKey, HistoryEntity.SPEC.token(), id, expected_version, fields, reason)));
+    }
+
+    @McpTool(name = "ledger_task_save", description = "tool.ledger_task_save", generateOutputSchema = true)
+    public WriteOutputs.Saved saveTask(
+            @McpToolParam(description = "field.project_id", required = false) String project_id,
+            @McpToolParam(description = "field.title", required = false) String title,
+            @McpToolParam(description = "field.purpose", required = false) String purpose,
+            @McpToolParam(description = "field.success_condition", required = false) String success_condition,
+            @McpToolParam(description = "field.owner_actor_id", required = false) String owner_actor_id,
+            @McpToolParam(description = "field.origin_ref", required = false) String origin_ref,
+            @McpToolParam(description = "field.origin_quote", required = false) String origin_quote,
+            @McpToolParam(description = "param.task_save_id", required = false) String id,
+            @McpToolParam(description = "param.save_expected_version", required = false) Long expected_version,
+            @McpToolParam(description = "param.reason", required = true) String reason,
+            @McpToolParam(description = "param.operation_key", required = true) String operationKey,
+            @McpToolParam(description = "param.host_attestation", required = false) String _hostAttestation) {
+        FieldsInput fields = new FieldsInput(patch(project_id), Patch.absent(), patch(title), Patch.absent(),
+                Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+                patch(owner_actor_id), patch(purpose), patch(success_condition), patch(origin_ref),
+                patch(origin_quote), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent());
+        return WriteOutputs.saved(save.save(_hostAttestation,
+                new SaveCommand(operationKey, HistoryEntity.TASK.token(), id, expected_version, fields, reason)));
+    }
+
+    @McpTool(name = "ledger_criterion_save", description = "tool.ledger_criterion_save", generateOutputSchema = true)
+    public WriteOutputs.Saved saveCriterion(
+            @McpToolParam(description = "field.project_id", required = false) String project_id,
+            @McpToolParam(description = "param.criterion_save_id", required = true) String id,
+            @McpToolParam(description = "field.milestone_name", required = false) String milestone_name,
+            @McpToolParam(description = "field.goal_label", required = false) String goal_label,
+            @McpToolParam(description = "field.code", required = false) String code,
+            @McpToolParam(description = "field.criterion_text", required = false) String criterion_text,
+            @McpToolParam(description = "param.save_expected_version", required = false) Long expected_version,
+            @McpToolParam(description = "param.reason", required = true) String reason,
+            @McpToolParam(description = "param.operation_key", required = true) String operationKey,
+            @McpToolParam(description = "param.host_attestation", required = false) String _hostAttestation) {
+        FieldsInput fields = new FieldsInput(patch(project_id), Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+                Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent(),
+                patch(milestone_name), patch(goal_label), patch(code), patch(criterion_text));
+        return WriteOutputs.saved(save.save(_hostAttestation,
+                new SaveCommand(operationKey, HistoryEntity.CRITERION.token(), id, expected_version, fields, reason)));
     }
 
     @McpTool(name = "ledger_transition", description = "tool.ledger_transition", generateOutputSchema = true)
     public WriteOutputs.Transitioned transition(
             @McpToolParam(description = "param.entity", required = true)
-            @Choice(from = HistoryEntity.class, only = {"DEFECT", "TASK", "CONDITION"}) String entity,
+            @Choice(from = HistoryEntity.class, only = {"ISSUE", "SPEC", "TASK", "CRITERION"}) String entity,
             @McpToolParam(description = "param.id", required = true) String id,
             @McpToolParam(description = "param.expected_version", required = true) Long expected_version,
             @McpToolParam(description = "param.transition_to", required = true)
-            @Choice(from = {DefectStatus.class, TaskState.class, ConditionState.class},
+            @Choice(from = {IssueStatus.class, SpecStatus.class, TaskState.class, CriterionState.class},
                     verification = Choice.Verification.EXCLUDED) String to,
             @McpToolParam(description = "param.reason", required = true) String reason,
             @McpToolParam(description = "param.evidence_uri", required = false) String evidence_uri,
@@ -99,39 +182,44 @@ public class WriteTools implements ToolAdapter {
                         evidence_sha256, merged_into, attachment_id)));
     }
 
-    @McpTool(name = "ledger_record_fix", description = "tool.ledger_record_fix", generateOutputSchema = true)
-    public WriteOutputs.FixRecorded recordFix(
-            @McpToolParam(description = "param.defect_id", required = true) String defect_id,
-            @McpToolParam(description = "param.repo", required = true) String repo,
-            @McpToolParam(description = "param.commit_sha", required = true) String commit_sha,
+    @McpTool(name = "ledger_record_deliverable", description = "tool.ledger_record_deliverable",
+            generateOutputSchema = true)
+    public WriteOutputs.DeliverableRecorded recordDeliverable(
+            @McpToolParam(description = "param.target_entity", required = true)
+            @Choice(from = DeliverableTarget.class) String target_entity,
+            @McpToolParam(description = "param.target_id", required = true) String target_id,
+            @McpToolParam(description = "param.deliverable_kind", required = true)
+            @CommonCode(group = CodeGroup.DELIVERABLE_KIND) String kind,
+            @McpToolParam(description = "param.deliverable_ref", required = true) String deliverable_ref,
+            @McpToolParam(description = "param.deliverable_summary", required = true) String summary,
             @McpToolParam(description = "param.reason", required = true) String reason,
-            @McpToolParam(description = "param.branch", required = false) String branch,
-            @McpToolParam(description = "param.ci_ref", required = false) String ci_ref,
-            @McpToolParam(description = "param.ci_conclusion", required = false)
-            @Choice(from = CiConclusion.class) String ci_conclusion,
-            @McpToolParam(description = "param.ci_completed_at", required = false) String ci_completed_at,
-            @McpToolParam(description = "param.mark_source_fixed", required = false) Boolean mark_source_fixed,
+            @McpToolParam(description = "param.deliverable_location", required = false) String location,
+            @McpToolParam(description = "param.check_ref", required = false) String check_ref,
+            @McpToolParam(description = "param.check_result", required = false)
+            @Choice(from = CheckResult.class) String check_result,
+            @McpToolParam(description = "param.checked_at", required = false) String checked_at,
+            @McpToolParam(description = "param.mark_done", required = false) Boolean mark_done,
             @McpToolParam(description = "param.attachment_id", required = false) String attachment_id,
             @McpToolParam(description = "param.operation_key", required = true) String operationKey,
             @McpToolParam(description = "param.host_attestation", required = false) String _hostAttestation) {
-        return WriteOutputs.fixRecorded(recordFix.recordFix(_hostAttestation,
-                new RecordFixCommand(operationKey, defect_id, repo, commit_sha, reason, branch, ci_ref,
-                        ci_conclusion, ci_completed_at, mark_source_fixed, attachment_id)));
+        return WriteOutputs.deliverableRecorded(recordDeliverable.recordDeliverable(_hostAttestation,
+                new RecordDeliverableCommand(operationKey, target_entity, target_id, kind, deliverable_ref, reason,
+                        location, summary, check_ref, check_result, checked_at, mark_done, attachment_id)));
     }
 
     @McpTool(name = "ledger_record_case", description = "tool.ledger_record_case", generateOutputSchema = true)
     public WriteOutputs.CaseRecorded recordCase(
-            @McpToolParam(description = "param.defect_id", required = true) String defect_id,
+            @McpToolParam(description = "param.issue_id", required = true) String issue_id,
             @McpToolParam(description = "param.observation", required = true) String observation,
             @McpToolParam(description = "param.case_reason", required = true) String reason,
             @McpToolParam(description = "param.case_evidence", required = false) String evidence,
-            @McpToolParam(description = "param.user_quote", required = false) String user_quote,
+            @McpToolParam(description = "param.source_quote", required = false) String source_quote,
             @McpToolParam(description = "param.observed_at", required = false) String observed_at,
             @McpToolParam(description = "param.attachment_id", required = false) String attachment_id,
             @McpToolParam(description = "param.operation_key", required = true) String operationKey,
             @McpToolParam(description = "param.host_attestation", required = false) String _hostAttestation) {
         return WriteOutputs.caseRecorded(recordCase.recordCase(_hostAttestation,
-                new RecordCaseCommand(operationKey, defect_id, observation, reason, evidence, user_quote,
+                new RecordCaseCommand(operationKey, issue_id, observation, reason, evidence, source_quote,
                         observed_at, attachment_id)));
     }
 
@@ -139,7 +227,8 @@ public class WriteTools implements ToolAdapter {
     public WriteOutputs.Linked link(
             @McpToolParam(description = "param.kind", required = true)
             @CommonCode(group = CodeGroup.RELATION_KIND,
-                    fixed = {"defect_task", "condition_task", "condition_defect"}) String kind,
+                    fixed = {"issue_task", "issue_spec", "spec_task", "criterion_task", "criterion_issue",
+                        "criterion_spec"}) String kind,
             @McpToolParam(description = "param.link_a", required = true) String a,
             @McpToolParam(description = "param.link_b", required = true) String b,
             @McpToolParam(description = "param.reason", required = true) String reason,
@@ -173,11 +262,11 @@ public class WriteTools implements ToolAdapter {
     @McpTool(name = "ledger_review", description = "tool.ledger_review", generateOutputSchema = true)
     public WriteOutputs.Transitioned review(
             @McpToolParam(description = "param.review_entity", required = true)
-            @Choice(from = HistoryEntity.class, only = {"DEFECT", "TASK", "CONDITION"}) String entity,
+            @Choice(from = HistoryEntity.class, only = {"ISSUE", "SPEC", "TASK", "CRITERION"}) String entity,
             @McpToolParam(description = "param.id", required = true) String id,
             @McpToolParam(description = "param.expected_version", required = true) Long expected_version,
             @McpToolParam(description = "param.review_to", required = true)
-            @Choice(from = {DefectStatus.class, TaskState.class, ConditionState.class}) String to,
+            @Choice(from = {IssueStatus.class, SpecStatus.class, TaskState.class, CriterionState.class}) String to,
             @McpToolParam(description = "param.reason", required = true) String reason,
             @McpToolParam(description = "param.review_evidence_uri", required = true) String evidence_uri,
             @McpToolParam(description = "param.evidence_sha256", required = false) String evidence_sha256,

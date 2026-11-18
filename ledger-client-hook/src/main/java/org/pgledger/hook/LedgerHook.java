@@ -20,14 +20,14 @@ import tools.jackson.databind.node.ObjectNode;
  * or malformed, or the {@code operationKey} is not a text. The value is the text of an
  * {@link org.pgledger.attestation.AttestationToken}, signed with the private key of the author
  * {@code <vendor>:<host id>} for the MCP server of the call, for the canonical tool name ({@code ledger_<operation>} or
- * {@code artifact-<operation>}),
+ * {@code artifact_<operation>}),
  * the operation key of the call, the digest of the arguments the hook hands the host (RFC 8785 canonical form, SHA-256:
  * {@link ArgumentsDigest}; the operation key is already in them, the attestation is not) and the time of the injected
  * clock. The operation key is the argument {@code operationKey}, exactly as the model gave it; the hook never makes
  * one up and adds nothing to the arguments but the attestation: a call without a key is signed with the empty key and
  * the server refuses it. whoami and the five attachment tools have no operation key in the claim
  * ({@link WriteTool#carriesOperationKey}): the claim is empty (the digest of the arguments covers the {@code operationKey}
- * of {@code artifact-begin}).
+ * of {@code artifact_begin}).
  * The digest covers the whole arguments object whatever its size (an attachment chunk is up to 349528 base64
  * characters): the hook neither limits nor truncates the arguments, the host's 10 second hook timeout is the bound.
  * Nothing else is changed.

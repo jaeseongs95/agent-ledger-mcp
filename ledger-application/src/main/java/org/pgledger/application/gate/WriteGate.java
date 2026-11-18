@@ -102,6 +102,11 @@ public class WriteGate {
         }
     }
 
+    /** True when the active transport request already carries a resolved per-author session identity. */
+    public boolean hasAmbientCaller() {
+        return callerResolver.hasAmbientCaller();
+    }
+
     /** Checks (and stamps) one more grant of an author that already passed the gate. */
     public void authorize(AuthorId author, Target target) {
         if (!grants.markUsed(author, target.project(), target.scope(), clock.instant())) {

@@ -112,8 +112,8 @@ class RuntimeToolTest {
         List<Tool> announced = session.awaitListChange(NOTIFICATION);
 
         assertThat(during.author()).isEqualTo("claude:nobody");
-        assertThat(announced).extracting(Tool::name).contains("ledger_save");
-        assertThat(SchemaView.of(session.mapper(), session.tool("ledger_save").inputSchema())
-                .at("fields.category").orElseThrow().allowed()).contains("AFTER_OUTAGE");
+        assertThat(announced).extracting(Tool::name).contains("ledger_issue_save");
+        assertThat(SchemaView.of(session.mapper(), session.tool("ledger_issue_save").inputSchema())
+                .at("category").orElseThrow().allowed()).contains("AFTER_OUTAGE");
     }
 }

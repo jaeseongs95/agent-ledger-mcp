@@ -11,11 +11,9 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.pgledger.application.admin.CommonCodeService;
-import org.pgledger.mcp.support.CodeChanges;
-import org.pgledger.testing.TestOwners;
-import org.pgledger.mcp.support.CodeListing;
 import org.pgledger.mcp.support.Calls;
-import org.pgledger.mcp.support.Calls.Fields;
+import org.pgledger.mcp.support.CodeChanges;
+import org.pgledger.mcp.support.CodeListing;
 import org.pgledger.mcp.support.McpServerTest;
 import org.pgledger.mcp.support.McpSession;
 import org.pgledger.mcp.support.Parallel;
@@ -25,29 +23,25 @@ import org.pgledger.mcp.support.SchemaView;
 import org.pgledger.mcp.support.ToolNames;
 import org.pgledger.mcp.tool.ReadOutputs;
 import org.pgledger.mcp.tool.WriteOutputs;
+import org.pgledger.testing.TestOwners;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * MCC cases about the tools following the common codes. Another process changes a code (here: the same service call
- * that the admin web and the command line make), the server notices it at its next poll (200 ms in the tests) and
- * announces list_changed. The server of this class is a context of its own because the cases change the codes for
- * good; every case works with codes of its own and checks with "contains".
+ * MCC cases about dynamic common-code updates reflected on {@code ledger_issue_save}, {@code ledger_record_deliverable},
+ * and {@code ledger_link} via {@code notifications/tools/list_changed}.
  */
 @McpServerTest
 @TestPropertySource(properties = "ledger.test.context=catalog-changes")
 class CatalogChangeTest {
 
-    /** Long enough for several polls even on a busy machine; a notification is awaited, not slept for. */
     private static final Duration NOTIFICATION = Duration.ofSeconds(5);
-
-    /** Three polls of 200 ms and a margin. */
     private static final Duration THREE_POLLS = Duration.ofMillis(1500);
 
-    private static SchemaView saveField(McpSession session, String path) {
-        return SchemaView.of(session.mapper(), session.tool("ledger_save").inputSchema()).at(path).orElseThrow();
+    private static SchemaView issueSaveField(McpSession session, String path) {
+        return SchemaView.of(session.mapper(), session.tool("ledger_issue_save").inputSchema()).at(path).orElseThrow();
     }
 
     private static CommonCodeService codes(ApplicationContext context) {
@@ -55,33 +49,31 @@ class CatalogChangeTest {
     }
 
     @Test
-    @DisplayName("MCC-003: a category added by another process is announced and shown in the ledger_save schema "
-            + "without a restart")
+    @DisplayName("MCC-003: a category added by another process is announced and shown in the ledger_issue_save schema without a restart")
     void aNewCategoryIsAnnounced(McpSession session, ApplicationContext context) {
         codes(context).set(CodeChanges.active(CodeChanges.CATEGORY, "UI_UX"), TestOwners.OWNER);
 
         List<Tool> announced = session.awaitListChange(NOTIFICATION);
 
         assertThat(announced).extracting(Tool::name).containsExactlyInAnyOrderElementsOf(ToolNames.all());
-        assertThat(saveField(session, "fields.category").allowed()).contains("UI_UX");
-        assertThat(saveField(session, "fields.category").description()).contains("UI_UX name UI_UX (Name UI_UX)");
+        assertThat(issueSaveField(session, "category").allowed()).contains("UI_UX");
+        assertThat(issueSaveField(session, "category").description()).contains("UI_UX name UI_UX (Name UI_UX)");
     }
 
     @Test
-    @DisplayName("MCC-004: a code set INACTIVE is announced and removed from enumeration and description, and shown "
-            + "again when reactivated")
+    @DisplayName("MCC-004: a code set INACTIVE is announced and removed from enumeration and description, and shown again when reactivated")
     void aRetiredCodeLeavesAndComesBack(McpSession session, ApplicationContext context) {
         codes(context).set(CodeChanges.active(CodeChanges.CATEGORY, "COMES_AND_GOES"), TestOwners.OWNER);
         session.awaitListChange(NOTIFICATION);
-        SchemaView shown = saveField(session, "fields.category");
+        SchemaView shown = issueSaveField(session, "category");
 
         codes(context).set(CodeChanges.inactive(CodeChanges.CATEGORY, "COMES_AND_GOES"), TestOwners.OWNER);
         session.awaitListChange(NOTIFICATION);
-        SchemaView retired = saveField(session, "fields.category");
+        SchemaView retired = issueSaveField(session, "category");
 
         codes(context).set(CodeChanges.active(CodeChanges.CATEGORY, "COMES_AND_GOES"), TestOwners.OWNER);
         session.awaitListChange(NOTIFICATION);
-        SchemaView reactivated = saveField(session, "fields.category");
+        SchemaView reactivated = issueSaveField(session, "category");
 
         assertThat(shown.allowed()).contains("COMES_AND_GOES");
         assertThat(retired.allowed()).doesNotContain("COMES_AND_GOES");
@@ -91,8 +83,7 @@ class CatalogChangeTest {
     }
 
     @Test
-    @DisplayName("MCC-005: a relation kind and a severity added by another process show in ledger_link.kind and in "
-            + "the severity text")
+    @DisplayName("MCC-005: a relation kind, a severity, and a deliverable kind added by another process show in the live tool schemas")
     void aRelationKindAndASeverityAreShown(McpSession session, ApplicationContext context) {
         codes(context).set(CodeChanges.active(CodeChanges.RELATION, "BLOCKS_NEW"), TestOwners.OWNER);
         session.awaitListChange(NOTIFICATION);
@@ -101,22 +92,28 @@ class CatalogChangeTest {
 
         codes(context).set(CodeChanges.active(CodeChanges.SEVERITY, "P7"), TestOwners.OWNER);
         session.awaitListChange(NOTIFICATION);
-        SchemaView severity = saveField(session, "fields.severity");
+        SchemaView severity = issueSaveField(session, "severity");
 
-        assertThat(kinds).contains("defect_task", "condition_task", "condition_defect", "BLOCKS_NEW");
+        codes(context).set(CodeChanges.active(CodeChanges.DELIVERABLE, "AUDIO_CUT"), TestOwners.OWNER);
+        session.awaitListChange(NOTIFICATION);
+        SchemaView deliverableKind = SchemaView.of(session.mapper(),
+                session.tool("ledger_record_deliverable").inputSchema()).at("kind").orElseThrow();
+
+        assertThat(kinds).contains("issue_task", "issue_spec", "spec_task", "criterion_task", "criterion_issue",
+                "criterion_spec", "BLOCKS_NEW");
         assertThat(severity.allowed()).contains("P1", "P2", "P3", "P7");
         assertThat(severity.description()).contains("P7 name P7 (Name P7)");
+        assertThat(deliverableKind.allowed()).contains("code_change", "document", "media", "AUDIO_CUT");
     }
 
     @Test
     @DisplayName("MCC-006: without a change there is no notification for three polls, and a write does not cause one")
     void noChangeNoNotification(McpSession session, Scenario scenario) {
-        // a change of an earlier test of the shared server may still be announced to this new session: let it arrive first
         session.drainListChanges(THREE_POLLS);
         session.awaitNoListChange(THREE_POLLS);
 
-        session.ok("ledger_save", Calls.Save.create("defect", Fields.defect(scenario.projectId(), "a write"),
-                Scenario.AUTHOR), WriteOutputs.Saved.class);
+        session.ok("ledger_issue_save", Calls.IssueSave.create(scenario.projectId(), "a write", Scenario.AUTHOR),
+                WriteOutputs.Saved.class);
 
         session.awaitNoListChange(THREE_POLLS);
     }
@@ -130,23 +127,24 @@ class CatalogChangeTest {
                 .map(session -> session.awaitListChange(NOTIFICATION)).toList();
 
         try (McpSession fourth = McpSession.open(context)) {
-            assertThat(saveField(fourth, "fields.category").allowed()).contains("FOR_THREE");
+            assertThat(issueSaveField(fourth, "category").allowed()).contains("FOR_THREE");
         }
-        assertThat(announced).hasSize(3).allSatisfy(tools -> assertThat(tools).hasSize(27));
+        assertThat(announced).hasSize(3).allSatisfy(tools -> assertThat(tools).hasSize(33));
     }
 
     @Test
     @DisplayName("MCC-008: a session with the old schema writes the new code, the service reads the database")
     void theOldSchemaDoesNotLimitTheWrite(McpSession session, Scenario scenario, ApplicationContext context) {
-        List<String> before = saveField(session, "fields.category").allowed();
+        List<String> before = issueSaveField(session, "category").allowed();
         codes(context).set(CodeChanges.active(CodeChanges.CATEGORY, "NOT_LISTED_YET"), TestOwners.OWNER);
 
-        WriteOutputs.Saved saved = session.ok("ledger_save", Calls.Save.create("defect",
-                new Fields(scenario.projectId(), "new code", "NOT_LISTED_YET", "P2", "b", "c", null, null, null, null,
-                        null, null, null, null, null), Scenario.AUTHOR), WriteOutputs.Saved.class);
+        WriteOutputs.Saved saved = session.ok("ledger_issue_save",
+                Calls.IssueSave.create(scenario.projectId(), "new code", Scenario.AUTHOR)
+                        .withCategory("NOT_LISTED_YET"),
+                WriteOutputs.Saved.class);
 
         assertThat(before).doesNotContain("NOT_LISTED_YET");
-        assertThat(session.ok("ledger_defect", new Calls.IdOnly(saved.id()), ReadOutputs.Defect.class).category())
+        assertThat(session.ok("ledger_issue", new Calls.IdOnly(saved.id()), ReadOutputs.Issue.class).category())
                 .isEqualTo("NOT_LISTED_YET");
     }
 
@@ -161,7 +159,7 @@ class CatalogChangeTest {
         });
 
         session.awaitNoListChange(THREE_POLLS);
-        assertThat(saveField(session, "fields.category").allowed()).doesNotContain("NEVER_COMMITTED");
+        assertThat(issueSaveField(session, "category").allowed()).doesNotContain("NEVER_COMMITTED");
     }
 
     @Test
@@ -179,21 +177,20 @@ class CatalogChangeTest {
         List<Outcome<List<Integer>>> outcomes = Parallel.all(List.of(listing, changing));
 
         assertThat(outcomes).allMatch(Outcome::succeeded);
-        assertThat(outcomes.get(0).value()).hasSize(200).containsOnly(27);
-        assertThat(outcomes.get(1).value()).hasSize(12).containsOnly(27);
+        assertThat(outcomes.get(0).value()).hasSize(200).containsOnly(33);
+        assertThat(outcomes.get(1).value()).hasSize(12).containsOnly(33);
     }
 
     @Test
-    @DisplayName("MCC-012: codes with quotes, a newline, a backslash and a template marker are listed verbatim, the "
-            + "inactive severity is omitted")
+    @DisplayName("MCC-012: codes with quotes, a newline, a backslash and a template marker are listed verbatim, the inactive severity is omitted")
     void specialCharactersArePreserved(McpSession session, ApplicationContext context) {
         codes(context).set(CodeChanges.withTexts(CodeChanges.CATEGORY, "QUOTED", "따옴표 \"quoted\"",
                 "say \"hi\"", "line one\nline two", "back\\slash"), TestOwners.OWNER);
-        codes(context).set(CodeChanges.withTexts(CodeChanges.CATEGORY, "TEMPLATE", "@CODES:DEFECT_CATEGORY@",
-                "@CODES:DEFECT_SEVERITY@", "@CODES:DEFECT_CATEGORY@", "@CODES:DEFECT_CATEGORY@"), TestOwners.OWNER);
+        codes(context).set(CodeChanges.withTexts(CodeChanges.CATEGORY, "TEMPLATE", "@CODES:ISSUE_CATEGORY@",
+                "@CODES:ISSUE_SEVERITY@", "@CODES:ISSUE_CATEGORY@", "@CODES:ISSUE_CATEGORY@"), TestOwners.OWNER);
         session.awaitListChange(NOTIFICATION);
-        SchemaView category = saveField(session, "fields.category");
-        SchemaView severity = saveField(session, "fields.severity");
+        SchemaView category = issueSaveField(session, "category");
+        SchemaView severity = issueSaveField(session, "severity");
         List<ReadOutputs.CodeRow> active = CodeListing.active(session, CodeChanges.CATEGORY);
 
         assertThat(active).extracting(ReadOutputs.CodeRow::code).contains("QUOTED", "TEMPLATE");
@@ -201,8 +198,8 @@ class CatalogChangeTest {
                 .toArray(new String[0]));
         assertThat(category.description()).contains("QUOTED 따옴표 \"quoted\" (say \"hi\"): line one\nline "
                 + "two / back\\slash");
-        assertThat(category.description()).contains("TEMPLATE @CODES:DEFECT_CATEGORY@ (@CODES:DEFECT_SEVERITY@): "
-                + "@CODES:DEFECT_CATEGORY@ / @CODES:DEFECT_CATEGORY@");
+        assertThat(category.description()).contains("TEMPLATE @CODES:ISSUE_CATEGORY@ (@CODES:ISSUE_SEVERITY@): "
+                + "@CODES:ISSUE_CATEGORY@ / @CODES:ISSUE_CATEGORY@");
         assertThat(severity.allowed()).doesNotContain("UNRATED");
         assertThat(severity.description()).doesNotContain("UNRATED");
     }

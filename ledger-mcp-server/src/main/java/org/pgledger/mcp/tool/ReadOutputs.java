@@ -19,9 +19,8 @@ import org.pgledger.application.read.SearchService;
 import org.pgledger.application.read.StatsService;
 
 /**
- * The results of the read tools as they go on the wire: the records of the application re-declared with the wire
- * keys. Lists are {@code items}, {@code truncated} and {@code next_cursor}; every instant is UTC ISO-8601 with
- * {@code Z} (the mapper writes {@code Instant} that way).
+ * Payload records placed inside {@code data} of the {@code ApiResult.v1} envelope for the fifteen read tools.
+ * Paginated lists carry {@code items}, {@code truncated}, and {@code next_cursor}; timestamps are UTC ISO-8601.
  */
 public final class ReadOutputs {
 
@@ -62,9 +61,12 @@ public final class ReadOutputs {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
-    public record Fix(@JsonProperty("commit") String commit, @JsonProperty("repo") String repo,
-            @JsonProperty("branch") String branch, @JsonProperty("ci") String ci,
-            @JsonProperty("ci_conclusion") String ciConclusion, @JsonProperty("by") String by) {
+    public record Deliverable(@JsonProperty("id") long id, @JsonProperty("kind") String kind,
+            @JsonProperty("deliverable_ref") String deliverableRef, @JsonProperty("location") String location,
+            @JsonProperty("summary") String summary, @JsonProperty("check_ref") String checkRef,
+            @JsonProperty("check_result") String checkResult, @JsonProperty("checked_at") Instant checkedAt,
+            @JsonProperty("attachment_id") String attachmentId, @JsonProperty("by") String by,
+            @JsonProperty("at") Instant at) {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
@@ -73,9 +75,9 @@ public final class ReadOutputs {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
-    public record Case(@JsonProperty("source") String source, @JsonProperty("defect") String defect,
+    public record Case(@JsonProperty("source") String source, @JsonProperty("issue") String issue,
             @JsonProperty("case_id") Long caseId, @JsonProperty("observation") String observation,
-            @JsonProperty("evidence") String evidence, @JsonProperty("user_quote") String userQuote,
+            @JsonProperty("evidence") String evidence, @JsonProperty("source_quote") String sourceQuote,
             @JsonProperty("observed_at") Instant observedAt, @JsonProperty("by") String by,
             @JsonProperty("at") Instant at) {
     }
@@ -92,17 +94,33 @@ public final class ReadOutputs {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
-    public record Defect(@JsonProperty("id") String id, @JsonProperty("project_id") String projectId,
+    public record Issue(@JsonProperty("id") String id, @JsonProperty("project_id") String projectId,
             @JsonProperty("title") String title, @JsonProperty("category") String category,
             @JsonProperty("severity") String severity, @JsonProperty("status") String status,
-            @JsonProperty("merged_into") String mergedInto, @JsonProperty("behavior") String behavior,
+            @JsonProperty("merged_into") String mergedInto, @JsonProperty("symptom") String symptom,
             @JsonProperty("root_cause") String rootCause, @JsonProperty("owner_actor_id") String ownerActorId,
             @JsonProperty("version") long version, @JsonProperty("updated_at") Instant updatedAt,
-            @JsonProperty("created_by") String createdBy, @JsonProperty("fixed_by") String fixedBy,
-            @JsonProperty("fixed_at") Instant fixedAt, @JsonProperty("last_change") LastChange lastChange,
-            @JsonProperty("fixes") List<Fix> fixes, @JsonProperty("tasks") List<TaskRef> tasks,
-            @JsonProperty("conditions") List<String> conditions, @JsonProperty("cases") List<Case> cases,
-            @JsonProperty("relations") List<Relation> relations,
+            @JsonProperty("created_by") String createdBy, @JsonProperty("resolved_by") String resolvedBy,
+            @JsonProperty("resolved_at") Instant resolvedAt, @JsonProperty("last_change") LastChange lastChange,
+            @JsonProperty("deliverables") List<Deliverable> deliverables, @JsonProperty("tasks") List<TaskRef> tasks,
+            @JsonProperty("specs") List<String> specs, @JsonProperty("criteria") List<String> criteria,
+            @JsonProperty("cases") List<Case> cases, @JsonProperty("relations") List<Relation> relations,
+            @JsonProperty("recent_changes") List<ChangeSummary> recentChanges) {
+    }
+
+    @JsonInclude(JsonInclude.Include.ALWAYS)
+    public record Spec(@JsonProperty("id") String id, @JsonProperty("project_id") String projectId,
+            @JsonProperty("parent_id") String parentId, @JsonProperty("title") String title,
+            @JsonProperty("summary") String summary, @JsonProperty("acceptance_criteria") String acceptanceCriteria,
+            @JsonProperty("priority") String priority, @JsonProperty("status") String status,
+            @JsonProperty("owner_actor_id") String ownerActorId, @JsonProperty("origin_ref") String originRef,
+            @JsonProperty("origin_quote") String originQuote, @JsonProperty("version") long version,
+            @JsonProperty("created_at") Instant createdAt, @JsonProperty("updated_at") Instant updatedAt,
+            @JsonProperty("created_by") String createdBy, @JsonProperty("completed_by") String completedBy,
+            @JsonProperty("last_change") LastChange lastChange,
+            @JsonProperty("deliverables") List<Deliverable> deliverables,
+            @JsonProperty("child_specs") List<String> childSpecs, @JsonProperty("tasks") List<String> tasks,
+            @JsonProperty("issues") List<String> issues, @JsonProperty("criteria") List<String> criteria,
             @JsonProperty("recent_changes") List<ChangeSummary> recentChanges) {
     }
 
@@ -114,8 +132,20 @@ public final class ReadOutputs {
             @JsonProperty("state") String state, @JsonProperty("owner_actor_id") String ownerActorId,
             @JsonProperty("version") long version, @JsonProperty("created_at") Instant createdAt,
             @JsonProperty("updated_at") Instant updatedAt, @JsonProperty("created_by") String createdBy,
-            @JsonProperty("completed_by") String completedBy, @JsonProperty("defects") List<String> defects,
-            @JsonProperty("conditions") List<String> conditions) {
+            @JsonProperty("completed_by") String completedBy,
+            @JsonProperty("deliverables") List<Deliverable> deliverables, @JsonProperty("issues") List<String> issues,
+            @JsonProperty("specs") List<String> specs, @JsonProperty("criteria") List<String> criteria) {
+    }
+
+    @JsonInclude(JsonInclude.Include.ALWAYS)
+    public record Criterion(@JsonProperty("id") String id, @JsonProperty("project_id") String projectId,
+            @JsonProperty("milestone_name") String milestoneName, @JsonProperty("goal_label") String goalLabel,
+            @JsonProperty("code") String code, @JsonProperty("criterion_text") String criterionText,
+            @JsonProperty("state") String state, @JsonProperty("version") long version,
+            @JsonProperty("created_by") String createdBy, @JsonProperty("last_change") LastChange lastChange,
+            @JsonProperty("issues") List<String> issues, @JsonProperty("specs") List<String> specs,
+            @JsonProperty("tasks") List<String> tasks,
+            @JsonProperty("recent_changes") List<ChangeSummary> recentChanges) {
     }
 
     /**
@@ -144,11 +174,19 @@ public final class ReadOutputs {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
-    public record DefectRow(@JsonProperty("id") String id, @JsonProperty("title") String title,
+    public record IssueRow(@JsonProperty("id") String id, @JsonProperty("title") String title,
             @JsonProperty("category") String category, @JsonProperty("severity") String severity,
             @JsonProperty("status") String status, @JsonProperty("merged_into") String mergedInto,
             @JsonProperty("owner") String owner, @JsonProperty("version") long version,
             @JsonProperty("created_at") Instant createdAt, @JsonProperty("updated_at") Instant updatedAt) {
+    }
+
+    @JsonInclude(JsonInclude.Include.ALWAYS)
+    public record SpecRow(@JsonProperty("id") String id, @JsonProperty("parent_id") String parentId,
+            @JsonProperty("title") String title, @JsonProperty("status") String status,
+            @JsonProperty("priority") String priority, @JsonProperty("owner_actor_id") String ownerActorId,
+            @JsonProperty("version") long version, @JsonProperty("created_at") Instant createdAt,
+            @JsonProperty("updated_at") Instant updatedAt) {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
@@ -159,9 +197,9 @@ public final class ReadOutputs {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
-    public record ConditionRow(@JsonProperty("id") String id, @JsonProperty("release") String release,
+    public record CriterionRow(@JsonProperty("id") String id, @JsonProperty("milestone_name") String milestoneName,
             @JsonProperty("goal_label") String goalLabel, @JsonProperty("code") String code,
-            @JsonProperty("condition_text") String conditionText, @JsonProperty("state") String state,
+            @JsonProperty("criterion_text") String criterionText, @JsonProperty("state") String state,
             @JsonProperty("version") long version) {
     }
 
@@ -171,17 +209,18 @@ public final class ReadOutputs {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
-    public record DayCount(@JsonProperty("day") LocalDate day, @JsonProperty("defects") long defects,
-            @JsonProperty("tasks") long tasks) {
+    public record DayCount(@JsonProperty("day") LocalDate day, @JsonProperty("issues") long issues,
+            @JsonProperty("specs") long specs, @JsonProperty("tasks") long tasks) {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
-    public record Stats(@JsonProperty("defects_by_status") Map<String, Long> defectsByStatus,
-            @JsonProperty("defects_by_severity") Map<String, Long> defectsBySeverity,
+    public record Stats(@JsonProperty("issues_by_status") Map<String, Long> issuesByStatus,
+            @JsonProperty("issues_by_severity") Map<String, Long> issuesBySeverity,
+            @JsonProperty("specs_by_status") Map<String, Long> specsByStatus,
             @JsonProperty("tasks_by_state") Map<String, Long> tasksByState,
-            @JsonProperty("conditions_by_state") Map<String, Long> conditionsByState,
-            @JsonProperty("defects") long defects, @JsonProperty("tasks") long tasks,
-            @JsonProperty("conditions") long conditions,
+            @JsonProperty("criteria_by_state") Map<String, Long> criteriaByState,
+            @JsonProperty("issues") long issues, @JsonProperty("specs") long specs,
+            @JsonProperty("tasks") long tasks, @JsonProperty("criteria") long criteria,
             @JsonProperty("created_per_day") List<DayCount> createdPerDay) {
     }
 
@@ -207,27 +246,50 @@ public final class ReadOutputs {
                 i.projectId(), i.mergedInto())).toList(), result.notFound());
     }
 
-    public static Defect defect(DetailService.DefectDetail d) {
-        return new Defect(d.id(), d.projectId(), d.title(), d.category(), d.severity(), d.status(), d.mergedInto(),
-                d.behavior(), d.rootCause(), d.ownerActorId(), d.version(), d.updatedAt(), d.createdBy(),
-                d.fixedBy(), d.fixedAt(),
-                d.lastChange() == null ? null : new LastChange(d.lastChange().at(), d.lastChange().author(),
-                        d.lastChange().login(), d.lastChange().assurance(), d.lastChange().op(),
-                        d.lastChange().reason()),
-                d.fixes().stream().map(f -> new Fix(f.commit(), f.repo(), f.branch(), f.ci(), f.ciConclusion(),
-                        f.by())).toList(),
-                d.tasks().stream().map(t -> new TaskRef(t.task(), t.state(), t.owner())).toList(), d.conditions(),
-                d.cases().stream().map(c -> new Case(c.source(), c.defect(), c.caseId(), c.observation(),
-                        c.evidence(), c.userQuote(), c.observedAt(), c.by(), c.at())).toList(),
+    private static LastChange lastChange(DetailService.LastChange last) {
+        return last == null ? null : new LastChange(last.at(), last.author(), last.login(), last.assurance(),
+                last.op(), last.reason());
+    }
+
+    private static List<Deliverable> deliverables(List<DetailService.DeliverableView> list) {
+        return list.stream().map(d -> new Deliverable(d.id(), d.kind(), d.deliverableRef(), d.location(), d.summary(),
+                d.checkRef(), d.checkResult(), d.checkedAt(), d.attachmentId(), d.by(), d.at())).toList();
+    }
+
+    private static List<ChangeSummary> changes(List<DetailService.ChangeSummary> list) {
+        return list.stream().map(c -> new ChangeSummary(c.id(), c.at(), c.author(), c.op(), c.reason())).toList();
+    }
+
+    public static Issue issue(DetailService.IssueDetail d) {
+        return new Issue(d.id(), d.projectId(), d.title(), d.category(), d.severity(), d.status(), d.mergedInto(),
+                d.symptom(), d.rootCause(), d.ownerActorId(), d.version(), d.updatedAt(), d.createdBy(),
+                d.resolvedBy(), d.resolvedAt(), lastChange(d.lastChange()), deliverables(d.deliverables()),
+                d.tasks().stream().map(t -> new TaskRef(t.task(), t.state(), t.owner())).toList(),
+                d.specs(), d.criteria(),
+                d.cases().stream().map(c -> new Case(c.source(), c.issue(), c.caseId(), c.observation(),
+                        c.evidence(), c.sourceQuote(), c.observedAt(), c.by(), c.at())).toList(),
                 d.relations().stream().map(r -> new Relation(r.kind(), r.other(), r.end().token())).toList(),
-                d.recentChanges().stream().map(c -> new ChangeSummary(c.id(), c.at(), c.author(), c.op(),
-                        c.reason())).toList());
+                changes(d.recentChanges()));
+    }
+
+    public static Spec spec(DetailService.SpecDetail s) {
+        return new Spec(s.id(), s.projectId(), s.parentId(), s.title(), s.summary(), s.acceptanceCriteria(),
+                s.priority(), s.status(), s.ownerActorId(), s.originRef(), s.originQuote(), s.version(),
+                s.createdAt(), s.updatedAt(), s.createdBy(), s.completedBy(), lastChange(s.lastChange()),
+                deliverables(s.deliverables()), s.childSpecs(), s.tasks(), s.issues(), s.criteria(),
+                changes(s.recentChanges()));
     }
 
     public static Task task(DetailService.TaskDetail t) {
         return new Task(t.id(), t.projectId(), t.title(), t.purpose(), t.successCondition(), t.originRef(),
                 t.originQuote(), t.state(), t.ownerActorId(), t.version(), t.createdAt(), t.updatedAt(),
-                t.createdBy(), t.completedBy(), t.defects(), t.conditions());
+                t.createdBy(), t.completedBy(), deliverables(t.deliverables()), t.issues(), t.specs(), t.criteria());
+    }
+
+    public static Criterion criterion(DetailService.CriterionDetail c) {
+        return new Criterion(c.id(), c.projectId(), c.milestoneName(), c.goalLabel(), c.code(), c.criterionText(),
+                c.state(), c.version(), c.createdBy(), lastChange(c.lastChange()),
+                c.issues(), c.specs(), c.tasks(), changes(c.recentChanges()));
     }
 
     /** @param includeBefore whether the caller asked for {@code before_data}: when not, the key is left out */
@@ -238,11 +300,6 @@ public final class ReadOutputs {
                 h.correctsId(), h.operationKey(), h.sourceRef(), h.attachmentId());
     }
 
-    /**
-     * The text that is written as it is for {@code before_data} ({@code @JsonRawValue}): the JSON the row stores
-     * (snake_case keys, written by the ledger mapper), or {@code null} (the JSON null) when it was asked for and the
-     * row has none, or a Java null (the key is left out) when it was not asked for.
-     */
     private static String beforeData(HistoryService.HistoryView h, boolean includeBefore) {
         if (!includeBefore) {
             return null;
@@ -251,12 +308,17 @@ public final class ReadOutputs {
     }
 
     public static Hit hit(SearchService.Hit h) {
-        return new Hit(h.kind(), h.id(), h.projectId(), h.title(), h.state(), h.createdAt());
+        return new Hit(h.entity(), h.id(), h.projectId(), h.title(), h.state(), h.createdAt());
     }
 
-    public static DefectRow defectRow(ListService.DefectItem d) {
-        return new DefectRow(d.id(), d.title(), d.category(), d.severity(), d.status(), d.mergedInto(), d.owner(),
+    public static IssueRow issueRow(ListService.IssueItem d) {
+        return new IssueRow(d.id(), d.title(), d.category(), d.severity(), d.status(), d.mergedInto(), d.owner(),
                 d.version(), d.createdAt(), d.updatedAt());
+    }
+
+    public static SpecRow specRow(ListService.SpecItem s) {
+        return new SpecRow(s.id(), s.parentId(), s.title(), s.status(), s.priority(), s.ownerActorId(),
+                s.version(), s.createdAt(), s.updatedAt());
     }
 
     public static TaskRow taskRow(ListService.TaskItem t) {
@@ -264,8 +326,8 @@ public final class ReadOutputs {
                 t.updatedAt());
     }
 
-    public static ConditionRow conditionRow(ListService.ConditionItem c) {
-        return new ConditionRow(c.id(), c.release(), c.goalLabel(), c.code(), c.conditionText(), c.state(),
+    public static CriterionRow criterionRow(ListService.CriterionItem c) {
+        return new CriterionRow(c.id(), c.milestoneName(), c.goalLabel(), c.code(), c.criterionText(), c.state(),
                 c.version());
     }
 
@@ -274,9 +336,9 @@ public final class ReadOutputs {
     }
 
     public static Stats stats(StatsService.Stats s) {
-        return new Stats(s.defectsByStatus(), s.defectsBySeverity(), s.tasksByState(), s.conditionsByState(),
-                s.defects(), s.tasks(), s.conditions(),
-                s.createdPerDay().stream().map(d -> new DayCount(d.day(), d.defects(), d.tasks())).toList());
+        return new Stats(s.issuesByStatus(), s.issuesBySeverity(), s.specsByStatus(), s.tasksByState(),
+                s.criteriaByState(), s.issues(), s.specs(), s.tasks(), s.criteria(),
+                s.createdPerDay().stream().map(d -> new DayCount(d.day(), d.issues(), d.specs(), d.tasks())).toList());
     }
 
     public static ProjectRow projectRow(CatalogService.ProjectView p) {

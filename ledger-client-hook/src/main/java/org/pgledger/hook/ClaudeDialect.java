@@ -14,11 +14,11 @@ import tools.jackson.core.JacksonException;
  *
  * <p>The tool names that are signed for are {@code mcp__<server>__<tool>}, or {@code mcp__<server>__<server>_<tool>}
  * when the tool reaches the host through a gateway that prefixes the tool names with the name of its upstream (the portal
- * of the deployment names the upstream like the server, {@code mcp__ledger__ledger_ledger_save}). The tool is one of the
- * ten {@code ledger_<op>} tools or one of the five attachment tools {@code artifact-begin}, {@code artifact-chunk},
- * {@code artifact-finish}, {@code artifact-status}, {@code artifact-read}, exactly. The prefix before the tool must be
- * exactly the server segment: a look-alike server that names its tool {@code other_ledger_save} or
- * {@code other_artifact-begin} is not signed for. The server segment is made of {@code A-Za-z0-9_-} (the host's own
+ * of the deployment names the upstream like the server, {@code mcp__ledger__ledger_ledger_issue_save}). The tool is one of the
+ * thirteen {@code ledger_<op>} tools or one of the five attachment tools {@code artifact_begin}, {@code artifact_chunk},
+ * {@code artifact_finish}, {@code artifact_status}, {@code artifact_read}, exactly. The prefix before the tool must be
+ * exactly the server segment: a look-alike server that names its tool {@code other_ledger_issue_save} or
+ * {@code other_artifact_begin} is not signed for. The server segment is made of {@code A-Za-z0-9_-} (the host's own
  * rule: no dot). The Codex Apps namespace belongs to Codex alone and is not signed for here.
  */
 @Component

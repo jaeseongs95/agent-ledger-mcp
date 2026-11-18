@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 import org.pgledger.mcp.error.ToolError;
 import org.pgledger.mcp.support.Args;
 import org.pgledger.mcp.support.Calls;
-import org.pgledger.mcp.support.Calls.Fields;
 import org.pgledger.mcp.support.Ledger;
 import org.pgledger.mcp.support.McpServerTest;
 import org.pgledger.mcp.support.McpSession;
@@ -23,82 +22,64 @@ import org.pgledger.mcp.tool.ReadOutputs;
 import org.pgledger.mcp.tool.WriteOutputs;
 
 /**
- * MCW-PRN-01: the {@code fields} of {@code ledger_save} and of a {@code save} operation of {@code ledger_batch} are one
- * input record whose fields are patches. A key written blank clears an optional field (with {@code Patch.set(null)} made in
- * code it clears too), a key left out or written as JSON {@code null} is not touched (a null counts as not given), and the
- * receipts, the history and the error paths are those of the map this record replaced.
+ * MCW-PRN-01: flat save tools ({@code ledger_issue_save}, {@code ledger_spec_save}, {@code ledger_task_save},
+ * {@code ledger_criterion_save}) and {@code save} operations of {@code ledger_batch} treat omitted or JSON {@code null}
+ * values as untouched and an empty string {@code ""} as clearing an optional field.
  */
 @McpServerTest
 class SaveInputTest {
 
-    private static ReadOutputs.Defect defect(McpSession session, String id) {
-        return session.ok("ledger_defect", new Calls.IdOnly(id), ReadOutputs.Defect.class);
+    private static ReadOutputs.Issue issue(McpSession session, String id) {
+        return session.ok("ledger_issue", new Calls.IdOnly(id), ReadOutputs.Issue.class);
     }
 
     private static WriteOutputs.Saved createWithOwner(McpSession session, Scenario scenario) {
-        Fields withOwner = new Fields(scenario.projectId(), "owned", "ARC", "P2", "behavior", "cause", Scenario.AUTHOR,
-                null, null, null, null, null, null, null, null);
-        return session.ok("ledger_save", Calls.Save.create("defect", withOwner, Scenario.AUTHOR),
+        return session.ok("ledger_issue_save",
+                Calls.IssueSave.create(scenario.projectId(), "owned", Scenario.AUTHOR).withOwner(Scenario.AUTHOR),
                 WriteOutputs.Saved.class);
     }
 
-    private static Args edit(McpSession session, String id, long version, Object fields) {
-        return Args.from(session.mapper(), Calls.Save.edit("defect", id, version, Fields.titled("x"), Scenario.AUTHOR))
-                .with("fields", fields);
-    }
-
-    /** The {@code fields} object of one key; the value may be null (a key written as null). */
-    private static Map<String, Object> one(String key, Object value) {
-        Map<String, Object> fields = new LinkedHashMap<>();
-        fields.put(key, value);
-        return fields;
-    }
-
-    /** The {@code fields} object of two keys; a value may be null (a key written as null). */
-    private static Map<String, Object> two(String key, Object value, String other, Object otherValue) {
-        Map<String, Object> fields = one(key, value);
-        fields.put(other, otherValue);
-        return fields;
+    private static Args flatEdit(McpSession session, String id, long version) {
+        return Args.from(session.mapper(), Calls.IssueSave.editTitle(id, version, "x", Scenario.AUTHOR))
+                .without("title");
     }
 
     /** The call over the real transport (HTTP to the running server, a null of the arguments goes on the wire as it is). */
-    private static CallToolResult overTheWire(RawHttp http, Args call) {
+    private static CallToolResult overTheWire(RawHttp http, String tool, Args call) {
         Header bearer = Header.bearer(McpTestSettings.TOKEN);
         String sessionId = http.openSession(bearer);
-        return http.toolResult(http.callTool(sessionId, "ledger_save", call, bearer));
+        return http.toolResult(http.callTool(sessionId, tool, call, bearer));
     }
 
     @Test
-    @DisplayName("MCW-PRN-01: a key left out is not touched, a key written with JSON null counts as not given (changed by opkey "
-            + "round 2: null used to clear; the digest of the signed arguments leaves the null out, so there is no "
-            + "ATTESTATION_BINDING_MISMATCH), a key written blank clears the optional field, and the history says so (OPK-021)")
+    @DisplayName("MCW-PRN-01: a parameter left out is not touched, a parameter written with JSON null counts as not given, "
+            + "and an empty string clears an optional field with full history")
     void leavingOutAndClearing(McpSession session, RawHttp http, Scenario scenario) {
         WriteOutputs.Saved created = createWithOwner(session, scenario);
-        assertThat(defect(session, created.id()).ownerActorId()).isEqualTo(Scenario.AUTHOR);
+        assertThat(issue(session, created.id()).ownerActorId()).isEqualTo(Scenario.AUTHOR);
 
-        WriteOutputs.Saved retitled = session.ok("ledger_save",
-                edit(session, created.id(), 1, one("title", "retitled")), WriteOutputs.Saved.class);
-        assertThat(defect(session, created.id()).ownerActorId()).as("a key left out is not touched")
+        WriteOutputs.Saved retitled = session.ok("ledger_issue_save",
+                Calls.IssueSave.editTitle(created.id(), 1, "retitled", Scenario.AUTHOR), WriteOutputs.Saved.class);
+        assertThat(issue(session, created.id()).ownerActorId()).as("a parameter left out is not touched")
                 .isEqualTo(Scenario.AUTHOR);
 
-        // JSON null in fields counts as not given: the title is written, the owner is not touched (signed with the digest of
-        // the arguments as sent, which leaves the null member out like the server side of the MCP SDK does)
-        Args withNull = edit(session, created.id(), retitled.version(), two("owner_actor_id", null, "title", "x"));
-        assertThat(http.toolCallText("ledger_save", withNull)).as("the null is on the wire")
+        Args withNull = flatEdit(session, created.id(), retitled.version())
+                .with("owner_actor_id", null).with("title", "x");
+        assertThat(http.toolCallText("ledger_issue_save", withNull)).as("the null is on the wire")
                 .contains("\"owner_actor_id\":null");
-        CallToolResult nullAndTitle = overTheWire(http, withNull);
+        CallToolResult nullAndTitle = overTheWire(http, "ledger_issue_save", withNull);
         assertThat(nullAndTitle.isError()).as("null next to a title: %s", nullAndTitle.content()).isFalse();
-        ReadOutputs.Defect afterNull = defect(session, created.id());
+        ReadOutputs.Issue afterNull = issue(session, created.id());
         assertThat(afterNull.title()).isEqualTo("x");
         assertThat(afterNull.ownerActorId()).as("a null is not a clearing").isEqualTo(Scenario.AUTHOR);
         assertThat(afterNull.version()).isEqualTo(3);
 
-        // an empty text clears an optional field, the one way
-        WriteOutputs.Saved cleared = session.ok("ledger_save",
-                edit(session, created.id(), afterNull.version(), one("owner_actor_id", "")), WriteOutputs.Saved.class);
+        WriteOutputs.Saved cleared = session.ok("ledger_issue_save",
+                flatEdit(session, created.id(), afterNull.version()).with("owner_actor_id", ""),
+                WriteOutputs.Saved.class);
 
-        ReadOutputs.Defect read = defect(session, created.id());
-        assertThat(read.ownerActorId()).as("a key written blank clears the field").isNull();
+        ReadOutputs.Issue read = issue(session, created.id());
+        assertThat(read.ownerActorId()).as("an empty string clears the field").isNull();
         assertThat(read.title()).isEqualTo("x");
         assertThat(cleared.version()).isEqualTo(4);
         assertThat(Ledger.history(session, scenario.projectId())).extracting(ReadOutputs.History::op)
@@ -106,47 +87,56 @@ class SaveInputTest {
     }
 
     @Test
-    @DisplayName("MCW-PRN-01 / OPK-021: fields with a JSON null alone is VALIDATION_FAILED at fields (must mention at least one "
-            + "field), as null counts as not given, over the real transport, and nothing is written")
+    @DisplayName("MCW-PRN-01 / OPK-021: an edit with a JSON null alone mentions no field and is VALIDATION_FAILED over "
+            + "the real transport, and nothing is written")
     void aNullAloneMentionsNoField(McpSession session, RawHttp http, Scenario scenario) {
         WriteOutputs.Saved created = createWithOwner(session, scenario);
 
-        CallToolResult result = overTheWire(http, edit(session, created.id(), 1, one("owner_actor_id", null)));
+        CallToolResult result = overTheWire(http, "ledger_issue_save",
+                flatEdit(session, created.id(), 1).with("owner_actor_id", null));
 
         assertThat(result.isError()).as("a null alone must be refused: %s", result.content()).isTrue();
         ToolError error = session.error(result);
         assertThat(error.code()).isEqualTo("VALIDATION_FAILED");
         assertThat(error.issues()).containsExactly(new ToolError.Issue("fields", "must mention at least one field", List.of()));
-        ReadOutputs.Defect read = defect(session, created.id());
+        ReadOutputs.Issue read = issue(session, created.id());
         assertThat(read.version()).isEqualTo(1);
         assertThat(read.ownerActorId()).isEqualTo(Scenario.AUTHOR);
         assertThat(Ledger.history(session, scenario.projectId())).hasSize(1);
     }
 
     @Test
-    @DisplayName("MCW-PRN-01: a key that belongs to another entity (purpose of a defect) is VALIDATION_FAILED on "
-            + "fields.purpose and nothing is written")
+    @DisplayName("MCW-PRN-01: a parameter belonging to another entity (purpose on ledger_issue_save, and fields.purpose "
+            + "in a batch issue save) is VALIDATION_FAILED and nothing is written")
     void aKeyOfAnotherEntity(McpSession session, Scenario scenario) {
         WriteOutputs.Saved created = createWithOwner(session, scenario);
 
-        ToolError error = session.failed("ledger_save",
-                edit(session, created.id(), 1, one("purpose", "not a defect field")));
+        ToolError flatError = session.failed("ledger_issue_save",
+                flatEdit(session, created.id(), 1).with("purpose", "not an issue parameter"));
+        assertThat(flatError.code()).isEqualTo("VALIDATION_FAILED");
+        assertThat(flatError.issues()).extracting(ToolError.Issue::path).containsExactly("purpose");
 
-        assertThat(error.code()).isEqualTo("VALIDATION_FAILED");
-        assertThat(error.issues()).extracting(ToolError.Issue::path).containsExactly("fields.purpose");
-        assertThat(defect(session, created.id()).version()).isEqualTo(1);
+        Map<String, Object> batchFields = new LinkedHashMap<>();
+        batchFields.put("purpose", "not an issue field");
+        Args batch = Args.of().with("_hostAttestation", Scenario.AUTHOR)
+                .with("operationKey", Calls.freshKey()).with("ops", List.of(
+                        Args.of().with("op", "save").with("entity", "issue").with("id", created.id())
+                                .with("expected_version", 1L).with("reason", Scenario.REASON)
+                                .with("fields", batchFields)));
+        ToolError batchError = session.failed("ledger_batch", batch);
+        assertThat(batchError.code()).isEqualTo("VALIDATION_FAILED");
+        assertThat(batchError.issues()).extracting(ToolError.Issue::path).containsExactly("fields.purpose");
+        assertThat(issue(session, created.id()).version()).isEqualTo(1);
     }
 
     @Test
     @DisplayName("MCW-PRN-01: an unknown key in a batch save is VALIDATION_FAILED UNKNOWN_ARGUMENT on "
-            + "ops[<i>].fields.<key> (the batch binds fields as the same record as ledger_save), nothing is written")
+            + "ops[<i>].fields.<key>, nothing is written")
     void anUnknownKeyInABatch(McpSession session, Scenario scenario) {
-        Args call = Args.from(session.mapper(), Calls.Save.create("defect",
-                Fields.defect(scenario.projectId(), "t"), Scenario.AUTHOR));
-        Args batch = Args.of().with("_hostAttestation", call.values().get("_hostAttestation"))
+        Args batch = Args.of().with("_hostAttestation", Scenario.AUTHOR)
                 .with("operationKey", Calls.freshKey()).with("ops", List.of(
-                Args.of().with("op", "save").with("entity", "defect").with("reason", Scenario.REASON)
-                        .with("fields", Args.of().with("title", "t").with("titel", "x"))));
+                        Args.of().with("op", "save").with("entity", "issue").with("reason", Scenario.REASON)
+                                .with("fields", Args.of().with("title", "t").with("titel", "x"))));
 
         ToolError error = session.failed("ledger_batch", batch);
 
@@ -156,17 +146,21 @@ class SaveInputTest {
     }
 
     @Test
-    @DisplayName("MCW-PRN-01: the old text form of fields is refused as the wrong type, whatever the text holds (changed: "
-            + "it used to bind with the same patches), and nothing is written")
+    @DisplayName("MCW-PRN-01: the text form of fields in a batch save is refused as the wrong type, and nothing is written")
     void theTextFormOfFieldsIsRefused(McpSession session, Scenario scenario) {
         WriteOutputs.Saved created = createWithOwner(session, scenario);
 
-        ToolError error = session.failed("ledger_save", edit(session, created.id(), 1, null)
-                .with("fields", "{\"title\":\"from text\",\"owner_actor_id\":null}"));
+        Args batch = Args.of().with("_hostAttestation", Scenario.AUTHOR)
+                .with("operationKey", Calls.freshKey()).with("ops", List.of(
+                        Args.of().with("op", "save").with("entity", "issue").with("id", created.id())
+                                .with("expected_version", 1L).with("reason", Scenario.REASON)
+                                .with("fields", "{\"title\":\"from text\",\"owner_actor_id\":null}")));
+        ToolError error = session.failed("ledger_batch", batch);
 
         assertThat(error.code()).isEqualTo("VALIDATION_FAILED");
-        assertThat(error.issues()).containsExactly(new ToolError.Issue("fields", "must be of type SaveFields", List.of()));
-        ReadOutputs.Defect read = defect(session, created.id());
+        assertThat(error.issues()).containsExactly(
+                new ToolError.Issue("ops[0].fields", "must be of type SaveFields", List.of()));
+        ReadOutputs.Issue read = issue(session, created.id());
         assertThat(read.title()).isEqualTo("owned");
         assertThat(read.ownerActorId()).isEqualTo(Scenario.AUTHOR);
         assertThat(read.version()).isEqualTo(1);

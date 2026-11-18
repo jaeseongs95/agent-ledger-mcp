@@ -32,14 +32,14 @@ class WriteAtomicityTest {
             + "failing operation")
     void aFailingBatchRollsBackEverything(McpSession session, Scenario scenario) {
         Calls.Batch batch = Calls.Batch.of(Scenario.AUTHOR,
-                Calls.Op.save("defect", Fields.defect(scenario.projectId(), "first operation")),
-                Calls.Op.transition("defect", scenario.defectId(99), 1, "DISPUTED"));
+                Calls.Op.save("issue", Fields.issue(scenario.projectId(), "first operation")),
+                Calls.Op.transition("issue", scenario.issueId(99), 1, "DISPUTED"));
 
         ToolError error = session.failed("ledger_batch", batch);
 
         assertThat(error.code()).isEqualTo("NOT_FOUND");
         assertThat(error.details()).containsEntry("op_index", List.of("2")).containsEntry("op", List.of("transition"));
-        assertThat(Ledger.get(session, scenario.defectId(1)).notFound()).containsExactly(scenario.defectId(1));
+        assertThat(Ledger.get(session, scenario.issueId(1)).notFound()).containsExactly(scenario.issueId(1));
         assertThat(Ledger.history(session, scenario.projectId())).isEmpty();
     }
 
@@ -47,13 +47,13 @@ class WriteAtomicityTest {
     @DisplayName("MCW-020: the batch that was fixed and sent again writes everything once")
     void theCorrectedBatchCommits(McpSession session, Scenario scenario) {
         Calls.Batch batch = Calls.Batch.of(Scenario.AUTHOR,
-                Calls.Op.save("defect", Fields.defect(scenario.projectId(), "first operation")),
+                Calls.Op.save("issue", Fields.issue(scenario.projectId(), "first operation")),
                 Calls.Op.save("task", Fields.task(scenario.projectId(), "second operation")));
 
         BatchResults results = session.ok("ledger_batch", batch, BatchResults.class);
 
         assertThat(results.count()).isEqualTo(2);
-        assertThat(Ledger.get(session, scenario.defectId(1), scenario.taskId(1)).items()).hasSize(2);
+        assertThat(Ledger.get(session, scenario.issueId(1), scenario.taskId(1)).items()).hasSize(2);
         assertThat(Ledger.history(session, scenario.projectId())).hasSize(2);
     }
 
@@ -64,13 +64,13 @@ class WriteAtomicityTest {
     @Test
     @DisplayName("MCW-021: twenty parallel sessions with different attestations: every result carries its own caller")
     void everyResultCarriesItsOwnCaller(ApplicationContext context, Scenario scenario) {
-        List<String> actors = IntStream.range(0, SESSIONS).mapToObj(i -> scenario.actorWith("par" + i, "defect"))
+        List<String> actors = IntStream.range(0, SESSIONS).mapToObj(i -> scenario.actorWith("par" + i, "issue"))
                 .toList();
         List<Callable<Seen>> calls = actors.stream().map(actor -> (Callable<Seen>) () -> {
             try (McpSession own = McpSession.open(context)) {
                 Whoami who = own.ok("ledger_whoami", Calls.Whoami.as(actor), Whoami.class);
-                Saved saved = own.ok("ledger_save",
-                        Calls.Save.create("defect", Fields.defect(scenario.projectId(), "by " + actor), actor),
+                Saved saved = own.ok("ledger_issue_save",
+                        Calls.IssueSave.create(scenario.projectId(), "by " + actor, actor),
                         Saved.class);
                 return new Seen(actor, who.author(), saved.author());
             }

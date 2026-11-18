@@ -31,7 +31,7 @@ class JsonFidelityTest {
     @MethodSource("org.pgledger.hook.Hosts#all")
     @DisplayName("HK-014 (changed by audit2 N2: no integer beyond 2**53-1) decimals keep their exact value (no double), and 0.10 keeps its trailing zero")
     void numbersAreExact(HostScenario host, HookFixture fixture) {
-        Run run = fixture.runClean(host, host.echoEvent("save", Json.raw(NUMBERS)));
+        Run run = fixture.runClean(host, host.echoEvent("issue_save", Json.raw(NUMBERS)));
         assertThat(run.out()).contains("\"dec\":0.10");
         JsonNode args = host.echoed(run);
         assertThat(args.path("huge").decimalValue()).isEqualByComparingTo(new BigDecimal("1e300"));
@@ -45,11 +45,11 @@ class JsonFidelityTest {
     @MethodSource("org.pgledger.hook.Hosts#all")
     @DisplayName("HK-014 escapes, surrogate pairs and Korean text survive; unknown fields pass through untouched; the output is UTF-8")
     void stringsAndUnknownFields(HostScenario host, HookFixture fixture) {
-        Run run = fixture.runClean(host, host.echoEvent("save", Json.raw(ESCAPES)));
+        Run run = fixture.runClean(host, host.echoEvent("issue_save", Json.raw(ESCAPES)));
         JsonNode args = host.echoed(run);
         assertThat(args.path("esc").stringValue()).isEqualTo("\"\\/\b\f\n\r\tA");
         assertThat(args.path("pair").stringValue()).isEqualTo("😀");
-        Attestations.Stamp stamp = fixture.stampCarrier(host.server(), host.author(HookFixture.HOST_ID), "save", Json.of(ESCAPES), args);
+        Attestations.Stamp stamp = fixture.stampCarrier(host.server(), host.author(HookFixture.HOST_ID), "issue_save", Json.of(ESCAPES), args);
         assertThat(args).isEqualTo(Json.stamped(Json.of(ESCAPES), stamp.token()));
         assertThat(run.stdout()).contains("한글".getBytes(StandardCharsets.UTF_8));
     }
@@ -59,11 +59,11 @@ class JsonFidelityTest {
     @DisplayName("HK-014 100 levels of nesting and duplicate keys: no crash (the last duplicate wins, as in JSON.parse)")
     void nestingAndDuplicates(HostScenario host, HookFixture fixture) {
         String sent = "{\"deep\":" + DEPTH_100 + ",\"dup\":1,\"dup\":2}";
-        Run run = fixture.runClean(host, host.echoEvent("save", Json.raw(sent)));
+        Run run = fixture.runClean(host, host.echoEvent("issue_save", Json.raw(sent)));
         JsonNode args = host.echoed(run);
         assertThat(args.path("deep")).isEqualTo(Json.of(DEPTH_100));
         assertThat(args.path("dup").intValue()).isEqualTo(2);
-        fixture.stampCarrier(host.server(), host.author(HookFixture.HOST_ID), "save", Json.of(sent), args);
+        fixture.stampCarrier(host.server(), host.author(HookFixture.HOST_ID), "issue_save", Json.of(sent), args);
     }
 
     @ParameterizedTest
@@ -71,7 +71,7 @@ class JsonFidelityTest {
     @DisplayName("HK-014 nesting far beyond any real call is rejected as malformed input, never a stack overflow")
     void absurdNestingIsRejected(HostScenario host, HookFixture fixture) {
         String deep = "[".repeat(5000) + "]".repeat(5000);
-        Run run = fixture.run(host, host.echoEvent("save", Json.raw("{\"deep\":" + deep + "}")));
+        Run run = fixture.run(host, host.echoEvent("issue_save", Json.raw("{\"deep\":" + deep + "}")));
         InputErrorTest.assertMalformedAnswer(host, run);
     }
 
@@ -81,13 +81,13 @@ class JsonFidelityTest {
     void oneMegabyteBody(HostScenario host, HookFixture fixture) {
         String text = "한글abc".repeat(120_000); // 9 bytes per unit: about 1.08 MB of UTF-8
         JsonNode input = Json.tree(Map.of("body", text, "n", 9007199254740991L));
-        byte[] event = host.echoEvent("save", input);
+        byte[] event = host.echoEvent("issue_save", input);
         assertThat(event.length).isGreaterThan(1_000_000);
         long start = System.nanoTime();
         Run run = fixture.runClean(host, event);
         long millis = (System.nanoTime() - start) / 1_000_000;
         JsonNode args = host.echoed(run);
-        Attestations.Stamp stamp = fixture.stampCarrier(host.server(), host.author(HookFixture.HOST_ID), "save", input, args);
+        Attestations.Stamp stamp = fixture.stampCarrier(host.server(), host.author(HookFixture.HOST_ID), "issue_save", input, args);
         assertThat(args).isEqualTo(Json.stamped(input, stamp.token()));
         assertThat(millis).as("in-process milliseconds").isLessThan(3_000);
     }
@@ -96,7 +96,7 @@ class JsonFidelityTest {
     @DisplayName("HK-014 Antigravity Arguments given as JSON text: numbers and Korean text survive the parse and re-serialisation")
     void numbersInsideJsonTextArguments(HookFixture fixture) {
         AntigravityHost agy = AntigravityHost.INSTANCE;
-        Run run = fixture.runClean(agy, agy.echoEvent("save", NUMBERS));
+        Run run = fixture.runClean(agy, agy.echoEvent("issue_save", NUMBERS));
         String text = agy.echoed(run).stringValue();
         assertThat(text).contains("\"dec\":0.10");
     }
@@ -108,7 +108,7 @@ class JsonFidelityTest {
     @DisplayName("HK-014 (changed by audit2 N2) an integer beyond 2**53-1 in magnitude has no exact canonical form (RFC 7493 section 2.2): denied ARGUMENTS_NOT_SIGNABLE on every host, nothing signed, no key created")
     void integersBeyondTheExactRangeAreDenied(String json, HookFixture fixture) {
         for (HostScenario host : Hosts.ALL) {
-            Run run = fixture.runClean(host, host.event(host.toolName("save"), Json.raw(json)));
+            Run run = fixture.runClean(host, host.event(host.toolName("issue_save"), Json.raw(json)));
             assertThat(run.document()).as(host.toString()).isEqualTo(host.denied(Refusal.ARGUMENTS_NOT_SIGNABLE));
         }
         assertThat(fixture.keyDirectory()).doesNotExist();
@@ -119,19 +119,19 @@ class JsonFidelityTest {
     @DisplayName("HK-014 (changed by audit2 N2) the largest exact integers (+-9007199254740991) and decimals that RFC 8785 canonicalises by their double (0.10, 1e300, 12345678901234567890.0) are still signed and passed on as sent")
     void theExactRangeIsSigned(HostScenario host, HookFixture fixture) {
         String sent = "{\"max\":9007199254740991,\"min\":-9007199254740991,\"dec\":0.10,\"huge\":1e300,\"float\":12345678901234567890.0}";
-        Run run = fixture.runClean(host, host.echoEvent("save", Json.raw(sent)));
+        Run run = fixture.runClean(host, host.echoEvent("issue_save", Json.raw(sent)));
         JsonNode args = host.echoed(run);
         assertThat(args.path("max").longValue()).isEqualTo(9007199254740991L);
         assertThat(args.path("min").longValue()).isEqualTo(-9007199254740991L);
         assertThat(run.out()).contains("\"dec\":0.10");
-        fixture.stampCarrier(host.server(), host.author(HookFixture.HOST_ID), "save", Json.of(sent), args);
+        fixture.stampCarrier(host.server(), host.author(HookFixture.HOST_ID), "issue_save", Json.of(sent), args);
     }
 
     @Test
     @DisplayName("HK-014 (changed by attest-fix) a lone surrogate escape has no UTF-8 form, so it has no canonical form to sign: denied ARGUMENTS_NOT_SIGNABLE, nothing signed")
     void loneSurrogate(HookFixture fixture) {
         CodexHost codex = new CodexHost();
-        Run run = fixture.runClean(codex, codex.event(codex.toolName("save"), Json.raw("{\"lone\":\"\\ud800x\"}")));
+        Run run = fixture.runClean(codex, codex.event(codex.toolName("issue_save"), Json.raw("{\"lone\":\"\\ud800x\"}")));
         assertThat(run.document()).isEqualTo(codex.denied(Refusal.ARGUMENTS_NOT_SIGNABLE));
         assertThat(fixture.keyDirectory()).doesNotExist();
     }

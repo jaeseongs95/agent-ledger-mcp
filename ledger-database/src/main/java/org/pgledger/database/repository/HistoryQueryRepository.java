@@ -30,9 +30,24 @@ public class HistoryQueryRepository {
         }
     }
 
-    /** Rows whose entity id starts with the id of a parent row, then a separator (the id of a fix or case row). */
+    /** Rows whose entity id starts with the id of a parent row, then a separator (the id of a case or link row). */
     private static final String CHILD_OF = "SUBSTRING(h.entity_id FROM 1 FOR CHAR_LENGTH(p.id)) = p.id "
             + "AND SUBSTRING(h.entity_id FROM CHAR_LENGTH(p.id) + 1 FOR 1) IN ('@', '|')";
+
+    private static final String DELIVERABLE_ISSUE = "(" + CHILD_OF + " OR ("
+            + "SUBSTRING(h.entity_id FROM 1 FOR 6) = 'issue:' "
+            + "AND SUBSTRING(h.entity_id FROM 7 FOR CHAR_LENGTH(p.id)) = p.id "
+            + "AND SUBSTRING(h.entity_id FROM 7 + CHAR_LENGTH(p.id) FOR 1) = '@'))";
+
+    private static final String DELIVERABLE_SPEC = "(" + CHILD_OF + " OR ("
+            + "SUBSTRING(h.entity_id FROM 1 FOR 5) = 'spec:' "
+            + "AND SUBSTRING(h.entity_id FROM 6 FOR CHAR_LENGTH(p.id)) = p.id "
+            + "AND SUBSTRING(h.entity_id FROM 6 + CHAR_LENGTH(p.id) FOR 1) = '@'))";
+
+    private static final String DELIVERABLE_TASK = "(" + CHILD_OF + " OR ("
+            + "SUBSTRING(h.entity_id FROM 1 FOR 5) = 'task:' "
+            + "AND SUBSTRING(h.entity_id FROM 6 FOR CHAR_LENGTH(p.id)) = p.id "
+            + "AND SUBSTRING(h.entity_id FROM 6 + CHAR_LENGTH(p.id) FOR 1) = '@'))";
 
     private static final String IN_PROJECT = "("
             + "(h.entity = 'ISSUE' AND h.entity_id IN (SELECT i.id FROM issue i WHERE i.project_id = :project)) "
@@ -47,9 +62,9 @@ public class HistoryQueryRepository {
             + "OR (h.entity = 'SPEC_TASK' AND EXISTS "
             + "(SELECT 1 FROM spec p WHERE p.project_id = :project AND " + CHILD_OF + ")) "
             + "OR (h.entity = 'DELIVERABLE' AND ("
-            + "EXISTS (SELECT 1 FROM issue p WHERE p.project_id = :project AND " + CHILD_OF + ") "
-            + "OR EXISTS (SELECT 1 FROM spec p WHERE p.project_id = :project AND " + CHILD_OF + ") "
-            + "OR EXISTS (SELECT 1 FROM task p WHERE p.project_id = :project AND " + CHILD_OF + "))) "
+            + "EXISTS (SELECT 1 FROM issue p WHERE p.project_id = :project AND " + DELIVERABLE_ISSUE + ") "
+            + "OR EXISTS (SELECT 1 FROM spec p WHERE p.project_id = :project AND " + DELIVERABLE_SPEC + ") "
+            + "OR EXISTS (SELECT 1 FROM task p WHERE p.project_id = :project AND " + DELIVERABLE_TASK + "))) "
             + "OR (h.entity = 'CRITERION_LINK' AND EXISTS "
             + "(SELECT 1 FROM milestone_criterion p WHERE p.project_id = :project AND " + CHILD_OF + ")))";
 

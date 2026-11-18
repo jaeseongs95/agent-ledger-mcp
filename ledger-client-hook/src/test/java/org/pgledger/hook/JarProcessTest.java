@@ -36,7 +36,7 @@ class JarProcessTest {
     static Stream<Arguments> cleanChannelCases() {
         return Hosts.ALL.stream().flatMap(host -> Stream.of(
                 Arguments.argumentSet(host + " deny", host,
-                        host.event(host.toolName("save"), Json.tree(Map.of(Json.RESERVED_KEY, Json.of("null")))),
+                        host.event(host.toolName("issue_save"), Json.tree(Map.of(Json.RESERVED_KEY, Json.of("null")))),
                         host.denied(Refusal.RESERVED_FIELD)),
                 Arguments.argumentSet(host + " pass-through", host, host.event(host.toolName("get"), Json.of("{}")),
                         host.untouched()),
@@ -58,11 +58,11 @@ class JarProcessTest {
     @MethodSource("org.pgledger.hook.Hosts#all")
     @DisplayName("HK-016 real jar: a stamped answer is one line of JSON, stderr is empty, exit 0, and its token verifies with the key in the key folder")
     void stampedChannelsAreClean(HostScenario host, HookJar jar) throws IOException {
-        Run run = jar.run(host.event(host.toolName("save"), KOREAN_INPUT), host.client().argument());
+        Run run = jar.run(host.event(host.toolName("issue_save"), KOREAN_INPUT), host.client().argument());
         assertThat(run.err()).as("stderr").isEmpty();
         assertThat(run.exit()).as("exit code").isZero();
         assertThat(run.out()).matches("(?s)[^\\n]*\\n");
-        Attestations.Stamp stamp = jar.stamp(host, "save", KOREAN_INPUT, run);
+        Attestations.Stamp stamp = jar.stamp(host, "issue_save", KOREAN_INPUT, run);
         assertThat(run.document()).isEqualTo(host.allowed(KOREAN_INPUT, stamp.token()));
     }
 
@@ -83,7 +83,7 @@ class JarProcessTest {
     void outputIsUtf8WhateverTheJvmDefaults(HostScenario host, HookJar jar, HookFixture fixture) throws IOException {
         // an own operation key (the hook generates none: the answer carries it unchanged)
         JsonNode input = Json.tree(Map.of("note", "한글 😀 é", "operationKey", "req-15"));
-        byte[] stdin = host.echoEvent("save", input);
+        byte[] stdin = host.echoEvent("issue_save", input);
         Run baseline = jar.run(stdin, host.client().argument());
         assertThat(baseline.exit()).isZero();
         assertThat(baseline.stdout()).contains(bytes("한글 😀 é"));
@@ -108,9 +108,9 @@ class JarProcessTest {
     @DisplayName("HK-017 cold start of java -jar finishes inside the 5 s host hook limit; the measured time of each start is recorded")
     void coldStartBudget(int start, HookJar jar) throws IOException {
         CodexHost codex = new CodexHost();
-        HookJar.Timed timed = jar.start(codex.event(codex.toolName("save"), KOREAN_INPUT), "codex");
+        HookJar.Timed timed = jar.start(codex.event(codex.toolName("issue_save"), KOREAN_INPUT), "codex");
         assertThat(timed.run().err()).isEmpty();
-        Attestations.Stamp stamp = jar.stamp(codex, "save", KOREAN_INPUT, timed.run());
+        Attestations.Stamp stamp = jar.stamp(codex, "issue_save", KOREAN_INPUT, timed.run());
         assertThat(timed.run().document()).isEqualTo(codex.allowed(KOREAN_INPUT, stamp.token()));
         String report = "HK-017 start " + start + ": java -jar wall time " + timed.millis()
                 + " ms ; limit " + HOST_LIMIT_MILLIS + " ms ; jar " + HookJar.JAR.toFile().length() + " bytes ; "
@@ -127,11 +127,11 @@ class JarProcessTest {
         ClaudeHost claude = new ClaudeHost();
         String text = "한글abc".repeat(120_000);
         JsonNode input = Json.tree(Map.of("body", text));
-        byte[] stdin = claude.event(claude.toolName("save"), input);
+        byte[] stdin = claude.event(claude.toolName("issue_save"), input);
         assertThat(stdin.length).isGreaterThan(1_000_000);
         HookJar.Timed timed = jar.start(stdin, "claude");
         assertThat(timed.run().err()).isEmpty();
-        Attestations.Stamp stamp = jar.stamp(claude, "save", input, timed.run());
+        Attestations.Stamp stamp = jar.stamp(claude, "issue_save", input, timed.run());
         assertThat(timed.run().document()).isEqualTo(claude.allowed(input, stamp.token()));
         assertThat(timed.millis()).isLessThan(HOST_LIMIT_MILLIS);
     }
@@ -161,7 +161,7 @@ class JarProcessTest {
     @DisplayName("HK-020 the argument must be exactly claude, codex or antigravity (or session-key with a server and an author): anything else exits 2 with the usage on stderr and nothing on stdout")
     void argumentIsAnEnum(List<String> arguments, HookJar jar, HookFixture fixture) throws IOException {
         CodexHost codex = new CodexHost();
-        byte[] stdin = codex.event(codex.toolName("save"), Json.of("{}"));
+        byte[] stdin = codex.event(codex.toolName("issue_save"), Json.of("{}"));
         String[] args = arguments.toArray(String[]::new);
         Run process = jar.run(stdin, args);
         Run inProcess = fixture.run(args, stdin);
@@ -194,7 +194,7 @@ class JarProcessTest {
         Assumptions.assumeTrue(olderJava != null && !olderJava.isBlank(),
                 "NOT_RUN: no JDK older than 25 on this host (set LEDGER_HOOK_OLDER_JAVA to its java executable)");
         CodexHost codex = new CodexHost();
-        Run run = jar.start(Path.of(olderJava), List.of(), Map.of(), codex.event(codex.toolName("save"), Json.of("{}")), "codex").run();
+        Run run = jar.start(Path.of(olderJava), List.of(), Map.of(), codex.event(codex.toolName("issue_save"), Json.of("{}")), "codex").run();
         assertThat(run.exit()).isNotZero();
         assertThat(run.stdout()).isEmpty();
         // the launcher is a Java 17 class file: a JDK of 17 to 24 refuses the hook class (69.0), an older one the launcher (61.0)
@@ -205,7 +205,7 @@ class JarProcessTest {
     @DisplayName("REM-008 (D-0048 / BLOCKING-L4): 4 concurrent cold java -jar starts stay well below the 5 s host limit")
     void rem008_concurrentColdStartsStayWithinHostLimit(HookJar jar) throws Exception {
         CodexHost codex = new CodexHost();
-        byte[] stdin = codex.event(codex.toolName("save"), KOREAN_INPUT);
+        byte[] stdin = codex.event(codex.toolName("issue_save"), KOREAN_INPUT);
         int starts = 4;
         java.util.concurrent.CyclicBarrier ready = new java.util.concurrent.CyclicBarrier(starts);
         try (var pool = java.util.concurrent.Executors.newFixedThreadPool(starts)) {

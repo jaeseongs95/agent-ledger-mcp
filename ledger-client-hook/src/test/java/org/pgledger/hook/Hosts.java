@@ -8,16 +8,17 @@ import org.junit.jupiter.params.provider.Arguments;
 /** The three hosts and the case sources built on them; one case is one invocation of a parameterized test. */
 final class Hosts {
 
-    /** The ten write tools of the external contract, written out here and not taken from the product. */
+    /** The thirteen write tools of the external contract, written out here and not taken from the product. */
     static final List<String> WRITE_OPS = List.of(
-            "save", "transition", "record_fix", "record_case", "link", "correct", "batch", "review", "review_correct", "whoami");
+            "issue_save", "spec_save", "task_save", "criterion_save", "transition", "record_deliverable",
+            "record_case", "link", "correct", "batch", "review", "review_correct", "whoami");
 
     /**
      * The five attachment tools (ATA-021), written out here and not taken from the product. Their operation is the whole
-     * canonical name, which is hyphenated and has no {@code ledger_} prefix; their claim carries no operation key, like whoami.
+     * canonical snake_case name, which has no {@code ledger_} prefix; their claim carries no operation key, like whoami.
      */
     static final List<String> ARTIFACT_OPS = List.of(
-            "artifact-begin", "artifact-chunk", "artifact-finish", "artifact-status", "artifact-read");
+            "artifact_begin", "artifact_chunk", "artifact_finish", "artifact_status", "artifact_read");
 
     static final List<HostScenario> ALL = List.of(new ClaudeHost(), new CodexHost(), AntigravityHost.INSTANCE);
 

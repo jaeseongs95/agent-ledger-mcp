@@ -24,17 +24,13 @@ import org.pgledger.mcp.support.Scenario;
 import org.pgledger.mcp.support.SchemaView;
 
 /**
- * ATA-020 for the five attachment tools: the catalog of the running server lists them with the inputs and the outputs of the common
- * design (section 3), with a text for every description (a model reads English: the bundle of the tool texts is English by design) and
- * with an English and a Korean text for every error code a caller can get. The optional {@code attachment_id} of the record tools is
- * asserted with those tools, not here.
+ * ATA-020 for the five snake_case attachment tools aligned with Sennard ArtifactTools and wrapped in ApiResult.v1.
  */
 @McpServerTest
 class AttachmentCatalogTest {
 
     private static final String ATTESTATION = "_hostAttestation";
 
-    /** A tool, the keys of its input (the attestation is added), the ones that are required, and the keys of its output. */
     private record Expected(String tool, List<String> input, List<String> required, List<String> output) {
 
         @Override
@@ -45,17 +41,17 @@ class AttachmentCatalogTest {
 
     static Stream<Expected> expected() {
         return Stream.of(
-                new Expected("artifact-begin", List.of("operationKey", "files", "purpose"),
+                new Expected("artifact_begin", List.of("operationKey", "files", "purpose"),
                         List.of("operationKey", "files"),
                         List.of("attachmentId", "files", "maxChunkBytes", "expiresAt")),
-                new Expected("artifact-chunk", List.of("uploadId", "sequence", "data", "chunkSha256"),
+                new Expected("artifact_chunk", List.of("uploadId", "sequence", "data", "chunkSha256"),
                         List.of("uploadId", "sequence", "data", "chunkSha256"), List.of("sequence", "received")),
-                new Expected("artifact-finish", List.of("attachmentId"), List.of("attachmentId"),
+                new Expected("artifact_finish", List.of("attachmentId"), List.of("attachmentId"),
                         List.of("attachmentId", "files")),
-                new Expected("artifact-status", List.of("uploadId", "attachmentId"), List.of(),
+                new Expected("artifact_status", List.of("uploadId", "attachmentId"), List.of(),
                         List.of("kind", "uploadId", "attachmentId", "seq", "state", "fileName", "mediaType", "size",
                                 "sha256", "expiresAt", "received", "sequence", "files")),
-                new Expected("artifact-read", List.of("attachmentId", "seq", "offsetBytes", "maxBytes"),
+                new Expected("artifact_read", List.of("attachmentId", "seq", "offsetBytes", "maxBytes"),
                         List.of("attachmentId", "offsetBytes", "maxBytes"),
                         List.of("attachmentId", "seq", "offsetBytes", "totalBytes", "size", "data", "mediaType",
                                 "fileName", "text")));
@@ -66,27 +62,29 @@ class AttachmentCatalogTest {
     }
 
     @Test
-    @DisplayName("ATA-020: the catalog lists the five attachment tools of ToolContract once each")
+    @DisplayName("ATA-020: the catalog lists the five snake_case attachment tools of ToolContract once each")
     void theFiveToolsAreListedOnce(McpSession session) {
-        assertThat(ToolContract.ATTACHMENT).containsExactly("artifact-begin", "artifact-chunk", "artifact-finish",
-                "artifact-status", "artifact-read");
+        assertThat(ToolContract.ATTACHMENT).containsExactly("artifact_begin", "artifact_chunk", "artifact_finish",
+                "artifact_status", "artifact_read");
         assertThat(session.tools()).extracting(Tool::name).doesNotHaveDuplicates().containsAll(ToolContract.ATTACHMENT);
     }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("expected")
-    @DisplayName("ATA-020: the input schema has the keys of design 3, closed, the required ones, the attestation optional; the output "
-            + "schema has the keys of design 3 and no path and no storage key")
+    @DisplayName("ATA-020: the input schema has the keys of design 3, closed, the required ones, the attestation optional; the ApiResult.v1 output schema wraps data without path or storage key")
     void theSchemasAreThoseOfTheDesign(Expected expected, McpSession session) {
         Tool tool = session.tool(expected.tool());
         SchemaView input = SchemaView.of(session.mapper(), tool.inputSchema());
         SchemaView output = SchemaView.of(session.mapper(), tool.outputSchema());
+        SchemaView data = output.at("data").orElseThrow();
 
         assertThat(input.propertyNames()).containsExactlyInAnyOrderElementsOf(withAttestation(expected.input()));
         assertThat(input.required()).containsExactlyInAnyOrderElementsOf(expected.required());
         assertThat(input.closed()).isTrue();
         assertThat(input.properties().get(ATTESTATION).type()).isEqualTo("string");
-        assertThat(output.propertyNames()).containsExactlyInAnyOrderElementsOf(expected.output())
+        assertThat(output.propertyNames()).containsExactlyInAnyOrder("schemaVersion", "ok", "data", "error");
+        assertThat(output.closed()).isTrue();
+        assertThat(data.propertyNames()).containsExactlyInAnyOrderElementsOf(expected.output())
                 .noneMatch(name -> name.toLowerCase(Locale.ROOT).contains("path")
                         || name.toLowerCase(Locale.ROOT).contains("storage"));
     }
@@ -94,11 +92,11 @@ class AttachmentCatalogTest {
     @Test
     @DisplayName("ATA-020: the numbers of the contract are integers and the data of a chunk is a string")
     void theTypesAreThoseOfTheDesign(McpSession session) {
-        SchemaView beginSchema = SchemaView.of(session.mapper(), session.tool("artifact-begin").inputSchema());
+        SchemaView beginSchema = SchemaView.of(session.mapper(), session.tool("artifact_begin").inputSchema());
         Map<String, SchemaView> begin = beginSchema.properties();
-        Map<String, SchemaView> chunk = SchemaView.of(session.mapper(), session.tool("artifact-chunk").inputSchema())
+        Map<String, SchemaView> chunk = SchemaView.of(session.mapper(), session.tool("artifact_chunk").inputSchema())
                 .properties();
-        Map<String, SchemaView> read = SchemaView.of(session.mapper(), session.tool("artifact-read").inputSchema())
+        Map<String, SchemaView> read = SchemaView.of(session.mapper(), session.tool("artifact_read").inputSchema())
                 .properties();
 
         assertThat(begin.get("files").type()).isEqualTo("array");
@@ -131,13 +129,12 @@ class AttachmentCatalogTest {
     }
 
     @Test
-    @DisplayName("ATA-020: the descriptions say what a caller needs: uploads only through these tools, the sizes, operationKey required "
-            + "and repeatable, the repeated last chunk, and the codes ARTIFACT_BUSY, ARTIFACT_INCOMPLETE, ARTIFACT_HASH_MISMATCH")
+    @DisplayName("ATA-020: the descriptions say what a caller needs: uploads only through these tools, the sizes, operationKey required and repeatable, the repeated last chunk, and the codes ARTIFACT_BUSY, ARTIFACT_INCOMPLETE, ARTIFACT_HASH_MISMATCH")
     void theDescriptionsSayWhatTheCallerNeeds(McpSession session) {
-        String begin = session.tool("artifact-begin").description();
-        String chunk = session.tool("artifact-chunk").description();
-        String finish = session.tool("artifact-finish").description();
-        SchemaView beginInput = SchemaView.of(session.mapper(), session.tool("artifact-begin").inputSchema());
+        String begin = session.tool("artifact_begin").description();
+        String chunk = session.tool("artifact_chunk").description();
+        String finish = session.tool("artifact_finish").description();
+        SchemaView beginInput = SchemaView.of(session.mapper(), session.tool("artifact_begin").inputSchema());
 
         assertThat(begin).contains("no other way").contains("operationKey is required").contains("repeatable")
                 .contains("262144").contains("64 MiB");
@@ -149,13 +146,11 @@ class AttachmentCatalogTest {
     }
 
     @Test
-    @DisplayName("OPK-011: artifact-chunk and artifact-finish have no operationKey property (the one exception: an upload "
-            + "starts with the operationKey of artifact-begin, a chunk is repeatable by uploadId + sequence + chunkSha256, "
-            + "finish by uploadId), artifact-begin declares it and requires it, and the descriptions of chunk and finish say so")
+    @DisplayName("OPK-011: artifact_chunk and artifact_finish have no operationKey property, artifact_begin declares and requires it")
     void chunkAndFinishTakeNoOperationKey(McpSession session) {
-        SchemaView begin = SchemaView.of(session.mapper(), session.tool("artifact-begin").inputSchema());
-        SchemaView chunk = SchemaView.of(session.mapper(), session.tool("artifact-chunk").inputSchema());
-        SchemaView finish = SchemaView.of(session.mapper(), session.tool("artifact-finish").inputSchema());
+        SchemaView begin = SchemaView.of(session.mapper(), session.tool("artifact_begin").inputSchema());
+        SchemaView chunk = SchemaView.of(session.mapper(), session.tool("artifact_chunk").inputSchema());
+        SchemaView finish = SchemaView.of(session.mapper(), session.tool("artifact_finish").inputSchema());
 
         assertThat(begin.properties()).containsKey("operationKey");
         assertThat(begin.required()).contains("operationKey");
@@ -164,15 +159,15 @@ class AttachmentCatalogTest {
         assertThat(chunk.required()).doesNotContain("operationKey");
         assertThat(finish.properties()).doesNotContainKey("operationKey");
         assertThat(finish.required()).doesNotContain("operationKey");
-        assertThat(session.tool("artifact-begin").description()).contains("the server never makes a key up");
-        assertThat(session.tool("artifact-chunk").description()).contains("takes no operationKey")
+        assertThat(session.tool("artifact_begin").description()).contains("the server never makes a key up");
+        assertThat(session.tool("artifact_chunk").description()).contains("takes no operationKey")
                 .contains("the one exception").contains("uploadId, sequence and chunkSha256");
-        assertThat(session.tool("artifact-finish").description()).contains("takes no operationKey")
+        assertThat(session.tool("artifact_finish").description()).contains("takes no operationKey")
                 .contains("the one exception").contains("repeatable by its attachmentId");
     }
 
     @Test
-    @DisplayName("OPK-011: an operationKey sent to artifact-chunk or artifact-finish is refused as an unknown argument")
+    @DisplayName("OPK-011: an operationKey sent to artifact_chunk or artifact_finish is refused as an unknown argument")
     void anOperationKeyToChunkOrFinishIsUnknown(McpSession session) {
         String uploadId = UUID.randomUUID().toString();
         Args chunk = Args.from(session.mapper(), Chunk.of(uploadId, 0, new byte[] {1}, Scenario.AUTHOR))
@@ -180,8 +175,8 @@ class AttachmentCatalogTest {
         Args finish = Args.from(session.mapper(), new Finish(uploadId, Scenario.AUTHOR))
                 .with("operationKey", UUID.randomUUID().toString());
 
-        ToolError chunkError = session.failed("artifact-chunk", chunk);
-        ToolError finishError = session.failed("artifact-finish", finish);
+        ToolError chunkError = session.failed("artifact_chunk", chunk);
+        ToolError finishError = session.failed("artifact_finish", finish);
 
         ToolError.Issue unknown = new ToolError.Issue("operationKey", "is not a known argument", List.of());
         assertThat(chunkError.code()).isEqualTo("VALIDATION_FAILED");

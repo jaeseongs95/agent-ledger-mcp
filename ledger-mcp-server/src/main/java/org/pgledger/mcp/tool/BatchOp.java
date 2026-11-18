@@ -6,19 +6,18 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import org.pgledger.application.write.BatchOpInput;
 
 /**
- * One operation of {@code ledger_batch} as it arrives on the wire: {@code op} picks the variant, the other keys are
- * the keys of the single tool, except the operation key: the batch has one {@code operationKey} and an operation carries
- * none (an {@code operationKey} in an operation is an unknown key). The component names are the wire keys;
- * {@link #toInput()} hands the operation to the batch service.
+ * One operation inside {@code ledger_batch} on the wire: {@code op} selects the variant, and the whole batch shares a
+ * single top-level {@code operationKey} (any {@code operationKey} inside an operation is rejected as an unknown key).
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "op")
 @JsonSubTypes({
     @JsonSubTypes.Type(value = BatchOp.Save.class, name = "save"),
     @JsonSubTypes.Type(value = BatchOp.Transition.class, name = "transition"),
-    @JsonSubTypes.Type(value = BatchOp.RecordFix.class, name = "record_fix"),
+    @JsonSubTypes.Type(value = BatchOp.RecordDeliverable.class, name = "record_deliverable"),
     @JsonSubTypes.Type(value = BatchOp.RecordCase.class, name = "record_case"),
     @JsonSubTypes.Type(value = BatchOp.Link.class, name = "link"),
-    @JsonSubTypes.Type(value = BatchOp.Correct.class, name = "correct")})
+    @JsonSubTypes.Type(value = BatchOp.Correct.class, name = "correct")
+})
 public sealed interface BatchOp {
 
     BatchOpInput toInput();
@@ -46,29 +45,29 @@ public sealed interface BatchOp {
         }
     }
 
-    record RecordFix(@JsonProperty("defect_id") String defectId, @JsonProperty("repo") String repo,
-            @JsonProperty("commit_sha") String commitSha, @JsonProperty("reason") String reason,
-            @JsonProperty("branch") String branch, @JsonProperty("ci_ref") String ciRef,
-            @JsonProperty("ci_conclusion") String ciConclusion,
-            @JsonProperty("ci_completed_at") String ciCompletedAt,
-            @JsonProperty("mark_source_fixed") Boolean markSourceFixed,
+    record RecordDeliverable(@JsonProperty("target_entity") String targetEntity,
+            @JsonProperty("target_id") String targetId, @JsonProperty("kind") String kind,
+            @JsonProperty("deliverable_ref") String deliverableRef, @JsonProperty("reason") String reason,
+            @JsonProperty("location") String location, @JsonProperty("summary") String summary,
+            @JsonProperty("check_ref") String checkRef, @JsonProperty("check_result") String checkResult,
+            @JsonProperty("checked_at") String checkedAt, @JsonProperty("mark_done") Boolean markDone,
             @JsonProperty("attachment_id") String attachmentId) implements BatchOp {
 
         @Override
         public BatchOpInput toInput() {
-            return new BatchOpInput.RecordFix(defectId, repo, commitSha, reason, branch, ciRef, ciConclusion,
-                    ciCompletedAt, markSourceFixed, attachmentId);
+            return new BatchOpInput.RecordDeliverable(targetEntity, targetId, kind, deliverableRef, reason, location,
+                    summary, checkRef, checkResult, checkedAt, markDone, attachmentId);
         }
     }
 
-    record RecordCase(@JsonProperty("defect_id") String defectId, @JsonProperty("observation") String observation,
+    record RecordCase(@JsonProperty("issue_id") String issueId, @JsonProperty("observation") String observation,
             @JsonProperty("reason") String reason, @JsonProperty("evidence") String evidence,
-            @JsonProperty("user_quote") String userQuote, @JsonProperty("observed_at") String observedAt,
+            @JsonProperty("source_quote") String sourceQuote, @JsonProperty("observed_at") String observedAt,
             @JsonProperty("attachment_id") String attachmentId) implements BatchOp {
 
         @Override
         public BatchOpInput toInput() {
-            return new BatchOpInput.RecordCase(defectId, observation, reason, evidence, userQuote, observedAt,
+            return new BatchOpInput.RecordCase(issueId, observation, reason, evidence, sourceQuote, observedAt,
                     attachmentId);
         }
     }

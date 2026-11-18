@@ -13,14 +13,14 @@ import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.stereotype.Component;
 
 /**
- * The five bundle attachment MCP tools: {@code artifact-begin}, {@code artifact-chunk}, {@code artifact-finish},
- * {@code artifact-status}, and {@code artifact-read}.
+ * The five bundle attachment MCP tools: {@code artifact_begin}, {@code artifact_chunk}, {@code artifact_finish},
+ * {@code artifact_status}, and {@code artifact_read}.
  */
 @Component
 @ConditionalOnAttachments
 public class AttachmentTools implements ToolAdapter {
 
-    /** One declared file entry in an {@code artifact-begin} request. */
+    /** One declared file entry in an {@code artifact_begin} request. */
     public record BeginFileInput(
             @JsonProperty("fileName") @JsonPropertyDescription("param.artifact_file_name") String fileName,
             @JsonProperty("mediaType") @JsonPropertyDescription("param.artifact_media_type") String mediaType,
@@ -34,7 +34,7 @@ public class AttachmentTools implements ToolAdapter {
         this.flow = flow;
     }
 
-    @McpTool(name = "artifact-begin", description = "tool.artifact_begin", generateOutputSchema = true)
+    @McpTool(name = "artifact_begin", description = "tool.artifact_begin", generateOutputSchema = true)
     public AttachmentOutputs.Begun begin(
             @McpToolParam(description = "param.artifact_operation_key", required = true) String operationKey,
             @McpToolParam(description = "param.artifact_files", required = true) List<BeginFileInput> files,
@@ -47,7 +47,7 @@ public class AttachmentTools implements ToolAdapter {
                 new UploadCommands.Begin(operationKey, commandFiles, purpose)));
     }
 
-    @McpTool(name = "artifact-chunk", description = "tool.artifact_chunk", generateOutputSchema = true)
+    @McpTool(name = "artifact_chunk", description = "tool.artifact_chunk", generateOutputSchema = true)
     public AttachmentOutputs.Received chunk(
             @McpToolParam(description = "param.artifact_upload_id", required = true) String uploadId,
             @McpToolParam(description = "param.artifact_sequence", required = true) Long sequence,
@@ -61,14 +61,14 @@ public class AttachmentTools implements ToolAdapter {
                 new UploadCommands.Chunk(uploadId, sequence, data, chunkSha256)));
     }
 
-    @McpTool(name = "artifact-finish", description = "tool.artifact_finish", generateOutputSchema = true)
+    @McpTool(name = "artifact_finish", description = "tool.artifact_finish", generateOutputSchema = true)
     public AttachmentOutputs.Finished finish(
             @McpToolParam(description = "param.artifact_attachment_id", required = true) String attachmentId,
             @McpToolParam(description = "param.host_attestation", required = false) String _hostAttestation) {
         return AttachmentOutputs.of(flow.finish(_hostAttestation, attachmentId));
     }
 
-    @McpTool(name = "artifact-status", description = "tool.artifact_status", generateOutputSchema = true)
+    @McpTool(name = "artifact_status", description = "tool.artifact_status", generateOutputSchema = true)
     public AttachmentOutputs.Status status(
             @McpToolParam(description = "param.artifact_status_upload_id", required = false) String uploadId,
             @McpToolParam(description = "param.artifact_status_attachment_id", required = false) String attachmentId,
@@ -80,7 +80,7 @@ public class AttachmentTools implements ToolAdapter {
         return AttachmentOutputs.of(flow.status(_hostAttestation, uploadId, attachmentId));
     }
 
-    @McpTool(name = "artifact-read", description = "tool.artifact_read", generateOutputSchema = true)
+    @McpTool(name = "artifact_read", description = "tool.artifact_read", generateOutputSchema = true)
     public AttachmentOutputs.Page read(
             @McpToolParam(description = "param.artifact_attachment_id", required = true) String attachmentId,
             @McpToolParam(description = "param.artifact_seq", required = false) Integer seq,

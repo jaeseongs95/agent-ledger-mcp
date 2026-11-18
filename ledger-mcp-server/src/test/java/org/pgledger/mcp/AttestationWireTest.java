@@ -134,7 +134,7 @@ class AttestationWireTest {
     void anotherTool(WriteCase write, McpSession session, Scenario scenario, @Autowired KeyRing keys) {
         Seed seed = Seed.create(session, scenario);
         keys.enroll(write.actor());
-        String otherTool = WHOAMI.equals(write.tool()) ? "ledger_save" : WHOAMI;
+        String otherTool = WHOAMI.equals(write.tool()) ? "ledger_issue_save" : WHOAMI;
         String operationKey = operationKeyFor(write);
 
         String token = keys.token(write.actor(), otherTool, operationKey,
@@ -229,7 +229,7 @@ class AttestationWireTest {
         Seed seed = Seed.create(session, scenario);
         WriteCase save = WriteCase.all().getFirst();
         String stranger = "claude:nokey" + UUID.randomUUID().toString().substring(0, 8);
-        scenario.grant(stranger, "defect");
+        scenario.grant(stranger, "issue");
         String operationKey = UUID.randomUUID().toString();
         String token = KeyRing.token(KeyRing.newPair(), stranger, save.tool(), operationKey,
                 digestOf(session, save, seed, operationKey), keys.clock().instant());
@@ -242,12 +242,12 @@ class AttestationWireTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("org.pgledger.mcp.support.WriteCase#all")
-    @DisplayName("MCW-043: an author with a registered key and an author without one, each with a well-formed token and a zero signature, get one identical error for all ten tools: no author, no key, nothing to tell them apart")
+    @DisplayName("MCW-043: an author with a registered key and an author without one, each with a well-formed token and a zero signature, get one identical error for all write tools: no author, no key, nothing to tell them apart")
     void noOracleForRegisteredKeys(WriteCase write, McpSession session, Scenario scenario, @Autowired KeyRing keys) {
         Seed seed = Seed.create(session, scenario);
         keys.enroll(write.actor());
         String stranger = "claude:nokey" + UUID.randomUUID().toString().substring(0, 8);
-        scenario.grant(stranger, "defect");
+        scenario.grant(stranger, "issue");
         String operationKey = operationKeyFor(write);
         Instant now = keys.clock().instant();
         List<ToolError> errors = new java.util.ArrayList<>();
@@ -268,7 +268,7 @@ class AttestationWireTest {
             @Autowired SessionKeyService owner) {
         Seed seed = Seed.create(session, scenario);
         WriteCase save = WriteCase.all().getFirst();
-        String author = scenario.actorWith("rk", "defect");
+        String author = scenario.actorWith("rk", "issue");
         keys.enroll(author);
 
         assertThat(owner.revoke(author, TestOwners.OWNER)).isTrue();
@@ -292,14 +292,16 @@ class AttestationWireTest {
     }
 
     @Test
-    @DisplayName("MCW-037: a signed call that is captured and sent again returns the stored response; with other content under the same operationKey it is ATTESTATION_BINDING_MISMATCH (arguments; was OPERATION_CONFLICT before the signature covered the content); the same token for another operationKey is a binding mismatch (operationKey)")
+    @DisplayName("MCW-037: a signed call that is captured and sent again returns the stored response; with other content under the same operationKey it is ATTESTATION_BINDING_MISMATCH (arguments); the same token for another operationKey is a binding mismatch (operationKey)")
     void replayOfASignedCall(McpSession session, Scenario scenario, @Autowired KeyRing keys) {
         WriteCase save = WriteCase.all().getFirst();
-        String author = scenario.actorWith("rp", "defect");
+        String author = scenario.actorWith("rp", "issue");
         keys.enroll(author);
         String operationKey = UUID.randomUUID().toString();
-        Args signed = Args.of().with("entity", "defect").with("reason", Scenario.REASON)
-                .with("fields", Fields.defect(scenario.projectId(), "captured")).with("operationKey", operationKey);
+        Args signed = Args.of().with("project_id", scenario.projectId()).with("title", "captured")
+                .with("category", "ARC").with("severity", "P2").with("symptom", "symptom of captured")
+                .with("root_cause", "cause of captured").with("reason", Scenario.REASON)
+                .with("operationKey", operationKey);
         String token = keys.token(author, save.tool(), operationKey, digest(session, signed));
         Args captured = signed.with("_hostAttestation", token);
 
@@ -307,8 +309,7 @@ class AttestationWireTest {
         WriteOutputs.Saved again = session.ok(save.tool(), captured, WriteOutputs.Saved.class);
         assertThat(again).isEqualTo(first);
 
-        ToolError conflict = session.failed(save.tool(), captured.with("fields",
-                Fields.defect(scenario.projectId(), "forged content")));
+        ToolError conflict = session.failed(save.tool(), captured.with("title", "forged content"));
         assertThat(conflict.code()).isEqualTo("ATTESTATION_BINDING_MISMATCH");
         assertThat(conflict.details()).containsEntry("field", List.of("arguments"));
 
@@ -321,7 +322,7 @@ class AttestationWireTest {
     @Test
     @DisplayName("MCW-038: whoami of a signed session lists its grants; of a session without a registered key it is ATTESTATION_SIGNATURE_INVALID (F5); of a malformed value it still answers author_format_ok=false")
     void whoami(McpSession session, Scenario scenario, @Autowired KeyRing keys) {
-        String author = scenario.actorWith("who", "defect", "task");
+        String author = scenario.actorWith("who", "issue", "task");
         keys.enroll(author);
         String emptyArguments = digest(session, Args.of());
         String token = keys.token(author, WHOAMI, "", emptyArguments);
@@ -353,18 +354,18 @@ class AttestationWireTest {
     @Test
     @DisplayName("MCW-041: the token of a batch cannot be sent again with other operations: new operations, an extra one or a changed one are ATTESTATION_BINDING_MISMATCH (arguments) and write nothing")
     void batchTokenCannotCarryOtherOperations(McpSession session, Scenario scenario, @Autowired KeyRing keys) {
-        String author = scenario.actorWith("br", "defect");
+        String author = scenario.actorWith("br", "issue");
         keys.enroll(author);
         String project = scenario.projectId();
         String batchKey = UUID.randomUUID().toString();
-        Args legitimate = batchCall(session, batchKey, Calls.Op.save("defect", Fields.defect(project, "one")));
+        Args legitimate = batchCall(session, batchKey, Calls.Op.save("issue", Fields.issue(project, "one")));
         String token = signedFor(session, keys, author, "ledger_batch", batchKey, legitimate);
 
         // (the operations carry no key of their own, so the changes are in the operations themselves)
         List<Args> variants = List.of(
-                batchCall(session, batchKey, Calls.Op.save("defect", Fields.defect(project, "one")),
-                        Calls.Op.save("defect", Fields.defect(project, "extra"))),
-                batchCall(session, batchKey, Calls.Op.save("defect", Fields.defect(project, "changed"))),
+                batchCall(session, batchKey, Calls.Op.save("issue", Fields.issue(project, "one")),
+                        Calls.Op.save("issue", Fields.issue(project, "extra"))),
+                batchCall(session, batchKey, Calls.Op.save("issue", Fields.issue(project, "changed"))),
                 batchCall(session, batchKey, Calls.Op.save("task", Fields.task(project, "one"))));
         int before = Ledger.history(session, project).size();
         for (Args variant : variants) {
@@ -383,25 +384,27 @@ class AttestationWireTest {
     @Test
     @DisplayName("MCW-042: the token of a save cannot be used for other content, whether the legitimate call came first or not")
     void saveTokenCannotCarryOtherContent(McpSession session, Scenario scenario, @Autowired KeyRing keys) {
-        String author = scenario.actorWith("pl", "defect");
+        String author = scenario.actorWith("pl", "issue");
         keys.enroll(author);
         String operationKey = UUID.randomUUID().toString();
-        Args signed = Args.of().with("entity", "defect").with("reason", Scenario.REASON)
-                .with("fields", Fields.defect(scenario.projectId(), "signed")).with("operationKey", operationKey);
-        Args other = signed.with("fields", Fields.defect(scenario.projectId(), "attacker content"));
-        String token = signedFor(session, keys, author, "ledger_save", operationKey, signed);
+        Args signed = Args.of().with("project_id", scenario.projectId()).with("title", "signed")
+                .with("category", "ARC").with("severity", "P2").with("symptom", "symptom of signed")
+                .with("root_cause", "cause of signed").with("reason", Scenario.REASON)
+                .with("operationKey", operationKey);
+        Args other = signed.with("title", "attacker content");
+        String token = signedFor(session, keys, author, "ledger_issue_save", operationKey, signed);
         int before = Ledger.history(session, scenario.projectId()).size();
 
         // the attacker is first: the other content must not win the race for the operation key
-        ToolError raced = session.failed("ledger_save", other.with("_hostAttestation", token));
+        ToolError raced = session.failed("ledger_issue_save", other.with("_hostAttestation", token));
         assertThat(raced.code()).isEqualTo("ATTESTATION_BINDING_MISMATCH");
         assertThat(raced.details()).containsEntry("field", List.of("arguments"));
         assertThat(Ledger.history(session, scenario.projectId())).hasSize(before);
 
-        WriteOutputs.Saved written = session.ok("ledger_save", signed.with("_hostAttestation", token),
+        WriteOutputs.Saved written = session.ok("ledger_issue_save", signed.with("_hostAttestation", token),
                 WriteOutputs.Saved.class);
         assertThat(written.author()).isEqualTo(author);
-        assertThat(session.failed("ledger_save", other.with("_hostAttestation", token)).code())
+        assertThat(session.failed("ledger_issue_save", other.with("_hostAttestation", token)).code())
                 .isEqualTo("ATTESTATION_BINDING_MISMATCH");
         assertThat(Ledger.history(session, scenario.projectId())).hasSize(before + 1);
     }
@@ -409,17 +412,19 @@ class AttestationWireTest {
     @Test
     @DisplayName("MCW-044 (audit2 N2): a token signed for the decimal 9007199254740992.0 cannot carry the integer 9007199254740993 (or 9007199254740992): the server does not verify an integer beyond 2**53-1, ATTESTATION_BINDING_MISMATCH (arguments), nothing is written")
     void anIntegerBeyondTheExactRangeIsNotVerified(McpSession session, Scenario scenario, @Autowired KeyRing keys) {
-        String author = scenario.actorWith("pl", "defect");
+        String author = scenario.actorWith("pl", "issue");
         keys.enroll(author);
         String operationKey = UUID.randomUUID().toString();
-        Args signed = Args.of().with("entity", "defect").with("reason", Scenario.REASON)
-                .with("fields", Fields.defect(scenario.projectId(), "signed")).with("operationKey", operationKey)
+        Args signed = Args.of().with("project_id", scenario.projectId()).with("title", "signed")
+                .with("category", "ARC").with("severity", "P2").with("symptom", "symptom of signed")
+                .with("root_cause", "cause of signed").with("reason", Scenario.REASON)
+                .with("operationKey", operationKey)
                 .with("expected_version", 9007199254740992.0);
-        String token = signedFor(session, keys, author, "ledger_save", operationKey, signed);
+        String token = signedFor(session, keys, author, "ledger_issue_save", operationKey, signed);
         int before = Ledger.history(session, scenario.projectId()).size();
 
         for (long integer : new long[] {9007199254740993L, 9007199254740992L}) {
-            ToolError error = session.failed("ledger_save",
+            ToolError error = session.failed("ledger_issue_save",
                     signed.with("expected_version", integer).with("_hostAttestation", token));
             assertThat(error.code()).isEqualTo("ATTESTATION_BINDING_MISMATCH");
             assertThat(error.details()).containsEntry("field", List.of("arguments"));

@@ -15,17 +15,17 @@ import tools.jackson.core.JacksonException;
  * <ul>
  * <li>{@code mcp__<server>__<tool>}, or {@code mcp__<server>__<server>_<tool>} when the tool reaches the host
  *     through a gateway that prefixes the tool names with the name of its upstream. The tool is {@code ledger_<op>} or
- *     one of the attachment tools {@code artifact-begin} ... {@code artifact-read}. The prefix before the tool
+ *     one of the attachment tools {@code artifact_begin} ... {@code artifact_read}. The prefix before the tool
  *     must be exactly the server segment, so a look-alike server is not signed for.
  * <li>The Codex Apps namespace {@code mcp__codex_apps__app_<app>_<tool>} (a real path: the tool of the app
  *     {@code <app>} reaches Codex as {@code app_<app>_<tool>} in the pseudo server {@code codex_apps}, for example
- *     {@code mcp__codex_apps__app_ledger_ledger_save} for the app {@code ledger}). The audience here is the app, not the
+ *     {@code mcp__codex_apps__app_ledger_ledger_issue_save} for the app {@code ledger}). The audience here is the app, not the
  *     pseudo server that every app shares, so the server identity is {@code codex_apps.<app>} and the key is kept per
  *     (that identity, author): the owner registers the key printed by {@code session-key codex_apps.<app> <author>}. An
  *     app with another name gets another identity and another key, so a look-alike app never gets a signature that
  *     verifies for the real one.
  * </ul>
- * The tool is one of the fifteen known ones, exactly.
+ * The tool is one of the eighteen known ones, exactly.
  */
 @Component
 record CodexDialect(JsonCodec codec) implements HostDialect {

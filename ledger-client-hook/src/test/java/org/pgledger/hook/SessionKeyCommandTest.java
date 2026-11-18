@@ -85,7 +85,7 @@ class SessionKeyCommandTest {
     @MethodSource("org.pgledger.hook.Hosts#all")
     @DisplayName("HK-028 real jar: the first run creates the key file in the folder named by LEDGER_HOOK_KEY_DIR, and nowhere else")
     void processUsesTheFolderOfTheVariable(HostScenario host, HookJar jar, TestWorkspace workspace) throws IOException {
-        byte[] stdin = host.event(host.toolName("save"), Json.of("{}"));
+        byte[] stdin = host.event(host.toolName("issue_save"), Json.of("{}"));
         Run run = jar.run(stdin, host.client().argument());
         assertThat(run.exit()).isZero();
         Path file = jar.keyDirectory().resolve(Attestations.keyFileName(host.server(), host.author(HookFixture.HOST_ID)));
@@ -179,8 +179,8 @@ class SessionKeyCommandTest {
         assertThat(command.exit()).isZero();
         PublicKey printed = PublicKeys.decode(fourLines(command).get(2).substring("public-key: ".length()));
         JsonNode input = Json.of("{}");
-        Run run = fixture.runClean(host, host.event(host.toolName("save"), input));
-        Attestations.Stamp stamp = fixture.stamp(host, "save", input, run);
+        Run run = fixture.runClean(host, host.event(host.toolName("issue_save"), input));
+        Attestations.Stamp stamp = fixture.stamp(host, "issue_save", input, run);
         AttestationToken.parse(stamp.token()).verify(printed);
     }
 

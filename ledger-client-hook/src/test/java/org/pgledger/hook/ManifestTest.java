@@ -29,7 +29,7 @@ class ManifestTest {
     private static final Path STAGING = Path.of(System.getProperty("ledger.hook.staging"));
     private static final Pattern JAVA_COMMAND = Pattern.compile("^(?:cmd\\.exe /d /c )?java -jar (?:\"([^\"]+)\"|(\\S+)) (\\S+)$");
     private static final List<String> SERVERS = List.of("ledger", "test", "t0001sink", "t0001sink_isolated-01", "codex_apps");
-    private static final List<String> READ_OPS = List.of("get", "history", "list", "search", "defects", "save_extra");
+    private static final List<String> READ_OPS = List.of("get", "history", "list", "search", "issues", "specs", "issue_save_extra");
 
     /** Where each client keeps its PreToolUse entries: the hooks file and the JSON pointer inside it. */
     private record HooksFile(String file, String pointer) {}
@@ -75,7 +75,7 @@ class ManifestTest {
 
     /** Attachment tool names that are none of the five (ATA-021): the matcher must not select them, in any naming. */
     private static final List<String> OTHER_ARTIFACT_NAMES = List.of(
-            "artifact-delete", "artifact-begin-extra", "artifact_begin", "artifact-", "artifact-Begin", "xartifact-begin");
+            "artifact_delete", "artifact_begin_extra", "artifact-begin", "artifact_", "artifact_Begin", "xartifact_begin");
 
     /** (client, tool name, whether the matcher must select it) */
     static Stream<Arguments> matcherCases() {
@@ -84,8 +84,8 @@ class ManifestTest {
                         Hosts.ARTIFACT_OPS.stream().flatMap(op -> names(client, op)).map(name -> Map.entry(name, true)),
                         OTHER_ARTIFACT_NAMES.stream().flatMap(other -> names(client, other)).map(name -> Map.entry(name, false)),
                         READ_OPS.stream().flatMap(op -> names(client, op)).map(name -> Map.entry(name, false)),
-                        Stream.of("Bash", "mcp__other__read", "ledger_save", "mcp__ledger_save", "mcp:ledger_save",
-                                "mcp__ledger__ledger_save_extra", "xmcp__ledger__ledger_save")
+                        Stream.of("Bash", "mcp__other__read", "ledger_issue_save", "mcp__ledger_issue_save", "mcp:ledger_issue_save",
+                                "mcp__ledger__ledger_issue_save_extra", "xmcp__ledger__ledger_issue_save")
                                 .map(name -> Map.entry(name, false)))
                 .flatMap(cases -> cases)
                 .map(c -> Arguments.argumentSet(client + " " + c.getKey(), client, c.getKey(), c.getValue())));

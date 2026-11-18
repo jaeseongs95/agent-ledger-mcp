@@ -1,5 +1,5 @@
 {
-  "description": "Contract vectors of the 2.0 MCP tool names: 13 write tools, 5 snake_case attachment tools (aligned with Sennard ArtifactTools), and 15 read tools. Every write tool except ledger_whoami takes a required operation_key.",
+  "description": "Contract vectors of the 2.0 MCP tool names: 13 write tools, 5 snake_case attachment tools (aligned with Sennard ArtifactTools), and 15 read tools. Every write tool except ledger_whoami takes a required operationKey.",
   "write": [
     "ledger_issue_save", "ledger_spec_save", "ledger_task_save", "ledger_criterion_save",
     "ledger_transition", "ledger_record_deliverable", "ledger_record_case", "ledger_link",

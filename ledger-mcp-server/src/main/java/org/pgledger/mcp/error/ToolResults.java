@@ -6,19 +6,10 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * Makes the result of a tool call: the output record as structured content and as its JSON text, or, when the call
- * fails, the {@link ToolError} as structured content with the text {@code <TOKEN>: <message>} and
- * {@code isError=true}. {@link #run} is the one entry of the MCP boundary that catches a failure of a tool.
- *
- * <p>The structured content is handed to the transport as the object itself: the MCP SDK serializes it once, when
- * it writes the response, and nothing is parsed again on the way. The output records carry
- * {@code @JsonInclude(ALWAYS)}, so a null stays a null whatever default inclusion the transport mapper has. The
- * JSON text of a successful result is the one serialization this class makes: the MCP specification (2025-06-18,
- * server/tools, "Structured Content") recommends that a tool that returns structured content also returns the
- * serialized JSON in a text content block. Source: MCP specification 2025-06-18, server/tools, section "Structured
- * Content" (https://modelcontextprotocol.io/specification/2025-06-18/server/tools#structured-content): "For
- * backwards compatibility, a tool that returns structured content SHOULD also return the serialized JSON in a
- * TextContent block." (confirmed by reading the page).
+ * Wraps every MCP tool call outcome in the {@link ApiResult} ({@code ApiResult.v1}) envelope: on success,
+ * {@code ok=true} with {@code data} and serialized JSON in {@code TextContent}; on failure, {@code ok=false} with
+ * {@code error}, {@code isError=true}, and {@code <TOKEN>: <message>} in {@code TextContent}. {@link #run} is the
+ * single MCP boundary that catches runtime exceptions.
  */
 @Component
 public class ToolResults {
@@ -40,12 +31,20 @@ public class ToolResults {
     }
 
     private CallToolResult success(Object output) {
-        return CallToolResult.builder().structuredContent(output).addTextContent(mapper.writeValueAsString(output))
-                .isError(false).build();
+        ApiResult<Object> envelope = ApiResult.ok(output);
+        return CallToolResult.builder()
+                .structuredContent(envelope)
+                .addTextContent(mapper.writeValueAsString(envelope))
+                .isError(false)
+                .build();
     }
 
     private CallToolResult failure(ToolError error) {
-        return CallToolResult.builder().structuredContent(error).addTextContent(error.code() + ": " + error.message())
-                .isError(true).build();
+        ApiResult<Object> envelope = ApiResult.failed(error);
+        return CallToolResult.builder()
+                .structuredContent(envelope)
+                .addTextContent(error.code() + ": " + error.message())
+                .isError(true)
+                .build();
     }
 }

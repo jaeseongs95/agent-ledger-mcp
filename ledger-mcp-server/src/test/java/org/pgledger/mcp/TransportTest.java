@@ -246,7 +246,7 @@ class TransportTest {
     @MethodSource("languages")
     @DisplayName("MCC-021 (superseded: model-facing text is English only): an error call returns the English message "
             + "and the same token whatever Accept-Language says")
-    void anErrorIsEnglishWhateverTheLanguage(String language, RawHttp http,
+    void anErrorIsEnglishWhateverTheLanguage(String language, RawHttp http, McpSession session,
             @Autowired MessageSource messages) {
         String sessionId = http.openSession(BEARER);
         String english = messages.getMessage("error.HOST_ATTESTATION_REQUIRED", null, Locale.ENGLISH);
@@ -259,8 +259,8 @@ class TransportTest {
         assertThat(korean).as("the Korean bundle must differ, or this case proves nothing").isNotEqualTo(english);
         assertThat(result.isError()).isTrue();
         assertThat(McpSession.text(result)).isEqualTo("HOST_ATTESTATION_REQUIRED: " + english);
-        assertThat(http.convert(result.structuredContent(), ToolError.class).code())
-                .isEqualTo("HOST_ATTESTATION_REQUIRED");    }
+        assertThat(session.error(result).code()).isEqualTo("HOST_ATTESTATION_REQUIRED");
+    }
 
     // ------------------------------------------------------------------------------------------------ MCC-022
 

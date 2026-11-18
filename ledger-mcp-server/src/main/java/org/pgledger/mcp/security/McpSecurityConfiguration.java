@@ -55,9 +55,9 @@ public class McpSecurityConfiguration {
     }
 
     @Bean
-    SecurityFilterChain mcpSecurity(HttpSecurity http, AgentTokenProvider tokens, TransportOriginAuthorization origin)
-            throws Exception {
-        AuthenticationManager agents = new ProviderManager(tokens);
+    SecurityFilterChain mcpSecurity(HttpSecurity http, AgentTokenProvider tokens, SessionTokenProvider sessionTokens,
+            TransportOriginAuthorization origin) throws Exception {
+        AuthenticationManager agents = new ProviderManager(tokens, sessionTokens);
         return http
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))

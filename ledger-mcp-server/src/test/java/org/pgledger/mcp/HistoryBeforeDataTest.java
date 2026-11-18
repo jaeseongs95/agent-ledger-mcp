@@ -10,7 +10,6 @@ import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.pgledger.mcp.support.Calls;
-import org.pgledger.mcp.support.Calls.Fields;
 import org.pgledger.mcp.support.McpServerTest;
 import org.pgledger.mcp.support.McpSession;
 import org.pgledger.mcp.support.Scenario;
@@ -22,16 +21,16 @@ import tools.jackson.databind.annotation.JsonNaming;
 @McpServerTest
 class HistoryBeforeDataTest {
 
-    /** The defect row before the edit, read with its snake_case keys: a key that is not on the wire stays null. */
+    /** The issue row before the edit, read with its snake_case keys: a key that is not on the wire stays null. */
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    record BeforeDefect(String id, String projectId, String title, String category, String severity, String status,
-            String mergedInto, String behavior, String rootCause, String ownerActorId, Long caseSeq, Long version,
+    record BeforeIssue(String id, String projectId, String title, String category, String severity, String status,
+            String mergedInto, String symptom, String rootCause, String ownerActorId, Long caseSeq, Long version,
             Instant createdAt, Instant updatedAt, String createdBy) {
     }
 
     /** The part of a history row this case looks at. */
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
-    record Row(long id, String op, BeforeDefect beforeData) {
+    record Row(long id, String op, BeforeIssue beforeData) {
     }
 
     /** The same row read with the camelCase keys: they must not be on the wire. */
@@ -47,17 +46,18 @@ class HistoryBeforeDataTest {
     @DisplayName("MCR-H13: the before_data of an EDIT row has snake_case keys and holds the row before the edit; "
             + "the CREATE row has none")
     void beforeDataIsWrittenWithTheKeysOfTheContract(McpSession session, Scenario scenario) {
-        Saved created = session.ok("ledger_save", Calls.Save.create("defect",
-                Fields.defect(scenario.projectId(), "first title"), Scenario.AUTHOR), Saved.class);
-        session.ok("ledger_save", Calls.Save.edit("defect", created.id(), created.version(),
-                Fields.titled("second title"), Scenario.AUTHOR), Saved.class);
+        Saved created = session.ok("ledger_issue_save",
+                Calls.IssueSave.create(scenario.projectId(), "first title", Scenario.AUTHOR), Saved.class);
+        session.ok("ledger_issue_save",
+                Calls.IssueSave.editTitle(created.id(), created.version(), "second title", Scenario.AUTHOR),
+                Saved.class);
 
         CallToolResult result = session.call("ledger_history", new Calls.History(scenario.projectId(), true, null));
         List<Row> rows = session.readItems(result, Row.class).items();
         List<CamelRow> camel = session.readItems(result, CamelRow.class).items();
 
-        BeforeDefect expected = new BeforeDefect(created.id(), scenario.projectId(), "first title", "ARC", "P2",
-                "OPEN", null, "behavior of first title", "cause of first title", null, 0L, 1L, null, null,
+        BeforeIssue expected = new BeforeIssue(created.id(), scenario.projectId(), "first title", "ARC", "P2",
+                "OPEN", null, "symptom of first title", "cause of first title", null, 0L, 1L, null, null,
                 Scenario.AUTHOR);
         assertThat(rows).extracting(Row::op).containsExactly("CREATE", "EDIT");
         assertThat(rows.getFirst().beforeData()).isNull();
@@ -77,12 +77,11 @@ class HistoryBeforeDataTest {
     @DisplayName("MCR-H14: the changes of a history row are written with the snake_case field names and as "
             + "[before, after] pairs")
     void changesAreWrittenWithTheKeysOfTheContract(McpSession session, Scenario scenario) {
-        Saved created = session.ok("ledger_save", Calls.Save.create("defect",
-                Fields.defect(scenario.projectId(), "first title"), Scenario.AUTHOR), Saved.class);
-        Fields edit = new Fields(null, "second title", null, null, null, "second cause", null, null, null, null,
-                null, null, null, null, null);
-        session.ok("ledger_save", Calls.Save.edit("defect", created.id(), created.version(), edit,
-                Scenario.AUTHOR), Saved.class);
+        Saved created = session.ok("ledger_issue_save",
+                Calls.IssueSave.create(scenario.projectId(), "first title", Scenario.AUTHOR), Saved.class);
+        Calls.IssueSave edit = new Calls.IssueSave(null, "second title", null, null, null, "second cause", null,
+                created.id(), created.version(), Scenario.REASON, Calls.freshKey(), Scenario.AUTHOR);
+        session.ok("ledger_issue_save", edit, Saved.class);
 
         CallToolResult result = session.call("ledger_history", new Calls.History(scenario.projectId(), false, null));
         List<ChangeRow> rows = session.readItems(result, ChangeRow.class).items();

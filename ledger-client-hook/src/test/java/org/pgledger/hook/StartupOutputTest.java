@@ -38,7 +38,7 @@ class StartupOutputTest {
     @DisplayName("HK-050 real main: a stamped answer on stdout is one JSON document and its line feed, from the first byte to the last")
     void stdoutIsTheAnswerAlone(HostScenario host, HookJar jar) throws IOException {
         JsonNode input = Json.of("{\"note\":\"startup\"}");
-        Run run = jar.run(host.event(host.toolName("save"), input), host.client().argument());
+        Run run = jar.run(host.event(host.toolName("issue_save"), input), host.client().argument());
         assertThat(run.stderr()).as("stderr bytes").isEmpty();
         assertThat(run.exit()).isZero();
         byte[] stdout = run.stdout();

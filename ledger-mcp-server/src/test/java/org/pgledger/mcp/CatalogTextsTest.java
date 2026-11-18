@@ -54,9 +54,10 @@ class CatalogTextsTest {
     }
 
     @Test
-    @DisplayName("1.5/MCW-017 texts: the tools of the server are 27 and each has a description")
+    @DisplayName("1.5/MCW-017 texts: the tools of the server are 33 and each has a clear domain-neutral description")
     void everyToolHasADescription(McpSession session) {
-        assertThat(session.tools()).extracting(Tool::name).containsExactlyInAnyOrderElementsOf(ToolNames.all());
+        assertThat(session.tools()).extracting(Tool::name).hasSize(33)
+                .containsExactlyInAnyOrderElementsOf(ToolNames.all());
         assertThat(session.tools()).allSatisfy(tool -> assertThat(tool.description()).isNotBlank());
     }
 
@@ -89,14 +90,16 @@ class CatalogTextsTest {
     }
 
     @Test
-    @DisplayName("1.5/MCW-017 texts: every message key that an adapter names exists in messages/mcp.properties")
+    @DisplayName("1.5/MCW-017 texts: every message key that an adapter names exists in both messages/mcp.properties and messages/mcp_ko.properties")
     void everyKeyOfTheAdaptersExists(@Autowired List<ToolAdapter> adapters) {
-        ResourceBundle texts = ResourceBundle.getBundle("messages/mcp", Locale.ROOT);
+        ResourceBundle english = ResourceBundle.getBundle("messages/mcp", Locale.ROOT);
+        ResourceBundle korean = ResourceBundle.getBundle("messages/mcp", Locale.KOREAN);
         List<String> used = adapters.stream().flatMap(CatalogTextsTest::keysOf).distinct().toList();
 
         assertThat(used.stream().filter(key -> key.startsWith("tool.")).count()).isEqualTo(ToolNames.all().size());
         assertThat(used.stream().filter(key -> key.startsWith("param.")).count()).isPositive();
         assertThat(used.stream().filter(key -> key.startsWith("field.")).count()).isPositive();
-        assertThat(used.stream().filter(key -> !texts.containsKey(key)).toList()).isEmpty();
+        assertThat(used.stream().filter(key -> !english.containsKey(key)).toList()).isEmpty();
+        assertThat(used.stream().filter(key -> !korean.containsKey(key)).toList()).isEmpty();
     }
 }

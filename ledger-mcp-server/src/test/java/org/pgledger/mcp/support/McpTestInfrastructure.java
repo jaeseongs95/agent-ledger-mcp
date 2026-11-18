@@ -72,8 +72,8 @@ public class McpTestInfrastructure {
 
     @Bean
     CategoriesSeeded categoriesSeeded(CommonCodeService codes, SchemaMigrated schema) {
-        codes.set(new CodeCommand("DEFECT_CATEGORY", "ARC", "구조", "Architecture", null, null, 1, "ACTIVE"), TestOwners.OWNER);
-        codes.set(new CodeCommand("DEFECT_CATEGORY", "RETIRED", "폐기", "Retired", null, null, 9, "INACTIVE"), TestOwners.OWNER);
+        codes.set(new CodeCommand("ISSUE_CATEGORY", "ARC", "구조", "Architecture", null, null, 1, "ACTIVE"), TestOwners.OWNER);
+        codes.set(new CodeCommand("ISSUE_CATEGORY", "RETIRED", "폐기", "Retired", null, null, 9, "INACTIVE"), TestOwners.OWNER);
         return new CategoriesSeeded();
     }
 }

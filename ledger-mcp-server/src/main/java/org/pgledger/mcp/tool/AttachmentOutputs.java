@@ -18,12 +18,12 @@ public final class AttachmentOutputs {
     private AttachmentOutputs() {
     }
 
-    /** One staged file upload created by {@code artifact-begin}. */
+    /** One staged file upload created by {@code artifact_begin}. */
     @JsonInclude(JsonInclude.Include.ALWAYS)
     public record BegunFile(@JsonProperty("seq") int seq, @JsonProperty("uploadId") String uploadId) {
     }
 
-    /** What {@code artifact-begin} answers for a bundle upload. */
+    /** What {@code artifact_begin} answers for a bundle upload. */
     @JsonInclude(JsonInclude.Include.ALWAYS)
     public record Begun(
             @JsonProperty("attachmentId") String attachmentId,
@@ -32,7 +32,7 @@ public final class AttachmentOutputs {
             @JsonProperty("expiresAt") Instant expiresAt) {
     }
 
-    /** What {@code artifact-chunk} answers: the number of the chunk and the plain bytes the upload holds now. */
+    /** What {@code artifact_chunk} answers: the number of the chunk and the plain bytes the upload holds now. */
     @JsonInclude(JsonInclude.Include.ALWAYS)
     public record Received(@JsonProperty("sequence") long sequence, @JsonProperty("received") long received) {
     }
@@ -47,7 +47,7 @@ public final class AttachmentOutputs {
             @JsonProperty("sha256") String sha256) {
     }
 
-    /** What {@code artifact-finish} answers. */
+    /** What {@code artifact_finish} answers. */
     @JsonInclude(JsonInclude.Include.ALWAYS)
     public record Finished(
             @JsonProperty("attachmentId") String attachmentId,
@@ -55,7 +55,7 @@ public final class AttachmentOutputs {
     }
 
     /**
-     * What {@code artifact-status} answers for an upload in progress ({@code kind = "upload"}) or a kept attachment
+     * What {@code artifact_status} answers for an upload in progress ({@code kind = "upload"}) or a kept attachment
      * bundle ({@code kind = "attachment"}). Never contains a path or storage key.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)

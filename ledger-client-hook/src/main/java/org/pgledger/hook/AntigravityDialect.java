@@ -26,13 +26,13 @@ import tools.jackson.databind.JsonNode;
  * <p>The tool names that are signed for:
  * <ul>
  * <li>Direct: {@code mcp:<server><sep><tool>} or {@code mcp:<server><sep><server>_<tool>} with a separator of
- *     {@code :}, {@code /} or {@code _}; a name without a server ({@code mcp:ledger_save}) names no audience and is not
+ *     {@code :}, {@code /} or {@code _}; a name without a server ({@code mcp:ledger_issue_save}) names no audience and is not
  *     signed. The prefix before the tool must be exactly the server.
  * <li>{@code call_mcp_tool}: the {@code ServerName} of the envelope, and a {@code ToolName} of {@code <tool>} or
  *     {@code <ServerName>_<tool>}.
  * </ul>
- * The {@code <tool>} is {@code ledger_<op>} or one of the attachment tools {@code artifact-begin} ... {@code artifact-read};
- * it is one of the fifteen known ones, exactly.
+ * The {@code <tool>} is {@code ledger_<op>} or one of the attachment tools {@code artifact_begin} ... {@code artifact_read};
+ * it is one of the eighteen known ones, exactly.
  */
 @Component
 record AntigravityDialect(JsonCodec codec) implements HostDialect {

@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
@@ -67,10 +68,10 @@ class WriteCallTest {
             + "argument any more, so it authorises nothing, and nothing is written")
     void theRemovedAuthorIdAloneAuthorisesNothing(McpSession session, Scenario scenario) {
         Args call = Args.from(session.mapper(),
-                Calls.Save.create("defect", Fields.defect(scenario.projectId(), "t"), null))
+                Calls.IssueSave.create(scenario.projectId(), "t", null))
                 .with("author_id", Scenario.AUTHOR);
 
-        ToolError error = session.failed("ledger_save", call);
+        ToolError error = session.failed("ledger_issue_save", call);
 
         assertThat(error.code()).isEqualTo("VALIDATION_FAILED");
         assertThat(error.issues()).containsExactly(new ToolError.Issue("author_id", UNKNOWN_ARGUMENT, List.of()));
@@ -78,34 +79,47 @@ class WriteCallTest {
     }
 
     /** An unknown argument added to a valid save: where it is and the path that must be named. */
-    private record UnknownArgument(String path, UnaryOperator<Args> add) {
+    private record UnknownArgument(String tool, String path, BiFunction<McpSession, Scenario, Args> call) {
 
         @Override
         public String toString() {
-            return path;
+            return tool + ": " + path;
         }
     }
 
     static Stream<UnknownArgument> unknownArguments() {
         return Stream.of(
-                new UnknownArgument("titel", call -> call.with("titel", "x")),
-                new UnknownArgument("authorId", call -> call.with("authorId", Scenario.AUTHOR)),
-                new UnknownArgument("Author_Id", call -> call.with("Author_Id", Scenario.AUTHOR)),
-                new UnknownArgument("_hostattestation", call -> call.with("_hostattestation", Scenario.AUTHOR)),
-                new UnknownArgument("fields.titel",
-                        call -> call.with("fields", Args.of().with("title", "t").with("titel", "x"))),
-                new UnknownArgument("fields.mentioned",
-                        call -> call.with("fields", Args.of().with("title", "t").with("mentioned", List.of("title")))));
+                new UnknownArgument("ledger_issue_save", "titel", (session, scenario) -> Args.from(session.mapper(),
+                        Calls.IssueSave.create(scenario.projectId(), "t", Scenario.AUTHOR)).with("titel", "x")),
+                new UnknownArgument("ledger_issue_save", "query", (session, scenario) -> Args.from(session.mapper(),
+                        Calls.IssueSave.create(scenario.projectId(), "t", Scenario.AUTHOR)).with("query", "SELECT 1")),
+                new UnknownArgument("ledger_issue_save", "fields", (session, scenario) -> Args.from(session.mapper(),
+                        Calls.IssueSave.create(scenario.projectId(), "t", Scenario.AUTHOR)).with("fields", Map.of())),
+                new UnknownArgument("ledger_issue_save", "authorId", (session, scenario) -> Args.from(session.mapper(),
+                        Calls.IssueSave.create(scenario.projectId(), "t", Scenario.AUTHOR)).with("authorId", Scenario.AUTHOR)),
+                new UnknownArgument("ledger_issue_save", "Author_Id", (session, scenario) -> Args.from(session.mapper(),
+                        Calls.IssueSave.create(scenario.projectId(), "t", Scenario.AUTHOR)).with("Author_Id", Scenario.AUTHOR)),
+                new UnknownArgument("ledger_issue_save", "_hostattestation", (session, scenario) -> Args.from(session.mapper(),
+                        Calls.IssueSave.create(scenario.projectId(), "t", Scenario.AUTHOR)).with("_hostattestation", Scenario.AUTHOR)),
+                new UnknownArgument("ledger_batch", "ops[0].fields.titel", (session, scenario) -> Args.of()
+                        .with("_hostAttestation", Scenario.AUTHOR).with("operationKey", Calls.freshKey())
+                        .with("ops", List.of(Args.of().with("op", "save").with("entity", "issue")
+                                .with("reason", Scenario.REASON)
+                                .with("fields", Args.of().with("title", "t").with("titel", "x"))))),
+                new UnknownArgument("ledger_batch", "ops[0].fields.mentioned", (session, scenario) -> Args.of()
+                        .with("_hostAttestation", Scenario.AUTHOR).with("operationKey", Calls.freshKey())
+                        .with("ops", List.of(Args.of().with("op", "save").with("entity", "issue")
+                                .with("reason", Scenario.REASON)
+                                .with("fields", Args.of().with("title", "t").with("mentioned", List.of("title")))))));
     }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("unknownArguments")
     @DisplayName("MCW-006: an unknown argument is VALIDATION_FAILED and names the argument")
     void anUnknownArgumentIsNamed(UnknownArgument unknown, McpSession session, Scenario scenario) {
-        Args call = unknown.add().apply(Args.from(session.mapper(),
-                Calls.Save.create("defect", Fields.defect(scenario.projectId(), "t"), Scenario.AUTHOR)));
+        Args call = unknown.call().apply(session, scenario);
 
-        ToolError error = session.failed("ledger_save", call);
+        ToolError error = session.failed(unknown.tool(), call);
 
         assertThat(error.code()).isEqualTo("VALIDATION_FAILED");
         assertThat(error.issues()).containsExactly(new ToolError.Issue(unknown.path(), UNKNOWN_ARGUMENT, List.of()));
@@ -116,16 +130,15 @@ class WriteCallTest {
     @DisplayName("MCW-006: all unknown arguments of one call are reported together")
     void allUnknownArgumentsAreReportedTogether(McpSession session, Scenario scenario) {
         Args call = Args.from(session.mapper(),
-                Calls.Save.create("defect", Fields.defect(scenario.projectId(), "t"), Scenario.AUTHOR))
+                Calls.IssueSave.create(scenario.projectId(), "t", Scenario.AUTHOR))
                 .with("titel", "x").with("authorId", Scenario.AUTHOR).with("Author_Id", Scenario.AUTHOR)
-                .with("_hostattestation", Scenario.AUTHOR)
-                .with("fields", Args.of().with("title", "t").with("titel", "x"));
+                .with("_hostattestation", Scenario.AUTHOR).with("query", "SELECT 1");
 
-        ToolError error = session.failed("ledger_save", call);
+        ToolError error = session.failed("ledger_issue_save", call);
 
         assertThat(error.code()).isEqualTo("VALIDATION_FAILED");
         assertThat(error.issues()).extracting(ToolError.Issue::path).containsExactlyInAnyOrder("titel", "authorId",
-                "Author_Id", "_hostattestation", "fields.titel");
+                "Author_Id", "_hostattestation", "query");
     }
 
     /** A batch operation that is wrong in its {@code op} key, and what the issue says about it. */
@@ -138,10 +151,10 @@ class WriteCallTest {
     }
 
     static Stream<BadOp> badOps() {
-        List<String> ops = List.of("save", "transition", "record_fix", "record_case", "link", "correct");
+        List<String> ops = List.of("save", "transition", "record_deliverable", "record_case", "link", "correct");
         return Stream.of(
                 new BadOp("unknown op", Map.of("op", "drop"), "unknown value drop", ops),
-                new BadOp("no op", Map.of("entity", "defect"), "is required", List.of()));
+                new BadOp("no op", Map.of("entity", "issue"), "is required", List.of()));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -164,7 +177,7 @@ class WriteCallTest {
 
     @Test
     @DisplayName("MCW-027: ops that are a text (JSON or not) are refused with the sentence of the reason bundle for "
-            + "the wrong type, not the text of the JSON library (changed: the JSON text form is no longer read)")
+            + "the wrong type, not the text of the JSON library")
     void textOpsGetTheSentenceOfTheBundle(McpSession session) {
         Args call = Args.of().with("ops", "[{not json").with("operationKey", Calls.freshKey())
                 .with("_hostAttestation", Scenario.AUTHOR);
@@ -178,8 +191,8 @@ class WriteCallTest {
     @Test
     @DisplayName("MCW-006: an empty _hostAttestation is AUTHOR_ID_FORMAT")
     void anEmptyAttestationIsAMalformedAuthorId(McpSession session, Scenario scenario) {
-        ToolError error = session.failed("ledger_save",
-                Calls.Save.create("defect", Fields.defect(scenario.projectId(), "t"), ""));
+        ToolError error = session.failed("ledger_issue_save",
+                Calls.IssueSave.create(scenario.projectId(), "t", ""));
 
         assertThat(error.code()).isEqualTo("AUTHOR_ID_FORMAT");
     }
@@ -187,33 +200,29 @@ class WriteCallTest {
     // ------------------------------------------------------------------------------------- MCW-007 .. MCW-009
 
     @Test
-    @DisplayName("MCW-007: fields as an object is one write and a receipt replay of the same operation key; fields as "
-            + "the JSON text form is VALIDATION_FAILED (wrong type) and changes nothing (changed: the text form is gone)")
-    void fieldsAsAnObjectIsReplayedAndAsTextIsRefused(McpSession session, Scenario scenario) {
+    @DisplayName("MCW-007: flat ledger_issue_save is one write and a receipt replay of the same operation key")
+    void flatSaveIsReplayed(McpSession session, Scenario scenario) {
         String operationKey = Calls.freshKey();
-        Fields fields = Fields.defect(scenario.projectId(), "text form");
 
-        WriteOutputs.Saved first = session.ok("ledger_save",
-                Calls.Save.create("defect", fields, Scenario.AUTHOR).withOperationKey(operationKey),
+        WriteOutputs.Saved first = session.ok("ledger_issue_save",
+                Calls.IssueSave.create(scenario.projectId(), "flat form", Scenario.AUTHOR)
+                        .withOperationKey(operationKey),
                 WriteOutputs.Saved.class);
-        WriteOutputs.Saved replay = session.ok("ledger_save",
-                Calls.Save.create("defect", fields, Scenario.AUTHOR).withOperationKey(operationKey),
+        WriteOutputs.Saved replay = session.ok("ledger_issue_save",
+                Calls.IssueSave.create(scenario.projectId(), "flat form", Scenario.AUTHOR)
+                        .withOperationKey(operationKey),
                 WriteOutputs.Saved.class);
-        ToolError text = session.failed("ledger_save", new Calls.TextSave("defect",
-                session.mapper().writeValueAsString(fields), Scenario.REASON, operationKey, Scenario.AUTHOR));
 
         assertThat(replay).isEqualTo(first);
-        assertThat(text.code()).isEqualTo("VALIDATION_FAILED");
-        assertThat(text.issues()).containsExactly(new ToolError.Issue("fields", "must be of type SaveFields", List.of()));
         assertThat(Ledger.history(session, scenario.projectId())).hasSize(1);
     }
 
     @Test
     @DisplayName("MCW-008: ops as an array is one batch and a receipt replay of the same operation key; ops as the JSON "
-            + "text form is VALIDATION_FAILED (wrong type) and changes nothing (changed: the text form is gone)")
+            + "text form is VALIDATION_FAILED (wrong type) and changes nothing")
     void opsAsAnArrayAreReplayedAndAsTextAreRefused(McpSession session, Scenario scenario) {
         String operationKey = Calls.freshKey();
-        List<Calls.Op> ops = List.of(Calls.Op.save("defect", Fields.defect(scenario.projectId(), "batched")));
+        List<Calls.Op> ops = List.of(Calls.Op.save("issue", Fields.issue(scenario.projectId(), "batched")));
 
         BatchResults first = session.ok("ledger_batch",
                 new Calls.Batch(ops, operationKey, Scenario.AUTHOR), BatchResults.class);
@@ -242,10 +251,11 @@ class WriteCallTest {
         }
     }
 
-    private static Malformed badFields(String name, Object value) {
-        return new Malformed("fields " + name, "ledger_save", Args.of().with("_hostAttestation", Scenario.AUTHOR)
-                .with("operationKey", Calls.freshKey()).with("entity", "defect").with("reason", Scenario.REASON),
-                "fields", value);
+    private static Malformed badBatchFields(String name, Object value) {
+        return new Malformed("ops[0].fields " + name, "ledger_batch", Args.of()
+                .with("_hostAttestation", Scenario.AUTHOR).with("operationKey", Calls.freshKey()),
+                "ops", List.of(Args.of().with("op", "save").with("entity", "issue")
+                        .with("reason", Scenario.REASON).with("fields", value)));
     }
 
     private static Malformed badOps(String name, Object value) {
@@ -255,12 +265,12 @@ class WriteCallTest {
 
     static Stream<Malformed> malformedStructures() {
         return Stream.of(
-                badFields("is a text that is not JSON", "{"),
-                badFields("is a JSON array text", "[]"),
-                badFields("is a JSON number text", "7"),
-                badFields("is the text null (a plain text, not a missing argument)", "null"),
-                badFields("is null", null),
-                badFields("is an empty object", Args.of()),
+                badBatchFields("is a text that is not JSON", "{"),
+                badBatchFields("is a JSON array text", "[]"),
+                badBatchFields("is a JSON number text", "7"),
+                badBatchFields("is the text null", "null"),
+                badBatchFields("is null", null),
+                badBatchFields("is an empty object", Args.of()),
                 badOps("is a text that is not JSON", "{"),
                 badOps("is an object", Args.of()),
                 badOps("is an empty array", List.of()));
@@ -282,12 +292,12 @@ class WriteCallTest {
     @DisplayName("MCW-010: whoami of a granted attestation: session_user, author, author_format_ok, can_verify_login, "
             + "grants")
     void whoamiOfAGrantedAuthor(McpSession session, Scenario scenario) {
-        String author = scenario.actorWith("defect-only", "defect");
+        String author = scenario.actorWith("issue-only", "issue");
 
         Whoami who = session.ok("ledger_whoami", Calls.Whoami.as(author), Whoami.class);
 
         assertThat(who).isEqualTo(new Whoami("ledger_author", author, true, false,
-                List.of(new Grant(scenario.projectId(), "defect", null))));
+                List.of(new Grant(scenario.projectId(), "issue", null))));
     }
 
     @Test
@@ -308,19 +318,27 @@ class WriteCallTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("org.pgledger.mcp.support.WriteCase#all")
-    @DisplayName("MCW-012: the result of a write tool is the result record itself: structured content and text agree, "
-            + "no wrapper, no error")
-    void theResultIsTheRecordItself(WriteCase write, McpSession session, Scenario scenario) {
+    @DisplayName("MCW-012: the result of a write tool uses the ApiResult.v1 envelope: structured content and text agree "
+            + "and validate against outputSchema")
+    void theResultUsesApiResultEnvelope(WriteCase write, McpSession session, Scenario scenario) {
         Seed seed = Seed.create(session, scenario);
+        io.modelcontextprotocol.spec.McpSchema.Tool tool = session.tool(write.tool());
 
         CallToolResult result = session.call(write.tool(), write.call(seed));
 
         assertThat(result.isError()).isFalse();
-        assertThat(((Map<?, ?>) result.structuredContent()).containsKey("rows")).isFalse();
-        assertThat(((Map<?, ?>) result.structuredContent()).containsKey("result")).isFalse();
+        assertThat(io.modelcontextprotocol.json.McpJsonDefaults.getSchemaValidator()
+                .validate(tool.outputSchema(), result.structuredContent()).valid()).isTrue();
+        Map<?, ?> envelope = (Map<?, ?>) result.structuredContent();
+        assertThat(envelope.get("schemaVersion")).isEqualTo("1.0.0");
+        assertThat(envelope.get("ok")).isEqualTo(Boolean.TRUE);
+        assertThat(envelope.get("error")).isNull();
         Object structured = session.read(result, write.output());
-        Object text = session.mapper().readValue(McpSession.text(result), write.output());
-        assertThat(structured).isEqualTo(text);
+        tools.jackson.databind.JavaType envelopeType = session.mapper().getTypeFactory()
+                .constructParametricType(org.pgledger.mcp.error.ApiResult.class, write.output());
+        org.pgledger.mcp.error.ApiResult<?> parsedText = session.mapper().readValue(McpSession.text(result),
+                envelopeType);
+        assertThat(structured).isEqualTo(parsedText.data());
     }
 
     /** A call that fails with the token. */
@@ -334,20 +352,19 @@ class WriteCallTest {
 
     static Stream<Failure> failures() {
         return Stream.of(
-                new Failure("no attestation", "ledger_save", "HOST_ATTESTATION_REQUIRED",
-                        seed -> Calls.Save.create("defect", Fields.defect(seed.project(), "t"), null)),
+                new Failure("no attestation", "ledger_issue_save", "HOST_ATTESTATION_REQUIRED",
+                        seed -> Calls.IssueSave.create(seed.project(), "t", null)),
                 new Failure("unknown argument", "ledger_whoami", "VALIDATION_FAILED",
                         seed -> Args.of().with("bogus", 1)),
-                new Failure("no grant", "ledger_save", "SESSION_NOT_GRANTED",
-                        seed -> Calls.Save.create("defect", Fields.defect(seed.project(), "t"), Scenario.NOGRANT)),
-                new Failure("old version", "ledger_save", "VERSION_CONFLICT",
-                        seed -> Calls.Save.edit("defect", seed.defect(), 9, Fields.titled("new"), Scenario.AUTHOR)),
+                new Failure("no grant", "ledger_issue_save", "SESSION_NOT_GRANTED",
+                        seed -> Calls.IssueSave.create(seed.project(), "t", Scenario.NOGRANT)),
+                new Failure("old version", "ledger_issue_save", "VERSION_CONFLICT",
+                        seed -> Calls.IssueSave.editTitle(seed.issue(), 9, "new", Scenario.AUTHOR)),
                 new Failure("unknown id", "ledger_transition", "NOT_FOUND",
-                        seed -> Calls.Transition.of("defect", seed.defect().replace("0001", "0099"), 1, "DISPUTED",
+                        seed -> Calls.Transition.of("issue", seed.issue().replace("0001", "0099"), 1, "DISPUTED",
                                 Scenario.AUTHOR).withEvidence(Scenario.EVIDENCE)),
-                new Failure("unknown category", "ledger_save", "CODE_INVALID", seed -> Calls.Save.create("defect",
-                        new Fields(seed.project(), "t", "ZZZ", "P2", "b", "c", null, null, null, null, null, null,
-                                null, null, null), Scenario.AUTHOR)));
+                new Failure("unknown category", "ledger_issue_save", "CODE_INVALID",
+                        seed -> Calls.IssueSave.create(seed.project(), "t", Scenario.AUTHOR).withCategory("ZZZ")));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -377,32 +394,42 @@ class WriteCallTest {
         Seed seed = Seed.create(session, scenario);
 
         ToolError error = session.failed("ledger_review",
-                Calls.Review.of("defect", seed.fixed(), 2, "VERIFIED", Scenario.REVIEWER).withoutEvidence());
+                Calls.Review.of("issue", seed.resolved(), 2, "VERIFIED", Scenario.REVIEWER).withoutEvidence());
 
         assertThat(error.code()).isEqualTo("VALIDATION_FAILED");
         assertThat(error.issues()).containsExactly(new ToolError.Issue("evidence_uri", "is required", List.of()));
     }
 
     @Test
-    @DisplayName("VRF-007: ledger_record_fix and ledger_save of a VERIFIED defect are VERIFIED_DEFECT, the message names "
-            + "the defect and says that a reviewer reopens it first, and nothing is written")
-    void verifiedDefectRefusesFixAndSave(McpSession session, Scenario scenario) {
+    @DisplayName("VRF-007: ledger_record_deliverable and save on VERIFIED issue or spec are VERIFIED_ENTITY, the message "
+            + "names the item and says that a reviewer reopens it first, and nothing is written")
+    void verifiedEntityRefusesDeliverableAndSave(McpSession session, Scenario scenario) {
         Seed seed = Seed.create(session, scenario);
+        session.ok("ledger_record_deliverable",
+                Calls.RecordDeliverable.ofSpec(seed.spec(), "spec-rev-1", Scenario.AUTHOR),
+                WriteOutputs.DeliverableRecorded.class);
+        session.ok("ledger_review",
+                Calls.Review.of("spec", seed.spec(), 2, "VERIFIED", Scenario.REVIEWER),
+                WriteOutputs.Transitioned.class);
         int before = Ledger.history(session, seed.project()).size();
 
-        CallToolResult fixResult = session.call("ledger_record_fix",
-                Calls.RecordFix.of(seed.verified(), "c".repeat(40), Scenario.AUTHOR));
-        CallToolResult saveResult = session.call("ledger_save",
-                Calls.Save.edit("defect", seed.verified(), 3, Fields.titled("changed"), Scenario.AUTHOR));
+        CallToolResult deliverableResult = session.call("ledger_record_deliverable",
+                Calls.RecordDeliverable.ofIssue(seed.verified(), "rev-after-verified", Scenario.AUTHOR));
+        CallToolResult saveIssueResult = session.call("ledger_issue_save",
+                Calls.IssueSave.editTitle(seed.verified(), 3, "changed", Scenario.AUTHOR));
+        CallToolResult saveSpecResult = session.call("ledger_spec_save",
+                Calls.SpecSave.editTitle(seed.spec(), 3, "changed spec", Scenario.AUTHOR));
 
-        for (CallToolResult result : List.of(fixResult, saveResult)) {
+        for (CallToolResult result : List.of(deliverableResult, saveIssueResult)) {
             assertThat(result.isError()).isTrue();
-            // the text content starts with the code, then the message (the contract of the error tokens)
-            assertThat(McpSession.text(result)).startsWith("VERIFIED_DEFECT: ");
+            assertThat(McpSession.text(result)).startsWith("VERIFIED_ENTITY: ");
             ToolError error = session.error(result);
-            assertThat(error.code()).isEqualTo("VERIFIED_DEFECT");
+            assertThat(error.code()).isEqualTo("VERIFIED_ENTITY");
             assertThat(error.message()).contains(seed.verified(), "reviewer", "ledger_review");
         }
+        assertThat(saveSpecResult.isError()).isTrue();
+        assertThat(session.error(saveSpecResult).code()).isEqualTo("VERIFIED_ENTITY");
+        assertThat(session.error(saveSpecResult).message()).contains(seed.spec(), "reviewer", "ledger_review");
         assertThat(Ledger.history(session, seed.project())).hasSize(before);
     }
 
@@ -431,15 +458,15 @@ class WriteCallTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("badValues")
-    @DisplayName("MCW-018: a text, a fraction, a negative version, an empty operationKey (was: a request id that is no "
-            + "UUID) and a short reason are refused without coercion")
+    @DisplayName("MCW-018: a text, a fraction, a negative version, an empty operationKey and a short reason are refused "
+            + "without coercion")
     void aBadValueIsRefused(BadValue bad, McpSession session, Scenario scenario) {
         Seed seed = Seed.create(session, scenario);
         int before = Ledger.history(session, seed.project()).size();
         Args call = Args.from(session.mapper(),
-                Calls.Save.edit("defect", seed.defect(), 1, Fields.titled("edited"), Scenario.AUTHOR));
+                Calls.IssueSave.editTitle(seed.issue(), 1, "edited", Scenario.AUTHOR));
 
-        ToolError error = session.failed("ledger_save", bad.change().apply(call));
+        ToolError error = session.failed("ledger_issue_save", bad.change().apply(call));
 
         assertThat(error.code()).isEqualTo(bad.token());
         assertThat(error.issues()).extracting(ToolError.Issue::path).containsExactlyElementsOf(bad.paths());
@@ -452,7 +479,7 @@ class WriteCallTest {
         Seed seed = Seed.create(session, scenario);
 
         ToolError error = session.failed("ledger_transition",
-                Calls.Transition.of("defect", seed.fixed(), 2, "VERIFIED", Scenario.REVIEWER));
+                Calls.Transition.of("issue", seed.resolved(), 2, "VERIFIED", Scenario.REVIEWER));
 
         assertThat(error.code()).isEqualTo("VALIDATION_FAILED");
     }
@@ -463,25 +490,35 @@ class WriteCallTest {
         Seed seed = Seed.create(session, scenario);
 
         ToolError error = session.failed("ledger_batch",
-                Calls.Batch.of(Scenario.REVIEWER, Calls.Op.transition("defect", seed.fixed(), 2, "VERIFIED")));
+                Calls.Batch.of(Scenario.REVIEWER, Calls.Op.transition("issue", seed.resolved(), 2, "VERIFIED")));
 
         assertThat(error.code()).isEqualTo("VERIFY_NEEDS_REVIEWER_LOGIN");
-        assertThat(Ledger.get(session, seed.fixed()).items()).extracting(item -> item.state())
-                .containsExactly("SOURCE_FIXED");
+        assertThat(Ledger.get(session, seed.resolved()).items()).extracting(item -> item.state())
+                .containsExactly("RESOLVED");
     }
 
     @Test
-    @DisplayName("MCW-019: ledger_review verifies as the reviewer")
+    @DisplayName("MCW-019: ledger_review verifies an issue and a spec as the reviewer")
     void reviewVerifies(McpSession session, Scenario scenario) {
         Seed seed = Seed.create(session, scenario);
 
-        WriteOutputs.Transitioned verified = session.ok("ledger_review",
-                Calls.Review.of("defect", seed.fixed(), 2, "VERIFIED", Scenario.REVIEWER),
+        WriteOutputs.Transitioned verifiedIssue = session.ok("ledger_review",
+                Calls.Review.of("issue", seed.resolved(), 2, "VERIFIED", Scenario.REVIEWER),
                 WriteOutputs.Transitioned.class);
 
-        assertThat(verified).usingRecursiveComparison().ignoringFields("historyId")
-                .isEqualTo(new WriteOutputs.Transitioned(WriteStatus.COMMITTED, "defect", seed.fixed(),
-                        "SOURCE_FIXED", "VERIFIED", 3, 0, Scenario.REVIEWER, "ledger_reviewer"));
+        assertThat(verifiedIssue).usingRecursiveComparison().ignoringFields("historyId")
+                .isEqualTo(new WriteOutputs.Transitioned(WriteStatus.COMMITTED, "issue", seed.resolved(),
+                        "RESOLVED", "VERIFIED", 3, 0, Scenario.REVIEWER, "ledger_reviewer"));
+
+        session.ok("ledger_record_deliverable",
+                Calls.RecordDeliverable.ofSpec(seed.spec(), "spec-rev-verify", Scenario.AUTHOR),
+                WriteOutputs.DeliverableRecorded.class);
+        WriteOutputs.Transitioned verifiedSpec = session.ok("ledger_review",
+                Calls.Review.of("spec", seed.spec(), 2, "VERIFIED", Scenario.REVIEWER),
+                WriteOutputs.Transitioned.class);
+        assertThat(verifiedSpec).usingRecursiveComparison().ignoringFields("historyId")
+                .isEqualTo(new WriteOutputs.Transitioned(WriteStatus.COMMITTED, "spec", seed.spec(),
+                        "COMPLETED", "VERIFIED", 3, 0, Scenario.REVIEWER, "ledger_reviewer"));
     }
 
     @Test

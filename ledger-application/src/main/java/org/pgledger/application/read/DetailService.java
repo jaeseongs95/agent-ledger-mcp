@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Objects;
 import org.pgledger.application.history.SpecHistory;
 import org.pgledger.application.history.TaskHistory;
+import org.pgledger.database.repository.CriterionRepository;
 import org.pgledger.database.repository.DeliverableRepository;
 import org.pgledger.database.repository.HistoryQueryRepository;
 import org.pgledger.database.repository.HistoryRepository;
@@ -18,6 +19,8 @@ import org.pgledger.database.repository.SpecRepository;
 import org.pgledger.database.repository.TaskRepository;
 import org.pgledger.domain.error.LookupCode;
 import org.pgledger.domain.error.LookupException;
+import org.pgledger.domain.model.Criterion;
+import org.pgledger.domain.model.CriterionLink;
 import org.pgledger.domain.model.Deliverable;
 import org.pgledger.domain.model.HistoryEntry;
 import org.pgledger.domain.model.Issue;
@@ -27,15 +30,17 @@ import org.pgledger.domain.model.Task;
 import org.pgledger.domain.rule.DeliverableTarget;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.RelationEnd;
+import org.pgledger.domain.value.CriterionId;
 import org.pgledger.domain.value.IssueId;
 import org.pgledger.domain.value.SpecId;
 import org.pgledger.domain.value.TaskId;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Full details of one issue, one specification, or one task, including deliverables, links, observations, and recent
- * history.
+ * Full details of one issue, one specification, one task, or one milestone criterion, including deliverables, links,
+ * observations, and recent history.
  */
 @Service
 @Transactional(readOnly = true)
@@ -83,9 +88,15 @@ public class DetailService {
             List<String> issues, List<String> specs, List<String> criteria) {
     }
 
+    public record CriterionDetail(String id, String projectId, String milestoneName, String goalLabel, String code,
+            String criterionText, String state, long version, String createdBy, LastChange lastChange,
+            List<String> issues, List<String> specs, List<String> tasks, List<ChangeSummary> recentChanges) {
+    }
+
     private final IssueRepository issues;
     private final SpecRepository specs;
     private final TaskRepository tasks;
+    private final CriterionRepository criteria;
     private final DeliverableRepository deliverables;
     private final IssueCaseRepository cases;
     private final LinkRepository links;
@@ -93,18 +104,27 @@ public class DetailService {
     private final HistoryRepository historyRows;
     private final HistoryQueryRepository historyQueries;
 
+    @Autowired
     public DetailService(IssueRepository issues, SpecRepository specs, TaskRepository tasks,
-            DeliverableRepository deliverables, IssueCaseRepository cases, LinkRepository links,
-            MergeChainRepository mergeChain, HistoryRepository historyRows, HistoryQueryRepository historyQueries) {
+            CriterionRepository criteria, DeliverableRepository deliverables, IssueCaseRepository cases,
+            LinkRepository links, MergeChainRepository mergeChain, HistoryRepository historyRows,
+            HistoryQueryRepository historyQueries) {
         this.issues = issues;
         this.specs = specs;
         this.tasks = tasks;
+        this.criteria = criteria;
         this.deliverables = deliverables;
         this.cases = cases;
         this.links = links;
         this.mergeChain = mergeChain;
         this.historyRows = historyRows;
         this.historyQueries = historyQueries;
+    }
+
+    public DetailService(IssueRepository issues, SpecRepository specs, TaskRepository tasks,
+            DeliverableRepository deliverables, IssueCaseRepository cases, LinkRepository links,
+            MergeChainRepository mergeChain, HistoryRepository historyRows, HistoryQueryRepository historyQueries) {
+        this(issues, specs, tasks, null, deliverables, cases, links, mergeChain, historyRows, historyQueries);
     }
 
     public IssueDetail issue(String rawId) {
@@ -168,6 +188,23 @@ public class DetailService {
                 t.ownerActorId() == null ? null : t.ownerActorId().value(), t.version(), t.createdAt(),
                 t.updatedAt(), t.createdBy().value(), completedBy, toDeliverableViews(delivRows),
                 links.issuesOfTask(id), links.specsOfTask(id), links.criteriaOfTask(id));
+    }
+
+    public CriterionDetail criterion(String rawId) {
+        CriterionId id = CriterionId.of(rawId);
+        Criterion c = criteria.findById(id).orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND,
+                List.of(HistoryEntity.CRITERION.token(), rawId)));
+        List<CriterionLink> linked = links.linksOf(id);
+        List<String> linkedIssues = linked.stream().filter(l -> l.issueId() != null)
+                .map(l -> l.issueId().value()).sorted().toList();
+        List<String> linkedSpecs = linked.stream().filter(l -> l.specId() != null)
+                .map(l -> l.specId().value()).sorted().toList();
+        List<String> linkedTasks = linked.stream().filter(l -> l.taskId() != null)
+                .map(l -> l.taskId().value()).sorted().toList();
+        return new CriterionDetail(rawId, c.projectId().value(), c.milestone(), c.goalLabel(), c.code(),
+                Texts.orEmpty(c.criterionText()), c.state().name(), c.version(), c.createdBy().value(),
+                newestChange(HistoryEntity.CRITERION, rawId), linkedIssues, linkedSpecs, linkedTasks,
+                recentChanges(HistoryEntity.CRITERION, rawId));
     }
 
     private static List<DeliverableView> toDeliverableViews(List<Deliverable> rows) {

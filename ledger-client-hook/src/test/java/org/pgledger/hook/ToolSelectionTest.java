@@ -25,9 +25,10 @@ class ToolSelectionTest {
     private static final JsonNode EMPTY = Json.of("{}");
 
     private static final List<String> READ_OPS = List.of(
-            "get", "history", "list", "search", "defects", "save_extra", "whoami_x", "Save", "SAVE", "xsave");
+            "get", "issue", "spec", "task", "criterion", "history", "list", "search", "issues", "specs", "tasks",
+            "criteria", "save", "record_fix", "issue_save_extra", "whoami_x", "Issue_save", "ISSUE_SAVE", "xissue_save");
     private static final List<String> OTHER_NAMES = List.of(
-            "run_command", "ledger_save", "ledger_get", "mcp__other__read", "mcp__other__save", "mcp__test__other_save", "Bash");
+            "run_command", "ledger_issue_save", "ledger_get", "mcp__other__read", "mcp__other__save", "mcp__test__other_save", "Bash");
 
     /** Names the hook must not touch: read tools in the naming of each host, and names of other tools. */
     static Stream<Arguments> untouchedNames() {
@@ -47,24 +48,24 @@ class ToolSelectionTest {
 
     static Stream<Arguments> antigravityNames() {
         return Stream.of(
-                Arguments.of("mcp:test:ledger_save", "test"), Arguments.of("mcp:test/ledger_save", "test"),
-                Arguments.of("mcp:test_ledger_save", "test"), Arguments.of("mcp:ledger_ledger_save", "ledger"),
-                Arguments.of("mcp:test:test_ledger_save", "test"), Arguments.of("mcp:my.server/ledger_save", "my.server"));
+                Arguments.of("mcp:test:ledger_issue_save", "test"), Arguments.of("mcp:test/ledger_issue_save", "test"),
+                Arguments.of("mcp:test_ledger_issue_save", "test"), Arguments.of("mcp:ledger_ledger_issue_save", "ledger"),
+                Arguments.of("mcp:test:test_ledger_issue_save", "test"), Arguments.of("mcp:my.server/ledger_issue_save", "my.server"));
     }
 
     @ParameterizedTest
     @MethodSource("antigravityNames")
-    @DisplayName("HK-011 Antigravity MCP names mcp:<server><:|/|_>[<server>_]ledger_save are stamped, for the server in the name")
+    @DisplayName("HK-011 Antigravity MCP names mcp:<server><:|/|_>[<server>_]ledger_issue_save are stamped, for the server in the name")
     void antigravityNameCandidatesAreStamped(String name, String server, HookFixture fixture) {
         Run run = fixture.runClean(AGY, AGY.event(name, EMPTY));
-        Attestations.Stamp stamp = fixture.stampCarrier(server, AGY.author(HookFixture.HOST_ID), "save", EMPTY,
+        Attestations.Stamp stamp = fixture.stampCarrier(server, AGY.author(HookFixture.HOST_ID), "issue_save", EMPTY,
                 AGY.stampedPart(run));
         assertThat(run.document()).isEqualTo(AGY.allowed(EMPTY, stamp.token()));
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"mcp:xledger_save", "mcp:test:ledger_get", "ledger_save", "mcp:ledger_save",
-            "mcp:test:other_ledger_save", "mcp:a b:ledger_save", "mcp::ledger_save"})
+    @ValueSource(strings = {"mcp:xledger_issue_save", "mcp:test:ledger_get", "ledger_issue_save", "mcp:ledger_issue_save",
+            "mcp:test:other_ledger_issue_save", "mcp:a b:ledger_issue_save", "mcp::ledger_issue_save", "mcp:test:ledger_save"})
     @DisplayName("HK-011 Antigravity names that are no ledger write tool, name no server, or have a prefix other than the server are not touched")
     void antigravityOtherNamesAreNotTouched(String name, HookFixture fixture) {
         Run run = fixture.runClean(AGY, AGY.event(name, EMPTY));
@@ -76,26 +77,26 @@ class ToolSelectionTest {
     /** (host, a name that is no signed attachment tool: look-alike prefix, no server, another tool, near miss). */
     static Stream<Arguments> otherArtifactNames() {
         return Stream.of(
-                Arguments.argumentSet("claude look-alike prefix", new ClaudeHost(), "mcp__ledger__other_artifact-begin"),
-                Arguments.argumentSet("claude prefix of another server", new ClaudeHost(), "mcp__a__b_artifact-chunk"),
-                Arguments.argumentSet("claude no server", new ClaudeHost(), "mcp__artifact-begin"),
-                Arguments.argumentSet("claude another tool", new ClaudeHost(), "mcp__ledger__artifact-delete"),
-                Arguments.argumentSet("claude a list tool", new ClaudeHost(), "mcp__ledger__artifact-list"),
-                Arguments.argumentSet("claude a suffix", new ClaudeHost(), "mcp__ledger__artifact-begin-extra"),
-                Arguments.argumentSet("claude upper case", new ClaudeHost(), "mcp__ledger__artifact-Begin"),
-                Arguments.argumentSet("claude underscore", new ClaudeHost(), "mcp__ledger__artifact_begin"),
-                Arguments.argumentSet("claude codex apps namespace", new ClaudeHost(), "mcp__codex_apps__app_ledger_artifact-begin"),
-                Arguments.argumentSet("codex look-alike prefix", CODEX, "mcp__test__other_artifact-begin"),
-                Arguments.argumentSet("codex no server", CODEX, "mcp__artifact-chunk"),
-                Arguments.argumentSet("codex another tool", CODEX, "mcp__test__artifact-delete"),
-                Arguments.argumentSet("codex a suffix", CODEX, "mcp__test__artifact-read-extra"),
-                Arguments.argumentSet("codex apps: no app", CODEX, "mcp__codex_apps__app_artifact-begin"),
-                Arguments.argumentSet("codex apps: another tool", CODEX, "mcp__codex_apps__app_ledger_artifact-delete"),
-                Arguments.argumentSet("codex apps: another pseudo server", CODEX, "mcp__other__app_ledger_artifact-begin"),
-                Arguments.argumentSet("antigravity look-alike prefix", AGY, "mcp:test:other_artifact-begin"),
-                Arguments.argumentSet("antigravity no server", AGY, "mcp:artifact-begin"),
-                Arguments.argumentSet("antigravity another tool", AGY, "mcp:test:artifact-delete"),
-                Arguments.argumentSet("antigravity a suffix", AGY, "mcp:test:artifact-finish-extra"));
+                Arguments.argumentSet("claude look-alike prefix", new ClaudeHost(), "mcp__ledger__other_artifact_begin"),
+                Arguments.argumentSet("claude prefix of another server", new ClaudeHost(), "mcp__a__b_artifact_chunk"),
+                Arguments.argumentSet("claude no server", new ClaudeHost(), "mcp__artifact_begin"),
+                Arguments.argumentSet("claude another tool", new ClaudeHost(), "mcp__ledger__artifact_delete"),
+                Arguments.argumentSet("claude a list tool", new ClaudeHost(), "mcp__ledger__artifact_list"),
+                Arguments.argumentSet("claude a suffix", new ClaudeHost(), "mcp__ledger__artifact_begin_extra"),
+                Arguments.argumentSet("claude upper case", new ClaudeHost(), "mcp__ledger__artifact_Begin"),
+                Arguments.argumentSet("claude hyphenated", new ClaudeHost(), "mcp__ledger__artifact-begin"),
+                Arguments.argumentSet("claude codex apps namespace", new ClaudeHost(), "mcp__codex_apps__app_ledger_artifact_begin"),
+                Arguments.argumentSet("codex look-alike prefix", CODEX, "mcp__test__other_artifact_begin"),
+                Arguments.argumentSet("codex no server", CODEX, "mcp__artifact_chunk"),
+                Arguments.argumentSet("codex another tool", CODEX, "mcp__test__artifact_delete"),
+                Arguments.argumentSet("codex a suffix", CODEX, "mcp__test__artifact_read_extra"),
+                Arguments.argumentSet("codex apps: no app", CODEX, "mcp__codex_apps__app_artifact_begin"),
+                Arguments.argumentSet("codex apps: another tool", CODEX, "mcp__codex_apps__app_ledger_artifact_delete"),
+                Arguments.argumentSet("codex apps: another pseudo server", CODEX, "mcp__other__app_ledger_artifact_begin"),
+                Arguments.argumentSet("antigravity look-alike prefix", AGY, "mcp:test:other_artifact_begin"),
+                Arguments.argumentSet("antigravity no server", AGY, "mcp:artifact_begin"),
+                Arguments.argumentSet("antigravity another tool", AGY, "mcp:test:artifact_delete"),
+                Arguments.argumentSet("antigravity a suffix", AGY, "mcp:test:artifact_finish_extra"));
     }
 
     @ParameterizedTest
@@ -107,7 +108,7 @@ class ToolSelectionTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"other_artifact-begin", "artifact-delete", "artifact-begin-extra", "artifact_begin", "ledger_artifact-begin"})
+    @ValueSource(strings = {"other_artifact_begin", "artifact_delete", "artifact_begin_extra", "artifact-begin", "ledger_artifact_begin"})
     @DisplayName("HK-012 ATA-021 call_mcp_tool: a ToolName that is no attachment tool, or has a prefix other than the ServerName, passes, even with a reserved key")
     void wrapperOtherArtifactToolPasses(String toolName, HookFixture fixture) {
         Run run = fixture.runClean(AGY, AGY.wrapperEvent(envelope(toolName, Map.of(Json.RESERVED_KEY, Json.of("null")))));
@@ -197,9 +198,9 @@ class ToolSelectionTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"mcp__codex_apps__app_ledger_ledger_get", "mcp__codex_apps__app_ledger_ledger_history",
-            "mcp__codex_apps__app_ledger_ledger_save_extra", "mcp__codex_apps__app_ledger_save",
-            "mcp__codex_apps__app_ledger_ledger_Save", "mcp__codex_apps__app_.ledger_save",
-            "mcp__other__app_ledger_ledger_save", "mcp__codex_apps__ledger_ledger_get", "mcp__codex_apps__apps_ledger_ledger_save"})
+            "mcp__codex_apps__app_ledger_ledger_issue_save_extra", "mcp__codex_apps__app_ledger_issue_save",
+            "mcp__codex_apps__app_ledger_ledger_Issue_save", "mcp__codex_apps__app_.ledger_issue_save",
+            "mcp__other__app_ledger_ledger_issue_save", "mcp__codex_apps__ledger_ledger_get", "mcp__codex_apps__apps_ledger_ledger_issue_save"})
     @DisplayName("HK-013 Codex Apps namespace: a non-ledger or read operation, a malformed app segment, or another pseudo server is not touched")
     void codexAppsNamespaceOtherNamesAreUntouched(String name, HookFixture fixture) {
         Run run = fixture.runClean(CODEX, CODEX.event(name, EMPTY));
@@ -207,7 +208,7 @@ class ToolSelectionTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"get", "history", "search", "defects"})
+    @ValueSource(strings = {"get", "history", "search", "issues", "specs"})
     @DisplayName("HK-013 Codex gateway name: read tool names are not handled")
     void codexGatewayLeavesReadToolsAlone(String op, HookFixture fixture) {
         Run run = fixture.runClean(CODEX, CODEX.event(codexGateway(op), EMPTY));
@@ -261,7 +262,7 @@ class ToolSelectionTest {
     @MethodSource("reservedValues")
     @DisplayName("HK-012 call_mcp_tool: a reserved key in Arguments given as an object is denied")
     void wrapperReservedKeyInObject(JsonNode value, HookFixture fixture) {
-        Run run = fixture.runClean(AGY, AGY.wrapperEvent(envelope("ledger_save", Map.of(Json.RESERVED_KEY, value))));
+        Run run = fixture.runClean(AGY, AGY.wrapperEvent(envelope("ledger_issue_save", Map.of(Json.RESERVED_KEY, value))));
         assertThat(run.document()).isEqualTo(AGY.denied(Refusal.RESERVED_FIELD));
     }
 
@@ -270,7 +271,7 @@ class ToolSelectionTest {
     @DisplayName("HK-012 call_mcp_tool: a reserved key in Arguments given as JSON text is denied")
     void wrapperReservedKeyInText(JsonNode value, HookFixture fixture) {
         String text = Json.MAPPER.writeValueAsString(Map.of(Json.RESERVED_KEY, value));
-        Run run = fixture.runClean(AGY, AGY.wrapperEvent(envelope("ledger_save", text)));
+        Run run = fixture.runClean(AGY, AGY.wrapperEvent(envelope("ledger_issue_save", text)));
         assertThat(run.document()).isEqualTo(AGY.denied(Refusal.RESERVED_FIELD));
     }
 
@@ -278,7 +279,7 @@ class ToolSelectionTest {
     @DisplayName("HK-012 call_mcp_tool: a reserved key on the envelope itself is denied")
     void wrapperReservedKeyOnEnvelope(HookFixture fixture) {
         Map<String, Object> envelope = Map.of(
-                "ServerName", "s", "ToolName", "ledger_save", "Arguments", EMPTY, Json.RESERVED_KEY, 1);
+                "ServerName", "s", "ToolName", "ledger_issue_save", "Arguments", EMPTY, Json.RESERVED_KEY, 1);
         Run run = fixture.runClean(AGY, AGY.wrapperEvent(envelope));
         assertThat(run.document()).isEqualTo(AGY.denied(Refusal.RESERVED_FIELD));
     }
@@ -302,12 +303,12 @@ class ToolSelectionTest {
     @MethodSource("invalidArguments")
     @DisplayName("HK-012 call_mcp_tool: invalid Arguments (null, [], 7, missing, unparsable or non-object text) are denied")
     void wrapperInvalidArguments(Object arguments, Refusal reason, HookFixture fixture) {
-        Run run = fixture.runClean(AGY, AGY.wrapperEvent(envelope("ledger_save", arguments)));
+        Run run = fixture.runClean(AGY, AGY.wrapperEvent(envelope("ledger_issue_save", arguments)));
         assertThat(run.document()).isEqualTo(AGY.denied(reason));
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"ledger_get", "unrelated_save", "ledger_save_extra", "ledger_history"})
+    @ValueSource(strings = {"ledger_get", "unrelated_save", "ledger_issue_save_extra", "ledger_history", "ledger_save"})
     @DisplayName("HK-012 call_mcp_tool: a ToolName that is no ledger write tool passes, even with a reserved key")
     void wrapperOtherToolPasses(String toolName, HookFixture fixture) {
         Run run = fixture.runClean(AGY, AGY.wrapperEvent(envelope(toolName, Map.of(Json.RESERVED_KEY, Json.of("null")))));
@@ -317,9 +318,9 @@ class ToolSelectionTest {
     /** Envelopes that are not a ledger call: ServerName missing, empty or not text, ToolName not text, not an object. */
     static Stream<Arguments> brokenEnvelopes() {
         return Stream.of(
-                Arguments.argumentSet("no ServerName", new Envelope(null, "ledger_save", EMPTY, null)),
-                Arguments.argumentSet("empty ServerName", new Envelope("", "ledger_save", EMPTY, null)),
-                Arguments.argumentSet("numeric ServerName", new Envelope(3, "ledger_save", EMPTY, null)),
+                Arguments.argumentSet("no ServerName", new Envelope(null, "ledger_issue_save", EMPTY, null)),
+                Arguments.argumentSet("empty ServerName", new Envelope("", "ledger_issue_save", EMPTY, null)),
+                Arguments.argumentSet("numeric ServerName", new Envelope(3, "ledger_issue_save", EMPTY, null)),
                 Arguments.argumentSet("numeric ToolName", new Envelope("s", 7, EMPTY, null)),
                 Arguments.argumentSet("array envelope", Json.of("[]")),
                 Arguments.argumentSet("null envelope", Json.of("null")),

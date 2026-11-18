@@ -17,7 +17,6 @@ import org.pgledger.application.admin.SessionKeyService;
 import org.pgledger.attestation.PublicKeys;
 import org.pgledger.mcp.support.Args;
 import org.pgledger.mcp.support.Calls;
-import org.pgledger.mcp.support.Calls.Fields;
 import org.pgledger.mcp.support.HookProcess;
 import org.pgledger.mcp.support.Ledger;
 import org.pgledger.mcp.support.McpServerTest;
@@ -75,19 +74,19 @@ class HookRoundTripTest {
         // 2. the owner compares the fingerprint, registers the key and grants the session
         assertThat(owner.register(new SessionKeyService.RegisterCommand(author, publicKey, "round trip"), TestOwners.OWNER)
                 .fingerprint()).isEqualTo(fingerprint);
-        scenario.grant(author, "defect");
+        scenario.grant(author, "issue");
 
         // 3. a write call as the model made it (an operationKey of the model's own, no attestation), signed by the hook:
         // the hook adds the attestation and nothing else (it makes no key up and changes no other argument)
-        Calls.Save call = Calls.Save.create("defect", Fields.defect(scenario.projectId(), "round trip"), null);
-        Args signed = hooked(mapper, work, keys, "ledger_save", hostId, call);
+        Calls.IssueSave call = Calls.IssueSave.create(scenario.projectId(), "round trip", null);
+        Args signed = hooked(mapper, work, keys, "ledger_issue_save", hostId, call);
         assertThat(signed.values()).containsKeys("_hostAttestation", "operationKey");
         assertThat(signed.values().get("operationKey")).isEqualTo(call.operationKey());
         assertThat(signed.without("_hostAttestation").values())
                 .isEqualTo(Args.from(mapper, call).values());
         assertThat(String.valueOf(signed.values().get("_hostAttestation"))).startsWith("pgla2.");
 
-        WriteOutputs.Saved saved = session.ok("ledger_save", signed, WriteOutputs.Saved.class);
+        WriteOutputs.Saved saved = session.ok("ledger_issue_save", signed, WriteOutputs.Saved.class);
         assertThat(saved.author()).isEqualTo(author);
         assertThat(saved.version()).isEqualTo(1);
         assertThat(Ledger.history(session, scenario.projectId())).hasSize(1);
@@ -100,12 +99,12 @@ class HookRoundTripTest {
         assertThat(who.grants()).hasSize(1);
 
         // 5. what a bearer-token holder can do with a captured call: the same call is idempotent, nothing else works
-        assertThat(session.ok("ledger_save", signed, WriteOutputs.Saved.class)).isEqualTo(saved);
-        assertThat(session.failed("ledger_save", signed.with("operationKey", UUID.randomUUID().toString())).code())
+        assertThat(session.ok("ledger_issue_save", signed, WriteOutputs.Saved.class)).isEqualTo(saved);
+        assertThat(session.failed("ledger_issue_save", signed.with("operationKey", UUID.randomUUID().toString())).code())
                 .isEqualTo("ATTESTATION_BINDING_MISMATCH");
-        assertThat(session.failed("ledger_save", signed.with("fields",
-                Fields.defect(scenario.projectId(), "other content"))).code()).isEqualTo("ATTESTATION_BINDING_MISMATCH");
-        CallToolResult asOther = session.callUnsigned("ledger_save",
+        assertThat(session.failed("ledger_issue_save", signed.with("title", "other content")).code())
+                .isEqualTo("ATTESTATION_BINDING_MISMATCH");
+        CallToolResult asOther = session.callUnsigned("ledger_issue_save",
                 signed.with("_hostAttestation", String.valueOf(signed.values().get("_hostAttestation"))
                         .replace("pgla2.", "pgla2.AA")));
         assertThat(asOther.isError()).isTrue();

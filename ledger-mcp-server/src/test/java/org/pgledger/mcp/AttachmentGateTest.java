@@ -47,14 +47,14 @@ class AttachmentGateTest {
 
     /** The call of each tool, as a function of the attestation of the call (null leaves it out). */
     private static final Map<String, Function<String, Object>> CALLS = Map.of(
-            "artifact-begin", author -> Begin.of("gate-key", "a.txt", "text/plain", BODY, author),
-            "artifact-chunk", author -> Chunk.of(ID, 0, BODY, author),
-            "artifact-finish", author -> new Finish(ID, author),
-            "artifact-status", author -> Status.ofUpload(ID, author),
-            "artifact-read", author -> Read.of(ID, 0L, 10L, author));
+            "artifact_begin", author -> Begin.of("gate-key", "a.txt", "text/plain", BODY, author),
+            "artifact_chunk", author -> Chunk.of(ID, 0, BODY, author),
+            "artifact_finish", author -> new Finish(ID, author),
+            "artifact_status", author -> Status.ofUpload(ID, author),
+            "artifact_read", author -> Read.of(ID, 0L, 10L, author));
 
     private static List<String> hostRequiredTools() {
-        return List.of("artifact-begin", "artifact-finish", "artifact-read");
+        return List.of("artifact_begin", "artifact_finish", "artifact_read");
     }
 
     private static long rows(DataSource dataSource) {
@@ -97,21 +97,21 @@ class AttachmentGateTest {
     }
 
     @Test
-    @DisplayName("ATA-018: without a host attestation, artifact-status by attachmentId is HOST_ATTESTATION_REQUIRED while uploadId capability tools refuse unknown ids")
+    @DisplayName("ATA-018: without a host attestation, artifact_status by attachmentId is HOST_ATTESTATION_REQUIRED while uploadId capability tools refuse unknown ids")
     void uploadCapabilityWithoutAttestation(McpSession session, Scenario scenario, @Autowired DataSource dataSource,
             @Autowired Environment environment) {
         long rowsBefore = rows(dataSource);
         List<Path> filesBefore = files(environment);
 
-        CallToolResult attStatus = session.callUnsigned("artifact-status", Status.ofAttachment(ID, null));
+        CallToolResult attStatus = session.callUnsigned("artifact_status", Status.ofAttachment(ID, null));
         assertThat(attStatus.isError()).isTrue();
         assertThat(session.error(attStatus).code()).isEqualTo("HOST_ATTESTATION_REQUIRED");
 
-        CallToolResult uploadStatus = session.callUnsigned("artifact-status", Status.ofUpload(ID, null));
+        CallToolResult uploadStatus = session.callUnsigned("artifact_status", Status.ofUpload(ID, null));
         assertThat(uploadStatus.isError()).isTrue();
         assertThat(session.error(uploadStatus).code()).isEqualTo("ARTIFACT_NOT_FOUND");
 
-        CallToolResult chunk = session.callUnsigned("artifact-chunk", Chunk.of(ID, 0, BODY, null));
+        CallToolResult chunk = session.callUnsigned("artifact_chunk", Chunk.of(ID, 0, BODY, null));
         assertThat(chunk.isError()).isTrue();
         assertThat(session.error(chunk).code()).isEqualTo("ARTIFACT_NOT_FOUND");
 
@@ -124,7 +124,7 @@ class AttachmentGateTest {
     @DisplayName("ATA-018: signed with the key that the owner closed, the tool is ATTESTATION_SIGNATURE_INVALID; no row, no file")
     void closedKey(String tool, McpSession session, Scenario scenario, @Autowired SessionKeyService owner,
             @Autowired DataSource dataSource, @Autowired Environment environment) {
-        String author = scenario.actorWith("ata18c", "defect");
+        String author = scenario.actorWith("ata18c", "issue");
         assertThat(owner.revoke(author, TestOwners.OWNER)).isTrue();
 
         refused(session, dataSource, environment, tool, author, true, "ATTESTATION_SIGNATURE_INVALID");

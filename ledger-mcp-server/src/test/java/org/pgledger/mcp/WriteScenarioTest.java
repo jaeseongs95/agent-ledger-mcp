@@ -23,19 +23,16 @@ import org.pgledger.mcp.support.Scenario;
 import org.pgledger.mcp.tool.ReadOutputs;
 import org.pgledger.mcp.tool.WriteOutputs.CaseRecorded;
 import org.pgledger.mcp.tool.WriteOutputs.Corrected;
-import org.pgledger.mcp.tool.WriteOutputs.FixRecorded;
+import org.pgledger.mcp.tool.WriteOutputs.DeliverableRecorded;
 import org.pgledger.mcp.tool.WriteOutputs.Linked;
 import org.pgledger.mcp.tool.WriteOutputs.Saved;
 import org.pgledger.mcp.tool.WriteOutputs.Transitioned;
 
 /**
- * MCW-025: the main path of the old end-to-end run, condensed, through the tools in the order of the old run: a
- * defect is created, replayed, edited, fixed, verified by the reviewer; a task goes through its states and the
- * review; a condition is met; the rows are linked; a batch writes two rows; a case is recorded; a history row is
- * corrected. The steps are test methods in a fixed order on one test instance (one scenario, the state that a step
- * hands to the next is held in the fields), so no loop runs inside a test method and every step compares its result
- * structurally. The history ids differ from run to run (one database serves all tests), so they are not compared
- * but must grow from step to step.
+ * MCW-025: end-to-end 2.0 universal ledger lifecycle through the MCP tools: an issue is created, replayed, edited,
+ * given a deliverable (moving to RESOLVED), and independently verified; a specification is created, completed with a
+ * deliverable, and independently verified; a task moves through ACTIVE, REPORTED_DONE, and VERIFIED; a milestone
+ * criterion is created and evaluated MET; links, batch writes, observed cases, and history corrections are exercised.
  */
 @McpServerTest
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -49,20 +46,22 @@ class WriteScenarioTest {
     private Scenario scenario;
     private String operationKey;
     private long lastHistoryId;
-    private String defect;
+    private String issue;
+    private String spec;
     private String task;
-    private String condition;
-    private String secondDefect;
-    private long firstDefectHistoryId;
+    private String criterion;
+    private String secondIssue;
+    private long firstIssueHistoryId;
 
     @BeforeAll
     void open(McpSession openedSession, Scenario openedScenario) {
         this.session = openedSession;
         this.scenario = openedScenario;
-        this.defect = scenario.defectId(1);
+        this.issue = scenario.issueId(1);
+        this.spec = scenario.specId(1);
         this.task = scenario.taskId(1);
-        this.condition = scenario.code() + "-C-REL1-A";
-        this.secondDefect = scenario.defectId(2);
+        this.criterion = scenario.criterionId("M1-A");
+        this.secondIssue = scenario.issueId(2);
         this.operationKey = UUID.randomUUID().toString();
     }
 
@@ -78,100 +77,130 @@ class WriteScenarioTest {
 
     @Test
     @Order(1)
-    @DisplayName("MCW-025 step 01 (E-07): the author creates a defect and gets the next id")
-    void createDefect() {
-        Saved result = session.ok("ledger_save", Calls.Save.create("defect",
-                Fields.defect(scenario.projectId(), "first defect"), Scenario.AUTHOR).withOperationKey(operationKey),
+    @DisplayName("MCW-025 step 01: the author creates an issue and gets the next <CODE>-I-NNNN id")
+    void createIssue() {
+        Saved result = session.ok("ledger_issue_save",
+                Calls.IssueSave.create(scenario.projectId(), "first issue", Scenario.AUTHOR)
+                        .withOperationKey(operationKey),
                 Saved.class);
 
         assertThat(result).usingRecursiveComparison().ignoringFields("historyId")
-                .isEqualTo(saved("defect", defect, 1, Scenario.AUTHOR));
+                .isEqualTo(saved("issue", issue, 1, Scenario.AUTHOR));
         advance(result.historyId());
-        this.firstDefectHistoryId = result.historyId();
+        this.firstIssueHistoryId = result.historyId();
     }
 
     @Test
     @Order(2)
-    @DisplayName("MCW-025 step 02 (E-08): the same operation key again is a replay of the same result")
+    @DisplayName("MCW-025 step 02: the same operation key again is a replay of the same result")
     void replayTheCreation() {
-        Saved replay = session.ok("ledger_save", Calls.Save.create("defect",
-                Fields.defect(scenario.projectId(), "first defect"), Scenario.AUTHOR).withOperationKey(operationKey),
+        Saved replay = session.ok("ledger_issue_save",
+                Calls.IssueSave.create(scenario.projectId(), "first issue", Scenario.AUTHOR)
+                        .withOperationKey(operationKey),
                 Saved.class);
 
-        assertThat(replay.historyId()).isEqualTo(firstDefectHistoryId);
+        assertThat(replay.historyId()).isEqualTo(firstIssueHistoryId);
         assertThat(replay).usingRecursiveComparison().ignoringFields("historyId")
-                .isEqualTo(saved("defect", defect, 1, Scenario.AUTHOR));
+                .isEqualTo(saved("issue", issue, 1, Scenario.AUTHOR));
     }
 
     @Test
     @Order(3)
-    @DisplayName("MCW-025 step 03 (E-12, E-13): a stale version is refused, the current version edits")
+    @DisplayName("MCW-025 step 03: a stale version is refused, the current version edits")
     void editWithTheCurrentVersion() {
-        ToolError stale = session.failed("ledger_save",
-                Calls.Save.edit("defect", defect, 7, Fields.titled("edited"), Scenario.AUTHOR));
-        Saved edited = session.ok("ledger_save",
-                Calls.Save.edit("defect", defect, 1, Fields.titled("edited"), Scenario.AUTHOR), Saved.class);
+        ToolError stale = session.failed("ledger_issue_save",
+                Calls.IssueSave.editTitle(issue, 7, "edited", Scenario.AUTHOR));
+        Saved edited = session.ok("ledger_issue_save",
+                Calls.IssueSave.editTitle(issue, 1, "edited", Scenario.AUTHOR), Saved.class);
 
         assertThat(stale.code()).isEqualTo("VERSION_CONFLICT");
         assertThat(edited).usingRecursiveComparison().ignoringFields("historyId")
-                .isEqualTo(saved("defect", defect, 2, Scenario.AUTHOR));
+                .isEqualTo(saved("issue", issue, 2, Scenario.AUTHOR));
         advance(edited.historyId());
     }
 
     @Test
     @Order(4)
-    @DisplayName("MCW-025 step 04 (E-15, record_fix): SOURCE_FIXED needs a fix; recording the fix moves the defect")
-    void recordTheFix() {
-        ToolError withoutFix = session.failed("ledger_transition",
-                Calls.Transition.of("defect", defect, 2, "SOURCE_FIXED", Scenario.AUTHOR));
-        FixRecorded fix = session.ok("ledger_record_fix", Calls.RecordFix.of(defect, "a".repeat(40), Scenario.AUTHOR),
-                FixRecorded.class);
+    @DisplayName("MCW-025 step 04: RESOLVED needs a deliverable; recording the deliverable moves the issue to RESOLVED")
+    void recordTheDeliverable() {
+        ToolError withoutDeliverable = session.failed("ledger_transition",
+                Calls.Transition.of("issue", issue, 2, "RESOLVED", Scenario.AUTHOR));
+        DeliverableRecorded deliverable = session.ok("ledger_record_deliverable",
+                Calls.RecordDeliverable.ofIssue(issue, "rev-doc-01", Scenario.AUTHOR),
+                DeliverableRecorded.class);
 
-        assertThat(withoutFix.code()).isEqualTo("FIX_REQUIRED");
-        assertThat(fix).usingRecursiveComparison().ignoringFields("historyId", "fixId", "transitionHistoryId")
-                .isEqualTo(new FixRecorded(WriteStatus.COMMITTED, defect, 0, "SOURCE_FIXED", Scenario.AUTHOR, 3, 0,
-                        0L, Scenario.AUTHOR, AUTHOR_LOGIN));
-        advance(fix.historyId());
+        assertThat(withoutDeliverable.code()).isEqualTo("DELIVERABLE_REQUIRED");
+        assertThat(deliverable).usingRecursiveComparison().ignoringFields("historyId", "deliverableId", "transitionHistoryId")
+                .isEqualTo(new DeliverableRecorded(WriteStatus.COMMITTED, "issue", issue, 0, "RESOLVED",
+                        Scenario.AUTHOR, 3, 0, 0L, Scenario.AUTHOR, AUTHOR_LOGIN));
+        advance(deliverable.historyId());
     }
 
     @Test
     @Order(5)
-    @DisplayName("MCW-025 step 05 (E-17, E-18): the fixing session cannot verify, a session without the grant cannot")
-    void theFixerAndTheUngrantedCannotVerify() {
-        ToolError fixer = session.failed("ledger_review",
-                Calls.Review.of("defect", defect, 3, "VERIFIED", Scenario.AUTHOR));
+    @DisplayName("MCW-025 step 05: the author session cannot self-verify, and a session without the grant cannot verify")
+    void theAuthorAndTheUngrantedCannotVerify() {
+        ToolError author = session.failed("ledger_review",
+                Calls.Review.of("issue", issue, 3, "VERIFIED", Scenario.AUTHOR));
         ToolError ungranted = session.failed("ledger_review",
-                Calls.Review.of("defect", defect, 3, "VERIFIED", Scenario.NOGRANT));
+                Calls.Review.of("issue", issue, 3, "VERIFIED", Scenario.NOGRANT));
 
-        assertThat(fixer.code()).isEqualTo("SAME_SESSION");
+        assertThat(author.code()).isEqualTo("SAME_SESSION");
         assertThat(ungranted.code()).isEqualTo("SESSION_NOT_GRANTED");
     }
 
     @Test
     @Order(6)
-    @DisplayName("MCW-025 step 06 (V1): the reviewer verifies the defect through ledger_review, without CI")
-    void theReviewerVerifies() {
+    @DisplayName("MCW-025 step 06: the reviewer verifies the issue through ledger_review")
+    void theReviewerVerifiesTheIssue() {
         Transitioned verified = session.ok("ledger_review",
-                Calls.Review.of("defect", defect, 3, "VERIFIED", Scenario.REVIEWER), Transitioned.class);
+                Calls.Review.of("issue", issue, 3, "VERIFIED", Scenario.REVIEWER), Transitioned.class);
 
         assertThat(verified).usingRecursiveComparison().ignoringFields("historyId")
-                .isEqualTo(new Transitioned(WriteStatus.COMMITTED, "defect", defect, "SOURCE_FIXED", "VERIFIED", 4, 0,
+                .isEqualTo(new Transitioned(WriteStatus.COMMITTED, "issue", issue, "RESOLVED", "VERIFIED", 4, 0,
                         Scenario.REVIEWER, REVIEWER_LOGIN));
         advance(verified.historyId());
     }
 
     @Test
     @Order(7)
-    @DisplayName("MCW-025 step 07 (P2): a task is created, moved to ACTIVE and REPORTED_DONE, and verified by the "
-            + "reviewer")
+    @DisplayName("MCW-025 step 07: a specification is created, completed with a deliverable, refused self-review, and verified by an independent reviewer")
+    void theSpecRunsThroughCompletionAndReview() {
+        Saved created = session.ok("ledger_spec_save",
+                Calls.SpecSave.create(scenario.projectId(), "scene 03 lighting spec", Scenario.AUTHOR),
+                Saved.class);
+        ToolError withoutEvidence = session.failed("ledger_transition",
+                Calls.Transition.of("spec", spec, 1, "COMPLETED", Scenario.AUTHOR));
+        DeliverableRecorded completed = session.ok("ledger_record_deliverable",
+                Calls.RecordDeliverable.ofSpec(spec, "cut-s03-v2", Scenario.AUTHOR),
+                DeliverableRecorded.class);
+        ToolError selfReview = session.failed("ledger_review",
+                Calls.Review.of("spec", spec, 2, "VERIFIED", Scenario.AUTHOR));
+        Transitioned verified = session.ok("ledger_review",
+                Calls.Review.of("spec", spec, 2, "VERIFIED", Scenario.REVIEWER), Transitioned.class);
+
+        assertThat(created).usingRecursiveComparison().ignoringFields("historyId")
+                .isEqualTo(saved("spec", spec, 1, Scenario.AUTHOR));
+        assertThat(withoutEvidence.code()).isEqualTo("EVIDENCE_REQUIRED");
+        assertThat(completed.targetState()).isEqualTo("COMPLETED");
+        assertThat(selfReview.code()).isEqualTo("SAME_SESSION");
+        assertThat(verified).usingRecursiveComparison().ignoringFields("historyId")
+                .isEqualTo(new Transitioned(WriteStatus.COMMITTED, "spec", spec, "COMPLETED", "VERIFIED", 3, 0,
+                        Scenario.REVIEWER, REVIEWER_LOGIN));
+        advance(verified.historyId());
+    }
+
+    @Test
+    @Order(8)
+    @DisplayName("MCW-025 step 08: a task is created, moved to ACTIVE and COMPLETED, and verified by the reviewer")
     void theTaskRunsThroughItsStates() {
-        Saved created = session.ok("ledger_save",
-                Calls.Save.create("task", Fields.task(scenario.projectId(), "first task"), Scenario.AUTHOR),
+        Saved created = session.ok("ledger_task_save",
+                Calls.TaskSave.create(scenario.projectId(), "first task", Scenario.AUTHOR),
                 Saved.class);
         Transitioned active = session.ok("ledger_transition",
                 Calls.Transition.of("task", task, 1, "ACTIVE", Scenario.AUTHOR), Transitioned.class);
         Transitioned done = session.ok("ledger_transition",
-                Calls.Transition.of("task", task, 2, "REPORTED_DONE", Scenario.AUTHOR)
+                Calls.Transition.of("task", task, 2, "COMPLETED", Scenario.AUTHOR)
                         .withEvidence(Scenario.EVIDENCE), Transitioned.class);
         Transitioned verified = session.ok("ledger_review",
                 Calls.Review.of("task", task, 3, "VERIFIED", Scenario.REVIEWER), Transitioned.class);
@@ -182,106 +211,116 @@ class WriteScenarioTest {
                 "historyId").containsExactly(
                         new Transitioned(WriteStatus.COMMITTED, "task", task, "PLANNED", "ACTIVE", 2, 0,
                                 Scenario.AUTHOR, AUTHOR_LOGIN),
-                        new Transitioned(WriteStatus.COMMITTED, "task", task, "ACTIVE", "REPORTED_DONE", 3, 0,
+                        new Transitioned(WriteStatus.COMMITTED, "task", task, "ACTIVE", "COMPLETED", 3, 0,
                                 Scenario.AUTHOR, AUTHOR_LOGIN),
-                        new Transitioned(WriteStatus.COMMITTED, "task", task, "REPORTED_DONE", "VERIFIED", 4, 0,
+                        new Transitioned(WriteStatus.COMMITTED, "task", task, "COMPLETED", "VERIFIED", 4, 0,
                                 Scenario.REVIEWER, REVIEWER_LOGIN));
         advance(verified.historyId());
     }
 
     @Test
-    @Order(8)
-    @DisplayName("MCW-025 step 08 (P2): a release condition is created and met")
-    void aConditionIsMet() {
-        Saved created = session.ok("ledger_save", Calls.Save
-                .create("condition", Fields.condition(scenario.projectId(), "REL1", "A"), Scenario.AUTHOR)
-                .withId(condition), Saved.class);
+    @Order(9)
+    @DisplayName("MCW-025 step 09: a milestone criterion is created and evaluated MET")
+    void aCriterionIsMet() {
+        Saved created = session.ok("ledger_criterion_save",
+                Calls.CriterionSave.create(scenario.projectId(), criterion, "M1", "A", Scenario.AUTHOR),
+                Saved.class);
         Transitioned met = session.ok("ledger_review",
-                Calls.Review.of("condition", condition, 1, "MET", Scenario.REVIEWER), Transitioned.class);
+                Calls.Review.of("criterion", criterion, 1, "MET", Scenario.REVIEWER), Transitioned.class);
 
         assertThat(created).usingRecursiveComparison().ignoringFields("historyId")
-                .isEqualTo(saved("condition", condition, 1, Scenario.AUTHOR));
+                .isEqualTo(saved("criterion", criterion, 1, Scenario.AUTHOR));
         assertThat(met).usingRecursiveComparison().ignoringFields("historyId")
-                .isEqualTo(new Transitioned(WriteStatus.COMMITTED, "condition", condition, "UNKNOWN", "MET", 2, 0,
+                .isEqualTo(new Transitioned(WriteStatus.COMMITTED, "criterion", criterion, "UNKNOWN", "MET", 2, 0,
                         Scenario.REVIEWER, REVIEWER_LOGIN));
         advance(met.historyId());
     }
 
     @Test
-    @Order(9)
-    @DisplayName("MCW-025 step 09 (E-19): the defect and the task are linked, a second link is refused")
-    void theDefectAndTheTaskAreLinked() {
-        Linked link = session.ok("ledger_link", Calls.Link.of("defect_task", defect, task, Scenario.AUTHOR),
+    @Order(10)
+    @DisplayName("MCW-025 step 10: the issue, spec, and task are linked, and a duplicate link is refused")
+    void entitiesAreLinked() {
+        Linked issueTask = session.ok("ledger_link", Calls.Link.of("issue_task", issue, task, Scenario.AUTHOR),
                 Linked.class);
-        ToolError again = session.failed("ledger_link", Calls.Link.of("defect_task", defect, task, Scenario.AUTHOR));
+        Linked specTask = session.ok("ledger_link", Calls.Link.of("spec_task", spec, task, Scenario.AUTHOR),
+                Linked.class);
+        ToolError again = session.failed("ledger_link", Calls.Link.of("issue_task", issue, task, Scenario.AUTHOR));
 
-        assertThat(link).usingRecursiveComparison().ignoringFields("historyId")
-                .isEqualTo(new Linked(WriteStatus.COMMITTED, "defect_task", defect + "|" + task, false, 0,
+        assertThat(issueTask).usingRecursiveComparison().ignoringFields("historyId")
+                .isEqualTo(new Linked(WriteStatus.COMMITTED, "issue_task", issue + "|" + task, false, 0,
                         Scenario.AUTHOR, AUTHOR_LOGIN));
+        assertThat(specTask.entity()).isEqualTo("spec_task");
         assertThat(again.code()).isEqualTo("NOTHING_CHANGES");
-        advance(link.historyId());
+        advance(specTask.historyId());
     }
 
     @Test
-    @Order(10)
-    @DisplayName("MCW-025 step 10 (E-21, P2): a batch saves a defect and links it to the task in one transaction")
+    @Order(11)
+    @DisplayName("MCW-025 step 11: a batch saves an issue and links it to the task in one transaction")
     void aBatchWritesTwoRows() {
         BatchResults batch = session.ok("ledger_batch", Calls.Batch.of(Scenario.AUTHOR,
-                Calls.Op.save("defect", Fields.defect(scenario.projectId(), "second defect")),
-                Calls.Op.link("defect_task", secondDefect, task)), BatchResults.class);
+                Calls.Op.save("issue", Fields.issue(scenario.projectId(), "second issue")),
+                Calls.Op.link("issue_task", secondIssue, task)), BatchResults.class);
 
         assertThat(batch.status()).isEqualTo(WriteStatus.COMMITTED);
         assertThat(batch.count()).isEqualTo(2);
         assertThat(batch.results()).usingRecursiveFieldByFieldElementComparatorIgnoringFields("historyId")
                 .containsExactly(
-                        new BatchResults.Entry(WriteStatus.COMMITTED, "defect", secondDefect, 1L, 0L,
+                        new BatchResults.Entry(WriteStatus.COMMITTED, "issue", secondIssue, 1L, 0L,
                                 Scenario.AUTHOR, AUTHOR_LOGIN, null, null, null, null, null, null, null, null, null,
-                                null),
-                        new BatchResults.Entry(WriteStatus.COMMITTED, "defect_task", secondDefect + "|" + task, null, 0L,
-                                Scenario.AUTHOR, AUTHOR_LOGIN, null, null, null, null, null, null, null, null,
-                                false, null));
+                                null, null, null),
+                        new BatchResults.Entry(WriteStatus.COMMITTED, "issue_task", secondIssue + "|" + task, null, 0L,
+                                Scenario.AUTHOR, AUTHOR_LOGIN, null, null, null, null, null, null, null, null, null,
+                                null, false, null));
         advance(batch.results().getLast().historyId());
     }
 
     @Test
-    @Order(11)
-    @DisplayName("MCW-025 step 11 (C1): an observed case is recorded under the defect")
+    @Order(12)
+    @DisplayName("MCW-025 step 12: an observed case is recorded under the issue")
     void aCaseIsRecorded() {
         CaseRecorded recorded = session.ok("ledger_record_case",
-                Calls.RecordCase.of(secondDefect, "seen once more", Scenario.AUTHOR), CaseRecorded.class);
+                Calls.RecordCase.of(secondIssue, "seen once more", Scenario.AUTHOR), CaseRecorded.class);
 
         assertThat(recorded).usingRecursiveComparison().ignoringFields("historyId", "caseId")
-                .isEqualTo(new CaseRecorded(WriteStatus.COMMITTED, "defect_case", secondDefect + "|" + recorded.caseId(),
-                        0, secondDefect, 0, Scenario.AUTHOR, AUTHOR_LOGIN));
+                .isEqualTo(new CaseRecorded(WriteStatus.COMMITTED, "issue_case", secondIssue + "|" + recorded.caseId(),
+                        0, secondIssue, 0, Scenario.AUTHOR, AUTHOR_LOGIN));
         advance(recorded.historyId());
     }
 
     @Test
-    @Order(12)
-    @DisplayName("MCW-025 step 12 (E-20): a history row is marked wrong with a CORRECT row")
+    @Order(13)
+    @DisplayName("MCW-025 step 13: a history row is marked wrong with a CORRECT row")
     void aHistoryRowIsCorrected() {
-        Corrected corrected = session.ok("ledger_correct", Calls.Correct.of(firstDefectHistoryId, Scenario.AUTHOR),
+        Corrected corrected = session.ok("ledger_correct", Calls.Correct.of(firstIssueHistoryId, Scenario.AUTHOR),
                 Corrected.class);
 
         assertThat(corrected).usingRecursiveComparison().ignoringFields("historyId")
-                .isEqualTo(new Corrected(WriteStatus.COMMITTED, firstDefectHistoryId, 0, Scenario.AUTHOR,
+                .isEqualTo(new Corrected(WriteStatus.COMMITTED, firstIssueHistoryId, 0, Scenario.AUTHOR,
                         AUTHOR_LOGIN));
         advance(corrected.historyId());
     }
 
     @Test
-    @Order(13)
-    @DisplayName("MCW-025 step 13 (E-29, E-30, P5): the reader sees the verified defect, its fixer and the history")
+    @Order(14)
+    @DisplayName("MCW-025 step 14: the reader sees the verified issue, verified spec, verified task, met criterion, and history")
     void theReaderSeesTheResult() {
-        ReadOutputs.Defect read = session.ok("ledger_defect", new Calls.IdOnly(defect), ReadOutputs.Defect.class);
-        ReadOutputs.Got got = Ledger.get(session, defect, task, condition);
+        ReadOutputs.Issue readIssue = session.ok("ledger_issue", new Calls.IdOnly(issue), ReadOutputs.Issue.class);
+        ReadOutputs.Spec readSpec = session.ok("ledger_spec", new Calls.IdOnly(spec), ReadOutputs.Spec.class);
+        ReadOutputs.Got got = Ledger.get(session, issue, spec, task, criterion);
 
-        assertThat(read).usingRecursiveComparison().comparingOnlyFields("id", "status", "version", "createdBy",
-                "fixedBy", "title").isEqualTo(new ReadOutputs.Defect(defect, scenario.projectId(), "edited", "ARC",
-                        "P2", "VERIFIED", null, null, null, null, 4, null, Scenario.AUTHOR, Scenario.AUTHOR, null, null,
-                        List.of(), List.of(), List.of(), List.of(), List.of(), List.of()));
+        assertThat(readIssue.id()).isEqualTo(issue);
+        assertThat(readIssue.status()).isEqualTo("VERIFIED");
+        assertThat(readIssue.version()).isEqualTo(4);
+        assertThat(readIssue.createdBy()).isEqualTo(Scenario.AUTHOR);
+        assertThat(readIssue.resolvedBy()).isEqualTo(Scenario.AUTHOR);
+        assertThat(readIssue.title()).isEqualTo("edited");
+        assertThat(readSpec.id()).isEqualTo(spec);
+        assertThat(readSpec.status()).isEqualTo("VERIFIED");
+        assertThat(readSpec.version()).isEqualTo(3);
+        assertThat(readSpec.completedBy()).isEqualTo(Scenario.AUTHOR);
         assertThat(got.items()).extracting(ReadOutputs.GotItem::state)
-                .containsExactlyInAnyOrder("VERIFIED", "VERIFIED", "MET");
+                .containsExactlyInAnyOrder("VERIFIED", "VERIFIED", "VERIFIED", "MET");
         assertThat(Ledger.history(session, scenario.projectId())).extracting(ReadOutputs.History::authorId)
                 .doesNotContain(Scenario.NOGRANT);
     }

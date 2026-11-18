@@ -89,6 +89,57 @@ final class SchemaDocument {
         nullable(root);
     }
 
+    /** Wraps the current output object schema inside the standard {@code ApiResult.v1} envelope schema. */
+    void wrapAsApiResult() {
+        Object schemaUri = root.remove("$schema");
+        Object defs = root.remove(DEFS);
+        Map<String, Object> dataSchema = copy(root);
+        dataSchema.put("type", List.of("object", "null"));
+        dataSchema.putIfAbsent(DESCRIPTION, "Result payload when ok is true, or null when ok is false.");
+
+        Map<String, Object> issueProps = new LinkedHashMap<>();
+        issueProps.put("path", Map.of("type", "string", DESCRIPTION, "Field or argument path of the issue."));
+        issueProps.put("reason", Map.of("type", "string", DESCRIPTION, "Explanation of why the value was refused."));
+        issueProps.put("allowed", Map.of("type", "array", "items", Map.of("type", "string"),
+                DESCRIPTION, "Allowed values when the field comes from a closed set."));
+        Map<String, Object> issueSchema = new LinkedHashMap<>();
+        issueSchema.put("type", "object");
+        issueSchema.put("additionalProperties", Boolean.FALSE);
+        issueSchema.put(PROPERTIES, issueProps);
+
+        Map<String, Object> errorProps = new LinkedHashMap<>();
+        errorProps.put("code", Map.of("type", "string", DESCRIPTION, "Machine-readable error code."));
+        errorProps.put("message", Map.of("type", "string", DESCRIPTION, "Human-readable error message."));
+        errorProps.put("details", Map.of("type", "object", DESCRIPTION, "Structured diagnostic details by key."));
+        errorProps.put("issues", Map.of("type", "array", "items", issueSchema,
+                DESCRIPTION, "Field validation issues when code is VALIDATION_FAILED."));
+        Map<String, Object> errorSchema = new LinkedHashMap<>();
+        errorSchema.put("type", List.of("object", "null"));
+        errorSchema.put("additionalProperties", Boolean.FALSE);
+        errorSchema.put(DESCRIPTION, "Structured error details when ok is false, or null when ok is true.");
+        errorSchema.put(PROPERTIES, errorProps);
+
+        Map<String, Object> envelopeProps = new LinkedHashMap<>();
+        envelopeProps.put("schemaVersion", Map.of("type", "string",
+                DESCRIPTION, "Envelope contract schema version (1.0.0)."));
+        envelopeProps.put("ok", Map.of("type", "boolean",
+                DESCRIPTION, "True when the call succeeded; false when error describes the failure."));
+        envelopeProps.put("data", dataSchema);
+        envelopeProps.put("error", errorSchema);
+
+        root.clear();
+        if (schemaUri != null) {
+            root.put("$schema", schemaUri);
+        }
+        if (defs != null) {
+            root.put(DEFS, defs);
+        }
+        root.put("type", "object");
+        root.put("additionalProperties", Boolean.FALSE);
+        root.put("required", List.of("schemaVersion", "ok", "data", "error"));
+        root.put(PROPERTIES, envelopeProps);
+    }
+
     private Optional<Map<String, Object>> node(String path) {
         Map<String, Object> current = root;
         for (String segment : StringUtils.delimitedListToStringArray(path, ".")) {

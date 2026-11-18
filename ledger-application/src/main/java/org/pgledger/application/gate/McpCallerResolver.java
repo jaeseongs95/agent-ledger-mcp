@@ -36,4 +36,13 @@ public interface McpCallerResolver {
      * @throws TrustException when caller authentication or binding fails
      */
     AuthorId verifyForWrite(String presented, ToolCall call, String operationKey);
+
+    /**
+     * True when an authenticated per-author identity is bound to the current transport call (such as an HTTP
+     * {@code Bearer} session token in {@code STANDARD} mode), even if no explicit {@code _hostAttestation} argument
+     * was supplied.
+     */
+    default boolean hasAmbientCaller() {
+        return false;
+    }
 }

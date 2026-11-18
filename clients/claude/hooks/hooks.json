@@ -1,7 +1,7 @@
 {
   "hooks": {
     "PreToolUse": [{
-      "matcher": "^mcp__[A-Za-z0-9_-]+__(?:[A-Za-z0-9_-]+_)?(?:ledger_(save|transition|record_fix|record_case|link|correct|batch|review|review_correct|whoami)|artifact-(begin|chunk|finish|status|read))$",
+      "matcher": "^mcp__[A-Za-z0-9_-]+__(?:[A-Za-z0-9_-]+_)?(?:ledger_(issue_save|spec_save|task_save|criterion_save|transition|record_deliverable|record_case|link|correct|batch|review|review_correct|whoami)|artifact_(begin|chunk|finish|status|read))$",
       "hooks": [{ "type": "command", "command": "java -jar \"${CLAUDE_PLUGIN_ROOT}/lib/ledger-client-hook.jar\" claude", "timeout": 10 }]
     }]
   }

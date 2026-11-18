@@ -24,7 +24,8 @@ import org.pgledger.mcp.tool.ReadOutputs.CodeRow;
 @McpServerTest
 class WriteSchemaTest {
 
-    private static final List<String> FIXED_LINK_KINDS = List.of("defect_task", "condition_task", "condition_defect");
+    private static final List<String> FIXED_LINK_KINDS = List.of("issue_task", "issue_spec", "spec_task",
+            "criterion_task", "criterion_issue", "criterion_spec");
 
     private static SchemaView input(McpSession session, String tool) {
         return SchemaView.of(session.mapper(), session.tool(tool).inputSchema());
@@ -103,7 +104,7 @@ class WriteSchemaTest {
         List<String> author = input(session, "ledger_transition").properties().get("to").allowed();
         List<String> reviewer = input(session, "ledger_review").properties().get("to").allowed();
 
-        assertThat(author).contains("OPEN", "SOURCE_FIXED", "PLANNED", "REPORTED_DONE")
+        assertThat(author).contains("OPEN", "RESOLVED", "PLANNED", "ACTIVE", "COMPLETED")
                 .doesNotContain("VERIFIED", "MET", "NOT_MET");
         assertThat(reviewer).contains("VERIFIED", "MET", "NOT_MET");
     }
@@ -115,25 +116,28 @@ class WriteSchemaTest {
         List<String> allowed = input(session, "ledger_transition").properties().get("to").allowed();
 
         ToolError error = session.failed("ledger_transition",
-                Calls.Transition.of("defect", seed.fixed(), 2, "VERIFIED", Scenario.REVIEWER));
+                Calls.Transition.of("issue", seed.resolved(), 2, "VERIFIED", Scenario.REVIEWER));
 
         assertThat(error.code()).isEqualTo("VALIDATION_FAILED");
         assertThat(error.issues()).containsExactly(new ToolError.Issue("to", "unknown value VERIFIED", allowed));
     }
 
     @Test
-    @DisplayName("MCW-016: the enumerations of entity, ci_conclusion and link kind")
+    @DisplayName("MCW-016: the enumerations of entity, target_entity, deliverable kind, check_result and link kind")
     void enumerationsOfTheClosedSets(McpSession session) {
         List<String> activeRelationKinds = CodeListing.codes(CodeListing.active(session, "RELATION_KIND"));
+        List<String> activeDeliverableKinds = CodeListing.codes(CodeListing.active(session, "DELIVERABLE_KIND"));
 
-        assertThat(input(session, "ledger_save").properties().get("entity").allowed())
-                .containsExactly("defect", "task", "condition");
         assertThat(input(session, "ledger_transition").properties().get("entity").allowed())
-                .containsExactly("defect", "task", "condition");
+                .containsExactly("issue", "spec", "task", "criterion");
         assertThat(input(session, "ledger_review").properties().get("entity").allowed())
-                .containsExactly("defect", "task", "condition");
-        assertThat(input(session, "ledger_record_fix").properties().get("ci_conclusion").allowed())
-                .containsExactly("success", "failure", "cancelled");
+                .containsExactly("issue", "spec", "task", "criterion");
+        assertThat(input(session, "ledger_record_deliverable").properties().get("target_entity").allowed())
+                .containsExactly("issue", "spec", "task");
+        assertThat(input(session, "ledger_record_deliverable").properties().get("kind").allowed())
+                .isEqualTo(activeDeliverableKinds);
+        assertThat(input(session, "ledger_record_deliverable").properties().get("check_result").allowed())
+                .containsExactly("passed", "failed", "cancelled");
         assertThat(input(session, "ledger_link").properties().get("kind").allowed())
                 .containsExactlyElementsOf(java.util.stream.Stream.concat(FIXED_LINK_KINDS.stream(),
                         activeRelationKinds.stream()).toList());
@@ -159,39 +163,37 @@ class WriteSchemaTest {
                     .endsWith(directed ? "[directed: a is the subject, b the object]"
                             : "[no direction: a and b are interchangeable]");
         }
-        // the three fixed kinds are no relation kind and carry no direction
-        assertThat(kinds).doesNotContain("defect_task [").doesNotContain("condition_task [");
+        // the six fixed kinds are no relation kind and carry no direction
+        assertThat(kinds).doesNotContain("issue_task [").doesNotContain("criterion_task [");
     }
 
     @Test
-    @DisplayName("MCW-017: the description of ledger_review says CI is optional metadata, that the reviewer runs the "
-            + "program and where to find the fixing session")
+    @DisplayName("MCW-017: the description of ledger_review states domain-neutral review rules: automated checks are "
+            + "optional metadata, the reviewer inspects the actual deliverable, and rework goes to resolved_by / completed_by")
     void reviewDescriptionStatesTheReviewRules(McpSession session) {
         String description = session.tool("ledger_review").description();
 
-        assertThat(description).contains("CI is optional metadata").contains("the reviewer runs the actual program")
-                .contains("fixed_by of ledger_defect");
+        assertThat(description).contains("optional metadata").contains("actual deliverable")
+                .contains("resolved_by of ledger_issue").contains("completed_by of ledger_spec");
     }
 
     @Test
-    @DisplayName("MCW-023: the fields of ledger_save are typed per kind; category and severity carry the active codes "
-            + "as enumeration and description")
-    void saveFieldsCarryTheActiveCodes(McpSession session) {
-        SchemaView fields = input(session, "ledger_save").at("fields").orElseThrow();
-        List<CodeRow> categories = CodeListing.active(session, "DEFECT_CATEGORY");
-        List<CodeRow> severities = CodeListing.active(session, "DEFECT_SEVERITY");
+    @DisplayName("MCW-023: flat ledger_issue_save and batch SaveFields carry active ISSUE_CATEGORY and ISSUE_SEVERITY codes "
+            + "as enumeration and description, and no write tool takes a raw query parameter")
+    void saveParametersAndBatchFieldsCarryTheActiveCodes(McpSession session) {
+        SchemaView issueSave = input(session, "ledger_issue_save");
+        List<CodeRow> categories = CodeListing.active(session, "ISSUE_CATEGORY");
+        List<CodeRow> severities = CodeListing.active(session, "ISSUE_SEVERITY");
 
-        assertThat(fields.propertyNames()).containsExactly("behavior", "category", "code", "condition_text",
-                "goal_label", "origin_quote", "origin_ref", "owner_actor_id", "project_id", "purpose", "release",
-                "root_cause", "severity", "success_condition", "title");
-        assertThat(fields.properties().values()).allMatch(property -> "string".equals(property.type()));
-        assertThat(fields.at("category").orElseThrow().allowed()).isEqualTo(CodeListing.codes(categories))
+        assertThat(ToolNames.WRITE).allSatisfy(tool ->
+                assertThat(input(session, tool).propertyNames()).doesNotContain("query", "sql"));
+        assertThat(issueSave.at("category").orElseThrow().allowed()).isEqualTo(CodeListing.codes(categories))
                 .containsExactly("ARC");
-        assertThat(fields.at("severity").orElseThrow().allowed()).isEqualTo(CodeListing.codes(severities))
+        assertThat(issueSave.at("severity").orElseThrow().allowed()).isEqualTo(CodeListing.codes(severities))
                 .doesNotContain("UNRATED");
-        assertThat(fields.at("category").orElseThrow().description())
+        assertThat(issueSave.at("category").orElseThrow().description())
                 .contains(categories.stream().map(CodeListing::line).toList().toArray(new String[0]));
-        assertThat(fields.at("severity").orElseThrow().description())
+        assertThat(issueSave.at("severity").orElseThrow().description())
                 .contains(severities.stream().map(CodeListing::line).toList().toArray(new String[0]));
     }
 }

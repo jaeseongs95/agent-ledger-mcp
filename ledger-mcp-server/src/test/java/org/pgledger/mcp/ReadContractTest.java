@@ -45,16 +45,22 @@ class ReadContractTest {
         CallToolResult result = session.call(read.tool(), read.call(seed));
         ValidationResponse validation = McpJsonDefaults.getSchemaValidator().validate(tool.outputSchema(),
                 result.structuredContent());
-        ToolError unknown = session.failed(read.tool(),
+        CallToolResult failedResult = session.call(read.tool(),
                 Args.from(session.mapper(), read.call(seed)).with("unknown_argument", 1));
+        ValidationResponse failedValidation = McpJsonDefaults.getSchemaValidator().validate(tool.outputSchema(),
+                failedResult.structuredContent());
+        ToolError unknown = session.error(failedResult);
 
         assertThat(tool.outputSchema()).isNotNull();
         assertThat(input.propertyNames()).doesNotContain("_hostAttestation");
         assertThat(input.closed()).isTrue();
         assertThat(input.objects()).allMatch(SchemaView::closed);
         assertThat(result.isError()).isFalse();
-        assertThat(validation.valid()).as("the result against the output schema: %s", validation.errorMessage())
+        assertThat(validation.valid()).as("the ok result against the output schema: %s", validation.errorMessage())
                 .isTrue();
+        assertThat(failedResult.isError()).isTrue();
+        assertThat(failedValidation.valid()).as("the error result against the output schema: %s",
+                failedValidation.errorMessage()).isTrue();
         assertThat(unknown.code()).isEqualTo("VALIDATION_FAILED");
         assertThat(unknown.issues()).extracting(ToolError.Issue::path).contains("unknown_argument");
     }
@@ -94,13 +100,17 @@ class ReadContractTest {
     }
 
     @Test
-    @DisplayName("MCR-011: ledger_codes exists and lists the codes")
+    @DisplayName("MCR-011: ledger_codes exists and lists the active groups")
     void theCodesToolExists(McpSession session) {
-        ReadOutputs.Items<ReadOutputs.CodeRow> codes = session.readItems(
-                session.call("ledger_codes", Calls.Codes.of("DEFECT_SEVERITY")), ReadOutputs.CodeRow.class);
+        ReadOutputs.Items<ReadOutputs.CodeRow> severities = session.readItems(
+                session.call("ledger_codes", Calls.Codes.of("ISSUE_SEVERITY")), ReadOutputs.CodeRow.class);
+        ReadOutputs.Items<ReadOutputs.CodeRow> deliverableKinds = session.readItems(
+                session.call("ledger_codes", Calls.Codes.of("DELIVERABLE_KIND")), ReadOutputs.CodeRow.class);
 
         assertThat(session.tools()).extracting(Tool::name).contains("ledger_codes");
-        assertThat(codes.items()).extracting(ReadOutputs.CodeRow::code).contains("P1", "P2", "P3");
+        assertThat(severities.items()).extracting(ReadOutputs.CodeRow::code).contains("P1", "P2", "P3");
+        assertThat(deliverableKinds.items()).extracting(ReadOutputs.CodeRow::code)
+                .contains("code_change", "document", "media", "design", "dataset", "specification", "artifact");
     }
 
     @Test
@@ -109,12 +119,12 @@ class ReadContractTest {
         List<ReadOutputs.CodeRow> kinds = session.readItems(session.call("ledger_codes", Calls.Codes.of("RELATION_KIND")),
                 ReadOutputs.CodeRow.class).items();
         List<ReadOutputs.CodeRow> severities = session.readItems(
-                session.call("ledger_codes", Calls.Codes.of("DEFECT_SEVERITY")), ReadOutputs.CodeRow.class).items();
+                session.call("ledger_codes", Calls.Codes.of("ISSUE_SEVERITY")), ReadOutputs.CodeRow.class).items();
 
         assertThat(kinds).filteredOn(row -> "GIVEN".equals(row.direction())).extracting(ReadOutputs.CodeRow::code)
                 .containsExactlyInAnyOrder("caused_by", "blocks");
         assertThat(kinds).filteredOn(row -> "CANONICAL".equals(row.direction())).extracting(ReadOutputs.CodeRow::code)
-                .contains("same_site", "same_family", "same_fix_unit", "regression_of");
+                .contains("same_site", "same_family", "same_work_unit", "regression_of");
         assertThat(severities).extracting(ReadOutputs.CodeRow::direction).containsOnly("CANONICAL");
     }
 

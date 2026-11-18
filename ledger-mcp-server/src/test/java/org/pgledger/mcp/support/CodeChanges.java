@@ -5,9 +5,10 @@ import org.pgledger.application.admin.CommonCodeService.CodeCommand;
 /** The common-code changes the catalog cases make, as the admin web or the command line would make them. */
 public final class CodeChanges {
 
-    public static final String CATEGORY = "DEFECT_CATEGORY";
-    public static final String SEVERITY = "DEFECT_SEVERITY";
+    public static final String CATEGORY = "ISSUE_CATEGORY";
+    public static final String SEVERITY = "ISSUE_SEVERITY";
     public static final String RELATION = "RELATION_KIND";
+    public static final String DELIVERABLE = "DELIVERABLE_KIND";
 
     private CodeChanges() {
     }
