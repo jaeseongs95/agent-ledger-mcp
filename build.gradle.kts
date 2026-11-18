@@ -276,23 +276,20 @@ subprojects {
                 }
             })
     }
-    tasks.named("check") { dependsOn(verifyRuntimeClasspath) }
-}
-
-val checkThirdPartyNotices = tasks.register<VerifyThirdPartyNotices>("checkThirdPartyNotices") {
-    group = "verification"
-    description = "Verifies that THIRD_PARTY_NOTICES.md covers every external runtime dependency group."
-    noticesFile = layout.projectDirectory.file("THIRD_PARTY_NOTICES.md")
-    subprojects.forEach { sub ->
-        runtimeGroups.addAll(sub.configurations.named("runtimeClasspath").flatMap { cfg ->
-            cfg.incoming.artifactView { componentFilter { it is ModuleComponentIdentifier } }
-                .artifacts.resolvedArtifacts.map { artifacts ->
-                    artifacts.map { (it.id.componentIdentifier as ModuleComponentIdentifier).group }
-                }
-        })
+    val checkThirdPartyNotices = tasks.register<VerifyThirdPartyNotices>("checkThirdPartyNotices") {
+        group = "verification"
+        description = "Verifies that THIRD_PARTY_NOTICES.md covers every external runtime dependency group of the module."
+        noticesFile = rootProject.layout.projectDirectory.file("THIRD_PARTY_NOTICES.md")
+        runtimeGroups.addAll(configurations.getByName("runtimeClasspath").incoming
+            .artifactView { componentFilter { it is ModuleComponentIdentifier } }
+            .artifacts.resolvedArtifacts
+            .map { artifacts ->
+                artifacts.map { (it.id.componentIdentifier as ModuleComponentIdentifier).group }
+            })
     }
+    tasks.named("check") { dependsOn(verifyRuntimeClasspath, checkThirdPartyNotices) }
 }
 
 tasks.named("check") {
-    dependsOn(checkThirdPartyNotices, "spotlessCheck")
+    dependsOn("spotlessCheck")
 }
