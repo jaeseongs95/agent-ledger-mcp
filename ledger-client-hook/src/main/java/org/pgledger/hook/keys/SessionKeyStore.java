@@ -58,10 +58,13 @@ public final class SessionKeyStore {
         SessionKeyFile keyFile = new SessionKeyFile(server, author);
         Path directory = directory();
         try {
-            Protection protection = Protection.of(directory.getFileSystem(), userName);
-            prepareDirectory(directory, protection);
             Path file = directory.resolve(keyFile.fileName());
             KeyFileReader reader = new KeyFileReader();
+            if (Files.isDirectory(directory) && Files.exists(file)) {
+                return read(reader, file, keyFile);
+            }
+            Protection protection = Protection.of(directory.getFileSystem(), userName);
+            prepareDirectory(directory, protection);
             if (Files.exists(file)) {
                 return read(reader, file, keyFile);
             }

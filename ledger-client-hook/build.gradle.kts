@@ -1,8 +1,10 @@
+import org.springframework.boot.gradle.tasks.aot.ProcessAot
+
 // One executable jar for the three client hooks: `java -jar ledger-client-hook.jar <claude|codex|antigravity>`, and for
 // the key command `java -jar ledger-client-hook.jar session-key <server> <author>`.
 // The hook is a Spring Boot application without a web server (user decision 2026-11-15: 「Spring으로 전환」): the Spring
-// Boot plugin builds the executable jar (bootJar). The start time of the JVM is no reason to avoid Spring (principle 5.3);
-// it is measured and handled with the AOT cache, which this build does not set up yet.
+// Boot plugin builds the executable jar (bootJar), and Spring Boot AOT (processAot) pre-computes bean definitions at
+// build time (principle 5.3) so concurrent cold `java -jar` invocations skip runtime ASM scanning and condition probing.
 plugins {
     // Spring Boot Gradle plugin: bootJar builds the one executable jar (java -jar ledger-client-hook.jar); the version is the catalog Boot version.
     id("org.springframework.boot") version libs.versions.springBoot.get()
@@ -11,20 +13,28 @@ plugins {
 val hookJarName = "ledger-client-hook.jar"
 
 configurations.implementation {
-    // YAML and unused logging bridges are excluded across all starters so cold CLI startup does not mount or scan unused jars.
+    // YAML, unused logging bridges, and Micrometer are excluded so cold CLI startup does not mount or scan unused jars.
     exclude(group = "org.yaml", module = "snakeyaml")
     exclude(group = "org.apache.logging.log4j", module = "log4j-to-slf4j")
     exclude(group = "org.apache.logging.log4j", module = "log4j-api")
     exclude(group = "org.slf4j", module = "jul-to-slf4j")
+    exclude(group = "io.micrometer", module = "micrometer-observation")
+    exclude(group = "io.micrometer", module = "micrometer-commons")
 }
 
 dependencies {
+    // Declared in class-load frequency order so BOOT-INF/classpath.idx places the hottest nested jars first.
+    implementation("tools.jackson.core:jackson-databind")
+    implementation("tools.jackson.core:jackson-core")
+    implementation("org.springframework:spring-core")
+    implementation("org.springframework:spring-beans")
+    implementation("org.springframework:spring-context")
+    implementation("org.springframework.boot:spring-boot")
     // Spring Boot core, logging (SLF4J + Logback) and the configuration properties binding; no web server, no JDBC, no data access (HK-018).
     implementation("org.springframework.boot:spring-boot-starter")
     // Jackson 3 (tools.jackson) with the JsonMapper that Boot configures (JacksonAutoConfiguration, the settings are
     // spring.jackson.* in application.properties); the versions come from the Boot BOM (the JDK has no JSON parser).
     implementation("org.springframework.boot:spring-boot-starter-jackson")
-    implementation("tools.jackson.core:jackson-databind")
 
     // The attestation token and the Ed25519 key text forms (pure JDK): the hook signs with them, the server verifies
     // with the same classes. bootJar packs the project jar of this module into BOOT-INF/lib.
@@ -43,15 +53,58 @@ dependencies {
     testImplementation(testFixtures(project(":ledger-attestation")))
 }
 
+val javaToolchains = extensions.getByType<JavaToolchainService>()
+val javaExt = extensions.getByType<JavaPluginExtension>()
+
+val processAot = tasks.register<ProcessAot>("processAot") {
+    group = "build"
+    description = "Generates Spring Boot AOT bean definitions for HookApplication."
+    dependsOn(tasks.classes)
+    applicationMainClass = "org.pgledger.hook.Main"
+    classpath(sourceSets.main.get().runtimeClasspath)
+    sourcesOutput = layout.buildDirectory.dir("generated/aotSources")
+    resourcesOutput = layout.buildDirectory.dir("generated/aotResources")
+    classesOutput = layout.buildDirectory.dir("generated/aotClasses")
+    groupId = project.group.toString()
+    artifactId = project.name
+    javaLauncher = javaToolchains.launcherFor(javaExt.toolchain)
+}
+
+val compileAotJava = tasks.register<JavaCompile>("compileAotJava") {
+    group = "build"
+    description = "Compiles generated Spring Boot AOT sources for the hook jar."
+    dependsOn(processAot)
+    source(processAot.flatMap { it.sourcesOutput })
+    classpath = sourceSets.main.get().runtimeClasspath + files(processAot.flatMap { it.classesOutput })
+    destinationDirectory = layout.buildDirectory.dir("classes/java/aot")
+    javaCompiler = javaToolchains.compilerFor(javaExt.toolchain)
+    options.compilerArgs.remove("-Werror")
+    options.compilerArgs.add("-Xlint:none")
+}
+
+val springAotJar = tasks.register<Jar>("springAotJar") {
+    group = "build"
+    description = "Packages compiled Spring Boot AOT classes into a nested library jar for bootJar."
+    archiveBaseName = "spring-aot"
+    archiveVersion = project.version.toString()
+    from(compileAotJava) {
+        exclude("previous-compilation-data.bin")
+    }
+    from(processAot.flatMap { it.classesOutput })
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+}
+
 // The executable jar keeps its name: the plugin manifests of the three hosts call lib/ledger-client-hook.jar. The plain jar
 // of the module (classifier "plain", not executable) is not used by anything.
 tasks.bootJar {
     archiveFileName = hookJarName
+    classpath(springAotJar)
     // The licence and notice texts of each dependency stay in the jar under META-INF/third-party/<jar>/, as they did in the
     // hand-merged jar of the earlier versions (the dependency jars themselves are nested unchanged in BOOT-INF/lib, each with
     // its own META-INF; this copy keeps them in one place that a reader of the jar finds without opening the nested jars).
     // The dependency jars (Jackson, the Spring libraries and the project jar of ledger-attestation) are built before they are read.
-    dependsOn(configurations.runtimeClasspath)
+    dependsOn(configurations.runtimeClasspath, springAotJar)
     val licenseFiles = listOf("META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/*-LICENSE")
     configurations.runtimeClasspath.get().filter { it.name.endsWith(".jar") }.forEach { dependency ->
         from(zipTree(dependency)) {
