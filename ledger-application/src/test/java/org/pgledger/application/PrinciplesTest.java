@@ -122,7 +122,7 @@ class PrinciplesTest {
     // --------------------------------------------------------------------------------------------------- F4
 
     @Test
-    @DisplayName("SVC-PRN-03: a free task id with a number of 19 digits has no number and raises no counter; one of 18 digits raises it; neither is a NumberFormatException")
+    @DisplayName("SVC-PRN-03 (changed by VRF-026): a free task id with a number of 19 digits has no number and raises no counter; one of 18 digits is a number above the next number and is refused (ID_NUMBER_AHEAD), so it cannot stop the automatic ids; neither is a NumberFormatException")
     void prn03_taskIdNumbers(Scenario s) {
         SaveService save = s.bean(SaveService.class);
         String free = s.code() + "-T-" + "9".repeat(19);
@@ -130,9 +130,10 @@ class PrinciplesTest {
         assertThat(s.count("SELECT next_task_no FROM project WHERE id = ?", s.projectId())).isZero();
 
         String issued = s.code() + "-T-123456789012345678";
-        assertThat(save.save(Scenario.AUTHOR, s.create("task", issued, s.taskFields("max"))).id()).isEqualTo(issued);
-        assertThat(s.count("SELECT next_task_no FROM project WHERE id = ?", s.projectId()))
-                .isEqualTo(123456789012345678L);
+        Expect.failure(() -> save.save(Scenario.AUTHOR, s.create("task", issued, s.taskFields("max"))),
+                ValidationCode.ID_NUMBER_AHEAD);
+        assertThat(s.count("SELECT next_task_no FROM project WHERE id = ?", s.projectId())).isZero();
+        assertThat(s.newTask("automatic").id()).isEqualTo(s.taskId(1));
     }
 
     @ParameterizedTest(name = "a history cursor whose id is \"{0}\"")

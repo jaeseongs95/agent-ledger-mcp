@@ -2,7 +2,9 @@ package org.pgledger.application.write;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.pgledger.application.attachment.AttachmentLinks;
 import org.pgledger.application.gate.Lookup;
 import org.pgledger.application.gate.Resolution;
@@ -14,8 +16,10 @@ import org.pgledger.application.history.Snapshot;
 import org.pgledger.application.history.TaskHistory;
 import org.pgledger.application.receipt.ReceiptService;
 import org.pgledger.application.write.WriteResult.TransitionResult;
+import org.pgledger.database.repository.DefectCaseRepository;
 import org.pgledger.database.repository.DefectFixRepository;
 import org.pgledger.database.repository.HistoryRepository;
+import org.pgledger.database.repository.MergeChainRepository;
 import org.pgledger.domain.error.TrustCode;
 import org.pgledger.domain.error.TrustException;
 import org.pgledger.domain.error.ValidationException;
@@ -40,6 +44,7 @@ import org.pgledger.domain.value.DefectId;
 import org.pgledger.domain.value.EntityId;
 import org.pgledger.domain.value.Evidence;
 import org.pgledger.domain.value.ProjectId;
+import org.pgledger.domain.value.SessionKey;
 import org.pgledger.domain.value.TaskId;
 import org.pgledger.domain.value.Tokens;
 import org.springframework.stereotype.Component;
@@ -56,21 +61,23 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
 
     private final WriteGate gate;
     private final Rows rows;
-    private final CodeRules codeRules;
     private final DefectFixRepository fixes;
+    private final DefectCaseRepository cases;
+    private final MergeChainRepository mergeChain;
     private final HistoryRepository historyRows;
     private final HistoryWriter history;
     private final AttachmentLinks attachments;
     private final Clock clock;
 
-    public TransitionOperation(WriteGate gate, ReceiptService receipts, Rows rows, CodeRules codeRules,
-            DefectFixRepository fixes, HistoryRepository historyRows, HistoryWriter history,
-            AttachmentLinks attachments, Clock clock) {
+    public TransitionOperation(WriteGate gate, ReceiptService receipts, Rows rows,
+            DefectFixRepository fixes, DefectCaseRepository cases, MergeChainRepository mergeChain,
+            HistoryRepository historyRows, HistoryWriter history, AttachmentLinks attachments, Clock clock) {
         super(gate, receipts, ReceiptOperation.TRANSITION, TransitionResult.class);
         this.gate = gate;
         this.rows = rows;
-        this.codeRules = codeRules;
         this.fixes = fixes;
+        this.cases = cases;
+        this.mergeChain = mergeChain;
         this.historyRows = historyRows;
         this.history = history;
         this.attachments = attachments;
@@ -81,7 +88,7 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
     protected Lookup resolve(TransitionCommand c) {
         return Lookup.verifiable(() -> Tokens.find(c.entity(), STATEFUL).map(entity -> switch (entity) {
             case DEFECT -> DefectId.parse(c.id()).map(id -> rows.findDefect(id)
-                    .map(row -> target(entity, row.projectId(), row.status(), c, DefectStatus.values()))
+                    .map(row -> defectTarget(row, c))
                     .orElseGet(() -> Resolution.unresolved(Rows.notFound("defect", id.value()))))
                     .orElseGet(() -> Resolution.unresolved(DefectId.malformed()));
             case TASK -> TaskId.parse(c.id()).map(id -> rows.findTask(id)
@@ -95,6 +102,29 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
             case DEFECT_FIX, DEFECT_TASK, DEFECT_RELATION, CONDITION_LINK, DEFECT_CASE ->
                 throw new IllegalStateException("STATEFUL has no such entity");
         }).orElseGet(() -> Resolution.unresolved(Tokens.unknown("entity", c.entity(), STATEFUL))));
+    }
+
+    /**
+     * The targets of a move of a defect that exists: its project with the scope of the move and, for a merge, the project of
+     * the merge target with the scope that writes a defect (the same rule as the other end of a relation: the two ends are
+     * two checks, or one when both are in one project). A merge target that does not exist adds none: the move fails with
+     * NOT_FOUND where it reads the target.
+     */
+    private Resolution defectTarget(Defect row, TransitionCommand c) {
+        return Tokens.find(c.to(), DefectStatus.values()).map(to -> {
+            Target own = new Target(row.projectId(), Scope.forTransition(HistoryEntity.DEFECT, row.status(), to));
+            if (to != DefectStatus.MERGED) {
+                return Resolution.of(own);
+            }
+            return mergeTargetProject(c).map(project -> Resolution.of(own,
+                    new Target(project, HistoryEntity.DEFECT.writeScope()))).orElseGet(() -> Resolution.of(own));
+        }).orElseGet(() -> Resolution.unresolved(Tokens.unknown("to", c.to(), DefectStatus.values())));
+    }
+
+    /** The project of the merge target that the command names, when it names a defect that exists. */
+    private Optional<ProjectId> mergeTargetProject(TransitionCommand c) {
+        return Optional.ofNullable(c.mergedInto()).filter(text -> !text.isBlank()).flatMap(DefectId::parse)
+                .flatMap(rows::findDefect).map(Defect::projectId);
     }
 
     /** The target of a move of a row that exists: its project and the scope of the move, or the unknown state. */
@@ -155,7 +185,7 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
         Defect row = rows.defectForWrite(id, expected);
         recheck(ctx, HistoryEntity.DEFECT, row.projectId(), row.status(), to);
         FixHistory fixHistory = new FixHistory(fixes.findByDefectIdOrderById(id).stream()
-                .map(f -> f.recordedBy().sessionKey()).toList());
+                .map(f -> f.recordedBy().sessionKey()).toList(), reporters(row, to));
         MergeTarget target = null;
         if (to == DefectStatus.MERGED && mergedInto != null) {
             Defect targetRow = rows.defect(mergedInto);
@@ -163,7 +193,8 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
         }
         row.status().requireTransitionTo(to, evidence, fixHistory, ctx.author().sessionKey(), id, target);
         Defect after = row.transitioned(to, to == DefectStatus.MERGED ? mergedInto : null, now);
-        codeRules.checkDefect(row, after.category(), after.severity());
+        // a state change writes no code column, so no code is checked: a defect that holds the retired severity UNRATED is moved,
+        // verified or merged all the same (the rating is forced where it is written, in the edit of ledger_save)
         Defect saved = rows.saveDefect(after);
         ChangeSet changes = to == DefectStatus.MERGED
                 ? ChangeSet.empty().with("merged_into", null, mergedInto.value()) : ChangeSet.empty();
@@ -174,6 +205,29 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
                 historyId);
     }
 
+    /**
+     * The sessions that reported the defect: the one that registered it (none for a row without one) and the ones that
+     * recorded a case of it, and the same for every defect merged into it, directly or through others, because the
+     * product shows their cases as the cases of this defect ({@code ledger_defect}). The fixes are not read like that: only
+     * the fixes of the defect itself are shown as its fixes. Only a verification looks at the reporters, so only then are
+     * they read.
+     */
+    private List<SessionKey> reporters(Defect row, DefectStatus to) {
+        if (to != DefectStatus.VERIFIED) {
+            return List.of();
+        }
+        List<Defect> sources = new ArrayList<>(List.of(row));
+        mergeChain.mergedInto(row.id()).forEach(merged -> sources.add(rows.defect(merged)));
+        List<SessionKey> reporters = new ArrayList<>();
+        for (Defect source : sources) {
+            if (source.createdBy() != null) {
+                reporters.add(source.createdBy().sessionKey());
+            }
+            cases.findByDefectIdOrderById(source.id()).forEach(c -> reporters.add(c.recordedBy().sessionKey()));
+        }
+        return reporters;
+    }
+
     private TransitionResult task(WriteContext ctx, TaskId id, long expected, TaskState to, Evidence evidence,
             String attachment) {
         Instant now = clock.instant();
@@ -181,12 +235,15 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
         recheck(ctx, HistoryEntity.TASK, row.projectId(), row.state(), to);
         TaskReports reports = new TaskHistory(historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.TASK,
                 id.value())).reports();
-        if (row.ownerActorId() == null) {
-            row.state().requireTransitionTo(to, evidence, ctx.author().sessionKey(), reports);
-        } else {
-            row.state().requireTransitionTo(to, evidence, ctx.author().sessionKey(), row.ownerActorId().sessionKey(),
-                    reports);
+        // the sessions that registered the task and that own it (either may be unknown)
+        List<SessionKey> registrants = new ArrayList<>();
+        if (row.createdBy() != null) {
+            registrants.add(row.createdBy().sessionKey());
         }
+        if (row.ownerActorId() != null) {
+            registrants.add(row.ownerActorId().sessionKey());
+        }
+        row.state().requireTransitionTo(to, evidence, ctx.author().sessionKey(), registrants, reports);
         Task saved = rows.saveTask(row.transitioned(to, now));
         long historyId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.TASK, id.value(),
                 HistoryOp.TRANSITION, ChangeSet.empty()).withStates(row.state().name(), to.name())
@@ -199,7 +256,9 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
             Evidence evidence, String attachment) {
         Condition row = rows.conditionForWrite(id, expected);
         recheck(ctx, HistoryEntity.CONDITION, row.projectId(), row.state(), to);
-        row.state().requireTransitionTo(to, evidence);
+        // the session that registered the condition does not judge it (the principle of the defects and the tasks)
+        List<SessionKey> registrants = row.createdBy() == null ? List.of() : List.of(row.createdBy().sessionKey());
+        row.state().requireTransitionTo(to, evidence, ctx.author().sessionKey(), registrants);
         Condition saved = rows.saveCondition(row.transitioned(to));
         long historyId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.CONDITION, id.value(),
                 HistoryOp.TRANSITION, ChangeSet.empty()).withStates(row.state().name(), to.name())

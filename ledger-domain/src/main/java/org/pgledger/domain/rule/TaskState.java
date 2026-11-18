@@ -1,7 +1,6 @@
 package org.pgledger.domain.rule;
 
 import java.util.List;
-import java.util.Objects;
 import org.pgledger.domain.error.TransitionCode;
 import org.pgledger.domain.error.TransitionException;
 import org.pgledger.domain.value.Evidence;
@@ -17,7 +16,7 @@ public enum TaskState implements LifecycleState {
     }
 
     /**
-     * Checks a move from this state to {@code to} of a task that has no owner.
+     * Checks a move from this state to {@code to} of a task that no session registered and none owns.
      *
      * @param actor the session that makes the move
      */
@@ -26,17 +25,19 @@ public enum TaskState implements LifecycleState {
     }
 
     /**
-     * Checks a move from this state to {@code to} of a task that has an owner.
+     * Checks a move from this state to {@code to} of a task that was registered by a session or is owned by one. Whoever
+     * registered or owns the task cannot verify it, and neither can a session that reported it done.
      *
-     * @param actor the session that makes the move
-     * @param owner the session that owns the task
+     * @param actor       the session that makes the move
+     * @param registrants the sessions that registered the task and that own it (a list, never an Optional: it is empty
+     *                    when neither is known)
      */
-    public void requireTransitionTo(TaskState to, Evidence evidence, SessionKey actor, SessionKey owner,
+    public void requireTransitionTo(TaskState to, Evidence evidence, SessionKey actor, List<SessionKey> registrants,
             TaskReports reports) {
-        requireTransition(to, evidence, actor, Objects.equals(actor, owner), reports);
+        requireTransition(to, evidence, actor, registrants.contains(actor), reports);
     }
 
-    private void requireTransition(TaskState to, Evidence evidence, SessionKey actor, boolean actorOwnsTask,
+    private void requireTransition(TaskState to, Evidence evidence, SessionKey actor, boolean actorRegisteredTask,
             TaskReports reports) {
         if (this == to || to == UNKNOWN) {
             throw new TransitionException(TransitionCode.TRANSITION_INVALID, List.of(name(), to.name()));
@@ -54,7 +55,7 @@ public enum TaskState implements LifecycleState {
             if (!evidence.provided()) {
                 throw evidenceRequired(to);
             }
-            if (actorOwnsTask || reports.reportedBy(actor)) {
+            if (actorRegisteredTask || reports.reportedBy(actor)) {
                 throw new TransitionException(TransitionCode.SAME_SESSION, List.of());
             }
         }

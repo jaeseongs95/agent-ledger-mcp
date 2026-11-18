@@ -6,7 +6,11 @@ import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import java.util.List;
 import java.util.UUID;
+import java.lang.reflect.Proxy;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.LongStream;
@@ -24,6 +28,8 @@ import org.pgledger.database.support.DatabaseTest;
 import org.pgledger.database.support.LedgerTestContext;
 import org.pgledger.database.support.Parallel;
 import org.pgledger.database.support.Seed;
+import org.pgledger.domain.error.ConflictCode;
+import org.pgledger.domain.error.ConflictException;
 import org.pgledger.domain.error.LookupCode;
 import org.pgledger.domain.error.LookupException;
 import org.pgledger.domain.model.Defect;
@@ -67,14 +73,161 @@ class CounterTest {
         assertThat(ctx.tx(() -> ids.nextDefectNo(project.code()))).isEqualTo(1);
         assertThat(ctx.tx(() -> ids.nextDefectNo(project.code()))).isEqualTo(2);
         assertThat(ctx.tx(() -> ids.nextTaskNo(project.code()))).isEqualTo(1);
-        ctx.tx(() -> {
-            ids.raiseDefectNo(project.code(), 100);
-            ids.raiseDefectNo(project.code(), 50);
-            return null;
-        });
-        assertThat(ctx.tx(() -> ids.nextDefectNo(project.code()))).isEqualTo(101);
+        // an explicit number is taken only up to the next one (VRF-020, D-0022)
+        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 3))).isEmpty();
+        assertThat(ctx.tx(() -> ids.nextDefectNo(project.code()))).isEqualTo(4);
         LookupException unknown = catchThrowableOfType(LookupException.class,
                 () -> ctx.tx(() -> ids.nextDefectNo(ProjectCode.of("NOSUCH"))));
+        assertThat(unknown.code()).isEqualTo(LookupCode.NOT_FOUND);
+    }
+
+    private long defectCounter(Project project) {
+        return JdbcClient.create(ctx.pool()).sql("SELECT next_defect_no FROM project WHERE code = :code")
+                .param("code", project.code().value()).query(Long.class).single();
+    }
+
+    private long taskCounter(Project project) {
+        return JdbcClient.create(ctx.pool()).sql("SELECT next_task_no FROM project WHERE code = :code")
+                .param("code", project.code().value()).query(Long.class).single();
+    }
+
+    @Test
+    void vrf020_anExplicitDefectNumberIsTakenUpToTheNextNumberOnly() {
+        Project project = seed.project();
+        ctx.tx(() -> ids.nextDefectNo(project.code()));
+        ctx.tx(() -> ids.nextDefectNo(project.code()));
+        assertThat(defectCounter(project)).isEqualTo(2);
+        // the next number: accepted, the counter is set to it
+        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 3))).isEmpty();
+        assertThat(defectCounter(project)).isEqualTo(3);
+        // past numbers: accepted, the counter stays
+        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 2))).isEmpty();
+        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 1))).isEmpty();
+        assertThat(defectCounter(project)).isEqualTo(3);
+        // above the next number: refused with the next number, the counter stays
+        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 5))).hasValue(4);
+        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 999_999_999_999_999_999L))).hasValue(4);
+        assertThat(defectCounter(project)).isEqualTo(3);
+        // then 4 is the next number
+        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 4))).isEmpty();
+        assertThat(defectCounter(project)).isEqualTo(4);
+        assertThat(ctx.tx(() -> ids.nextDefectNo(project.code()))).isEqualTo(5);
+        // the task counter was never touched
+        assertThat(taskCounter(project)).isZero();
+        LookupException unknown = catchThrowableOfType(LookupException.class,
+                () -> ctx.tx(() -> ids.takeDefectNo(ProjectCode.of("NOSUCH"), 1)));
+        assertThat(unknown.code()).isEqualTo(LookupCode.NOT_FOUND);
+    }
+
+    @Test
+    void vrf036_aNumberTakenAndNotCommittedIsNotWaitedFor() throws InterruptedException {
+        Project project = seed.project();
+        for (int i = 0; i < 3; i++) {
+            ctx.tx(() -> ids.nextDefectNo(project.code()));
+        }
+        CountDownLatch holding = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Thread holder = new Thread(() -> ctx.tx(() -> {
+            ids.nextDefectNo(project.code());
+            holding.countDown();
+            try {
+                release.await(30, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            return null;
+        }));
+        holder.start();
+        try {
+            assertThat(holding.await(30, TimeUnit.SECONDS)).isTrue();
+            // the number 4 is taken by a transaction that has not committed: the statement does not see it and does not wait;
+            // the number after it is ahead of what is committed, and the answer names the committed next number
+            assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 5))).hasValue(4);
+        } finally {
+            release.countDown();
+            holder.join();
+        }
+        assertThat(defectCounter(project)).isEqualTo(4);
+        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 5))).isEmpty();
+        assertThat(defectCounter(project)).isEqualTo(5);
+    }
+
+    /**
+     * An allocator whose JdbcClient runs {@code afterUpdate} right after an UPDATE of the project counter, whatever it wrote:
+     * the only way to put another transaction between the two statements of a take.
+     */
+    private IdAllocator allocatorWithHook(Runnable afterUpdate) {
+        JdbcClient real = ctx.bean(JdbcClient.class);
+        JdbcClient wrapped = (JdbcClient) Proxy.newProxyInstance(JdbcClient.class.getClassLoader(),
+                new Class<?>[] {JdbcClient.class}, (proxy, method, args) -> {
+                    Object result = invoke(method, real, args);
+                    if ("sql".equals(method.getName()) && args != null && args[0] instanceof String sql
+                            && result instanceof JdbcClient.StatementSpec spec) {
+                        return hooked(spec, sql.startsWith("UPDATE project"), afterUpdate);
+                    }
+                    return result;
+                });
+        return new IdAllocator(wrapped);
+    }
+
+    private static JdbcClient.StatementSpec hooked(JdbcClient.StatementSpec spec, boolean hook, Runnable afterUpdate) {
+        return (JdbcClient.StatementSpec) Proxy.newProxyInstance(JdbcClient.class.getClassLoader(),
+                new Class<?>[] {JdbcClient.StatementSpec.class}, (proxy, method, args) -> {
+                    Object result = invoke(method, spec, args);
+                    if (result == spec) {
+                        return proxy;
+                    }
+                    if (hook && "update".equals(method.getName())) {
+                        afterUpdate.run();
+                    }
+                    return result;
+                });
+    }
+
+    private static Object invoke(java.lang.reflect.Method method, Object target, Object[] args) throws Throwable {
+        try {
+            return method.invoke(target, args);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            throw e.getCause();
+        }
+    }
+
+    @Test
+    void vrf039_aCounterThatChangesBetweenTheTwoStatementsIsAConflict() {
+        Project project = seed.project();
+        for (int i = 0; i < 3; i++) {
+            ctx.tx(() -> ids.nextDefectNo(project.code()));
+        }
+        // the update for 5 (it needs the counter at 4) writes no row; then another transaction takes 4 and commits; the read sees 4
+        IdAllocator allocator = allocatorWithHook(() -> CompletableFuture.runAsync(
+                () -> ctx.tx(() -> ids.nextDefectNo(project.code()))).join());
+        ConflictException conflict = catchThrowableOfType(ConflictException.class,
+                () -> ctx.tx(() -> allocator.takeDefectNo(project.code(), 5)));
+        assertThat(conflict).isNotNull();
+        assertThat(conflict.code()).isEqualTo(ConflictCode.ID_COUNTER_CHANGED);
+        assertThat(conflict.args()).containsExactly(project.code().value());
+        assertThat(defectCounter(project)).isEqualTo(4);
+        // sent again, the number is the next one and is accepted
+        assertThat(ctx.tx(() -> ids.takeDefectNo(project.code(), 5))).isEmpty();
+        assertThat(defectCounter(project)).isEqualTo(5);
+    }
+
+    @Test
+    void vrf021_anExplicitTaskNumberIsTakenUpToTheNextNumberOnly() {
+        Project project = seed.project();
+        ctx.tx(() -> ids.nextDefectNo(project.code()));
+        ctx.tx(() -> ids.nextTaskNo(project.code()));
+        assertThat(ctx.tx(() -> ids.takeTaskNo(project.code(), 2))).isEmpty();
+        assertThat(taskCounter(project)).isEqualTo(2);
+        assertThat(ctx.tx(() -> ids.takeTaskNo(project.code(), 1))).isEmpty();
+        assertThat(ctx.tx(() -> ids.takeTaskNo(project.code(), 4))).hasValue(3);
+        assertThat(ctx.tx(() -> ids.takeTaskNo(project.code(), 123_456_789_012_345_678L))).hasValue(3);
+        assertThat(taskCounter(project)).isEqualTo(2);
+        assertThat(ctx.tx(() -> ids.nextTaskNo(project.code()))).isEqualTo(3);
+        // the defect counter is independent of the task counter
+        assertThat(defectCounter(project)).isEqualTo(1);
+        LookupException unknown = catchThrowableOfType(LookupException.class,
+                () -> ctx.tx(() -> ids.takeTaskNo(ProjectCode.of("NOSUCH"), 1)));
         assertThat(unknown.code()).isEqualTo(LookupCode.NOT_FOUND);
     }
 

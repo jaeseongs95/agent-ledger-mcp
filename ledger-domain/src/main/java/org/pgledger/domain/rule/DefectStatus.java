@@ -46,7 +46,7 @@ public enum DefectStatus implements LifecycleState {
                 if (!fixes.hasFix()) {
                     throw new TransitionException(TransitionCode.FIX_REQUIRED, List.of(to.name()));
                 }
-                if (!fixes.hasFixOtherThan(actor)) {
+                if (fixes.involves(actor)) {
                     throw new TransitionException(TransitionCode.SAME_SESSION, List.of());
                 }
             }

@@ -44,30 +44,28 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
 
 /**
- * Records a fix commit (or new CI data of a known commit). The defect row is read first and, when the fix changes it, written
- * first with the conditional save of its version (before any counter is taken), so a race with another write of the defect
+ * Records a fix commit (or new CI data of a known commit). The defect row is read first and written
+ * first (by every record, also when only its version and its time of change move) with the conditional save of its version (before any counter is taken), so a race with another write of the defect
  * is decided by that statement (VERSION_CONFLICT) and the state check and the fix insert see the same defect (no write
  * skew); an OPEN defect moves to SOURCE_FIXED in the same
  * transaction unless told not to, and recording a new fix commit makes the recording session the owner.
- * Recording a fix on a MERGED defect is allowed.
+ * Recording a fix on a MERGED defect is allowed; on a VERIFIED defect it is refused (VERIFIED_DEFECT, {@link Defect#requireNotVerified}).
  */
 @Component
 public class RecordFixOperation extends WriteOperation<RecordFixCommand, RecordFixResult> {
 
     private final Rows rows;
-    private final CodeRules codeRules;
     private final DefectFixRepository fixes;
     private final IdAllocator ids;
     private final HistoryWriter history;
     private final AttachmentLinks attachments;
     private final Clock clock;
 
-    public RecordFixOperation(WriteGate gate, ReceiptService receipts, Rows rows, CodeRules codeRules,
+    public RecordFixOperation(WriteGate gate, ReceiptService receipts, Rows rows,
             DefectFixRepository fixes, IdAllocator ids, HistoryWriter history, AttachmentLinks attachments,
             Clock clock) {
         super(gate, receipts, ReceiptOperation.RECORD_FIX, RecordFixResult.class);
         this.rows = rows;
-        this.codeRules = codeRules;
         this.fixes = fixes;
         this.ids = ids;
         this.history = history;
@@ -116,6 +114,8 @@ public class RecordFixOperation extends WriteOperation<RecordFixCommand, RecordF
         attachments.requireOwnedBy(attachment, ctx.author());
         Instant now = clock.instant();
         Defect defect = rows.defectForWrite(defectId, null);
+        // a VERIFIED defect is changed by no fix (nor by new CI data of one): a reviewer reopens it first
+        defect.requireNotVerified();
         String fixEntityId = defectId.value() + "@" + commit.value();
         ActorId author = ctx.author();
         Evidence evidence = Evidence.of(ciRef, null);
@@ -129,22 +129,30 @@ public class RecordFixOperation extends WriteOperation<RecordFixCommand, RecordF
         // The row of the defect is written first, before any counter (an id, a history row) is taken: it is the statement
         // that decides a race with another write of the same defect (VERSION_CONFLICT), and every write of a defect takes
         // its row before the counters, so two writes cannot wait for each other (principle 4.4: no lock statement).
+        // What new CI data of a known commit changes is checked before anything is written (a refused amendment leaves nothing).
+        ChangeSet amended = known.isPresent() ? amendedChanges(known.get(), ciRef, conclusion, completedAt) : null;
         HistoryOp defectOp = null;
         if (defect.status() == DefectStatus.OPEN && mark) {
+            // a fix changes no code field (category, severity), so no code is checked: a defect that holds a retired code
+            // (the UNRATED of an import) is fixed all the same
             Defect after = defect.transitioned(DefectStatus.SOURCE_FIXED, null, now).ownedBy(nextOwner, now);
-            codeRules.checkDefect(defect, after.category(), after.severity());
             version = rows.saveDefect(after).version();
             defectOp = HistoryOp.TRANSITION;
             status = DefectStatus.SOURCE_FIXED;
-        } else if (!Objects.equals(oldOwner, newOwner)) {
+        } else {
+            // Also when the owner and the status stay the row is saved (updated_at and the version change): a concurrent
+            // transition of the defect, a verification above all, is decided by this conditional statement, so no fix row is
+            // left on a defect that was verified in between. Only a change of the owner is a change that the history records
+            // (no history row, so no before_data, for the bookkeeping columns alone: it would be an empty edit row per fix).
             Defect after = defect.ownedBy(nextOwner, now);
-            codeRules.checkDefect(defect, after.category(), after.severity());
             version = rows.saveDefect(after).version();
-            defectOp = HistoryOp.EDIT;
+            if (!Objects.equals(oldOwner, newOwner)) {
+                defectOp = HistoryOp.EDIT;
+            }
         }
         FixWrite fix = known
-                .map(row -> amendFix(ctx, row, fixEntityId, ciRef, conclusion, completedAt, evidence,
-                        amendedChanges(row, ciRef, conclusion, completedAt), attachment))
+                .map(row -> amendFix(ctx, row, fixEntityId, ciRef, conclusion, completedAt, evidence, amended,
+                        attachment))
                 .orElseGet(() -> recordFix(ctx, defectId, fixEntityId, repo, commit, branch, ciRef, conclusion,
                         completedAt, evidence, now, attachment));
         long fixId = fix.fixId();

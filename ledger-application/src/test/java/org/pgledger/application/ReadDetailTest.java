@@ -35,6 +35,7 @@ import org.pgledger.database.repository.Counter;
 import org.pgledger.database.repository.HistoryRepository;
 import org.pgledger.database.repository.IdAllocator;
 import org.pgledger.domain.error.LookupCode;
+import org.pgledger.domain.error.TransitionCode;
 import org.pgledger.domain.error.ValidationCode;
 import org.pgledger.domain.model.HistoryEntry;
 import org.pgledger.domain.rule.ActorAssurance;
@@ -250,10 +251,13 @@ class ReadDetailTest {
         assertThat(fixed.ownerActorId()).isEqualTo(Scenario.REVIEWER);
         assertThat(fixed.fixedBy()).isEqualTo(Scenario.REVIEWER);
         assertThat(fixed.fixedAt()).isNotNull();
-        s.bean(ReviewService.class).review(Scenario.AUTHOR, s.move("defect", d.id(), 3, "VERIFIED",
-                Scenario.EVIDENCE));
+        // VRF-013 (D-0029): the session that registered and fixed the defect cannot verify it, an independent one does
+        Expect.failure(() -> s.bean(ReviewService.class).review(Scenario.AUTHOR, s.move("defect", d.id(), 3, "VERIFIED",
+                Scenario.EVIDENCE)), TransitionCode.SAME_SESSION);
+        String verifier = s.actorWith("verify");
+        s.bean(ReviewService.class).review(verifier, s.move("defect", d.id(), 3, "VERIFIED", Scenario.EVIDENCE));
         DefectDetail verified = s.bean(DetailService.class).defect(d.id());
-        assertThat(verified.lastChange().author()).isEqualTo(Scenario.AUTHOR);
+        assertThat(verified.lastChange().author()).isEqualTo(verifier);
         assertThat(verified.createdBy()).isEqualTo(Scenario.AUTHOR);
         assertThat(verified.ownerActorId()).isEqualTo(Scenario.REVIEWER);
     }

@@ -98,12 +98,20 @@ public class LinkOperation extends WriteOperation<LinkCommand, LinkResult> {
         return ValidationException.invalid("kind", ValidationReason.UNKNOWN_VALUE, allowed, String.valueOf(token));
     }
 
+    /**
+     * What a link or an unlink touches: the project of each end, with the scope that the kind needs (the same scope for both
+     * ends, as for a relation and as for a move of a task to another project). The gate holds the targets as a set, so two ends
+     * in one project are one check. The unlink is the same operation and passes this lookup too.
+     */
     @Override
     protected Lookup resolve(LinkCommand c) {
         return Lookup.afterActor(() -> switch (knownKind(c.kind())) {
-            case CONDITION_TASK, CONDITION_DEFECT -> List.of(new Target(
-                    rows.condition(ConditionId.of(c.a())).projectId(), Scope.TASK));
-            case DEFECT_TASK -> List.of(new Target(rows.defect(DefectId.of(c.a())).projectId(), Scope.DEFECT));
+            case CONDITION_TASK -> List.of(new Target(rows.condition(ConditionId.of(c.a())).projectId(), Scope.TASK),
+                    new Target(rows.task(TaskId.of(c.b())).projectId(), Scope.TASK));
+            case CONDITION_DEFECT -> List.of(new Target(rows.condition(ConditionId.of(c.a())).projectId(), Scope.TASK),
+                    new Target(rows.defect(DefectId.of(c.b())).projectId(), Scope.TASK));
+            case DEFECT_TASK -> List.of(new Target(rows.defect(DefectId.of(c.a())).projectId(), Scope.DEFECT),
+                    new Target(rows.task(TaskId.of(c.b())).projectId(), Scope.DEFECT));
             case RELATION -> List.of(new Target(rows.defect(DefectId.of(c.a())).projectId(), Scope.DEFECT),
                     new Target(rows.defect(DefectId.of(c.b())).projectId(), Scope.DEFECT));
         });

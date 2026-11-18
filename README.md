@@ -30,16 +30,24 @@ and no argument of an earlier version is accepted next to the new ones); what ch
   which the host hook of the client fills in. Models must omit it. The author is `<vendor>:<session-id>`, for example
   `claude:1f2e3d4c` or `codex:9a8b7c6d`; the owner of the ledger is `user:owner`. The author is the attestation and nothing else: a tool has no `author_id` argument.
 - **Writes need a live grant.** The owner grants an author a scope on a project with `ledger-cli grant` (or on the grants page of
-  the admin web). The scopes are `defect`, `task`, `fix` and `verify`. A write without a matching grant is refused.
+  the admin web). The scopes are `defect`, `task`, `fix` and `verify`. A write without a matching grant is refused. A write that
+  touches rows of two projects (a task or a condition moved to another project, a link, a merge into a defect of another project) needs the
+  matching grant on both projects.
 - **Verification is separate.** `VERIFIED`, `MET` and `NOT_MET` are set only through the reviewer tools `ledger_review` and
   `ledger_review_correct`, which need the scope `verify`. A defect is verified only with an evidence link and at least one
-  recorded fix from another session than the verifier; the verification and rework requests go to the session that recorded
-  the fix (`fixed_by`), not to the one that registered the defect (`created_by`). CI results are optional metadata.
+  recorded fix, and only by a session that did not register the defect, did not record a case of it and did not record a fix of
+  it (the cases and the registrants of the defects merged into it count as its own); a task is verified only by a session that
+  did not register it, does not own it and never reported it done; a condition is set `MET` or `NOT_MET` only by a session
+  that did not register it (otherwise `SAME_SESSION`). The verification and rework requests go to the session that recorded the fix (`fixed_by`), not to the one
+  that registered the defect (`created_by`). CI results are optional metadata. A `VERIFIED` defect takes no `ledger_record_fix`
+  and no edit by `ledger_save` (`VERIFIED_DEFECT`): a reviewer reopens it first with `ledger_review`.
 - **History is append-only.** Every write adds a history row: when, author, channel, operation, state change and reason. The
   application has no path that updates or deletes a history row, and the grant template of the database module (`migrate` applies it to
   the application account) gives that account no `UPDATE` or `DELETE` on it. A mistake is marked with a `CORRECT` row. An operation that changes an
   existing row also stores the full row as it was before the change (`before_data`, returned by `ledger_history` with
-  `include_before`).
+  `include_before`). One exception: a `ledger_record_fix` that changes nothing of the defect but its `updated_at` and version (the
+  owner and the status stay) writes no history row of the defect and so stores no `before_data` of it; the fix row is its
+  history, and a row for the bookkeeping columns alone would put an empty edit row on the history of the defect for every fix.
 - **Retries are safe.** Every write tool takes a required `operationKey` (1 to 128 characters, for example a UUID). Repeating the same
   request with the same key returns the stored result and writes nothing twice. The keys belong to the author (as the keys of
   `artifact-begin` do): another author may use the same key for a write of its own. A key of the author that is already bound to
@@ -53,13 +61,18 @@ and no argument of an earlier version is accepted next to the new ones); what ch
 - **Projects and ids.** A defect belongs to a project and gets the id `<CODE>-D-0001`, `<CODE>-D-0002`, and so on. A task without
   an id gets `<CODE>-T-0001`, and so on. The server assigns them. An id that a caller chooses for a task or a condition is 1 to 120
   characters without whitespace, in any case and with any characters (`:`, `/`, `#`, `.`, `_`, `-` and so on); an id that equals an
-  existing one when the case is ignored is refused (`DUPLICATE_KEY`), and an id is always compared exactly.
+  existing one when the case is ignored is refused (`DUPLICATE_KEY`), and an id is always compared exactly. A defect id that a caller
+  chooses, and a task id in the form `<CODE>-T-0001` that a caller chooses, must have a number that is not above the next number of
+  the project: a free number below it is accepted, and a number above it is refused with `ID_NUMBER_AHEAD`, whose message names the
+  next id, so that one id cannot stop the numbering by the server (when another request takes the number while this one runs,
+  `ID_COUNTER_CHANGED` tells you to send the request again). Such an id is written as the server writes it (a number of at
+  least 1, zero padded to 4 digits and not otherwise): `<CODE>-D-00002` and number 0 are refused (`VALIDATION_FAILED` at `id`).
 - **One defect, one root cause, many observed cases.** Each observation of a defect (symptom, log, user report) is a case under it
   (`ledger_record_case`). A merged defect (`MERGED`, `merged_into`) keeps its cases; `ledger_defect` shows them under the defect it
   was merged into, and a `MERGED` defect takes no new cases.
 - **Common codes.** Defect category, defect severity and relation kind are the three groups `DEFECT_CATEGORY`, `DEFECT_SEVERITY` and
   `RELATION_KIND`, with Korean and English names. The active values are part of the tool definitions. A retired code stays on
-  existing rows and is refused when newly assigned. A severity is required on every defect. A relation kind has a direction, which is
+  existing rows and is refused when newly assigned. A severity is required on every defect. Only a write that stores the category or the severity (the create and the edit of `ledger_save`) checks the common codes; a fix and a state change do not, so a defect that still holds the retired `UNRATED` can be fixed, moved and verified, and is rated by an edit. A relation kind has a direction, which is
   part of its code: `caused_by` (a is caused by b) and `blocks` (a blocks b) are directed, keep `a` and `b` in the order the caller gave
   them, and so (a, b) and (b, a) are two relations; `same_site`, `same_family`, `same_fix_unit` and `regression_of` have no direction
   and are one relation in either order. A kind that is added with `code-set` or in the admin console declares its direction as well
@@ -97,14 +110,14 @@ Write tools (a login, an attestation and a live grant are needed). Every write t
 | Tool | Channel | What |
 |---|---|---|
 | `ledger_whoami` | author | is this author well formed, which grants does it hold (read only) |
-| `ledger_save` | author | create or edit a defect, task or condition |
+| `ledger_save` | author | create or edit a defect, task or condition (a `VERIFIED` defect is not edited) |
 | `ledger_transition` | author | change state (`OPEN`, `SOURCE_FIXED`, `MERGED`, `ACTIVE`, `REPORTED_DONE`, and so on) |
-| `ledger_record_fix` | author | record a fix commit and optional CI metadata; the fixing session becomes `fixed_by` and an `OPEN` defect becomes `SOURCE_FIXED` |
+| `ledger_record_fix` | author | record a fix commit and optional CI metadata; the fixing session becomes `fixed_by` and an `OPEN` defect becomes `SOURCE_FIXED`; a `VERIFIED` defect is refused until a reviewer reopens it |
 | `ledger_record_case` | author | add an observed case under a defect (a `MERGED` defect is refused and names its target) |
 | `ledger_link` | author | link defects, tasks and conditions, or remove a link; the relation kinds `caused_by` and `blocks` are directed (`a` is the subject, an unlink names the ends in the order they were linked) |
 | `ledger_correct` | author | mark a history row as wrong |
 | `ledger_batch` | author | up to 200 of the operations above in one transaction: all commit or none; one `operationKey` for the batch, the operations carry none |
-| `ledger_review` | reviewer | `VERIFIED`, `MET`, `NOT_MET`, and reopening them; the evidence link is required |
+| `ledger_review` | reviewer | `VERIFIED`, `MET`, `NOT_MET`, and reopening them (a `VERIFIED` defect that is reopened can be fixed and edited again); the evidence link is required |
 | `ledger_review_correct` | reviewer | mark a verification row as wrong |
 
 Attachment tools (a login, an attestation and at least one live grant of the author; see Attachments below):

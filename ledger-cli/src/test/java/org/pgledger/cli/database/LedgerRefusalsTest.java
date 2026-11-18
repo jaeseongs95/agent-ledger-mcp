@@ -122,6 +122,23 @@ class LedgerRefusalsTest {
     }
 
     @Test
+    @DisplayName("VRF-051: every conflict code is named by the translation; ID_COUNTER_CHANGED is LEDGER_REFUSED with its code")
+    void everyConflictCodeIsTranslated() {
+        for (Context context : Context.values()) {
+            assertRefusedAs(new ConflictException(ConflictCode.ID_COUNTER_CHANGED, List.of("E2E")), context,
+                    ErrorCode.LEDGER_REFUSED, "ID_COUNTER_CHANGED");
+            for (ConflictCode code : ConflictCode.values()) {
+                if (code == ConflictCode.KEY_REPLACEMENT_NOT_CONFIRMED || code == ConflictCode.SESSION_KEY_REQUIRED
+                        || code == ConflictCode.DUPLICATE_KEY) {
+                    continue; // these have a meaning of their own in some contexts (and the arguments it needs)
+                }
+                assertRefusedAs(new ConflictException(code, List.of("a", "b", "c", "d")), context,
+                        ErrorCode.LEDGER_REFUSED, code.token());
+            }
+        }
+    }
+
+    @Test
     @DisplayName("CLI-PRN-15 SESSION_KEY_REQUIRED of the grant service is NO_SESSION_KEY with the author, in every context")
     void sessionKeyRequired() {
         for (Context context : Context.values()) {

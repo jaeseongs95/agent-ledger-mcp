@@ -1,6 +1,9 @@
 package org.pgledger.database.repository;
 
 import java.util.List;
+import java.util.OptionalLong;
+import org.pgledger.domain.error.ConflictCode;
+import org.pgledger.domain.error.ConflictException;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.domain.error.LookupCode;
@@ -39,16 +42,53 @@ public class IdAllocator {
                 .query(Long.class).single();
     }
 
-    /** After an explicit defect id was used: the counter never lags behind the highest number in use. */
-    public void raiseDefectNo(ProjectCode code, long atLeast) {
-        jdbc.sql("UPDATE project SET next_defect_no = :n WHERE code = :code AND next_defect_no < :n")
-                .param("n", atLeast).param("code", code.value()).update();
+    /**
+     * Takes the number of an explicit defect id. The column holds the last number that was issued, so the next number is the
+     * column plus one: that number is taken (the column is set to it, by the one conditional UPDATE that decides it) and a
+     * number at or below the column is a past number that nothing issued any more (a free gap), which is accepted and leaves
+     * the column alone. A number above the next one is refused, so one explicit id cannot push the counter out of reach of
+     * the ids that the server issues.
+     *
+     * @return empty when the number is accepted; otherwise the next number of the project, which the caller names in its refusal
+     * @throws LookupException NOT_FOUND when the project does not exist
+     */
+    public OptionalLong takeDefectNo(ProjectCode code, long number) {
+        return take("UPDATE project SET next_defect_no = :n WHERE code = :code AND next_defect_no = :previous",
+                "SELECT next_defect_no FROM project WHERE code = :code", code, number);
     }
 
-    /** After an explicit task id was used: the counter never lags behind the highest number in use. */
-    public void raiseTaskNo(ProjectCode code, long atLeast) {
-        jdbc.sql("UPDATE project SET next_task_no = :n WHERE code = :code AND next_task_no < :n")
-                .param("n", atLeast).param("code", code.value()).update();
+    /** As {@link #takeDefectNo} for the number of an explicit task id of the form the server issues. */
+    public OptionalLong takeTaskNo(ProjectCode code, long number) {
+        return take("UPDATE project SET next_task_no = :n WHERE code = :code AND next_task_no = :previous",
+                "SELECT next_task_no FROM project WHERE code = :code", code, number);
+    }
+
+    /**
+     * The update writes only for the next number. The row it sees decides: when that row does not satisfy the condition the
+     * statement writes nothing and does not wait for a transaction that holds the row (a number that such a transaction took
+     * and has not committed is not seen), and when it does, the statement waits for the lock of a concurrent writer and is
+     * decided again against what that writer committed. When it wrote no row the column is read. The column only grows
+     * (what is committed), so a number at or below the value read is past for good and is accepted; a number above the next
+     * one is ahead, and the next number named is the committed counter plus one, true when it was read (a transaction that
+     * has not committed may have taken it, and the same request sent again after its commit is then decided anew). A value
+     * read that is exactly the number minus one means that the counter changed between the statement and the read: the
+     * request is neither accepted nor "ahead", and the caller is told to send it again (ID_COUNTER_CHANGED, nothing is
+     * retried here).
+     *
+     * @throws ConflictException ID_COUNTER_CHANGED when the counter changed while the call ran
+     */
+    private OptionalLong take(String update, String select, ProjectCode code, long number) {
+        int rows = jdbc.sql(update).param("n", number).param("previous", number - 1).param("code", code.value())
+                .update();
+        if (rows == 1) {
+            return OptionalLong.empty();
+        }
+        long last = jdbc.sql(select).param("code", code.value()).query(Long.class).optional()
+                .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND, List.of("project", code.value())));
+        if (number == last + 1) {
+            throw new ConflictException(ConflictCode.ID_COUNTER_CHANGED, List.of(code.value()));
+        }
+        return number <= last ? OptionalLong.empty() : OptionalLong.of(last + 1);
     }
 
     /** The next number of a surrogate key sequence (history, fix, case, grant). */

@@ -1,6 +1,7 @@
 package org.pgledger.domain.model;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import org.springframework.data.annotation.CreatedBy;
 import org.springframework.data.annotation.Id;
@@ -8,6 +9,8 @@ import org.springframework.data.annotation.ReadOnlyProperty;
 import org.springframework.data.annotation.Version;
 import org.springframework.data.relational.core.mapping.InsertOnlyProperty;
 import org.springframework.data.relational.core.mapping.Table;
+import org.pgledger.domain.error.TransitionCode;
+import org.pgledger.domain.error.TransitionException;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.rule.DefectStatus;
@@ -37,6 +40,18 @@ public record Defect(@Id DefectId id, ProjectId projectId, String title, CodeVal
         }
         if (Objects.equals(id, mergedInto)) {
             throw ValidationException.invalid("merged_into", ValidationReason.MUST_NOT_BE_THE_DEFECT_ITSELF);
+        }
+    }
+
+    /**
+     * The one rule of the paths that change the content of a defect ({@code record_fix}, {@code save}): a VERIFIED defect
+     * is not changed by them; a reviewer reopens it first ({@code ledger_review}). Any other status passes.
+     *
+     * @throws TransitionException VERIFIED_DEFECT, with the id of the defect
+     */
+    public void requireNotVerified() {
+        if (status == DefectStatus.VERIFIED) {
+            throw new TransitionException(TransitionCode.VERIFIED_DEFECT, List.of(id.value()));
         }
     }
 

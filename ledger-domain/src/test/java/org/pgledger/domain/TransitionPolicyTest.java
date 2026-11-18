@@ -30,8 +30,8 @@ class TransitionPolicyTest {
     private static final AuthorId OTHER = AuthorId.of("codex:other");
     private static final DefectId SELF = DefectId.of("E2E-D-0001");
     private static final DefectId LIVE = DefectId.of("E2E-D-0002");
-    private static final FixHistory OTHER_FIX = new FixHistory(List.of(OTHER.sessionKey()));
-    private static final FixHistory OWN_FIX = new FixHistory(List.of(ME.sessionKey()));
+    private static final FixHistory OTHER_FIX = new FixHistory(List.of(OTHER.sessionKey()), List.of());
+    private static final FixHistory OWN_FIX = new FixHistory(List.of(ME.sessionKey()), List.of());
 
     private static void defect(DefectStatus from, DefectStatus to, Evidence evidence, FixHistory fixes,
             MergeTarget target) {
@@ -85,9 +85,54 @@ class TransitionPolicyTest {
                 () -> defect(sf, DefectStatus.VERIFIED, EVIDENCE, FixHistory.NONE, null));
         Expect.failsWith(TransitionCode.SAME_SESSION, () -> defect(sf, DefectStatus.VERIFIED, EVIDENCE, OWN_FIX, null));
         assertThatCode(() -> defect(sf, DefectStatus.VERIFIED, EVIDENCE, OTHER_FIX, null)).doesNotThrowAnyException();
-        // a mix of own and independent fixes is enough
-        FixHistory mixed = new FixHistory(List.of(ME.sessionKey(), OTHER.sessionKey()));
-        assertThatCode(() -> defect(sf, DefectStatus.VERIFIED, EVIDENCE, mixed, null)).doesNotThrowAnyException();
+        // VRF-010 (D-0029): a mix of own and independent fixes is refused, the verifier differs from every fixer
+        FixHistory mixed = new FixHistory(List.of(ME.sessionKey(), OTHER.sessionKey()), List.of());
+        Expect.failsWith(TransitionCode.SAME_SESSION, () -> defect(sf, DefectStatus.VERIFIED, EVIDENCE, mixed, null));
+        FixHistory mixedTheOtherWay = new FixHistory(List.of(OTHER.sessionKey(), ME.sessionKey()), List.of());
+        Expect.failsWith(TransitionCode.SAME_SESSION,
+                () -> defect(sf, DefectStatus.VERIFIED, EVIDENCE, mixedTheOtherWay, null));
+    }
+
+    @Test
+    void vrf011_theVerifierIsNoReporterEither() {
+        DefectStatus sf = DefectStatus.SOURCE_FIXED;
+        AuthorId registrar = AuthorId.of("claude:registrar");
+        AuthorId observer = AuthorId.of("codex:observer");
+        AuthorId fixer = AuthorId.of("codex:fixer");
+        AuthorId independent = AuthorId.of("claude:independent");
+        FixHistory facts = new FixHistory(List.of(fixer.sessionKey()),
+                List.of(registrar.sessionKey(), observer.sessionKey()));
+        for (AuthorId participant : List.of(registrar, observer, fixer)) {
+            Expect.failsWith(TransitionCode.SAME_SESSION, () -> sf.requireTransitionTo(DefectStatus.VERIFIED, EVIDENCE,
+                    facts, participant.sessionKey(), SELF, null));
+        }
+        assertThatCode(() -> sf.requireTransitionTo(DefectStatus.VERIFIED, EVIDENCE, facts,
+                independent.sessionKey(), SELF, null)).doesNotThrowAnyException();
+        // a defect row without a registering session adds nobody to the reporters
+        FixHistory noReporter = new FixHistory(List.of(fixer.sessionKey()), List.of());
+        assertThatCode(() -> sf.requireTransitionTo(DefectStatus.VERIFIED, EVIDENCE, noReporter,
+                registrar.sessionKey(), SELF, null)).doesNotThrowAnyException();
+        // the order of the checks is the one of DOM-012: evidence, then the fix, then the session
+        Expect.failsWith(TransitionCode.EVIDENCE_REQUIRED, () -> sf.requireTransitionTo(DefectStatus.VERIFIED,
+                Evidence.NONE, facts, registrar.sessionKey(), SELF, null));
+        Expect.failsWith(TransitionCode.FIX_REQUIRED, () -> sf.requireTransitionTo(DefectStatus.VERIFIED, EVIDENCE,
+                new FixHistory(List.of(), List.of(registrar.sessionKey())), registrar.sessionKey(), SELF, null));
+        assertThat(FixHistory.NONE.hasFix()).isFalse();
+        assertThat(FixHistory.NONE.involves(registrar.sessionKey())).isFalse();
+        assertThat(facts.involves(observer.sessionKey())).isTrue();
+    }
+
+    @Test
+    void vrf001_onlyAVerifiedDefectRefusesAContentChange() {
+        for (DefectStatus status : DefectStatus.values()) {
+            Defect defect = DomainFixtures.defect(status, status == DefectStatus.MERGED ? LIVE : null);
+            if (status == DefectStatus.VERIFIED) {
+                assertThat(Expect.failsWith(TransitionCode.VERIFIED_DEFECT, defect::requireNotVerified).args())
+                        .containsExactly(defect.id().value());
+            } else {
+                assertThatCode(defect::requireNotVerified).as(status.name()).doesNotThrowAnyException();
+            }
+        }
     }
 
     @Test
@@ -152,7 +197,7 @@ class TransitionPolicyTest {
         if (owner == null) {
             from.requireTransitionTo(to, evidence, actor.sessionKey(), reports);
         } else {
-            from.requireTransitionTo(to, evidence, actor.sessionKey(), owner.sessionKey(), reports);
+            from.requireTransitionTo(to, evidence, actor.sessionKey(), List.of(owner.sessionKey()), reports);
         }
     }
 
@@ -161,14 +206,50 @@ class TransitionPolicyTest {
         TaskReports none = new TaskReports(List.of());
         // the owner overload takes a session, never an Optional; a different owner changes nothing
         assertThatCode(() -> TaskState.REPORTED_DONE.requireTransitionTo(TaskState.VERIFIED, EVIDENCE,
-                OTHER.sessionKey(), ME.sessionKey(), none)).doesNotThrowAnyException();
+                OTHER.sessionKey(), List.of(ME.sessionKey()), none)).doesNotThrowAnyException();
         assertThatCode(() -> TaskState.REPORTED_DONE.requireTransitionTo(TaskState.VERIFIED, EVIDENCE,
                 OTHER.sessionKey(), none)).doesNotThrowAnyException();
-        Expect.failsWith(TransitionCode.SAME_SESSION, () -> TaskState.REPORTED_DONE
-                .requireTransitionTo(TaskState.VERIFIED, EVIDENCE, OTHER.sessionKey(), OTHER.sessionKey(), none));
+        assertThatCode(() -> TaskState.REPORTED_DONE.requireTransitionTo(TaskState.VERIFIED, EVIDENCE,
+                OTHER.sessionKey(), List.of(), none)).doesNotThrowAnyException();
+        Expect.failsWith(TransitionCode.SAME_SESSION, () -> TaskState.REPORTED_DONE.requireTransitionTo(
+                TaskState.VERIFIED, EVIDENCE, OTHER.sessionKey(), List.of(OTHER.sessionKey()), none));
         // the same session key is the same session
         Expect.failsWith(TransitionCode.SAME_SESSION, () -> TaskState.REPORTED_DONE.requireTransitionTo(
-                TaskState.VERIFIED, EVIDENCE, OTHER.sessionKey(), new SessionKey(OTHER.value()), none));
+                TaskState.VERIFIED, EVIDENCE, OTHER.sessionKey(), List.of(new SessionKey(OTHER.value())), none));
+    }
+
+    @Test
+    void vrf014_theVerifierIsNoRegistrantAndNoReporterOfTheTaskAtAnyTime() {
+        AuthorId creator = AuthorId.of("claude:creator");
+        AuthorId owner = AuthorId.of("codex:owner");
+        AuthorId first = AuthorId.of("claude:first");
+        AuthorId second = AuthorId.of("codex:second");
+        AuthorId reviewer = AuthorId.of("codex:reviewer");
+        AuthorId independent = AuthorId.of("claude:independent");
+        // first reports, the reviewer verifies and sends the task back (no report), second reports again
+        TaskReports history = new TaskReports(List.of(
+                new TaskTransition(TaskState.ACTIVE, TaskState.REPORTED_DONE, first),
+                new TaskTransition(TaskState.REPORTED_DONE, TaskState.VERIFIED, reviewer),
+                new TaskTransition(TaskState.VERIFIED, TaskState.REPORTED_DONE, reviewer),
+                new TaskTransition(TaskState.ACTIVE, TaskState.REPORTED_DONE, second)));
+        List<SessionKey> registrants = List.of(creator.sessionKey(), owner.sessionKey());
+        for (AuthorId refused : List.of(creator, owner, first, second)) {
+            Expect.failsWith(TransitionCode.SAME_SESSION, () -> TaskState.REPORTED_DONE.requireTransitionTo(
+                    TaskState.VERIFIED, EVIDENCE, refused.sessionKey(), registrants, history));
+        }
+        // the reviewer only sent the task back: that is no report
+        for (AuthorId allowed : List.of(reviewer, independent)) {
+            assertThatCode(() -> TaskState.REPORTED_DONE.requireTransitionTo(TaskState.VERIFIED, EVIDENCE,
+                    allowed.sessionKey(), registrants, history)).doesNotThrowAnyException();
+        }
+        // nobody is known: nothing refuses
+        assertThatCode(() -> TaskState.REPORTED_DONE.requireTransitionTo(TaskState.VERIFIED, EVIDENCE,
+                creator.sessionKey(), List.of(), new TaskReports(List.of()))).doesNotThrowAnyException();
+        // reportedBy answers for a report at any time; the latest reporter stays the one of the last report
+        assertThat(history.reportedBy(first.sessionKey())).isTrue();
+        assertThat(history.reportedBy(second.sessionKey())).isTrue();
+        assertThat(history.reportedBy(reviewer.sessionKey())).isFalse();
+        assertThat(history.latestReporter()).contains(second.sessionKey());
     }
 
     @Test
@@ -223,14 +304,34 @@ class TransitionPolicyTest {
     @Test
     void dom019_conditionPolicy() {
         for (ConditionState to : List.of(ConditionState.MET, ConditionState.NOT_MET)) {
-            Expect.failsWith(TransitionCode.EVIDENCE_REQUIRED,
-                    () -> ConditionState.UNKNOWN.requireTransitionTo(to, Evidence.NONE));
-            assertThatCode(() -> ConditionState.UNKNOWN.requireTransitionTo(to, EVIDENCE)).doesNotThrowAnyException();
+            Expect.failsWith(TransitionCode.EVIDENCE_REQUIRED, () -> ConditionState.UNKNOWN.requireTransitionTo(to,
+                    Evidence.NONE, ME.sessionKey(), List.of()));
+            assertThatCode(() -> ConditionState.UNKNOWN.requireTransitionTo(to, EVIDENCE, ME.sessionKey(), List.of()))
+                    .doesNotThrowAnyException();
         }
         // leaving MET or NOT_MET for UNKNOWN needs no evidence (unchanged from the old ledger by design)
-        assertThatCode(() -> ConditionState.MET.requireTransitionTo(ConditionState.UNKNOWN, Evidence.NONE))
-                .doesNotThrowAnyException();
+        assertThatCode(() -> ConditionState.MET.requireTransitionTo(ConditionState.UNKNOWN, Evidence.NONE,
+                ME.sessionKey(), List.of())).doesNotThrowAnyException();
         Expect.failsWith(TransitionCode.TRANSITION_INVALID,
-                () -> ConditionState.MET.requireTransitionTo(ConditionState.MET, EVIDENCE));
+                () -> ConditionState.MET.requireTransitionTo(ConditionState.MET, EVIDENCE, ME.sessionKey(), List.of()));
+    }
+
+    @Test
+    void vrf017_theSessionThatRegisteredAConditionDoesNotJudgeIt() {
+        List<SessionKey> registrants = List.of(ME.sessionKey());
+        for (ConditionState to : List.of(ConditionState.MET, ConditionState.NOT_MET)) {
+            Expect.failsWith(TransitionCode.SAME_SESSION, () -> ConditionState.UNKNOWN.requireTransitionTo(to,
+                    EVIDENCE, ME.sessionKey(), registrants));
+            assertThatCode(() -> ConditionState.UNKNOWN.requireTransitionTo(to, EVIDENCE, OTHER.sessionKey(),
+                    registrants)).doesNotThrowAnyException();
+            assertThatCode(() -> ConditionState.UNKNOWN.requireTransitionTo(to, EVIDENCE, ME.sessionKey(), List.of()))
+                    .doesNotThrowAnyException();
+        }
+        // leaving MET for UNKNOWN is no judgement: no check of the session
+        assertThatCode(() -> ConditionState.MET.requireTransitionTo(ConditionState.UNKNOWN, Evidence.NONE,
+                ME.sessionKey(), registrants)).doesNotThrowAnyException();
+        // the order is the one of the other states: evidence first
+        Expect.failsWith(TransitionCode.EVIDENCE_REQUIRED, () -> ConditionState.UNKNOWN.requireTransitionTo(
+                ConditionState.MET, Evidence.NONE, ME.sessionKey(), registrants));
     }
 }

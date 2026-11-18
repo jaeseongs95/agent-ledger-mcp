@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Optional;
 import org.pgledger.domain.value.SessionKey;
 
-/** The transitions of one task, oldest first; tells who reported it done last. */
+/** The transitions of one task, oldest first; tells who reported it done last and whether a session reported it at all. */
 public record TaskReports(List<TaskTransition> transitions) {
 
     public TaskReports {
@@ -21,13 +21,19 @@ public record TaskReports(List<TaskTransition> transitions) {
 
     /** The latest REPORTED_DONE transition that did not come from VERIFIED: who made it, as the history recorded it. */
     public Optional<TaskTransition> latestReport() {
-        return transitions.reversed().stream()
-                .filter(t -> t.to() == TaskState.REPORTED_DONE && t.from() != TaskState.VERIFIED)
-                .findFirst();
+        return transitions.reversed().stream().filter(TaskReports::isReport).findFirst();
     }
 
-    /** Whether {@code session} is the latest reporter of the task. */
+    /**
+     * Whether {@code session} reported the task done at any time (a REPORTED_DONE transition that did not come from
+     * VERIFIED): the session that reported it, even before another one reported it again, cannot verify it.
+     */
     public boolean reportedBy(SessionKey session) {
-        return latestReporter().filter(session::equals).isPresent();
+        return transitions.stream().filter(TaskReports::isReport)
+                .anyMatch(t -> t.author().sessionKey().equals(session));
+    }
+
+    private static boolean isReport(TaskTransition t) {
+        return t.to() == TaskState.REPORTED_DONE && t.from() != TaskState.VERIFIED;
     }
 }

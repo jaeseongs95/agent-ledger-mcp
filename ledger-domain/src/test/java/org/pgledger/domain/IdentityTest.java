@@ -126,6 +126,13 @@ class IdentityTest {
         assertThat(TaskId.of("E2E-T-0007").numberIn(e2e)).hasValue(7);
         assertThat(TaskId.of("OTHER-T-0007").numberIn(e2e)).isEmpty();
         assertThat(TaskId.of("E2E-T-" + "9".repeat(19)).numberIn(e2e)).isEmpty();
+        // VRF-048 (D-0049): the form is judged by the key, so the case of the id does not hide its number
+        for (String id : new String[] {"E2E-t-0005", "e2e-T-0005", "e2e-t-00005"}) {
+            assertThat(TaskId.of(id).number()).as(id).hasValue(5);
+            assertThat(TaskId.of(id).numberIn(e2e)).as(id).hasValue(5);
+        }
+        assertThat(TaskId.of("e2e-t-0005X").numberIn(e2e)).isEmpty();
+        assertThat(TaskId.of("other-t-0005").numberIn(e2e)).isEmpty();
     }
 
     /**

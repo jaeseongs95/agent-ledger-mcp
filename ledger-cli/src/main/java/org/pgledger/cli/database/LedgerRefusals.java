@@ -82,7 +82,7 @@ public final class LedgerRefusals {
                     refused.args().getFirst());
             case VERSION_CONFLICT, OPERATION_CONFLICT, ARTIFACT_CHUNK_CONFLICT, ARTIFACT_BUSY, ARTIFACT_INCOMPLETE,
                 ARTIFACT_OPERATION_CONFLICT, ARTIFACT_LIMIT, ARTIFACT_HASH_MISMATCH, CHUNK_HASH_MISMATCH,
-                ARTIFACT_EXPIRED, ARTIFACT_STORAGE_FULL -> generic(refused);
+                ARTIFACT_EXPIRED, ARTIFACT_STORAGE_FULL, ID_COUNTER_CHANGED -> generic(refused);
         };
     }
 
