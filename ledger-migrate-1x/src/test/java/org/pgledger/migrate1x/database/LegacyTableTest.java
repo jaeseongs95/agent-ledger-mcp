@@ -33,9 +33,10 @@ class LegacyTableTest {
      * reported, see ImportReport), {@code common_code.version} (V5, default 0; the version that the update of a code checks) and
      * {@code history.attachment_id} (V8, nullable, no default: 1.x had no attachments, so every imported row has none).
      */
-    private static final Map<LegacyTable, List<String>> SCHEMA_ONLY = Map.of(LegacyTable.HISTORY,
-            List.of("attachment_id"), LegacyTable.COMMON_CODE,
-            List.of("direction", "version"));
+    private static final Map<LegacyTable, List<String>> SCHEMA_ONLY = Map.of(
+            LegacyTable.HISTORY, List.of("attachment_id"),
+            LegacyTable.DEFECT_FIX, List.of("attachment_id"),
+            LegacyTable.COMMON_CODE, List.of("direction", "version"));
 
     private static List<String> names(List<LegacyColumn> columns) {
         return columns.stream().map(LegacyColumn::name).toList();
@@ -68,8 +69,8 @@ class LegacyTableTest {
         assertThat(task.get("id_key").maxChars()).isEqualTo(360);
         assertThat(task.get("id").maxChars()).isEqualTo(120);
         assertThat(target.columnRules(LegacyTable.RELEASE_CONDITION).get("code").maxChars()).isEqualTo(200);
-        assertThat(target.columnRules(LegacyTable.RELEASE_CONDITION).get("release_name").nullable()).isFalse();
-        assertThat(target.columnRules(LegacyTable.DEFECT_FIX).get("ci_ref").maxChars()).isEqualTo(2000);
+        assertThat(target.columnRules(LegacyTable.RELEASE_CONDITION).get("milestone_name").nullable()).isFalse();
+        assertThat(target.columnRules(LegacyTable.DEFECT_FIX).get("check_ref").maxChars()).isEqualTo(2000);
         assertThat(task.get("owner_actor_id").nullable()).isTrue();
         assertThat(task.get("title").maxChars()).isEqualTo(300);
         // REH3-LEN-02: origin_ref is a long text (text without a limit in 1.x; 9408 characters in production)
@@ -98,11 +99,11 @@ class LegacyTableTest {
     void parentsComeFirst() {
         List<String> order = List.of(LegacyTable.values()).stream().map(LegacyTable::targetName).toList();
         Map<String, Set<String>> parents = Map.of(
-                "task", Set.of("project"), "defect", Set.of("project", "defect"),
-                "defect_fix", Set.of("defect"), "defect_case", Set.of("defect"),
-                "defect_task", Set.of("defect", "task"), "defect_relation", Set.of("defect"),
-                "release_condition", Set.of("project"),
-                "condition_link", Set.of("release_condition", "task", "defect"),
+                "task", Set.of("project"), "issue", Set.of("project", "issue"),
+                "deliverable", Set.of("issue", "task"), "issue_case", Set.of("issue"),
+                "issue_task", Set.of("issue", "task"), "issue_relation", Set.of("issue"),
+                "milestone_criterion", Set.of("project"),
+                "criterion_link", Set.of("milestone_criterion", "task", "issue"),
                 "session_grant", Set.of("project"), "history", Set.of("history"));
 
         for (Map.Entry<String, Set<String>> entry : parents.entrySet()) {

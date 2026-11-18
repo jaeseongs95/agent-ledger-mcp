@@ -34,7 +34,7 @@ class LoginTest {
     void adm007_anonymous() throws Exception {
         Browser browser = new Browser(mvc);
 
-        browser.perform(browser.get("/defects")).andExpect(status().is3xxRedirection())
+        browser.perform(browser.get("/issues")).andExpect(status().is3xxRedirection())
                 .andExpect(header().string(HttpHeaders.LOCATION, endsWith("/login")));
         browser.perform(browser.get("/api/overview").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isUnauthorized()).andExpect(jsonPath("$.code").value("UNAUTHORIZED"))

@@ -51,8 +51,8 @@ class SecretsTest {
         List<MvcResult> results = new ArrayList<>();
         Browser owner = Browser.signedIn(mvc);
         results.add(owner.perform(owner.get("/login")).andReturn());
-        for (String page : List.of("/", "/projects", "/defects", "/tasks", "/conditions", "/history", "/grants", "/codes",
-                "/driver", "/defects/NOP-D-0001")) {
+        for (String page : List.of("/", "/projects", "/issues", "/specs", "/tasks", "/criteria", "/history", "/grants",
+                "/codes", "/driver", "/issues/NOP-I-0001")) {
             results.add(owner.perform(owner.get(page)).andReturn());
         }
         Browser attacker = new Browser(mvc);

@@ -13,7 +13,7 @@ import org.pgledger.application.admin.GrantService;
 import org.pgledger.application.admin.GrantService.GrantCommand;
 import org.pgledger.application.read.DetailService;
 import org.pgledger.application.read.ListService;
-import org.pgledger.application.read.ListService.ConditionsQuery;
+import org.pgledger.application.read.ListService.CriteriaQuery;
 import org.pgledger.application.support.Expect;
 import org.pgledger.application.support.Fields;
 import org.pgledger.application.support.LedgerAppContext;
@@ -29,9 +29,10 @@ import org.pgledger.domain.error.LookupCode;
 import org.pgledger.domain.error.ValidationCode;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationIssue;
-import org.pgledger.domain.model.ConditionLink;
+import org.pgledger.domain.model.CriterionLink;
 import org.pgledger.domain.value.AuthorId;
-import org.pgledger.domain.value.ConditionId;
+import org.pgledger.domain.value.CriterionId;
+import org.pgledger.domain.value.IssueId;
 import org.pgledger.domain.value.TaskId;
 import org.pgledger.migrate1x.fixture.LegacyFixtures;
 import org.pgledger.migrate1x.fixture.LegacyLedger;
@@ -65,14 +66,14 @@ class RealShapesImportTest {
     }
 
     private static void assertNothingWritten(LedgerAppContext ctx) {
-        for (String table : List.of("project", "task", "defect", "release_condition", "condition_link", "history",
+        for (String table : List.of("project", "task", "issue", "milestone_criterion", "criterion_link", "history",
                 "owner_audit")) {
             assertThat(count(ctx, "SELECT COUNT(*) FROM " + table)).as(table).isZero();
         }
     }
 
     @Test
-    @DisplayName("REH3-IMP-01 the legacy ledger of the real shapes (ids in any case with # / . : _ -, 120 characters, a code of 79, a CI reference of 533, '' in five long texts, links to tasks and defects) imports and verifies: every id byte for byte, '' as NULL, the link keys as ConditionLink derives them, the id_key in upper case")
+    @DisplayName("REH3-IMP-01 the legacy ledger of the real shapes (ids in any case with # / . : _ -, 120 characters, a code of 79, a CI reference of 533, '' in five long texts, links to tasks and defects) imports and verifies: every id byte for byte, '' as NULL, the link keys as CriterionLink derives them, the id_key in upper case")
     void imp01_realShapes() {
         withRig(LegacyFixtures.withRealShapes(LegacyFixtures.rich()), ctx -> {
             ImportReport report = importer(ctx).importLegacy(TestOwners.OWNER);
@@ -86,11 +87,11 @@ class RealShapesImportTest {
             }
             assertThat(LegacyFixtures.REAL_TASK_120).hasSize(120);
             for (String id : List.of(LegacyFixtures.REAL_CONDITION_LONG, LegacyFixtures.REAL_CONDITION_LOWER)) {
-                assertThat(count(ctx, "SELECT COUNT(*) FROM release_condition WHERE id = ?", id)).as(id).isEqualTo(1);
+                assertThat(count(ctx, "SELECT COUNT(*) FROM milestone_criterion WHERE id = ?", id)).as(id).isEqualTo(1);
             }
-            assertThat(count(ctx, "SELECT COUNT(*) FROM release_condition WHERE code = ?", LegacyFixtures.REAL_CODE_79))
+            assertThat(count(ctx, "SELECT COUNT(*) FROM milestone_criterion WHERE code = ?", LegacyFixtures.REAL_CODE_79))
                     .isEqualTo(1);
-            assertThat(count(ctx, "SELECT COUNT(*) FROM defect_fix WHERE ci_ref = ?", LegacyFixtures.REAL_CI_REF_533))
+            assertThat(count(ctx, "SELECT COUNT(*) FROM deliverable WHERE check_ref = ?", LegacyFixtures.REAL_CI_REF_533))
                     .isEqualTo(1);
             // REH3-LEN-02: an origin reference of 9408 characters (a text column of 1.x without a limit) is stored whole
             assertThat(LegacyFixtures.REAL_ORIGIN_REF_9408).hasSize(9408);
@@ -101,24 +102,24 @@ class RealShapesImportTest {
                     LegacyFixtures.REAL_TASK_EMPTY_BOTH)).isEqualTo(1);
             assertThat(count(ctx, "SELECT COUNT(*) FROM task WHERE id = ? AND purpose IS NULL AND success_condition = ?",
                     LegacyFixtures.REAL_TASK_EMPTY_ONE, "it is done")).isEqualTo(1);
-            assertThat(count(ctx, "SELECT COUNT(*) FROM defect WHERE id = ? AND behavior IS NULL AND root_cause IS NULL",
+            assertThat(count(ctx, "SELECT COUNT(*) FROM issue WHERE id = ? AND symptom IS NULL AND root_cause IS NULL",
                     LegacyFixtures.REAL_DEFECT)).isEqualTo(1);
-            assertThat(count(ctx, "SELECT COUNT(*) FROM release_condition WHERE id = ? AND condition_text IS NULL",
+            assertThat(count(ctx, "SELECT COUNT(*) FROM milestone_criterion WHERE id = ? AND criterion_text IS NULL",
                     LegacyFixtures.REAL_CONDITION_LOWER)).isEqualTo(1);
             // the link keys are the ones of a new link
-            ConditionId condition = ConditionId.of(LegacyFixtures.REAL_CONDITION_LONG);
-            List<String> keys = ctx.jdbc().sql("SELECT link_key FROM condition_link WHERE condition_id = ? ORDER BY link_key")
-                    .param(condition.value()).query(String.class).list();
+            CriterionId criterion = CriterionId.of(LegacyFixtures.REAL_CONDITION_LONG);
+            List<String> keys = ctx.jdbc().sql("SELECT link_key FROM criterion_link WHERE criterion_id = ? ORDER BY link_key")
+                    .param(criterion.value()).query(String.class).list();
             assertThat(keys).containsExactlyInAnyOrder(
-                    ConditionLink.toTask(condition, TaskId.of(LegacyFixtures.REAL_TASK_A01), AuthorId.OWNER).linkKey(),
-                    ConditionLink.toTask(condition, TaskId.of(LegacyFixtures.REAL_TASK_CHARS), AuthorId.OWNER).linkKey(),
-                    ConditionLink.toDefect(condition, org.pgledger.domain.value.DefectId.of(LegacyFixtures.REAL_DEFECT),
+                    CriterionLink.toTask(criterion, TaskId.of(LegacyFixtures.REAL_TASK_A01), AuthorId.OWNER).linkKey(),
+                    CriterionLink.toTask(criterion, TaskId.of(LegacyFixtures.REAL_TASK_CHARS), AuthorId.OWNER).linkKey(),
+                    CriterionLink.toIssue(criterion, IssueId.of(LegacyFixtures.REAL_DEFECT),
                             AuthorId.OWNER).linkKey());
             // the normalised id the unique key rests on
             for (Map<String, Object> row : ctx.jdbc().sql("SELECT id, id_key FROM task").query().listOfRows()) {
                 assertThat(row.get("id_key")).isEqualTo(String.valueOf(row.get("id")).toUpperCase(Locale.ROOT));
             }
-            for (Map<String, Object> row : ctx.jdbc().sql("SELECT id, id_key FROM release_condition").query().listOfRows()) {
+            for (Map<String, Object> row : ctx.jdbc().sql("SELECT id, id_key FROM milestone_criterion").query().listOfRows()) {
                 assertThat(row.get("id_key")).isEqualTo(String.valueOf(row.get("id")).toUpperCase(Locale.ROOT));
             }
         });
@@ -135,8 +136,8 @@ class RealShapesImportTest {
                     .isEqualTo("ID_DIFFERS_ONLY_IN_CASE"));
             List<String> paths = refused.issues().stream().map(ValidationIssue::path).toList();
             assertThat(paths).anyMatch(path -> "task[OLD-T-a].id".equals(path) || "task[OLD-T-A].id".equals(path));
-            assertThat(paths).anyMatch(path -> "release_condition[old-c].id".equals(path)
-                    || "release_condition[OLD-C].id".equals(path));
+            assertThat(paths).anyMatch(path -> "milestone_criterion[old-c].id".equals(path)
+                    || "milestone_criterion[OLD-C].id".equals(path));
             ValidationIssue task = refused.issues().stream().filter(issue -> issue.path().startsWith("task[")).findFirst()
                     .orElseThrow();
             assertThat(task.reasonArgs()).hasSize(1);
@@ -150,7 +151,7 @@ class RealShapesImportTest {
             assertThat(refused.issues()).hasSize(3);
             assertThat(refused.issues()).allSatisfy(issue -> assertThat(issue.reason().name()).isEqualTo("MUST_BE_ID"));
             assertThat(refused.issues().stream().map(ValidationIssue::path).toList()).contains("task[OLD T SPACE].id",
-                    "task[" + LegacyFixtures.TASK_ID_121 + "].id", "release_condition[OLD\tC].id");
+                    "task[" + LegacyFixtures.TASK_ID_121 + "].id", "milestone_criterion[OLD\tC].id");
             assertNothingWritten(ctx);
         });
     }
@@ -174,9 +175,9 @@ class RealShapesImportTest {
         insertFix(fits, 31, "1", "r".repeat(2000));
         withRig(fits, ctx -> {
             assertThat(importer(ctx).importLegacy(TestOwners.OWNER).tables()).allMatch(TableCheck::matches);
-            assertThat(count(ctx, "SELECT COUNT(*) FROM release_condition WHERE id = 'OLD-C-200' AND code = ?",
+            assertThat(count(ctx, "SELECT COUNT(*) FROM milestone_criterion WHERE id = 'OLD-C-200' AND code = ?",
                     "c".repeat(200))).isEqualTo(1);
-            assertThat(count(ctx, "SELECT COUNT(*) FROM defect_fix WHERE id = 31 AND ci_ref = ?", "r".repeat(2000)))
+            assertThat(count(ctx, "SELECT COUNT(*) FROM deliverable WHERE id = 31 AND check_ref = ?", "r".repeat(2000)))
                     .isEqualTo(1);
         });
         LegacyLedger tooLong = LegacyFixtures.rich();
@@ -187,7 +188,7 @@ class RealShapesImportTest {
             ValidationException refused = refused(ctx);
 
             assertThat(refused.issues()).extracting(ValidationIssue::path).containsExactlyInAnyOrder(
-                    "release_condition[OLD-C-201].code", "defect_fix[32].ci_ref", "task[OLD-T-1].title");
+                    "milestone_criterion[OLD-C-201].code", "deliverable[32].check_ref", "task[OLD-T-1].title");
             assertThat(refused.issues()).allSatisfy(issue -> assertThat(issue.reason().name())
                     .isEqualTo("MUST_BE_AT_MOST_CHARS"));
             assertThat(refused.issues().stream().map(issue -> issue.reasonArgs().getFirst()).toList())
@@ -203,7 +204,7 @@ class RealShapesImportTest {
             ValidationException refused = refused(ctx);
 
             assertThat(refused.issues()).extracting(ValidationIssue::path).containsExactlyInAnyOrder(
-                    "release_condition[OLD-C-NORELEASE].release_name", "defect_fix[30].repo");
+                    "milestone_criterion[OLD-C-NORELEASE].milestone_name", "deliverable[30].location");
             assertThat(refused.issues()).allSatisfy(issue -> assertThat(issue.reason().name()).isEqualTo("REQUIRED"));
             assertNothingWritten(ctx);
         });
@@ -236,9 +237,9 @@ class RealShapesImportTest {
             Expect.failure(() -> ctx.bean(TransitionService.class).transition(author, new TransitionCommand(Scenario.uuid(), "task",
                     other, 3L, "BLOCKED", Scenario.REASON, null, null, null)), LookupCode.NOT_FOUND);
             LinkService links = ctx.bean(LinkService.class);
-            assertThat(links.link(author, new LinkCommand(Scenario.uuid(), "condition_task", LegacyFixtures.REAL_CONDITION_LONG, id,
+            assertThat(links.link(author, new LinkCommand(Scenario.uuid(), "criterion_task", LegacyFixtures.REAL_CONDITION_LONG, id,
                     Scenario.REASON, null)).id()).isEqualTo(LegacyFixtures.REAL_CONDITION_LONG + "|" + id);
-            Expect.failure(() -> links.link(author, new LinkCommand(Scenario.uuid(), "condition_task",
+            Expect.failure(() -> links.link(author, new LinkCommand(Scenario.uuid(), "criterion_task",
                     LegacyFixtures.REAL_CONDITION_LONG, other, Scenario.REASON, null)), LookupCode.NOT_FOUND);
 
             assertThat(count(ctx, "SELECT COUNT(*) FROM task WHERE id = ? AND title = 'edited' AND state = 'ACTIVE'", id))
@@ -260,31 +261,31 @@ class RealShapesImportTest {
             assertThat(task.successCondition()).isEmpty();
             assertThat(detail.task(LegacyFixtures.REAL_TASK_EMPTY_ONE).purpose()).isEmpty();
             assertThat(detail.task(LegacyFixtures.REAL_TASK_EMPTY_ONE).successCondition()).isEqualTo("it is done");
-            DetailService.DefectDetail defect = detail.defect(LegacyFixtures.REAL_DEFECT);
-            assertThat(defect.behavior()).isEmpty();
-            assertThat(defect.rootCause()).isEmpty();
-            var conditions = ctx.bean(ListService.class).conditions(new ConditionsQuery("ags", null, null, 50, null));
-            assertThat(conditions.items()).filteredOn(item -> LegacyFixtures.REAL_CONDITION_LOWER.equals(item.id()))
-                    .singleElement().satisfies(item -> assertThat(item.conditionText()).isEmpty());
+            DetailService.IssueDetail issue = detail.issue(LegacyFixtures.REAL_DEFECT);
+            assertThat(issue.symptom()).isEmpty();
+            assertThat(issue.rootCause()).isEmpty();
+            var criteria = ctx.bean(ListService.class).criteria(new CriteriaQuery("ags", null, null, 50, null));
+            assertThat(criteria.items()).filteredOn(item -> LegacyFixtures.REAL_CONDITION_LOWER.equals(item.id()))
+                    .singleElement().satisfies(item -> assertThat(item.criterionText()).isEmpty());
         });
     }
 
     @Test
-    @DisplayName("REH3-ID-08 / REH3-LEN-01 the schema: id 120, id_key 360 NOT NULL and unique in task and release_condition, code 200, ci_ref 2000, and the five long texts are nullable")
+    @DisplayName("REH3-ID-08 / REH3-LEN-01 the schema: id 120, id_key 360 NOT NULL and unique in task and milestone_criterion, code 200, check_ref 2000, and the five long texts are nullable")
     void id08_theColumns() {
         withRig(LegacyFixtures.rich(), ctx -> {
             assertThat(size(ctx, "task", "id")).isEqualTo(120);
             assertThat(size(ctx, "task", "id_key")).isEqualTo(360);
-            assertThat(size(ctx, "release_condition", "id")).isEqualTo(120);
-            assertThat(size(ctx, "release_condition", "id_key")).isEqualTo(360);
-            assertThat(size(ctx, "release_condition", "code")).isEqualTo(200);
-            assertThat(size(ctx, "defect_fix", "ci_ref")).isEqualTo(2000);
+            assertThat(size(ctx, "milestone_criterion", "id")).isEqualTo(120);
+            assertThat(size(ctx, "milestone_criterion", "id_key")).isEqualTo(360);
+            assertThat(size(ctx, "milestone_criterion", "code")).isEqualTo(200);
+            assertThat(size(ctx, "deliverable", "check_ref")).isEqualTo(2000);
             for (String[] column : new String[][] {{"task", "purpose"}, {"task", "success_condition"},
-                    {"defect", "behavior"}, {"defect", "root_cause"}, {"release_condition", "condition_text"}}) {
+                    {"issue", "symptom"}, {"issue", "root_cause"}, {"milestone_criterion", "criterion_text"}}) {
                 assertThat(nullable(ctx, column[0], column[1])).as(column[0] + "." + column[1]).isTrue();
             }
             assertThat(nullable(ctx, "task", "id_key")).isFalse();
-            assertThat(nullable(ctx, "release_condition", "id_key")).isFalse();
+            assertThat(nullable(ctx, "milestone_criterion", "id_key")).isFalse();
         });
     }
 

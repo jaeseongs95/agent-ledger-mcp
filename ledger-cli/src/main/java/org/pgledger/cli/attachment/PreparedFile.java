@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Measures one local regular file in a single streaming pass before upload ({@code attachments-prepare}), producing the
- * four declaration fields accepted by {@code artifact-begin} ({@code fileName}, {@code size}, {@code sha256} as 64
+ * four declaration fields accepted by {@code artifact_begin} ({@code fileName}, {@code size}, {@code sha256} as 64
  * lowercase hex characters, {@code mediaType}). Rejects non-regular files, unreadable files, and files modified while
  * being read. Connects to nothing.
  */

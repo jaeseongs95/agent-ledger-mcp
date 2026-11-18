@@ -39,7 +39,7 @@ class GrantRefusalTest {
 
         LedgerException refused = null;
         try {
-            grants.grant(new GrantCommand(author, project.project(), List.of("defect"), null, null), TestOwners.OWNER);
+            grants.grant(new GrantCommand(author, project.project(), List.of("issue"), null, null), TestOwners.OWNER);
         } catch (ConflictException failure) {
             refused = failure;
         }

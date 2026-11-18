@@ -46,7 +46,7 @@ class SetupCommandTest {
     /** REH4-SEED-01: what the report says about a code that differs from the seed (the operator changed it, or it was imported). */
     private static final String KEPT_REASON = "changed by the operator or imported";
     private static final String CODES = "SELECT code_group, code, name_ko, name_en, description_ko, description_en, sort_order, state "
-            + "FROM common_code WHERE code_group = 'DEFECT_CATEGORY' ORDER BY sort_order, code";
+            + "FROM common_code WHERE code_group = 'ISSUE_CATEGORY' ORDER BY sort_order, code";
 
     @TempDir
     Path tmp;
@@ -112,7 +112,7 @@ class SetupCommandTest {
         List<Map<String, Object>> audit = database.rows("SELECT actor, subject FROM owner_audit WHERE operation = 'CODE_SET' ORDER BY id");
         assertThat(audit).hasSize(14).allSatisfy(row -> assertThat(row.get("actor")).isEqualTo("cli:alice"));
         assertThat(audit.stream().map(row -> (String) row.get("subject"))).containsExactlyInAnyOrderElementsOf(
-                seed.stream().map(code -> "DEFECT_CATEGORY/" + code.code()).toList());
+                seed.stream().map(code -> "ISSUE_CATEGORY/" + code.code()).toList());
         assertThat(output.info()).contains("Applied ").contains("grants").contains("Added 14 seed code(s)");
         String report = report(output);
         assertThat(report).startsWith("Seed check: 14 codes in the seed, 14 present in the database, 14 equal to the seed, 0 differ from the seed and were kept (" + KEPT_REASON + ")");
@@ -141,9 +141,9 @@ class SetupCommandTest {
     @DisplayName("SET-012 a code the owner changed or retired is kept as he left it, his own code is untouched, nothing is audited, and the report says 12 equal and 2 changed")
     void set012_aChangedCodeIsKept(Cli cli) {
         run(cli, new RecordingOutput(), true, "setup", "--app-account=" + account(database));
-        run(cli, new RecordingOutput(), true, "code-set", "DEFECT_CATEGORY", "ARC", "내 이름");
-        run(cli, new RecordingOutput(), true, "code-set", "DEFECT_CATEGORY", "CON", "동시성·원자성", "--inactive");
-        run(cli, new RecordingOutput(), true, "code-set", "DEFECT_CATEGORY", "MINE", "내 분류");
+        run(cli, new RecordingOutput(), true, "code-set", "ISSUE_CATEGORY", "ARC", "내 이름");
+        run(cli, new RecordingOutput(), true, "code-set", "ISSUE_CATEGORY", "CON", "동시성·원자성", "--inactive");
+        run(cli, new RecordingOutput(), true, "code-set", "ISSUE_CATEGORY", "MINE", "내 분류");
         List<Object> before = state();
         RecordingOutput output = new RecordingOutput();
 
@@ -177,7 +177,7 @@ class SetupCommandTest {
         assertThat(result.code()).contains(ErrorCode.APP_ACCOUNT_NO_ACCESS);
         assertThat(result.refusal().orElseThrow().arguments()).containsExactly(CliExtension.APPLICATION_ACCOUNT_NAME);
         assertThat(number("SELECT COUNT(*) FROM schema_history")).isPositive();
-        assertThat(number("SELECT COUNT(*) FROM common_code WHERE code_group = 'DEFECT_CATEGORY'")).isZero();
+        assertThat(number("SELECT COUNT(*) FROM common_code WHERE code_group = 'ISSUE_CATEGORY'")).isZero();
         assertThat(number("SELECT revision FROM code_revision WHERE id = 1")).isZero();
         assertThat(number("SELECT COUNT(*) FROM owner_audit")).isZero();
         String guidance = bundle().getProperty(ErrorCode.APP_ACCOUNT_NO_ACCESS.messageKey());
@@ -241,7 +241,7 @@ class SetupCommandTest {
 
         assertThat(refused.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
         assertThat(refused.code()).contains(ErrorCode.GRANT_FAILED);
-        assertThat(number("SELECT COUNT(*) FROM common_code WHERE code_group = 'DEFECT_CATEGORY'")).isZero();
+        assertThat(number("SELECT COUNT(*) FROM common_code WHERE code_group = 'ISSUE_CATEGORY'")).isZero();
 
         Outcome finished = run(cli, new RecordingOutput(), true, "setup", "--app-account=" + account(database));
 

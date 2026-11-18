@@ -17,7 +17,7 @@
     <form method="post" th:action="@{/projects}" data-approve>
       <label for="id" th:text="#{projects.id.label}">Project id</label>
       <input id="id" name="id" type="text" required autocomplete="off">
-      <label for="code" th:text="#{projects.code.label}">Code (upper case, the prefix of defect and task ids)</label>
+      <label for="code" th:text="#{projects.code.label}">Code (upper case, the prefix of issue, spec, and task ids)</label>
       <input id="code" name="code" type="text" required autocomplete="off">
       <label for="title" th:text="#{projects.title.label}">Title</label>
       <input id="title" name="title" type="text" required maxlength="200" autocomplete="off">

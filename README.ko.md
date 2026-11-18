@@ -2,14 +2,14 @@
 
 [English](README.md)
 
-AI 에이전트가 수행한 작업을 기록하는 장부이며, 하나의 MCP 엔드포인트로 제공됩니다. 결함, 작업, 수정과 그 검증을 누가 왜 수행했는지와 함께 기록합니다.
-에이전트는 MCP 도구로 읽고 쓰며, 자신의 데이터베이스 로그인을 받지 않습니다.
+소프트웨어 개발, 영화 제작, 집필, 연구, 운영 등 모든 분야의 AI 에이전트 작업을 기록하는 범용 장부이며, 하나의 MCP 엔드포인트로 제공됩니다. 이슈, 명세, 작업, 마일스톤 기준, 산출물과 독립 검수를 누가 왜 수행했는지와 함께 기록합니다.
+에이전트는 표준 MCP 도구로 읽고 쓰며, 자신의 데이터베이스 로그인을 받지 않습니다.
 
 이것은 **개인판**입니다. 한 사람이 본인의 컴퓨터나 본인의 서버에 설치해 실행하며, 설치 대상 전체를 신뢰합니다. 두 서비스(MCP 서버와 관리 웹)는
 루프백 주소 `127.0.0.1`에서만 수신합니다. 다른 컴퓨터에서 접근하게 하는 일, 곧 역방향 프록시와 TLS 인증서는 운영자가 고른 도구로 하는 운영자의 몫이며,
 설치기는 프록시 설정을 쓰지 않고 인증서를 발급하지 않습니다.
 
-2.0.0 버전은 Java 25와 Spring Boot로 다시 작성한 것이며 자체 도구 계약을 가집니다(모든 쓰기 도구는 필수 `operationKey`를 받고, 이전 버전의 인자는 새 인자와 함께 받아들이지 않습니다).
+2.0.0 버전은 Java 25와 Spring Boot로 다시 작성한 것이며 자체 도구 계약을 가집니다(모든 쓰기 도구는 필수 `operationKey`를 받고, 모든 응답은 `ApiResult.v1` 봉투를 쓰며, 이전 버전의 인자는 새 인자와 함께 받아들이지 않습니다).
 클라이언트에 바뀐 내용은 [릴리스 노트](docs/release-notes/2.0.0.md)에 적습니다. 릴리스 노트의 형식은 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md)에 있습니다.
 
 ## 목차
@@ -29,39 +29,37 @@ AI 에이전트가 수행한 작업을 기록하는 장부이며, 하나의 MCP 
 
 ## 개념
 
-- **작성자 신원은 주장이 아니라 증명으로 확인합니다.** 모든 쓰기와 모든 `ledger_whoami` 호출에는 예약 키 `_hostAttestation`이 붙으며, 이 값은 클라이언트의 호스트 훅이 채웁니다.
-  모델은 이 키를 넣지 않아야 합니다. 작성자는 `<vendor>:<session-id>` 형식이며 예를 들어 `claude:1f2e3d4c` 또는 `codex:9a8b7c6d`입니다. 장부의 소유자는 `user:owner`입니다.
-  작성자는 증명으로만 정해지며, 도구에는 `author_id` 인자가 없습니다.
+- **작성자 신원은 주장이 아니라 증명으로 확인합니다.** 기본값인 `STANDARD` 모드(`ledger.mcp.auth-mode`)에서는 어떤 표준 MCP 클라이언트든 `ledger-cli token-issue`가 발급한 작성자별 HTTP `Bearer` 토큰(`lgt_...`)만으로 클라이언트 훅 없이 `<vendor>:<session-id>` 신원으로 인증됩니다.
+  공유 게이트 토큰 `ledger.mcp.token`을 쓰거나 `ATTESTED` 모드일 때는 모든 쓰기와 모든 `ledger_whoami` 호출에 클라이언트의 호스트 훅이 채우는 예약 키 `_hostAttestation`이 붙으며 모델은 이를 생략해야 합니다.
+  작성자는 예를 들어 `claude:1f2e3d4c` 또는 `codex:9a8b7c6d`이고 장부 소유자는 `user:owner`입니다. 도구에는 `author_id` 인자가 없습니다.
 - **쓰기에는 유효한 부여가 필요합니다.** 소유자는 `ledger-cli grant`(또는 관리 웹의 부여 화면)로 작성자에게 프로젝트의 범위를 부여합니다.
-  범위는 `defect`, `task`, `fix`, `verify`입니다. 해당 부여가 없는 쓰기는 거절됩니다. 두 프로젝트의 행에 걸치는 쓰기(작업이나 조건을 다른 프로젝트로 옮기기, 연결,
-  다른 프로젝트의 결함으로의 병합)는 두 프로젝트 모두에서 해당하는 부여를 요구합니다.
-- **검증은 분리되어 있습니다.** `VERIFIED`, `MET`, `NOT_MET`은 검토자 도구 `ledger_review`와 `ledger_review_correct`로만 설정할 수 있으며, 이 도구들은 `verify` 범위를 요구합니다.
-  결함은 증거 링크와 수정이 하나 이상 있어야 하고, 그 결함을 등록하지 않았고 사례를 기록하지 않았고 수정도 기록하지 않은 세션만 검증할 수 있습니다.
-  (그 결함에 병합된 결함의 사례와 등록 세션도 그 결함의 것으로 칩니다.) 작업은 그것을 등록하지 않았고, 소유하지 않으며, 완료를 보고한 적이 없는 세션만 검증할 수 있고,
-  조건은 그것을 등록하지 않은 세션만 `MET`이나 `NOT_MET`으로 정할 수 있습니다(그렇지 않으면 `SAME_SESSION`). 검증 결과와 재작업 요청은 결함을 등록한
-  세션(`created_by`)이 아니라 수정을 기록한 세션(`fixed_by`)에게 보냅니다. CI 결과는 선택 메타데이터입니다. `VERIFIED` 결함에는 `ledger_record_fix`도 `ledger_save`의
-  수정도 허용되지 않으며(`VERIFIED_DEFECT`), 검토자가 먼저 `ledger_review`로 다시 열어야 합니다.
+  범위는 `issue`, `spec`, `task`, `deliverable`, `verify`입니다. 해당 부여가 없는 쓰기는 거절됩니다. 두 프로젝트의 행에 걸치는 쓰기(명세, 작업, 기준을 다른 프로젝트로 옮기기, 연결,
+  다른 프로젝트의 이슈로의 병합)는 두 프로젝트 모두에서 해당하는 부여를 요구합니다.
+- **완료 보고와 독립 검수는 모든 개체에서 분리되어 있습니다.** 작성자는 `issue`, `spec`, `task`에 산출물(`ledger_record_deliverable`)을 기록하고 완료를 보고합니다(`issue`는 `RESOLVED`, `spec`·`task`·기준은 `COMPLETED`).
+  `VERIFIED`, `MET`, `NOT_MET`은 검토자 도구 `ledger_review`와 `ledger_review_correct`로만 설정할 수 있으며 `verify` 범위와 `evidence_uri`가 필요합니다.
+  이슈는 기록된 산출물이 하나 이상 있어야 하고, 그 이슈를 등록하지 않았고 사례를 기록하지 않았고 산출물을 기록하거나 수정하지 않은 세션만 검수할 수 있습니다(병합된 이슈도 그 이슈의 것으로 칩니다).
+  명세나 작업은 그것을 만들지 않았고 소유하지 않으며 산출물 기록이나 완료 보고를 한 적이 없는 세션만 검수할 수 있고, 마일스톤 기준은 그것을 등록하거나 완료하지 않은 세션만 `MET`이나 `NOT_MET`으로 정할 수 있습니다(그렇지 않으면 `SAME_SESSION`).
+  검수 결과와 재작업 요청은 `created_by`가 아니라 `owner_actor_id`로 이어집니다. 점검 메타데이터(`check_ref`, `check_result`)는 벤더 독립 선택 항목입니다. `VERIFIED` 개체에는 `ledger_record_deliverable`도 수정도 허용되지 않으며(`VERIFIED_ENTITY`), 검토자가 먼저 `ledger_review`로 다시 열어야 합니다.
 - **이력은 추가만 가능합니다.** 쓰기마다 이력 행이 추가되며, 시각, 작성자, 채널, 연산, 상태 변화, 사유를 담습니다. 애플리케이션에는 이력 행을 수정하거나 삭제하는 경로가 없고,
   데이터베이스 모듈의 부여 템플릿(`migrate`가 앱 계정에 적용합니다)은 그 계정에 이력의 `UPDATE`와 `DELETE`를 주지 않습니다. 잘못된 기록은 `CORRECT` 행으로 표시합니다.
-  기존 행을 바꾸는 연산은 바꾸기 전의 전체 행도 함께 저장합니다(`before_data`, `ledger_history`에서 `include_before`를 주면 반환됩니다). 한 가지 예외가 있습니다. 결함에서 `updated_at`과 판만 바꾸는 `ledger_record_fix`(소유자와 상태는 그대로)는
-  결함의 이력 행을 쓰지 않으므로 결함의 `before_data`도 저장하지 않습니다. 그 수정의 이력은 수정 행이며, 기록 관리 열만 바뀌는데 이력 행을 쓰면 수정마다 빈 편집 행이 결함의 이력에 쌓이기 때문입니다.
+  기존 행을 바꾸는 연산은 바꾸기 전의 전체 행도 함께 저장합니다(`before_data`, `ledger_history`에서 `include_before`를 주면 반환됩니다). 한 가지 예외가 있습니다. 대상 개체에서 `updated_at`과 판만 바꾸는 `ledger_record_deliverable`(소유자와 상태는 그대로)은
+  대상 개체의 추가 이력 행을 쓰지 않으므로 `before_data`도 저장하지 않으며, 산출물 행이 그 이력입니다.
 - **재시도는 안전합니다.** 모든 쓰기 도구는 필수 인자 `operationKey`(1자 이상 128자 이하, 예를 들어 UUID)를 받습니다. 같은 키로 같은 요청을 반복하면 저장된 결과를 돌려주며 두 번 기록하지 않습니다.
-  키는 작성자에게 속합니다(`artifact-begin`의 키와 같습니다). 다른 작성자는 같은 키로 자기 쓰기를 할 수 있습니다. 작성자의 키가 이미 다른 작업, 내용 또는 채널에 묶여 있으면 `OPERATION_CONFLICT`로 거절됩니다. 서버는 키를 대신 만들지 않으며, 키가 없거나 비어 있으면 `VALIDATION_FAILED`(경로 `operationKey`)로 거절됩니다.
-  `ledger_batch`는 배치 전체에 키 하나를 받으며 배치는 하나의 요청입니다. 같은 키에 같은 연산이면 저장된 결과를 돌려주고, 같은 키에 다른 연산(추가, 삭제, 변경, 순서 바꿈)이거나 다른 도구이면 `OPERATION_CONFLICT`입니다. `artifact-chunk`와 `artifact-finish`는 `operationKey`를 받지 않습니다. 업로드는 `artifact-begin`의 `operationKey`로 시작하고,
-  청크는 `uploadId`, `sequence`, `chunkSha256`으로, finish는 `uploadId`로 멱등입니다.
+  키는 작성자에게 속합니다(`artifact_begin`의 키와 같습니다). 다른 작성자는 같은 키로 자기 쓰기를 할 수 있습니다. 작성자의 키가 이미 다른 작업, 내용 또는 채널에 묶여 있으면 `OPERATION_CONFLICT`로 거절됩니다. 서버는 키를 대신 만들지 않으며, 키가 없거나 비어 있으면 `VALIDATION_FAILED`(경로 `operationKey`)로 거절됩니다.
+  `ledger_batch`는 배치 전체에 키 하나를 받으며 배치는 하나의 요청입니다. 같은 키에 같은 연산이면 저장된 결과를 돌려주고, 같은 키에 다른 연산(추가, 삭제, 변경, 순서 바꿈)이거나 다른 도구이면 `OPERATION_CONFLICT`입니다. `artifact_chunk`와 `artifact_finish`는 `operationKey`를 받지 않습니다. 업로드는 `artifact_begin`의 `operationKey`로 시작하고,
+  청크는 `uploadId`, `sequence`, `chunkSha256`으로, finish는 `attachmentId`로 멱등입니다.
 - **낙관적 잠금.** 수정과 전이는 `expected_version`을 가지며, 오래된 판은 `VERSION_CONFLICT`입니다.
-- **프로젝트와 ID.** 결함은 프로젝트에 속하며 `<CODE>-D-0001`, `<CODE>-D-0002`와 같은 ID를 받습니다. ID 없이 만든 작업은 `<CODE>-T-0001`과 같은 ID를 받습니다.
-  ID는 서버가 부여합니다. 작업이나 조건에 호출자가 정하는 ID는 공백이 없는 1자 이상 120자 이하이며 대소문자와 문자 종류(`:`, `/`, `#`, `.`, `_`, `-` 등)를 가리지 않습니다.
-  이미 있는 ID와 대소문자만 다르면 `DUPLICATE_KEY`로 거부하며, ID는 언제나 정확히 비교합니다. 호출자가 정하는 결함 ID와 `<CODE>-T-0001` 형식의 작업 ID는 번호가 프로젝트의
-  다음 번호를 넘지 않아야 합니다. 그보다 작은 빈 번호는 받아들이고, 넘는 번호는 다음 ID를 알려 주는 `ID_NUMBER_AHEAD`로 거절하므로 ID 하나가 서버의 번호 부여를 멈추게 할 수 없습니다(이 요청이 처리되는 동안 다른 요청이 그 번호를 가져가면 `ID_COUNTER_CHANGED`가 요청을 다시 보내라고 알립니다). 이런 ID는 서버가 적는 형식(1 이상의 번호를 4자리가 되게 0으로 채우고 그 밖의 채움은 없음)으로만 받으며,
-  `<CODE>-D-00002`와 번호 0은 거절합니다(경로 `id`의 `VALIDATION_FAILED`).
-- **결함 하나는 근본 원인 하나이고, 관찰된 사례는 여러 개입니다.** 결함에 대한 각 관찰(증상, 로그, 사용자 보고)은 그 아래의 사례입니다(`ledger_record_case`).
-  병합된 결함(`MERGED`, `merged_into`)은 사례를 그대로 유지하며, `ledger_defect`는 병합 대상 결함 아래에 그 사례를 보여 줍니다. `MERGED` 결함에는 새 사례를 추가할 수 없습니다.
-- **공통코드.** 결함 분류, 결함 심각도, 관계 종류는 세 그룹 `DEFECT_CATEGORY`, `DEFECT_SEVERITY`, `RELATION_KIND`이며 한국어와 영어 이름을 가집니다.
-  활성 값은 도구 정의에 반영됩니다. 폐기한 코드는 기존 행에 남고 새로 지정할 때는 거절됩니다. 모든 결함에는 심각도가 필수입니다. 분류나 심각도를 저장하는 쓰기(`ledger_save`의 생성과 수정)만 공통코드를 검사하며, 수정 기록과 상태 전이는 검사하지 않으므로 폐기된 `UNRATED`를 아직 가진 결함도 수정 기록, 전이, 검증을 할 수 있고 등급은 수정으로 매깁니다. 관계 종류의 방향은 코드에 속합니다.
-  `caused_by`(a의 원인은 b)와 `blocks`(a가 b를 차단)는 방향이 있어 호출자가 준 `a`, `b`의 순서를 유지하므로 (a, b)와 (b, a)는 서로 다른 관계이고,
-  `same_site`, `same_family`, `same_fix_unit`, `regression_of`는 방향이 없어 어느 순서로 주어도 하나의 관계입니다. `code-set`이나 관리 콘솔로 추가하는 종류도 방향을 정하며
-  (`ledger_codes`가 보여 주고, `ledger_link` 정의의 종류 목록에 표시됩니다), 이미 관계가 있는 종류의 방향은 바꿀 수 없습니다.
+- **프로젝트와 ID.** 이슈는 프로젝트에 속하며 `<CODE>-I-0001`, `<CODE>-I-0002`와 같은 ID를 받습니다(가져온 1.x 행은 `<CODE>-D-0001`을 유지합니다). ID 없이 만든 명세는 `<CODE>-S-0001`, 작업은 `<CODE>-T-0001`을 받습니다.
+  명세, 작업, 마일스톤 기준에 호출자가 정하는 ID는 공백이 없는 1자 이상 120자 이하이며 대소문자와 문자 종류(`:`, `/`, `#`, `.`, `_`, `-` 등)를 가리지 않습니다.
+  이미 있는 ID와 대소문자만 다르면 `DUPLICATE_KEY`로 거부하며, ID는 언제나 정확히 비교합니다. 호출자가 정하는 이슈 ID와 번호 형식 `<CODE>-S-0001` 또는 `<CODE>-T-0001`의 ID는 번호가 프로젝트의
+  다음 번호를 넘지 않아야 합니다. 그보다 작은 빈 번호는 받아들이고, 넘는 번호는 `ID_NUMBER_AHEAD`로 거절합니다(그동안 다른 요청이 번호를 가져가면 `ID_COUNTER_CHANGED`가 다시 보내라고 알립니다). 번호형 ID는 최소 4자리 0 채움 형식으로만 받으며,
+  `<CODE>-I-00002`와 번호 0은 거절합니다(경로 `id`의 `VALIDATION_FAILED`).
+- **이슈 하나는 근본 원인 하나이고, 관찰된 사례는 여러 개입니다.** 이슈에 대한 각 관찰(증상, 로그, 현장 기록, 보고)은 그 아래의 사례입니다(`ledger_record_case`).
+  병합된 이슈(`MERGED`, `merged_into`)는 사례를 그대로 유지하며, `ledger_issue`는 병합 대상 이슈 아래에 그 사례를 보여 줍니다. `MERGED` 이슈에는 새 사례를 추가할 수 없습니다.
+- **공통코드.** 이슈 분류, 이슈 심각도, 산출물 종류, 관계 종류는 네 그룹 `ISSUE_CATEGORY`, `ISSUE_SEVERITY`, `DELIVERABLE_KIND`, `RELATION_KIND`이며 한국어와 영어 이름을 가집니다.
+  활성 값은 도구 정의에 반영됩니다. 폐기한 코드는 기존 행에 남고 새로 지정할 때는 거절됩니다. 모든 이슈에는 심각도가 필수입니다. 공통코드를 저장하는 쓰기만 코드를 검사하며 상태 전이는 검사하지 않으므로, 폐기된 `UNRATED`를 가진 가져온 이슈도 진행·검수할 수 있고 등급은 수정(`ledger_issue_save`)으로 매깁니다. 관계 종류의 방향은 코드에 속합니다.
+  `caused_by`와 `blocks`는 방향이 있어(`GIVEN`) 호출자가 준 `a`, `b`의 순서를 유지하므로 (a, b)와 (b, a)는 서로 다른 관계이고,
+  `same_site`, `same_family`, `same_work_unit`, `same_fix_unit`, `regression_of`는 방향이 없어(`CANONICAL`) 어느 순서로 주어도 하나의 관계입니다(`ledger_codes`가 방향을 보여 주고 `code-set`이 정합니다).
 - **생성 출처는 바뀌지 않습니다.** 새 행에는 `created_by`가 자동으로 기록되며, 수정과 검토자 전이는 이를 유지합니다.
 - **시각은 UTC입니다.** 시각은 UTC(`Z`가 붙은 ISO-8601)로 저장하고 전송하며, 서버는 시간대를 변환하지 않습니다. JVM과 데이터베이스 세션은 UTC로 실행되어야 하며,
   그렇지 않으면 서버가 시작되지 않습니다(`ledger.schema.require-utc`).
@@ -76,55 +74,60 @@ AI 에이전트가 수행한 작업을 기록하는 장부이며, 하나의 MCP 
   MySQL이 그렇습니다)에서는 셋 모두 utf8mb4여야 합니다. 검사 대상 스키마인 JDBC URL의 데이터베이스의 기본 문자 집합, 변수
   character_set_server, 연결의 문자 집합입니다. 앞의 둘이 아니면 `migrate`는 아무것도 바꾸기 전에 진행을 거부합니다.
 
-MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer 토큰은 호출자를 들여보내고, 서명된 증명이 작성자를 증명합니다.
+MCP를 직접 호출하는 쪽은 작성자별 `Bearer` 세션 토큰(`STANDARD` 모드) 또는 `_hostAttestation`과 짝지은 공유 게이트 토큰 `ledger.mcp.token`으로 인증됩니다.
 
 ## MCP 도구
 
-서버는 `/mcp`(기본 `127.0.0.1:8765`)에서 Streamable HTTP로 MCP를 제공하고 `/healthz`에 응답합니다. 호출자는 bearer 토큰 `ledger.mcp.token`을 제시합니다.
-결과는 키를 최상위에 담습니다. 모든 도구 입력은 닫혀 있어, 알 수 없는 인자는 거절됩니다. 객체나 배열 인자는 그 JSON 값으로 보내야 하며(문자열로 담은 JSON 문서는 거절됩니다),
-텍스트 `null`은 인자가 없다는 뜻이 아니라 하나의 텍스트입니다. `fields`의 키를 JSON `null`로 쓰면 주지 않은 것으로 봅니다(필드를 건드리지 않으며, 증명이 서명하는 다이제스트에서도 빠집니다). 선택 필드는 빈 텍스트로 지웁니다.
+서버는 `/mcp`(기본 `127.0.0.1:8765`)에서 Streamable HTTP로 MCP를 제공하고 `/healthz`에 응답합니다. 호출자는 작성자별 세션 토큰(`lgt_...`) 또는 `ledger.mcp.token`을 제시합니다.
+모든 도구는 `ApiResult.v1` 봉투(`schemaVersion` `"1.0.0"`, `ok`, `data`, `error`)로 응답합니다. 모든 도구 입력은 닫혀 있고 평탄하여(원시 SQL 질의 인자나 비정형 맵 없음), 알 수 없는 인자는 거절됩니다. 객체나 배열 인자는 그 JSON 값으로 보내야 하며, 텍스트 `null`은 인자가 없다는 뜻이 아니라 하나의 텍스트입니다. 선택 필드의 JSON `null`은 생략한 것으로 보며, 선택 텍스트 필드는 빈 문자열로 지웁니다.
 
-쓰기 도구(로그인, 증명, 유효한 부여가 필요합니다). `ledger_whoami`를 뺀 모든 쓰기 도구는 필수 인자 `operationKey`를 받습니다.
+쓰기 도구(인증된 작성자와 유효한 부여가 필요합니다). `ledger_whoami`를 뺀 모든 쓰기 도구는 필수 인자 `operationKey`를 받습니다.
 
 | 도구 | 채널 | 내용 |
 |---|---|---|
-| `ledger_whoami` | author | 이 작성자 형식이 올바른지, 어떤 부여를 가졌는지 확인합니다(읽기 전용) |
-| `ledger_save` | author | 결함, 작업, 조건을 만들거나 수정합니다(`VERIFIED` 결함은 수정하지 않습니다) |
-| `ledger_transition` | author | 상태를 바꿉니다(`OPEN`, `SOURCE_FIXED`, `MERGED`, `ACTIVE`, `REPORTED_DONE` 등) |
-| `ledger_record_fix` | author | 수정 커밋과 선택적 CI 메타데이터를 기록합니다. 수정한 세션이 `fixed_by`가 되고 `OPEN` 결함은 `SOURCE_FIXED`가 됩니다. `VERIFIED` 결함은 검토자가 다시 열기 전에는 거절됩니다 |
-| `ledger_record_case` | author | 결함 아래에 관찰된 사례를 추가합니다(`MERGED` 결함은 거절되며 병합 대상을 알려 줍니다) |
-| `ledger_link` | author | 결함, 작업, 조건을 연결하거나 연결을 제거합니다. 관계 종류 `caused_by`와 `blocks`는 방향이 있습니다(`a`가 주어이며, 연결 해제는 연결한 순서대로 양 끝을 적습니다) |
+| `ledger_whoami` | author | 호출자 신원을 확인하고 유효한 프로젝트 부여를 조회합니다(읽기 전용) |
+| `ledger_issue_save` | author | 명시적 파라미터(`project_id`, `title`, `category`, `severity`, `symptom`, `root_cause`, `owner_actor_id`, `id`, `expected_version`, `reason`)로 이슈를 만들거나 수정합니다 |
+| `ledger_spec_save` | author | 명세를 만들거나 수정합니다(`project_id`, `parent_id`, `title`, `summary`, `acceptance_criteria`, `priority`, `owner_actor_id`, `origin_ref`, `origin_quote`, `id`, `expected_version`, `reason`) |
+| `ledger_task_save` | author | 작업을 만들거나 수정합니다(`project_id`, `title`, `purpose`, `success_condition`, `owner_actor_id`, `origin_ref`, `origin_quote`, `id`, `expected_version`, `reason`) |
+| `ledger_criterion_save` | author | 마일스톤 기준을 만들거나 수정합니다(`project_id`, `id`, `milestone_name`, `goal_label`, `code`, `criterion_text`, `expected_version`, `reason`) |
+| `ledger_transition` | author | 작성자 채널 상태를 바꿉니다(`OPEN`, `IN_PROGRESS`, `RESOLVED`, `MERGED`, `DRAFT`, `PLANNED`, `ACTIVE`, `COMPLETED`, `BLOCKED`, `PENDING` 등) |
+| `ledger_record_deliverable` | author | `issue`, `spec`, `task`에 산출물(`document`, `commit`, `media`, `scene`, `dataset`, `design`, `artifact`, `other`)을 기록하거나 보완하고, 선택으로 `RESOLVED` 또는 `COMPLETED` 처리합니다(`mark_done`) |
+| `ledger_record_case` | author | 이슈 아래에 관찰된 사례를 추가합니다(`MERGED` 이슈는 거절되며 병합 대상을 알려 줍니다) |
+| `ledger_link` | author | 이슈, 명세, 작업, 기준을 연결(`issue_task`, `issue_spec`, `spec_task`, `criterion_task`, `criterion_issue`, `criterion_spec` 또는 이슈 `RELATION_KIND` 코드)하거나 연결을 제거합니다 |
 | `ledger_correct` | author | 이력 행이 잘못되었음을 표시합니다 |
-| `ledger_batch` | author | 위 연산을 한 트랜잭션에서 최대 200개까지 처리합니다. 모두 반영되거나 모두 반영되지 않습니다. 배치에 `operationKey` 하나를 주며 연산에는 키가 없습니다 |
-| `ledger_review` | reviewer | `VERIFIED`, `MET`, `NOT_MET`과 그 재개를 처리합니다(다시 연 `VERIFIED` 결함은 다시 수정하고 편집할 수 있습니다). 증거 링크가 필수입니다 |
-| `ledger_review_correct` | reviewer | 검증 행이 잘못되었음을 표시합니다 |
+| `ledger_batch` | author | 위 연산을 한 트랜잭션에서 최대 200개까지 처리합니다. 모두 반영되거나 모두 반영되지 않으며 배치에 `operationKey` 하나를 줍니다 |
+| `ledger_review` | reviewer | 독립 검수(`VERIFIED`, `MET`, `NOT_MET`)와 재오픈을 처리합니다(`evidence_uri` 필수) |
+| `ledger_review_correct` | reviewer | 검수 행이 잘못되었음을 표시합니다 |
 
-첨부 도구(로그인, 증명, 작성자의 유효한 부여 하나 이상이 필요합니다. 아래 첨부 절을 보십시오).
+첨부 도구(인증된 작성자와 유효한 부여 하나 이상이 필요합니다. 아래 첨부 절을 보십시오).
 
 | 도구 | 내용 |
 |---|---|
-| `artifact-begin` | 기록이 가리킬 수 있는 파일의 업로드를 시작합니다. `operationKey`는 필수이며 호출을 되풀이할 수 있게 합니다. `purpose`는 선택이고 `evidence`만 지원합니다 |
-| `artifact-chunk` | 다음 청크(최대 262144바이트, base64)를 SHA-256과 함께 보냅니다. 마지막으로 반영된 청크를 다시 보내면 현재 상태로 답합니다. `operationKey`를 받지 않습니다(유일한 예외입니다. 업로드는 `artifact-begin`의 `operationKey`로 시작했고, 청크는 `uploadId`, `sequence`, `chunkSha256`으로 멱등이며 같은 순서 번호에 다른 내용을 보내면 충돌입니다) |
-| `artifact-finish` | 받은 바이트를 선언한 크기와 SHA-256에 대조하고 파일을 첨부로 보관합니다. 같은 업로드 ID로 다시 부르면 같은 첨부 ID를 돌려줍니다. `operationKey`를 받지 않습니다(`uploadId`로 멱등입니다) |
-| `artifact-status` | 업로드나 첨부의 상태, 크기, SHA-256, 만료, 진행을 보여 줍니다(경로나 저장 키는 절대 보여 주지 않습니다) |
-| `artifact-read` | 보관된 첨부의 한 페이지를 복호화하고 검증해서 읽습니다 |
+| `artifact_begin` | 1..64개 파일 번들(`files`, 필수 `operationKey`, 선택 `purpose` = `evidence`) 업로드를 시작합니다 |
+| `artifact_chunk` | 다음 청크(최대 262144바이트, base64)를 `chunkSha256`과 함께 보냅니다. `uploadId`, `sequence`, `chunkSha256`으로 멱등입니다(`operationKey` 없음) |
+| `artifact_finish` | 선언한 파일 크기와 SHA-256을 모두 대조하고 첨부 번들을 봉인합니다. `attachmentId`로 멱등입니다(`operationKey` 없음) |
+| `artifact_status` | `uploadId`나 `attachmentId`의 상태, 크기, SHA-256, 만료, 진행률을 조회합니다(경로나 저장 키는 노출하지 않음) |
+| `artifact_read` | 봉인된 첨부에서 파일 `seq`의 한 페이지를 복호화·검증해 읽습니다 |
 
 읽기 도구(증명과 부여가 필요하지 않습니다. 1.x의 원시 SQL 도구를 대체하는 정형 조회입니다).
 
 | 도구 | 내용 |
 |---|---|
-| `ledger_get` | 여러 ID(결함, 작업, 조건을 섞어도 됩니다)의 상태와 판을 한 번에 봅니다. 쓰기 뒤 확인과 `expected_version` 확보에 씁니다 |
-| `ledger_defect` | 결함 하나와 그 수정, 작업, 조건, 사례(병합된 결함의 사례 포함), 관계, `fixed_by`, 최근 변경을 보여 줍니다 |
-| `ledger_task` | 작업 하나와 목적, 성공 조건, 출처, 담당, 완료를 보고한 세션, 결함, 조건을 보여 줍니다 |
-| `ledger_history` | 이력과 모든 쓰기의 영수증을 ID, ID 범위, 대상, 프로젝트, 연산, 작성자, 기간으로 조회합니다. `include_before`를 주면 `before_data`를 더합니다 |
-| `ledger_search` | 키워드로 결함, 작업, 조건을 대소문자 구분 없이 검색합니다. `match`는 `ANY`(기본) 또는 `ALL`입니다 |
-| `ledger_defects` | 프로젝트의 결함을 상태, 심각도, 분류, 주의 종류, 담당으로 거릅니다 |
+| `ledger_get` | 여러 ID(이슈, 명세, 작업, 기준 혼합 가능)의 상태와 판을 한 번에 조회하며 `expected_version` 확보에 씁니다 |
+| `ledger_issue` | 이슈 하나와 산출물, 작업, 명세, 기준, 사례(병합된 이슈 포함), 관계, `owner_actor_id`, 최근 이력을 보여 줍니다 |
+| `ledger_spec` | 명세 하나와 요약, 수용 기준, 상위·하위 명세, 산출물, 작업, 이슈, 기준, 최근 이력을 보여 줍니다 |
+| `ledger_task` | 작업 하나와 목적, 성공 조건, 출처, 담당, 산출물, 이슈, 명세, 기준, 최근 이력을 보여 줍니다 |
+| `ledger_criterion` | 마일스톤 기준 하나와 마일스톤, 목표 라벨, 코드, 기준 문장, 상태 및 연결된 작업·이슈·명세를 보여 줍니다 |
+| `ledger_history` | 추가 전용 이력과 영수증을 ID, ID 범위, 대상, 프로젝트, 연산, 작성자, 기간으로 조회합니다. `include_before`를 주면 `before_data`를 더합니다 |
+| `ledger_search` | 키워드로 이슈, 명세, 작업, 기준을 대소문자 구분 없이 검색합니다. `match`는 `ANY`(기본) 또는 `ALL`입니다 |
+| `ledger_issues` | 프로젝트의 이슈를 상태, 심각도, 분류, 주의 종류, 담당으로 거릅니다 |
+| `ledger_specs` | 프로젝트의 명세를 상태, 상위 ID, 우선순위, 담당, 주의 종류로 거릅니다 |
 | `ledger_tasks` | 프로젝트의 작업을 상태, 담당, 주의 종류로 거릅니다 |
-| `ledger_conditions` | 프로젝트의 릴리스 조건을 상태와 릴리스로 거릅니다 |
-| `ledger_attention` | 확인이 필요한 항목입니다: `OPEN_WITH_FIX`, `FIXED_WITHOUT_COMMIT`, `OPEN_NO_OWNER`, `TASK_UNKNOWN`, `DONE_NOT_VERIFIED` |
+| `ledger_criteria` | 프로젝트의 마일스톤 기준을 상태와 `milestone_name`으로 거릅니다 |
+| `ledger_attention` | 조치가 필요한 항목입니다: `OPEN_WITH_DELIVERABLE`, `RESOLVED_WITHOUT_DELIVERABLE`, `OPEN_NO_OWNER`, `SPEC_DRAFT_WITH_DELIVERABLE`, `SPEC_COMPLETED_NOT_VERIFIED`, `TASK_UNKNOWN`, `DONE_NOT_VERIFIED` |
 | `ledger_stats` | 한 프로젝트 또는 전체의 상태별, 심각도별 건수입니다. `bucket`을 `day`로 주면 UTC 일별 신규 건수를 더합니다 |
 | `ledger_projects` | 프로젝트의 ID, 코드, 제목입니다 |
-| `ledger_codes` | 공통코드입니다. 폐기한 코드는 `include_inactive`를 주어야 나옵니다 |
+| `ledger_codes` | 공통코드입니다. 폐기한 코드는 `include_inactive`를 주면 포함됩니다 |
 
 목록형 읽기 도구는 `max_rows`(1에서 1000, 기본 50)와 `cursor`를 받으며, 응답에 `truncated`와 `next_cursor`가 붙습니다.
 1.x의 `execute_sql_reader`와 `search_objects_reader` 도구는 제거되었으므로 위의 읽기 도구를 사용합니다.
@@ -132,20 +135,20 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 공통코드가 바뀌면 서버가 `notifications/tools/list_changed`를 보내므로, 연결된 클라이언트는 재시작 없이 도구 정의를 다시 읽습니다. 다른 프로세스(관리 웹, `ledger-cli`)가
 바꾼 내용은 `ledger.mcp.code-poll-interval` 안에 감지합니다. 새 도구는 서버가 시작될 때 등록됩니다.
 
-`ledger_record_case`는 `defect_id`, `observation`(1자에서 4000자), `reason`을 받고, 선택으로 `evidence`, `user_quote`, `observed_at`(`Z` 또는 오프셋이 붙은 ISO-8601)을 받습니다.
+`ledger_record_case`는 `issue_id`, `observation`(1자에서 4000자), `reason`을 받고, 선택으로 `evidence`, `source_quote`, `observed_at`(`Z` 또는 오프셋이 붙은 ISO-8601)을 받습니다.
 `ledger_batch`에서는 같은 인자를 연산 `{"op": "record_case", ...}`에 넣습니다.
 
 ```json
-{"defect_id": "WEB-D-0007", "observation": "checkout returns 500 for a gift card",
- "evidence": "request 7f3a, api/checkout.ts:88", "user_quote": "I can't pay with my gift card",
+{"issue_id": "WEB-I-0007", "observation": "checkout returns 500 for a gift card",
+ "evidence": "request 7f3a, api/checkout.ts:88", "source_quote": "I can't pay with my gift card",
  "observed_at": "2026-11-05T10:00:00Z", "reason": "second report of the same failure"}
 ```
 
 ## 첨부
 
-검수 보고서(또는 그 밖의 근거)는 첨부로 보관합니다. 데이터베이스에 본문 텍스트로 두지 않고, 흔적 없이 고칠 수 있는 로컬 파일로도 두지 않습니다. 기록의 이력 행은 `ledger_transition`, `ledger_review`, `ledger_review_correct`, `ledger_correct`, `ledger_record_fix`, `ledger_record_case`와 `ledger_batch`의 같은 연산이 받는 선택 인자 `attachment_id`로 첨부를 가리킵니다. 기록은 첨부가 있고 기록을 쓰는 작성자가 올린 것일 때만 쓰입니다.
+검수 보고서(또는 그 밖의 근거)는 첨부로 보관합니다. 데이터베이스에 본문 텍스트로 두지 않고, 흔적 없이 고칠 수 있는 로컬 파일로도 두지 않습니다. 기록의 이력 행은 `ledger_transition`, `ledger_review`, `ledger_review_correct`, `ledger_correct`, `ledger_record_deliverable`, `ledger_record_case`와 `ledger_batch`의 같은 연산이 받는 선택 인자 `attachment_id`로 첨부를 가리킵니다. 기록은 첨부가 있고 기록을 쓰는 작성자가 올린 것일 때만 쓰입니다.
 
-- **업로드.** 업로드는 위의 MCP 도구 다섯 개로 합니다. `artifact-begin`(필수 `operationKey`, 순서가 있는 1..64개 파일 목록 `files`), 청크마다 `artifact-chunk`(최대 262144바이트), `artifact-finish`(`attachmentId`), 확인·조회용 `artifact-status`와 `artifact-read`(선택 `seq`, 기본값 `0`)입니다. PC의 로컬 파일을 모델 문맥을 거치지 않고 업로드하려면 `ledger-cli attachments-prepare <file> [--name=<name>]`으로 한 번에 크기와 SHA-256을 측정하고, `ledger-cli attachments-send <file> --upload-id=<id>`로 `/mcp`에 직접 청크를 전송합니다(세션 증명 없이 `uploadId` 권한으로 전송합니다).
+- **업로드.** 업로드는 위의 MCP 도구 다섯 개로 합니다. `artifact_begin`(필수 `operationKey`, 순서가 있는 1..64개 파일 목록 `files`), 청크마다 `artifact_chunk`(최대 262144바이트), `artifact_finish`(`attachmentId`), 확인·조회용 `artifact_status`와 `artifact_read`(선택 `seq`, 기본값 `0`)입니다. PC의 로컬 파일을 모델 문맥을 거치지 않고 업로드하려면 `ledger-cli attachments-prepare <file> [--name=<name>]`으로 한 번에 크기와 SHA-256을 측정하고, `ledger-cli attachments-send <file> --upload-id=<id>`로 `/mcp`에 직접 청크를 전송합니다(세션 증명 없이 `uploadId` 권한으로 전송합니다).
 - **저장.** 데이터베이스에는 번들·파일 메타데이터와 저장 사본 판본만 둡니다(`upload_staging`, `attachment`, `attachment_file`, `attachment_storage`. 본문 열도 외래 키도 없습니다). 파일 사본은 `ledger.attachments.directory` 아래에 128비트 무작위 이름으로, 확장자와 원본 이름 없이 두며, 청크마다 한 세그먼트로 AES-256-GCM 암호화하고(저장 키와 위치를 함께 인증합니다) 끝나면 읽기 전용으로 바꿉니다. 첨부는 바꾸거나 지우지 않습니다. 데이터베이스의 응용 계정은 첨부에 `SELECT`와 `INSERT`만 가집니다.
 - **키.** `setup`이 첫 256비트 키 파일을 `ledger.attachments.key-directory`에 만들고(서비스 계정만 읽습니다) `ledger.attachments.active-key-id`를 정합니다. 교체는 `ledger-cli attachments-key-create`, `active-key-id`를 새 id로 바꾸기, 재시작, 그다음 `ledger-cli attachments-rekey --from=<old id>`로 옛 키의 파일을 다시 쓰는 순서입니다. 옛 키 파일은 현재 파일이나 열린 업로드가 쓰는 동안 남깁니다. 필요한 키 파일이 없으면 시작 점검이 키가 아니라 키 id를 알립니다.
 - **오류.** `ARTIFACT_CHUNK_CONFLICT`, `CHUNK_HASH_MISMATCH`, `ARTIFACT_BUSY`(잠시 뒤 다시 보냅니다), `ARTIFACT_INCOMPLETE`, `ARTIFACT_HASH_MISMATCH`(바이트는 남습니다), `ARTIFACT_CORRUPTED`, `ARTIFACT_LIMIT`, `ARTIFACT_UNSUPPORTED_PURPOSE`, `ARTIFACT_EXPIRED`, `ARTIFACT_NOT_FOUND`, `ARTIFACT_OPERATION_CONFLICT`, `ARTIFACT_STORAGE_FULL`(디스크가 너무 찼으니 소유자가 비워야 합니다), `ARTIFACT_STORAGE_IO_ERROR`, `ARTIFACT_STORAGE_UNSAFE`(저장 경로를 이 용도로 쓸 수 없습니다. 폴더 자리에 파일이 있거나, 파일 자리에 폴더가 있거나, 이 파일 시스템이나 이 계정에서는 소유자 전용으로 만들 수 없는 경우입니다), `ARTIFACT_KEY_MISSING`(쓸 수 있는 키가 없습니다. 키 파일이 없거나, 비었거나, 256비트가 아닙니다. 키 파일을 되살립니다). 이 도구들의 오류에는 모두 `details.retryable`이 실립니다. 같은 요청을 나중에 다시 보내 성공할 수 있을 때만 `true`입니다(`ARTIFACT_BUSY`, 그리고 `details.limit`이 `staging-budget`이나 `open-uploads`인 `ARTIFACT_LIMIT`). `ARTIFACT_INCOMPLETE`는 `false`입니다(빠진 청크를 보낸 뒤 finish를 다시 보냅니다).
@@ -202,6 +205,7 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | `ledger.schema.require-utc` | 서버, CLI | JVM이나 데이터베이스 세션이 UTC가 아니면 시작을 거부합니다. 기본 true |
 | `ledger.attestation.window` | 서버 | 증명의 시각이 서버 시각과 벌어질 수 있는 한도, 기본 `PT5M` |
 | `ledger.mcp.token` | MCP 서버, `mcp-check` | 에이전트의 bearer 토큰, 16자 이상(비밀) |
+| `ledger.mcp.auth-mode` | MCP 서버 | 호출자 인증 모드: `STANDARD`(기본값, 작성자별 `Bearer` 세션 토큰과 `_hostAttestation` 모두 허용) 또는 `ATTESTED`(작성자 신원에 `_hostAttestation` 필수) |
 | `ledger.mcp.allowed-hosts` | MCP 서버 | 허용하는 `Host` 값, 기본 `127.0.0.1`과 `localhost` |
 | `ledger.mcp.allowed-origins` | MCP 서버 | 허용하는 브라우저 출처, 기본 없음 |
 | `ledger.mcp.max-request-size` | MCP 서버 | 요청 본문의 최대 크기, 기본 1MB |
@@ -226,7 +230,7 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | `ledger.attachments.active-key-id` | 서버, CLI | 새 업로드를 쓰는 키입니다. `setup`이 `local.yaml`에 적습니다. 키 파일이 없으면 서버가 시작하지 않습니다 |
 | `ledger.attachments.max-file-bytes` | 서버, CLI | 파일 하나의 최대 크기, 기본 64MB |
 | `ledger.attachments.staging-budget-bytes` | 서버, CLI | 열린 업로드 전체가 선언할 수 있는 크기, 기본 512MB |
-| `ledger.attachments.attachment-budget-bytes` | 서버, CLI | 보관 첨부 전체(와 열린 업로드)가 가질 수 있는 크기, 기본 10GB. 넘으면 새 `artifact-begin`을 거절하고 있는 첨부는 지우지 않습니다 |
+| `ledger.attachments.attachment-budget-bytes` | 서버, CLI | 보관 첨부 전체(와 열린 업로드)가 가질 수 있는 크기, 기본 10GB. 넘으면 새 `artifact_begin`을 거절하고 있는 첨부는 지우지 않습니다 |
 | `ledger.attachments.max-open-per-owner` | 서버, CLI | 작성자 한 명이 열어 둘 수 있는 업로드 수, 기본 4 |
 | `ledger.attachments.disk-margin-bytes` | 서버, CLI | 파일을 쓴 뒤에도 `directory`의 디스크에 남겨 두어야 하는 공간, 기본 64MB(가장 큰 파일 하나의 크기). `usable - size`가 이보다 작으면 begin이나 청크를 `ARTIFACT_STORAGE_FULL`로 거절하며, 소유자가 디스크를 비워야 합니다 |
 | `ledger.attachments.upload-ttl` | 서버, CLI | 마지막 청크 뒤 업로드가 사는 시간, 기본 10m |
@@ -426,18 +430,21 @@ JDBC 드라이버의 타입 정보는 드라이버가 판단할 수 없는 형�
 | `setup` | `setup [--owner-account=<account>] [--app-account=<account>] [--stdin]` | 첫 설정입니다. `migrate`처럼 마이그레이션하고, 앱 계정이 스키마를 쓸 수 있는지 확인하며(쓸 수 없으면 종료 코드 `3`과 빠진 단계를 알림), 없는 시드 코드를 추가하고(있는 코드는 바꾸지 않음), 시드와 데이터베이스를 개수와 다이제스트로 대조합니다. 다시 실행해도 아무것도 바뀌지 않습니다 |
 | `key-register` | `key-register <author> <public-key-or-block> <fingerprint> [--replace=<current-fingerprint>]` | 세션이 출력한 공개 키를 작성자에 묶습니다. 유효한 키는 `--replace`가 있어야 교체합니다 |
 | `key-revoke` | `key-revoke <author> --fingerprint=<fingerprint>` | 작성자의 유효한 키를 닫습니다 |
+| `token-issue` | `token-issue <author> [--note=<text>] [--expires=<ISO-8601 with Z or an offset>]` | 작성자용 표준 HTTP `Bearer` 세션 토큰(`lgt_...`)을 발급하고 SHA-256 해시와 접두사만 저장하며 토큰을 한 번 출력합니다 |
+| `token-revoke` | `token-revoke <id>` | 숫자 ID로 세션 토큰을 회수합니다 |
+| `token-list` | `token-list [<author>]` | 작성자 또는 전체의 회수되지 않은 세션 토큰을 나열합니다(비밀값 미출력) |
 | `passkey-code` | `passkey-code [--remove-existing]` | 관리 웹에 소유자의 패스키를 등록하는 일회용 코드를 발급합니다(한 번만 보여 주고, 15분간 유효하며, 해시로만 저장합니다. 새 코드는 쓰지 않은 이전 코드를 끝냅니다). `--remove-existing`은 패스키를 모두 잃은 소유자를 위해 유효한 패스키를 먼저 모두 닫습니다 |
 | `project-add` | `project-add <id> <code> <title>` | 프로젝트를 추가합니다 |
 | `code-set` | `code-set <group> <code> <name-ko> [<description-ko>] [--name-en=<text>] [--description-en=<text>] [--sort=<n>] [--inactive] [--direction=<direction>]` | 공통코드를 추가하거나 수정합니다. `--direction`(`GIVEN` 또는 `CANONICAL`)은 `RELATION_KIND` 그룹용입니다(`ledger_link` 도구 참고) |
 | `codes` | `codes [<group>]` | 공통코드를 나열합니다 |
-| `grant` | `grant <author> <project> <scope>... [--note=<text>] [--expires=<ISO-8601 with Z or an offset>]` | 프로젝트의 범위를 부여합니다. 작성자에게 먼저 유효한 세션 키가 있어야 합니다 |
+| `grant` | `grant <author> <project> <scope>... [--note=<text>] [--expires=<ISO-8601 with Z or an offset>]` | 프로젝트의 범위를 부여합니다. 작성자에게 먼저 유효한 세션 키나 세션 토큰이 있어야 합니다 |
 | `revoke` | `revoke <author> [<project> [<scope>]]` | 유효한 부여를 회수합니다 |
 | `grants` | `grants [<author>]` | 유효한 부여를 나열합니다 |
 | `attachments-check` | `attachments-check [--purge-orphans]` | 첨부를 그 파일 및 키와 맞춰 봅니다. 어느 행도 가리키지 않는 파일과 `attachments-rekey`가 대체한 파일은 지우지 않고 `orphans/`로 옮기며, `orphans/`에 있던 파일의 행이 다시 생겼으면 되돌립니다. 보고서는 건수와, 없어졌거나 손상되었거나 어느 이력 행도 가리키지 않는 첨부의 ID(저장 키나 경로는 출력하지 않습니다)를 보여 주고, 없어졌거나 손상된 첨부가 있으면 종료 코드는 `1`입니다. `--purge-orphans`는 먼저 `orphans/`를 비우고 그 수를 감사 기록에 남깁니다 |
 | `attachments-rekey` | `attachments-rekey --from=<keyId>` | 키 `<keyId>`로 쓴 첨부 파일을 활성 키 `ledger.attachments.active-key-id`(다른 키여야 합니다)로 다시 씁니다. 옛 파일은 `ledger.attachments.orphan-grace`가 지난 뒤 `attachments-check`가 `orphans/`로 옮깁니다 |
 | `attachments-key-create` | `attachments-key-create` | 키 디렉터리에 새 256비트 키 파일을 만들고(서비스 계정만 읽을 수 있습니다. Windows에서는 설치한 사용자와, 읽기만 하는 LocalService) 키 ID를 출력합니다. 키 자체는 출력하지 않으며, 새 업로드를 그 키로 쓰려면 `ledger.attachments.active-key-id`를 그 값으로 설정합니다 |
-| `attachments-prepare` | `attachments-prepare <file> [--name=<name>]` | 일반 파일 하나를 스트리밍으로 한 번 읽어 `artifact-begin`에 쓸 JSON(`fileName`, `size`, `sha256`, `mediaType`)을 출력합니다. 서버나 데이터베이스에 연결하지 않습니다 |
-| `attachments-send` | `attachments-send <file> --upload-id=<id> [--url=<url>] [--ledger.mcp.token=<token>]` | `artifact-status`와 `artifact-chunk`로 실행 중인 MCP 서버에 파일 청크를 직접 전송합니다(세션 증명 없이 `uploadId` 권한 사용). 중단되면 다시 실행해 서버가 받은 위치부터 이어 보냅니다. 데이터베이스는 필요하지 않습니다 |
+| `attachments-prepare` | `attachments-prepare <file> [--name=<name>]` | 일반 파일 하나를 스트리밍으로 한 번 읽어 `artifact_begin`에 쓸 JSON(`fileName`, `size`, `sha256`, `mediaType`)을 출력합니다. 서버나 데이터베이스에 연결하지 않습니다 |
+| `attachments-send` | `attachments-send <file> --upload-id=<id> [--url=<url>] [--ledger.mcp.token=<token>]` | `artifact_status`와 `artifact_chunk`로 실행 중인 MCP 서버에 파일 청크를 직접 전송합니다(세션 증명 없이 `uploadId` 권한 사용). 중단되면 다시 실행해 서버가 받은 위치부터 이어 보냅니다. 데이터베이스는 필요하지 않습니다 |
 | `mcp-check` | `mcp-check [--url=<url>] [--ledger.mcp.token=<token>]` | 실행 중인 MCP 서버에 연결해 도구를 확인합니다 |
 | `render-deploy` | `render-deploy --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>] [--admin-host=<host>] [--root=<directory>] [--check]` | 서비스 정의(systemd 유닛, Windows에서는 WinSW 설정)와 설정을 씁니다. 설치기가 호출합니다 |
 | `prepare-host` | `prepare-host --jars=<dir> --driver-jar=<file> [--winsw=<file>] --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>] [--admin-host=<host>] [--root=<directory>]` | 호스트의 파일을 준비합니다(root로, Windows에서는 관리자 권한으로 실행). 폴더를 소유자·모드 또는 ACL(Windows에서는 LocalService의 접근과 설치한 사용자의 비밀 폴더)과 함께 만들고, jar와 드라이버(Windows에서는 WinSW도)를 복사하고, `render-deploy`가 쓰는 것을 씁니다. 설치기가 호출합니다 |

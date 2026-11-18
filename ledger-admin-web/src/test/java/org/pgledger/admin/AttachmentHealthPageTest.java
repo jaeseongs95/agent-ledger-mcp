@@ -107,7 +107,7 @@ class AttachmentHealthPageTest {
         String altered = seeds.attachment("altered.txt", "text/plain", "what was uploaded".getBytes(StandardCharsets.UTF_8));
         String loose = seeds.attachment("loose.txt", "text/plain", "no history row points here".getBytes(StandardCharsets.UTF_8));
         for (String attachment : new String[] {good, gone, altered}) {
-            seeds.disputeWithAttachment(seeds.defect(project, "defect of " + attachment), attachment);
+            seeds.disputeWithAttachment(seeds.issue(project, "issue of " + attachment), attachment);
         }
         StorageKey goodKey = keyOf(good);
         StorageKey goneKey = keyOf(gone);

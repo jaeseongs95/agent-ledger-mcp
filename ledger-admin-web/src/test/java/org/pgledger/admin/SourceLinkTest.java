@@ -49,7 +49,7 @@ class SourceLinkTest {
         assertThat(login).as("/login").contains("href=\"" + DEFAULT_URL + "\"").contains(">" + text + "</a>")
                 .contains("rel=\"noopener noreferrer\"");
 
-        for (String path : new String[] {"/defects", "/projects", "/grants", "/driver"}) {
+        for (String path : new String[] {"/issues", "/specs", "/projects", "/grants", "/driver"}) {
             String page = owner.perform(owner.get(path).header(HttpHeaders.ACCEPT_LANGUAGE, language)).andExpect(status().isOk())
                     .andReturn().getResponse().getContentAsString();
 

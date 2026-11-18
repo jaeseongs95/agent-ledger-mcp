@@ -87,8 +87,8 @@ class PasskeyTest {
         Browser owner = Browser.signedIn(mvc);
         String csrf = owner.csrfOf("/grants");
 
-        for (String path : List.of("/grants", "/grants/revoke", "/grants/keys/revoke", "/codes", "/projects", "/driver",
-                "/passkeys/revoke")) {
+        for (String path : List.of("/grants", "/grants/author", "/grants/revoke", "/grants/keys/revoke",
+                "/grants/tokens", "/grants/tokens/revoke", "/codes", "/projects", "/driver", "/passkeys/revoke")) {
             owner.perform(owner.formWithoutApproval(path, Form.of("a", "b"), csrf).accept(MediaType.APPLICATION_JSON))
                     .andExpect(status().isForbidden()).andExpect(jsonPath("$.code").value("PASSKEY_APPROVAL_REQUIRED"));
         }
@@ -125,7 +125,7 @@ class PasskeyTest {
                 .andExpect(jsonPath("$.code").value("PASSKEY_APPROVAL_INVALID"));
         String second = "d" + unique();
         String forAProject = owner.approval("/projects", project(second), csrf);
-        owner.perform(owner.formWithoutApproval("/codes", Form.of("group", "DEFECT_CATEGORY", "code", "X"), csrf)
+        owner.perform(owner.formWithoutApproval("/codes", Form.of("group", "ISSUE_CATEGORY", "code", "X"), csrf)
                 .param("approval", forAProject).accept(MediaType.APPLICATION_JSON)).andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("PASSKEY_APPROVAL_INVALID"));
 

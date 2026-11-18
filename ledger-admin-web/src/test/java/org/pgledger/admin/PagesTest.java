@@ -61,7 +61,6 @@ class PagesTest {
                     .fromUriString(link.group(1).replace("&amp;", "&")).build().getQueryParams().getFirst("id"),
                     java.nio.charset.StandardCharsets.UTF_8);
             assertThat(id).isEqualTo(row[0]);
-            // the browser sends the id back as the query parameter the link carries (MockMvc would encode a URI text again)
             assertThat(link.group(1)).startsWith("/tasks/detail?id=");
             String detail = browser.perform(browser.get("/tasks/detail").param("id", id)).andExpect(status().isOk())
                     .andReturn().getResponse().getContentAsString();
@@ -73,29 +72,33 @@ class PagesTest {
     }
 
     @Test
-    @DisplayName("ADM-016: the overview, projects, defects, a defect, tasks, conditions, history, grants and codes each show "
-            + "the seeded rows")
+    @DisplayName("ADM-016: the overview, projects, issues, an issue, specs, a spec, tasks, criteria, history, grants and codes each show the seeded rows")
     void adm016_everyPageShowsItsRows() throws Exception {
         Seeded project = seeds.project();
-        String defect = seeds.defect(project, "the first defect");
+        String issue = seeds.issue(project, "the first issue");
+        String spec = seeds.spec(project, "the first spec");
         String task = seeds.task(project, "the first task");
-        seeds.condition(project, "R1", "1.0", "C1");
-        seeds.dispute(defect, "https://evidence.example/1");
+        seeds.criterion(project, "R1", "2.0", "C1");
+        seeds.dispute(issue, "https://evidence.example/1");
         Browser browser = Browser.signedIn(mvc);
 
         assertThat(page(browser, "/?project=" + project.project())).contains("mcp-status", "attention", "Counts");
         assertThat(page(browser, "/projects")).contains(project.project(), project.code());
-        assertThat(page(browser, "/defects?project=" + project.project())).contains(defect, "the first defect");
-        assertThat(page(browser, "/defects/" + defect)).contains("behavior of the first defect",
-                "cause of the first defect", "Recent changes");
+        assertThat(page(browser, "/issues?project=" + project.project())).contains(issue, "the first issue");
+        assertThat(page(browser, "/issues/" + issue)).contains("symptom of the first issue",
+                "cause of the first issue", "Recent changes");
+        assertThat(page(browser, "/specs?project=" + project.project())).contains(spec, "the first spec");
+        assertThat(page(browser, "/specs/detail?id=" + spec)).contains("summary of the first spec",
+                "acceptance of the first spec");
         assertThat(page(browser, "/tasks?project=" + project.project())).contains(task, "the first task");
         assertThat(page(browser, "/tasks/detail?id=" + task)).contains("purpose of the first task");
-        assertThat(page(browser, "/conditions?project=" + project.project())).contains("condition C1", "1.0");
-        assertThat(page(browser, "/history?project=" + project.project())).contains(defect, "CREATE");
+        assertThat(page(browser, "/criteria?project=" + project.project())).contains("criterion C1", "2.0");
+        assertThat(page(browser, "/history?project=" + project.project())).contains(issue, "CREATE");
         assertThat(page(browser, "/grants")).contains(Seeds.AUTHOR, project.project());
-        assertThat(page(browser, "/codes")).contains("DEFECT_CATEGORY", "ARC", "RETIRED");
+        assertThat(page(browser, "/codes")).contains("ISSUE_CATEGORY", "ARC", "RETIRED");
         browser.perform(browser.get("/api/overview?project=" + project.project()).accept(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.stats.defects").value(1))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.stats.issues").value(1))
+                .andExpect(jsonPath("$.stats.specs").value(1))
                 .andExpect(jsonPath("$.mcp.state").value("NOT_CONFIGURED"));
     }
 
@@ -108,20 +111,19 @@ class PagesTest {
     }
 
     @Test
-    @DisplayName("ADM-018: a defect that does not exist is 404 NOT_FOUND (a page for a browser, a problem for a client)")
-    void adm018_unknownDefect() throws Exception {
+    @DisplayName("ADM-018: an issue that does not exist is 404 NOT_FOUND (a page for a browser, a problem for a client)")
+    void adm018_unknownIssue() throws Exception {
         Browser browser = Browser.signedIn(mvc);
 
-        browser.perform(browser.get("/defects/NOP-D-0001").accept(MediaType.APPLICATION_JSON))
+        browser.perform(browser.get("/issues/NOP-I-0001").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isNotFound()).andExpect(jsonPath("$.code").value("NOT_FOUND"));
-        String html = browser.perform(browser.get("/defects/NOP-D-0001")).andExpect(status().isNotFound()).andReturn()
+        String html = browser.perform(browser.get("/issues/NOP-I-0001")).andExpect(status().isNotFound()).andReturn()
                 .getResponse().getContentAsString();
         assertThat(html).contains("NOT_FOUND").contains("class=\"skip-link\"");
     }
 
     @Test
-    @DisplayName("ADM-003: skip link, page info, page-size select, previous and next (disabled on the first and the last "
-            + "page), :focus-visible in the CSS")
+    @DisplayName("ADM-003: skip link, page info, page-size select, previous and next (disabled on the first and the last page), :focus-visible in the CSS")
     void adm003_pagingControls() throws Exception {
         Seeded project = seeds.project();
         seeds.task(project, "task one");
@@ -136,8 +138,7 @@ class PagesTest {
     }
 
     @Test
-    @DisplayName("ADM-016/044: tasks with limit 1 show one row, the total and a next control; next and previous move by cursor; "
-            + "a row inserted meanwhile does not repeat or skip a row")
+    @DisplayName("ADM-016/044: tasks with limit 1 show one row, the total and a next control; next and previous move by cursor; a row inserted meanwhile does not repeat or skip a row")
     void adm016_adm044_pagingByCursor() throws Exception {
         Seeded project = seeds.project();
         String oldest = seeds.task(project, "task oldest");
@@ -174,7 +175,7 @@ class PagesTest {
     @DisplayName("ADM-004: an http or https evidence address is a link")
     void adm004_httpAddressesAreLinks(String address) throws Exception {
         Seeded project = seeds.project();
-        seeds.dispute(seeds.defect(project, "d"), address);
+        seeds.dispute(seeds.issue(project, "i"), address);
         Browser browser = Browser.signedIn(mvc);
 
         assertThat(page(browser, "/history?project=" + project.project())).contains("<a href=\"" + address + "\"");
@@ -189,13 +190,13 @@ class PagesTest {
     @DisplayName("ADM-004: any other scheme stays plain, escaped text and never becomes a link")
     void adm004_otherAddressesAreText(String address) throws Exception {
         Seeded project = seeds.project();
-        String defect = seeds.defect(project, "d");
-        seeds.dispute(defect, address);
-        seeds.observe(defect, "seen", address);
+        String issue = seeds.issue(project, "i");
+        seeds.dispute(issue, address);
+        seeds.observe(issue, "seen", address);
         Browser browser = Browser.signedIn(mvc);
 
         for (String html : List.of(page(browser, "/history?project=" + project.project()),
-                page(browser, "/defects/" + defect))) {
+                page(browser, "/issues/" + issue))) {
             assertThat(html).contains(address).doesNotContain("href=\"" + address);
         }
     }
@@ -205,11 +206,11 @@ class PagesTest {
     void adm006_escaping() throws Exception {
         Seeded project = seeds.project();
         String hostile = "<script>alert(\"x\")</script> & 'q'\nline";
-        String defect = seeds.defect(project, hostile);
-        seeds.observe(defect, hostile, "https://x.example/e");
+        String issue = seeds.issue(project, hostile);
+        seeds.observe(issue, hostile, "https://x.example/e");
         Browser browser = Browser.signedIn(mvc);
 
-        for (String html : List.of(page(browser, "/defects?project=" + project.project()), page(browser, "/defects/" + defect),
+        for (String html : List.of(page(browser, "/issues?project=" + project.project()), page(browser, "/issues/" + issue),
                 page(browser, "/history?project=" + project.project()))) {
             assertThat(html).doesNotContain("<script>alert").contains("&lt;script&gt;alert");
         }
@@ -219,15 +220,15 @@ class PagesTest {
     @DisplayName("ADM-039: instants are <time datetime=...Z> in UTC; the page is the same under another JVM zone and names no zone")
     void adm039_utcInstants() throws Exception {
         Seeded project = seeds.project();
-        seeds.defect(project, "utc");
+        seeds.issue(project, "utc");
         Browser browser = Browser.signedIn(mvc);
 
-        String utc = page(browser, "/defects?project=" + project.project());
+        String utc = page(browser, "/issues?project=" + project.project());
         TimeZone before = TimeZone.getDefault();
         String seoul;
         try {
             TimeZone.setDefault(TimeZone.getTimeZone("Asia/Seoul"));
-            seoul = page(browser, "/defects?project=" + project.project());
+            seoul = page(browser, "/issues?project=" + project.project());
         } finally {
             TimeZone.setDefault(before);
         }
@@ -239,7 +240,6 @@ class PagesTest {
         assertThat(withoutToken(seoul)).isEqualTo(withoutToken(utc)).doesNotContain("Asia/Seoul").doesNotContain("KST");
     }
 
-    /** The CSRF token (the hidden field of a form and the meta tag the passkey script reads) is masked differently on every render; everything else must be equal. */
     private static String withoutToken(String html) {
         return html.replaceAll("name=\"_csrf\" value=\"[^\"]+\"", "name=\"_csrf\"")
                 .replaceAll("name=\"_csrf\" content=\"[^\"]+\"", "name=\"_csrf\"");

@@ -88,7 +88,8 @@ class Import1xCommandTest {
             long legacyRows = legacy.count(table.sourceName());
             rows += legacyRows;
             assertThat(output.info()).containsPattern(table.targetName() + ": " + legacyRows + " rows, sha256 [0-9a-f]{64}");
-            assertThat(count(table.targetName())).as(table.name()).isEqualTo(legacyRows);
+            long expectedTargetRows = table == LegacyTable.COMMON_CODE ? legacyRows + 9 : legacyRows;
+            assertThat(count(table.targetName())).as(table.name()).isEqualTo(expectedTargetRows);
         }
         assertThat(LegacyTable.values()).hasSize(12);
         assertThat(output.info()).contains("Imported " + rows + " rows of 12 tables from the 1.x schema " + legacy.schema())
@@ -156,8 +157,8 @@ class Import1xCommandTest {
         assertThat(result.code()).contains(MigrationError.IMPORT_DATA_REFUSED);
         assertThat(output.info()).contains("task[OLD T SPACE].id: MUST_BE_ID 120")
                 .contains("task[" + LegacyFixtures.TASK_ID_121 + "].id: MUST_BE_ID 120")
-                .contains("release_condition[OLD-C-NORELEASE].release_name: REQUIRED")
-                .contains("defect_fix[30].repo: REQUIRED")
+                .contains("milestone_criterion[OLD-C-NORELEASE].milestone_name: REQUIRED")
+                .contains("deliverable[30].location: REQUIRED")
                 .doesNotContain("OLD-T-UNKNOWN").doesNotContain("old-t-lower").doesNotContain("old-c-lower");
         assertThat(result.refusal().orElseThrow().arguments()).containsExactly("5");
         assertThat(captured.getAll()).contains("cannot be imported as they are");
@@ -199,7 +200,7 @@ class Import1xCommandTest {
         assertThat(verified.info()).contains("Verified").contains("of 12 tables").contains("Nothing was changed");
         assertThat(database.rows(AUDIT)).hasSize(1);
 
-        database.update("UPDATE defect SET title = 'tampered' WHERE id = 'OLD-D-0001'");
+        database.update("UPDATE issue SET title = 'tampered' WHERE id = 'OLD-D-0001'");
         RecordingOutput failed = new RecordingOutput();
         Outcome tampered = run(tool, failed, "import-1x", "--verify-only");
 
@@ -207,12 +208,12 @@ class Import1xCommandTest {
         assertThat(tampered.code()).contains(MigrationError.IMPORT_VERIFY_FAILED);
         List<String> arguments = tampered.refusal().orElseThrow().arguments();
         assertThat(arguments).hasSize(5);
-        assertThat(arguments.get(0)).isEqualTo("defect");
+        assertThat(arguments.get(0)).isEqualTo("issue");
         assertThat(arguments.get(1)).isEqualTo(arguments.get(2));
         assertThat(arguments.get(3)).hasSize(64).isNotEqualTo(arguments.get(4));
-        assertThat(failed.info()).contains("Table defect: " + arguments.get(1) + " 1.x rows but " + arguments.get(2)
+        assertThat(failed.info()).contains("Table issue: " + arguments.get(1) + " 1.x rows but " + arguments.get(2)
                 + " rows in the new schema; sha256 " + arguments.get(3) + " against " + arguments.get(4));
-        assertThat(captured.getAll()).contains("differ in the table defect");
+        assertThat(captured.getAll()).contains("differ in the table issue");
         assertThat(database.rows(AUDIT)).hasSize(1);
     }
 

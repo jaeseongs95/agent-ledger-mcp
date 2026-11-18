@@ -12,7 +12,7 @@ import org.pgledger.seed.SeedCode;
 class SeedReportTest {
 
     private static SeedCode code(String code, String name, int sort, String state) {
-        return new SeedCode("DEFECT_CATEGORY", code, name, name + " en", "설명 " + code, "Description " + code, sort, state);
+        return new SeedCode("ISSUE_CATEGORY", code, name, name + " en", "설명 " + code, "Description " + code, sort, state);
     }
 
     private static List<SeedCode> seed() {

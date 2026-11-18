@@ -82,19 +82,25 @@ class PackagedProductSystemTest {
     private int port;
     private List<String> serverArguments;
     private String token;
+    private String standardAuthor;
+    private String standardToken;
     private Process server;
     private McpSyncClient client;
+    private McpSyncClient standardClient;
 
     // the facts of the steps that later steps need
     private String projectId;
     private String author;
     private Path keys;
     private String hostId;
-    private String defectId;
+    private String issueId;
+    private String specId;
     private String taskId;
     private final List<String> sentOperationKeys = new ArrayList<>();
-    private Map<String, String> defectBeforeEdit;
+    private Map<String, String> issueBeforeEdit;
     private Map<String, String> taskBeforeTransition;
+    private Map<String, String> specBeforeComplete;
+    private Map<String, String> specBeforeVerify;
     private List<Map<String, String>> schemaHistoryAfterMigrate;
     private int historyRowsAfterWrites;
     private int receiptsAfterWrites;
@@ -207,20 +213,21 @@ class PackagedProductSystemTest {
         assertThat(owner.schemaExists(schema)).isTrue();
         List<String> tables = owner.rows("SELECT table_name FROM information_schema.tables WHERE table_schema = '"
                 + schema + "'").stream().map(row -> row.get("table_name")).toList();
-        assertThat(tables).contains("project", "defect", "task", "history", "request_receipt", "session_key",
-                "session_grant", "schema_history");
+        assertThat(tables).contains("project", "issue", "spec", "task", "milestone_criterion", "deliverable", "history",
+                "request_receipt", "session_key", "session_token", "session_grant", "schema_history");
         schemaHistoryAfterMigrate = schemaHistory(schema);
         assertThat(schemaHistoryAfterMigrate).hasSize(ShippedMigrations.count()).allSatisfy(row -> assertThat(row.get("outcome"))
                 .isEqualTo("SUCCEEDED"));
         assertThat(privileges("history")).containsExactlyInAnyOrder("SELECT", "INSERT");
-        assertThat(privileges("defect")).contains("SELECT", "INSERT", "UPDATE").doesNotContain("DELETE");
+        assertThat(privileges("issue")).contains("SELECT", "INSERT", "UPDATE").doesNotContain("DELETE");
+        assertThat(privileges("spec")).contains("SELECT", "INSERT", "UPDATE").doesNotContain("DELETE");
         // the step of the DBMS that the grant template leaves to the operator: the account may look into the schema
         owner.execute("GRANT USAGE ON SCHEMA " + schema + " TO " + database.appUser());
     }
 
     @Test
     @Order(5)
-    @DisplayName("SYS-005: the owner sets up the project, the key made by the hook jar and its grants with the commands of the product")
+    @DisplayName("SYS-005: the owner sets up the project, the key made by the hook jar, a standard Bearer session token, and their grants with the commands of the product")
     void ownerSetup() throws IOException {
         // The real install in its order (ATA-036, ATA-037): prepare-host makes the folders (it is not run here: it needs an
         // elevated prompt for the ACLs, section 21), then setup makes the first attachment key (its folder, owner-only, if it is not
@@ -237,8 +244,8 @@ class PackagedProductSystemTest {
         projectId = "sysproj";
         JavaProcess.Result project = cli(true, null, "project-add", projectId, "SYSTEST", "SystemTest");
         assertThat(project.exit()).as(project.streams()).isZero();
-        // setup added the seed codes; the owner sets the one the defects use (a new name of the seed code ARC)
-        JavaProcess.Result code = cli(true, null, "code-set", "DEFECT_CATEGORY", "ARC", "Architecture");
+        // setup added the seed codes; the owner sets the one the issues use (a new name of the seed code ARC)
+        JavaProcess.Result code = cli(true, null, "code-set", "ISSUE_CATEGORY", "ARC", "Architecture");
         assertThat(code.exit()).as(code.streams()).isZero();
 
         hostId = "sys" + UUID.randomUUID().toString().substring(0, 8);
@@ -257,11 +264,25 @@ class PackagedProductSystemTest {
         assertThat(owner.value("SELECT fingerprint FROM " + schema + ".session_key WHERE author_id = '" + author
                 + "' AND revoked_at IS NULL")).isEqualTo(fingerprint);
 
-        JavaProcess.Result granted = cli(true, null, "grant", author, projectId, "defect", "task");
+        JavaProcess.Result granted = cli(true, null, "grant", author, projectId, "issue", "spec", "task",
+                "deliverable", "verify");
         assertThat(granted.exit()).as(granted.streams()).isZero();
         JavaProcess.Result listed = cli(true, null, "grants", author);
         assertThat(listed.exit()).as(listed.streams()).isZero();
-        assertThat(listed.out()).contains(author, projectId, "defect", "task");
+        assertThat(listed.out()).contains(author, projectId, "issue", "spec", "task", "deliverable", "verify");
+
+        standardAuthor = "standard:agent-" + hostId;
+        JavaProcess.Result issued = cli(true, null, "token-issue", standardAuthor, "--note=system-test");
+        assertThat(issued.exit()).as(issued.streams()).isZero();
+        String issuedText = issued.out().strip();
+        standardToken = issuedText.substring(issuedText.lastIndexOf(": ") + 2).strip();
+        assertThat(standardToken).startsWith("lgt_");
+        JavaProcess.Result tokenList = cli(true, null, "token-list", standardAuthor);
+        assertThat(tokenList.exit()).as(tokenList.streams()).isZero();
+        assertThat(tokenList.out()).contains(standardAuthor).doesNotContain(standardToken);
+
+        JavaProcess.Result standardGranted = cli(true, null, "grant", standardAuthor, projectId, "spec", "deliverable");
+        assertThat(standardGranted.exit()).as(standardGranted.streams()).isZero();
     }
 
     // ---- the server ----------------------------------------------------------------------------------------------
@@ -288,27 +309,27 @@ class PackagedProductSystemTest {
 
     @Test
     @Order(7)
-    @DisplayName("SYS-007: the writes signed by the real hook jar, whoami and the read tools work against the packaged server")
+    @DisplayName("SYS-007: signed writes via the hook jar, vendor-independent Bearer session token writes, independent spec verification, whoami and read tools work against the packaged server")
     void signedWritesAndReads() throws IOException {
         require(server, "SYS-006");
-        openClient();
+        client = openClientWithBearer(token);
+        standardClient = openClientWithBearer(standardToken);
 
-        Map<String, Object> defect = Map.of("entity", "defect", "reason", REASON, "fields", Map.of("project_id", projectId,
-                "title", "first title", "category", "ARC", "severity", "P2", "behavior", "behavior of the defect",
-                "root_cause", "cause of the defect"));
-        JsonNode created = write("ledger_save", defect);
-        defectId = created.path("id").asString();
+        JsonNode created = write("ledger_issue_save", Map.of("project_id", projectId, "title", "first title",
+                "category", "ARC", "severity", "P2", "symptom", "symptom of the issue",
+                "root_cause", "cause of the issue", "reason", REASON));
+        issueId = created.path("id").asString();
         assertThat(created.path("version").asLong()).isEqualTo(1);
         assertThat(created.path("author").asString()).isEqualTo(author);
-        defectBeforeEdit = row("SELECT title, status, severity, category, version FROM " + schema + ".defect WHERE id = '"
-                + defectId + "'");
+        issueBeforeEdit = row("SELECT title, status, severity, category, version FROM " + schema + ".issue WHERE id = '"
+                + issueId + "'");
 
-        JsonNode edited = write("ledger_save", Map.of("entity", "defect", "id", defectId, "expected_version", 1,
-                "reason", REASON, "fields", Map.of("title", "second title")));
+        JsonNode edited = write("ledger_issue_save", Map.of("id", issueId, "expected_version", 1,
+                "title", "second title", "reason", REASON));
         assertThat(edited.path("version").asLong()).isEqualTo(2);
 
-        JsonNode task = write("ledger_save", Map.of("entity", "task", "reason", REASON, "fields", Map.of("project_id",
-                projectId, "title", "the task", "purpose", "purpose of the task", "success_condition", "success of the task")));
+        JsonNode task = write("ledger_task_save", Map.of("project_id", projectId, "title", "the task",
+                "purpose", "purpose of the task", "success_condition", "success of the task", "reason", REASON));
         taskId = task.path("id").asString();
         assertThat(task.path("version").asLong()).isEqualTo(1);
         taskBeforeTransition = row("SELECT title, state, version FROM " + schema + ".task WHERE id = '" + taskId + "'");
@@ -318,45 +339,88 @@ class PackagedProductSystemTest {
         assertThat(transitioned.path("to").asString()).isEqualTo("ACTIVE");
         assertThat(transitioned.path("version").asLong()).isEqualTo(2);
 
-        // whoami is signed too (an empty operation key); it is not a write
-        JsonNode who = call("ledger_whoami", hooked("ledger_whoami", Map.of()));
-        assertThat(who.path("author").asString()).isEqualTo(author);
-        assertThat(who.path("grants").toString()).contains("defect").contains("task").contains(projectId);
+        JsonNode standardWho = call(standardClient, "ledger_whoami", Map.of());
+        assertThat(standardWho.path("author").asString()).isEqualTo(standardAuthor);
+        assertThat(standardWho.path("grants").toString()).contains("spec", "deliverable", projectId);
 
-        JsonNode history = call("ledger_history", Map.of("project", projectId, "include_before", true));
+        JsonNode spec = standardWrite("ledger_spec_save", Map.of("project_id", projectId,
+                "title", "scene lighting spec", "summary", "universal spec summary",
+                "acceptance_criteria", "approved lighting cue sheet", "reason", REASON));
+        specId = spec.path("id").asString();
+        assertThat(spec.path("version").asLong()).isEqualTo(1);
+        assertThat(spec.path("author").asString()).isEqualTo(standardAuthor);
+        specBeforeComplete = row("SELECT title, status, version FROM " + schema + ".spec WHERE id = '" + specId + "'");
+
+        JsonNode deliverable = standardWrite("ledger_record_deliverable", Map.of("target_entity", "spec",
+                "target_id", specId, "kind", "document", "deliverable_ref", "doc:lighting-sheet-v1",
+                "summary", "final lighting cue sheet", "mark_done", true, "reason", REASON));
+        assertThat(deliverable.path("target_state").asString()).isEqualTo("COMPLETED");
+        assertThat(deliverable.path("version").asLong()).isEqualTo(2);
+        specBeforeVerify = row("SELECT title, status, version FROM " + schema + ".spec WHERE id = '" + specId + "'");
+
+        JsonNode verifiedSpec = write("ledger_review", Map.of("entity", "spec", "id", specId, "expected_version", 2,
+                "to", "VERIFIED", "evidence_uri", "evidence://lighting-review-1", "reason", REASON));
+        assertThat(verifiedSpec.path("to").asString()).isEqualTo("VERIFIED");
+        assertThat(verifiedSpec.path("version").asLong()).isEqualTo(3);
+
+        // whoami is signed too (an empty operation key); it is not a write
+        JsonNode who = call(client, "ledger_whoami", hooked("ledger_whoami", Map.of()));
+        assertThat(who.path("author").asString()).isEqualTo(author);
+        assertThat(who.path("grants").toString()).contains("issue", "spec", "task", "deliverable", "verify", projectId);
+
+        JsonNode specDetail = call(client, "ledger_spec", Map.of("id", specId));
+        assertThat(specDetail.path("status").asString()).isEqualTo("VERIFIED");
+        assertThat(specDetail.path("deliverables")).hasSize(1);
+
+        JsonNode history = call(client, "ledger_history", Map.of("project", projectId, "include_before", true));
         List<String> ops = new ArrayList<>();
         history.path("items").forEach(item -> ops.add(item.path("op").asString()));
-        assertThat(ops).containsExactly("CREATE", "EDIT", "CREATE", "TRANSITION");
+        assertThat(ops).containsExactly("CREATE", "EDIT", "CREATE", "TRANSITION", "CREATE", "CREATE",
+                "TRANSITION", "TRANSITION");
         assertThat(history.path("items").get(1).path("before_data").path("title").asString()).isEqualTo("first title");
-        assertThat(call("ledger_projects", Map.of()).path("items").toString()).contains(projectId);
+        assertThat(call(client, "ledger_projects", Map.of()).path("items").toString()).contains(projectId);
     }
 
     @Test
     @Order(8)
     @DisplayName("SYS-008: the rows, one receipt per write and the before_data are in the database as the writes made them")
     void rowsReceiptsAndBeforeData() throws IOException {
-        require(defectId, "SYS-007");
-        assertThat(rows("SELECT title, version FROM " + schema + ".defect")).containsExactly(
+        require(issueId, "SYS-007");
+        assertThat(rows("SELECT title, version FROM " + schema + ".issue")).containsExactly(
                 Map.of("title", "second title", "version", "2"));
         assertThat(rows("SELECT state, version FROM " + schema + ".task")).containsExactly(
                 Map.of("state", "ACTIVE", "version", "2"));
+        assertThat(rows("SELECT status, version FROM " + schema + ".spec")).containsExactly(
+                Map.of("status", "VERIFIED", "version", "3"));
+        assertThat(rows("SELECT target_entity, kind, deliverable_ref FROM " + schema + ".deliverable")).containsExactly(
+                Map.of("target_entity", "SPEC", "kind", "document", "deliverable_ref", "doc:lighting-sheet-v1"));
 
         List<Map<String, String>> history = rows("SELECT op, entity, operation_key, before_data FROM " + schema
                 + ".history ORDER BY id");
-        assertThat(history).extracting(row -> row.get("op")).containsExactly("CREATE", "EDIT", "CREATE", "TRANSITION");
-        assertThat(history).extracting(row -> row.get("operation_key")).containsExactlyElementsOf(sentOperationKeys);
+        assertThat(history).extracting(row -> row.get("op")).containsExactly("CREATE", "EDIT", "CREATE", "TRANSITION",
+                "CREATE", "CREATE", "TRANSITION", "TRANSITION");
+        List<String> expectedHistoryOpKeys = List.of(sentOperationKeys.get(0), sentOperationKeys.get(1),
+                sentOperationKeys.get(2), sentOperationKeys.get(3), sentOperationKeys.get(4), sentOperationKeys.get(5),
+                sentOperationKeys.get(5), sentOperationKeys.get(6));
+        assertThat(history).extracting(row -> row.get("operation_key")).containsExactlyElementsOf(expectedHistoryOpKeys);
         assertThat(history.get(0).get("before_data")).isNull();
         assertThat(history.get(2).get("before_data")).isNull();
+        assertThat(history.get(4).get("before_data")).isNull();
+        assertThat(history.get(5).get("before_data")).isNull();
         assertThat(beforeValues(history.get(1).get("before_data"), "title", "status", "severity", "category", "version"))
-                .isEqualTo(defectBeforeEdit);
+                .isEqualTo(issueBeforeEdit);
         assertThat(beforeValues(history.get(3).get("before_data"), "title", "state", "version"))
                 .isEqualTo(taskBeforeTransition);
+        assertThat(beforeValues(history.get(6).get("before_data"), "title", "status", "version"))
+                .isEqualTo(specBeforeComplete);
+        assertThat(beforeValues(history.get(7).get("before_data"), "title", "status", "version"))
+                .isEqualTo(specBeforeVerify);
 
         List<Map<String, String>> receipts = rows("SELECT operation_key, operation FROM " + schema
                 + ".request_receipt ORDER BY created_at, operation_key");
         assertThat(receipts).extracting(row -> row.get("operation_key")).containsExactlyInAnyOrderElementsOf(sentOperationKeys);
         assertThat(receipts).extracting(row -> row.get("operation")).containsExactlyInAnyOrder("SAVE", "SAVE", "SAVE",
-                "TRANSITION");
+                "TRANSITION", "SAVE", "RECORD_DELIVERABLE", "TRANSITION");
         historyRowsAfterWrites = history.size();
         receiptsAfterWrites = receipts.size();
     }
@@ -375,16 +439,18 @@ class PackagedProductSystemTest {
 
     @Test
     @Order(10)
-    @DisplayName("SYS-010: a write without the attestation of the hook is refused by the packaged server and writes nothing")
+    @DisplayName("SYS-010: a write with the shared gate token and without the attestation of the hook is refused by the packaged server and writes nothing")
     void unsignedWriteIsRefused() throws IOException {
         require(client, "SYS-007");
-        CallToolResult result = send("ledger_save", Map.of("operationKey", UUID.randomUUID().toString(), "entity", "defect",
-                "reason", REASON, "fields", Map.of(
-                "project_id", projectId, "title", "unsigned", "category", "ARC", "severity", "P2", "behavior", "b",
-                "root_cause", "c")));
+        CallToolResult result = send(client, "ledger_issue_save", Map.of("operationKey", UUID.randomUUID().toString(),
+                "project_id", projectId, "title", "unsigned", "category", "ARC", "severity", "P2", "symptom", "b",
+                "root_cause", "c", "reason", REASON));
         assertThat(result.isError()).as("the unsigned write must fail, got %s", result.content()).isTrue();
-        assertThat(mapper.valueToTree(result.structuredContent()).path("code").asString())
-                .isEqualTo("HOST_ATTESTATION_REQUIRED");
+        JsonNode envelope = mapper.valueToTree(result.structuredContent());
+        assertThat(envelope.path("schemaVersion").asString()).isEqualTo("1.0.0");
+        assertThat(envelope.path("ok").asBoolean()).isFalse();
+        assertThat(envelope.path("data").isNull()).isTrue();
+        assertThat(envelope.path("error").path("code").asString()).isEqualTo("HOST_ATTESTATION_REQUIRED");
         assertThat(rows("SELECT id FROM " + schema + ".history")).hasSize(historyRowsAfterWrites);
         assertThat(rows("SELECT operation_key FROM " + schema + ".request_receipt")).hasSize(receiptsAfterWrites);
     }
@@ -480,41 +546,55 @@ class PackagedProductSystemTest {
         Map<String, Object> sent = hooked(tool, keyed);
         assertThat(sent.get("operationKey")).as("the hook leaves the operationKey as given").isEqualTo(operationKey);
         sentOperationKeys.add(operationKey);
-        return call(tool, sent);
+        return call(client, tool, sent);
     }
 
-    private JsonNode call(String tool, Map<String, Object> sent) {
-        CallToolResult result = send(tool, sent);
+    private JsonNode standardWrite(String tool, Map<String, Object> input) {
+        String operationKey = UUID.randomUUID().toString();
+        Map<String, Object> keyed = new LinkedHashMap<>(input);
+        keyed.put("operationKey", operationKey);
+        sentOperationKeys.add(operationKey);
+        return call(standardClient, tool, keyed);
+    }
+
+    private JsonNode call(McpSyncClient mcp, String tool, Map<String, Object> sent) {
+        CallToolResult result = send(mcp, tool, sent);
         assertThat(result.isError()).as("%s failed: %s", tool, result.content()).isFalse();
-        return mapper.valueToTree(result.structuredContent());
+        JsonNode envelope = mapper.valueToTree(result.structuredContent());
+        assertThat(envelope.path("schemaVersion").asString()).isEqualTo("1.0.0");
+        assertThat(envelope.path("ok").asBoolean()).isTrue();
+        assertThat(envelope.path("error").isNull()).isTrue();
+        return envelope.path("data");
     }
 
-    private CallToolResult send(String tool, Map<String, Object> arguments) {
-        return client.callTool(CallToolRequest.builder(tool)
+    private CallToolResult send(McpSyncClient mcp, String tool, Map<String, Object> arguments) {
+        return mcp.callTool(CallToolRequest.builder(tool)
                 .arguments(new JacksonMcpJsonMapper(mapper), mapper.writeValueAsString(arguments)).build());
     }
 
-    private void openClient() {
+    private McpSyncClient openClientWithBearer(String bearer) {
         var transport = HttpClientStreamableHttpTransport.builder("http://127.0.0.1:" + port).endpoint("/mcp")
                 .jsonMapper(new JacksonMcpJsonMapper(mapper))
                 .addHttpRequestCustomizer((request, method, uri, body, context) ->
-                        request.header("Authorization", "Bearer " + token))
+                        request.header("Authorization", "Bearer " + bearer))
                 .build();
-        client = McpClient.sync(transport).requestTimeout(Duration.ofSeconds(30))
+        McpSyncClient mcp = McpClient.sync(transport).requestTimeout(Duration.ofSeconds(30))
                 .initializationTimeout(Duration.ofSeconds(30)).build();
-        client.initialize();
+        mcp.initialize();
+        return mcp;
     }
 
-    /** Closes the client and ends the server process; safe to call again. */
+    /** Closes the clients and ends the server process; safe to call again. */
     private void close() {
-        if (client != null) {
+        for (McpSyncClient mcp : Stream.of(client, standardClient).filter(java.util.Objects::nonNull).toList()) {
             try {
-                client.closeGracefully();
+                mcp.closeGracefully();
             } catch (RuntimeException ignored) {
                 // the server is stopped next; a client that cannot close gracefully holds nothing the test needs
             }
-            client = null;
         }
+        client = null;
+        standardClient = null;
         JavaProcess.stop(server);
     }
 

@@ -7,15 +7,15 @@ import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.pgledger.database.repository.Counter;
-import org.pgledger.domain.value.DefectId;
+import org.pgledger.domain.value.IssueId;
 import org.pgledger.migrate1x.database.LegacyRow;
 import org.pgledger.migrate1x.database.LegacyTable;
 
 /**
  * The highest numbers the legacy ledger has used, which the new ledger continues from: per project the number of the
- * last defect ({@code <CODE>-D-NNNN}) and of the last task ({@code <CODE>-T-NNNN}; a task with another id counts for
- * nothing), and the highest id of each surrogate key sequence (history, fix, case, grant). The next number issued is
- * one above, so it collides with nothing.
+ * last issue ({@code <CODE>-D-NNNN} or {@code <CODE>-I-NNNN}) and of the last task ({@code <CODE>-T-NNNN}; a task with
+ * another id counts for nothing), and the highest id of each surrogate key sequence (history, deliverable, case, grant).
+ * The next number issued is one above, so it collides with nothing.
  */
 final class ImportCounters {
 
@@ -27,7 +27,7 @@ final class ImportCounters {
 
     private final Map<String, String> codeByProject = new HashMap<>();
     private final Map<String, Pattern> taskIdByProject = new HashMap<>();
-    private final Map<String, Long> defectNumbers = new HashMap<>();
+    private final Map<String, Long> issueNumbers = new HashMap<>();
     private final Map<String, Long> taskNumbers = new HashMap<>();
     private final Map<Counter, Long> surrogate = new EnumMap<>(Counter.class);
 
@@ -36,9 +36,9 @@ final class ImportCounters {
         switch (table) {
             case PROJECT -> project(row.text("id"), row.text("code"));
             case TASK -> task(row.text("project_id"), row.text("id"));
-            case DEFECT -> defect(row.text("project_id"), row.text("id"));
-            case DEFECT_FIX -> surrogate(Counter.DEFECT_FIX, row.number("id"));
-            case DEFECT_CASE -> surrogate(Counter.DEFECT_CASE, row.number("id"));
+            case DEFECT -> issue(row.text("project_id"), row.text("id"));
+            case DEFECT_FIX -> surrogate(Counter.DELIVERABLE, row.number("id"));
+            case DEFECT_CASE -> surrogate(Counter.ISSUE_CASE, row.number("id"));
             case SESSION_GRANT -> surrogate(Counter.SESSION_GRANT, row.number("id"));
             case HISTORY -> surrogate(Counter.HISTORY, row.number("id"));
             case COMMON_CODE, DEFECT_TASK, DEFECT_RELATION, RELEASE_CONDITION, CONDITION_LINK -> {
@@ -55,10 +55,10 @@ final class ImportCounters {
         }
     }
 
-    private void defect(String projectId, String defectId) {
+    private void issue(String projectId, String issueId) {
         String code = codeByProject.get(projectId);
-        DefectId.parse(defectId).filter(id -> Objects.equals(code, id.projectCode().value()))
-                .ifPresent(id -> defectNumbers.merge(projectId, id.number(), Math::max));
+        IssueId.parse(issueId).filter(id -> Objects.equals(code, id.projectCode().value()))
+                .ifPresent(id -> issueNumbers.merge(projectId, id.number(), Math::max));
     }
 
     private void task(String projectId, String taskId) {
@@ -77,8 +77,8 @@ final class ImportCounters {
         }
     }
 
-    long defectNumber(String projectId) {
-        return defectNumbers.getOrDefault(projectId, 0L);
+    long issueNumber(String projectId) {
+        return issueNumbers.getOrDefault(projectId, 0L);
     }
 
     long taskNumber(String projectId) {

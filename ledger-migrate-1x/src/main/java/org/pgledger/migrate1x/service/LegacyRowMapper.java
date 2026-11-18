@@ -8,34 +8,32 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.pgledger.domain.error.ValidationReason;
-import org.pgledger.domain.model.ConditionLink;
+import org.pgledger.domain.model.CriterionLink;
 import org.pgledger.domain.model.SessionGrant;
 import org.pgledger.domain.rule.ActorAssurance;
-import org.pgledger.domain.rule.CiConclusion;
+import org.pgledger.domain.rule.CheckResult;
 import org.pgledger.domain.rule.CodeGroup;
 import org.pgledger.domain.rule.CodeState;
-import org.pgledger.domain.rule.ConditionState;
-import org.pgledger.domain.rule.DefectStatus;
-import org.pgledger.domain.rule.FixOrigin;
+import org.pgledger.domain.rule.CriterionState;
+import org.pgledger.domain.rule.DeliverableOrigin;
+import org.pgledger.domain.rule.DeliverableTarget;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
+import org.pgledger.domain.rule.IssueStatus;
 import org.pgledger.domain.rule.Scope;
 import org.pgledger.domain.rule.TaskState;
 import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.CodeValue;
-import org.pgledger.domain.value.ConditionId;
-import org.pgledger.domain.value.DefectId;
+import org.pgledger.domain.value.CriterionId;
 import org.pgledger.domain.value.EntityId;
+import org.pgledger.domain.value.IssueId;
 import org.pgledger.domain.value.ProjectCode;
 import org.pgledger.domain.value.ProjectId;
 import org.pgledger.domain.value.TaskId;
-import org.pgledger.domain.value.Token;
-import org.pgledger.domain.value.Tokens;
 import org.pgledger.migrate1x.database.ColumnRule;
 import org.pgledger.migrate1x.database.LegacyColumn;
 import org.pgledger.migrate1x.database.LegacyRow;
@@ -45,40 +43,6 @@ import org.springframework.stereotype.Component;
 /**
  * Turns a row of the legacy schema into the row of the new schema, or says why it cannot be. It is a pure function of the
  * row, the column rules of the new schema and the numbers the legacy ledger used; it touches no database.
- *
- * <p>The rules, which the comparison of the import applies to both sides because it compares the rows this class makes with
- * the rows the new schema holds:
- * <ul>
- * <li>An empty text ({@code ''}) is NULL. The legacy columns allowed {@code ''}; the new schema never holds it
- * (SVC-NORM). Where the new column is nullable (the five long texts of 1.x that allowed {@code ''}: purpose, success
- * condition, behavior, root cause, condition text; REH3-IMP-01) the value becomes NULL and the tools show {@code ""} as 1.x
- * did; where it is NOT NULL (a text that identifies a row) the row is reported (MIG-023) and nothing is written, no value is
- * invented.</li>
- * <li>A time value is cut to microseconds, the precision of the columns of the new schema; the instant is kept and is
- * stored as UTC.</li>
- * <li>The tokens that the new schema writes as constant names (the history entity, the grant scope, the CI conclusion) are
- * the legacy lower-case tokens in upper case; a token that is none of them is reported.</li>
- * <li>The vocabulary of the imported rows of the new schema has no 1.x names: the legacy assurances {@code LEGACY_LOGIN},
- * {@code LEGACY_SHARED}, {@code LEGACY_UNKNOWN} are {@code IMPORTED_LOGIN}, {@code IMPORTED_SHARED}, {@code IMPORTED_UNKNOWN},
- * the history operations {@code LEGACY_NOTE} and {@code LEGACY_CHANGE} are {@code IMPORTED_NOTE} and {@code IMPORTED_CHANGE},
- * and the column {@code legacy_ref} is {@code source_ref} (M1X-050); a value that is none of them is reported.</li>
- * <li>An id that does not have the form of its kind (the id of a task or condition: 1 to 120 characters without whitespace
- * or control character, in any case; the defect id) is reported (MIG-028) and never case-folded; every id of 1.x imports
- * unchanged. The key of a task and a condition ({@code id_key}) is the id in upper case. That two ids of one kind
- * differ only in case is not a property of a row: the import service reports it (REH3-IMP-02).</li>
- * <li>A text longer than its new column is reported, never cut.</li>
- * <li>The derived columns are made by the domain's own rules: the link key of a condition link ({@link ConditionLink#linkKey},
- * the key of a new link), the id key of a task and a condition, the active key of a grant,
- * the origin of a fix ({@code imported} true is IMPORTED), the state of a common code ({@code active} true is ACTIVE),
- * the counters of a project are the highest numbers the legacy ledger used, the version of a
- * project is 1, and {@code before_data} and {@code last_used_at} stay NULL.</li>
- * <li>An actor id (the columns {@code author_id}, {@code recorded_by}, {@code owner_actor_id}, {@code created_by},
- * {@code granted_by}) loses the prefix {@code agent:} that 1.x put before a session id: {@code agent:claude:s1} is the session
- * {@code claude:s1} of 2.0, so the checks of one session (VERIFIED, owner and reporter) hold across the import (M1X-050). Nothing
- * else of the id changes; the text of the JSON columns {@code changes} is copied as it is.</li>
- * <li>The request receipts of 1.x are not mapped: they are not copied (M1X-003). The column {@code history.request_id} of 1.x
- * is copied into {@code history.operation_key}.</li>
- * </ul>
  */
 @Component
 final class LegacyRowMapper {
@@ -87,18 +51,74 @@ final class LegacyRowMapper {
     record Mapped(LegacyRow row, List<LegacyViolation> violations) {
     }
 
-    private static final Set<String> TASK_STATES = names(TaskState.values());
-    private static final Set<String> DEFECT_STATUSES = names(DefectStatus.values());
-    private static final Set<String> CONDITION_STATES = names(ConditionState.values());
+    private static final Map<String, String> CODE_GROUPS = Map.of(
+            "DEFECT_CATEGORY", CodeGroup.ISSUE_CATEGORY.name(),
+            "DEFECT_SEVERITY", CodeGroup.ISSUE_SEVERITY.name(),
+            "RELATION_KIND", CodeGroup.RELATION_KIND.name());
+
+    private static final Map<String, String> TASK_STATES = taskStates();
+    private static final Map<String, String> ISSUE_STATUSES = issueStatuses();
+    private static final Set<String> CRITERION_STATES = names(CriterionState.values());
+
+    private static final Map<String, String> CHECK_RESULTS = Map.of(
+            "success", CheckResult.PASSED.name(),
+            "failure", CheckResult.FAILED.name(),
+            "cancelled", CheckResult.CANCELLED.name(),
+            "passed", CheckResult.PASSED.name(),
+            "failed", CheckResult.FAILED.name());
+
+    private static final Map<String, Scope> GRANT_SCOPES = Map.of(
+            "defect", Scope.ISSUE,
+            "fix", Scope.DELIVERABLE,
+            "task", Scope.TASK,
+            "verify", Scope.VERIFY,
+            "issue", Scope.ISSUE,
+            "spec", Scope.SPEC,
+            "deliverable", Scope.DELIVERABLE);
+
+    private static final Map<String, String> HISTORY_ENTITIES = Map.of(
+            "defect", HistoryEntity.ISSUE.name(),
+            "defect_fix", HistoryEntity.DELIVERABLE.name(),
+            "defect_case", HistoryEntity.ISSUE_CASE.name(),
+            "defect_task", HistoryEntity.ISSUE_TASK.name(),
+            "defect_relation", HistoryEntity.ISSUE_RELATION.name(),
+            "condition", HistoryEntity.CRITERION.name(),
+            "condition_link", HistoryEntity.CRITERION_LINK.name(),
+            "task", HistoryEntity.TASK.name());
+
+    private static final Map<String, String> HISTORY_STATES = Map.of(
+            "SOURCE_FIXED", IssueStatus.RESOLVED.name(),
+            "NOT_DEFECT", IssueStatus.NOT_AN_ISSUE.name(),
+            "REPORTED_DONE", TaskState.COMPLETED.name());
+
     /** The assurances and operations as 1.x wrote them (its {@code LEGACY_} names) and the constants of 2.0 they become. */
     private static final Map<String, String> ASSURANCES = oneXNames(ActorAssurance.values());
     private static final Map<String, String> HISTORY_OPS = oneXNames(HistoryOp.values());
-    private static final Set<String> CODE_GROUPS = names(CodeGroup.values());
     /** How the refusal of an author names the format (the domain has the rule, not a sentence for it). */
     private static final String AUTHOR_FORMAT = "<vendor>:<session-id>";
+    private static final String IMPORTED_FIX_SUMMARY = "imported 1.x commit";
 
     private static <E extends Enum<E>> Set<String> names(E[] values) {
         return Arrays.stream(values).map(Enum::name).collect(Collectors.toUnmodifiableSet());
+    }
+
+    private static Map<String, String> taskStates() {
+        Map<String, String> map = new LinkedHashMap<>();
+        for (TaskState state : TaskState.values()) {
+            map.put(state.name(), state.name());
+        }
+        map.put("REPORTED_DONE", TaskState.COMPLETED.name());
+        return Map.copyOf(map);
+    }
+
+    private static Map<String, String> issueStatuses() {
+        Map<String, String> map = new LinkedHashMap<>();
+        for (IssueStatus status : IssueStatus.values()) {
+            map.put(status.name(), status.name());
+        }
+        map.put("SOURCE_FIXED", IssueStatus.RESOLVED.name());
+        map.put("NOT_DEFECT", IssueStatus.NOT_AN_ISSUE.name());
+        return Map.copyOf(map);
     }
 
     private static final String IMPORTED_PREFIX = "IMPORTED_";
@@ -148,14 +168,13 @@ final class LegacyRowMapper {
             case PROJECT -> project(s, t, counters, violations);
             case COMMON_CODE -> commonCode(s, t, violations);
             case TASK -> task(s, t, violations);
-            case DEFECT -> defect(s, t, violations);
-            case DEFECT_FIX -> defectFix(s, t, violations);
-            case DEFECT_CASE -> copy(s, t, "id", "defect_id", "observation", "evidence", "user_quote", "observed_at",
-                    "recorded_by", "recorded_at");
-            case DEFECT_TASK -> copy(s, t, "defect_id", "task_id", "created_by");
-            case DEFECT_RELATION -> defectRelation(s, t, violations);
-            case RELEASE_CONDITION -> releaseCondition(s, t, violations);
-            case CONDITION_LINK -> conditionLink(s, t, violations);
+            case DEFECT -> issue(s, t, violations);
+            case DEFECT_FIX -> deliverable(s, t, violations);
+            case DEFECT_CASE -> issueCase(s, t);
+            case DEFECT_TASK -> issueTask(s, t);
+            case DEFECT_RELATION -> issueRelation(s, t, violations);
+            case RELEASE_CONDITION -> milestoneCriterion(s, t, violations);
+            case CONDITION_LINK -> criterionLink(s, t, violations);
             case SESSION_GRANT -> sessionGrant(s, t, violations);
             case HISTORY -> history(s, t, violations);
         }
@@ -230,61 +249,93 @@ final class LegacyRowMapper {
         copy(s, t, "id", "code", "title", "created_by");
         matches(v, "id", s.text("id"), ProjectId.FORMAT, ValidationReason.MUST_MATCH);
         matches(v, "code", s.text("code"), ProjectCode.FORMAT, ValidationReason.MUST_MATCH);
-        t.put("next_defect_no", counters.defectNumber(s.text("id")));
+        t.put("next_issue_no", counters.issueNumber(s.text("id")));
+        t.put("next_spec_no", 0L);
         t.put("next_task_no", counters.taskNumber(s.text("id")));
         t.put("version", 1L);
     }
 
     private static void commonCode(LegacyRow s, Map<String, Object> t, Violations v) {
-        copy(s, t, "code_group", "code", "name_ko", "name_en", "description_ko", "description_en", "sort_order",
-                "created_by");
-        oneOf(v, "code_group", s.text("code_group"), CODE_GROUPS);
+        copy(s, t, "code", "name_ko", "name_en", "description_ko", "description_en", "sort_order", "created_by");
+        t.put("code_group", renamed(v, "code_group", s.text("code_group"), CODE_GROUPS));
         matches(v, "code", s.text("code"), CodeValue.FORMAT, ValidationReason.MUST_MATCH);
         t.put("state", (s.flag("active") ? CodeState.ACTIVE : CodeState.INACTIVE).name());
     }
 
     private static void task(LegacyRow s, Map<String, Object> t, Violations v) {
-        copy(s, t, "id", "project_id", "title", "purpose", "success_condition", "state", "owner_actor_id",
+        copy(s, t, "id", "project_id", "title", "purpose", "success_condition", "owner_actor_id",
                 "origin_ref", "origin_quote", "version", "created_at", "updated_at", "created_by");
         entityId(v, "id", s.text("id"));
         t.put("id_key", idKey(s.text("id")));
-        oneOf(v, "state", s.text("state"), TASK_STATES);
+        t.put("state", renamed(v, "state", s.text("state"), TASK_STATES));
     }
 
-    private static void defect(LegacyRow s, Map<String, Object> t, Violations v) {
-        copy(s, t, "id", "project_id", "title", "category", "severity", "status", "merged_into", "behavior",
+    private static void issue(LegacyRow s, Map<String, Object> t, Violations v) {
+        copy(s, t, "id", "project_id", "title", "category", "severity", "merged_into",
                 "root_cause", "owner_actor_id", "version", "created_at", "updated_at", "created_by");
+        t.put("symptom", s.get("behavior"));
         String id = s.text("id");
-        if (id != null && !DefectId.FORMAT.matcher(id).matches()) {
-            v.add("id", ValidationReason.DEFECT_ID_FORMAT);
+        if (id != null && !IssueId.FORMAT.matcher(id).matches()) {
+            v.add("id", ValidationReason.ISSUE_ID_FORMAT);
         }
         matches(v, "category", s.text("category"), CodeValue.FORMAT, ValidationReason.MUST_MATCH);
         matches(v, "severity", s.text("severity"), CodeValue.FORMAT, ValidationReason.MUST_MATCH);
-        oneOf(v, "status", s.text("status"), DEFECT_STATUSES);
+        t.put("status", renamed(v, "status", s.text("status"), ISSUE_STATUSES));
         t.put("case_seq", 0L);
     }
 
-    private static void defectFix(LegacyRow s, Map<String, Object> t, Violations v) {
-        copy(s, t, "id", "defect_id", "repo", "commit_sha", "branch", "ci_ref", "ci_completed_at", "recorded_by",
-                "recorded_at");
-        t.put("ci_conclusion", nameOf(v, "ci_conclusion", s.text("ci_conclusion"), CiConclusion.values()));
-        t.put("origin", (s.flag("imported") ? FixOrigin.IMPORTED : FixOrigin.NATIVE).name());
+    private static void deliverable(LegacyRow s, Map<String, Object> t, Violations v) {
+        t.put("id", s.get("id"));
+        t.put("target_entity", DeliverableTarget.ISSUE.name());
+        t.put("target_id", s.text("defect_id"));
+        t.put("kind", "code_change");
+        t.put("deliverable_ref", s.text("commit_sha"));
+        String repo = s.text("repo");
+        t.put("location", repo);
+        if (repo == null) {
+            v.add("location", ValidationReason.REQUIRED);
+        }
+        String branch = s.text("branch");
+        t.put("summary", branch != null ? "branch " + branch : IMPORTED_FIX_SUMMARY);
+        String checkRef = s.text("ci_ref");
+        t.put("check_ref", checkRef);
+        String checkResult = renamedNull(v, "check_result", s.text("ci_conclusion"), CHECK_RESULTS);
+        t.put("check_result", checkResult);
+        if (checkResult != null && checkRef == null) {
+            v.add("check_ref", ValidationReason.REQUIRED);
+        }
+        t.put("checked_at", s.get("ci_completed_at"));
+        t.put("recorded_by", s.text("recorded_by"));
+        t.put("recorded_at", s.get("recorded_at"));
+        t.put("origin", (s.flag("imported") ? DeliverableOrigin.IMPORTED : DeliverableOrigin.NATIVE).name());
     }
 
-    private static void defectRelation(LegacyRow s, Map<String, Object> t, Violations v) {
+    private static void issueCase(LegacyRow s, Map<String, Object> t) {
+        copy(s, t, "id", "observation", "evidence", "observed_at", "recorded_by", "recorded_at");
+        t.put("issue_id", s.text("defect_id"));
+        t.put("source_quote", s.text("user_quote"));
+    }
+
+    private static void issueTask(LegacyRow s, Map<String, Object> t) {
+        t.put("issue_id", s.text("defect_id"));
+        copy(s, t, "task_id", "created_by");
+    }
+
+    private static void issueRelation(LegacyRow s, Map<String, Object> t, Violations v) {
         copy(s, t, "a", "b", "kind", "created_by");
         matches(v, "kind", s.text("kind"), CodeValue.FORMAT, ValidationReason.MUST_MATCH);
     }
 
-    private static void releaseCondition(LegacyRow s, Map<String, Object> t, Violations v) {
-        copy(s, t, "id", "project_id", "goal_label", "code", "condition_text", "state", "version", "created_by");
-        t.put("release_name", s.text("release"));
+    private static void milestoneCriterion(LegacyRow s, Map<String, Object> t, Violations v) {
+        copy(s, t, "id", "project_id", "goal_label", "code", "state", "version", "created_by");
+        t.put("milestone_name", s.text("release"));
+        t.put("criterion_text", s.text("condition_text"));
         entityId(v, "id", s.text("id"));
         t.put("id_key", idKey(s.text("id")));
-        oneOf(v, "state", s.text("state"), CONDITION_STATES);
+        oneOf(v, "state", s.text("state"), CRITERION_STATES);
     }
 
-    /** An id of a task or condition that has the form of 1.x (the id of a defect is {@link DefectId}); it is never case-folded. */
+    /** An id of a task or criterion that has the form of 1.x (the id of an issue is {@link IssueId}); it is never case-folded. */
     private static void entityId(Violations v, String column, String id) {
         if (id != null && !EntityId.PATTERN.matcher(id).matches()) {
             v.add(column, ValidationReason.MUST_BE_ID, Integer.toString(EntityId.MAX_LENGTH));
@@ -296,50 +347,55 @@ final class LegacyRowMapper {
         return id == null ? null : EntityId.key(id);
     }
 
-    private static void conditionLink(LegacyRow s, Map<String, Object> t, Violations v) {
-        copy(s, t, "condition_id", "task_id", "defect_id", "created_by");
-        String condition = s.text("condition_id");
+    private static void criterionLink(LegacyRow s, Map<String, Object> t, Violations v) {
+        String criterion = s.text("condition_id");
         String task = s.text("task_id");
-        String defect = s.text("defect_id");
-        if ((task == null) == (defect == null)) {
-            v.add("task_id", ValidationReason.MUST_BE_EXACTLY_ONE_OF, "task_id", "defect_id");
+        String issue = s.text("defect_id");
+        t.put("criterion_id", criterion);
+        t.put("task_id", task);
+        t.put("issue_id", issue);
+        t.put("spec_id", null);
+        t.put("created_by", s.text("created_by"));
+        if ((task == null) == (issue == null)) {
+            v.add("task_id", ValidationReason.MUST_BE_EXACTLY_ONE_OF, "task_id", "issue_id");
         }
-        Optional<ConditionId> conditionId = ConditionId.parse(condition);
-        if (condition != null && conditionId.isEmpty()) {
-            v.add("condition_id", ValidationReason.MUST_BE_ID, Integer.toString(EntityId.MAX_LENGTH));
+        boolean criterionValid = criterion != null && EntityId.PATTERN.matcher(criterion).matches();
+        if (criterion != null && !criterionValid) {
+            v.add("criterion_id", ValidationReason.MUST_BE_ID, Integer.toString(EntityId.MAX_LENGTH));
         }
-        // a row without a valid link has no link key: the column is NULL (and the row is reported above or below)
-        // the key is in the row either way: the copy writes every column of the table (a missing key and a null value differ)
-        conditionId.flatMap(id -> linkKey(id, task, defect, v))
-                .ifPresentOrElse(key -> t.put("link_key", key), () -> t.put("link_key", null));
+        t.put("link_key", criterionValid ? linkKey(CriterionId.of(criterion), task, issue, v) : null);
     }
 
-    /** The link key of a condition and exactly one of a task and a defect, reporting an id that is none. */
-    private static Optional<String> linkKey(ConditionId condition, String task, String defect, Violations v) {
-        if (task != null && defect == null) {
-            Optional<TaskId> taskId = TaskId.parse(task);
-            if (taskId.isEmpty()) {
+    /** The link key of a criterion and exactly one of a task and an issue, reporting an id that is none. */
+    private static String linkKey(CriterionId criterion, String task, String issue, Violations v) {
+        if (task != null && issue == null) {
+            if (!EntityId.PATTERN.matcher(task).matches()) {
                 v.add("task_id", ValidationReason.MUST_BE_ID, Integer.toString(EntityId.MAX_LENGTH));
+                return null;
             }
-            return taskId.map(id -> ConditionLink.toTask(condition, id, AuthorId.OWNER).linkKey());
+            return CriterionLink.toTask(criterion, TaskId.of(task), AuthorId.OWNER).linkKey();
         }
-        if (defect != null && task == null) {
-            Optional<DefectId> defectId = DefectId.parse(defect);
-            if (defectId.isEmpty()) {
-                v.add("defect_id", ValidationReason.DEFECT_ID_FORMAT);
+        if (issue != null && task == null) {
+            if (!IssueId.FORMAT.matcher(issue).matches()) {
+                v.add("issue_id", ValidationReason.ISSUE_ID_FORMAT);
+                return null;
             }
-            return defectId.map(id -> ConditionLink.toDefect(condition, id, AuthorId.OWNER).linkKey());
+            return CriterionLink.toIssue(criterion, IssueId.of(issue), AuthorId.OWNER).linkKey();
         }
-        return Optional.empty();
+        return null;
     }
 
     private static void sessionGrant(LegacyRow s, Map<String, Object> t, Violations v) {
         copy(s, t, "id", "author_id", "granted_by", "granted_at", "expires_at", "revoked_at", "note");
         t.put("project_id", s.text("project"));
         t.put("last_used_at", null);
-        String scope = nameOf(v, "scope", s.text("scope"), Scope.values());
+        String rawScope = s.text("scope");
+        Scope mappedScope = rawScope == null ? null : GRANT_SCOPES.get(rawScope);
+        if (rawScope != null && mappedScope == null) {
+            v.add("grant_scope", ValidationReason.UNKNOWN_VALUE, rawScope);
+        }
         // the new schema names the column grant_scope (SCOPE is a reserved word of SQL:2003); the legacy one is scope
-        t.put("grant_scope", scope);
+        t.put("grant_scope", mappedScope == null ? null : mappedScope.name());
         String author = s.text("author_id");
         String project = s.text("project");
         boolean authorValid = AuthorId.matches(author);
@@ -357,14 +413,14 @@ final class LegacyRowMapper {
         String activeKey = null;
         if (s.instant("revoked_at") != null) {
             activeKey = SessionGrant.revokedKey(s.number("id"));
-        } else if (authorValid && projectValid && scope != null) {
-            activeKey = SessionGrant.liveKey(new AuthorId(author), new ProjectId(project), Scope.valueOf(scope));
+        } else if (authorValid && projectValid && mappedScope != null) {
+            activeKey = SessionGrant.liveKey(new AuthorId(author), new ProjectId(project), mappedScope);
         }
         t.put("active_key", activeKey);
     }
 
     private static void history(LegacyRow s, Map<String, Object> t, Violations v) {
-        copy(s, t, "id", "author_id", "login", "entity_id", "from_state", "to_state", "changes", "reason", "evidence_uri",
+        copy(s, t, "id", "author_id", "login", "entity_id", "changes", "reason", "evidence_uri",
                 "evidence_sha256", "corrects_id");
         // the new schema names the column occurred_at (AT is a reserved word of SQL:2003); the legacy one is at
         t.put("occurred_at", s.get("at"));
@@ -372,7 +428,9 @@ final class LegacyRowMapper {
         t.put("operation_key", s.get("request_id"));
         // and source_ref where 1.x had legacy_ref: the reference of the row in the ledger it was imported from
         t.put("source_ref", s.get("legacy_ref"));
-        t.put("entity", nameOf(v, "entity", s.text("entity"), HistoryEntity.values()));
+        t.put("from_state", mapState(s.text("from_state")));
+        t.put("to_state", mapState(s.text("to_state")));
+        t.put("entity", renamedNull(v, "entity", s.text("entity"), HISTORY_ENTITIES));
         t.put("before_data", null);
         t.put("actor_assurance", renamed(v, "actor_assurance", s.text("actor_assurance"), ASSURANCES));
         t.put("op", renamed(v, "op", s.text("op"), HISTORY_OPS));
@@ -384,6 +442,14 @@ final class LegacyRowMapper {
     }
 
     // ---------------------------------------------------------------------------------------------------- helpers
+
+    private static String mapState(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String mapped = HISTORY_STATES.get(raw);
+        return mapped != null ? mapped : raw;
+    }
 
     /**
      * The name of the constant of 2.0 for the value as 1.x wrote it. A value that is none of them is reported and kept as it
@@ -397,6 +463,19 @@ final class LegacyRowMapper {
         if (name == null) {
             v.add(column, ValidationReason.UNKNOWN_VALUE, raw);
             return raw;
+        }
+        return name;
+    }
+
+    /** Maps a nullable or required token via a 1.x-to-2.0 lookup map, returning null and reporting UNKNOWN_VALUE on an unknown text. */
+    private static String renamedNull(Violations v, String column, String raw, Map<String, String> oneXNames) {
+        if (raw == null) {
+            return null;
+        }
+        String name = oneXNames.get(raw);
+        if (name == null) {
+            v.add(column, ValidationReason.UNKNOWN_VALUE, raw);
+            return null;
         }
         return name;
     }
@@ -417,19 +496,5 @@ final class LegacyRowMapper {
         if (value != null && !allowed.contains(value)) {
             v.add(column, ValidationReason.UNKNOWN_VALUE, value);
         }
-    }
-
-    /** The constant name of the token (the legacy lower-case tokens are the tokens of the domain enums), or null. */
-    private static <E extends Enum<E> & Token> String nameOf(Violations v, String column, String raw, E[] values) {
-        if (raw == null) {
-            return null;
-        }
-        Optional<String> name = Tokens.find(raw, values).map(Enum::name);
-        if (name.isEmpty()) {
-            v.add(column, ValidationReason.UNKNOWN_VALUE, raw);
-            // the column is NULL for a token that is none of the constants (the row is reported)
-            return null;
-        }
-        return name.orElseThrow();
     }
 }

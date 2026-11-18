@@ -16,7 +16,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * {@code attachments-send <file> --upload-id=<id> [--url=<url>]}: uploads chunks of a local regular file directly to
- * the running MCP server using the {@code uploadId} capability token from {@code artifact-begin}. Needs no database.
+ * the running MCP server using the {@code uploadId} capability token from {@code artifact_begin}. Needs no database.
  */
 @Component
 public class AttachmentsSendCommand implements Command {

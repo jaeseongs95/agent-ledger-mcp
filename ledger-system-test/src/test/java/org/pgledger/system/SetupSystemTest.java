@@ -120,7 +120,7 @@ class SetupSystemTest {
         assertThat(result.exit()).as(result.streams()).isEqualTo(3);
         assertThat(owner.schemaExists(schema)).isTrue();
         assertThat(owner.value("SELECT COUNT(*) FROM " + schema + ".schema_history")).isEqualTo(String.valueOf(ShippedMigrations.count()));
-        assertThat(owner.value("SELECT COUNT(*) FROM " + schema + ".common_code WHERE code_group = 'DEFECT_CATEGORY'"))
+        assertThat(owner.value("SELECT COUNT(*) FROM " + schema + ".common_code WHERE code_group = 'ISSUE_CATEGORY'"))
                 .as("no seed code before the operator step").isEqualTo("0");
     }
 
@@ -139,7 +139,7 @@ class SetupSystemTest {
         firstDigests = digests(result.out());
         assertThat(firstDigests).as("the digest of the seed and of the same codes in the database").hasSize(2);
         assertThat(firstDigests.get(0)).isEqualTo(firstDigests.get(1));
-        assertThat(owner.value("SELECT COUNT(*) FROM " + schema + ".common_code WHERE code_group = 'DEFECT_CATEGORY'"))
+        assertThat(owner.value("SELECT COUNT(*) FROM " + schema + ".common_code WHERE code_group = 'ISSUE_CATEGORY'"))
                 .isEqualTo("14");
         stateAfterTheFirstSetup = state();
     }

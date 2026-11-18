@@ -14,7 +14,7 @@
     <label for="entity" th:text="#{history.entity}">Entity</label>
     <select id="entity" name="entity">
       <option value="" th:text="#{common.any}">Any</option>
-      <option th:each="e : ${entities}" th:value="${e.token()}" th:text="${e.token()}" th:selected="${e.token() == filter.entity()}">defect</option>
+      <option th:each="e : ${entities}" th:value="${e.token()}" th:text="${e.token()}" th:selected="${e.token() == filter.entity()}">issue</option>
     </select>
     <label for="entityId" th:text="#{history.entityId}">Entity id</label>
     <input id="entityId" name="entityId" type="text" th:value="${filter.entityId()}" maxlength="300">
@@ -43,7 +43,7 @@
       <th:block th:each="h : ${page.items()}"><tr>
         <td th:text="${h.id()}">1</td>
         <td><time th:replace="~{fragments :: time(${h.at()})}">t</time></td>
-        <td><span th:text="${h.entity()}">defect</span> <span th:text="${h.entityId()}">ID</span></td>
+        <td><span th:text="${h.entity()}">issue</span> <span th:text="${h.entityId()}">ID</span></td>
         <td th:text="${h.op()}">CREATE</td>
         <td th:text="${h.fromState()} + ' > ' + ${h.toState()}" th:if="${h.fromState() != null or h.toState() != null}">a > b</td>
         <td th:unless="${h.fromState() != null or h.toState() != null}"></td>

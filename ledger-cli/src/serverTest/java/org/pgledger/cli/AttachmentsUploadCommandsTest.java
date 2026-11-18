@@ -35,7 +35,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * ATA-044: {@code attachments-prepare} measures files locally with no server/DB, and {@code attachments-send} streams
- * chunks over HTTP to {@code /mcp} ({@code artifact-status} and {@code artifact-chunk}) using {@code uploadId}
+ * chunks over HTTP to {@code /mcp} ({@code artifact_status} and {@code artifact_chunk}) using {@code uploadId}
  * capability without session attestation, resuming cleanly from server progress.
  */
 @ExtendWith({ OutputCaptureExtension.class, CliExtension.class, EnglishMessages.class })
@@ -108,26 +108,34 @@ class AttachmentsUploadCommandsTest {
 
         try (McpTestServer server = McpTestServer.start(Files.createDirectories(tmp.resolve("tomcat2")), TOKEN,
                 spec -> {
-                    Tool statusTool = Tool.builder("artifact-status", Map.of("type", "object")).build();
+                    Tool statusTool = Tool.builder("artifact_status", Map.of("type", "object")).build();
                     spec.toolCall(statusTool, (exchange, request) -> {
                         String requestedId = String.valueOf(request.arguments().get("uploadId"));
                         if ("missing-id".equals(requestedId)) {
+                            Map<String, Object> failed = Map.of("schemaVersion", "1.0.0", "ok", false,
+                                    "error", Map.of("code", "ARTIFACT_NOT_FOUND", "message", "Unknown upload"));
                             return CallToolResult.builder().isError(true)
-                                    .addTextContent(mapper.writeValueAsString(
-                                            Map.of("code", "ARTIFACT_NOT_FOUND", "message", "Unknown upload")))
+                                    .structuredContent(failed)
+                                    .addTextContent("ARTIFACT_NOT_FOUND: Unknown upload")
                                     .build();
                         }
                         if ("wrong-size".equals(requestedId)) {
+                            Map<String, Object> envelope = Map.of("schemaVersion", "1.0.0", "ok", true,
+                                    "data", Map.of("kind", "upload", "attachmentId", attachmentId, "seq", 0,
+                                            "state", "STAGING", "size", 999L, "sha256", smallSha,
+                                            "received", 0L, "sequence", 0L));
                             return CallToolResult.builder()
-                                    .addTextContent(mapper.writeValueAsString(Map.of("kind", "upload",
-                                            "attachmentId", attachmentId, "seq", 0, "state", "STAGING",
-                                            "size", 999L, "sha256", smallSha, "received", 0L, "sequence", 0L)))
+                                    .structuredContent(envelope)
+                                    .addTextContent(mapper.writeValueAsString(envelope))
                                     .build();
                         }
+                        Map<String, Object> envelope = Map.of("schemaVersion", "1.0.0", "ok", true,
+                                "data", Map.of("kind", "upload", "attachmentId", attachmentId, "seq", 0,
+                                        "state", "COMPLETED", "size", 5L, "sha256", smallSha,
+                                        "received", 5L, "sequence", 1L));
                         return CallToolResult.builder()
-                                .addTextContent(mapper.writeValueAsString(Map.of("kind", "upload",
-                                        "attachmentId", attachmentId, "seq", 0, "state", "COMPLETED",
-                                        "size", 5L, "sha256", smallSha, "received", 5L, "sequence", 1L)))
+                                .structuredContent(envelope)
+                                .addTextContent(mapper.writeValueAsString(envelope))
                                 .build();
                     });
                 })) {
@@ -153,12 +161,12 @@ class AttachmentsUploadCommandsTest {
             String declaredSha, ByteArrayOutputStream assembled, AtomicLong expectedSeq, AtomicInteger chunkCalls)
             throws IOException {
         return McpTestServer.start(Files.createDirectories(tmp.resolve("tomcat1")), TOKEN, spec -> {
-            Tool statusTool = Tool.builder("artifact-status", Map.of("type", "object")).build();
+            Tool statusTool = Tool.builder("artifact_status", Map.of("type", "object")).build();
             spec.toolCall(statusTool, (exchange, request) -> {
                 assertThat(request.arguments()).doesNotContainKey("_hostAttestation");
                 assertThat(request.arguments().get("uploadId")).isEqualTo(uploadId);
-                return CallToolResult.builder()
-                        .addTextContent(mapper.writeValueAsString(Map.of(
+                Map<String, Object> envelope = Map.of("schemaVersion", "1.0.0", "ok", true,
+                        "data", Map.of(
                                 "kind", "upload",
                                 "attachmentId", attachmentId,
                                 "seq", 0,
@@ -166,10 +174,13 @@ class AttachmentsUploadCommandsTest {
                                 "size", declaredSize,
                                 "sha256", declaredSha,
                                 "received", (long) assembled.size(),
-                                "sequence", expectedSeq.get())))
+                                "sequence", expectedSeq.get()));
+                return CallToolResult.builder()
+                        .structuredContent(envelope)
+                        .addTextContent(mapper.writeValueAsString(envelope))
                         .build();
             });
-            Tool chunkTool = Tool.builder("artifact-chunk", Map.of("type", "object")).build();
+            Tool chunkTool = Tool.builder("artifact_chunk", Map.of("type", "object")).build();
             spec.toolCall(chunkTool, (exchange, request) -> {
                 assertThat(request.arguments()).doesNotContainKey("_hostAttestation");
                 assertThat(request.arguments().get("uploadId")).isEqualTo(uploadId);
@@ -179,10 +190,11 @@ class AttachmentsUploadCommandsTest {
                 assertThat(Sha256.ofBytes(chunk).hex()).isEqualTo(request.arguments().get("chunkSha256"));
                 assembled.writeBytes(chunk);
                 chunkCalls.incrementAndGet();
+                Map<String, Object> envelope = Map.of("schemaVersion", "1.0.0", "ok", true,
+                        "data", Map.of("sequence", seq, "received", (long) assembled.size()));
                 return CallToolResult.builder()
-                        .addTextContent(mapper.writeValueAsString(Map.of(
-                                "sequence", seq,
-                                "received", (long) assembled.size())))
+                        .structuredContent(envelope)
+                        .addTextContent(mapper.writeValueAsString(envelope))
                         .build();
             });
         });

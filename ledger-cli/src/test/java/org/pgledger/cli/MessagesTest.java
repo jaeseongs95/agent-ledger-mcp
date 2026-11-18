@@ -30,7 +30,8 @@ class MessagesTest {
                 "migrate.applied", "migrate.current", "driver-register.registered", "project-add.added", "code-set.set",
                 "codes.line", "codes.line.relation", "grant.issued", "grant.never", "revoke.revoked", "grants.none", "grants.line", "mcp-check.ok",
                 "attachments-check.summary", "attachments-check.files", "attachments-check.missing", "attachments-check.damaged",
-                "attachments-check.unreferenced", "attachments-check.purged", "attachments-rekey.done", "attachments-key-create.created"));
+                "attachments-check.unreferenced", "attachments-check.purged", "attachments-rekey.done", "attachments-key-create.created",
+                "token-issue.issued", "token-revoke.revoked", "token-revoke.already", "token-list.none", "token-list.line"));
         for (ErrorCode code : ErrorCode.values()) {
             required.add(code.messageKey());
         }

@@ -42,8 +42,8 @@ import org.pgledger.application.admin.ProjectService;
 import org.pgledger.application.admin.ProjectService.ProjectCommand;
 import org.pgledger.application.write.RecordCaseCommand;
 import org.pgledger.application.write.RecordCaseService;
-import org.pgledger.application.write.RecordFixCommand;
-import org.pgledger.application.write.RecordFixService;
+import org.pgledger.application.write.RecordDeliverableCommand;
+import org.pgledger.application.write.RecordDeliverableService;
 import org.pgledger.application.write.ReviewService;
 import org.pgledger.application.write.SaveCommand;
 import org.pgledger.application.write.SaveService;
@@ -52,7 +52,7 @@ import org.pgledger.application.write.TransitionService;
 import org.pgledger.application.write.WhoamiService;
 import org.pgledger.application.write.WhoamiService.GrantView;
 import org.pgledger.application.write.WriteResult.RecordCaseResult;
-import org.pgledger.application.write.WriteResult.RecordFixResult;
+import org.pgledger.application.write.WriteResult.RecordDeliverableResult;
 import org.pgledger.application.write.WriteResult.SaveResult;
 import org.pgledger.application.write.WriteResult.TransitionResult;
 import org.pgledger.apptest.TestKeyRing;
@@ -129,7 +129,9 @@ class LegacyImportTest {
             for (LegacyTable table : LegacyTable.values()) {
                 rows += table.targetMayHoldOtherRows() ? 0 : count("SELECT COUNT(*) FROM " + table.targetName());
             }
-            return rows + count("SELECT COUNT(*) FROM session_key") + count("SELECT COUNT(*) FROM owner_audit");
+            return rows + count("SELECT COUNT(*) FROM spec") + count("SELECT COUNT(*) FROM issue_spec")
+                    + count("SELECT COUNT(*) FROM spec_task") + count("SELECT COUNT(*) FROM session_key")
+                    + count("SELECT COUNT(*) FROM session_token") + count("SELECT COUNT(*) FROM owner_audit");
         }
     }
 
@@ -161,13 +163,13 @@ class LegacyImportTest {
                 .call(call::get);
     }
 
-    private static Map<String, String> defectFields(String project, String title) {
+    private static Map<String, String> issueFields(String project, String title) {
         Map<String, String> fields = new LinkedHashMap<>();
         fields.put("project_id", project);
         fields.put("title", title);
         fields.put("category", "OLDBUG");
         fields.put("severity", "P2");
-        fields.put("behavior", "behavior of " + title);
+        fields.put("symptom", "symptom of " + title);
         fields.put("root_cause", "cause of " + title);
         return fields;
     }
@@ -223,7 +225,9 @@ class LegacyImportTest {
             long total = 0;
             for (LegacyTable table : LegacyTable.values()) {
                 long legacyRows = rig.legacy().count(table.sourceName());
-                assertThat(rig.count("SELECT COUNT(*) FROM " + table.targetName())).as(table.name()).isEqualTo(legacyRows);
+                long expectedTargetRows = table == LegacyTable.COMMON_CODE ? legacyRows + 9 : legacyRows;
+                assertThat(rig.count("SELECT COUNT(*) FROM " + table.targetName())).as(table.name())
+                        .isEqualTo(expectedTargetRows);
                 total += legacyRows;
             }
             assertThat(LegacyTable.values()).hasSize(12);
@@ -249,17 +253,28 @@ class LegacyImportTest {
                     .findFirst().orElseThrow();
             assertThat(defectTask.sourceDigest().hex()).isEqualTo(documentedDigest(legacyRows));
             assertThat(defectTask.targetDigest().hex()).isEqualTo(documentedDigest(legacyRows));
-            for (String table : List.of("history", "defect_fix", "defect_case", "session_grant")) {
-                Set<Long> legacyIds = new HashSet<>(rig.legacy().rows("SELECT id FROM " + rig.legacy().schema() + "." + table)
-                        .stream().map(row -> ((Number) row.get("id")).longValue()).toList());
-                Set<Long> ids = new HashSet<>(rig.ctx().jdbc().sql("SELECT id FROM " + table).query(Long.class).list());
-                assertThat(ids).as(table).isEqualTo(legacyIds);
+            for (LegacyTable table : List.of(LegacyTable.HISTORY, LegacyTable.DEFECT_FIX, LegacyTable.DEFECT_CASE,
+                    LegacyTable.SESSION_GRANT)) {
+                Set<Long> legacyIds = new HashSet<>(rig.legacy().rows("SELECT id FROM " + rig.legacy().schema() + "."
+                        + table.sourceName()).stream().map(row -> ((Number) row.get("id")).longValue()).toList());
+                Set<Long> ids = new HashSet<>(rig.ctx().jdbc().sql("SELECT id FROM " + table.targetName())
+                        .query(Long.class).list());
+                assertThat(ids).as(table.name()).isEqualTo(legacyIds);
             }
         });
     }
 
+    private static final Map<String, String> HISTORY_ENTITY_MAP = Map.of(
+            "defect", "ISSUE", "defect_fix", "DELIVERABLE", "defect_case", "ISSUE_CASE",
+            "defect_task", "ISSUE_TASK", "defect_relation", "ISSUE_RELATION",
+            "condition", "CRITERION", "condition_link", "CRITERION_LINK", "task", "TASK");
+
+    private static String mappedHistoryState(String legacyState) {
+        return "SOURCE_FIXED".equals(legacyState) ? "RESOLVED" : legacyState;
+    }
+
     @Test
-    @DisplayName("MIG-003 / M1X-050 every field of every history row is equal (the JSON text of changes, source_ref from legacy_ref, login, the 1.x request_id as operation_key, corrects_id), the 1.x operations and assurances arrive under the imported vocabulary (LEGACY_ becomes IMPORTED_), the entity is the upper-case name, and before_data is NULL on every row")
+    @DisplayName("MIG-003 / M1X-050 every field of every history row is equal (the JSON text of changes, source_ref from legacy_ref, login, the 1.x request_id as operation_key, corrects_id), the 1.x operations and assurances arrive under the imported vocabulary (LEGACY_ becomes IMPORTED_), the entity is the 2.0 upper-case name, and before_data is NULL on every row")
     void mig003_historyFields() {
         withRich(rig -> {
             rig.importAll();
@@ -275,10 +290,14 @@ class LegacyImportTest {
             for (int i = 0; i < rows.size(); i++) {
                 Map<String, Object> legacy = legacyRows.get(i);
                 Map<String, Object> row = rows.get(i);
-                for (String column : List.of("id", "login", "entity_id", "from_state", "to_state", "changes",
+                for (String column : List.of("id", "login", "entity_id", "changes",
                         "reason", "evidence_uri", "evidence_sha256", "corrects_id")) {
                     assertThat(text(row, column)).as("history %s of row %d", column, i).isEqualTo(text(legacy, column));
                 }
+                assertThat(text(row, "from_state")).as("history from_state of row %d", i)
+                        .isEqualTo(mappedHistoryState(text(legacy, "from_state")));
+                assertThat(text(row, "to_state")).as("history to_state of row %d", i)
+                        .isEqualTo(mappedHistoryState(text(legacy, "to_state")));
                 // the 1.x column request_id is the column operation_key of 2.0 (OPK-018 checks it on its own)
                 assertThat(text(row, "operation_key")).as("history operation_key of row %d", i)
                         .isEqualTo(text(legacy, "request_id"));
@@ -289,7 +308,7 @@ class LegacyImportTest {
                 assertThat(text(row, "actor_assurance")).as("assurance of row %d", i).isEqualTo(imported(text(legacy, "actor_assurance")));
                 assertThat(text(row, "op")).as("op of row %d", i).isEqualTo(imported(text(legacy, "op")));
                 assertThat(text(row, "source_ref")).as("source_ref of row %d", i).isEqualTo(text(legacy, "legacy_ref"));
-                assertThat(text(row, "entity")).isEqualTo(text(legacy, "entity").toUpperCase(Locale.ROOT));
+                assertThat(text(row, "entity")).isEqualTo(HISTORY_ENTITY_MAP.get(text(legacy, "entity")));
                 assertThat(row.get("before_data")).as("before_data of row %d", i).isNull();
             }
             assertThat(rows.stream().map(row -> text(row, "op")).toList()).contains("IMPORT", "IMPORTED_NOTE", "IMPORTED_CHANGE",
@@ -331,24 +350,24 @@ class LegacyImportTest {
 
             assertThat(report.tables()).allSatisfy(check -> assertThat(check.matches()).isTrue());
             for (String[] column : new String[][] { { "project", "created_by" }, { "common_code", "created_by" },
-                    { "task", "owner_actor_id" }, { "task", "created_by" }, { "defect", "owner_actor_id" },
-                    { "defect", "created_by" }, { "defect_fix", "recorded_by" }, { "defect_case", "recorded_by" },
-                    { "defect_task", "created_by" }, { "defect_relation", "created_by" }, { "release_condition", "created_by" },
-                    { "condition_link", "created_by" }, { "session_grant", "author_id" }, { "session_grant", "granted_by" },
+                    { "task", "owner_actor_id" }, { "task", "created_by" }, { "issue", "owner_actor_id" },
+                    { "issue", "created_by" }, { "deliverable", "recorded_by" }, { "issue_case", "recorded_by" },
+                    { "issue_task", "created_by" }, { "issue_relation", "created_by" }, { "milestone_criterion", "created_by" },
+                    { "criterion_link", "created_by" }, { "session_grant", "author_id" }, { "session_grant", "granted_by" },
                     { "history", "author_id" } }) {
                 assertThat(rig.count("SELECT COUNT(*) FROM " + column[0] + " WHERE " + column[1] + " LIKE 'agent:%'"))
                         .as("%s.%s", column[0], column[1]).isZero();
             }
             // the imported fix 9 was recorded by agent:old-1, the fix 3 by agent:claude:e2e-seed (the fixture)
-            assertThat(rig.rows("SELECT id, recorded_by FROM defect_fix ORDER BY id").stream()
+            assertThat(rig.rows("SELECT id, recorded_by FROM deliverable ORDER BY id").stream()
                     .map(row -> text(row, "id") + "=" + text(row, "recorded_by")).toList())
                     .contains("3=" + SEED, "9=old-1");
 
             LedgerAppContext ctx = rig.ctx();
             ctx.enroll(SEED);
             ctx.bean(GrantService.class).grant(new GrantCommand(SEED, "e2e", List.of("verify"), null, null), TestOwners.OWNER);
-            // E2E-D-0007 is SOURCE_FIXED and its only fix is the one of this session
-            Expect.failure(() -> ctx.bean(ReviewService.class).review(SEED, new TransitionCommand(Scenario.uuid(), "defect", "E2E-D-0007",
+            // E2E-D-0007 is RESOLVED and its only deliverable is the one of this session
+            Expect.failure(() -> ctx.bean(ReviewService.class).review(SEED, new TransitionCommand(Scenario.uuid(), "issue", "E2E-D-0007",
                     2L, "VERIFIED", Scenario.REASON, Scenario.EVIDENCE, null, null)), TransitionCode.SAME_SESSION);
         });
     }
@@ -394,10 +413,10 @@ class LegacyImportTest {
 
             assertThat(rig.count("SELECT COUNT(*) FROM session_grant")).isEqualTo(rig.legacy().count("session_grant")).isEqualTo(5);
             assertThat(rig.ctx().jdbc().sql("SELECT active_key FROM session_grant ORDER BY id").query(String.class).list())
-                    .containsExactly("claude:e2e-seed|old|defect", "claude:e2e-seed|old|task", "revoked:4",
-                            "gemini:expired|old|verify", "claude:e2e-seed|e2e|defect");
+                    .containsExactly("claude:e2e-seed|old|issue", "claude:e2e-seed|old|task", "revoked:4",
+                            "gemini:expired|old|verify", "claude:e2e-seed|e2e|issue");
             assertThat(rig.ctx().jdbc().sql("SELECT grant_scope FROM session_grant ORDER BY id").query(String.class).list())
-                    .containsExactly("DEFECT", "TASK", "FIX", "VERIFY", "DEFECT");
+                    .containsExactly("ISSUE", "TASK", "DELIVERABLE", "VERIFY", "ISSUE");
             assertThat(rig.count("SELECT COUNT(*) FROM session_grant WHERE last_used_at IS NOT NULL")).isZero();
             assertThat(rig.count("SELECT COUNT(*) FROM session_grant WHERE granted_by <> 'user:owner'")).isZero();
             assertThat(rig.count("SELECT COUNT(*) FROM session_key")).isZero();
@@ -405,7 +424,7 @@ class LegacyImportTest {
             rig.ctx().enroll(SEED);
             WhoamiService whoami = rig.ctx().bean(WhoamiService.class);
             assertThat(whoami.whoami(SEED, Channel.AUTHOR).grants()).extracting(GrantView::project, GrantView::scope)
-                    .containsExactlyInAnyOrder(tuple("old", "defect"), tuple("old", "task"), tuple("e2e", "defect"));
+                    .containsExactlyInAnyOrder(tuple("old", "issue"), tuple("old", "task"), tuple("e2e", "issue"));
             rig.ctx().enroll(RELINK);
             assertThat(whoami.whoami(RELINK, Channel.AUTHOR).grants()).isEmpty();
             rig.ctx().enroll("gemini:expired");
@@ -420,23 +439,23 @@ class LegacyImportTest {
             rig.importAll();
             SaveService save = rig.ctx().bean(SaveService.class);
             String operationKey = Scenario.uuid();
-            SaveCommand command = new SaveCommand(operationKey, "defect", null, 0L, Fields.of(defectFields("old", "after the import")),
+            SaveCommand command = new SaveCommand(operationKey, "issue", null, 0L, Fields.of(issueFields("old", "after the import")),
                     Scenario.REASON);
-            String token = TestKeyRing.token(TestKeyRing.newPair(), SEED, "ledger_save", operationKey,
+            String token = TestKeyRing.token(TestKeyRing.newPair(), SEED, "ledger_issue_save", operationKey,
                     rig.ctx().clock().instant());
 
-            LedgerException refused = Expect.failure(() -> asTool("ledger_save", () -> save.save(token, command)),
+            LedgerException refused = Expect.failure(() -> asTool("ledger_issue_save", () -> save.save(token, command)),
                     TrustCode.ATTESTATION_SIGNATURE_INVALID);
 
             assertThat(refused.args()).isEmpty();
-            assertThat(rig.count("SELECT COUNT(*) FROM defect WHERE title = ?", "after the import")).isZero();
+            assertThat(rig.count("SELECT COUNT(*) FROM issue WHERE title = ?", "after the import")).isZero();
             assertThat(rig.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ?", operationKey)).isZero();
 
             rig.ctx().enroll(SEED);
-            SaveResult saved = save.save(SEED, new SaveCommand(Scenario.uuid(), "defect", null, 0L, Fields.of(defectFields("old", "after the key")),
+            SaveResult saved = save.save(SEED, new SaveCommand(Scenario.uuid(), "issue", null, 0L, Fields.of(issueFields("old", "after the key")),
                     Scenario.REASON));
             assertThat(saved.author()).isEqualTo(SEED);
-            assertThat(saved.id()).isEqualTo("OLD-D-0004");
+            assertThat(saved.id()).isEqualTo("OLD-I-0004");
         });
     }
 
@@ -451,39 +470,44 @@ class LegacyImportTest {
                     LegacyTable.CONDITION_LINK)) {
                 List<String> legacy = rig.legacy().rows("SELECT created_by FROM " + rig.legacy().schema() + "."
                         + table.sourceName()).stream().map(row -> text(row, "created_by")).toList();
-                List<String> imported = rig.ctx().jdbc().sql("SELECT created_by FROM " + table.targetName())
+                String sql = table == LegacyTable.COMMON_CODE
+                        ? "SELECT created_by FROM common_code WHERE code_group <> 'DELIVERABLE_KIND' AND code <> 'same_work_unit'"
+                        : "SELECT created_by FROM " + table.targetName();
+                List<String> imported = rig.ctx().jdbc().sql(sql)
                         .query(String.class).list();
                 assertThat(imported).as(table.name()).containsExactlyInAnyOrderElementsOf(legacy);
             }
-            assertThat(rig.count("SELECT COUNT(*) FROM release_condition WHERE id = 'OLD-C-3' AND created_by = 'unknown:legacy'"))
+            assertThat(rig.count("SELECT COUNT(*) FROM milestone_criterion WHERE id = 'OLD-C-3' AND created_by = 'unknown:legacy'"))
                     .isEqualTo(1);
-            assertThat(rig.count("SELECT COUNT(*) FROM condition_link WHERE condition_id = 'OLD-C-2' AND "
+            assertThat(rig.count("SELECT COUNT(*) FROM criterion_link WHERE criterion_id = 'OLD-C-2' AND "
                     + "created_by = 'codex:e2e-relink'")).isEqualTo(1);
         });
     }
 
     @Test
-    @DisplayName("MIG-007 the counters continue after the highest legacy numbers: project defect counter = highest <CODE>-D-NNNN, task counter = highest <CODE>-T-NNNN (0 when none), history, fix, case and grant counters = highest id; the next numbers issued collide with nothing")
+    @DisplayName("MIG-007 the counters continue after the highest legacy numbers: project issue counter = highest <CODE>-D-NNNN, task counter = highest <CODE>-T-NNNN (0 when none), history, deliverable, case and grant counters = highest id; the next numbers issued collide with nothing")
     void mig007_counters() {
         withRich(rig -> {
             rig.importAll();
 
-            assertThat(rig.count("SELECT next_defect_no FROM project WHERE id = 'old'")).isEqualTo(3);
+            assertThat(rig.count("SELECT next_issue_no FROM project WHERE id = 'old'")).isEqualTo(3);
+            assertThat(rig.count("SELECT next_spec_no FROM project WHERE id = 'old'")).isZero();
             assertThat(rig.count("SELECT next_task_no FROM project WHERE id = 'old'")).isZero();
-            assertThat(rig.count("SELECT next_defect_no FROM project WHERE id = 'e2e'")).isEqualTo(100);
+            assertThat(rig.count("SELECT next_issue_no FROM project WHERE id = 'e2e'")).isEqualTo(100);
+            assertThat(rig.count("SELECT next_spec_no FROM project WHERE id = 'e2e'")).isZero();
             assertThat(rig.count("SELECT next_task_no FROM project WHERE id = 'e2e'")).isEqualTo(3);
-            for (Map.Entry<String, Long> counter : Map.of("HISTORY", 57L, "DEFECT_FIX", 9L, "DEFECT_CASE", 5L,
-                    "SESSION_GRANT", 8L, "SESSION_KEY", 0L, "OWNER_AUDIT", 1L).entrySet()) {
+            for (Map.Entry<String, Long> counter : Map.of("HISTORY", 57L, "DELIVERABLE", 9L, "ISSUE_CASE", 5L,
+                    "SESSION_GRANT", 8L, "SESSION_KEY", 0L, "SESSION_TOKEN", 0L, "OWNER_AUDIT", 1L).entrySet()) {
                 assertThat(rig.count("SELECT issued_no FROM id_counter WHERE name = ?", counter.getKey()))
                         .as(counter.getKey()).isEqualTo(counter.getValue());
             }
             IdAllocator ids = rig.ctx().bean(IdAllocator.class);
-            assertThat(rig.ctx().tx(() -> ids.nextDefectNo(ProjectCode.of("OLD")))).isEqualTo(4);
-            assertThat(rig.ctx().tx(() -> ids.nextDefectNo(ProjectCode.of("E2E")))).isEqualTo(101);
+            assertThat(rig.ctx().tx(() -> ids.nextIssueNo(ProjectCode.of("OLD")))).isEqualTo(4);
+            assertThat(rig.ctx().tx(() -> ids.nextIssueNo(ProjectCode.of("E2E")))).isEqualTo(101);
             assertThat(rig.ctx().tx(() -> ids.nextTaskNo(ProjectCode.of("E2E")))).isEqualTo(4);
             assertThat(rig.ctx().tx(() -> ids.nextTaskNo(ProjectCode.of("OLD")))).isEqualTo(1);
             assertThat(rig.ctx().tx(() -> ids.next(Counter.HISTORY))).isEqualTo(58);
-            assertThat(rig.ctx().tx(() -> ids.next(Counter.DEFECT_FIX))).isEqualTo(10);
+            assertThat(rig.ctx().tx(() -> ids.next(Counter.DELIVERABLE))).isEqualTo(10);
         });
     }
 
@@ -544,7 +568,7 @@ class LegacyImportTest {
     @DisplayName("REH2-MIG-02 a new schema that holds a code set through the code service (a CODE_SET row in owner_audit, what migrate and setup make) is accepted: the comparison of every table is equal, and the code revision is one higher than after the code was set")
     void reh2Mig02_acceptsWhatSetupMade() {
         withRich(rig -> {
-            rig.ctx().bean(CommonCodeService.class).set(new CodeCommand("DEFECT_CATEGORY", "MINE", "내 코드", "My code", null, null, 3,
+            rig.ctx().bean(CommonCodeService.class).set(new CodeCommand("ISSUE_CATEGORY", "MINE", "내 코드", "My code", null, null, 3,
                     "ACTIVE"), TestOwners.OWNER);
             assertThat(rig.count("SELECT COUNT(*) FROM owner_audit WHERE operation = 'CODE_SET'")).isEqualTo(1);
             long revision = rig.count(REVISION);
@@ -563,16 +587,16 @@ class LegacyImportTest {
     void reh2Mig03_aSeedCodeOfTheLegacyLedger() {
         withRich(rig -> {
             CommonCodeService codes = rig.ctx().bean(CommonCodeService.class);
-            codes.set(new CodeCommand("DEFECT_CATEGORY", "CON", "내 이름", "My name", "내 설명", "My description", 7, "INACTIVE"),
+            codes.set(new CodeCommand("ISSUE_CATEGORY", "CON", "내 이름", "My name", "내 설명", "My description", 7, "INACTIVE"),
                     TestOwners.OWNER);
-            codes.set(new CodeCommand("DEFECT_CATEGORY", "MINE", "내 코드", "My code", null, null, 3, "ACTIVE"), TestOwners.OWNER);
+            codes.set(new CodeCommand("ISSUE_CATEGORY", "MINE", "내 코드", "My code", null, null, 3, "ACTIVE"), TestOwners.OWNER);
 
             ImportReport report = rig.importAll();
 
             Category con = LegacyFixtures.categories().stream().filter(category -> "CON".equals(category.code())).findFirst()
                     .orElseThrow();
             Map<String, Object> row = rig.rows("SELECT name_ko, name_en, description_ko, sort_order, state FROM common_code "
-                    + "WHERE code_group = 'DEFECT_CATEGORY' AND code = 'CON'").getFirst();
+                    + "WHERE code_group = 'ISSUE_CATEGORY' AND code = 'CON'").getFirst();
             assertThat(text(row, "name_ko")).isEqualTo(con.name());
             assertThat(text(row, "name_en")).isEqualTo("Concurrency and atomicity");
             assertThat(text(row, "description_ko")).isEqualTo(con.definition());
@@ -601,7 +625,7 @@ class LegacyImportTest {
 
             // a grant needs the registered key of its author (what key-register does)
             rig.ctx().enroll(SEED);
-            rig.ctx().bean(GrantService.class).grant(new GrantCommand(SEED, "own", List.of("fix"), null, null), TestOwners.OWNER);
+            rig.ctx().bean(GrantService.class).grant(new GrantCommand(SEED, "own", List.of("deliverable"), null, null), TestOwners.OWNER);
             long withGrant = rig.ledgerRows();
 
             LedgerException grant = Expect.failure(rig::importAll, ConflictCode.DUPLICATE_KEY);
@@ -650,7 +674,7 @@ class LegacyImportTest {
 
             assertThat(target.inserted()).as("rows were written before the failure").isPositive();
             assertThat(rig.ledgerRows()).isZero();
-            assertThat(rig.count("SELECT COUNT(*) FROM common_code")).isEqualTo(10);
+            assertThat(rig.count("SELECT COUNT(*) FROM common_code")).isEqualTo(18);
             assertThat(rig.count("SELECT SUM(issued_no) FROM id_counter")).isZero();
             assertThat(rig.count("SELECT revision FROM code_revision")).isZero();
 
@@ -665,18 +689,18 @@ class LegacyImportTest {
     // ---------------------------------------------------------------------------------------------- MIG-011 .. 017
 
     @Test
-    @DisplayName("MIG-011 every common code is kept with state, sort order, Korean and English text; CON and EXC have their English names; the category only the old installation has falls back to the Korean text; the 14 known categories have English text that differs from the Korean; severities and relation kinds as seeded")
+    @DisplayName("MIG-011 every common code is kept with state, sort order, Korean and English text; CON and EXC have their English names; the category only the old installation has falls back to the Korean text; the 14 known categories have English text that differs from the Korean; severities, deliverable kinds and relation kinds as seeded")
     void mig011_commonCodes() {
         withRich(rig -> {
             rig.importAll();
 
-            assertThat(rig.count("SELECT COUNT(*) FROM common_code")).isEqualTo(25);
+            assertThat(rig.count("SELECT COUNT(*) FROM common_code")).isEqualTo(34);
             List<Category> categories = LegacyFixtures.categories();
             assertThat(categories).hasSize(14);
-            assertThat(rig.count("SELECT COUNT(*) FROM common_code WHERE code_group = 'DEFECT_CATEGORY'")).isEqualTo(15);
+            assertThat(rig.count("SELECT COUNT(*) FROM common_code WHERE code_group = 'ISSUE_CATEGORY'")).isEqualTo(15);
             for (Category category : categories) {
                 Map<String, Object> row = rig.rows("SELECT name_ko, name_en, description_ko, description_en, sort_order, state "
-                        + "FROM common_code WHERE code_group = 'DEFECT_CATEGORY' AND code = '" + category.code() + "'").getFirst();
+                        + "FROM common_code WHERE code_group = 'ISSUE_CATEGORY' AND code = '" + category.code() + "'").getFirst();
                 assertThat(text(row, "name_ko")).as(category.code()).isEqualTo(category.name());
                 assertThat(text(row, "description_ko")).isEqualTo(category.definition());
                 assertThat(text(row, "name_en")).isNotEqualTo(category.name());
@@ -694,45 +718,47 @@ class LegacyImportTest {
             assertThat(text(oldBug, "description_en")).isEqualTo(text(oldBug, "description_ko"));
             assertThat(rig.ctx().jdbc().sql("SELECT state FROM common_code WHERE code = 'UNRATED'").query(String.class).single())
                     .isEqualTo("INACTIVE");
-            assertThat(rig.count("SELECT COUNT(*) FROM common_code WHERE code_group = 'RELATION_KIND'")).isEqualTo(6);
-            assertThat(rig.count("SELECT COUNT(*) FROM common_code WHERE code_group = 'DEFECT_SEVERITY' AND state = 'ACTIVE'"))
+            assertThat(rig.count("SELECT COUNT(*) FROM common_code WHERE code_group = 'RELATION_KIND'")).isEqualTo(7);
+            assertThat(rig.count("SELECT COUNT(*) FROM common_code WHERE code_group = 'ISSUE_SEVERITY' AND state = 'ACTIVE'"))
                     .isEqualTo(3);
+            assertThat(rig.count("SELECT COUNT(*) FROM common_code WHERE code_group = 'DELIVERABLE_KIND' AND state = 'ACTIVE'"))
+                    .isEqualTo(8);
         });
     }
 
     @Test
-    @DisplayName("MIG-012 a defect imported with severity UNRATED stays UNRATED until it is written: an edit without a rating is CODE_INVALID, the same edit with P3 is accepted at version 2")
+    @DisplayName("MIG-012 an issue imported with severity UNRATED stays UNRATED until it is written: an edit without a rating is CODE_INVALID, the same edit with P3 is accepted at version 2")
     void mig012_unrated() {
         withRich(rig -> {
             rig.importAll();
             SaveService save = rig.ctx().bean(SaveService.class);
 
-            assertThat(rig.ctx().jdbc().sql("SELECT severity FROM defect WHERE id = 'OLD-D-0003'").query(String.class).single())
+            assertThat(rig.ctx().jdbc().sql("SELECT severity FROM issue WHERE id = 'OLD-D-0003'").query(String.class).single())
                     .isEqualTo("UNRATED");
             ValidationException refused = (ValidationException) Expect.failure(() -> save.save(SEED, new SaveCommand(Scenario.uuid(),
-                    "defect", "OLD-D-0003", 1L, Fields.of("title", "unrated, edited"), Scenario.REASON)),
+                    "issue", "OLD-D-0003", 1L, Fields.of("title", "unrated, edited"), Scenario.REASON)),
                     ValidationCode.CODE_INVALID);
-            assertThat(refused.args()).startsWith("defect.severity", "UNRATED");
+            assertThat(refused.args()).startsWith("issue.severity", "UNRATED");
 
-            SaveResult edited = save.save(SEED, new SaveCommand(Scenario.uuid(), "defect", "OLD-D-0003", 1L,
+            SaveResult edited = save.save(SEED, new SaveCommand(Scenario.uuid(), "issue", "OLD-D-0003", 1L,
                     Fields.of(Map.of("title", "unrated, edited", "severity", "P3")), Scenario.REASON));
             assertThat(edited.version()).isEqualTo(2);
-            assertThat(rig.ctx().jdbc().sql("SELECT severity FROM defect WHERE id = 'OLD-D-0003'").query(String.class).single())
+            assertThat(rig.ctx().jdbc().sql("SELECT severity FROM issue WHERE id = 'OLD-D-0003'").query(String.class).single())
                     .isEqualTo("P3");
         });
     }
 
     @Test
-    @DisplayName("MIG-013 the detail of a defect shows the behavior of a defect that was merged into it before the import as a merged_behavior case with its observation text, next to the cases")
+    @DisplayName("MIG-013 the detail of an issue shows the symptom of an issue that was merged into it before the import as a merged_symptom case with its observation text, next to the cases")
     void mig013_mergedBeforeTheImport() {
         withRich(rig -> {
             rig.importAll();
 
-            DetailService.DefectDetail detail = rig.ctx().bean(DetailService.class).defect("OLD-D-0001");
+            DetailService.IssueDetail detail = rig.ctx().bean(DetailService.class).issue("OLD-D-0001");
 
             assertThat(detail.cases()).anySatisfy(entry -> {
-                assertThat(entry.source()).isEqualTo("merged_behavior");
-                assertThat(entry.defect()).isEqualTo("OLD-D-0002");
+                assertThat(entry.source()).isEqualTo("merged_symptom");
+                assertThat(entry.issue()).isEqualTo("OLD-D-0002");
                 assertThat(entry.observation()).isEqualTo("old merged behaviour");
             });
             assertThat(detail.cases()).extracting(DetailService.CaseView::caseId).contains(2L, 5L);
@@ -740,31 +766,31 @@ class LegacyImportTest {
     }
 
     @Test
-    @DisplayName("MIG-014 links with the same target text in the task and the defect table, ids that contain |, re-linked rows: every link arrives and the link keys keep the kinds and the separator apart")
+    @DisplayName("MIG-014 links with the same target text in the task and the issue table, ids that contain |, re-linked rows: every link arrives and the link keys keep the kinds and the separator apart")
     void mig014_links() {
         withRich(rig -> {
             rig.importAll();
 
-            assertThat(rig.count("SELECT COUNT(*) FROM condition_link")).isEqualTo(7).isEqualTo(rig.legacy().count("condition_link"));
-            assertThat(rig.ctx().jdbc().sql("SELECT link_key FROM condition_link").query(String.class).list())
-                    .containsExactlyInAnyOrder("7:OLD-C-1|T|OLD-T-1", "7:OLD-C-1|T|OLD-D-0001", "7:OLD-C-1|D|OLD-D-0001",
-                            "7:OLD-C-2|D|OLD-D-0001", "7:OLD-C-3|T|OLD-T-1", "10:OLD-PIPE-C|T|A|T", "12:OLD-PIPE-C|A|T|T");
-            assertThat(rig.count("SELECT COUNT(*) FROM release_condition WHERE id = 'OLD-PIPE-C|A'")).isEqualTo(1);
+            assertThat(rig.count("SELECT COUNT(*) FROM criterion_link")).isEqualTo(7).isEqualTo(rig.legacy().count("condition_link"));
+            assertThat(rig.ctx().jdbc().sql("SELECT link_key FROM criterion_link").query(String.class).list())
+                    .containsExactlyInAnyOrder("T:7:OLD-C-1:OLD-T-1", "T:7:OLD-C-1:OLD-D-0001", "I:7:OLD-C-1:OLD-D-0001",
+                            "I:7:OLD-C-2:OLD-D-0001", "T:7:OLD-C-3:OLD-T-1", "T:10:OLD-PIPE-C:A|T", "T:12:OLD-PIPE-C|A:T");
+            assertThat(rig.count("SELECT COUNT(*) FROM milestone_criterion WHERE id = 'OLD-PIPE-C|A'")).isEqualTo(1);
             assertThat(rig.count("SELECT COUNT(*) FROM task WHERE id = 'A|T'")).isEqualTo(1);
-            assertThat(rig.count("SELECT COUNT(*) FROM defect_task")).isEqualTo(2);
-            assertThat(rig.count("SELECT COUNT(*) FROM defect_relation")).isEqualTo(1);
+            assertThat(rig.count("SELECT COUNT(*) FROM issue_task")).isEqualTo(2);
+            assertThat(rig.count("SELECT COUNT(*) FROM issue_relation")).isEqualTo(1);
         });
     }
 
     @Test
-    @DisplayName("MIG-035 1.x stored every relation with the smaller id first and kept nowhere which defect the caller named first: caused_by and blocks are imported as stored, never guessed, and listed (count and ids) in the report, the audit row and the verification; a kind only the legacy ledger has is imported without a direction; the codes keep their direction")
+    @DisplayName("MIG-035 1.x stored every relation with the smaller id first and kept nowhere which issue the caller named first: caused_by and blocks are imported as stored, never guessed, and listed (count and ids) in the report, the audit row and the verification; a kind only the legacy ledger has is imported without a direction; the codes keep their direction")
     void mig035_relationsOfUnknownDirection() {
         withRig(LegacyFixtures.withDirectedRelations(LegacyFixtures.rich()), rig -> {
             ImportReport report = rig.importAll();
 
             assertThat(report.tables()).allMatch(TableCheck::matches);
-            assertThat(rig.count("SELECT COUNT(*) FROM defect_relation")).isEqualTo(4);
-            assertThat(rig.count("SELECT COUNT(*) FROM defect_relation WHERE a = 'E2E-D-0007' AND b = 'OLD-D-0001' "
+            assertThat(rig.count("SELECT COUNT(*) FROM issue_relation")).isEqualTo(4);
+            assertThat(rig.count("SELECT COUNT(*) FROM issue_relation WHERE a = 'E2E-D-0007' AND b = 'OLD-D-0001' "
                     + "AND kind = 'caused_by'")).as("imported in the order it was stored").isEqualTo(1);
             // only the relations of a kind that has a direction are listed, in stored order, sorted
             assertThat(report.relationsOfUnknownDirection())
@@ -788,16 +814,16 @@ class LegacyImportTest {
     }
 
     @Test
-    @DisplayName("MIG-015 4000 characters of Korean text with both kinds of quotes, backslashes and line feeds arrive unchanged (a defect behavior and a case observation)")
+    @DisplayName("MIG-015 4000 characters of Korean text with both kinds of quotes, backslashes and line feeds arrive unchanged (an issue symptom and a case observation)")
     void mig015_longText() {
         withRich(rig -> {
             rig.importAll();
 
             String expected = LegacyFixtures.koreanText(4000);
             assertThat(expected).hasSize(4000).contains("\n").contains("\"").contains("'");
-            assertThat(rig.ctx().jdbc().sql("SELECT behavior FROM defect WHERE id = 'E2E-D-0100'").query(String.class).single())
+            assertThat(rig.ctx().jdbc().sql("SELECT symptom FROM issue WHERE id = 'E2E-D-0100'").query(String.class).single())
                     .isEqualTo(expected);
-            assertThat(rig.ctx().jdbc().sql("SELECT observation FROM defect_case WHERE id = 5").query(String.class).single())
+            assertThat(rig.ctx().jdbc().sql("SELECT observation FROM issue_case WHERE id = 5").query(String.class).single())
                     .isEqualTo(expected);
         });
     }
@@ -808,18 +834,24 @@ class LegacyImportTest {
         withRich(rig -> {
             rig.importAll();
 
-            for (String[] column : new String[][] {{"history", "at"}, {"task", "created_at"}, {"task", "updated_at"},
-                    {"defect", "created_at"}, {"defect", "updated_at"}, {"defect_fix", "ci_completed_at"},
-                    {"defect_fix", "recorded_at"}, {"defect_case", "recorded_at"}, {"session_grant", "granted_at"},
-                    {"session_grant", "expires_at"}, {"session_grant", "revoked_at"}}) {
+            for (String[] column : new String[][] {
+                    {"history", "at", "history", "occurred_at"},
+                    {"task", "created_at", "task", "created_at"},
+                    {"task", "updated_at", "task", "updated_at"},
+                    {"defect", "created_at", "issue", "created_at"},
+                    {"defect", "updated_at", "issue", "updated_at"},
+                    {"defect_fix", "ci_completed_at", "deliverable", "checked_at"},
+                    {"defect_fix", "recorded_at", "deliverable", "recorded_at"},
+                    {"defect_case", "recorded_at", "issue_case", "recorded_at"},
+                    {"session_grant", "granted_at", "session_grant", "granted_at"},
+                    {"session_grant", "expires_at", "session_grant", "expires_at"},
+                    {"session_grant", "revoked_at", "session_grant", "revoked_at"}}) {
                 // the request receipts of 1.x are not copied, so their times are not compared (M1X-003)
                 String key = "id";
                 List<Map<String, Object>> legacy = rig.legacy().rows("SELECT " + key + " AS k, EXTRACT(EPOCH FROM " + column[1]
                         + ") AS e FROM " + rig.legacy().schema() + "." + column[0] + " ORDER BY " + key);
                 for (Map<String, Object> row : legacy) {
-                    // the new schema names the time of a history row occurred_at (the legacy column is at)
-                    String target = "history".equals(column[0]) && "at".equals(column[1]) ? "occurred_at" : column[1];
-                    Instant instant = rig.instant("SELECT " + target + " AS t FROM " + column[0] + " WHERE " + key + " = ?",
+                    Instant instant = rig.instant("SELECT " + column[3] + " AS t FROM " + column[2] + " WHERE " + key + " = ?",
                             row.get("k"));
                     if (row.get("e") == null) {
                         assertThat(instant).as("%s.%s %s", column[0], column[1], row.get("k")).isNull();
@@ -841,16 +873,16 @@ class LegacyImportTest {
         withRich(rig -> {
             rig.importAll();
 
-            assertThat(rig.ctx().jdbc().sql("SELECT merged_into FROM defect WHERE id = 'E2E-D-0004'").query(String.class).single())
+            assertThat(rig.ctx().jdbc().sql("SELECT merged_into FROM issue WHERE id = 'E2E-D-0004'").query(String.class).single())
                     .isEqualTo("E2E-D-0100");
-            assertThat(rig.ctx().jdbc().sql("SELECT merged_into FROM defect WHERE id = 'OLD-D-0002'").query(String.class).single())
+            assertThat(rig.ctx().jdbc().sql("SELECT merged_into FROM issue WHERE id = 'OLD-D-0002'").query(String.class).single())
                     .isEqualTo("OLD-D-0001");
-            assertThat(rig.count("SELECT COUNT(*) FROM defect WHERE status = 'MERGED'")).isEqualTo(2);
+            assertThat(rig.count("SELECT COUNT(*) FROM issue WHERE status = 'MERGED'")).isEqualTo(2);
         });
     }
 
     @Test
-    @DisplayName("MIG-029 defects that are merged into each other in a loop cannot be ordered: they are reported (MERGE_CHAIN_LOOPS) and nothing is written")
+    @DisplayName("MIG-029 issues that are merged into each other in a loop cannot be ordered: they are reported (MERGE_CHAIN_LOOPS) and nothing is written")
     void mig029_mergeLoop() {
         LegacyLedger legacy = LegacyFixtures.rich();
         legacy.update("UPDATE " + legacy.schema() + ".defect SET merged_into = 'OLD-D-0002', status = 'MERGED' "
@@ -859,8 +891,8 @@ class LegacyImportTest {
             ValidationException refused = (ValidationException) Expect.failure(rig::importAll, ValidationCode.VALIDATION_FAILED);
 
             assertThat(refused.issues()).extracting(ValidationIssue::path, ValidationIssue::reason).containsExactlyInAnyOrder(
-                    tuple("defect[OLD-D-0001].merged_into", ValidationReason.MERGE_CHAIN_LOOPS),
-                    tuple("defect[OLD-D-0002].merged_into", ValidationReason.MERGE_CHAIN_LOOPS));
+                    tuple("issue[OLD-D-0001].merged_into", ValidationReason.MERGE_CHAIN_LOOPS),
+                    tuple("issue[OLD-D-0002].merged_into", ValidationReason.MERGE_CHAIN_LOOPS));
             assertThat(rig.ledgerRows()).isZero();
         });
     }
@@ -868,7 +900,7 @@ class LegacyImportTest {
     // ---------------------------------------------------------------------------------------------- MIG-018 .. 019
 
     @Test
-    @DisplayName("MIG-018 after the import the ledger works on the imported data: create (ids continue), edit with the imported version, record a fix and a case, move to SOURCE_FIXED and verify; versions continue, new history, fix and case ids exceed every imported id, no key collides")
+    @DisplayName("MIG-018 after the import the ledger works on the imported data: create (ids continue), edit with the imported version, record a deliverable and a case, move to RESOLVED and verify; versions continue, new history, deliverable and case ids exceed every imported id, no key collides")
     void mig018_writesContinue() {
         withRich(rig -> {
             rig.importAll();
@@ -876,20 +908,20 @@ class LegacyImportTest {
             String reviewer = "codex:mig-reviewer";
             ctx.enroll(reviewer);
             ctx.enroll(SEED);
-            ctx.bean(GrantService.class).grant(new GrantCommand(reviewer, "old", List.of("fix", "verify"), null, null),
+            ctx.bean(GrantService.class).grant(new GrantCommand(reviewer, "old", List.of("deliverable", "verify"), null, null),
                     TestOwners.OWNER);
-            ctx.bean(GrantService.class).grant(new GrantCommand(SEED, "old", List.of("fix"), null, null), TestOwners.OWNER);
+            ctx.bean(GrantService.class).grant(new GrantCommand(SEED, "old", List.of("deliverable"), null, null), TestOwners.OWNER);
 
-            SaveResult created = ctx.bean(SaveService.class).save(SEED, new SaveCommand(Scenario.uuid(), "defect", null, 0L,
-                    Fields.of(defectFields("old", "after the import")), Scenario.REASON));
-            assertThat(created.id()).isEqualTo("OLD-D-0004");
+            SaveResult created = ctx.bean(SaveService.class).save(SEED, new SaveCommand(Scenario.uuid(), "issue", null, 0L,
+                    Fields.of(issueFields("old", "after the import")), Scenario.REASON));
+            assertThat(created.id()).isEqualTo("OLD-I-0004");
             assertThat(created.historyId()).isGreaterThan(57);
             SaveResult task = ctx.bean(SaveService.class).save(SEED, new SaveCommand(Scenario.uuid(), "task", null, 0L,
                     Fields.of(Map.of("project_id", "old", "title", "new task", "purpose", "p", "success_condition", "s")),
                     Scenario.REASON));
             assertThat(task.id()).isEqualTo("OLD-T-0001");
 
-            SaveResult edited = ctx.bean(SaveService.class).save(SEED, new SaveCommand(Scenario.uuid(), "defect", "OLD-D-0001", 1L,
+            SaveResult edited = ctx.bean(SaveService.class).save(SEED, new SaveCommand(Scenario.uuid(), "issue", "OLD-D-0001", 1L,
                     Fields.of("title", "edited after the import"), Scenario.REASON));
             assertThat(edited.version()).isEqualTo(2);
             assertThat(edited.historyId()).isGreaterThan(created.historyId());
@@ -898,13 +930,14 @@ class LegacyImportTest {
                     "OLD-D-0001", "seen again after the import", Scenario.REASON, null, null, null));
             assertThat(observed.caseId()).isEqualTo(6);
 
-            RecordFixResult fixed = ctx.bean(RecordFixService.class).recordFix(SEED, new RecordFixCommand(Scenario.uuid(), "OLD-D-0001",
-                    "repo/old", "d".repeat(40), Scenario.REASON, null, null, null, null, null));
-            assertThat(fixed.fixId()).isEqualTo(10);
+            RecordDeliverableResult fixed = ctx.bean(RecordDeliverableService.class).recordDeliverable(SEED,
+                    new RecordDeliverableCommand(Scenario.uuid(), "issue", "OLD-D-0001", "code_change", "d".repeat(40),
+                            Scenario.REASON, "repo/old", "fix after import", null, null, null, true));
+            assertThat(fixed.deliverableId()).isEqualTo(10);
             assertThat(fixed.version()).isEqualTo(3);
-            assertThat(fixed.defectStatus()).isEqualTo("SOURCE_FIXED");
+            assertThat(fixed.targetState()).isEqualTo("RESOLVED");
 
-            TransitionResult verified = ctx.bean(ReviewService.class).review(reviewer, new TransitionCommand(Scenario.uuid(), "defect",
+            TransitionResult verified = ctx.bean(ReviewService.class).review(reviewer, new TransitionCommand(Scenario.uuid(), "issue",
                     "OLD-D-0001", fixed.version(), "VERIFIED", Scenario.REASON, Scenario.EVIDENCE, null, null));
             assertThat(verified.version()).isEqualTo(4);
             assertThat(verified.historyId()).isGreaterThan(fixed.historyId());
@@ -913,8 +946,8 @@ class LegacyImportTest {
                     "OLD-T-1", 1L, "ACTIVE", Scenario.REASON, null, null, null));
             assertThat(moved.version()).isEqualTo(2);
             // every history row written after the import has an id above the imported ones, the ids continue without a gap
-            // or a collision, and they are exactly the ones the calls returned (the fix also moved the defect to
-            // SOURCE_FIXED, which is a second history row of its own)
+            // or a collision, and they are exactly the ones the calls returned (the deliverable also moved the issue to
+            // RESOLVED, which is a second history row of its own)
             List<Long> returned = List.of(created.historyId(), task.historyId(), edited.historyId(), observed.historyId(),
                     fixed.historyId(), fixed.transitionHistoryId(), verified.historyId(), moved.historyId());
             assertThat(rig.ctx().jdbc().sql("SELECT id FROM history WHERE id > 57 ORDER BY id").query(Long.class).list())
@@ -933,14 +966,14 @@ class LegacyImportTest {
             assertThat(again.tables()).isEqualTo(report.tables());
             assertThat(rig.ledgerRows()).isEqualTo(rows);
 
-            rig.ctx().jdbc().sql("UPDATE defect SET title = 'tampered' WHERE id = 'OLD-D-0001'").update();
+            rig.ctx().jdbc().sql("UPDATE issue SET title = 'tampered' WHERE id = 'OLD-D-0001'").update();
 
             InfrastructureException failure = (InfrastructureException) Expect.failure(() -> rig.service().verify(),
                     InfrastructureCode.INTEGRITY_VIOLATION);
             TableCheck expected = report.tables().stream().filter(check -> check.table() == LegacyTable.DEFECT).findFirst()
                     .orElseThrow();
             assertThat(failure.args()).hasSize(5);
-            assertThat(failure.args().get(0)).isEqualTo("defect");
+            assertThat(failure.args().get(0)).isEqualTo("issue");
             assertThat(failure.args().get(1)).isEqualTo(String.valueOf(expected.sourceRows()));
             assertThat(failure.args().get(2)).isEqualTo(String.valueOf(expected.targetRows()));
             assertThat(failure.args().get(3)).isEqualTo(expected.sourceDigest().hex());
@@ -958,7 +991,7 @@ class LegacyImportTest {
             InfrastructureException failure = (InfrastructureException) Expect.failure(rig::importAll,
                     InfrastructureCode.INTEGRITY_VIOLATION);
 
-            assertThat(failure.args().get(0)).isEqualTo("defect");
+            assertThat(failure.args().get(0)).isEqualTo("issue");
             assertThat(failure.args().get(3)).isNotEqualTo(failure.args().get(4));
             assertThat(rig.ledgerRows()).isZero();
             target.tamper(false);
@@ -1017,8 +1050,9 @@ class LegacyImportTest {
 
             assertThat(rig.rows("SELECT owner_actor_id, origin_ref FROM task WHERE id = 'OLD-T-1'").getFirst().values())
                     .containsOnlyNulls();
-            assertThat(rig.count("SELECT COUNT(*) FROM defect_case WHERE id = 2 AND evidence IS NULL")).isEqualTo(1);
-            assertThat(rig.count("SELECT COUNT(*) FROM defect_fix WHERE id = 9 AND branch IS NULL")).isEqualTo(1);
+            assertThat(rig.count("SELECT COUNT(*) FROM issue_case WHERE id = 2 AND evidence IS NULL")).isEqualTo(1);
+            assertThat(rig.count("SELECT COUNT(*) FROM deliverable WHERE id = 9 AND summary = 'imported 1.x commit' "
+                    + "AND check_ref IS NULL")).isEqualTo(1);
             assertThat(rig.count("SELECT COUNT(*) FROM task WHERE origin_ref = '' OR owner_actor_id = ''")).isZero();
         });
         // revised by REH3 (decision 7j): the five long texts of 1.x that allowed '' are nullable, the import stores NULL
@@ -1091,7 +1125,7 @@ class LegacyImportTest {
         withRich(rig -> {
             rig.importAll();
 
-            assertThat(rig.count("SELECT COUNT(*) FROM release_condition WHERE id IN ('OLD-PIPE-C', 'OLD-PIPE-C|A')")).isEqualTo(2);
+            assertThat(rig.count("SELECT COUNT(*) FROM milestone_criterion WHERE id IN ('OLD-PIPE-C', 'OLD-PIPE-C|A')")).isEqualTo(2);
             assertThat(rig.count("SELECT COUNT(*) FROM task WHERE id = 'A|T'")).isEqualTo(1);
         });
         // revised by REH3 (decision 7m): the ids of 1.x are kept in any case, and are never case-folded
@@ -1100,7 +1134,7 @@ class LegacyImportTest {
             rig.importAll();
 
             assertThat(rig.count("SELECT COUNT(*) FROM task WHERE id = 'old-t-lower'")).isEqualTo(1);
-            assertThat(rig.count("SELECT COUNT(*) FROM release_condition WHERE id = 'old-c-lower'")).isEqualTo(1);
+            assertThat(rig.count("SELECT COUNT(*) FROM milestone_criterion WHERE id = 'old-c-lower'")).isEqualTo(1);
             assertThat(rig.count("SELECT COUNT(*) FROM task WHERE id = 'OLD-T-LOWER'")).isZero();
             rig.service().verify();
         });

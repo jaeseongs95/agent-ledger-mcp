@@ -81,9 +81,9 @@ class MessagesTest {
         for (AttentionKind kind : AttentionKind.values()) {
             names.add("attention." + kind);
         }
-        // D-0016: the end of a relation (defect page) and the direction of a relation kind (code page)
+        // D-0016: the end of a relation (issue page) and the direction of a relation kind (code page)
         for (RelationEnd end : RelationEnd.values()) {
-            names.add("defect.relationEnd." + end.token());
+            names.add("issue.relationEnd." + end.token());
         }
         for (CodeDirection direction : CodeDirection.values()) {
             names.add("codes.direction." + direction.token());

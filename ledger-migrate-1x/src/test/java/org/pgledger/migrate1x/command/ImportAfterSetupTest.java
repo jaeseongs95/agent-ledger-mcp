@@ -77,13 +77,13 @@ class ImportAfterSetupTest {
         for (Category category : seed) {
             List<String> english = LegacyFixtures.englishOf(category);
             target.update("INSERT INTO common_code (code_group, code, name_ko, name_en, description_ko, description_en, "
-                    + "sort_order, state, created_by) VALUES ('DEFECT_CATEGORY', ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)",
+                    + "sort_order, state, created_by) VALUES ('ISSUE_CATEGORY', ?, ?, ?, ?, ?, ?, 'ACTIVE', ?)",
                     category.code(), category.name(), english.get(0), category.definition(), english.get(1), 10 + audit,
                     "cli:" + USER);
             audit++;
             target.update("INSERT INTO owner_audit (id, occurred_at, actor, operation, subject, detail) VALUES (?, "
                     + ARRANGED_AT + ", ?, 'CODE_SET', ?, 'created')", audit, "cli:" + USER,
-                    "DEFECT_CATEGORY/" + category.code());
+                    "ISSUE_CATEGORY/" + category.code());
         }
         audit++;
         target.update("INSERT INTO owner_audit (id, occurred_at, actor, operation, subject, detail) VALUES (?, "
@@ -124,8 +124,8 @@ class ImportAfterSetupTest {
         }
         // the seed has the same 14 categories as the 1.x ledger, which has the category OLDBUG besides; the 1.x values
         // overwrite the seed rows (the sort order of the seed was 10 and more, in 1.x it is 0)
-        assertThat(count("common_code WHERE code_group = 'DEFECT_CATEGORY'")).isEqualTo(15);
-        assertThat(count("common_code WHERE code_group = 'DEFECT_CATEGORY' AND sort_order <> 0")).isZero();
+        assertThat(count("common_code WHERE code_group = 'ISSUE_CATEGORY'")).isEqualTo(15);
+        assertThat(count("common_code WHERE code_group = 'ISSUE_CATEGORY' AND sort_order <> 0")).isZero();
         List<Map<String, Object>> audit = database.rows(AUDIT);
         assertThat(audit.stream().filter(row -> "CODE_SET".equals(row.get("operation")))).hasSize(14);
         assertThat(audit.stream().filter(row -> "DRIVER_REGISTERED".equals(row.get("operation")))).hasSize(1);

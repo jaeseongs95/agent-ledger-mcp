@@ -91,8 +91,7 @@ class SqlRulesTest {
                 .toList();
         assertThat(mainDirs).hasSize(11);
         List<String> catchProblems = CodingScan.catchProblems(
-                java.util.Set.of("HookMain.java", "CliErrorBoundary.java", "HttpTransport.java",
-                        "McpCheckCommand.java", "LedgerMigrateApplication.java"),
+                java.util.Set.of("McpCheckCommand.java", "ToolResults.java"),
                 "driver",
                 mainDirs.toArray(Path[]::new));
         assertThat(catchProblems).isEmpty();

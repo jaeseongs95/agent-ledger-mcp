@@ -37,11 +37,14 @@ class NoDriverTest {
                 // SET-018: the first setup uses the database like migrate (the seed is read first and needs no driver)
                 Arguments.of((Object) new String[] { "setup" }),
                 Arguments.of((Object) new String[] { "project-add", "e2e", "E2E", "End-to-end test project" }),
-                Arguments.of((Object) new String[] { "code-set", "DEFECT_CATEGORY", "BUG", "ko-name" }),
+                Arguments.of((Object) new String[] { "code-set", "ISSUE_CATEGORY", "BUG", "ko-name" }),
                 Arguments.of((Object) new String[] { "codes" }),
-                Arguments.of((Object) new String[] { "grant", "claude:e2e-author", "e2e", "defect" }),
+                Arguments.of((Object) new String[] { "grant", "claude:e2e-author", "e2e", "issue" }),
                 Arguments.of((Object) new String[] { "revoke", "claude:e2e-author" }),
                 Arguments.of((Object) new String[] { "key-revoke", "claude:e2e-author", "--fingerprint=abc" }),
+                Arguments.of((Object) new String[] { "token-issue", "claude:e2e-author" }),
+                Arguments.of((Object) new String[] { "token-revoke", "1" }),
+                Arguments.of((Object) new String[] { "token-list" }),
                 Arguments.of((Object) new String[] { "grants" }),
                 // ATA-008, ATA-022, ATA-031: the commands of the attachments need the ledger database as well
                 Arguments.of((Object) new String[] { "attachments-check" }),

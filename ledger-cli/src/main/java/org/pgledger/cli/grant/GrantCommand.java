@@ -19,10 +19,11 @@ import org.springframework.stereotype.Component;
 /**
  * {@code grant <author> <project> <scope>... [--note=<text>] [--expires=<ISO-8601 with Z or an offset>]}: issues one grant
  * per scope through {@code GrantService}, the service the admin web uses, and records {@code cli:<process user>} in the
- * owner's audit trail. The scopes are {@code defect}, {@code task}, {@code fix} and {@code verify}. A write is accepted only
- * when it is signed with the registered key of its author, so a grant for an author that has no live session key would never
- * be usable: the service refuses it (the rule is in {@code GrantService}) and the CLI shows NO_SESSION_KEY, which says how
- * to register the key ({@code key-register}); the admin web registers the key and grants in one form. An expiry without a zone is refused by the ledger.
+ * owner's audit trail. The scopes are {@code issue}, {@code spec}, {@code task}, {@code deliverable} and {@code verify}. A
+ * write is accepted only when its author has a live session key or a live session token, so a grant for an author that has
+ * neither would never be usable: the service refuses it (the rule is in {@code GrantService}) and the CLI shows NO_SESSION_KEY,
+ * which says how to register a key ({@code key-register}) or issue a token ({@code token-issue}). An expiry without a zone is
+ * refused by the ledger.
  */
 @Component
 public class GrantCommand implements Command {

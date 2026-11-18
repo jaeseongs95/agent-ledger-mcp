@@ -81,8 +81,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class LegacyImportService {
 
     /** The surrogate key sequences whose counters continue after the highest legacy id. */
-    private static final List<Counter> COPIED_COUNTERS = List.of(Counter.HISTORY, Counter.DEFECT_FIX,
-            Counter.DEFECT_CASE, Counter.SESSION_GRANT);
+    private static final List<Counter> COPIED_COUNTERS = List.of(Counter.HISTORY, Counter.DELIVERABLE,
+            Counter.ISSUE_CASE, Counter.SESSION_GRANT);
 
     private static final String VALIDATION_SUBJECT = "legacy data";
     private static final String MISSING_STEP = "legacy migration step";

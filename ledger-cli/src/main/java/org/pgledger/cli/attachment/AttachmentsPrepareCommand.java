@@ -16,7 +16,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * {@code attachments-prepare <file> [--name=<name>]}: measures a local regular file in one streaming pass and prints
- * JSON {@code {fileName, size, sha256, mediaType}} for {@code artifact-begin}. Connects to neither database nor server.
+ * JSON {@code {fileName, size, sha256, mediaType}} for {@code artifact_begin}. Connects to neither database nor server.
  */
 @Component
 public class AttachmentsPrepareCommand implements Command {

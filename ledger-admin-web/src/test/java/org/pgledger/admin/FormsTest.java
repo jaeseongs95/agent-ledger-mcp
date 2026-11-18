@@ -3,7 +3,6 @@ package org.pgledger.admin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-import org.pgledger.testing.TestOwners;
 
 import java.util.List;
 import java.util.stream.Stream;
@@ -25,6 +24,7 @@ import org.pgledger.domain.rule.CodeDirection;
 import org.pgledger.domain.rule.CodeGroup;
 import org.pgledger.domain.rule.CodeState;
 import org.pgledger.domain.value.ProjectId;
+import org.pgledger.testing.TestOwners;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -49,7 +49,6 @@ class FormsTest {
     @Autowired
     private CommonCodeService codes;
 
-    /** A form post of a signed-in owner with the token of the page that has the form, asking for a problem detail. */
     private org.springframework.test.web.servlet.ResultActions post(Browser browser, String page, String uri,
             MultiValueMap<String, String> fields) throws Exception {
         return browser.perform(browser.form(uri, fields, browser.csrfOf(page)).accept(MediaType.APPLICATION_JSON));
@@ -103,17 +102,17 @@ class FormsTest {
         String author = "gemini:admin-ui-test";
         Browser browser = Browser.signedIn(mvc);
 
-        browser.perform(browser.form("/grants", AuthorKeys.newPair().confirmed(Form.of("author", author, "project", project.project(), "scopes", "defect",
+        browser.perform(browser.form("/grants", AuthorKeys.newPair().confirmed(Form.of("author", author, "project", project.project(), "scopes", "issue",
                 "scopes", "task", "expiresAt", "2099-12-31T00:00:00Z", "note", "a note")), browser.csrfOf("/grants")))
                 .andExpect(status().is3xxRedirection());
-        assertThat(grants.live(author)).extracting(g -> g.scope().token()).containsExactlyInAnyOrder("defect", "task");
+        assertThat(grants.live(author)).extracting(g -> g.scope().token()).containsExactlyInAnyOrder("issue", "task");
         assertThat(grants.live(author)).allMatch(g -> "user:owner".equals(g.grantedBy().value()));
         assertThat(browser.perform(browser.get("/grants")).andReturn().getResponse().getContentAsString())
                 .contains(author, "a note");
 
         browser.perform(browser.form("/grants/revoke", Form.of("author", author, "project", project.project(), "scope",
                 "task"), browser.csrfOf("/grants"))).andExpect(status().is3xxRedirection());
-        assertThat(grants.live(author)).extracting(g -> g.scope().token()).containsExactly("defect");
+        assertThat(grants.live(author)).extracting(g -> g.scope().token()).containsExactly("issue");
 
         browser.perform(browser.form("/grants/revoke", Form.of("author", author), browser.csrfOf("/grants")))
                 .andExpect(status().is3xxRedirection());
@@ -122,11 +121,11 @@ class FormsTest {
 
     static Stream<Invalid> invalidGrants() {
         return Stream.of(
-                new Invalid("no author", Form.of("author", "", "project", "p", "scopes", "defect")),
-                new Invalid("bad author", Form.of("author", "no-colon", "project", "p", "scopes", "defect")),
+                new Invalid("no author", Form.of("author", "", "project", "p", "scopes", "issue")),
+                new Invalid("bad author", Form.of("author", "no-colon", "project", "p", "scopes", "issue")),
                 new Invalid("no scope", Form.of("author", "claude:a", "project", "p")),
                 new Invalid("unknown scope", Form.of("author", "claude:a", "project", "p", "scopes", "root")),
-                new Invalid("bad expiry", Form.of("author", "claude:a", "project", "p", "scopes", "defect", "expiresAt",
+                new Invalid("bad expiry", Form.of("author", "claude:a", "project", "p", "scopes", "issue", "expiresAt",
                         "tomorrow")));
     }
 
@@ -152,7 +151,7 @@ class FormsTest {
     void adm021_revokeNeedsWhatItNeeds() throws Exception {
         Browser browser = Browser.signedIn(mvc);
 
-        post(browser, "/grants", "/grants/revoke", Form.of("author", "claude:admin-ui-test", "scope", "defect"))
+        post(browser, "/grants", "/grants/revoke", Form.of("author", "claude:admin-ui-test", "scope", "issue"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.errors[0].path").value("project"));
         post(browser, "/grants", "/grants/revoke", Form.of("author", "")).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"));
@@ -171,18 +170,18 @@ class FormsTest {
                     return r;
                 })).andExpect(status().isMethodNotAllowed())
                 .andExpect(jsonPath("$.code").value("COMMON_CODE_DELETE_FORBIDDEN"));
-        post(browser, "/codes", "/codes/delete", Form.of("group", "DEFECT_CATEGORY", "code", "ARC"))
+        post(browser, "/codes", "/codes/delete", Form.of("group", "ISSUE_CATEGORY", "code", "ARC"))
                 .andExpect(status().isMethodNotAllowed()).andExpect(jsonPath("$.code").value("COMMON_CODE_DELETE_FORBIDDEN"));
     }
 
     static Stream<Invalid> invalidCodes() {
         return Stream.of(
                 new Invalid("unknown group", Form.of("group", "X", "code", "ABC", "nameKo", "n")),
-                new Invalid("bad code", Form.of("group", "DEFECT_CATEGORY", "code", "bad code", "nameKo", "n")),
-                new Invalid("empty names", Form.of("group", "DEFECT_CATEGORY", "code", "ABC", "nameKo", "")),
-                new Invalid("description of 501 characters", Form.of("group", "DEFECT_CATEGORY", "code", "ABC", "nameKo",
+                new Invalid("bad code", Form.of("group", "ISSUE_CATEGORY", "code", "bad code", "nameKo", "n")),
+                new Invalid("empty names", Form.of("group", "ISSUE_CATEGORY", "code", "ABC", "nameKo", "")),
+                new Invalid("description of 501 characters", Form.of("group", "ISSUE_CATEGORY", "code", "ABC", "nameKo",
                         "n", "descriptionKo", "x".repeat(501))),
-                new Invalid("english description of 501 characters", Form.of("group", "DEFECT_CATEGORY", "code", "ABC",
+                new Invalid("english description of 501 characters", Form.of("group", "ISSUE_CATEGORY", "code", "ABC",
                         "nameKo", "n", "descriptionEn", "x".repeat(501))));
     }
 
@@ -197,19 +196,18 @@ class FormsTest {
     }
 
     @Test
-    @DisplayName("ADM-PRN-07: the code form is bound to CodeGroup and CodeState: a value that is none of them is 400 "
-            + "VALIDATION_FAILED on its path with the allowed values; a sort order that is no number is NOT_AN_INTEGER")
+    @DisplayName("ADM-PRN-07: the code form is bound to CodeGroup and CodeState: a value that is none of them is 400 VALIDATION_FAILED on its path with the allowed values; a sort order that is no number is NOT_AN_INTEGER")
     void admPrn07_theCodeFormIsBoundToTheClosedSets() throws Exception {
         Browser browser = Browser.signedIn(mvc);
 
         post(browser, "/codes", "/codes", Form.of("group", "X", "code", "ABC", "nameKo", "n"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].path").value("group"))
-                .andExpect(jsonPath("$.errors[0].allowed[0]").value("DEFECT_CATEGORY"));
-        post(browser, "/codes", "/codes", Form.of("group", "DEFECT_CATEGORY", "code", "ABC", "nameKo", "n", "state",
+                .andExpect(jsonPath("$.errors[0].allowed[0]").value("ISSUE_CATEGORY"));
+        post(browser, "/codes", "/codes", Form.of("group", "ISSUE_CATEGORY", "code", "ABC", "nameKo", "n", "state",
                 "BOGUS")).andExpect(status().isBadRequest()).andExpect(jsonPath("$.errors[0].path").value("state"))
                 .andExpect(jsonPath("$.errors[0].allowed[0]").value("ACTIVE"));
-        post(browser, "/codes", "/codes", Form.of("group", "DEFECT_CATEGORY", "code", "ABC", "nameKo", "n",
+        post(browser, "/codes", "/codes", Form.of("group", "ISSUE_CATEGORY", "code", "ABC", "nameKo", "n",
                 "sortOrder", "many")).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0].path").value("sort_order"));
     }
@@ -229,25 +227,24 @@ class FormsTest {
     @DisplayName("ADM-024: a code is created, then set INACTIVE; the row stays listed as inactive; the revision moves")
     void adm024_createAndRetireCode() throws Exception {
         Browser browser = Browser.signedIn(mvc);
-        long before = codes.set(new CommonCodeService.CodeCommand("DEFECT_CATEGORY", "TMPCAT", "임시", "Temp", null, null,
+        long before = codes.set(new CommonCodeService.CodeCommand("ISSUE_CATEGORY", "TMPCAT", "임시", "Temp", null, null,
                 null, "ACTIVE"), TestOwners.OWNER).revision();
 
-        browser.perform(browser.form("/codes", Form.of("group", "DEFECT_CATEGORY", "code", "UI_UX", "nameKo", "화면",
+        browser.perform(browser.form("/codes", Form.of("group", "ISSUE_CATEGORY", "code", "UI_UX", "nameKo", "화면",
                 "nameEn", "UI", "state", "ACTIVE"), browser.csrfOf("/codes"))).andExpect(status().is3xxRedirection());
-        browser.perform(browser.form("/codes", Form.of("group", "DEFECT_CATEGORY", "code", "UI_UX", "nameKo", "화면",
+        browser.perform(browser.form("/codes", Form.of("group", "ISSUE_CATEGORY", "code", "UI_UX", "nameKo", "화면",
                 "nameEn", "UI", "state", "INACTIVE"), browser.csrfOf("/codes"))).andExpect(status().is3xxRedirection());
 
-        List<CommonCode> listed = codes.list(CodeGroup.DEFECT_CATEGORY);
+        List<CommonCode> listed = codes.list(CodeGroup.ISSUE_CATEGORY);
         assertThat(listed).anyMatch(code -> "UI_UX".equals(code.code().value()) && code.state() == CodeState.INACTIVE);
         String html = browser.perform(browser.get("/codes")).andReturn().getResponse().getContentAsString();
         assertThat(html).contains("UI_UX").contains("badge-INACTIVE");
-        assertThat(codes.set(new CommonCodeService.CodeCommand("DEFECT_CATEGORY", "TMPCAT", "임시", "Temp", null, null,
+        assertThat(codes.set(new CommonCodeService.CodeCommand("ISSUE_CATEGORY", "TMPCAT", "임시", "Temp", null, null,
                 null, "ACTIVE"), TestOwners.OWNER).revision()).as("the revision is bumped by the two changes").isGreaterThan(before);
     }
 
     @Test
-    @DisplayName("ADM-DIR-01: the direction of a relation kind is set in the code form and shown in the list; empty keeps it; "
-            + "a value that is no direction, or a direction on another group, is 400 VALIDATION_FAILED")
+    @DisplayName("ADM-DIR-01: the direction of a relation kind is set in the code form and shown in the list; empty keeps it; a value that is no direction, or a direction on another group, is 400 VALIDATION_FAILED")
     void admDir01_theDirectionOfARelationKind() throws Exception {
         Browser browser = Browser.signedIn(mvc);
 
@@ -256,13 +253,11 @@ class FormsTest {
                 .andExpect(status().is3xxRedirection());
         assertThat(codes.list(CodeGroup.RELATION_KIND)).anyMatch(code -> "dir_form".equals(code.code().value())
                 && code.direction() == CodeDirection.GIVEN);
-        // the same code again with the direction left empty keeps GIVEN
         browser.perform(browser.form("/codes", Form.of("group", "RELATION_KIND", "code", "dir_form", "nameKo", "방향 2",
                 "nameEn", "Directed", "direction", ""), browser.csrfOf("/codes")))
                 .andExpect(status().is3xxRedirection());
         assertThat(codes.list(CodeGroup.RELATION_KIND)).anyMatch(code -> "dir_form".equals(code.code().value())
                 && code.direction() == CodeDirection.GIVEN && "방향 2".equals(code.nameKo()));
-        // a code of the seed that is directed and one that is not, as the list shows them
         String html = browser.perform(browser.get("/codes")).andReturn().getResponse().getContentAsString();
         assertThat(html).contains("caused_by").contains("directed: a to b").contains("no direction: (a, b)");
 
@@ -271,7 +266,7 @@ class FormsTest {
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.errors[0].path").value("direction"))
                 .andExpect(jsonPath("$.errors[0].allowed[0]").value("GIVEN"));
-        post(browser, "/codes", "/codes", Form.of("group", "DEFECT_CATEGORY", "code", "ABC", "nameKo", "n",
+        post(browser, "/codes", "/codes", Form.of("group", "ISSUE_CATEGORY", "code", "ABC", "nameKo", "n",
                 "direction", "GIVEN")).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0].path").value("direction"));
     }
@@ -280,19 +275,19 @@ class FormsTest {
     @DisplayName("ADM-005: a retired code becomes active again only with the explicit confirmation")
     void adm005_reactivationNeedsConfirmation() throws Exception {
         Browser browser = Browser.signedIn(mvc);
-        MultiValueMap<String, String> retire = Form.of("group", "DEFECT_CATEGORY", "code", "REACT", "nameKo", "r", "state",
+        MultiValueMap<String, String> retire = Form.of("group", "ISSUE_CATEGORY", "code", "REACT", "nameKo", "r", "state",
                 "INACTIVE");
         browser.perform(browser.form("/codes", retire, browser.csrfOf("/codes"))).andExpect(status().is3xxRedirection());
 
-        post(browser, "/codes", "/codes", Form.of("group", "DEFECT_CATEGORY", "code", "REACT", "nameKo", "r", "state",
+        post(browser, "/codes", "/codes", Form.of("group", "ISSUE_CATEGORY", "code", "REACT", "nameKo", "r", "state",
                 "ACTIVE")).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.errors[0].path").value("confirm_reactivation"));
-        assertThat(codes.list(CodeGroup.DEFECT_CATEGORY)).anyMatch(code -> "REACT".equals(code.code().value())
+        assertThat(codes.list(CodeGroup.ISSUE_CATEGORY)).anyMatch(code -> "REACT".equals(code.code().value())
                 && code.state() == CodeState.INACTIVE);
 
-        browser.perform(browser.form("/codes", Form.of("group", "DEFECT_CATEGORY", "code", "REACT", "nameKo", "r", "state",
+        browser.perform(browser.form("/codes", Form.of("group", "ISSUE_CATEGORY", "code", "REACT", "nameKo", "r", "state",
                 "ACTIVE", "confirmReactivation", "yes"), browser.csrfOf("/codes"))).andExpect(status().is3xxRedirection());
-        assertThat(codes.list(CodeGroup.DEFECT_CATEGORY)).anyMatch(code -> "REACT".equals(code.code().value())
+        assertThat(codes.list(CodeGroup.ISSUE_CATEGORY)).anyMatch(code -> "REACT".equals(code.code().value())
                 && code.state() == CodeState.ACTIVE);
     }
 

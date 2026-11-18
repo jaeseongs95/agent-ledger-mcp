@@ -201,8 +201,8 @@ public class ListService {
                 .map(after -> criteria.page(project, filter, maxRows, after))
                 .orElseGet(() -> criteria.page(project, filter, maxRows, null));
         return cursors.page(page, PageCursor.Kind.CRITERIA, criteriaKey,
-                r -> new CriterionItem(r.id().value(), r.milestone(), r.goalLabel(), r.code(), r.criterionText(),
-                        r.state().name(), r.version()),
+                r -> new CriterionItem(r.id().value(), r.milestone(), r.goalLabel(), r.code(),
+                        Texts.orEmpty(r.criterionText()), r.state().name(), r.version()),
                 r -> null,
                 r -> r.id().value());
     }

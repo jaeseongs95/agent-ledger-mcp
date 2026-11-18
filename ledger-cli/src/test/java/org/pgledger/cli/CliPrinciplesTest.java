@@ -71,7 +71,7 @@ class CliPrinciplesTest {
     @Test
     @DisplayName("CLI-PRN-10 code-set --sort=abc is INVALID_OPTION_VALUE (exit 2), the number format failure is the cause of the refusal, and the value is in no argument of it")
     void aSortThatIsNoNumberKeepsItsCause(Cli cli) {
-        Outcome result = cli.run(tmp.resolve("secrets"), null, new RecordingOutput(), "code-set", "DEFECT_CATEGORY", "BUG",
+        Outcome result = cli.run(tmp.resolve("secrets"), null, new RecordingOutput(), "code-set", "ISSUE_CATEGORY", "BUG",
                 "ko-name", "--sort=abc-4711");
 
         assertThat(result.exitCode()).isEqualTo(ExitStatus.USAGE.code());

@@ -82,7 +82,7 @@ class SeedTest {
         assertThat(bundle.codes()).extracting(SeedCode::sortOrder).containsExactly(10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110,
                 120, 130, 140);
         assertThat(bundle.codes()).extracting(SeedCode::state).containsOnly("ACTIVE");
-        assertThat(bundle.codes()).extracting(SeedCode::group).containsOnly(CodeGroup.DEFECT_CATEGORY.name());
+        assertThat(bundle.codes()).extracting(SeedCode::group).containsOnly(CodeGroup.ISSUE_CATEGORY.name());
         assertThat(bundle.digest()).hasSize(64).isEqualTo(org.pgledger.seed.SeedDigest.of(text));
     }
 

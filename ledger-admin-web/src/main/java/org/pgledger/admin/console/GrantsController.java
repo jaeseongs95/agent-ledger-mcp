@@ -12,6 +12,9 @@ import org.pgledger.application.admin.GrantService.GrantCommand;
 import org.pgledger.application.admin.GrantService.RevokeCommand;
 import org.pgledger.application.admin.SessionKeyService;
 import org.pgledger.application.admin.SessionKeyService.PresentedKey;
+import org.pgledger.application.admin.SessionTokenService;
+import org.pgledger.application.admin.SessionTokenService.IssueCommand;
+import org.pgledger.application.admin.SessionTokenService.IssuedToken;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.model.SessionPublicKey;
@@ -25,20 +28,12 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
 
 /**
- * The live session grants: the list, the form that issues grants (one per scope) and the form that revokes them.
+ * The live session grants, registered session keys, and HTTP Bearer session tokens.
  *
- * <p>A grant is issued together with the public key of the session it is for, because the server accepts a write only
- * when it is signed with the key registered for its author. The owner pastes the key the session printed (hook command
- * {@code session-key}), the preview shows the key's fingerprint so that the owner can compare it with the one the session
- * printed, and only the confirmation that repeats this fingerprint registers the key and issues the grants. The key and
- * the grants are one service method and one transaction ({@link GrantService#grantWithKey}): a refused grant leaves no
- * key registered, a refused key issues no grant. An author that already has another live key is not changed silently:
- * the owner has to confirm the replacement of that exact key, which the preview shows with its registration time. Every
+ * <p>Attested sessions register an Ed25519 public key together with their grants ({@link GrantService#grantWithKey})
+ * after comparing the fingerprint on the preview screen. Standard HTTP Bearer sessions receive a one-time session
+ * token ({@link SessionTokenService#issue}) and may be granted scopes on projects ({@link GrantService#grant}). Every
  * operation is recorded with the signed-in owner.
- *
- * <p>The checks of the forms that need no knowledge of the ledger are the constraints of the form records ({@link FormErrors}
- * turns a violation into the one failure of invalid input). What needs a computed value stays here: whether the fingerprint
- * the owner repeated is the fingerprint of the pasted key.
  */
 @Controller
 public class GrantsController {
@@ -68,14 +63,29 @@ public class GrantsController {
     public record KeyRevokeForm(String author, String fingerprint) {
     }
 
+    /** Issues grants for an author that already holds a live session key or bearer session token. */
+    public record AuthorGrantForm(String author, String project, List<String> scopes, String expiresAt, String note) {
+    }
+
+    /** Issues a standard HTTP Bearer session token for an author; the raw secret is shown once in the response. */
+    public record TokenIssueForm(String author, String expiresAt, String note) {
+    }
+
+    /** Revokes a standard HTTP Bearer session token by numeric id. */
+    public record TokenRevokeForm(@NotNull(message = FormErrors.REQUIRED) Long id) {
+    }
+
     private final GrantService grants;
     private final SessionKeyService keys;
+    private final SessionTokenService tokens;
     private final Choices choices;
     private final FormErrors forms;
 
-    public GrantsController(GrantService grants, SessionKeyService keys, Choices choices, FormErrors forms) {
+    public GrantsController(GrantService grants, SessionKeyService keys, SessionTokenService tokens, Choices choices,
+            FormErrors forms) {
         this.grants = grants;
         this.keys = keys;
+        this.tokens = tokens;
         this.choices = choices;
         this.forms = forms;
     }
@@ -101,7 +111,6 @@ public class GrantsController {
         fill(model);
         current.filter(live -> !Objects.equals(live.fingerprint(), presented.fingerprint()))
                 .ifPresent(other -> model.addAttribute("currentKey", other));
-        // the confirmation carries the bare key, whichever of the two forms was pasted
         GrantForm shown = new GrantForm(form.author(), form.project(), form.scopes(), form.expiresAt(), form.note(),
                 presented.publicKey());
         model.addAttribute("preview", new Preview(shown, presented.fingerprint(), presented.server(),
@@ -118,12 +127,18 @@ public class GrantsController {
         requireTheKeysFingerprint(confirmation, presented.fingerprint());
         GrantCommand command = new GrantCommand(form.author(), form.project(), form.scopes(), form.expiresAt(),
                 form.note());
-        // one use case, one service method, one transaction: the key and the grants commit or roll back together
         if (confirmation.replace() == null) {
             grants.grantWithKey(command, presented.publicKey(), actor);
         } else {
             grants.grantReplacingKey(command, presented.publicKey(), confirmation.replaceFingerprint(), actor);
         }
+        return "redirect:/grants";
+    }
+
+    @PostMapping("/grants/author")
+    String grantAuthor(@ModelAttribute AuthorGrantForm form, OwnerIdentity actor) {
+        grants.grant(new GrantCommand(form.author(), form.project(), form.scopes(), form.expiresAt(), form.note()),
+                actor);
         return "redirect:/grants";
     }
 
@@ -133,20 +148,31 @@ public class GrantsController {
         return "redirect:/grants";
     }
 
-    /**
-     * Closes the live key of an author: the owner names the author and types the fingerprint of the key (shown in the
-     * table of live keys) to confirm that exactly this key is meant. The author keeps its grants but cannot sign until
-     * another key is registered. Recorded with the signed-in owner.
-     */
     @PostMapping("/grants/keys/revoke")
     String revokeKey(@ModelAttribute KeyRevokeForm form, OwnerIdentity actor) {
         keys.revokeConfirmed(form.author(), form.fingerprint(), actor);
         return "redirect:/grants";
     }
 
+    @PostMapping("/grants/tokens")
+    String issueToken(@ModelAttribute TokenIssueForm form, OwnerIdentity actor, Model model) {
+        IssuedToken issued = tokens.issue(new IssueCommand(form.author(), form.expiresAt(), form.note()), actor);
+        fill(model);
+        model.addAttribute("issuedToken", issued);
+        return "grants";
+    }
+
+    @PostMapping("/grants/tokens/revoke")
+    String revokeToken(@Valid @ModelAttribute TokenRevokeForm form, BindingResult formErrors, OwnerIdentity actor) {
+        forms.raiseIfAny(formErrors);
+        tokens.revoke(form.id(), actor);
+        return "redirect:/grants";
+    }
+
     private void fill(Model model) {
         model.addAttribute("grants", grants.liveAll());
         model.addAttribute("keys", keys.liveKeys());
+        model.addAttribute("tokens", tokens.listUnrevoked());
         model.addAttribute("choice", choices.project(null));
         model.addAttribute("scopes", Scope.values());
     }

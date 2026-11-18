@@ -38,9 +38,9 @@ class OwnerCommandsTest {
     private static final String AUTHOR = "claude:e2e-author";
     private static final String OWNER = "user:owner";
 
-    private static final String PROJECTS = "SELECT id, code, title, next_defect_no, next_task_no, created_by FROM project ORDER BY id";
+    private static final String PROJECTS = "SELECT id, code, title, next_issue_no, next_spec_no, next_task_no, created_by FROM project ORDER BY id";
     private static final String CODES = "SELECT code_group, code, name_ko, name_en, description_ko, description_en, sort_order, "
-            + "state, created_by FROM common_code WHERE code_group = 'DEFECT_CATEGORY' ORDER BY code";
+            + "state, created_by FROM common_code WHERE code_group = 'ISSUE_CATEGORY' ORDER BY code";
     private static final String GRANTS = "SELECT id, author_id, project_id, grant_scope, granted_by, expires_at, revoked_at, note "
             + "FROM session_grant ORDER BY id";
     private static final String AUDIT = "SELECT actor, operation, subject, detail FROM owner_audit ORDER BY id";
@@ -110,7 +110,8 @@ class OwnerCommandsTest {
         assertThat(project.get("id")).isEqualTo("e2e");
         assertThat(project.get("code")).isEqualTo("E2E");
         assertThat(project.get("title")).isEqualTo("End-to-end test project");
-        assertThat(((Number) project.get("next_defect_no")).longValue()).isZero();
+        assertThat(((Number) project.get("next_issue_no")).longValue()).isZero();
+        assertThat(((Number) project.get("next_spec_no")).longValue()).isZero();
         assertThat(((Number) project.get("next_task_no")).longValue()).isZero();
         assertThat(project.get("created_by")).isEqualTo(OWNER);
         List<Map<String, Object>> audit = database.rows(AUDIT);
@@ -161,11 +162,11 @@ class OwnerCommandsTest {
     void createsACode(Cli cli) {
         RecordingOutput output = new RecordingOutput();
 
-        Outcome result = run(cli, output, "code-set", "DEFECT_CATEGORY", "BUG", "ko-name", "ko-desc", "--name-en=English name",
+        Outcome result = run(cli, output, "code-set", "ISSUE_CATEGORY", "BUG", "ko-name", "ko-desc", "--name-en=English name",
                 "--description-en=English description", "--sort=6", "--inactive");
 
         assertThat(result.exitCode()).isZero();
-        assertThat(output.info()).contains("DEFECT_CATEGORY/BUG").contains("INACTIVE");
+        assertThat(output.info()).contains("ISSUE_CATEGORY/BUG").contains("INACTIVE");
         List<Map<String, Object>> codes = database.rows(CODES);
         assertThat(codes).hasSize(1);
         Map<String, Object> code = codes.getFirst();
@@ -180,9 +181,9 @@ class OwnerCommandsTest {
         assertThat(audit).hasSize(1);
         assertThat(audit.getFirst().get("actor")).isEqualTo("cli:" + USER);
         assertThat(audit.getFirst().get("operation")).isEqualTo("CODE_SET");
-        assertThat(audit.getFirst().get("subject")).isEqualTo("DEFECT_CATEGORY/BUG");
+        assertThat(audit.getFirst().get("subject")).isEqualTo("ISSUE_CATEGORY/BUG");
 
-        Outcome same = run(cli, "code-set", "DEFECT_CATEGORY", "BUG", "ko-name", "ko-desc", "--name-en=English name",
+        Outcome same = run(cli, "code-set", "ISSUE_CATEGORY", "BUG", "ko-name", "ko-desc", "--name-en=English name",
                 "--description-en=English description", "--sort=6", "--inactive");
 
         assertThat(same.exitCode()).isZero();
@@ -192,9 +193,9 @@ class OwnerCommandsTest {
     @Test
     @DisplayName("CLI-006 code-set updates an existing code: without --inactive it is ACTIVE again, without --sort it keeps its position, the English texts fall back to the Korean ones; the audit trail says changed")
     void updatesACode(Cli cli) {
-        assertThat(run(cli, "code-set", "DEFECT_CATEGORY", "BUG", "ko-name", "--sort=6", "--inactive").exitCode()).isZero();
+        assertThat(run(cli, "code-set", "ISSUE_CATEGORY", "BUG", "ko-name", "--sort=6", "--inactive").exitCode()).isZero();
 
-        Outcome result = run(cli, "code-set", "DEFECT_CATEGORY", "BUG", "new-ko-name", "new-desc");
+        Outcome result = run(cli, "code-set", "ISSUE_CATEGORY", "BUG", "new-ko-name", "new-desc");
 
         assertThat(result.exitCode()).isZero();
         Map<String, Object> code = database.rows(CODES).getFirst();
@@ -209,10 +210,10 @@ class OwnerCommandsTest {
     @Test
     @DisplayName("CLI-006 special characters (quotes, a line break, a backslash, text that looks like a placeholder or like @CODES:..@) are stored exactly as given")
     void keepsSpecialCharacters(Cli cli) {
-        String name = "say \"hi\" it's a back\\slash ${x} @CODES:DEFECT_CATEGORY@";
+        String name = "say \"hi\" it's a back\\slash ${x} @CODES:ISSUE_CATEGORY@";
         String description = "line 1\nline 2 with 'single' and \"double\" quotes and @CODES:RELATION_KIND@";
 
-        Outcome result = run(cli, "code-set", "DEFECT_CATEGORY", "QUOTE", name, description, "--name-en=" + name,
+        Outcome result = run(cli, "code-set", "ISSUE_CATEGORY", "QUOTE", name, description, "--name-en=" + name,
                 "--description-en=" + description);
 
         assertThat(result.exitCode()).isZero();
@@ -226,8 +227,8 @@ class OwnerCommandsTest {
     @Test
     @DisplayName("CLI-006 an unknown group, an invalid code and a name of 201 characters are LEDGER_REFUSED naming VALIDATION_FAILED (exit 1); nothing is stored")
     void refusesInvalidCodes(Cli cli) {
-        for (String[] line : List.of(new String[] { "NO_SUCH_GROUP", "BUG", "n" }, new String[] { "DEFECT_CATEGORY", "1bad", "n" },
-                new String[] { "DEFECT_CATEGORY", "BUG", "x".repeat(201) })) {
+        for (String[] line : List.of(new String[] { "NO_SUCH_GROUP", "BUG", "n" }, new String[] { "ISSUE_CATEGORY", "1bad", "n" },
+                new String[] { "ISSUE_CATEGORY", "BUG", "x".repeat(201) })) {
             Outcome result = run(cli, "code-set", line[0], line[1], line[2]);
 
             assertThat(result.exitCode()).as(String.join(" ", line)).isEqualTo(ExitStatus.FAILURE.code());
@@ -240,20 +241,20 @@ class OwnerCommandsTest {
     @Test
     @DisplayName("CLI-007 codes [group] lists code, state, sort order and the names, for one group or for every group; an unknown group is refused")
     void listsCodes(Cli cli) {
-        assertThat(run(cli, "code-set", "DEFECT_CATEGORY", "BUG", "ko-name", "--name-en=English name", "--sort=6", "--inactive")
+        assertThat(run(cli, "code-set", "ISSUE_CATEGORY", "BUG", "ko-name", "--name-en=English name", "--sort=6", "--inactive")
                 .exitCode()).isZero();
         RecordingOutput one = new RecordingOutput();
         RecordingOutput every = new RecordingOutput();
 
-        Outcome group = run(cli, one, "codes", "DEFECT_CATEGORY");
+        Outcome group = run(cli, one, "codes", "ISSUE_CATEGORY");
         Outcome all = run(cli, every, "codes");
 
         assertThat(group.exitCode()).isZero();
-        assertThat(one.info()).isEqualTo("DEFECT_CATEGORY BUG INACTIVE 6 ko-name / English name");
+        assertThat(one.info()).isEqualTo("ISSUE_CATEGORY BUG INACTIVE 6 ko-name / English name");
         assertThat(all.exitCode()).isZero();
         long stored = ((Number) database.rows("SELECT COUNT(*) AS n FROM common_code").getFirst().get("n")).longValue();
         assertThat(every.info().lines().count()).isEqualTo(stored);
-        assertThat(every.info()).contains("DEFECT_CATEGORY BUG INACTIVE 6 ko-name / English name");
+        assertThat(every.info()).contains("ISSUE_CATEGORY BUG INACTIVE 6 ko-name / English name");
         Outcome unknown = run(cli, "codes", "NO_SUCH_GROUP");
         assertThat(unknown.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
         assertThat(detailOfFirstRefusal(unknown)).startsWith("VALIDATION_FAILED");
@@ -272,7 +273,7 @@ class OwnerCommandsTest {
         RecordingOutput listed = new RecordingOutput();
         assertThat(run(cli, listed, "codes", "RELATION_KIND").exitCode()).isZero();
         assertThat(listed.info()).contains("RELATION_KIND dir_cli ACTIVE 77 new-ko-name / new-ko-name direction GIVEN")
-                .contains("RELATION_KIND same_site ACTIVE 1 동일 위치 / Same site direction CANONICAL")
+                .contains("RELATION_KIND same_site ACTIVE 1 동일 위치 / Same location direction CANONICAL")
                 .contains("RELATION_KIND caused_by ACTIVE 2 원인 관계 / Caused by direction GIVEN");
         assertThat(run(cli, "code-set", "RELATION_KIND", "dir_cli", "new-ko-name", "--direction=CANONICAL").exitCode())
                 .isZero();
@@ -281,7 +282,7 @@ class OwnerCommandsTest {
         Outcome sideways = run(cli, "code-set", "RELATION_KIND", "dir_cli", "n", "--direction=SIDEWAYS");
         assertThat(sideways.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
         assertThat(detailOfFirstRefusal(sideways)).startsWith("VALIDATION_FAILED");
-        Outcome category = run(cli, "code-set", "DEFECT_CATEGORY", "BUG", "n", "--direction=GIVEN");
+        Outcome category = run(cli, "code-set", "ISSUE_CATEGORY", "BUG", "n", "--direction=GIVEN");
         assertThat(category.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
         assertThat(detailOfFirstRefusal(category)).startsWith("VALIDATION_FAILED");
         assertThat(database.rows(CODES)).isEmpty();
@@ -296,15 +297,16 @@ class OwnerCommandsTest {
         registerKey(cli, AUTHOR);
         RecordingOutput output = new RecordingOutput();
 
-        Outcome result = run(cli, output, "grant", AUTHOR, "e2e", "defect", "task", "fix", "verify", "--note=x",
+        Outcome result = run(cli, output, "grant", AUTHOR, "e2e", "issue", "spec", "task", "deliverable", "verify", "--note=x",
                 "--expires=2099-01-01T10:00:00+09:00");
 
         assertThat(result.exitCode()).isZero();
         assertThat(result.failure()).isNull();
-        assertThat(output.info()).contains(AUTHOR).contains("e2e").contains("defect,task,fix,verify");
+        assertThat(output.info()).contains(AUTHOR).contains("e2e").contains("issue,spec,task,deliverable,verify");
         List<Map<String, Object>> grants = database.rows(GRANTS);
-        assertThat(grants).hasSize(4);
-        assertThat(grants).extracting(row -> row.get("grant_scope")).containsExactly("DEFECT", "TASK", "FIX", "VERIFY");
+        assertThat(grants).hasSize(5);
+        assertThat(grants).extracting(row -> row.get("grant_scope"))
+                .containsExactly("ISSUE", "SPEC", "TASK", "DELIVERABLE", "VERIFY");
         for (Map<String, Object> grant : grants) {
             assertThat(grant.get("author_id")).isEqualTo(AUTHOR);
             assertThat(grant.get("project_id")).isEqualTo("e2e");
@@ -317,7 +319,7 @@ class OwnerCommandsTest {
         assertThat(audit.get("actor")).isEqualTo("cli:" + USER);
         assertThat(audit.get("operation")).isEqualTo("GRANT_ISSUED");
         assertThat(audit.get("subject")).isEqualTo(AUTHOR + "|e2e");
-        assertThat(audit.get("detail").toString()).contains("scopes=defect,task,fix,verify");
+        assertThat(audit.get("detail").toString()).contains("scopes=issue,spec,task,deliverable,verify");
     }
 
     @Test
@@ -327,14 +329,14 @@ class OwnerCommandsTest {
         registerKey(cli, AUTHOR);
 
         for (String expires : List.of("2099-01-01T10:00:00", "2099-01-01")) {
-            Outcome result = run(cli, "grant", AUTHOR, "e2e", "defect", "--expires=" + expires);
+            Outcome result = run(cli, "grant", AUTHOR, "e2e", "issue", "--expires=" + expires);
 
             assertThat(result.exitCode()).as(expires).isEqualTo(ExitStatus.FAILURE.code());
             assertThat(detailOfFirstRefusal(result)).startsWith("VALIDATION_FAILED");
         }
         assertThat(database.rows(GRANTS)).isEmpty();
 
-        Outcome zulu = run(cli, "grant", AUTHOR, "e2e", "defect", "--expires=2099-01-01T10:00:00Z");
+        Outcome zulu = run(cli, "grant", AUTHOR, "e2e", "issue", "--expires=2099-01-01T10:00:00Z");
 
         assertThat(zulu.exitCode()).isZero();
         assertThat(String.valueOf(database.rows(GRANTS).getFirst().get("expires_at"))).startsWith("2099-01-01 10:00:00");
@@ -345,10 +347,10 @@ class OwnerCommandsTest {
     void grantsAgainAndRefuses(Cli cli) {
         addProject(cli);
         registerKey(cli, AUTHOR);
-        assertThat(run(cli, "grant", AUTHOR, "e2e", "defect").exitCode()).isZero();
+        assertThat(run(cli, "grant", AUTHOR, "e2e", "issue").exitCode()).isZero();
 
-        Outcome again = run(cli, "grant", AUTHOR, "e2e", "defect", "--note=second");
-        Outcome noProject = run(cli, "grant", AUTHOR, "nope", "defect");
+        Outcome again = run(cli, "grant", AUTHOR, "e2e", "issue", "--note=second");
+        Outcome noProject = run(cli, "grant", AUTHOR, "nope", "issue");
         Outcome noScope = run(cli, "grant", AUTHOR, "e2e", "bogus");
 
         assertThat(again.exitCode()).isZero();
@@ -370,11 +372,11 @@ class OwnerCommandsTest {
         addProject(cli);
         int auditBefore = database.rows(AUDIT).size();
 
-        Outcome result = run(cli, "grant", AUTHOR, "e2e", "defect", "task");
+        Outcome result = run(cli, "grant", AUTHOR, "e2e", "issue", "task");
 
         assertThat(result.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
         assertThat(result.code()).contains(ErrorCode.NO_SESSION_KEY);
-        assertThat(captured.getAll()).contains("key-register").contains(AUTHOR);
+        assertThat(captured.getAll()).contains("key-register").contains("token-issue").contains(AUTHOR);
         assertThat(database.rows(GRANTS)).isEmpty();
         assertThat(database.rows(AUDIT)).hasSize(auditBefore);
     }
@@ -389,7 +391,7 @@ class OwnerCommandsTest {
         assertThat(run(cli, "key-revoke", AUTHOR, "--fingerprint=" + PublicKeys.fingerprint(pair.getPublic())).exitCode())
                 .isZero();
 
-        Outcome result = run(cli, "grant", AUTHOR, "e2e", "defect");
+        Outcome result = run(cli, "grant", AUTHOR, "e2e", "issue");
 
         assertThat(result.code()).contains(ErrorCode.NO_SESSION_KEY);
         assertThat(database.rows(GRANTS)).isEmpty();
@@ -400,9 +402,9 @@ class OwnerCommandsTest {
     void listsGrants(Cli cli) {
         addProject(cli);
         registerKey(cli, AUTHOR);
-        assertThat(run(cli, "grant", AUTHOR, "e2e", "defect", "task", "--note=first", "--expires=2099-01-01T10:00:00+09:00")
+        assertThat(run(cli, "grant", AUTHOR, "e2e", "issue", "task", "--note=first", "--expires=2099-01-01T10:00:00+09:00")
                 .exitCode()).isZero();
-        assertThat(run(cli, "grant", AUTHOR, "e2e", "fix").exitCode()).isZero();
+        assertThat(run(cli, "grant", AUTHOR, "e2e", "deliverable").exitCode()).isZero();
         RecordingOutput all = new RecordingOutput();
         RecordingOutput one = new RecordingOutput();
         RecordingOutput none = new RecordingOutput();
@@ -413,9 +415,9 @@ class OwnerCommandsTest {
 
         assertThat(everyone.exitCode()).isZero();
         assertThat(all.info().lines().toList()).containsExactlyInAnyOrder(
-                AUTHOR + " e2e defect expires 2099-01-01T01:00:00Z first",
+                AUTHOR + " e2e issue expires 2099-01-01T01:00:00Z first",
                 AUTHOR + " e2e task expires 2099-01-01T01:00:00Z first",
-                AUTHOR + " e2e fix expires never ");
+                AUTHOR + " e2e deliverable expires never ");
         assertThat(author.exitCode()).isZero();
         assertThat(one.info()).isEqualTo(all.info());
         assertThat(other.exitCode()).isZero();
@@ -427,7 +429,7 @@ class OwnerCommandsTest {
     void revokesGrants(Cli cli) {
         addProject(cli);
         registerKey(cli, AUTHOR);
-        assertThat(run(cli, "grant", AUTHOR, "e2e", "defect", "task", "fix", "verify").exitCode()).isZero();
+        assertThat(run(cli, "grant", AUTHOR, "e2e", "issue", "spec", "task", "deliverable", "verify").exitCode()).isZero();
         RecordingOutput scope = new RecordingOutput();
         RecordingOutput project = new RecordingOutput();
         RecordingOutput all = new RecordingOutput();
@@ -438,16 +440,55 @@ class OwnerCommandsTest {
 
         assertThat(oneScope.exitCode()).isZero();
         assertThat(scope.info()).isEqualTo("Revoked 1 live grant(s) of " + AUTHOR + ".");
-        assertThat(project.info()).isEqualTo("Revoked 3 live grant(s) of " + AUTHOR + ".");
+        assertThat(project.info()).isEqualTo("Revoked 4 live grant(s) of " + AUTHOR + ".");
         assertThat(nothingLeft.exitCode()).isZero();
         assertThat(all.info()).isEqualTo("Revoked 0 live grant(s) of " + AUTHOR + ".");
         List<Map<String, Object>> grants = database.rows(GRANTS);
-        assertThat(grants).hasSize(4);
+        assertThat(grants).hasSize(5);
         assertThat(grants).allSatisfy(grant -> assertThat(grant.get("revoked_at")).isNotNull());
         List<Map<String, Object>> revocations = database.rows(AUDIT).stream()
                 .filter(row -> "GRANT_REVOKED".equals(row.get("operation"))).toList();
         assertThat(revocations).hasSize(3);
         assertThat(revocations).allSatisfy(row -> assertThat(row.get("actor")).isEqualTo("cli:" + USER));
+    }
+
+    @Test
+    @DisplayName("CLI-TOK-01 token-issue, token-list and token-revoke manage standard HTTP Bearer session tokens without persisting the raw secret, and allow granting without an Ed25519 key")
+    void issuesListsAndRevokesSessionTokens(Cli cli) {
+        addProject(cli);
+        String tokenAuthor = "agent:writer-1";
+        RecordingOutput issuedOut = new RecordingOutput();
+
+        Outcome issued = run(cli, issuedOut, "token-issue", tokenAuthor, "--note=film-edit",
+                "--expires=2099-01-01T00:00:00Z");
+
+        assertThat(issued.exitCode()).isZero();
+        assertThat(issuedOut.info()).contains(tokenAuthor).contains("lgt_");
+        List<Map<String, Object>> stored = database.rows("SELECT id, author_id, token_hash, token_prefix, revoked_at, note FROM session_token");
+        assertThat(stored).hasSize(1);
+        long tokenId = ((Number) stored.getFirst().get("id")).longValue();
+        String prefix = String.valueOf(stored.getFirst().get("token_prefix"));
+        assertThat(prefix).startsWith("lgt_");
+        assertThat(String.valueOf(stored.getFirst().get("token_hash"))).hasSize(64).doesNotStartWith("lgt_");
+
+        assertThat(run(cli, "grant", tokenAuthor, "e2e", "spec", "deliverable").exitCode()).isZero();
+
+        RecordingOutput listedOut = new RecordingOutput();
+        assertThat(run(cli, listedOut, "token-list", tokenAuthor).exitCode()).isZero();
+        assertThat(listedOut.info()).contains(tokenAuthor).contains(prefix).contains("film-edit");
+        // token-list prints only the short prefix (12 chars), never the full raw token printed at issuance
+        String rawSecret = issuedOut.info().substring(issuedOut.info().lastIndexOf(": ") + 2).strip();
+        assertThat(rawSecret).hasSizeGreaterThan(prefix.length());
+        assertThat(listedOut.info()).doesNotContain(rawSecret);
+
+        RecordingOutput revokedOut = new RecordingOutput();
+        assertThat(run(cli, revokedOut, "token-revoke", String.valueOf(tokenId)).exitCode()).isZero();
+        assertThat(revokedOut.info()).contains("Revoked session token " + tokenId);
+
+        RecordingOutput emptyOut = new RecordingOutput();
+        assertThat(run(cli, emptyOut, "token-list", tokenAuthor).exitCode()).isZero();
+        assertThat(emptyOut.info()).isEqualTo("There are no active session tokens.");
+        assertThat(run(cli, "grant", tokenAuthor, "e2e", "issue").code()).contains(ErrorCode.NO_SESSION_KEY);
     }
 
     // CLI-009 ---------------------------------------------------------------------------------------------------
@@ -457,9 +498,9 @@ class OwnerCommandsTest {
     void rowsAreOwnedByTheOwnerAndAuditedAsTheCli(Cli cli) {
         addProject(cli);
         registerKey(cli, AUTHOR);
-        assertThat(run(cli, "code-set", "DEFECT_CATEGORY", "BUG", "ko-name").exitCode()).isZero();
-        assertThat(run(cli, "grant", AUTHOR, "e2e", "defect").exitCode()).isZero();
-        assertThat(run(cli, "revoke", AUTHOR, "e2e", "defect").exitCode()).isZero();
+        assertThat(run(cli, "code-set", "ISSUE_CATEGORY", "BUG", "ko-name").exitCode()).isZero();
+        assertThat(run(cli, "grant", AUTHOR, "e2e", "issue").exitCode()).isZero();
+        assertThat(run(cli, "revoke", AUTHOR, "e2e", "issue").exitCode()).isZero();
 
         assertThat(database.rows(PROJECTS)).allSatisfy(row -> assertThat(row.get("created_by")).isEqualTo(OWNER));
         assertThat(database.rows(CODES)).allSatisfy(row -> assertThat(row.get("created_by")).isEqualTo(OWNER));

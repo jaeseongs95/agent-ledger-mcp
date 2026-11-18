@@ -2,8 +2,9 @@
 
 [한국어](README.ko.md)
 
-A ledger for work done by AI agents, served as one MCP endpoint. It records defects, tasks, fixes and their verification,
-together with who did each one and why. Agents read and write through MCP tools; they never get a database login of their own.
+A universal ledger for work done by AI agents across software, film production, writing, research and operations, served as one MCP
+endpoint. It records issues, specifications, tasks, milestone criteria, deliverables and their independent verification, together with
+who did each one and why. Agents read and write through standard MCP tools; they never get a database login of their own.
 
 This is the **personal edition**: one person installs it and runs it on their own computer or on a server of their own, and trusts the
 whole installation target. The two services (the MCP server and the admin web) listen on the loopback address `127.0.0.1` only. Making
@@ -11,8 +12,9 @@ them reachable from another machine, with a reverse proxy and a TLS certificate,
 choice: the installers write no proxy configuration and order no certificate.
 
 Version 2.0.0 is a rewrite in Java 25 and Spring Boot with its own tool contract (every write tool takes a required `operationKey`,
-and no argument of an earlier version is accepted next to the new ones); what changed for a client is stated in the
-[release notes](docs/release-notes/2.0.0.md); the format of release notes is in [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md).
+every response uses the `ApiResult.v1` envelope, and no argument of an earlier version is accepted next to the new ones); what changed
+for a client is stated in the [release notes](docs/release-notes/2.0.0.md); the format of release notes is in
+[docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md).
 
 ## Contents
 
@@ -31,58 +33,63 @@ and no argument of an earlier version is accepted next to the new ones); what ch
 
 ## Concepts
 
-- **Author identity is proved, not claimed.** Every write and every `ledger_whoami` carries the reserved key `_hostAttestation`,
-  which the host hook of the client fills in. Models must omit it. The author is `<vendor>:<session-id>`, for example
-  `claude:1f2e3d4c` or `codex:9a8b7c6d`; the owner of the ledger is `user:owner`. The author is the attestation and nothing else: a tool has no `author_id` argument.
+- **Author identity is proved, not claimed.** In `STANDARD` mode (`ledger.mcp.auth-mode`, the default), any standard MCP client can
+  authenticate as `<vendor>:<session-id>` with a per-author HTTP `Bearer` token (`lgt_...`) issued by `ledger-cli token-issue`, with no
+  client hook needed. When the shared gate token `ledger.mcp.token` is used (or in `ATTESTED` mode), every write and every
+  `ledger_whoami` carries the reserved key `_hostAttestation`, which the host hook of the client fills in and models must omit. For
+  example, the author is `claude:1f2e3d4c` or `codex:9a8b7c6d`; the owner of the ledger is `user:owner`. A tool has no `author_id`
+  argument.
 - **Writes need a live grant.** The owner grants an author a scope on a project with `ledger-cli grant` (or on the grants page of
-  the admin web). The scopes are `defect`, `task`, `fix` and `verify`. A write without a matching grant is refused. A write that
-  touches rows of two projects (a task or a condition moved to another project, a link, a merge into a defect of another project) needs the
-  matching grant on both projects.
-- **Verification is separate.** `VERIFIED`, `MET` and `NOT_MET` are set only through the reviewer tools `ledger_review` and
-  `ledger_review_correct`, which need the scope `verify`. A defect is verified only with an evidence link and at least one
-  recorded fix, and only by a session that did not register the defect, did not record a case of it and did not record a fix of
-  it (the cases and the registrants of the defects merged into it count as its own); a task is verified only by a session that
-  did not register it, does not own it and never reported it done; a condition is set `MET` or `NOT_MET` only by a session
-  that did not register it (otherwise `SAME_SESSION`). The verification and rework requests go to the session that recorded the fix (`fixed_by`), not to the one
-  that registered the defect (`created_by`). CI results are optional metadata. A `VERIFIED` defect takes no `ledger_record_fix`
-  and no edit by `ledger_save` (`VERIFIED_DEFECT`): a reviewer reopens it first with `ledger_review`.
+  the admin web). The scopes are `issue`, `spec`, `task`, `deliverable` and `verify`. A write without a matching grant is refused. A
+  write that touches rows of two projects (a spec, task or criterion moved to another project, a link, a merge into an issue of another
+  project) needs the matching grant on both projects.
+- **Completion and verification are separate across all entities.** Authors record deliverables (`ledger_record_deliverable`) on an
+  `issue`, `spec` or `task` and report completion (`RESOLVED` on an `issue`, `COMPLETED` on a `spec`, `task` or criterion). `VERIFIED`,
+  `MET` and `NOT_MET` are set only through the reviewer tools `ledger_review` and `ledger_review_correct`, which need the scope
+  `verify` and an `evidence_uri`. An issue is verified only with at least one recorded deliverable and only by a session that did not
+  register the issue, did not record a case of it and did not record or amend a deliverable of it (merged issues count as its own); a
+  specification or task is verified only by a session that did not create it, does not own it, never recorded a deliverable on it and
+  never reported it completed; a milestone criterion is set `MET` or `NOT_MET` only by a session that did not register or complete it
+  (otherwise `SAME_SESSION`). Verification and rework follow-ups route to `owner_actor_id` rather than `created_by`. Check metadata
+  (`check_ref`, `check_result`) is optional and vendor-neutral. A `VERIFIED` entity takes no `ledger_record_deliverable` and no edit
+  (`VERIFIED_ENTITY`): a reviewer reopens it first with `ledger_review`.
 - **History is append-only.** Every write adds a history row: when, author, channel, operation, state change and reason. The
   application has no path that updates or deletes a history row, and the grant template of the database module (`migrate` applies it to
-  the application account) gives that account no `UPDATE` or `DELETE` on it. A mistake is marked with a `CORRECT` row. An operation that changes an
-  existing row also stores the full row as it was before the change (`before_data`, returned by `ledger_history` with
-  `include_before`). One exception: a `ledger_record_fix` that changes nothing of the defect but its `updated_at` and version (the
-  owner and the status stay) writes no history row of the defect and so stores no `before_data` of it; the fix row is its
-  history, and a row for the bookkeeping columns alone would put an empty edit row on the history of the defect for every fix.
+  the application account) gives that account no `UPDATE` or `DELETE` on it. A mistake is marked with a `CORRECT` row. An operation
+  that changes an existing row also stores the full row as it was before the change (`before_data`, returned by `ledger_history` with
+  `include_before`). One exception: a `ledger_record_deliverable` that changes nothing of the target entity except its `updated_at` and
+  version (the owner and the status stay) writes no extra history row of the target entity and so stores no `before_data` of it; the
+  deliverable row is its history.
 - **Retries are safe.** Every write tool takes a required `operationKey` (1 to 128 characters, for example a UUID). Repeating the same
   request with the same key returns the stored result and writes nothing twice. The keys belong to the author (as the keys of
-  `artifact-begin` do): another author may use the same key for a write of its own. A key of the author that is already bound to
+  `artifact_begin` do): another author may use the same key for a write of its own. A key of the author that is already bound to
   another operation, payload or channel is refused with `OPERATION_CONFLICT`. The server never makes a key up: a missing or empty
   key is refused with `VALIDATION_FAILED` (path `operationKey`). `ledger_batch` takes one key for the whole batch and the batch is
   one request: the same key with the same operations returns the stored results, the same key with other operations (one added,
-  removed, changed or moved) or under another tool is `OPERATION_CONFLICT`. `artifact-chunk` and
-  `artifact-finish` take no `operationKey`: an upload starts with the `operationKey` of `artifact-begin`, a chunk is idempotent by its
-  `uploadId`, `sequence` and `chunkSha256`, and finish by its `uploadId`.
+  removed, changed or moved) or under another tool is `OPERATION_CONFLICT`. `artifact_chunk` and
+  `artifact_finish` take no `operationKey`: an upload starts with the `operationKey` of `artifact_begin`, a chunk is idempotent by its
+  `uploadId`, `sequence` and `chunkSha256`, and finish by its `attachmentId`.
 - **Optimistic locking.** Edits and transitions carry `expected_version`; a stale version is `VERSION_CONFLICT`.
-- **Projects and ids.** A defect belongs to a project and gets the id `<CODE>-D-0001`, `<CODE>-D-0002`, and so on. A task without
-  an id gets `<CODE>-T-0001`, and so on. The server assigns them. An id that a caller chooses for a task or a condition is 1 to 120
-  characters without whitespace, in any case and with any characters (`:`, `/`, `#`, `.`, `_`, `-` and so on); an id that equals an
-  existing one when the case is ignored is refused (`DUPLICATE_KEY`), and an id is always compared exactly. A defect id that a caller
-  chooses, and a task id in the form `<CODE>-T-0001` that a caller chooses, must have a number that is not above the next number of
-  the project: a free number below it is accepted, and a number above it is refused with `ID_NUMBER_AHEAD`, whose message names the
-  next id, so that one id cannot stop the numbering by the server (when another request takes the number while this one runs,
-  `ID_COUNTER_CHANGED` tells you to send the request again). Such an id is written as the server writes it (a number of at
-  least 1, zero padded to 4 digits and not otherwise): `<CODE>-D-00002` and number 0 are refused (`VALIDATION_FAILED` at `id`).
-- **One defect, one root cause, many observed cases.** Each observation of a defect (symptom, log, user report) is a case under it
-  (`ledger_record_case`). A merged defect (`MERGED`, `merged_into`) keeps its cases; `ledger_defect` shows them under the defect it
-  was merged into, and a `MERGED` defect takes no new cases.
-- **Common codes.** Defect category, defect severity and relation kind are the three groups `DEFECT_CATEGORY`, `DEFECT_SEVERITY` and
-  `RELATION_KIND`, with Korean and English names. The active values are part of the tool definitions. A retired code stays on
-  existing rows and is refused when newly assigned. A severity is required on every defect. Only a write that stores the category or the severity (the create and the edit of `ledger_save`) checks the common codes; a fix and a state change do not, so a defect that still holds the retired `UNRATED` can be fixed, moved and verified, and is rated by an edit. A relation kind has a direction, which is
-  part of its code: `caused_by` (a is caused by b) and `blocks` (a blocks b) are directed, keep `a` and `b` in the order the caller gave
-  them, and so (a, b) and (b, a) are two relations; `same_site`, `same_family`, `same_fix_unit` and `regression_of` have no direction
-  and are one relation in either order. A kind that is added with `code-set` or in the admin console declares its direction as well
-  (`ledger_codes` shows it, and the list of kinds in the `ledger_link` definition marks it); the direction of a kind that already has
-  relations cannot be changed.
+- **Projects and ids.** An issue belongs to a project and gets the id `<CODE>-I-0001`, `<CODE>-I-0002`, and so on (imported 1.x rows
+  keep `<CODE>-D-0001`). A specification without an id gets `<CODE>-S-0001`, and a task without an id gets `<CODE>-T-0001`. An id that
+  a caller chooses for a specification, task or milestone criterion is 1 to 120 characters without whitespace, in any case and with any
+  characters (`:`, `/`, `#`, `.`, `_`, `-` and so on); an id that equals an existing one when the case is ignored is refused
+  (`DUPLICATE_KEY`), and an id is always compared exactly. An issue id that a caller chooses, and a spec or task id in the numbered form
+  `<CODE>-S-0001` or `<CODE>-T-0001`, must have a number that is not above the next number of the project: a free number below it is
+  accepted, and a number above it is refused with `ID_NUMBER_AHEAD` (`ID_COUNTER_CHANGED` tells you to send the request again if
+  another request took the number meanwhile). Numbered ids use at least 4 digits with no leading extra zeros: `<CODE>-I-00002` and
+  number 0 are refused (`VALIDATION_FAILED` at `id`).
+- **One issue, one root cause, many observed cases.** Each observation of an issue (symptom, log, field note, report) is a case under it
+  (`ledger_record_case`). A merged issue (`MERGED`, `merged_into`) keeps its cases; `ledger_issue` shows them under the issue it was
+  merged into, and a `MERGED` issue takes no new cases.
+- **Common codes.** Issue category, issue severity, deliverable kind and relation kind are the four groups `ISSUE_CATEGORY`,
+  `ISSUE_SEVERITY`, `DELIVERABLE_KIND` and `RELATION_KIND`, with Korean and English names. The active values are part of the tool
+  definitions. A retired code stays on existing rows and is refused when newly assigned. A severity is required on every issue. Only a
+  write that stores a common code checks it; a transition does not, so an imported issue that still holds the retired `UNRATED` can be
+  progressed and verified, and is rated by an edit (`ledger_issue_save`). A relation kind has a direction, which is part of its code:
+  `caused_by` and `blocks` are directed (`GIVEN`), keep `a` and `b` in the order the caller gave them, and so (a, b) and (b, a) are two
+  relations; `same_site`, `same_family`, `same_work_unit`, `same_fix_unit` and `regression_of` have no direction (`CANONICAL`) and are
+  one relation in either order (`ledger_codes` shows the direction, and `code-set` sets it).
 - **Creation provenance is immutable.** New rows receive `created_by` automatically; edits and reviewer transitions keep it.
 - **Time is UTC.** Timestamps are stored and transmitted in UTC (ISO-8601 with `Z`); the server converts no time zone. The JVM and
   the database session must run in UTC, and a server that finds otherwise does not start (`ledger.schema.require-utc`).
@@ -99,58 +106,65 @@ and no argument of an earlier version is accepted next to the new ones); what ch
   and MySQL do), all three must be utf8mb4: the default character set of the database of the JDBC URL (the schema that is checked), the variable
   character_set_server and the character set of the connection. `migrate` refuses to go on, before it changes anything, when the first two are not.
 
-A direct MCP caller is not authenticated as a host: the bearer token admits the caller, and the signed attestation proves the author.
+A direct MCP caller is authenticated either by its per-author `Bearer` session token (`STANDARD` mode) or by the shared gate token
+`ledger.mcp.token` paired with `_hostAttestation`.
 
 ## MCP tools
 
-The server speaks MCP over Streamable HTTP at `/mcp` (default `127.0.0.1:8765`) and answers `/healthz`. Callers present
-the bearer token `ledger.mcp.token`. The results carry their keys at the top level of the result. Every tool input is closed:
-an unknown argument is refused, an object or an array argument must be sent as that JSON value (not as text), and the text
-`null` is a text, not a missing argument. A key of `fields` that is written as JSON `null` counts as not given (the field is not
-touched, and the digest that the attestation signs leaves it out); an optional field is cleared with an empty text.
+The server speaks MCP over Streamable HTTP at `/mcp` (default `127.0.0.1:8765`) and answers `/healthz`. Callers present either a
+per-author session token (`lgt_...`) or `ledger.mcp.token`. Every tool returns the `ApiResult.v1` envelope (`schemaVersion` `"1.0.0"`,
+`ok`, `data`, `error`). Every tool input is closed and flat (no raw SQL query argument, no untyped map): an unknown argument is
+refused, an object or an array argument must be sent as that JSON value (not as text), and the text `null` is a text, not a missing
+argument. A JSON `null` on an optional field counts as not given; an optional text field is cleared with an empty string.
 
-Write tools (a login, an attestation and a live grant are needed). Every write tool except `ledger_whoami` takes the required
+Write tools (authenticated author and a live grant are needed). Every write tool except `ledger_whoami` takes the required
 `operationKey`:
 
 | Tool | Channel | What |
 |---|---|---|
-| `ledger_whoami` | author | is this author well formed, which grants does it hold (read only) |
-| `ledger_save` | author | create or edit a defect, task or condition (a `VERIFIED` defect is not edited) |
-| `ledger_transition` | author | change state (`OPEN`, `SOURCE_FIXED`, `MERGED`, `ACTIVE`, `REPORTED_DONE`, and so on) |
-| `ledger_record_fix` | author | record a fix commit and optional CI metadata; the fixing session becomes `fixed_by` and an `OPEN` defect becomes `SOURCE_FIXED`; a `VERIFIED` defect is refused until a reviewer reopens it |
-| `ledger_record_case` | author | add an observed case under a defect (a `MERGED` defect is refused and names its target) |
-| `ledger_link` | author | link defects, tasks and conditions, or remove a link; the relation kinds `caused_by` and `blocks` are directed (`a` is the subject, an unlink names the ends in the order they were linked) |
+| `ledger_whoami` | author | verify caller identity and list live project grants (read only) |
+| `ledger_issue_save` | author | create or edit an issue with explicit parameters (`project_id`, `title`, `category`, `severity`, `symptom`, `root_cause`, `owner_actor_id`, `id`, `expected_version`, `reason`) |
+| `ledger_spec_save` | author | create or edit a specification (`project_id`, `parent_id`, `title`, `summary`, `acceptance_criteria`, `priority`, `owner_actor_id`, `origin_ref`, `origin_quote`, `id`, `expected_version`, `reason`) |
+| `ledger_task_save` | author | create or edit a task (`project_id`, `title`, `purpose`, `success_condition`, `owner_actor_id`, `origin_ref`, `origin_quote`, `id`, `expected_version`, `reason`) |
+| `ledger_criterion_save` | author | create or edit a milestone criterion (`project_id`, `id`, `milestone_name`, `goal_label`, `code`, `criterion_text`, `expected_version`, `reason`) |
+| `ledger_transition` | author | change author-side status or state (`OPEN`, `IN_PROGRESS`, `RESOLVED`, `MERGED`, `DRAFT`, `PLANNED`, `ACTIVE`, `COMPLETED`, `BLOCKED`, `PENDING`, and so on) |
+| `ledger_record_deliverable` | author | record or amend a deliverable (`document`, `commit`, `media`, `scene`, `dataset`, `design`, `artifact`, `other`) on an `issue`, `spec` or `task`, optionally marking it `RESOLVED` or `COMPLETED` (`mark_done`) |
+| `ledger_record_case` | author | add an observed case under an issue (`MERGED` issues are refused and name their target) |
+| `ledger_link` | author | link issues, specs, tasks and criteria (`issue_task`, `issue_spec`, `spec_task`, `criterion_task`, `criterion_issue`, `criterion_spec`, or issue `RELATION_KIND` codes), or remove a link |
 | `ledger_correct` | author | mark a history row as wrong |
-| `ledger_batch` | author | up to 200 of the operations above in one transaction: all commit or none; one `operationKey` for the batch, the operations carry none |
-| `ledger_review` | reviewer | `VERIFIED`, `MET`, `NOT_MET`, and reopening them (a `VERIFIED` defect that is reopened can be fixed and edited again); the evidence link is required |
-| `ledger_review_correct` | reviewer | mark a verification row as wrong |
+| `ledger_batch` | author | up to 200 of the operations above in one transaction: all commit or none; one `operationKey` for the batch |
+| `ledger_review` | reviewer | independent verification (`VERIFIED`, `MET`, `NOT_MET`) and reopening (`evidence_uri` required) |
+| `ledger_review_correct` | reviewer | mark a reviewer verification row as wrong |
 
-Attachment tools (a login, an attestation and at least one live grant of the author; see Attachments below):
+Attachment tools (authenticated author with at least one live grant; see Attachments below):
 
 | Tool | What |
 |---|---|
-| `artifact-begin` | start the upload of a file that a record can point to; `operationKey` is required and makes the call repeatable, `purpose` is optional and only `evidence` is supported |
-| `artifact-chunk` | send the next chunk (at most 262144 bytes, base64) with its SHA-256; the last applied chunk sent again is answered with the current state. It takes no `operationKey` (the one exception: the upload started with the `operationKey` of `artifact-begin`; a chunk is idempotent by `uploadId`, `sequence` and `chunkSha256`, other content under the same sequence is a conflict) |
-| `artifact-finish` | check the received bytes against the declared size and SHA-256 and keep the file as an attachment; the same upload id again gives the same attachment id. It takes no `operationKey` (it is idempotent by `uploadId`) |
-| `artifact-status` | the state, size, SHA-256, expiry and progress of an upload or an attachment (never a path or a storage key) |
-| `artifact-read` | one page of a kept attachment, decrypted and checked |
+| `artifact_begin` | start the upload of a bundle of 1..64 files (`files`, required `operationKey`, optional `purpose` = `evidence`) |
+| `artifact_chunk` | send the next chunk (at most 262144 bytes, base64) with `chunkSha256`; idempotent by `uploadId`, `sequence` and `chunkSha256` (no `operationKey`) |
+| `artifact_finish` | verify every declared file size and SHA-256 and seal the attachment bundle; idempotent by `attachmentId` (no `operationKey`) |
+| `artifact_status` | inspect the state, size, SHA-256, expiry and progress of an `uploadId` or `attachmentId` (never a path or storage key) |
+| `artifact_read` | read one decrypted, integrity-checked page of file `seq` in a sealed attachment |
 
 Read tools (no attestation and no grant; structured queries that replace the raw SQL tools of 1.x):
 
 | Tool | What |
 |---|---|
-| `ledger_get` | state and version of many ids at once (defects, tasks and conditions mixed); the check after a write and the source of `expected_version` |
-| `ledger_defect` | one defect with fixes, tasks, conditions, cases (also those of merged defects), relations, `fixed_by` and recent changes |
-| `ledger_task` | one task with purpose, success condition, origin, owner, the session that reported it done, defects and conditions |
-| `ledger_history` | the history and the receipt of every write, by ids, id range, entity, project, operation, author or time range; `include_before` adds `before_data` |
-| `ledger_search` | defects, tasks and conditions by keywords, case-insensitive, `match` is `ANY` (default) or `ALL` |
-| `ledger_defects` | the defects of a project, filtered by status, severity, category, attention kind and owner |
-| `ledger_tasks` | the tasks of a project, filtered by state, owner and attention kind |
-| `ledger_conditions` | the release conditions of a project, filtered by state and release |
-| `ledger_attention` | what needs a look: `OPEN_WITH_FIX`, `FIXED_WITHOUT_COMMIT`, `OPEN_NO_OWNER`, `TASK_UNKNOWN`, `DONE_NOT_VERIFIED` |
-| `ledger_stats` | counts per state and severity of one project or of all; `bucket` = `day` adds the new items per UTC day |
-| `ledger_projects` | the projects with id, code and title |
-| `ledger_codes` | the common codes; retired codes with `include_inactive` |
+| `ledger_get` | status/state and version of many ids at once (issues, specs, tasks and criteria mixed); source of `expected_version` |
+| `ledger_issue` | one issue with deliverables, tasks, specs, criteria, cases (including merged issues), relations, `owner_actor_id` and recent history |
+| `ledger_spec` | one specification with summary, acceptance criteria, parent/child specs, deliverables, tasks, issues, criteria and recent history |
+| `ledger_task` | one task with purpose, success condition, origin, owner, deliverables, issues, specs, criteria and recent history |
+| `ledger_criterion` | one milestone criterion with milestone, goal label, code, criterion text, state and linked tasks, issues and specs |
+| `ledger_history` | append-only history and receipts by ids, id range, entity, project, operation, author or time range; `include_before` adds `before_data` |
+| `ledger_search` | issues, specs, tasks and criteria by keywords, case-insensitive, `match` is `ANY` (default) or `ALL` |
+| `ledger_issues` | issues of a project, filtered by status, severity, category, attention kind and owner |
+| `ledger_specs` | specifications of a project, filtered by status, parent id, priority, owner and attention kind |
+| `ledger_tasks` | tasks of a project, filtered by state, owner and attention kind |
+| `ledger_criteria` | milestone criteria of a project, filtered by state and `milestone_name` |
+| `ledger_attention` | items needing action: `OPEN_WITH_DELIVERABLE`, `RESOLVED_WITHOUT_DELIVERABLE`, `OPEN_NO_OWNER`, `SPEC_DRAFT_WITH_DELIVERABLE`, `SPEC_COMPLETED_NOT_VERIFIED`, `TASK_UNKNOWN`, `DONE_NOT_VERIFIED` |
+| `ledger_stats` | counts per state and severity of one project or of all; `bucket` = `day` adds new items per UTC day |
+| `ledger_projects` | projects with id, code and title |
+| `ledger_codes` | common codes; retired codes included with `include_inactive` |
 
 The list read tools take `max_rows` (1 to 1000, default 50) and `cursor`; their answers carry `truncated` and `next_cursor`.
 The tools `execute_sql_reader` and `search_objects_reader` of 1.x were removed: use the read tools above.
@@ -159,13 +173,13 @@ When a common code changes, the server sends `notifications/tools/list_changed`,
 definitions without a restart. A change made by another process (the admin web, `ledger-cli`) is noticed within
 `ledger.mcp.code-poll-interval`. A new tool is registered when the server starts.
 
-`ledger_record_case` takes `defect_id`, `observation` (1 to 4000 characters) and `reason`, and optionally `evidence`,
-`user_quote` and `observed_at` (ISO-8601 with `Z` or an offset). In `ledger_batch` the same arguments go in an operation
+`ledger_record_case` takes `issue_id`, `observation` (1 to 4000 characters) and `reason`, and optionally `evidence`,
+`source_quote` and `observed_at` (ISO-8601 with `Z` or an offset). In `ledger_batch` the same arguments go in an operation
 `{"op": "record_case", ...}`:
 
 ```json
-{"defect_id": "WEB-D-0007", "observation": "checkout returns 500 for a gift card",
- "evidence": "request 7f3a, api/checkout.ts:88", "user_quote": "I can't pay with my gift card",
+{"issue_id": "WEB-I-0007", "observation": "checkout returns 500 for a gift card",
+ "evidence": "request 7f3a, api/checkout.ts:88", "source_quote": "I can't pay with my gift card",
  "observed_at": "2026-11-05T10:00:00Z", "reason": "second report of the same failure"}
 ```
 
@@ -173,12 +187,12 @@ definitions without a restart. A change made by another process (the admin web, 
 
 A review report (or any other evidence) is kept as an attachment, never as text in the database and never as a local file that
 can be edited without a trace. The history row of a record points to it with the optional `attachment_id` of `ledger_transition`,
-`ledger_review`, `ledger_review_correct`, `ledger_correct`, `ledger_record_fix`, `ledger_record_case` and the same operations of
+`ledger_review`, `ledger_review_correct`, `ledger_correct`, `ledger_record_deliverable`, `ledger_record_case` and the same operations of
 `ledger_batch`. The record is written only when the attachment exists and was uploaded by the author who writes the record.
 
-- **Upload.** Uploads are made through the five MCP tools above: `artifact-begin` (with a required `operationKey` and an
-  ordered `files` list of 1..64 files), `artifact-chunk` for each chunk of at most 262144 bytes, `artifact-finish` (with
-  `attachmentId`), and `artifact-status` and `artifact-read` (with optional `seq`, default `0`) to inspect or read a file.
+- **Upload.** Uploads are made through the five MCP tools above: `artifact_begin` (with a required `operationKey` and an
+  ordered `files` list of 1..64 files), `artifact_chunk` for each chunk of at most 262144 bytes, `artifact_finish` (with
+  `attachmentId`), and `artifact_status` and `artifact_read` (with optional `seq`, default `0`) to inspect or read a file.
   To upload local files without sending raw bytes through the model context, measure them locally with
   `ledger-cli attachments-prepare <file> [--name=<name>]` and stream chunks directly to `/mcp` with
   `ledger-cli attachments-send <file> --upload-id=<id>` (uses `uploadId` capability without session attestation).
@@ -261,6 +275,7 @@ configuration tree (Spring Boot makes every file below a tree a property of the 
 | `ledger.schema.require-utc` | servers, CLI | refuse to start when the JVM or the database session is not UTC, default true |
 | `ledger.attestation.window` | servers | how far the time of an attestation may be from the server time, default `PT5M` |
 | `ledger.mcp.token` | MCP server, `mcp-check` | the bearer token of the agents, at least 16 characters (secret) |
+| `ledger.mcp.auth-mode` | MCP server | caller authentication mode: `STANDARD` (default, accepts per-author `Bearer` session tokens as well as `_hostAttestation`) or `ATTESTED` (requires `_hostAttestation` for author identity) |
 | `ledger.mcp.allowed-hosts` | MCP server | accepted `Host` values, default `127.0.0.1` and `localhost` |
 | `ledger.mcp.allowed-origins` | MCP server | accepted browser origins, default none |
 | `ledger.mcp.max-request-size` | MCP server | largest request body, default 1MB |
@@ -285,7 +300,7 @@ configuration tree (Spring Boot makes every file below a tree a property of the 
 | `ledger.attachments.active-key-id` | servers, CLI | the key that new uploads are written with; `setup` writes it into `local.yaml`; the server does not start without the key file |
 | `ledger.attachments.max-file-bytes` | servers, CLI | the largest file, default 64MB |
 | `ledger.attachments.staging-budget-bytes` | servers, CLI | what all open uploads may declare together, default 512MB |
-| `ledger.attachments.attachment-budget-bytes` | servers, CLI | what all kept attachments (and the open uploads) may hold together, default 10GB; over it a new `artifact-begin` is refused and nothing is deleted |
+| `ledger.attachments.attachment-budget-bytes` | servers, CLI | what all kept attachments (and the open uploads) may hold together, default 10GB; over it a new `artifact_begin` is refused and nothing is deleted |
 | `ledger.attachments.max-open-per-owner` | servers, CLI | how many uploads of one author may be open, default 4 |
 | `ledger.attachments.disk-margin-bytes` | servers, CLI | the space that has to stay free on the disk of `directory` after a file is written, default 64MB (the size of the largest file): when `usable - size` is below it a begin or a chunk is refused with `ARTIFACT_STORAGE_FULL` and the owner has to free the disk |
 | `ledger.attachments.upload-ttl` | servers, CLI | how long an upload lives after its last chunk, default 10m |
@@ -522,18 +537,21 @@ service user), and every owner operation is recorded with that user.
 | `setup` | `setup [--owner-account=<account>] [--app-account=<account>] [--stdin]` | the first setup: migrate as `migrate` does, check that the application account can use the schema (exit code `3` and the missing step when it cannot), add the seed codes that are missing (a code that exists is never changed) and compare the seed with the database by counts and digest; running it again changes nothing |
 | `key-register` | `key-register <author> <public-key-or-block> <fingerprint> [--replace=<current-fingerprint>]` | bind the public key a session printed to its author; a live key is replaced only with `--replace` |
 | `key-revoke` | `key-revoke <author> --fingerprint=<fingerprint>` | close the live key of an author |
+| `token-issue` | `token-issue <author> [--note=<text>] [--expires=<ISO-8601 with Z or an offset>]` | issue a standard HTTP `Bearer` session token (`lgt_...`) for an author, storing only its SHA-256 hash and prefix, and print the token once |
+| `token-revoke` | `token-revoke <id>` | revoke a session token by numeric id |
+| `token-list` | `token-list [<author>]` | list unrevoked session tokens of an author or of every author (never the secret) |
 | `passkey-code` | `passkey-code [--remove-existing]` | issue the one-time code that enrols a passkey of the owner in the admin web (shown once, valid 15 minutes, stored only as its hash; a new code ends the earlier unused one); `--remove-existing` closes every live passkey first, for an owner who lost them all |
 | `project-add` | `project-add <id> <code> <title>` | add a project |
 | `code-set` | `code-set <group> <code> <name-ko> [<description-ko>] [--name-en=<text>] [--description-en=<text>] [--sort=<n>] [--inactive] [--direction=<direction>]` | add or update a common code; `--direction` (`GIVEN` or `CANONICAL`) is for the group `RELATION_KIND` (see the `ledger_link` tool) |
 | `codes` | `codes [<group>]` | list the common codes |
-| `grant` | `grant <author> <project> <scope>... [--note=<text>] [--expires=<ISO-8601 with Z or an offset>]` | grant scopes on a project; the author needs a live session key first |
+| `grant` | `grant <author> <project> <scope>... [--note=<text>] [--expires=<ISO-8601 with Z or an offset>]` | grant scopes on a project; the author needs a live session key or session token first |
 | `revoke` | `revoke <author> [<project> [<scope>]]` | revoke live grants |
 | `grants` | `grants [<author>]` | list live grants |
 | `attachments-check` | `attachments-check [--purge-orphans]` | check the attachments against their files and keys: a file that no row names, and a file that `attachments-rekey` replaced, is moved to `orphans/` and never deleted; a file in `orphans/` whose row exists again is moved back; the report gives the counts and the ids (never a storage key or a path) of the attachments that are missing, damaged or pointed to by no history row, and the exit code is `1` when one is missing or damaged; `--purge-orphans` first empties `orphans/` and records the number in the audit trail |
 | `attachments-rekey` | `attachments-rekey --from=<keyId>` | write the attachment files of the key `<keyId>` again under the active key `ledger.attachments.active-key-id` (a different key); the old files are moved to `orphans/` by `attachments-check` after `ledger.attachments.orphan-grace` |
 | `attachments-key-create` | `attachments-key-create` | create a new 256-bit key file in the key directory (readable by the service account only; on Windows by the installing user and, read only, by LocalService) and print its key id, never the key; set `ledger.attachments.active-key-id` to it to write new uploads with it |
-| `attachments-prepare` | `attachments-prepare <file> [--name=<name>]` | measure one regular file in a single streaming pass and print JSON (`fileName`, `size`, `sha256`, `mediaType`) for `artifact-begin`; connects to nothing |
-| `attachments-send` | `attachments-send <file> --upload-id=<id> [--url=<url>] [--ledger.mcp.token=<token>]` | send the chunks of one file directly to the running MCP server using `artifact-status` and `artifact-chunk` (`uploadId` capability without session attestation); resumes from server progress if interrupted and needs no database |
+| `attachments-prepare` | `attachments-prepare <file> [--name=<name>]` | measure one regular file in a single streaming pass and print JSON (`fileName`, `size`, `sha256`, `mediaType`) for `artifact_begin`; connects to nothing |
+| `attachments-send` | `attachments-send <file> --upload-id=<id> [--url=<url>] [--ledger.mcp.token=<token>]` | send the chunks of one file directly to the running MCP server using `artifact_status` and `artifact_chunk` (`uploadId` capability without session attestation); resumes from server progress if interrupted and needs no database |
 | `mcp-check` | `mcp-check [--url=<url>] [--ledger.mcp.token=<token>]` | connect to a running MCP server and check its tools |
 | `render-deploy` | `render-deploy --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>] [--admin-host=<host>] [--root=<directory>] [--check]` | write the service definitions (systemd units, or WinSW configurations on Windows) and the settings; the installers call it |
 | `prepare-host` | `prepare-host --jars=<dir> --driver-jar=<file> [--winsw=<file>] --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>] [--admin-host=<host>] [--root=<directory>]` | prepare the files of the host (run as root, or elevated on Windows): the folders with owner and mode, or their ACLs (on Windows the access of LocalService and the secret folders of the installing user), the copies of the jars and the driver (on Windows also of WinSW), and what `render-deploy` writes; the installers call it |

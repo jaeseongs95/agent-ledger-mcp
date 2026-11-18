@@ -109,10 +109,10 @@ class AttachmentPagesTest {
     @DisplayName("ata023_textAttachmentIsEscapedAndReadOnly: a text body with <script> appears only as escaped text in a pre element, with its name, type, size, SHA-256, uploader and time")
     void ata023_textAttachmentIsEscapedAndReadOnly() throws Exception {
         Seeded project = seeds.project();
-        String defect = seeds.defect(project, "defect with a report");
+        String issue = seeds.issue(project, "issue with a report");
         String body = "<script>alert(1)</script> & \"quoted\" <b>bold</b>";
         String attachment = seeds.attachment("report.txt", "text/plain", body.getBytes(StandardCharsets.UTF_8));
-        seeds.disputeWithAttachment(defect, attachment);
+        seeds.disputeWithAttachment(issue, attachment);
         Browser browser = Browser.signedIn(mvc);
 
         String page = history(browser, project);
@@ -131,9 +131,9 @@ class AttachmentPagesTest {
     @DisplayName("ata023_longTextIsCutAtTheLimit: a text attachment over 256 KiB shows its first 256 KiB and says so")
     void ata023_longTextIsCutAtTheLimit() throws Exception {
         Seeded project = seeds.project();
-        String defect = seeds.defect(project, "defect with a long report");
+        String issue = seeds.issue(project, "issue with a long report");
         String attachment = seeds.attachment("long.txt", "text/plain", "x".repeat(300_000).getBytes(StandardCharsets.UTF_8));
-        seeds.disputeWithAttachment(defect, attachment);
+        seeds.disputeWithAttachment(issue, attachment);
         Browser browser = Browser.signedIn(mvc);
 
         String page = history(browser, project);
@@ -146,11 +146,11 @@ class AttachmentPagesTest {
     @DisplayName("ata023_nonTextIsADownload: a binary attachment is offered as a download; the download streams the same bytes with attachment, nosniff and application/octet-stream, and no path")
     void ata023_nonTextIsADownload() throws Exception {
         Seeded project = seeds.project();
-        String defect = seeds.defect(project, "defect with a pdf");
+        String issue = seeds.issue(project, "issue with a pdf");
         byte[] body = new byte[300_000];
         new Random(7).nextBytes(body);
         String attachment = seeds.attachment("보고서 1.pdf", "application/pdf", body);
-        seeds.disputeWithAttachment(defect, attachment);
+        seeds.disputeWithAttachment(issue, attachment);
         Browser browser = Browser.signedIn(mvc);
 
         String page = history(browser, project);
@@ -176,9 +176,9 @@ class AttachmentPagesTest {
     @DisplayName("ata023_textThatIsNotUtf8IsADownload: a text type whose bytes are not valid UTF-8 is not shown as text")
     void ata023_textThatIsNotUtf8IsADownload() throws Exception {
         Seeded project = seeds.project();
-        String defect = seeds.defect(project, "defect with a latin1 report");
+        String issue = seeds.issue(project, "issue with a latin1 report");
         String attachment = seeds.attachment("latin.txt", "text/plain", new byte[] {(byte) 0xff, (byte) 0xfe, 'a'});
-        seeds.disputeWithAttachment(defect, attachment);
+        seeds.disputeWithAttachment(issue, attachment);
         Browser browser = Browser.signedIn(mvc);
 
         String page = history(browser, project);
@@ -203,14 +203,14 @@ class AttachmentPagesTest {
     @DisplayName("ATA-044: multi-file bundle renders all files on history and downloads each by ?seq=N (default 0), returning 404 on invalid seq")
     void ata044_multiFileBundleRendersAndDownloadsBySeq() throws Exception {
         Seeded project = seeds.project();
-        String defect = seeds.defect(project, "defect with a multi-file bundle");
+        String issue = seeds.issue(project, "issue with a multi-file bundle");
         byte[] doc = "# Bundle Summary\nLine 2\n".getBytes(StandardCharsets.UTF_8);
         byte[] bin = new byte[1024];
         new Random(9).nextBytes(bin);
         String attachment = seeds.bundle(java.util.List.of(
                 new BundleFile("summary.md", "text/markdown", doc),
                 new BundleFile("trace.bin", "application/octet-stream", bin)));
-        seeds.disputeWithAttachment(defect, attachment);
+        seeds.disputeWithAttachment(issue, attachment);
         Browser browser = Browser.signedIn(mvc);
 
         String page = history(browser, project);

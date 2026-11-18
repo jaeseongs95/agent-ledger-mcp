@@ -168,12 +168,12 @@ class OidcTest {
         Authorization authorization = start(browser);
         callback(browser, authorization.state(), claims -> { }, authorization).andExpect(status().is3xxRedirection());
 
-        browser.perform(browser.form("/codes", Browser.Form.of("group", "DEFECT_CATEGORY", "code", "OIDCAUD", "nameKo",
+        browser.perform(browser.form("/codes", Browser.Form.of("group", "ISSUE_CATEGORY", "code", "OIDCAUD", "nameKo",
                 "감사", "nameEn", "Audit", "state", "ACTIVE"), browser.csrfOf("/codes")))
                 .andExpect(status().is3xxRedirection());
 
         assertThat(jdbc.sql("SELECT actor FROM owner_audit WHERE operation = 'CODE_SET' AND subject = :subject")
-                .param("subject", "DEFECT_CATEGORY/OIDCAUD").query(String.class).list())
+                .param("subject", "ISSUE_CATEGORY/OIDCAUD").query(String.class).list())
                 .containsExactly("oidc:" + PROVIDER.issuer() + "#" + MockOidcProvider.SUBJECT);
     }
 

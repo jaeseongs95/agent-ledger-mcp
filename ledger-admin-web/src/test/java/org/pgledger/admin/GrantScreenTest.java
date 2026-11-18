@@ -5,6 +5,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.pgledger.admin.support.AdminTest;
@@ -15,6 +17,7 @@ import org.pgledger.admin.support.Seeds;
 import org.pgledger.admin.support.Seeds.Seeded;
 import org.pgledger.application.admin.GrantService;
 import org.pgledger.application.admin.SessionKeyService;
+import org.pgledger.application.admin.SessionTokenService;
 import org.pgledger.domain.model.SessionPublicKey;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -24,9 +27,8 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.util.MultiValueMap;
 
 /**
- * ADM-064 .. ADM-067: the grant screen registers the public key of the session with the grants (the server accepts a
- * write only with a signature of the registered key), shows the fingerprint for comparison first, never replaces a live
- * key of an author silently, and records who did every owner operation.
+ * ADM-064 .. ADM-077: the grant screen registers Ed25519 session keys, issues and revokes standard HTTP Bearer session
+ * tokens, grants scopes to enrolled authors, and records who did every owner operation.
  */
 @AdminTest
 class GrantScreenTest {
@@ -44,6 +46,9 @@ class GrantScreenTest {
     private SessionKeyService keys;
 
     @Autowired
+    private SessionTokenService sessionTokens;
+
+    @Autowired
     private JdbcClient jdbc;
 
     private static final java.util.concurrent.atomic.AtomicInteger SEQUENCE = new java.util.concurrent.atomic.AtomicInteger();
@@ -57,7 +62,7 @@ class GrantScreenTest {
     }
 
     private static MultiValueMap<String, String> issue(String author, Seeded project) {
-        return Form.of("author", author, "project", project.project(), "scopes", "defect", "scopes", "task");
+        return Form.of("author", author, "project", project.project(), "scopes", "issue", "scopes", "task");
     }
 
     @Test
@@ -132,8 +137,7 @@ class GrantScreenTest {
     }
 
     @Test
-    @DisplayName("ADM-065 / ADM-PRN-11: the confirmation registers the key for the author and issues the grants (the key first, "
-            + "so the key rule of the service accepts the grant); the fingerprint's letter case does not matter")
+    @DisplayName("ADM-065 / ADM-PRN-11: the confirmation registers the key for the author and issues the grants; the fingerprint's letter case does not matter")
     void adm065_grantRegistersTheKey() throws Exception {
         Seeded project = seeds.project();
         String author = newAuthor();
@@ -149,7 +153,7 @@ class GrantScreenTest {
         SessionPublicKey live = keys.live(author).orElseThrow();
         assertThat(live.fingerprint()).isEqualTo(key.fingerprint());
         assertThat(live.registeredBy().value()).isEqualTo("user:owner");
-        assertThat(grants.live(author)).extracting(g -> g.scope().token()).containsExactlyInAnyOrder("defect", "task");
+        assertThat(grants.live(author)).extracting(g -> g.scope().token()).containsExactlyInAnyOrder("issue", "task");
     }
 
     @Test
@@ -164,16 +168,15 @@ class GrantScreenTest {
                 .andExpect(status().is3xxRedirection());
         long id = keys.live(author).orElseThrow().id();
         browser.perform(browser.form("/grants", key.confirmed(Form.of("author", author, "project", project.project(),
-                "scopes", "fix")), browser.csrfOf("/grants"))).andExpect(status().is3xxRedirection());
+                "scopes", "deliverable")), browser.csrfOf("/grants"))).andExpect(status().is3xxRedirection());
 
         assertThat(keys.live(author).orElseThrow().id()).isEqualTo(id);
-        assertThat(grants.live(author)).extracting(g -> g.scope().token()).containsExactlyInAnyOrder("defect", "task", "fix");
+        assertThat(grants.live(author)).extracting(g -> g.scope().token())
+                .containsExactlyInAnyOrder("issue", "task", "deliverable");
     }
 
     @Test
-    @DisplayName("ADM-069 (changed by TXA-02): the key and the grants of one submission are one transaction: a refused grant "
-            + "leaves no key registered (and no audit row), and the same submission with a known project registers the key "
-            + "once and issues the grants")
+    @DisplayName("ADM-069 (changed by TXA-02): the key and the grants of one submission are one transaction: a refused grant leaves no key registered (and no audit row), and the same submission with a known project registers the key once and issues the grants")
     void adm069_retryAfterARefusedGrant() throws Exception {
         Seeded project = seeds.project();
         String author = newAuthor();
@@ -181,22 +184,21 @@ class GrantScreenTest {
         Browser browser = Browser.signedIn(mvc);
 
         post(browser, "/grants", key.confirmed(Form.of("author", author, "project", "no-such-project", "scopes",
-                "defect"))).andExpect(status().isNotFound());
+                "issue"))).andExpect(status().isNotFound());
         assertThat(keys.history(author)).as("the refused grant took the registration of the key back").isEmpty();
         assertThat(jdbc.sql("SELECT COUNT(*) FROM owner_audit WHERE subject = :author").param("author", author)
                 .query(Integer.class).single()).isZero();
         browser.perform(browser.form("/grants", key.confirmed(Form.of("author", author, "project", project.project(),
-                "scopes", "defect")), browser.csrfOf("/grants"))).andExpect(status().is3xxRedirection());
+                "scopes", "issue")), browser.csrfOf("/grants"))).andExpect(status().is3xxRedirection());
 
         assertThat(keys.history(author)).hasSize(1);
-        assertThat(grants.live(author)).extracting(g -> g.scope().token()).containsExactly("defect");
+        assertThat(grants.live(author)).extracting(g -> g.scope().token()).containsExactly("issue");
         assertThat(jdbc.sql("SELECT COUNT(*) FROM owner_audit WHERE operation = 'KEY_REGISTERED' AND subject = :author")
                 .param("author", author).query(Integer.class).single()).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("ADM-066: another key for an author that has one is refused 409 KEY_REPLACEMENT_NOT_CONFIRMED naming the "
-            + "registered fingerprint and time; nothing changes")
+    @DisplayName("ADM-066: another key for an author that has one is refused 409 KEY_REPLACEMENT_NOT_CONFIRMED naming the registered fingerprint and time; nothing changes")
     void adm066_noSilentReplacement() throws Exception {
         Seeded project = seeds.project();
         String author = newAuthor();
@@ -207,12 +209,13 @@ class GrantScreenTest {
                 .andExpect(status().is3xxRedirection());
 
         post(browser, "/grants", intruder.confirmed(Form.of("author", author, "project", project.project(), "scopes",
-                "fix"))).andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("KEY_REPLACEMENT_NOT_CONFIRMED"))
+                "deliverable"))).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("KEY_REPLACEMENT_NOT_CONFIRMED"))
                 .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString(first.fingerprint())))
                 .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("2026-11-05T")));
 
         assertThat(keys.live(author).orElseThrow().fingerprint()).isEqualTo(first.fingerprint());
-        assertThat(grants.live(author)).extracting(g -> g.scope().token()).containsExactlyInAnyOrder("defect", "task");
+        assertThat(grants.live(author)).extracting(g -> g.scope().token()).containsExactlyInAnyOrder("issue", "task");
     }
 
     @Test
@@ -234,8 +237,7 @@ class GrantScreenTest {
     }
 
     @Test
-    @DisplayName("ADM-066: with the replace confirmation naming the registered fingerprint, the key is replaced and the "
-            + "grants issued; with a wrong fingerprint it is refused again")
+    @DisplayName("ADM-066: with the replace confirmation naming the registered fingerprint, the key is replaced and the grants issued; with a wrong fingerprint it is refused again")
     void adm066_confirmedReplacement() throws Exception {
         Seeded project = seeds.project();
         String author = newAuthor();
@@ -246,7 +248,7 @@ class GrantScreenTest {
                 .andExpect(status().is3xxRedirection());
 
         MultiValueMap<String, String> wrong = second.confirmed(Form.of("author", author, "project", project.project(),
-                "scopes", "fix"));
+                "scopes", "deliverable"));
         wrong.add("replace", "yes");
         wrong.add("replaceFingerprint", second.fingerprint());
         post(browser, "/grants", wrong).andExpect(status().isConflict())
@@ -254,7 +256,7 @@ class GrantScreenTest {
         assertThat(keys.live(author).orElseThrow().fingerprint()).isEqualTo(first.fingerprint());
 
         MultiValueMap<String, String> right = second.confirmed(Form.of("author", author, "project", project.project(),
-                "scopes", "fix"));
+                "scopes", "deliverable"));
         right.add("replace", "yes");
         right.add("replaceFingerprint", first.fingerprint());
         browser.perform(browser.form("/grants", right, browser.csrfOf("/grants"))).andExpect(status().is3xxRedirection());
@@ -267,8 +269,7 @@ class GrantScreenTest {
     }
 
     @Test
-    @DisplayName("ADM-067: grant, revoke and a common code change are recorded with the signed-in owner (token:owner), "
-            + "not with the fixed role")
+    @DisplayName("ADM-067: grant, revoke and a common code change are recorded with the signed-in owner (token:owner), not with the fixed role")
     void adm067_auditActorOfTheToken() throws Exception {
         Seeded project = seeds.project();
         String author = newAuthor();
@@ -278,13 +279,13 @@ class GrantScreenTest {
                 browser.csrfOf("/grants"))).andExpect(status().is3xxRedirection());
         browser.perform(browser.form("/grants/revoke", Form.of("author", author, "project", project.project(), "scope",
                 "task"), browser.csrfOf("/grants"))).andExpect(status().is3xxRedirection());
-        browser.perform(browser.form("/codes", Form.of("group", "DEFECT_CATEGORY", "code", "AUDITED", "nameKo", "감사",
+        browser.perform(browser.form("/codes", Form.of("group", "ISSUE_CATEGORY", "code", "AUDITED", "nameKo", "감사",
                 "nameEn", "Audited", "state", "ACTIVE"), browser.csrfOf("/codes")))
                 .andExpect(status().is3xxRedirection());
 
         List<String> rows = jdbc.sql("SELECT operation || ' ' || actor FROM owner_audit WHERE subject IN (:subjects) "
                 + "ORDER BY id").param("subjects", List.of(author + "|" + project.project(), author,
-                        "DEFECT_CATEGORY/AUDITED")).query(String.class).list();
+                        "ISSUE_CATEGORY/AUDITED")).query(String.class).list();
         assertThat(rows).containsExactly("KEY_REGISTERED token:owner", "GRANT_ISSUED token:owner",
                 "GRANT_REVOKED token:owner", "CODE_SET token:owner");
         assertThat(grants.live(author)).allMatch(g -> "user:owner".equals(g.grantedBy().value()));
@@ -400,5 +401,37 @@ class GrantScreenTest {
         assertThat(jdbc.sql("SELECT operation || ' ' || actor || ' ' || detail FROM owner_audit WHERE subject = :id")
                 .param("id", id).query(String.class).list())
                 .containsExactly("PROJECT_ADDED token:owner code=AUDITP" + number);
+    }
+
+    @Test
+    @DisplayName("ADM-TOK-01: issuing a bearer session token shows the raw secret once, allows granting scopes to the enrolled author without an Ed25519 key, lists only the prefix later, and revokes cleanly")
+    void admTok01_bearerSessionTokensAndEnrolledAuthorGrants() throws Exception {
+        Seeded project = seeds.project();
+        String author = "mcp:bearer-" + SEQUENCE.incrementAndGet();
+        Browser browser = Browser.signedIn(mvc);
+
+        String issuedHtml = browser.perform(browser.form("/grants/tokens",
+                Form.of("author", author, "expiresAt", "2099-12-31T00:00:00Z", "note", "ci-agent"),
+                browser.csrfOf("/grants"))).andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+
+        Matcher rawMatch = Pattern.compile("id=\"issued-raw-token\">(lgt_[A-Za-z0-9_-]+)</code>").matcher(issuedHtml);
+        assertThat(rawMatch.find()).isTrue();
+        String rawToken = rawMatch.group(1);
+        assertThat(sessionTokens.authenticate(rawToken)).isPresent();
+
+        String reloaded = browser.perform(browser.get("/grants")).andExpect(status().isOk()).andReturn()
+                .getResponse().getContentAsString();
+        assertThat(reloaded).doesNotContain(rawToken).contains(rawToken.substring(0, 12));
+
+        browser.perform(browser.form("/grants/author", Form.of("author", author, "project", project.project(),
+                "scopes", "issue", "scopes", "spec"), browser.csrfOf("/grants")))
+                .andExpect(status().is3xxRedirection());
+        assertThat(grants.live(author)).extracting(g -> g.scope().token()).containsExactlyInAnyOrder("issue", "spec");
+
+        long tokenId = sessionTokens.live(author).getFirst().id();
+        browser.perform(browser.form("/grants/tokens/revoke", Form.of("id", Long.toString(tokenId)),
+                browser.csrfOf("/grants"))).andExpect(status().is3xxRedirection());
+        assertThat(sessionTokens.live(author)).isEmpty();
+        assertThat(sessionTokens.authenticate(rawToken)).isEmpty();
     }
 }

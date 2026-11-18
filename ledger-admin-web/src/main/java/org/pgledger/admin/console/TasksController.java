@@ -4,12 +4,12 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import org.pgledger.application.read.DetailService;
 import org.pgledger.application.read.ListService;
-import org.pgledger.application.read.ListService.ConditionsQuery;
+import org.pgledger.application.read.ListService.CriteriaQuery;
 import org.pgledger.application.read.ListService.TasksQuery;
 import org.pgledger.application.read.StatsService;
 import org.pgledger.application.read.StatsService.StatsQuery;
 import org.pgledger.domain.rule.AttentionKind;
-import org.pgledger.domain.rule.ConditionState;
+import org.pgledger.domain.rule.CriterionState;
 import org.pgledger.domain.rule.TaskState;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.RequestParam;
 
-/** The tasks and the release conditions of a project (filtered, paged) and the detail of a task. */
+/** The tasks and the milestone criteria of a project (filtered, paged) and the detail of a task. */
 @Controller
 public class TasksController {
 
@@ -26,8 +26,8 @@ public class TasksController {
             String cursor, String back) {
     }
 
-    /** The filters and the paging position of the condition list. */
-    public record ConditionFilter(String project, String state, String release, Integer limit, String cursor,
+    /** The filters and the paging position of the milestone criteria list. */
+    public record CriterionFilter(String project, String state, String milestone, Integer limit, String cursor,
             String back) {
     }
 
@@ -68,8 +68,9 @@ public class TasksController {
     }
 
     /**
-     * The page of one task. The id is a query parameter and not a path segment: ids are free text and may contain characters (a slash,
-     * a number sign, a question mark) that a path segment cannot carry, and the web container refuses an encoded slash.
+     * The page of one task. The id is a query parameter and not a path segment: ids are free text and may contain
+     * characters (a slash, a number sign, a question mark) that a path segment cannot carry, and the web container
+     * refuses an encoded slash.
      */
     @GetMapping("/tasks/detail")
     String task(@RequestParam("id") String id, Model model) {
@@ -77,24 +78,24 @@ public class TasksController {
         return "task";
     }
 
-    @GetMapping("/conditions")
-    String conditions(@ModelAttribute("filter") ConditionFilter filter, Model model) {
+    @GetMapping("/criteria")
+    String criteria(@ModelAttribute("filter") CriterionFilter filter, Model model) {
         Choices.ProjectChoice project = choices.project(filter.project());
         model.addAttribute("choice", project);
-        model.addAttribute("states", ConditionState.values());
+        model.addAttribute("states", CriterionState.values());
         model.addAttribute("sizes", Paging.SIZES);
         if (project.selected() != null) {
-            var page = lists.conditions(new ConditionsQuery(project.selected(), filter.state(), filter.release(),
+            var page = lists.criteria(new CriteriaQuery(project.selected(), filter.state(), filter.milestone(),
                     Paging.limitOf(filter.limit()), filter.cursor()));
             Map<String, String> filters = new LinkedHashMap<>();
             filters.put("project", project.selected());
             filters.put("state", filter.state());
-            filters.put("release", filter.release());
+            filters.put("milestone", filter.milestone());
             model.addAttribute("page", page);
-            model.addAttribute("paging", Paging.of("/conditions", filters, filter.limit(), filter.cursor(),
+            model.addAttribute("paging", Paging.of("/criteria", filters, filter.limit(), filter.cursor(),
                     filter.back(), page.nextCursor()));
-            model.addAttribute("total", stats.stats(new StatsQuery(project.selected(), null)).conditions());
+            model.addAttribute("total", stats.stats(new StatsQuery(project.selected(), null)).criteria());
         }
-        return "conditions";
+        return "criteria";
     }
 }

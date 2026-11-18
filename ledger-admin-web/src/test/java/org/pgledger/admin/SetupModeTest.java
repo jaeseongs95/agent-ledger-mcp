@@ -52,7 +52,7 @@ class SetupModeTest {
         assertThat(login).contains("driver-register").doesNotContain("passkey-signin").doesNotContain("/login/ott")
                 .doesNotContain("oauth2/authorization");
         anonymous.perform(anonymous.get("/healthz").accept(MediaType.APPLICATION_JSON)).andExpect(status().isOk());
-        for (String path : List.of("/", "/defects", "/grants", "/projects", "/history", "/driver", "/passkeys")) {
+        for (String path : List.of("/", "/issues", "/specs", "/grants", "/projects", "/history", "/driver", "/passkeys")) {
             anonymous.perform(anonymous.get(path)).andExpect(status().is3xxRedirection());
         }
         anonymous.perform(anonymous.get("/api/overview").accept(MediaType.APPLICATION_JSON))

@@ -187,7 +187,7 @@ class Retire1xCommandTest {
         imported(tool);
         RecordingOutput listed = new RecordingOutput();
         run(tool, listed, "retire-1x");
-        database.update("UPDATE defect SET title = 'tampered' WHERE id = 'OLD-D-0001'");
+        database.update("UPDATE issue SET title = 'tampered' WHERE id = 'OLD-D-0001'");
         RecordingOutput failed = new RecordingOutput();
 
         Outcome afterwards = run(tool, failed, "retire-1x");
@@ -197,10 +197,10 @@ class Retire1xCommandTest {
         for (Outcome outcome : List.of(afterwards, confirmed)) {
             assertThat(outcome.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
             assertThat(outcome.code()).contains(MigrationError.RETIRE_VERIFY_FAILED);
-            assertThat(outcome.refusal().orElseThrow().arguments()).hasSize(5).first().isEqualTo("defect");
+            assertThat(outcome.refusal().orElseThrow().arguments()).hasSize(5).first().isEqualTo("issue");
         }
-        assertThat(failed.info()).contains("Table defect: ");
-        assertThat(captured.getAll()).contains("differ in the table defect").contains("nothing was removed");
+        assertThat(failed.info()).contains("Table issue: ");
+        assertThat(captured.getAll()).contains("differ in the table issue").contains("nothing was removed");
         assertLegacyIntact();
     }
 

@@ -91,7 +91,7 @@ class MigrateGrantsTest {
         assertThat(result.exitCode()).isZero();
         assertThat(output.info()).contains("Applied ").contains("schema version(s)").contains(account).contains("grants");
         JdbcTemplate app = database.asAppAccount();
-        assertThat(outcomeOf(app, "SELECT COUNT(*) FROM defect")).isEqualTo("allowed");
+        assertThat(outcomeOf(app, "SELECT COUNT(*) FROM issue")).isEqualTo("allowed");
         assertThat(outcomeOf(app, "SELECT COUNT(*) FROM schema_history")).isEqualTo("allowed");
         assertThat(outcomeOf(app, "DELETE FROM history")).isEqualTo(NOT_ALLOWED);
         assertThat(outcomeOf(app, "UPDATE schema_history SET outcome = 'FAILED'")).isEqualTo(NOT_ALLOWED);
@@ -109,7 +109,7 @@ class MigrateGrantsTest {
 
         assertThat(again.exitCode()).isZero();
         assertThat(output.info()).contains("up to date").contains(account);
-        assertThat(outcomeOf(database.asAppAccount(), "SELECT COUNT(*) FROM defect")).isEqualTo("allowed");
+        assertThat(outcomeOf(database.asAppAccount(), "SELECT COUNT(*) FROM issue")).isEqualTo("allowed");
     }
 
     @Test
@@ -118,7 +118,7 @@ class MigrateGrantsTest {
         Outcome result = run(cli, new RecordingOutput(), "migrate");
 
         assertThat(result.exitCode()).isZero();
-        assertThat(outcomeOf(database.asAppAccount(), "SELECT COUNT(*) FROM defect")).isEqualTo(NOT_ALLOWED);
+        assertThat(outcomeOf(database.asAppAccount(), "SELECT COUNT(*) FROM issue")).isEqualTo(NOT_ALLOWED);
     }
 
     static Stream<Arguments> usageRefusals() {

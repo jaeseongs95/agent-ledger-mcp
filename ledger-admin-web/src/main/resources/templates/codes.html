@@ -16,7 +16,7 @@
     </tr></thead>
     <tbody>
       <tr th:each="c : ${codes}">
-        <td th:text="${c.group()}">DEFECT_CATEGORY</td><td th:text="${c.code()}">ARC</td><td th:text="${c.nameKo()}">name</td><td th:text="${c.nameEn()}">name</td>
+        <td th:text="${c.group()}">ISSUE_CATEGORY</td><td th:text="${c.code()}">ARC</td><td th:text="${c.nameKo()}">name</td><td th:text="${c.nameEn()}">name</td>
         <td th:text="${c.sortOrder()}">1</td><td><span th:class="'badge badge-' + ${c.state()}" th:text="${c.state()}">ACTIVE</span></td>
         <td th:if="${c.group() == 'RELATION_KIND'}" th:text="#{'codes.direction.' + ${c.direction().token()}}">no direction</td>
         <td th:unless="${c.group() == 'RELATION_KIND'}">-</td>
@@ -29,7 +29,7 @@
     <form method="post" th:action="@{/codes}" data-approve>
       <label for="group" th:text="#{codes.group}">Group</label>
       <select id="group" name="group" required>
-        <option th:each="g : ${groups}" th:value="${g.token()}" th:text="${g.token()}">DEFECT_CATEGORY</option>
+        <option th:each="g : ${groups}" th:value="${g.token()}" th:text="${g.token()}">ISSUE_CATEGORY</option>
       </select>
       <label for="code" th:text="#{codes.code}">Code</label>
       <input id="code" name="code" type="text" required autocomplete="off">

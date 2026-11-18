@@ -69,7 +69,7 @@ class DpopTest {
             "DPoP " + AdminTestSettings.AGENT_TOKEN}) {
             Browser agent = new Browser(mvc);
             agent.perform(agent.form("/grants", key.confirmed(Form.of("author", "claude:dpop-agent", "project",
-                    project.project(), "scopes", "defect")), null).accept(MediaType.APPLICATION_JSON)
+                    project.project(), "scopes", "issue")), null).accept(MediaType.APPLICATION_JSON)
                     .header(HttpHeaders.AUTHORIZATION, authorization).header("DPoP", PROOF))
                     .andExpect(status().is(authorization.startsWith("Bearer") ? 401 : 403));
         }

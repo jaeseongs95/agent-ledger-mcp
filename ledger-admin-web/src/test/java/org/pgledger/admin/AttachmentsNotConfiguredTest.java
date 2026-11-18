@@ -61,12 +61,12 @@ class AttachmentsNotConfiguredTest {
     void ata023_notConfigured() throws Exception {
         assertThat(context.getBeanNamesForType(org.pgledger.application.attachment.AttachmentStore.class)).isEmpty();
         Seeded project = seeds.project();
-        String defect = seeds.defect(project, "defect with an attachment row only");
+        String issue = seeds.issue(project, "issue with an attachment row only");
         String id = UUID.randomUUID().toString();
         byte[] body = "report".getBytes(StandardCharsets.UTF_8);
         attachments.insert(new Attachment(id, AuthorId.of(Seeds.AUTHOR), Instant.parse("2026-11-15T00:00:00Z")));
         files.insert(new AttachmentFile(id, 0, "report.txt", "text/plain", body.length, Sha256.ofBytes(body)));
-        seeds.disputeWithAttachment(defect, id);
+        seeds.disputeWithAttachment(issue, id);
         Browser browser = Browser.signedIn(mvc);
 
         String page = browser.perform(browser.get("/history?project=" + project.project())).andExpect(status().isOk())

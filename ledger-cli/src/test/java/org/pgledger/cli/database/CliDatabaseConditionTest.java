@@ -82,7 +82,7 @@ class CliDatabaseConditionTest {
     @Test
     @DisplayName("W7-CLI-02 an operand that holds ${...} as text (the name of a code) does not stop the condition: the command is still a database command and the bean exists")
     void anOperandWithAPlaceholderIsText() {
-        registered("code-set,DEFECT_CATEGORY,QUOTE,say ${x} @CODES:DEFECT_CATEGORY@")
+        registered("code-set,ISSUE_CATEGORY,QUOTE,say ${x} @CODES:ISSUE_CATEGORY@")
                 .run(context -> assertThat(context).hasNotFailed().hasBean("databaseBean"));
     }
 

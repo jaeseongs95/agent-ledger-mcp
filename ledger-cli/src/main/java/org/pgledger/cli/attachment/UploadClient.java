@@ -15,8 +15,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.Base64;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Objects;
 import org.pgledger.application.attachment.AttachmentProperties;
 import org.pgledger.cli.ErrorCode;
@@ -32,7 +30,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Resumable file uploader for {@code ledger-cli attachments-send}. Communicates with the running MCP server over
- * Streamable HTTP ({@link McpCheckCommand}) calling {@code artifact-status} and {@code artifact-chunk} by
+ * Streamable HTTP ({@link McpCheckCommand}) calling {@code artifact_status} and {@code artifact_chunk} by
  * {@code uploadId} capability (without {@code _hostAttestation}) so large file bytes bypass the LLM context.
  */
 @Component
@@ -53,6 +51,12 @@ public class UploadClient {
     public record Stopped(String message, long received, long nextSequence) implements Outcome {
     }
 
+    private record StatusRequest(String uploadId) {
+    }
+
+    private record ChunkRequest(String uploadId, long sequence, String data, String chunkSha256) {
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record ToolErrorPayload(String code, String message) {
     }
@@ -60,6 +64,18 @@ public class UploadClient {
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record UploadStatusPayload(String kind, String attachmentId, Integer seq, String state, Long size,
             String sha256, Long received, Long sequence) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record ChunkAckPayload(Long sequence, Long received) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record StatusEnvelope(String schemaVersion, Boolean ok, UploadStatusPayload data, ToolErrorPayload error) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record ChunkEnvelope(String schemaVersion, Boolean ok, ChunkAckPayload data, ToolErrorPayload error) {
     }
 
     private final McpCheckCommand mcp;
@@ -123,12 +139,9 @@ public class UploadClient {
             while (more) {
                 int length = (int) Math.min(AttachmentProperties.CHUNK_BYTES, size - offset);
                 byte[] data = readAt(file, channel, offset, length);
-                Map<String, Object> arguments = new LinkedHashMap<>();
-                arguments.put("uploadId", uploadId);
-                arguments.put("sequence", sequence);
-                arguments.put("data", Base64.getEncoder().encodeToString(data));
-                arguments.put("chunkSha256", Sha256.ofBytes(data).hex());
-                call(client, shown, "artifact-chunk", arguments);
+                ChunkRequest request = new ChunkRequest(uploadId, sequence,
+                        Base64.getEncoder().encodeToString(data), Sha256.ofBytes(data).hex());
+                sendChunk(client, shown, request);
                 offset += data.length;
                 sequence++;
                 more = offset < size;
@@ -169,35 +182,78 @@ public class UploadClient {
     }
 
     private UploadStatusPayload readStatus(McpSyncClient client, String shown, String uploadId) {
-        String raw = call(client, shown, "artifact-status", Map.of("uploadId", uploadId));
+        String raw = callRaw(client, shown, "artifact_status", new StatusRequest(uploadId));
         try {
+            StatusEnvelope envelope = json.readValue(raw, StatusEnvelope.class);
+            if (Boolean.FALSE.equals(envelope.ok()) || envelope.error() != null) {
+                throw refused(envelope.error(), raw);
+            }
+            if (envelope.data() != null) {
+                return envelope.data();
+            }
             return json.readValue(raw, UploadStatusPayload.class);
         } catch (JacksonException malformed) {
             throw new FailureException(ErrorCode.MCP_FAILED, malformed, shown, "JacksonException");
         }
     }
 
-    private String call(McpSyncClient client, String shown, String tool, Map<String, Object> arguments) {
+    private void sendChunk(McpSyncClient client, String shown, ChunkRequest request) {
+        String raw = callRaw(client, shown, "artifact_chunk", request);
+        try {
+            ChunkEnvelope envelope = json.readValue(raw, ChunkEnvelope.class);
+            if (Boolean.FALSE.equals(envelope.ok()) || envelope.error() != null) {
+                throw refused(envelope.error(), raw);
+            }
+        } catch (JacksonException malformed) {
+            throw new FailureException(ErrorCode.MCP_FAILED, malformed, shown, "JacksonException");
+        }
+    }
+
+    private String callRaw(McpSyncClient client, String shown, String tool, Record arguments) {
         CallToolResult result = mcp.callTool(client, shown,
                 () -> client.callTool(CallToolRequest.builder(tool)
                         .arguments(new JacksonMcpJsonMapper(json), json.writeValueAsString(arguments))
                         .build()));
-        String text = firstText(result, shown);
-        if (Boolean.TRUE.equals(result.isError())) {
-            try {
-                ToolErrorPayload error = json.readValue(text, ToolErrorPayload.class);
-                String code = error.code() == null || error.code().isBlank() ? "UNKNOWN" : error.code();
-                String message = error.message() == null ? text : error.message();
-                throw new FailureException(ErrorCode.ATTACHMENTS_TOOL_REFUSED, code, message);
-            } catch (JacksonException notToolError) {
-                throw new FailureException(ErrorCode.MCP_FAILED, notToolError, shown, "JacksonException");
-            }
+        if (result == null) {
+            throw new FailureException(ErrorCode.MCP_FAILED, shown, "EmptyContent");
         }
-        return text;
+        String structured = result.structuredContent() == null ? null
+                : json.writeValueAsString(result.structuredContent());
+        if (Boolean.TRUE.equals(result.isError())) {
+            throw decodeError(structured != null ? structured : firstText(result, shown), shown);
+        }
+        return structured != null ? structured : firstText(result, shown);
+    }
+
+    private FailureException decodeError(String raw, String shown) {
+        try {
+            StatusEnvelope envelope = json.readValue(raw, StatusEnvelope.class);
+            if (envelope.error() != null) {
+                return refused(envelope.error(), raw);
+            }
+            ToolErrorPayload direct = json.readValue(raw, ToolErrorPayload.class);
+            if (direct.code() != null && !direct.code().isBlank()) {
+                return refused(direct, raw);
+            }
+        } catch (JacksonException notJson) {
+            int colon = raw.indexOf(": ");
+            if (colon > 0) {
+                return new FailureException(ErrorCode.ATTACHMENTS_TOOL_REFUSED,
+                        raw.substring(0, colon), raw.substring(colon + 2));
+            }
+            return new FailureException(ErrorCode.MCP_FAILED, notJson, shown, "JacksonException");
+        }
+        return new FailureException(ErrorCode.ATTACHMENTS_TOOL_REFUSED, "UNKNOWN", raw);
+    }
+
+    private static FailureException refused(ToolErrorPayload error, String fallback) {
+        String code = error == null || error.code() == null || error.code().isBlank() ? "UNKNOWN" : error.code();
+        String message = error == null || error.message() == null ? fallback : error.message();
+        return new FailureException(ErrorCode.ATTACHMENTS_TOOL_REFUSED, code, message);
     }
 
     private static String firstText(CallToolResult result, String shown) {
-        if (result == null || result.content() == null || result.content().isEmpty()) {
+        if (result.content() == null || result.content().isEmpty()) {
             throw new FailureException(ErrorCode.MCP_FAILED, shown, "EmptyContent");
         }
         for (Content item : result.content()) {

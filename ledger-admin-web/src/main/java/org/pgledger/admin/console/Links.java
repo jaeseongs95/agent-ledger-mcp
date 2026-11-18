@@ -21,20 +21,21 @@ public class Links {
     }
 
     /**
-     * The page of an item of the attention list, as the link base the page gives the {@code id} to: the defect page
-     * ({@code /defects/{id}}, the id is a path segment) for a defect and the task page ({@code /tasks/detail}, the id is a query
-     * parameter: ids are free text and may contain a slash) for a task. The kind of the item is decided as the {@link HistoryEntity} that its text
-     * names, not by comparing the text in the page.
+     * The page of an item of the attention list, as the link base the page gives the {@code id} to: the issue page
+     * ({@code /issues/{id}}, the id is a path segment) for an issue, the specification page ({@code /specs/detail}, the
+     * id is a query parameter: ids may be free text) for a specification, and the task page ({@code /tasks/detail}, the
+     * id is a query parameter) for a task.
      *
      * @throws org.pgledger.domain.error.ValidationException when the text names no kind of row
-     * @throws IllegalArgumentException for a kind of row that has no page of its own (the attention list holds only
-     *         defects and tasks)
+     * @throws IllegalArgumentException for a kind of row that has no page of its own
      */
     public String itemPage(String entity) {
         return switch (Tokens.parse("entity", entity, HistoryEntity.values())) {
-            case DEFECT -> "/defects/{id}";
+            case ISSUE -> "/issues/{id}";
+            case SPEC -> "/specs/detail";
             case TASK -> "/tasks/detail";
-            case CONDITION, DEFECT_FIX, DEFECT_TASK, DEFECT_RELATION, CONDITION_LINK, DEFECT_CASE ->
+            case CRITERION, DELIVERABLE, ISSUE_TASK, ISSUE_SPEC, SPEC_TASK, ISSUE_RELATION, CRITERION_LINK,
+                    ISSUE_CASE ->
                 throw new IllegalArgumentException("the attention list has no item of the kind " + entity);
         };
     }

@@ -17,13 +17,17 @@ import java.util.stream.Collectors;
  * table, an {@code ORDER BY}, an {@code INSERT} with one placeholder per column. The schema of the legacy side is an
  * identifier and so cannot be a bind value; the caller passes a validated name.
  *
- * <p>{@code task} and {@code release_condition} have a column of the new schema that the legacy tables do not: {@code id_key},
+ * <p>{@code task} and {@code milestone_criterion} have a column of the new schema that the legacy tables do not: {@code id_key},
  * the id in upper case under a UNIQUE constraint (the mapping makes it from the legacy id, like the link key).
  *
- * <p>The new schema avoids the words that SQL:2003 reserves, and has its own names for three others, so four columns are named
- * differently on the two sides: {@code history.at} of the legacy schema is {@code occurred_at} here, {@code history.legacy_ref}
- * is {@code source_ref}, {@code history.request_id} is {@code operation_key} (the new name of the key of a write), and
- * {@code session_grant.scope} is {@code grant_scope}. The legacy side keeps the names the old installer
+ * <p>The new schema uses universal 2.0 domain names and avoids words that SQL:2003 reserves: {@code defect} becomes {@code issue}
+ * ({@code behavior} becomes {@code symptom}), {@code defect_fix} becomes {@code deliverable}, {@code defect_case} becomes
+ * {@code issue_case} ({@code user_quote} becomes {@code source_quote}), {@code defect_task} becomes {@code issue_task},
+ * {@code defect_relation} becomes {@code issue_relation}, {@code condition} becomes {@code milestone_criterion}
+ * ({@code release} becomes {@code milestone_name}, {@code condition_text} becomes {@code criterion_text}),
+ * {@code condition_link} becomes {@code criterion_link}, {@code history.at} becomes {@code occurred_at},
+ * {@code history.legacy_ref} becomes {@code source_ref}, {@code history.request_id} becomes {@code operation_key}, and
+ * {@code session_grant.scope} becomes {@code grant_scope}. The legacy side keeps the names the old installer
  * created; the mapper of the import maps one to the other.
  *
  * <p>The tables that are not copied: {@code _migration} (bookkeeping of the legacy installer, read only to check its
@@ -31,15 +35,15 @@ import java.util.stream.Collectors;
  * the rows of {@code common_code}) and {@code request_receipt} (the idempotency records of 1.x requests: every write of 2.0
  * carries an {@code operationKey} and a call with the old {@code request_id} is refused as an unknown argument, so a 1.x
  * answer that was lost cannot cause a second write in 2.0, and the rows are not carried over).
- * {@code session_key} and {@code owner_audit} are new in this schema; the keys are registered by the owner after the import and
- * the import writes its own audit row.
+ * {@code spec}, {@code issue_spec}, {@code spec_task}, {@code session_key}, {@code session_token} and {@code owner_audit} are
+ * new in this schema; the keys or tokens are issued by the owner after the import and the import writes its own audit row.
  */
 public enum LegacyTable {
 
     PROJECT("project", "project", List.of("id"), List.of("id"),
             List.of(text("id"), text("code"), text("title"), text("created_by")),
-            List.of(text("id"), text("code"), text("title"), number("next_defect_no"), number("next_task_no"),
-                    number("version"), text("created_by")), false),
+            List.of(text("id"), text("code"), text("title"), number("next_issue_no"), number("next_spec_no"),
+                    number("next_task_no"), number("version"), text("created_by")), false),
 
     COMMON_CODE("common_code", "common_code", List.of("code_group", "code"), List.of("code_group", "code"),
             List.of(text("code_group"), text("code"), text("name_ko"), text("name_en"), text("description_ko"),
@@ -56,47 +60,48 @@ public enum LegacyTable {
                     text("origin_quote"), number("version"), instant("created_at"), instant("updated_at"),
                     text("created_by")), false),
 
-    DEFECT("defect", "defect", List.of("id"), List.of("id"),
+    DEFECT("defect", "issue", List.of("id"), List.of("id"),
             List.of(text("id"), text("project_id"), text("title"), text("category"), text("severity"), text("status"),
                     text("merged_into"), text("behavior"), text("root_cause"), text("owner_actor_id"), number("version"),
                     instant("created_at"), instant("updated_at"), text("created_by")),
             List.of(text("id"), text("project_id"), text("title"), text("category"), text("severity"), text("status"),
-                    text("merged_into"), text("behavior"), text("root_cause"), text("owner_actor_id"), number("case_seq"),
+                    text("merged_into"), text("symptom"), text("root_cause"), text("owner_actor_id"), number("case_seq"),
                     number("version"), instant("created_at"), instant("updated_at"), text("created_by")), false),
 
-    DEFECT_FIX("defect_fix", "defect_fix", List.of("id"), List.of("id"),
+    DEFECT_FIX("defect_fix", "deliverable", List.of("id"), List.of("id"),
             List.of(number("id"), text("defect_id"), text("repo"), text("commit_sha"), text("branch"), text("ci_ref"),
                     text("ci_conclusion"), instant("ci_completed_at"), text("recorded_by"), instant("recorded_at"),
                     flag("imported")),
-            List.of(number("id"), text("defect_id"), text("repo"), text("commit_sha"), text("branch"), text("ci_ref"),
-                    text("ci_conclusion"), instant("ci_completed_at"), text("recorded_by"), instant("recorded_at"),
-                    text("origin")), false),
+            List.of(number("id"), text("target_entity"), text("target_id"), text("kind"), text("deliverable_ref"),
+                    text("location"), text("summary"), text("check_ref"), text("check_result"), instant("checked_at"),
+                    text("recorded_by"), instant("recorded_at"), text("origin")), false),
 
-    DEFECT_CASE("defect_case", "defect_case", List.of("id"), List.of("id"),
+    DEFECT_CASE("defect_case", "issue_case", List.of("id"), List.of("id"),
             List.of(number("id"), text("defect_id"), text("observation"), text("evidence"), text("user_quote"),
                     instant("observed_at"), text("recorded_by"), instant("recorded_at")),
-            List.of(number("id"), text("defect_id"), text("observation"), text("evidence"), text("user_quote"),
+            List.of(number("id"), text("issue_id"), text("observation"), text("evidence"), text("source_quote"),
                     instant("observed_at"), text("recorded_by"), instant("recorded_at")), false),
 
-    DEFECT_TASK("defect_task", "defect_task", List.of("defect_id", "task_id"), List.of("defect_id", "task_id"),
+    DEFECT_TASK("defect_task", "issue_task", List.of("defect_id", "task_id"), List.of("issue_id", "task_id"),
             List.of(text("defect_id"), text("task_id"), text("created_by")),
-            List.of(text("defect_id"), text("task_id"), text("created_by")), false),
+            List.of(text("issue_id"), text("task_id"), text("created_by")), false),
 
-    DEFECT_RELATION("defect_relation", "defect_relation", List.of("a", "b", "kind"), List.of("a", "b", "kind"),
+    DEFECT_RELATION("defect_relation", "issue_relation", List.of("a", "b", "kind"), List.of("a", "b", "kind"),
             List.of(text("a"), text("b"), text("kind"), text("created_by")),
             List.of(text("a"), text("b"), text("kind"), text("created_by")), false),
 
-    /** The legacy table is named {@code condition} and its release column {@code release}; both are reserved words. */
-    RELEASE_CONDITION("condition", "release_condition", List.of("id"), List.of("id"),
+    /** The legacy table is named {@code condition} and its milestone column {@code release}; both are reserved words. */
+    RELEASE_CONDITION("condition", "milestone_criterion", List.of("id"), List.of("id"),
             List.of(text("id"), text("project_id"), text("release"), text("goal_label"), text("code"),
                     text("condition_text"), text("state"), number("version"), text("created_by")),
-            List.of(text("id"), text("id_key"), text("project_id"), text("release_name"), text("goal_label"),
-                    text("code"), text("condition_text"), text("state"), number("version"), text("created_by")), false),
+            List.of(text("id"), text("id_key"), text("project_id"), text("milestone_name"), text("goal_label"),
+                    text("code"), text("criterion_text"), text("state"), number("version"), text("created_by")), false),
 
-    /** The legacy table has no key column: the new schema's {@code link_key} is made from the three id columns. */
-    CONDITION_LINK("condition_link", "condition_link", List.of("condition_id"), List.of("link_key"),
+    /** The legacy table has no key column: the new schema's {@code link_key} is made from the target id columns. */
+    CONDITION_LINK("condition_link", "criterion_link", List.of("condition_id"), List.of("link_key"),
             List.of(text("condition_id"), text("task_id"), text("defect_id"), text("created_by")),
-            List.of(text("link_key"), text("condition_id"), text("task_id"), text("defect_id"), text("created_by")), false),
+            List.of(text("link_key"), text("criterion_id"), text("task_id"), text("issue_id"), text("spec_id"),
+                    text("created_by")), false),
 
     SESSION_GRANT("session_grant", "session_grant", List.of("id"), List.of("id"),
             List.of(number("id"), text("author_id"), text("project"), text("scope"), text("granted_by"),

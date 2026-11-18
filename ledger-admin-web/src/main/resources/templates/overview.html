@@ -37,7 +37,7 @@
       <tbody>
         <tr th:each="item : ${overview.attention()}">
           <td th:text="#{'attention.' + ${item.kind()}}">kind</td>
-          <td th:text="${item.entity()}">defect</td>
+          <td th:text="${item.entity()}">issue</td>
           <td><a th:with="page=${@links.itemPage(item.entity())}" th:href="@{${page}(id=${item.id()})}" th:text="${item.id()}">ID</a></td>
           <td th:text="${item.projectId()}">p1</td>
         </tr>
@@ -48,12 +48,14 @@
 
   <section id="stats">
     <h2 th:text="#{overview.stats}">Counts</h2>
-    <p th:text="#{overview.totals(${overview.stats().defects()}, ${overview.stats().tasks()}, ${overview.stats().conditions()})}">Totals</p>
+    <p th:text="#{overview.totals(${overview.stats().issues()}, ${overview.stats().specs()}, ${overview.stats().tasks()}, ${overview.stats().criteria()})}">Totals</p>
     <div class="cards">
-      <article><h3 th:text="#{overview.defectsByStatus}">Defects by status</h3>
-        <dl><th:block th:each="e : ${overview.stats().defectsByStatus()}"><dt th:text="${e.key}">OPEN</dt><dd th:text="${e.value}">0</dd></th:block></dl></article>
-      <article><h3 th:text="#{overview.defectsBySeverity}">Defects by severity</h3>
-        <dl><th:block th:each="e : ${overview.stats().defectsBySeverity()}"><dt th:text="${e.key}">P1</dt><dd th:text="${e.value}">0</dd></th:block></dl></article>
+      <article><h3 th:text="#{overview.issuesByStatus}">Issues by status</h3>
+        <dl><th:block th:each="e : ${overview.stats().issuesByStatus()}"><dt th:text="${e.key}">OPEN</dt><dd th:text="${e.value}">0</dd></th:block></dl></article>
+      <article><h3 th:text="#{overview.issuesBySeverity}">Issues by severity</h3>
+        <dl><th:block th:each="e : ${overview.stats().issuesBySeverity()}"><dt th:text="${e.key}">P1</dt><dd th:text="${e.value}">0</dd></th:block></dl></article>
+      <article><h3 th:text="#{overview.specsByStatus}">Specs by status</h3>
+        <dl><th:block th:each="e : ${overview.stats().specsByStatus()}"><dt th:text="${e.key}">DRAFT</dt><dd th:text="${e.value}">0</dd></th:block></dl></article>
       <article><h3 th:text="#{overview.tasksByState}">Tasks by state</h3>
         <dl><th:block th:each="e : ${overview.stats().tasksByState()}"><dt th:text="${e.key}">ACTIVE</dt><dd th:text="${e.value}">0</dd></th:block></dl></article>
     </div>

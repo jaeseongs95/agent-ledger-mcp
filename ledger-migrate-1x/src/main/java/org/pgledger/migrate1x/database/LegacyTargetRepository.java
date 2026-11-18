@@ -63,7 +63,11 @@ public class LegacyTargetRepository {
                 names.add(table.targetName());
             }
         }
+        names.add("spec");
+        names.add("issue_spec");
+        names.add("spec_task");
         names.add("session_key");
+        names.add("session_token");
         return List.copyOf(names);
     }
 
