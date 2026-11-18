@@ -15,8 +15,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * {@code render-deploy --java=<path> --jdbc-url=<url> --app-account=<account> [...]}: writes the definition of the two
- * services (systemd units, or WinSW configurations), the settings files and, with {@code --nginx-conf}, the nginx site of the
- * two public host names, from the parameters ({@link DeployParameters}, {@link DeployRenderer}). It needs no database and writes no secret.
+ * services (systemd units, or WinSW configurations) and the settings files, from the parameters ({@link DeployParameters}, {@link DeployRenderer}). It needs no database and writes no secret.
  * All parameters are validated before the first file is written, so a refused value leaves nothing written; so is a platform
  * whose paths are not paths of this host (without {@code --root}, the files of the other platform would be written below the
  * working directory: that is refused, naming {@code --platform}). {@code --root}
@@ -24,8 +23,8 @@ import org.springframework.stereotype.Component;
  * place). The command is the one {@code deploy/install.sh} (Linux) and {@code deploy/install.cmd} (Windows,
  * {@code --platform=windows}) call; they run it as root or as an administrator, which is the only reason the files can be
  * put into {@code /etc} or the service directories. The targets (a personal PC, a Windows server, a Linux server) differ by
- * the options only: {@code --platform}, {@code --home}, the host names, and {@code --nginx-conf} (the site of the reverse
- * proxy, Linux only).
+ * the options only: {@code --platform}, {@code --home} and the host names (the one name each service accepts in its Host check
+ * besides the loopback names; a reverse proxy and its certificate are the operator's).
  */
 @Component
 public class RenderDeployCommand implements Command {

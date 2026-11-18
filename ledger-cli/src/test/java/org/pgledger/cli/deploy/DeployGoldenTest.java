@@ -26,22 +26,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
  */
 class DeployGoldenTest {
 
-    /** A Linux server with the nginx site. */
-    private static Map<String, String> linuxWithSite() {
-        Map<String, String> values = new HashMap<>();
-        values.put(DeployOptions.JAVA, "/usr/lib/jvm/java-25/bin/java");
-        values.put(DeployOptions.JDBC_URL, "jdbc:postgresql://db.example.org:5432/ledger");
-        values.put(DeployOptions.APP_ACCOUNT, "ledger_app");
-        values.put(DeployOptions.SCHEMA, "ledger");
-        values.put(DeployOptions.MCP_HOST, "mcp.example.org");
-        values.put(DeployOptions.ADMIN_HOST, "admin.example.org");
-        values.put(DeployOptions.NGINX_CONF, "/etc/nginx/conf.d/pg-ledger-mcp.conf");
-        values.put(DeployOptions.TLS_CERTIFICATE, "/etc/ssl/ledger/fullchain.pem");
-        values.put(DeployOptions.TLS_KEY, "/etc/ssl/ledger/privkey.pem");
-        return values;
-    }
-
-    /** A Linux server without a site. */
+    /** A Linux server. */
     private static Map<String, String> linuxPlain() {
         Map<String, String> values = new HashMap<>();
         values.put(DeployOptions.JAVA, "/usr/lib/jvm/java-25/bin/java");
@@ -71,7 +56,6 @@ class DeployGoldenTest {
 
     private static Map<String, Map<String, String>> targets() {
         Map<String, Map<String, String>> targets = new LinkedHashMap<>();
-        targets.put("linux with site", linuxWithSite());
         targets.put("linux plain", linuxPlain());
         targets.put("personal pc", personalPc());
         targets.put("windows server", windowsServer());
@@ -101,12 +85,34 @@ class DeployGoldenTest {
         return content.replaceAll("(?m)^(  schema:\\n    name: .*\\n)", "$1    " + removedKey + ": 'TEXT'\n");
     }
 
+    /**
+     * PCS (ServiceSettings): the example setting named in the comment of the shared settings file is {@code ledger.admin.oidc.owner-email}
+     * now (the list {@code owners} was never released). The old name is put back here, as the long text line above, so that the digests
+     * keep saying that everything else is as it was.
+     */
+    private static String withOldOwnersExample(String content) {
+        return content.replace("(for example ledger.admin.oidc.owner-email) belong", "(for example ledger.admin.oidc.owners) belong");
+    }
+
+    /**
+     * SPL-003 (D-0031): each service imports {@code secrets/common/} and its own folder ({@code secrets/mcp/} or
+     * {@code secrets/admin/}) instead of {@code secrets/}. Putting the single tree back here proves that nothing else in the
+     * rendered service definitions or settings changed; {@code ConfigImportTest} and {@code DeployRendererTest} check the split trees.
+     */
+    private static String withSingleSecretsTree(String content) {
+        return content.replaceAll(
+                ",optional:configtree:([^,\\n<]*)/secrets/common/,optional:configtree:\\1/secrets/(?:mcp|admin)/",
+                ",optional:configtree:$1/secrets/");
+    }
+
     /** The SHA-256 of path and content of every rendered file, in the order the renderer gives them. */
     private static String digest(List<RenderedFile> files) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             for (RenderedFile file : files) {
-                digest.update((file.path() + "\u0000" + withRemovedLongTextLine(withoutAttachments(file.content())) + "\u0000")
+                digest.update((file.path() + "\u0000"
+                        + withSingleSecretsTree(withOldOwnersExample(withRemovedLongTextLine(withoutAttachments(file.content()))))
+                        + "\u0000")
                         .getBytes(StandardCharsets.UTF_8));
             }
             return HexFormat.of().formatHex(digest.digest());
@@ -120,8 +126,9 @@ class DeployGoldenTest {
     // on purpose (the two targets with --admin-host: admin.yaml now carries ledger.admin.passkey.rp-id and origins, the passkey: block of
     // four lines); checked by rendering both again without that block, which gave the digests above (f18fa93f..., 4e1ec84d...). The two
     // targets without a public admin name are unchanged.
+    // PCS removed the target "linux with site": the nginx site and the certificate options do not exist any more. The other three
+    // targets keep their digests (the one host name of "windows server" renders as the list of one name did).
     private static final Map<String, String> BEFORE_SETUP = Map.of(
-            "linux with site", "78200d1ae042a42563187723e6294154f6dd706bfe2ed210ad30a1d9379032a0",
             "linux plain", "a7cc4e0a5d1ff750a4044e9f07bd99bad4bd6b897f8c9fa4779d1bd5ddfbb8e9",
             "personal pc", "09d2be30498adb057b386356b338b0c6be703833cabd16f4f80e0bf5bb595ef1",
             "windows server", "819c9e62752b66bc2029cb0d6a910426ebffdba725d12133ef59ac3dcdf9b5b9");
@@ -141,7 +148,7 @@ class DeployGoldenTest {
         new ApplicationContextRunner().withBean(ProcessUser.class, () -> fileSystem -> () -> "tester")
                 .withBean(Validator.class, () -> Validation.buildDefaultValidatorFactory().getValidator())
                 .withUserConfiguration(ServicePlatforms.class, LinuxPlatform.class, WindowsPlatform.class, DeployRenderer.class,
-                        DeployInputReader.class, DeployFiles.class, HostFiles.class, WindowsAccess.class, WindowsPrivileges.class,
+                        DeployInputReader.class, DeployFiles.class, HostFiles.class, WindowsAccess.class,
                         SystemHostAccounts.class, InstallDefaults.class, PackagedSeed.class)
                 .run(context -> {
                     assertThat(context).hasNotFailed();

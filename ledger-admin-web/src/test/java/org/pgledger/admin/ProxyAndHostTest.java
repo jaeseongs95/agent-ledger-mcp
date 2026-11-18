@@ -13,6 +13,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.pgledger.admin.support.AdminTestInfrastructure;
 import org.pgledger.admin.support.AdminTestSettings;
+import org.pgledger.admin.support.RemoteAddressProbe;
 import org.pgledger.testing.database.TestSchemaInitializer;
 import org.springframework.test.context.ContextConfiguration;
 import org.pgledger.admin.support.RealHttp;
@@ -29,7 +30,8 @@ import org.springframework.boot.test.context.filter.annotation.TypeExcludeFilter
 /**
  * ADM-049 and ADM-051 (security audit D1, D2): what Tomcat believes of the forwarding headers, against a real server.
  * The proxy of the host is {@code 127.0.0.1}; a client that connects from another address, even another loopback
- * address, is not the proxy and chooses neither the address the lock counts nor the host the firewall checks.
+ * address, is not the proxy and chooses neither the client address the application sees nor the host the firewall checks (the
+ * address is only for the records: there is no limit per address, LGN-013).
  */
 @ContextConfiguration(initializers = {TestSchemaInitializer.class, TestDriverRegistration.class})
 @SpringBootTest(classes = LedgerAdminApplication.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -37,13 +39,16 @@ import org.springframework.boot.test.context.filter.annotation.TypeExcludeFilter
             AdminTestSettings.INSECURE_COOKIE, AdminTestSettings.NO_GLOBAL_CAP, AdminTestSettings.QUIET_BANNER,
             AdminTestSettings.QUIET_LOG, AdminTestSettings.NO_JMX})
 @TypeExcludeFilters(TestDatabaseScanFilter.class)
-@Import(AdminTestInfrastructure.class)
+@Import({AdminTestInfrastructure.class, RemoteAddressProbe.Configuration.class})
 class ProxyAndHostTest {
 
     private static final String WRONG = "wrong-wrong-wrong-wrong";
 
     @LocalServerPort
     private int port;
+
+    @Autowired
+    private RemoteAddressProbe probe;
 
     @Autowired
     private Environment environment;
@@ -73,28 +78,33 @@ class ProxyAndHostTest {
     }
 
     @Test
-    @DisplayName("ADM-049: a peer that is not the proxy cannot choose the address the lock counts with X-Forwarded-For")
-    void adm049_anUntrustedPeerCannotRotateItsAddress() {
+    @DisplayName("ADM-049 (changed by PSEC, LGN-013): a peer that is not the proxy cannot choose the client address the application sees with X-Forwarded-For: it is the address of the connection, whatever the header says")
+    void adm049_anUntrustedPeerCannotChooseItsAddress() {
         RealHttp attacker = new RealHttp(port, InetAddress.ofLiteral("127.0.0.2"));
+        int before = probe.seen().size();
 
         List<Integer> statuses = new ArrayList<>();
         for (int i = 1; i <= 7; i++) {
             statuses.add(bearer(attacker, WRONG, "203.0.113." + i).status());
         }
 
-        assertThat(statuses).containsExactly(401, 401, 401, 401, 401, 429, 429);
+        assertThat(statuses).as("nothing is locked: every wrong token is answered as one").containsOnly(401);
+        assertThat(probe.seen().subList(before, probe.seen().size())).containsOnly("127.0.0.2").hasSize(7);
     }
 
     @Test
-    @DisplayName("ADM-049: the proxy of the host does tell the client address: the forwarded address is what is locked")
+    @DisplayName("ADM-049 (changed by PSEC, LGN-013): the proxy of the host does tell the client address: the application sees the forwarded address, for the records, not for a limit")
     void adm049_theProxyTellsTheClientAddress() {
         RealHttp proxy = new RealHttp(port);
+        int before = probe.seen().size();
 
         List<Integer> statuses = Stream.generate(() -> bearer(proxy, WRONG, "198.51.100.77").status()).limit(6).toList();
         Reply otherClient = bearer(proxy, AdminTestSettings.TOKEN, "198.51.100.78");
 
-        assertThat(statuses).containsExactly(401, 401, 401, 401, 401, 429);
+        assertThat(statuses).containsOnly(401);
         assertThat(otherClient.status()).isEqualTo(200);
+        assertThat(probe.seen().subList(before, probe.seen().size())).containsExactly("198.51.100.77", "198.51.100.77",
+                "198.51.100.77", "198.51.100.77", "198.51.100.77", "198.51.100.77", "198.51.100.78");
     }
 
     @Test

@@ -5,6 +5,11 @@
 A ledger for work done by AI agents, served as one MCP endpoint. It records defects, tasks, fixes and their verification,
 together with who did each one and why. Agents read and write through MCP tools; they never get a database login of their own.
 
+This is the **personal edition**: one person installs it and runs it on their own computer or on a server of their own, and trusts the
+whole installation target. The two services (the MCP server and the admin web) listen on the loopback address `127.0.0.1` only. Making
+them reachable from another machine, with a reverse proxy and a TLS certificate, is the operator's, with a tool of the operator's
+choice: the installers write no proxy configuration and order no certificate.
+
 Version 2.0.0 is a rewrite in Java 25 and Spring Boot with its own tool contract (every write tool takes a required `operationKey`,
 and no argument of an earlier version is accepted next to the new ones); what changed for a client is stated in the
 [release notes](docs/release-notes/2.0.0.md); the format of release notes is in [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md).
@@ -223,8 +228,22 @@ The build is a Gradle multi-module project.
 
 Settings are Spring Boot properties: in a file, on the command line (`--name=value`) or from the secret store. Secrets are never
 put in a file or in an environment variable; `ledger-cli secret-set <name>` reads a secret with hidden input and stores it as one file
-of the secret directory, which the processes read as a Spring configuration tree. A secret is stored under the name of its property.
-There is no command that prints a stored secret.
+of the secret directory, in the folder of the use of its name, which the processes read as a Spring configuration tree. A secret is
+stored under the name of its property, and a name that is no secret of the product is refused (`UNKNOWN_SECRET_NAME`). There is no
+command that prints a stored secret.
+
+The secret directory (`<settings folder>/secrets`) has one folder per use, and a process imports only the folders it needs, so the
+MCP server never has the secrets of the admin web in its settings and the admin web never has the token of the agents under that name:
+
+| Secret (the file name is the property) | Read by | Folder in the secret directory |
+|---|---|---|
+| `ledger.jdbc.password` | MCP server, admin web, `ledger-cli`, `ledger-migrate-1x` | `common` |
+| `ledger.admin.token`, `ledger.admin.agent-token`, `spring.security.oauth2.client.registration.<id>.client-secret` (OpenID Connect) | admin web | `admin` |
+| `ledger.mcp.token` | MCP server, `ledger-cli mcp-check` | `mcp` |
+| `ledger.import.source.password` | `ledger-migrate-1x` | `tool` |
+
+The key files of the attachments are not in the secret directory: they are in `<settings folder>/attachment-keys`, below no
+configuration tree (Spring Boot makes every file below a tree a property of the process).
 
 | Key | Used by | Meaning |
 |---|---|---|
@@ -249,18 +268,15 @@ There is no command that prints a stored secret.
 | `ledger.admin.sign-in` | admin web | how the owner signs in, exactly one of `token`, `oidc` or `passkey`; the login page offers only that one; absent means `passkey` for a new installation, and an installation with `ledger.admin.oidc.*` settings and no choice is refused at start (nothing is guessed) |
 | `ledger.admin.oidc.owner-email` | admin web | with `ledger.admin.sign-in=oidc`: the one e-mail address of the owner, which the provider must have verified; the provider itself is `spring.security.oauth2.client.*` |
 | `ledger.admin.oidc.issuer` | admin web | with `ledger.admin.sign-in=oidc`: the issuer (`iss`) the address counts for: an address is only meaningful at the issuer that verified it |
-| `ledger.admin.oidc.owners` | admin web | no longer supported (the earlier list of owners): a configuration that still has it is refused at start, and the message names `ledger.admin.oidc.owner-email` |
-| `ledger.admin.passkey.rp-id` | admin web | the host name the passkeys are bound to; default: the one non-loopback host of `ledger.admin.allowed-hosts`, else `localhost` (several public hosts need this setting) |
+| `ledger.admin.passkey.rp-id` | admin web | the host name the passkeys are bound to; default: the one non-loopback host of `ledger.admin.allowed-hosts`, else `localhost` |
 | `ledger.admin.passkey.origins` | admin web | the origins the browser shows (scheme, host and port): `https` except `http://localhost`; default `https://<rp-id>`, or `http://localhost:<server.port>` for `localhost` |
-| `ledger.admin.lockout.max-failures` | admin web | failed attempts (admin token, passkey sign-in, one-time code) of one client before it is locked, default 5 |
-| `ledger.admin.lockout.window` | admin web | the period in which failures are counted, default 60s |
-| `ledger.admin.lockout.lock-period` | admin web | how long a client stays locked, default 60s |
-| `ledger.admin.lockout.global-max-failures` | admin web | failed attempts of all clients together within the window before the global delay starts, default 50 |
-| `ledger.admin.lockout.global-delay` | admin web | the wait before a token is compared once the global budget is used, default 1s; it slows down and never locks |
+| `ledger.admin.lockout.window` | admin web | the period in which credential checks (admin token, passkey sign-in, one-time code) are counted, default 60s |
+| `ledger.admin.lockout.global-max-failures` | admin web | credential checks of all callers together within the window before the delay starts, default 50 |
+| `ledger.admin.lockout.global-delay` | admin web | the wait before a credential is compared once the budget is used, default 1s; it slows down and never locks or refuses: the right credential always signs in |
 | `ledger.admin.mcp.health-url` | admin web | the `/healthz` URL of the MCP server shown on the overview; absent means not configured |
 | `ledger.admin.mcp.timeout` | admin web | timeout of that check, default 2s |
 | `ledger.attachments.directory` | servers, CLI | where the files of the attachments are kept (the installer sets it to `<data folder>/attachments`); when it is not set the attachment tools are not registered |
-| `ledger.attachments.key-directory` | servers, CLI | where the key files are kept, outside `directory` (the start fails when it is inside); the installer sets it to `<settings folder>/secrets/attachment-keys` |
+| `ledger.attachments.key-directory` | servers, CLI | where the key files are kept, outside `directory` (the start fails when it is inside); the installer sets it to `<settings folder>/attachment-keys`, beside the secret directory and not inside it |
 | `ledger.attachments.active-key-id` | servers, CLI | the key that new uploads are written with; `setup` writes it into `local.yaml`; the server does not start without the key file |
 | `ledger.attachments.max-file-bytes` | servers, CLI | the largest file, default 64MB |
 | `ledger.attachments.staging-budget-bytes` | servers, CLI | what all open uploads may declare together, default 512MB |
@@ -271,23 +287,23 @@ There is no command that prints a stored secret.
 | `ledger.attachments.orphan-grace` | servers, CLI | how long a file without a row (or a replaced file) waits before `attachments-check` moves it to `orphans/`, default 24h |
 | `ledger.attachments.reaper-interval` | MCP server | how often expired uploads are removed, default 1m |
 | `ledger.secrets.home` | `ledger-cli` | the directory of the installation that holds the settings, the driver registration, the driver jars and the secret directory, default `/etc/pg-ledger-mcp` (the Windows installer gives its own) |
-| `ledger.secrets.directory` | `ledger-cli` | the secret directory, default `/etc/pg-ledger-mcp/secrets` |
+| `ledger.secrets.directory` | `ledger-cli` | the secret directory (it holds the folders `common`, `admin`, `mcp` and `tool` and is itself no configuration tree), default `/etc/pg-ledger-mcp/secrets` |
 | `ledger.secrets.instance` | `ledger-cli` | the instance name that the default paths follow, default `pg-ledger-mcp` |
 | `ledger.cli.driver.directory` | `ledger-cli` | the directory `driver-register` takes a jar from, default `/etc/pg-ledger-mcp/drivers` |
 | `ledger.cli.driver.file` | `ledger-cli` | the registration file `driver-register` writes, default `/etc/pg-ledger-mcp/jdbc-driver.yaml` |
 
-The servers listen on loopback only (MCP `127.0.0.1:8765`, admin web `127.0.0.1:8865`); publish them through a reverse proxy
-that terminates HTTPS and list its public host name in the allowed hosts. The admin web trusts `X-Forwarded-For` and
-`X-Forwarded-Proto` from the loopback address only. The servers read the driver registration file and the secret directory
+The servers listen on loopback only (MCP `127.0.0.1:8765`, admin web `127.0.0.1:8865`), fixed in the code of both: there is no setting
+for the address. To publish them, the operator puts a reverse proxy of their choice, which terminates HTTPS, on the same host and
+lists the one host name that it passes in the allowed hosts of the service (`--mcp-host`, `--admin-host`). The admin web trusts
+`X-Forwarded-For` and `X-Forwarded-Proto` from the loopback address only. The servers read the driver registration file and the secret directory
 through `spring.config.import`, which the installers put into the service definition (see Installation); `ledger-cli` reads them by default.
 
 ## Installation
 
-Two installers cover three targets. A **personal PC** (Windows) runs `deploy\install.cmd` with its defaults: both servers listen on
-the loopback address only, and there is no reverse proxy and no TLS. A **Windows server** runs the same script and, when it is
-reached from outside, names its public host names and puts a reverse proxy that the operator has prepared in front of it. A **Linux
-server** runs `sudo deploy/install.sh`, optionally with an nginx site. macOS is not supported; a Linux desktop that is a personal PC
-follows the Linux procedure. The build needs JDK 25 and the host needs a Java 25 runtime at a path that every account can execute (not
+Two installers cover three targets: a personal PC and a Windows server run `deploy\install.cmd`, a Linux server runs
+`sudo deploy/install.sh`. The targets differ by their options only, and on every one of them both servers listen on the loopback
+address only (see Reaching the servers from outside). macOS is not supported; a Linux desktop that is a personal PC follows the
+Linux procedure. The build needs JDK 25 and the host needs a Java 25 runtime at a path that every account can execute (not
 under `/home`: the service account runs it too).
 
 What every target has in common:
@@ -295,7 +311,12 @@ What every target has in common:
 - **One service account.** The MCP server and the admin web run as one operating system account that belongs to no person: on
   Linux the system user `pg-ledger-mcp` (no login, not root), on Windows the predefined account LocalService (no password). Its purpose
   is to keep the secrets of the ledger, the admin token and the database password, away from the account of the person who works on
-  the machine and from the agents that run under it: the secret directory is readable by the service account only. The two
+  the machine and from the agents that run under it: the secret directory is readable by the service account only (on Windows: by the installing user and, read only, by LocalService, and by nobody else). The secrets are
+  kept in one folder per use and each service imports only its own and the common one, so the process of the MCP server no longer holds
+  the admin token or the OpenID Connect client secret in its settings (and no key file of the attachments is a property of either
+  service). What this does not do: the two services run as one operating system user, so the file permissions do not keep one service from
+  reading the folder of the other; the personal edition trusts the whole installation target, and the change is that no process
+  carries a secret of another use in its environment. The two
   services of an installation, called an instance, are named after it: the instance is `pg-ledger-mcp` unless `--name=<name>` gives
   another name, and its services are `<name>` and `<name>-admin` (`pg-ledger-mcp` and `pg-ledger-mcp-admin` by default). The Linux user, the
   directories (`/opt/<name>`, `/etc/<name>`, on Windows `C:\ProgramData\<name>`) and the WinSW ids follow the name, so a second instance, or an
@@ -323,7 +344,7 @@ cp ledger-cli/build/libs/ledger-cli.jar ledger-mcp-server/build/libs/ledger-mcp-
   database password of the application account (hidden input), `ledger.admin.token` and `ledger.mcp.token` (generated, shown once,
   at the end of their step) and the copy `ledger.admin.agent-token`; it registers the driver, runs `setup` with the DDL account (the
   schema, the grants and the seed codes, see First setup) and starts the two services. What stays in the scripts, because Java cannot do it, is creating the operating system user (`useradd`),
-  starting a command as that user (`runuser`), the service managers (`systemctl`, WinSW and `sc.exe`) and `nginx -t` with the reload.
+  starting a command as that user (`runuser`) and the service managers (`systemctl`, WinSW and `sc.exe`).
   The Java 25 check is the JVM's own: the jars are compiled for Java 25, and no other runtime loads them. Nothing is downloaded or
   installed. Running it again with newer jars is the upgrade: files and services are replaced, the schema and the grants are applied
   again, and secrets, tokens and data are kept. A run that stopped half way is repaired the same way: run it again with the same
@@ -345,18 +366,11 @@ The options of `deploy/install.sh` are given as `--name=value`; the ones it does
 | `--schema=<name>` | `ledger.schema.name`, optional |
 | `--mcp-port=<n>` | the loopback port of the MCP server, default 8765 |
 | `--admin-port=<n>` | the loopback port of the admin web, default 8865 |
-| `--mcp-host=<host>[,<host>...]` | the public host name of the MCP server, or a comma list of several (each once, at most 10, lower case, no port); every name is allowed in its `Host` check and served by the nginx site. It can be given without `--admin-host` |
-| `--admin-host=<host>[,<host>...]` | the public host names of the admin web, in the same form; optional: without it the admin web is reached on loopback only (its `Host` check allows `127.0.0.1` and `localhost`), and the nginx site has no block for it. With a public name, the installer also writes `ledger.admin.passkey.rp-id` (the first name) and `ledger.admin.passkey.origins` (`https://<name>` for the first name and every name below it) into `admin.yaml`, so the passkeys of a remote installation work without a hand edit; a name that is not below the first one is reachable but does not share its passkeys (set `rp-id` and `origins` in `local.yaml` for another arrangement) |
-| `--nginx-conf=<path>` | Linux: write the nginx site to this file. The path must be one that the nginx of the host already includes in its `http` context (for example `/etc/nginx/conf.d/<name>.conf`, which the Debian, Ubuntu and RHEL-family packages include): the installer writes the site at that path and only runs `nginx -t` and a reload, and it links nothing into `sites-enabled`; needs `--mcp-host` and either `--tls-certificate=<path>` and `--tls-key=<path>` or `--tls-acme` |
-| `--tls-certificate=<path>` | the TLS certificate of the operator; nothing issues or renews one |
-| `--tls-key=<path>` | the TLS key of the operator |
-| `--tls-acme` | a flag, instead of the certificate and the key of the operator: the certificate is made and renewed by `ledger-cli` (see Automatic certificate) |
-| `--acme-directory=<url>` | with `--tls-acme`, optional: the ACME directory URL of the certificate authority; the default is the production directory of Let's Encrypt, `https://acme-v02.api.letsencrypt.org/directory` |
-| `--acme-email=<address>` | with `--tls-acme`, optional: the contact address of the ACME account |
-| `--agree-tos` | with `--tls-acme`: you have read the terms of service of the certificate authority and agree to them; the first order needs it |
+| `--mcp-host=<host>` | optional: the one host name (lower case, no port) that the reverse proxy of the operator passes in the `Host` header for the MCP server; it is allowed in the `Host` check of the MCP server besides `127.0.0.1` and `localhost`, which are always allowed. Without it the server is reached on loopback only |
+| `--admin-host=<host>` | optional: the same for the admin web, and a name other than `--mcp-host`. With it, the installer also writes `ledger.admin.passkey.rp-id` (the name) and `ledger.admin.passkey.origins` (`https://<name>`) into `admin.yaml`, so the passkeys of a remote installation work without a hand edit (set `rp-id` and `origins` in `local.yaml` for another arrangement) |
 | `--stdin` | read the passwords from standard input instead of the terminal: first the one of the application account (only while it is not stored), then the DDL one; the convention of `docker login --password-stdin` |
 
-`render-deploy`, `prepare-host` and `seal-host` take five more options that the installers set themselves: `--platform=<platform>`
+`render-deploy` and `prepare-host` take five more options that the installers set themselves: `--platform=<platform>`
 (`linux`, the default, or `windows`), `--home=<path>` (Windows: the installation directory), `--java=<path>` (the Java executable),
 `--root=<directory>` (put the files below a directory instead of at their paths, for a look before they are put in place) and, for
 `render-deploy` only, the flag `--check` (validate every option and change nothing; the installers run it first, so that a bad value,
@@ -368,7 +382,7 @@ before anything is read or written.
 ### Linux server
 
 Run as root; the user `pg-ledger-mcp` is created when it is missing, `prepare-host` (Java) creates `/opt/<name>` (root, 0755),
-`/etc/<name>` (the service user, 0750), its `drivers` folder (root, 0755) and its `secrets` folder (the service user, 0700), copies the
+`/etc/<name>` (the service user, 0750), its `drivers` folder (root, 0755), its `secrets` folder with the folders `common`, `admin`, `mcp` and `tool` and the folder `attachment-keys` (the service user, 0700), copies the
 jars and the driver and renders the units into `/etc/systemd/system`, which are then enabled; the secrets are stored by the service
 user. A file that the installer did not render and that a rendered file replaces is kept as `<file>.backup`; to move a 1.x installation,
 see Upgrading from 1.x.
@@ -377,84 +391,19 @@ see Upgrading from 1.x.
 sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<driver-class> --owner-account=<ddl-account> --app-account=<app-account> --jdbc-url=<jdbc-url>
 ```
 
-With a public name and TLS, add the host names and the paths of your certificate and key; the nginx site overwrites
-`X-Forwarded-For` with the address of the connection, which the admin web trusts from the loopback proxy only:
+### Reaching the servers from outside
 
-```sh
-sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<driver-class> --owner-account=<ddl-account> --app-account=<app-account> --jdbc-url=<jdbc-url> --mcp-host=<mcp-host> --admin-host=<admin-host> --nginx-conf=/etc/nginx/conf.d/pg-ledger-mcp.conf --tls-certificate=<certificate> --tls-key=<key>
-```
-
-### Automatic certificate
-
-With `--tls-acme` in place of `--tls-certificate` and `--tls-key`, `ledger-cli` makes and renews the certificate itself. It is a
-standard ACME client (RFC 8555) built on the library acme4j (Apache-2.0; it brings jose4j, Apache-2.0, and Bouncy Castle, under the
-Bouncy Castle license, an MIT-style license, which acme4j uses for the certificate request). The certificate authority is any ACME
-directory: `--acme-directory=<url>`, by default the production directory of Let's Encrypt. The proof is HTTP-01 only, so no
-interface of a DNS or CDN vendor is involved. The result is `fullchain.pem` and `privkey.pem` in `/etc/<name>/tls`, next to the
-account key `account.key`: standard PEM files that any other proxy can use as well. The keys are made with the JDK (EC P-256),
-stored so that only the service user can read them, never printed, and the files are replaced atomically, so a failed renewal
-leaves the old certificate in place.
-
-What the operator does, in this order:
-
-1. Create the DNS records (`A` and `AAAA`) of the host names, `--mcp-host` and `--admin-host` (every name of a list; the admin web needs
-   one only when it has a public name), that point to the server.
-2. Allow the ports `80` and `443` in the firewall. Port `80` must reach nginx: the certificate authority fetches the proof from
-   there over HTTP.
-3. If a CDN or another proxy stands in front of the server, it has to pass the path `/.well-known/acme-challenge/` through to the
-   server on port `80` and must neither cache it nor redirect it. Long-lived MCP connections (Streamable HTTP) need a timeout of
-   the proxy that is long enough; the nginx site itself sets `proxy_buffering off` and `proxy_read_timeout 3600s` for the MCP host.
-4. Read the terms of service of the certificate authority and give `--agree-tos`; `--acme-email=<address>` is an optional contact.
-
-```sh
-sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<driver-class> --owner-account=<ddl-account> --app-account=<app-account> --jdbc-url=<jdbc-url> --mcp-host=<mcp-host> --admin-host=<admin-host> --nginx-conf=/etc/nginx/conf.d/pg-ledger-mcp.conf --tls-acme --agree-tos
-```
-
-The nginx site holds only the `server` blocks of its own host names (the names of the MCP server in one block, the names of the admin web in another when it has any). It never takes `default_server` and changes no other
-site, so it can live next to other services of the host. For each host name a port 80 block serves `/.well-known/acme-challenge/`
-from the web root `/var/www/<name>-acme` and redirects everything else to https; the 443 blocks use the PEM files.
-
-Port 80 is open to the whole network, so the port 80 blocks are hardened. A port 80 block serves a file of the web root only for a path
-`/.well-known/acme-challenge/<token>` whose token consists of the characters of base64url (`A-Za-z0-9_-`), and only for the methods `GET` and
-`HEAD`. It answers every other request below `/.well-known/acme-challenge/` with 404 and redirects everything else to https at the fixed
-host name of the block, never to the `Host` header of the request. It accepts `1k` of request body and waits `10s` for the header, the
-body and an idle connection. It allows each address 10 requests per second (a burst of 20) and 20 connections at the same time and
-answers `429` above that; the limits are far above what a certificate authority needs, because it checks from several places at the
-same time, each from its own address. It hides the version of nginx (`server_tokens off`, in the 443 blocks too). The two shared memory
-zones that count the addresses are declared at the top of the site file and carry the name of the instance (`<name>-acme-req` and
-`<name>-acme-conn`), so no other site and no other instance is affected. A port 80 block does not take `default_server`, does not
-change any other site, sets no global directive and proxies nothing to the services.
-
-Recommendation: when this is the only site on the host that uses port 80, add a default server of your own that closes the requests for
-names and addresses that nobody serves there, for example the following. The product does not create it.
-
-```nginx
-server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    server_name _;
-    return 444;
-}
-```
-
-First issuance: nginx cannot load a 443 block before its certificate files exist, so `render-deploy` writes the 443 blocks only
-when `fullchain.pem` and `privkey.pem` exist. The installer therefore writes the site with the port 80 blocks, lets nginx load it,
-runs `tls-issue` as the service user, runs `render-deploy` again (now with the 443 blocks), lets nginx load the site again and
-enables the timer. Running the installer again asks `tls-renew` instead, which orders only what is due.
-
-Renewal: `render-deploy --tls-acme` writes the systemd service `<name>-tls-renew.service` and the timer
-`<name>-tls-renew.timer`. The timer runs twice a day, at a random time. `tls-renew` orders a new certificate only when the present
-one expires within 30 days (`--renew-before-days=<n>`) or does not name exactly the host names given, and otherwise does nothing and
-says so. The service runs as the service user without any capability, may write only the TLS directory and the web root, and
-reloads nginx afterwards with `ExecStartPost=+/usr/bin/systemctl reload nginx`. That is one fixed command line that systemd runs with
-full privileges outside the sandbox (the `+` prefix of systemd.service(5)), because only root may reload nginx. Nothing from the
-service user reaches it, and no `sudo` rule and no polkit rule has to be kept; the process that talks to the network and writes the
-keys keeps no privilege.
-
-Automatic certificates are for Linux only, because the nginx site is: the installer for Windows has no web server of its own (a
-Windows server is reached through a reverse proxy that you prepare). The commands themselves run on any host: with `--webroot=<dir>`
-and `--tls-dir=<dir>` they write the proof where the web server of your choice serves it and the PEM files where your proxy reads
-them, and `--name=<name>` selects the instance whose directories are the defaults.
+Both servers listen on `127.0.0.1` only, and no setting changes that. To reach them from another machine, the operator runs a
+reverse proxy and a TLS certificate on the same host, with a tool of the operator's choice; the installers write no proxy
+configuration, order no certificate and install no renewal. The proxy connects to `127.0.0.1:8765` (MCP server) and
+`127.0.0.1:8865` (admin web) and passes the `Host` header of the client on. Give each service the one host name that the proxy
+passes for it, `--mcp-host=<host>` and `--admin-host=<host>`: the name is allowed in the `Host` check of that service, besides
+`127.0.0.1` and `localhost`, which are always allowed. With a name for the admin web, the installer also writes the passkey settings
+for it (see the options above). The admin web trusts `X-Forwarded-For` and `X-Forwarded-Proto` from the loopback address only, so the
+proxy has to overwrite them with the address and the scheme of the connection it received. This is tied to the lock after failed sign-in
+attempts: the admin web counts the attempts per client address, so a proxy that does not pass `X-Forwarded-For` makes every client look like the
+proxy's loopback address, and the failed attempts of anyone then lock the owner out together with them. Long-lived MCP connections (Streamable
+HTTP) need a timeout of the proxy that is long enough. The certificate, its renewal and the firewall are the operator's too.
 
 ### Windows: a personal PC or a server
 
@@ -479,8 +428,8 @@ and the installer neither bundles nor downloads it.
 deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <app-account> "<jdbc-url>"
 ```
 
-A Windows server that is reached from outside adds its host names and puts a reverse proxy that you have prepared in front of the two
-loopback ports (the installer writes no proxy site on Windows):
+A server that is reached from outside adds the host name of each service and puts a reverse proxy that you have prepared in front of the
+two loopback ports (see Reaching the servers from outside):
 
 ```bat
 deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <app-account> "<jdbc-url>" "pg-ledger-mcp" "--mcp-host=<mcp-host> --admin-host=<admin-host>"
@@ -488,10 +437,13 @@ deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <a
 
 Everything lives in `C:\ProgramData\<name>`. Both services run as LocalService, restart after a failure (the WinSW
 configuration), and write their logs to the `logs` folder. `prepare-host` closes the folders to every account but SYSTEM and
-Administrators; `seal-host` hands the secrets over to LocalService at the end of the installation (Java, with ACLs, no `icacls`): the
-installing user can only see that a file exists, and `prepare-host` takes them back for the duration of a re-run. So the
-owner commands of `ledger-cli` cannot read them afterwards: do the owner work (projects, common codes, grants, keys) on the pages of
-the admin web (see Admin web: sign in with a passkey or OpenID Connect, and register the first passkey with `passkey-code`). On a
+Administrators and gives LocalService its access in the same step (Java, with ACLs, no `icacls`): it reads and runs the jars and
+changes the settings, the logs and the data. The secrets are the installing user's: the folder of the secrets, its folders of the uses, the folder `attachment-keys` and each secret made in
+them are created with an ACL for the installing user (everything) and for LocalService (read only), and for nobody else, so the
+services read them and the accounts the agents run as cannot. Nothing is handed over to LocalService (the installing user stays the owner and
+no privilege to take ownership is used), so the owner commands of `ledger-cli` keep working for the installing user, and a re-run of the
+installer finds everything as it was; run it again as the same user (the personal edition has one user). The admin web is where the
+owner works too (see Admin web: sign in with a passkey or OpenID Connect, and register the first passkey with `passkey-code`). On a
 personal PC open the admin web at `http://localhost:8865` (the port is `--admin-port=<n>`): the admin web sets a `Secure` session
 cookie, which the major browsers accept from `localhost` because they treat it as a secure context, and a passkey works on `localhost`
 without HTTPS.
@@ -520,7 +472,7 @@ order:
 4. It compares the seed with the database by the number of codes and by a SHA-256 digest, and prints the report. Running `setup`
    again changes nothing and prints the same report; a code of yours that differs from the seed is counted as changed and is kept.
 
-The defaults of an installation are written in one place, the seed bundle. `render-deploy`, `prepare-host` and `seal-host` take the name
+The defaults of an installation are written in one place, the seed bundle. `render-deploy` and `prepare-host` take the name
 and the ports from it when an option is not given, and the installers ask for them with `install-default <name>` (`instance-name`,
 `mcp-port` or `admin-port`), so no script holds a second copy.
 
@@ -574,14 +526,11 @@ service user), and every owner operation is recorded with that user.
 | `grants` | `grants [<author>]` | list live grants |
 | `attachments-check` | `attachments-check [--purge-orphans]` | check the attachments against their files and keys: a file that no row names, and a file that `attachments-rekey` replaced, is moved to `orphans/` and never deleted; a file in `orphans/` whose row exists again is moved back; the report gives the counts and the ids (never a storage key or a path) of the attachments that are missing, damaged or pointed to by no history row, and the exit code is `1` when one is missing or damaged; `--purge-orphans` first empties `orphans/` and records the number in the audit trail |
 | `attachments-rekey` | `attachments-rekey --from=<keyId>` | write the attachment files of the key `<keyId>` again under the active key `ledger.attachments.active-key-id` (a different key); the old files are moved to `orphans/` by `attachments-check` after `ledger.attachments.orphan-grace` |
-| `attachments-key-create` | `attachments-key-create` | create a new 256-bit key file in the key directory (readable by the service account only) and print its key id, never the key; set `ledger.attachments.active-key-id` to it to write new uploads with it |
+| `attachments-key-create` | `attachments-key-create` | create a new 256-bit key file in the key directory (readable by the service account only; on Windows by the installing user and, read only, by LocalService) and print its key id, never the key; set `ledger.attachments.active-key-id` to it to write new uploads with it |
 | `mcp-check` | `mcp-check [--url=<url>] [--ledger.mcp.token=<token>]` | connect to a running MCP server and check its tools |
-| `render-deploy` | `render-deploy --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>] [--check]` | write the service definitions (systemd units, or WinSW configurations on Windows), the settings and the optional nginx site; the installers call it |
-| `prepare-host` | `prepare-host --jars=<dir> --driver-jar=<file> [--winsw=<file>] --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>]` | prepare the files of the host (run as root, or elevated on Windows): the folders with owner and mode, or their ACLs, the copies of the jars and the driver (on Windows also of WinSW), and what `render-deploy` writes; the installers call it |
-| `seal-host` | `seal-host --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>]` | Windows, last: give LocalService its access and hand the secrets over to it; the installer calls it |
+| `render-deploy` | `render-deploy --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>] [--admin-host=<host>] [--root=<directory>] [--check]` | write the service definitions (systemd units, or WinSW configurations on Windows) and the settings; the installers call it |
+| `prepare-host` | `prepare-host --jars=<dir> --driver-jar=<file> [--winsw=<file>] --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>] [--admin-host=<host>] [--root=<directory>]` | prepare the files of the host (run as root, or elevated on Windows): the folders with owner and mode, or their ACLs (on Windows the access of LocalService and the secret folders of the installing user), the copies of the jars and the driver (on Windows also of WinSW), and what `render-deploy` writes; the installers call it |
 | `install-default` | `install-default <name>` | print one default of the installation from the seed bundle (`instance-name`, `mcp-port` or `admin-port`); the installers ask for their defaults with it |
-| `tls-issue` | `tls-issue --mcp-host=<host>[,<host>...] [--admin-host=<host>[,<host>...]] [--name=<name>] [--webroot=<dir>] [--tls-dir=<dir>] [--acme-directory=<url>] [--acme-email=<address>] [--agree-tos]` | order a certificate for the host names given from a certificate authority that speaks ACME and write `fullchain.pem` and `privkey.pem`; the first run creates the account and needs `--agree-tos`; see Automatic certificate |
-| `tls-renew` | `tls-renew --mcp-host=<host>[,<host>...] [--admin-host=<host>[,<host>...]] [--name=<name>] [--webroot=<dir>] [--tls-dir=<dir>] [--acme-directory=<url>] [--renew-before-days=<n>]` | order a new certificate when the present one expires within `--renew-before-days` (default 30) or does not name exactly the host names given, and otherwise do nothing; the timer of `--tls-acme` runs it |
 
 ## Admin web
 
@@ -596,7 +545,12 @@ the service account of the installation and never as root.
   finds no sign-in. The admin token `ledger.admin.token` also stays the bearer of the read-only JSON endpoints. Whichever sign-in
   is chosen, a change is approved by a passkey, so a session opened with the token registers its first passkey with the one-time
   code of `passkey-code`. The agents' token is refused, so an agent that holds the MCP token cannot grant itself
-  anything. Failed attempts (passkey, one-time code, token) lock the client and slow down all clients (`ledger.admin.lockout.*`).
+  anything. Credential checks (passkey, one-time code, token) are slowed down once more than a budget of them arrive within a window
+  (`ledger.admin.lockout.*`); nothing is ever locked, because a lock that anybody can trigger with wrong credentials locks the owner out as
+  well. There is no limit per client either: the public reaches the services through the operator's reverse proxy on the same host, and
+  the address that proxy forwards is a record of the request and not an identity (depending on the proxy, every user arrives as one
+  address), so a lock by address would lock the owner with the attacker, and the personal edition, one person, has nobody to tell apart. A token
+  made by `token-generate` (256 bits from `SecureRandom`) and the one-time code (100 bits) cannot be guessed, so a delay is all that is needed.
 - **Approval of every change by a passkey, whichever way you signed in.** Every change you make in the console (grants, session
   keys, common codes, projects, the driver, closing a passkey) is approved with a passkey, with user verification: the page asks the
   server for a challenge made from that very change and your session, the authenticator signs it, and the write goes with the
@@ -633,8 +587,7 @@ The hook signs only the ten write tools, named `mcp__<server>__ledger_<op>` or `
 `operationKey` of the call (empty for `ledger_whoami` and the attachment tools), the SHA-256 of the RFC 8785 canonical form of the arguments (without
 `_hostAttestation`; a batch: every operation, its content, its order and the key of the batch) and the time. The hook reads the
 `operationKey` from the arguments the model sent and never makes one up; a call without one is refused by the server. A captured token
-cannot carry other content. `pgla1` tokens are refused with
-`ATTESTATION_VERSION_UNSUPPORTED`.
+cannot carry other content.
 
 - The hook keeps one Ed25519 key per MCP server name and author in an owner-only folder: `~/.pg-ledger-mcp/session-keys`, or the
   absolute path in `LEDGER_HOOK_KEY_DIR`. A signature made for one server never verifies on another. For Codex Apps the server name
@@ -674,7 +627,7 @@ driver; `stop-1x` and `import-secrets-1x` need none.
 
 | Migration command | Syntax | What |
 |---|---|---|
-| `stop-1x` | `stop-1x [--name=<instance>] [--platform=<platform>] [--unit-dir=<dir>] [--home=<dir>] [--env=<file> [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]]]` | first step: stop and disable the two services of 1.x, `<name>` and `<name>-admin`, and keep each definition as a backup next to it (`<file>.1x-backup`); with `--env` it first checks the public host names of 1.x |
+| `stop-1x` | `stop-1x [--name=<instance>] [--platform=<platform>] [--unit-dir=<dir>] [--home=<dir>] [--env=<file> [--mcp-host=<host>] [--admin-host=<host>]]` | first step: stop and disable the two services of 1.x, `<name>` and `<name>-admin`, and keep each definition as a backup next to it (`<file>.1x-backup`); with `--env` it first checks the public host names of 1.x |
 | `import-secrets-1x` | `import-secrets-1x --env=<file> [--replace]` or `import-secrets-1x --stdin [--replace]` | after the installer: move the secrets of 1.x into the secret store of 2.0; with `--replace` they replace the tokens that the installer generated |
 | `import-1x` | `import-1x [--verify-only] [--owner-account=<account>] [--stdin]` | copy the 1.x ledger into the new schema in one transaction and compare every table by row count and SHA-256; `--verify-only` repeats only the comparison |
 | `retire-1x` | `retire-1x [--confirm=<sha256> --backup-tested]` | after you accept 2.0, remove what the 1.x installer made in the database; without options it lists it and changes nothing |
@@ -706,13 +659,13 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
      Every service is checked before the first change; otherwise the command stops with `NOT_1X_SERVICE` and has changed nothing.
    - **The public host names of 1.x.** The clients reach the 1.x server through the host names that the 1.x setting `DBHUB_ALLOWED_HOSTS`
      allows (the admin web of 1.1.0: `PGLEDGER_ADMIN_ALLOWED_HOSTS`), for example the name of your reverse proxy. The `Host` check of 2.0 allows
-     `127.0.0.1`, `localhost` and the names of `--mcp-host` and `--admin-host` only, so a name that is missing would make every client request
-     fail with HTTP 403 right after the migration. With `--env=<file>` the command therefore refuses, before it stops anything, when the file
-     allows a public host name that `--mcp-host` (or `--admin-host`) does not carry: it stops with `HOSTS_DROPPED` and exit code 2, names the host
-     names and the option, and has changed nothing. Add the names to the option, one name or a comma list (`--mcp-host=<name>[,<name>...]`;
-     `--mcp-host` can be given without `--admin-host`), and give the same options to the installer. The loopback names need no option, and
-     nothing else of the file is printed. A name that the clients no longer use is removed from a copy of the file, and the copy is given to
-     `--env`. The two host options without `--env` are refused.
+     `127.0.0.1`, `localhost` and the one name of `--mcp-host` and the one name of `--admin-host` only (the installer takes one host name for each
+     service), so a name of the file that the clients still use and that is not carried would be refused with HTTP 403 right after the migration.
+     With `--env=<file>` the command therefore tells, before it stops anything, each public host name of the file that the option does not carry
+     as a name that 2.0 no longer accepts, naming the host names and the option; it refuses nothing for them and goes on. Give the one name that
+     your proxy passes to the option (`--mcp-host=<name>`, one host name of the installer's form: lower case, no port, no list; `--mcp-host` can be given
+     without `--admin-host`), and give the same options to the installer. The loopback names need no option, and nothing else of the file
+     is printed. The two host options without `--env` are refused.
    - **Run it again** when it stopped half way: a service that was stopped before is reported as such, a backup file that holds other bytes
      than the definition is never replaced (`BACKUP_DIFFERS`), and a failed call of the service manager (`SERVICE_COMMAND_FAILED`) leaves what
      was done and the next run continues. The clients of 1.x are refused from now on, until the server of 2.0 runs. To keep 1.x running
@@ -737,14 +690,15 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
    ```
 
    - **What it reads.** The 1.x environment file, given with `--stdin` (as above) or with `--env=<file>` for an operator who can read the file as the
-     service user; exactly one of the two. Only the two tokens are read, and all values are checked before anything is written (at least 16 characters, and the admin token
-     differs from the agent token). It uses no database.
+     service user; exactly one of the two. Only the token of the agents is read, and its value is checked before anything is written (at least
+     16 characters). It uses no database.
    - **What it changes.** The installer has generated tokens of its own already, so without `--replace` a secret that exists is kept. With `--replace`
-     the three secrets take the 1.x values: `DBHUB_AUTH_TOKEN` of 1.x becomes `ledger.mcp.token` and `ledger.admin.agent-token`, and `PGLEDGER_ADMIN_TOKEN` of 1.x becomes
-     `ledger.admin.token`. The clients of 1.x keep working, and the admin token stays the bearer of the read-only endpoints (it signs a
-     browser in only with `ledger.admin.sign-in=token`). A 1.0.0 installation had no admin web and so no `PGLEDGER_ADMIN_TOKEN`: then only
-     the two tokens of the agents are replaced, the command says so, and the `ledger.admin.token` of the installer stays. Only the names of the
-     secrets are printed, never a value.
+     the two secrets of the agents take the 1.x value: `DBHUB_AUTH_TOKEN` of 1.x becomes `ledger.mcp.token` and `ledger.admin.agent-token`.
+     The clients of 1.x keep working. Only the names of the secrets are printed, never a value.
+   - **The admin token is not imported.** `PGLEDGER_ADMIN_TOKEN` of 1.x is not carried over (when the 1.x environment has it, the command says so): the
+     admin token of 2.0 is the `ledger.admin.token` that the installer made with `token-generate` (256 bits from `SecureRandom`, shown once), because
+     a token chosen by hand may be weaker and the limit on credential checks of 2.0 is a delay that counts on a token that cannot be guessed. It stays
+     the bearer of the read-only endpoints (it signs a browser in only with `ledger.admin.sign-in=token`).
    - For an instance with another name the service user is that name (`runuser -u <name>`), and the tool takes `--ledger.secrets.instance=<name>`.
 
    The services read their secrets at start, so restart the two services of 2.0:
@@ -767,7 +721,7 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
 7. **Register the session keys.** The grants of 1.x are copied without a session key. Every author registers a session key with
    `ledger-cli key-register`; then its grants work.
 8. **Check.** Run `ledger-cli mcp-check --url=<its public URL>` and `import-1x --verify-only` (it needs the settings of the 1.x source and
-   changes nothing), and run `ledger-cli passkey-code` and register your first passkey in the admin web (the admin token of 1.x signs a
+   changes nothing), and run `ledger-cli passkey-code` and register your first passkey in the admin web (the admin token of the installer signs a
    browser in only with `ledger.admin.sign-in=token`; the default is `passkey`). Clients: the tools `execute_sql_reader` and `search_objects_reader` were removed; the read tools replace them. The results of the write
    tools keep their keys without the `rows[0].result` wrapping. Install the hook jar (a Java 25 runtime) on every client host before the server is switched.
    When the checks have passed, the read-only account of the 1.x database that was made for the import may be dropped.
@@ -837,11 +791,9 @@ directory or give them on the command line as `--name=value`; the password is a 
 | `ledger.import.source.roles` | `retire-1x` | the database roles of the 1.x installer that `retire-1x` removes after the schema, default `ledger_owner`, `ledger_author`, `ledger_reviewer`, `ledger_reader` |
 
 **Upgrade note: the admin web sign-in.** If you signed in to the admin web with OpenID Connect, say so: set `ledger.admin.sign-in=oidc`
-(an installation with `ledger.admin.oidc.*` settings and no `ledger.admin.sign-in` is refused at start with a message that names it), and
-replace the list `ledger.admin.oidc.owners` by the one e-mail address of the owner, `ledger.admin.oidc.owner-email`, with the issuer it
-counts for, `ledger.admin.oidc.issuer`; a configuration that still has the list is refused at start and the message names both keys,
-because the product never picks one of several people silently. Whichever way you sign in, register a passkey with `passkey-code`: it
-approves every change.
+(an installation with `ledger.admin.oidc.*` settings and no `ledger.admin.sign-in` is refused at start with a message that names it),
+and give the one e-mail address of the owner, `ledger.admin.oidc.owner-email`, with the issuer it counts for,
+`ledger.admin.oidc.issuer`. Whichever way you sign in, register a passkey with `passkey-code`: it approves every change.
 
 ## Build and test
 

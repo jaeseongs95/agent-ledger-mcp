@@ -10,8 +10,12 @@ import org.pgledger.migrate1x.secret.OneXEnvironment;
 /** REH4-HOST-03: which host names of a 1.x environment file the options would drop. */
 class Hosts1xTest {
 
-    private static List<String> dropped(String environment, String key, String... given) {
-        return Hosts1x.dropped(OneXEnvironment.parse(environment), key, List.of(given));
+    private static List<String> dropped(String environment, String key) {
+        return Hosts1x.dropped(OneXEnvironment.parse(environment), key, "");
+    }
+
+    private static List<String> dropped(String environment, String key, String given) {
+        return Hosts1x.dropped(OneXEnvironment.parse(environment), key, given);
     }
 
     @Test

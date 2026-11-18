@@ -240,13 +240,13 @@ class AttestationTokenTest {
     }
 
     @Test
-    @DisplayName("ATT-036 a token of the retired version 1 (prefix pgla1, six parts, no arguments digest) is VERSION_UNSUPPORTED and never accepted")
-    void versionOneIsRefused() {
+    @DisplayName("PCS-040 a text with the prefix pgla1 (six parts, no arguments digest) is not of the format: MALFORMED like any other text, and never accepted")
+    void versionOneTextIsMalformed() {
         String signature = AttestationToken.sign(CLAIMS, newKeyPair().getPrivate()).text().split("\\.", -1)[6];
         String versionOne = String.join(".", "pgla1", encode("claude:s1"), encode("ledger_save"), encode("r1"),
                 "1700000000", signature);
-        assertThat(reasonOf(() -> AttestationToken.parse(versionOne))).isEqualTo(AttestationException.Reason.VERSION_UNSUPPORTED);
-        assertThat(reasonOf(() -> AttestationToken.parse("pgla1."))).isEqualTo(AttestationException.Reason.VERSION_UNSUPPORTED);
+        assertThat(reasonOf(() -> AttestationToken.parse(versionOne))).isEqualTo(AttestationException.Reason.MALFORMED);
+        assertThat(reasonOf(() -> AttestationToken.parse("pgla1."))).isEqualTo(AttestationException.Reason.MALFORMED);
     }
 
     @Test

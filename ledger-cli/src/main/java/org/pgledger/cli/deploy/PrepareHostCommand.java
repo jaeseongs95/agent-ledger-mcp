@@ -21,7 +21,7 @@ import org.springframework.stereotype.Component;
 /**
  * {@code prepare-host --jars=<dir> --driver-jar=<file> [--winsw=<file>] <the options of render-deploy>}: everything an
  * installation does to the files of the host before the secrets exist, in Java, so that the installers keep only what Java
- * cannot do (creating the service user, switching to it, the service managers, nginx). The same options as
+ * cannot do (creating the service user, switching to it, the service managers). The same options as
  * {@code render-deploy} validate first, and a refused value changes nothing. What is done to the folders and the jars is
  * the business of the platform ({@link ServicePlatform#prepare}); then the rendered files are written, and a platform that is
  * not the platform of this host is refused before anything is read (without {@code --root}):
@@ -67,7 +67,7 @@ public class PrepareHostCommand implements Command {
 
     private static Set<String> optionNames() {
         Set<String> names = new HashSet<>(DeployOptions.ALL);
-        names.addAll(List.of(JARS, DRIVER_JAR, DeployOptions.WINSW, DeployOptions.TLS_ACME));
+        names.addAll(List.of(JARS, DRIVER_JAR, DeployOptions.WINSW));
         return Set.copyOf(names);
     }
 
@@ -105,11 +105,6 @@ public class PrepareHostCommand implements Command {
                 }
             }
             platform.prepare(layout, input.root(), jars, driver, wrappers);
-            if (parameters.nginx() != null && parameters.nginx().acme() != null) {
-                platforms.capability(layout.platform(), TlsHosting.class)
-                        .orElseThrow(() -> new UsageException(ErrorCode.INVALID_DEPLOY_VALUE, DeployOptions.TLS_ACME))
-                        .prepareTls(layout, input.root());
-            }
             for (Path file : files.writeIntoHost(platform, input.root(), renderer.render(parameters),
                     BackupNotice.told(output, messages))) {
                 output.info(messages.get("render-deploy.written", file.toString()));

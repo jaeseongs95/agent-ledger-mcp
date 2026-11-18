@@ -34,9 +34,7 @@ class RenderDeployCommandTest {
 
     private static final String[] LINUX = { "--java=/usr/lib/jvm/java-25/bin/java",
             "--jdbc-url=jdbc:postgresql://db.example.org:5432/ledger", "--app-account=ledger_app",
-            "--mcp-host=mcp.example.org", "--admin-host=admin.example.org",
-            "--nginx-conf=/etc/nginx/conf.d/pg-ledger-mcp.conf", "--tls-certificate=/etc/ssl/ledger/fullchain.pem",
-            "--tls-key=/etc/ssl/ledger/privkey.pem" };
+            "--mcp-host=mcp.example.org", "--admin-host=admin.example.org" };
     private static final String[] WINDOWS = { "--platform=windows", "--home=C:/ProgramData/pg-ledger-mcp",
             "--java=C:/Program Files/Java/jdk-25/bin/java.exe", "--jdbc-url=jdbc:postgresql://localhost:5432/ledger",
             "--app-account=ledger_app" };
@@ -73,9 +71,7 @@ class RenderDeployCommandTest {
         List<RenderedFile> expected = DeployTestBeans.render((java.util.Map.of(
                 DeployOptions.JAVA, "/usr/lib/jvm/java-25/bin/java", DeployOptions.JDBC_URL,
                 "jdbc:postgresql://db.example.org:5432/ledger", DeployOptions.APP_ACCOUNT, "ledger_app",
-                DeployOptions.MCP_HOST, "mcp.example.org", DeployOptions.ADMIN_HOST, "admin.example.org",
-                DeployOptions.NGINX_CONF, "/etc/nginx/conf.d/pg-ledger-mcp.conf", DeployOptions.TLS_CERTIFICATE,
-                "/etc/ssl/ledger/fullchain.pem", DeployOptions.TLS_KEY, "/etc/ssl/ledger/privkey.pem")));
+                DeployOptions.MCP_HOST, "mcp.example.org", DeployOptions.ADMIN_HOST, "admin.example.org")));
         assertThat(files(root)).hasSize(expected.size());
         for (RenderedFile file : expected) {
             assertThat(Files.readString(root.resolve(file.path().substring(1)), StandardCharsets.UTF_8))
@@ -89,7 +85,7 @@ class RenderDeployCommandTest {
 
     @Test
     @RequiresPosixPermissions
-    @DisplayName("INS-020 the files are readable by all (0644): the service user and nginx have to read them, and they hold no secret")
+    @DisplayName("INS-020 the files are readable by all (0644): the service user has to read them, and they hold no secret")
     void ins020_theFilesAreReadable(Cli cli) throws IOException {
         Path root = tmp.resolve("root");
 
@@ -283,7 +279,12 @@ class RenderDeployCommandTest {
                 Arguments.of(new String[] { JAVA, URL, ACCOUNT, "--mcp-port=80" }, ErrorCode.INVALID_DEPLOY_VALUE, ExitStatus.USAGE),
                 Arguments.of(new String[] { JAVA, URL, ACCOUNT, "--force" }, ErrorCode.UNKNOWN_OPTION, ExitStatus.USAGE),
                 Arguments.of(new String[] { JAVA, URL, ACCOUNT, "--schema" }, ErrorCode.MISSING_OPTION_VALUE, ExitStatus.USAGE),
-                Arguments.of(new String[] { JAVA, URL, ACCOUNT, "--tls-key=/etc/ssl/k.pem" }, ErrorCode.MISSING_ARGUMENT, ExitStatus.USAGE));
+                // PCS-002: the options of the site and of the certificate do not exist any more
+                Arguments.of(new String[] { JAVA, URL, ACCOUNT, "--tls-key=/etc/ssl/k.pem" }, ErrorCode.UNKNOWN_OPTION, ExitStatus.USAGE),
+                Arguments.of(new String[] { JAVA, URL, ACCOUNT, "--nginx-conf=/etc/nginx/x.conf" }, ErrorCode.UNKNOWN_OPTION, ExitStatus.USAGE),
+                Arguments.of(new String[] { JAVA, URL, ACCOUNT, "--tls-acme" }, ErrorCode.UNKNOWN_OPTION, ExitStatus.USAGE),
+                // PCS-020: a comma list is no host name
+                Arguments.of(new String[] { JAVA, URL, ACCOUNT, "--mcp-host=a.example.org,b.example.org" }, ErrorCode.INVALID_DEPLOY_VALUE, ExitStatus.USAGE));
     }
 
     @ParameterizedTest

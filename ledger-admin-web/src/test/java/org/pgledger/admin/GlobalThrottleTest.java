@@ -29,7 +29,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 
 /**
- * ADM-070 (audit2 N1): a flood of wrong tokens from many clients slows the checks down and never keeps the owner out;
+ * ADM-070 (audit2 N1; changed by LGN-005, LGN-006): a flood of wrong tokens, from many clients or from one, slows the checks
+ * down and never keeps the owner out, and no client is locked;
  * the budget of the global throttle is counted and decided in one atomic step, so checks that arrive together cannot
  * overshoot it. The budget is 8 checks per window and a check beyond it waits 400 ms.
  */
@@ -91,7 +92,7 @@ class GlobalThrottleTest {
     }
 
     @Test
-    @DisplayName("ADM-070: after a flood of wrong tokens from 12 clients (more than the budget of 8), the owner's right token from another client logs in (200, delayed), and the flood clients that kept going are locked per client as before")
+    @DisplayName("ADM-070 (changed by LGN-005): after a flood of wrong tokens from 12 clients (more than the budget of 8), the owner's right token from another client logs in (200, delayed), and a client that kept going is answered 401 each time, never 429, and its right token is 200")
     void adm070_theOwnerStillLogsInAfterTheFlood() throws Exception {
         for (int i = 1; i <= 12; i++) {
             assertThat(attempt("10.202." + (i / 250) + "." + (i % 250 + 1), WRONG).status()).isEqualTo(401);
@@ -102,9 +103,32 @@ class GlobalThrottleTest {
         assertThat(owner.status()).isEqualTo(200);
         assertThat(owner.took()).isGreaterThanOrEqualTo(DELAYED_AT_LEAST);
         for (int again = 0; again < 5; again++) {
-            attempt("10.202.0.1", WRONG);
+            assertThat(attempt("10.202.0.1", WRONG).status()).as("a client that goes on failing is not locked").isEqualTo(401);
         }
-        assertThat(attempt("10.202.0.1", AdminTestSettings.TOKEN).status()).as("one client is still locked by its own failures")
-                .isEqualTo(429);
+        assertThat(attempt("10.202.0.1", AdminTestSettings.TOKEN).status()).as("its right token still logs in")
+                .isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("LGN-006: 64 wrong tokens of ONE address at the same moment: all are 401 (never 429), and at least 56 waited the delay (the address plays no part)")
+    void lgn006_oneAddressIsNotLocked() throws Exception {
+        CyclicBarrier together = new CyclicBarrier(THREADS);
+        List<Answer> answers = new ArrayList<>();
+        try (ExecutorService pool = Executors.newFixedThreadPool(THREADS)) {
+            List<Future<Answer>> pending = new ArrayList<>();
+            for (int i = 0; i < THREADS; i++) {
+                pending.add(pool.submit(() -> {
+                    together.await();
+                    return attempt("10.204.0.1", WRONG);
+                }));
+            }
+            for (Future<Answer> answer : pending) {
+                answers.add(answer.get());
+            }
+        }
+
+        assertThat(answers).extracting(Answer::status).containsOnly(401);
+        assertThat(answers.stream().filter(answer -> answer.took().compareTo(DELAYED_AT_LEAST) >= 0).count())
+                .isGreaterThanOrEqualTo(THREADS - BUDGET);
     }
 }

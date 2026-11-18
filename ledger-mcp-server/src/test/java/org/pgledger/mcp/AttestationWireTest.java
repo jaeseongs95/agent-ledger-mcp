@@ -444,10 +444,10 @@ class AttestationWireTest {
             refused(session, save, callOf(session, save, seed, UUID.randomUUID().toString(), text),
                     "ATTESTATION_MALFORMED", text);
         }
-        // the retired version 1 is its own answer, never accepted
+        // PCS-041: a pgla1 text is neither a token nor an author, like any other such text: the author is malformed
         for (String text : List.of("pgla1.", "pgla1.a.b.c.1.AAAA")) {
             refused(session, save, callOf(session, save, seed, UUID.randomUUID().toString(), text),
-                    "ATTESTATION_VERSION_UNSUPPORTED", text);
+                    "AUTHOR_ID_FORMAT", text);
         }
     }
 }

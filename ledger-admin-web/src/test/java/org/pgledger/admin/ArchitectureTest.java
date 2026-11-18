@@ -192,6 +192,40 @@ class ArchitectureTest {
     }
 
     @Test
+    @DisplayName("LGN-012: there is no per-client lock: no Admission, Counter, client key or table of clients; no caller takes a client "
+            + "address for the limit; TOO_MANY_AUTH_FAILURES is thrown only for an interrupted wait; LoginAttempts says why there is no client")
+    void lgn012_noClientLock() throws IOException {
+        Path admin = MAIN_JAVA.resolve(Path.of("org", "pgledger", "admin"));
+        String attempts = Files.readString(admin.resolve(Path.of("security", "LoginAttempts.java")));
+
+        assertThat(attempts).doesNotContain("Admission").doesNotContain("Counter").doesNotContain("keyOf")
+                .doesNotContain("MAX_CLIENTS").doesNotContain("Cache<").doesNotContain("Inet6Address")
+                .contains("reverse proxy").contains("X-Forwarded-For").contains("not an identity")
+                .contains("token-generate").contains("no queue");
+        assertThat(Files.readString(admin.resolve(Path.of("security", "AdminSecurityConfiguration.java"))))
+                .doesNotContain("codeWithClientAddress").doesNotContain("WebAuthenticationDetailsSource");
+        assertThat(Files.readString(Path.of("build.gradle.kts"))).doesNotContainIgnoringCase("caffeine")
+                .doesNotContain("starter-cache");
+        for (String caller : List.of("security/AdminTokenProvider.java", "passkey/EnrollmentTokenService.java",
+                "passkey/PasskeyLoginGuard.java")) {
+            assertThat(Files.readString(admin.resolve(caller))).as(caller).doesNotContain("Admission")
+                    .doesNotContain("allowed()").doesNotContain("getRemoteAddress").doesNotContain("getRemoteAddr");
+        }
+        try (Stream<Path> sources = Files.walk(MAIN_JAVA)) {
+            for (Path source : sources.filter(path -> path.toString().endsWith(".java")).toList()) {
+                assertThat(Files.readString(source)).as(source + ": no Caffeine and no Spring Cache").doesNotContainIgnoringCase("caffeine")
+                        .doesNotContain("org.springframework.cache");
+                for (String line : Files.readAllLines(source)) {
+                    if (line.contains("AdminCode.TOO_MANY_AUTH_FAILURES")) {
+                        assertThat(line).as(source + ": a limit that refuses does not exist, only an interrupted wait does")
+                                .contains("interrupted");
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     @DisplayName("ARC-036 catch rules: no empty catch, no broad catch")
     void arc036_catchRules() {
         assertThat(CodingScan.catchProblems(Set.of(), null, MAIN_JAVA, TEST_JAVA)).isEmpty();

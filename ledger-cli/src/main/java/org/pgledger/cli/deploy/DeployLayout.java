@@ -3,13 +3,16 @@ package org.pgledger.cli.deploy;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Pattern;
 import java.util.Locale;
+import org.pgledger.application.attachment.ServiceAccountAccess;
+import org.pgledger.cli.secret.SecretFolder;
 
 /**
  * Where an installation puts its files, and the names of it. An installation is an <em>instance</em> with a name (the default
  * is an install default, see {@code InstallDefaults}): the product runs as two services, the MCP server (named {@code <name>}) and the admin web (named
  * {@code <name>-admin}), under <b>one</b> operating system service account that belongs to no person (on Linux the system user
  * {@code <name>}). Its purpose is to keep the secrets of the ledger (the admin token, the database password) away from the
- * accounts the agents run as, so the secret directory is readable by the service account only. Everything an instance owns
+ * accounts the agents run as, so the secret directory is readable by the service account only (on Linux: it is the service user's; on Windows the
+ * installing user owns it and the service account LocalService reads it, and nobody else has access). Everything an instance owns
  * (the service names, the user, the jar directory, the settings and secret directory, the WinSW ids) follows the name, so two
  * instances can live on one host. The jar names are constants, and so is the rule that makes the name; a name is only accepted
  * through {@link DeployParameters}. {@code deploy/install.sh} and {@code deploy/install.cmd}, which create the directories,
@@ -32,13 +35,13 @@ public record DeployLayout(Platform platform,
 
     /**
      * The operating system families an installation is rendered for; the one thing a render option decides, and only its name.
-     * What each family does and what it accepts (its service definitions, the form of its paths, whether it has the nginx site,
-     * the host preparation) is its {@code ServicePlatform}, found by this constant in one place.
+     * What each family does and what it accepts (its service definitions, the form of its paths, the host preparation) is its
+     * {@code ServicePlatform}, found by this constant in one place.
      */
     public enum Platform {
-        /** A Linux server: systemd units; may have the nginx site. */
+        /** A Linux server: systemd units. */
         LINUX,
-        /** A personal PC or a Windows server: WinSW services; nginx is not part of it. */
+        /** A personal PC or a Windows server: WinSW services. */
         WINDOWS;
 
         /** The value of {@code --platform} that names it. */
@@ -54,7 +57,7 @@ public record DeployLayout(Platform platform,
      * password, and the installer can create nothing else without a PowerShell script or {@code net user} (see
      * {@code deploy/install.cmd}). It is shared by every instance of the host and by every other service that runs as it.
      */
-    public static final String WINDOWS_SERVICE_ACCOUNT = "NT AUTHORITY\\LocalService";
+    public static final String WINDOWS_SERVICE_ACCOUNT = ServiceAccountAccess.WINDOWS_SERVICE_ACCOUNT;
     public static final String MCP_JAR = "ledger-mcp-server.jar";
     public static final String ADMIN_JAR = "ledger-admin-web.jar";
     public static final String CLI_JAR = "ledger-cli.jar";
@@ -80,12 +83,25 @@ public record DeployLayout(Platform platform,
     }
 
     /**
-     * Where the key files of the attachments are kept: {@code <etc>/secrets/attachment-keys}, inside the secret directory that is
-     * private to the service account (the setting {@code ledger.attachments.key-directory}); outside the attachment directory, so
-     * a backup of the files never carries the keys by itself.
+     * Where the key files of the attachments are kept: {@code <etc>/attachment-keys}, private to the service account like the
+     * secret directory (on Windows: the installing user with everything and LocalService with read; the setting
+     * {@code ledger.attachments.key-directory}); outside the attachment directory, so a backup of the files never carries the
+     * keys by itself, and beside the secret directory, not inside it: Spring Boot makes every file below a configuration tree
+     * a property, so a key file below any imported tree would be in the {@code Environment} of the process (see
+     * {@link #secretDirectory()}).
      */
     public String attachmentKeyDirectory() {
-        return etc + "/secrets/attachment-keys";
+        return etc + "/attachment-keys";
+    }
+
+    /** The secret directory, {@code <etc>/secrets}: it holds one folder per use ({@link #secretFolder}) and is itself no configuration tree. */
+    public String secretDirectory() {
+        return etc + "/secrets";
+    }
+
+    /** The folder of one use below the secret directory: the configuration tree that the processes which need it import. */
+    public String secretFolder(SecretFolder folder) {
+        return secretDirectory() + "/" + folder.directory();
     }
 
     /** The name of the MCP server service (systemd unit, WinSW service id). */
@@ -96,34 +112,6 @@ public record DeployLayout(Platform platform,
     /** The name of the admin web service. */
     public String adminName() {
         return name + "-admin";
-    }
-
-    /**
-     * Linux: where {@code tls-issue} and {@code tls-renew} keep the account key and the certificate files by default
-     * ({@code account.key}, {@code fullchain.pem}, {@code privkey.pem}): below the settings directory, which is the service
-     * user's, so the keys are the service user's.
-     */
-    public String tlsDirectory() {
-        return etc + "/tls";
-    }
-
-    /** The names of the files in the TLS directory: the account key, the certificate chain and the key of the certificate. */
-    public static final String TLS_ACCOUNT_FILE = "account.key";
-    public static final String TLS_CHAIN_FILE = "fullchain.pem";
-    public static final String TLS_KEY_FILE = "privkey.pem";
-
-    /**
-     * Linux: the web root the port 80 blocks of the nginx site serve {@code /.well-known/acme-challenge/} from, and where
-     * {@code tls-issue} writes the token files. It is outside the settings directory (which the service user alone may enter)
-     * because the account the web server runs as has to read the tokens.
-     */
-    public String acmeWebroot() {
-        return "/var/www/" + name + "-acme";
-    }
-
-    /** Linux: the name of the systemd service and timer that renew the certificate. */
-    public String tlsRenewName() {
-        return name + "-tls-renew";
     }
 
     /** The one service account on Linux: the system user of the name of the instance (no login, not root). */

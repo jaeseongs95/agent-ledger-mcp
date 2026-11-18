@@ -280,7 +280,7 @@ public class SessionKeyService {
                 case KEY_BLOCK_FINGERPRINT -> ValidationReason.KEY_BLOCK_FINGERPRINT_DIFFERS;
                 case KEY_INVALID -> ValidationReason.MUST_BE_ED25519_PUBLIC_KEY;
                 // a block that is not one: every other reason of the parser (no token or signature is read here)
-                case MALFORMED, VERSION_UNSUPPORTED, SIGNATURE_INVALID, KEY_BLOCK_INVALID ->
+                case MALFORMED, SIGNATURE_INVALID, KEY_BLOCK_INVALID ->
                     ValidationReason.MUST_BE_SESSION_KEY_BLOCK;
             };
             throw ValidationException.invalid("public_key", reason, failure);

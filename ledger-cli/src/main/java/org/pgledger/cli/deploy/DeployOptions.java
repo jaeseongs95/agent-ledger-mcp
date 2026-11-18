@@ -19,18 +19,14 @@ public final class DeployOptions {
     public static final String SCHEMA = "schema";
     public static final String MCP_PORT = "mcp-port";
     public static final String ADMIN_PORT = "admin-port";
-    /** The public host names of the MCP server: one name or a comma list, each allowed in its Host check and served by the nginx site. */
+    /**
+     * The one host name of the MCP server that the operator's reverse proxy passes in the {@code Host} header, allowed in the Host
+     * check of the service besides {@code 127.0.0.1} and {@code localhost}, which are always allowed; optional. The service listens
+     * on loopback only, and the proxy and its certificate are the operator's.
+     */
     public static final String MCP_HOST = "mcp-host";
-    /** The public host names of the admin web, in the form of {@link #MCP_HOST}; optional (the admin web is then reached on loopback only). */
+    /** The one host name of the admin web, in the form and the meaning of {@link #MCP_HOST}; optional. */
     public static final String ADMIN_HOST = "admin-host";
-    /** Linux only: write the nginx site (the reverse proxy in front of the two services); absent writes none. */
-    public static final String NGINX_CONF = "nginx-conf";
-    public static final String TLS_CERTIFICATE = "tls-certificate";
-    public static final String TLS_KEY = "tls-key";
-    /** A flag, Linux only, with {@link #NGINX_CONF}: the certificate is made and renewed by {@code tls-issue} and {@code tls-renew} (ACME); not with the operator's own certificate. */
-    public static final String TLS_ACME = "tls-acme";
-    /** The ACME directory URL of the certificate authority (an option of {@code tls-issue} and {@code tls-renew} too); with {@link #TLS_ACME} only. */
-    public static final String ACME_DIRECTORY = "acme-directory";
     /**
      * The name of the instance, default {@code pg-ledger-mcp}: the service names ({@code <name>} and {@code <name>-admin}),
      * the Linux service user, the jar, settings and secret directories and the WinSW ids all follow it, so that two instances
@@ -45,10 +41,10 @@ public final class DeployOptions {
     public static final String CHECK = "check";
 
     /** The options that take a value, in the order of their usage text. */
-    public static final List<String> ALL = List.of(NAME, PLATFORM, HOME, JAVA, JDBC_URL, APP_ACCOUNT, SCHEMA, MCP_PORT, ADMIN_PORT, MCP_HOST, ADMIN_HOST, NGINX_CONF, TLS_CERTIFICATE, TLS_KEY, ACME_DIRECTORY, ROOT);
+    public static final List<String> ALL = List.of(NAME, PLATFORM, HOME, JAVA, JDBC_URL, APP_ACCOUNT, SCHEMA, MCP_PORT, ADMIN_PORT, MCP_HOST, ADMIN_HOST, ROOT);
 
     /** Every option of the command, as the set the runner checks the command line against. */
-    public static final Set<String> NAMES = Stream.concat(ALL.stream(), Stream.of(CHECK, TLS_ACME))
+    public static final Set<String> NAMES = Stream.concat(ALL.stream(), Stream.of(CHECK))
             .collect(Collectors.toUnmodifiableSet());
 
     private DeployOptions() {

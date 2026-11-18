@@ -70,8 +70,7 @@ public final class SigningAttestationVerifier implements AttestationVerifier {
     }
 
     private Proof check(String presented, ToolCall call, String operationKey, boolean write) {
-        if (presented == null || presented.startsWith(AttestationToken.PREFIX + ".")
-                || presented.startsWith(AttestationToken.RETIRED_PREFIX + ".")) {
+        if (presented == null || presented.startsWith(AttestationToken.PREFIX + ".")) {
             return verifyWith(presented, call, operationKey, write);
         }
         if (AuthorId.matches(presented)) {

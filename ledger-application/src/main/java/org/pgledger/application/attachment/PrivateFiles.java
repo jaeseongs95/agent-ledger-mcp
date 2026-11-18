@@ -11,7 +11,6 @@ import java.nio.file.NotDirectoryException;
 import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.attribute.AclEntry;
-import java.nio.file.attribute.AclEntryFlag;
 import java.nio.file.attribute.AclEntryPermission;
 import java.nio.file.attribute.AclEntryType;
 import java.nio.file.attribute.AclFileAttributeView;
@@ -33,8 +32,9 @@ import org.springframework.stereotype.Component;
  * The one place that makes what only the service account may use, and reads it: the attachment directory, its sub folders and
  * files, the key directory and the key files. <b>Creation is owner-only</b>, chosen by what the file system supports and never by the
  * name of the operating system: POSIX permissions {@code rwx------} (directory) and {@code rw-------} (file), or on a file system
- * with ACLs an ACL with one entry for the account of this process; a file system with neither view cannot hold a private file and
- * is refused for a creation.
+ * with ACLs an ACL with the entry of the account of this process (everything) and the entry of the service account LocalService
+ * (read; the key files that the installing user made are read by the services, {@link ServiceAccountAccess}); a file system with
+ * neither view cannot hold a private file and is refused for a creation.
  *
  * <p><b>Reading and using what exists does not look at who may reach it.</b> The personal edition trusts the whole PC: broad
  * permissions (group and other bits, an ACL entry for Users or Authenticated Users, which a folder on a data volume or under the
@@ -82,7 +82,7 @@ public class PrivateFiles {
             return new FileAttribute<?>[] {PosixFilePermissions.asFileAttribute(directory ? DIRECTORY_MODE : FILE_MODE)};
         }
         if (views.contains("acl")) {
-            return new FileAttribute<?>[] {new AclAttribute(ownerOnly(processUser(fileSystem), directory))};
+            return new FileAttribute<?>[] {new AclAttribute(ownerAndService(fileSystem, directory))};
         }
         throw unsafe("the file system has neither POSIX permissions nor ACLs");
     }
@@ -168,27 +168,29 @@ public class PrivateFiles {
     }
 
     /**
-     * An ACL that was merged with what the parent hands down is replaced by the owner-only one right after creation, before
+     * An ACL that was merged with what the parent hands down is replaced by the owner and service one right after creation, before
      * anything is written: the only place where a protection is changed after creation, and only to the narrow one.
      */
     private void settle(Path path) throws IOException {
         FileSystem fileSystem = path.getFileSystem();
         if (fileSystem.supportedFileAttributeViews().contains("acl") && !fileSystem.supportedFileAttributeViews().contains("posix")) {
             UserPrincipal user = processUser(fileSystem);
-            if (opensToOthers(path, user)) {
-                Files.getFileAttributeView(path, AclFileAttributeView.class).setAcl(ownerOnly(user, Files.isDirectory(path)));
+            UserPrincipal service = serviceAccount(fileSystem);
+            if (opensToOthers(path, user, service)) {
+                Files.getFileAttributeView(path, AclFileAttributeView.class)
+                        .setAcl(ServiceAccountAccess.ownerAndService(user, service, Files.isDirectory(path)));
             }
         }
     }
 
-    private static boolean opensToOthers(Path path, UserPrincipal user) throws IOException {
+    private static boolean opensToOthers(Path path, UserPrincipal user, UserPrincipal service) throws IOException {
         List<AclEntry> acl = Files.getFileAttributeView(path, AclFileAttributeView.class, LinkOption.NOFOLLOW_LINKS).getAcl();
         if (acl.isEmpty()) {
             return true;
         }
         for (AclEntry entry : acl) {
             if (entry.type() == AclEntryType.ALLOW && !Objects.equals(entry.principal(), user) && !isAdministrative(entry.principal())
-                    && !HARMLESS.containsAll(entry.permissions())) {
+                    && !ServiceAccountAccess.isServiceRead(entry, service) && !HARMLESS.containsAll(entry.permissions())) {
                 return true;
             }
         }
@@ -200,11 +202,21 @@ public class PrivateFiles {
         return name.endsWith("\\SYSTEM") || name.endsWith("\\Administrators");
     }
 
-    private static List<AclEntry> ownerOnly(UserPrincipal owner, boolean directory) {
-        Set<AclEntryFlag> flags = directory ? EnumSet.of(AclEntryFlag.FILE_INHERIT, AclEntryFlag.DIRECTORY_INHERIT)
-                : EnumSet.noneOf(AclEntryFlag.class);
-        return List.of(AclEntry.newBuilder().setType(AclEntryType.ALLOW).setPrincipal(owner)
-                .setPermissions(EnumSet.allOf(AclEntryPermission.class)).setFlags(flags).build());
+    /** The ACL of a new private path: the owner with everything and the service account with read ({@link ServiceAccountAccess}). */
+    private static List<AclEntry> ownerAndService(FileSystem fileSystem, boolean directory) {
+        return ServiceAccountAccess.ownerAndService(processUser(fileSystem), serviceAccount(fileSystem), directory);
+    }
+
+    /** The service account as a principal of the file system. */
+    private static UserPrincipal serviceAccount(FileSystem fileSystem) {
+        try {
+            return ServiceAccountAccess.principal(fileSystem);
+        } catch (UserPrincipalNotFoundException unknown) {
+            throw unsafe("the service account is not known to the file system");
+        } catch (IOException failure) {
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_IO_ERROR,
+                    List.of(failure.getClass().getSimpleName()), failure);
+        }
     }
 
     /** The account of this process (JDK ProcessHandle) as a principal of the file system, so that it compares equal to a file owner. */

@@ -1,6 +1,7 @@
 package org.pgledger.domain.rule;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import org.pgledger.domain.value.SessionKey;
 
@@ -30,7 +31,7 @@ public record TaskReports(List<TaskTransition> transitions) {
      */
     public boolean reportedBy(SessionKey session) {
         return transitions.stream().filter(TaskReports::isReport)
-                .anyMatch(t -> t.author().sessionKey().equals(session));
+                .anyMatch(t -> Objects.equals(t.author().sessionKey(), session));
     }
 
     private static boolean isReport(TaskTransition t) {

@@ -35,7 +35,7 @@ public interface AttestationVerifier {
 
             @Override
             public AuthorId requireAuthor() {
-                throw new TrustException(TrustCode.AUTHOR_ID_FORMAT, List.of(text));
+                throw new TrustException(TrustCode.AUTHOR_ID_FORMAT, List.of());
             }
         }
     }

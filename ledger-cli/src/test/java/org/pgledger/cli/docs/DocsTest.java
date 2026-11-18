@@ -55,14 +55,14 @@ class DocsTest {
             "use one database account", "설치기는 이번 릴리스에 포함되지 않으며", "데이터베이스 계정 하나를 씁니다");
     private static final List<String> REQUIRED_KEYS = List.of("ledger.mcp.token", "ledger.admin.token",
             "ledger.admin.agent-token", "ledger.admin.driver-directory", "ledger.admin.sign-in",
-            "ledger.admin.oidc.owner-email", "ledger.admin.oidc.issuer", "ledger.admin.oidc.owners",
+            "ledger.admin.oidc.owner-email", "ledger.admin.oidc.issuer",
             "ledger.admin.passkey.rp-id", "ledger.admin.passkey.origins",
             "ledger.admin.lockout.global-delay", "ledger.jdbc.url", "ledger.schema.name");
-    private static final List<String> NOTE_TERMS = List.of("pgla2", "pgla1", "ATTESTATION_VERSION_UNSUPPORTED",
+    private static final List<String> NOTE_TERMS = List.of("pgla2",
             "execute_sql_reader", "search_objects_reader", "rows[0].result",
             "notifications/tools/list_changed", "key-register", "import-1x", "migrate", "secret-set", "D-0012",
             "ledger.admin.agent-token", "ledger.admin.driver-directory", "ledger.admin.sign-in",
-            "ledger.admin.oidc.owner-email", "ledger.admin.oidc.owners", "passkey-code",
+            "ledger.admin.oidc.owner-email", "passkey-code",
             "ledger.admin.lockout.global-delay");
 
     private static final Pattern KEY = Pattern.compile("ledger(\\.[a-z0-9-]+)+");
@@ -343,10 +343,13 @@ class DocsTest {
 
     @ParameterizedTest
     @EnumSource(Language.class)
-    @DisplayName("REH4-DOC-01 the README option table shows the comma list of --mcp-host and --admin-host")
-    void readmeShowsTheCommaListOfThePublicHostNames(Language language) {
-        assertThat(language.readme().codeSpans()).anyMatch(span -> span.startsWith("--mcp-host=<host>[,<host>...]"))
-                .anyMatch(span -> span.startsWith("--admin-host=<host>[,<host>...]"));
+    @DisplayName("PCS-023 (replaces REH4-DOC-01) the README option table shows --mcp-host and --admin-host as one host name each, no comma list")
+    void readmeShowsOneHostNameForEachService(Language language) {
+        assertThat(language.readme().codeSpans()).anyMatch(span -> "--mcp-host=<host>".equals(span))
+                .anyMatch(span -> "--admin-host=<host>".equals(span))
+                .noneMatch(span -> (span.startsWith("--mcp-host=") || span.startsWith("--admin-host=")) && span.contains("[,"))
+                .noneMatch(span -> span.startsWith("render-deploy ") && span.contains("[,<host>...]"))
+                .noneMatch(span -> span.startsWith("prepare-host ") && span.contains("[,<host>...]"));
     }
 
     static Stream<Arguments> installNoteCases() {
@@ -604,10 +607,10 @@ class DocsTest {
 
     @ParameterizedTest
     @EnumSource(Language.class)
-    @DisplayName("W7-SEC-01 (changed by M1X) the guide of each README says that a 1.0.0 installation has no admin token (import-secrets-1x keeps the one of the installer), and each part of the note names 1.0.0")
-    void oneZeroHasNoAdminToken(Language language) {
-        assertThat(upgradeGuide(language)).contains("1.0.0").contains("`PGLEDGER_ADMIN_TOKEN`").contains("`ledger.admin.token`");
-        assertThat(note().part(language.partHeading()).text()).contains("1.0.0");
+    @DisplayName("W7-SEC-01 (changed by M1X and PSEC, LGN-015) the guide of each README says that the admin token of 1.x is not imported, whatever the 1.x installation is (import-secrets-1x keeps the one of the installer)")
+    void theAdminTokenOfOneXIsNotImported(Language language) {
+        assertThat(upgradeGuide(language)).contains("`PGLEDGER_ADMIN_TOKEN`").contains("`ledger.admin.token`")
+                .contains(language == Language.EN ? "is not imported" : "가져오지 않습니다");
     }
 
     @ParameterizedTest
@@ -791,18 +794,60 @@ class DocsTest {
 
     @ParameterizedTest
     @EnumSource(Language.class)
-    @DisplayName("FUP-NGX-06 the section on the automatic certificate says what the port 80 blocks do (the limits, the proof path, 429, the version) and do not do (default_server, other sites, global directives), and recommends a default server of the operator with its example; the product does not create it")
-    void thePortEightyBlocksAreDescribed(Language language) {
+    @DisplayName("PCS-051 the READMEs and the header of install.cmd say that the secrets of Windows are the installing user's with read for LocalService, that nothing is handed over, and that the installer is run again as the same user; none says that another administrator is kept out")
+    void pcs051_theWindowsSecretsAreTheInstallingUsersWithReadForLocalService(Language language) {
         String readme = language.readme().text();
-        String heading = language == Language.EN ? "### Automatic certificate" : "### 자동 인증서";
-        int start = readme.indexOf(heading);
-        String section = readme.substring(start, readme.indexOf("\n### ", start + heading.length()));
 
-        assertThat(start).isNotNegative();
-        assertThat(section).contains("`/.well-known/acme-challenge/<token>`", "`A-Za-z0-9_-`", "`GET`", "`HEAD`", "`1k`", "`10s`", "`429`",
-                "`server_tokens off`", "`<name>-acme-req`", "`<name>-acme-conn`", "`Host`", "`default_server`");
-        assertThat(language.readme().fences()).anySatisfy(block -> assertThat(block).containsExactly("server {",
-                "    listen 80 default_server;", "    listen [::]:80 default_server;", "    server_name _;", "    return 444;", "}"));
-        assertThat(section).contains(language == Language.EN ? "The product does not create it." : "제품은 이 설정을 만들지 않습니다.");
+        assertThat(readme).contains("LocalService").contains(language == Language.EN ? "same user" : "같은 사용자");
+        assertThat(readme).contains(language == Language.EN ? "Nothing is handed over to LocalService" : "LocalService에 넘기는 것은 없으므로");
+        assertThat(readme.toLowerCase(java.util.Locale.ROOT)).doesNotContain("another administrator");
+        assertThat(Repository.read("deploy/install.cmd")).contains("Run it again as the same user").contains("nothing is handed over");
+    }
+
+    @ParameterizedTest
+    @EnumSource(Language.class)
+    @DisplayName("SPL-009 the READMEs and the 2.0.0 note tell the folders of the secrets (name, who reads, folder), the key folder beside the secret directory, that the file permissions do not separate the two services (one operating system user), and that the per-client lock settings are gone; the headers of both installers name the folders")
+    void spl009_theSecretFoldersAreTold(Language language) {
+        String readme = language.readme().text();
+
+        assertThat(language.readme().codeSpans()).contains("common", "admin", "mcp", "tool", "<settings folder>/secrets",
+                "<settings folder>/attachment-keys", "UNKNOWN_SECRET_NAME", "ledger.jdbc.password", "ledger.admin.token",
+                "ledger.admin.agent-token", "ledger.mcp.token", "ledger.import.source.password");
+        assertThat(readme).doesNotContain("secrets/attachment-keys").doesNotContain("lockout.max-failures")
+                .doesNotContain("lockout.lock-period");
+        assertThat(readme).contains(language == Language.EN ? "one operating system user" : "같은 운영체제 사용자");
+        String note = note().part(language.partHeading()).text();
+        assertThat(note).contains("D-0031").contains("D-0013").contains("attachment-keys");
+        assertThat(Repository.read("deploy/install.sh")).contains("(common, admin, mcp, tool)");
+        assertThat(Repository.read("deploy/install.cmd")).contains("(common, admin, mcp, tool)");
+    }
+
+    @ParameterizedTest
+    @EnumSource(Language.class)
+    @DisplayName("LGN-014 the upgrade guide of each README and the 2.0.0 note say that the admin token of 1.x is not imported (the installer's token is the one of 2.0), none tells to remove and make it again, and the security text ties the 256 bits to a token that token-generate made")
+    void lgn014_theAdminTokenIsNotImported(Language language) {
+        String readme = language.readme().text();
+        String heading = language == Language.EN ? "The admin token is not imported" : "관리 토큰은 가져오지 않습니다";
+
+        assertThat(language.readme().codeSpans()).contains("PGLEDGER_ADMIN_TOKEN", "token-generate", "SecureRandom", "ledger.admin.token");
+        assertThat(readme).contains(heading);
+        assertThat(readme.indexOf(heading)).as("in the step of import-secrets-1x").isGreaterThan(readme.indexOf(language == Language.EN
+                ? "Move the secrets of 1.x with" : "로 1.x의 비밀을 옮깁니다"));
+        assertThat(readme).doesNotContain("token-generate ledger.admin.token --print").doesNotContain(language == Language.EN
+                ? "Generate the admin token again" : "관리 토큰을 다시 만듭니다");
+        assertThat(readme).doesNotContain(language == Language.EN ? "the admin token is 256 bits from" : "관리 토큰은 `SecureRandom` 256비트");
+        String note = note().part(language.partHeading()).text();
+        assertThat(note).contains("PGLEDGER_ADMIN_TOKEN").contains(language == Language.EN ? "not imported" : "가져오지 않습니다");
+    }
+
+    @ParameterizedTest
+    @EnumSource(Language.class)
+    @DisplayName("PCS-050 the README defines the personal edition (one person, their own computer or server, the whole installation target trusted, loopback only, the network exposure the operator's) and names no reverse proxy, certificate authority, nginx, ACME, tls-issue, tls-renew or seal-host")
+    void theReadmeDefinesThePersonalEditionAndNamesNoProxyProduct(Language language) {
+        String readme = language.readme().text();
+
+        assertThat(readme).contains(language == Language.EN ? "personal edition" : "개인판").contains("127.0.0.1");
+        assertThat(readme.toLowerCase(java.util.Locale.ROOT)).doesNotContain("nginx", "acme", "let's encrypt", "certbot", "caddy", "traefik",
+                "cloudflare", "tls-issue", "tls-renew", "seal-host", "--tls-acme", "--nginx-conf", "--tls-certificate", "--tls-key");
     }
 }

@@ -25,8 +25,8 @@ import org.springframework.util.MultiValueMap;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * One browser: a session of its own and a client address of its own (the lock after failed attempts counts per
- * address, so tests must not share one). It reads the CSRF token the way a browser does, from the hidden field that
+ * One browser: a session of its own and a client address of its own (nothing limits per address any more, but the address is
+ * what the application sees of the client, so tests keep one each). It reads the CSRF token the way a browser does, from the hidden field that
  * Thymeleaf puts into every form, and posts forms the way a browser does.
  *
  * <p>A browser that holds a passkey ({@link #withPasskey}) approves the writes it posts as the page does: it tells the server

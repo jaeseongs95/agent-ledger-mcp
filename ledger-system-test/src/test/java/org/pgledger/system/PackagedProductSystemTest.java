@@ -51,8 +51,8 @@ import tools.jackson.databind.json.JsonMapper;
  * writes. The platform of the host chooses the layout of {@code render-deploy} ({@link InstalledInstance}): on Windows it
  * needs drive paths and is skipped without them. No test profile is activated.
  *
- * <p>Install steps that are not run here are listed in section 21 of the test cases ({@code prepare-host} and
- * {@code seal-host} need an elevated prompt for the ACLs, WinSW and {@code sc.exe} are not run).
+ * <p>Install steps that are not run here are listed in section 21 of the test cases ({@code prepare-host} needs an elevated
+ * prompt for the ACLs, WinSW and {@code sc.exe} are not run).
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
@@ -151,6 +151,12 @@ class PackagedProductSystemTest {
         serverArguments = instance.serverArguments();
         assertThat(serverArguments).contains("-jar");
         assertThat(serverArguments.getLast()).startsWith("--spring.config.import=").contains("optional:configtree:");
+        // SPL-008: the MCP server imports the folders common and mcp of the secrets as trees of their own, not the secret directory
+        // and not the folder of the admin web; the key files of the attachments are beside the secrets, in no tree
+        assertThat(serverArguments.getLast()).contains(slash(etc) + "/secrets/common/,optional:configtree:" + slash(etc) + "/secrets/mcp/")
+                .doesNotContain("/secrets/admin").doesNotContain("/secrets/tool").doesNotEndWith("/secrets/");
+        // the file names the path of a real installation on Linux (the files are below a root), not the path of this host
+        assertThat(application).contains(instance.renderedEtc() + "/attachment-keys").doesNotContain("/secrets/attachment-keys");
     }
 
     @Test
@@ -159,7 +165,7 @@ class PackagedProductSystemTest {
     void tokenGenerate() throws IOException {
         JavaProcess.Result first = cli(false, null, "token-generate", "ledger.mcp.token");
         assertThat(first.exit()).as(first.streams()).isZero();
-        Path file = etc.resolve("secrets").resolve("ledger.mcp.token");
+        Path file = etc.resolve("secrets").resolve("mcp").resolve("ledger.mcp.token");
         assertThat(file).isRegularFile();
         token = Files.readString(file, StandardCharsets.UTF_8).strip();
         assertThat(token.length()).isGreaterThanOrEqualTo(16);

@@ -130,7 +130,7 @@ public class RecordFixOperation extends WriteOperation<RecordFixCommand, RecordF
         // that decides a race with another write of the same defect (VERSION_CONFLICT), and every write of a defect takes
         // its row before the counters, so two writes cannot wait for each other (principle 4.4: no lock statement).
         // What new CI data of a known commit changes is checked before anything is written (a refused amendment leaves nothing).
-        ChangeSet amended = known.isPresent() ? amendedChanges(known.get(), ciRef, conclusion, completedAt) : null;
+        Optional<ChangeSet> amended = known.map(row -> amendedChanges(row, ciRef, conclusion, completedAt));
         HistoryOp defectOp = null;
         if (defect.status() == DefectStatus.OPEN && mark) {
             // a fix changes no code field (category, severity), so no code is checked: a defect that holds a retired code
@@ -151,8 +151,8 @@ public class RecordFixOperation extends WriteOperation<RecordFixCommand, RecordF
             }
         }
         FixWrite fix = known
-                .map(row -> amendFix(ctx, row, fixEntityId, ciRef, conclusion, completedAt, evidence, amended,
-                        attachment))
+                .map(row -> amendFix(ctx, row, fixEntityId, ciRef, conclusion, completedAt, evidence,
+                        amended.orElseThrow(), attachment))
                 .orElseGet(() -> recordFix(ctx, defectId, fixEntityId, repo, commit, branch, ciRef, conclusion,
                         completedAt, evidence, now, attachment));
         long fixId = fix.fixId();

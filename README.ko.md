@@ -5,6 +5,10 @@
 AI 에이전트가 수행한 작업을 기록하는 장부이며, 하나의 MCP 엔드포인트로 제공됩니다. 결함, 작업, 수정과 그 검증을 누가 왜 수행했는지와 함께 기록합니다.
 에이전트는 MCP 도구로 읽고 쓰며, 자신의 데이터베이스 로그인을 받지 않습니다.
 
+이것은 **개인판**입니다. 한 사람이 본인의 컴퓨터나 본인의 서버에 설치해 실행하며, 설치 대상 전체를 신뢰합니다. 두 서비스(MCP 서버와 관리 웹)는
+루프백 주소 `127.0.0.1`에서만 수신합니다. 다른 컴퓨터에서 접근하게 하는 일, 곧 역방향 프록시와 TLS 인증서는 운영자가 고른 도구로 하는 운영자의 몫이며,
+설치기는 프록시 설정을 쓰지 않고 인증서를 발급하지 않습니다.
+
 2.0.0 버전은 Java 25와 Spring Boot로 다시 작성한 것이며 자체 도구 계약을 가집니다(모든 쓰기 도구는 필수 `operationKey`를 받고, 이전 버전의 인자는 새 인자와 함께 받아들이지 않습니다).
 클라이언트에 바뀐 내용은 [릴리스 노트](docs/release-notes/2.0.0.md)에 적습니다. 릴리스 노트의 형식은 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md)에 있습니다.
 
@@ -147,7 +151,7 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 - **오류.** `ARTIFACT_CHUNK_CONFLICT`, `CHUNK_HASH_MISMATCH`, `ARTIFACT_BUSY`(잠시 뒤 다시 보냅니다), `ARTIFACT_INCOMPLETE`, `ARTIFACT_HASH_MISMATCH`(바이트는 남습니다), `ARTIFACT_CORRUPTED`, `ARTIFACT_LIMIT`, `ARTIFACT_UNSUPPORTED_PURPOSE`, `ARTIFACT_EXPIRED`, `ARTIFACT_NOT_FOUND`, `ARTIFACT_OPERATION_CONFLICT`, `ARTIFACT_STORAGE_FULL`(디스크가 너무 찼으니 소유자가 비워야 합니다), `ARTIFACT_STORAGE_IO_ERROR`, `ARTIFACT_STORAGE_UNSAFE`(저장 경로를 이 용도로 쓸 수 없습니다. 폴더 자리에 파일이 있거나, 파일 자리에 폴더가 있거나, 이 파일 시스템이나 이 계정에서는 소유자 전용으로 만들 수 없는 경우입니다), `ARTIFACT_KEY_MISSING`(쓸 수 있는 키가 없습니다. 키 파일이 없거나, 비었거나, 256비트가 아닙니다. 키 파일을 되살립니다). 이 도구들의 오류에는 모두 `details.retryable`이 실립니다. 같은 요청을 나중에 다시 보내 성공할 수 있을 때만 `true`입니다(`ARTIFACT_BUSY`, 그리고 `details.limit`이 `staging-budget`이나 `open-uploads`인 `ARTIFACT_LIMIT`). `ARTIFACT_INCOMPLETE`는 `false`입니다(빠진 청크를 보낸 뒤 finish를 다시 보냅니다).
 - **점검.** `ledger-cli attachments-check`는 없거나 손상된 첨부(지우지 않습니다)와 어떤 이력 행도 가리키지 않는 첨부(보존합니다)를 알리고, 행이 없는 파일이나 rekey가 대체한 파일을 `orphan-grace`가 지난 뒤 `orphans/`로 옮깁니다. `orphans/`를 비우는 길은 `--purge-orphans`뿐이며 감사 기록에 남습니다. 관리 웹은 같은 결과를 읽기 전용으로 보여 주고, 기록 화면에 텍스트 첨부는 이스케이프해서 보여 주며 그 밖의 형식은 응용을 거치는 내려받기로 제공합니다.
 - **백업.** 첨부 폴더, 키 폴더, 데이터베이스를 함께 백업하고 복원합니다. 복원 뒤 `ledger-cli attachments-check`를 실행하면 없거나 손상된 첨부가 없어야 합니다. 격리된 파일의 행이 다시 생기면 점검이 그 파일을 제자리로 돌려놓습니다.
-- **설치.** 설치 프로그램이 첨부 폴더(서비스 계정 소유, 다른 계정에는 닫힘), 비밀 폴더 아래의 키 폴더, 설정을 만듭니다. 1.x의 근거는 기록된 URI와 해시 그대로 남으며 이전은 아무것도 가져오지 않습니다.
+- **설치.** 설치 프로그램이 첨부 폴더(서비스 계정 소유, 다른 계정에는 닫힘), 비밀 디렉터리 옆의 키 폴더(`attachment-keys`), 설정을 만듭니다. 1.x의 근거는 기록된 URI와 해시 그대로 남으며 이전은 아무것도 가져오지 않습니다.
 
 ## 모듈
 
@@ -170,8 +174,20 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 ## 설정
 
 설정은 Spring Boot 속성입니다. 파일, 명령줄(`--name=value`), 비밀 저장소로 줄 수 있습니다. 비밀은 파일이나 환경 변수에 넣지 않습니다.
-`ledger-cli secret-set <name>`은 숨김 입력으로 비밀을 받아 비밀 디렉터리의 파일 하나로 저장하며, 프로세스들은 이 디렉터리를 Spring 설정 트리로 읽습니다.
-비밀은 그 속성 이름으로 저장합니다. 저장된 비밀을 출력하는 명령은 없습니다.
+`ledger-cli secret-set <name>`은 숨김 입력으로 비밀을 받아 비밀 디렉터리 안에서 그 이름의 용도에 맞는 폴더의 파일 하나로 저장하며, 프로세스들은 이 폴더를 Spring 설정 트리로 읽습니다.
+비밀은 그 속성 이름으로 저장하며, 제품의 비밀 이름이 아닌 이름은 거절합니다(`UNKNOWN_SECRET_NAME`). 저장된 비밀을 출력하는 명령은 없습니다.
+
+비밀 디렉터리(`<settings folder>/secrets`)에는 용도마다 폴더가 하나씩 있고, 각 프로세스는 자기에게 필요한 폴더만 읽어 들입니다. 그래서 MCP 서버의 설정에는 관리 웹의 비밀이 들어오지 않고,
+관리 웹에는 에이전트의 토큰이 그 이름으로 들어오지 않습니다.
+
+| 비밀(파일 이름이 속성 이름) | 읽는 곳 | 비밀 디렉터리의 폴더 |
+|---|---|---|
+| `ledger.jdbc.password` | MCP 서버, 관리 웹, `ledger-cli`, `ledger-migrate-1x` | `common` |
+| `ledger.admin.token`, `ledger.admin.agent-token`, `spring.security.oauth2.client.registration.<id>.client-secret`(OpenID Connect) | 관리 웹 | `admin` |
+| `ledger.mcp.token` | MCP 서버, `ledger-cli mcp-check` | `mcp` |
+| `ledger.import.source.password` | `ledger-migrate-1x` | `tool` |
+
+첨부의 키 파일은 비밀 디렉터리에 두지 않고 `<settings folder>/attachment-keys`에 둡니다. 어떤 설정 트리 아래에도 없는 위치입니다(Spring Boot는 트리 아래의 모든 파일을 그 프로세스의 속성으로 만듭니다).
 
 | 키 | 사용처 | 의미 |
 |---|---|---|
@@ -196,18 +212,15 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | `ledger.admin.sign-in` | 관리 웹 | 소유자의 로그인 방식으로 `token`, `oidc`, `passkey` 중 정확히 하나이며 로그인 페이지는 그것만 제공합니다. 없으면 새 설치는 `passkey`이고, `ledger.admin.oidc.*` 설정이 있는데 선택이 없는 설치는 시작할 때 거절합니다(추측하지 않습니다) |
 | `ledger.admin.oidc.owner-email` | 관리 웹 | `ledger.admin.sign-in=oidc`일 때 소유자의 이메일 주소 하나이며 공급자가 확인한 주소여야 합니다. 공급자 자체는 `spring.security.oauth2.client.*`입니다 |
 | `ledger.admin.oidc.issuer` | 관리 웹 | `ledger.admin.sign-in=oidc`일 때 그 주소가 유효한 발급자(`iss`): 주소는 그것을 확인한 발급자 안에서만 의미가 있습니다 |
-| `ledger.admin.oidc.owners` | 관리 웹 | 더 이상 지원하지 않는 이전의 소유자 목록입니다. 이것이 남은 설정은 시작할 때 거절하며 메시지가 `ledger.admin.oidc.owner-email`을 알려 줍니다 |
-| `ledger.admin.passkey.rp-id` | 관리 웹 | 패스키가 묶이는 호스트 이름. 기본값은 `ledger.admin.allowed-hosts`의 루프백이 아닌 호스트 하나이고, 없으면 `localhost`입니다(공개 호스트가 여럿이면 이 설정이 필요합니다) |
+| `ledger.admin.passkey.rp-id` | 관리 웹 | 패스키가 묶이는 호스트 이름. 기본값은 `ledger.admin.allowed-hosts`의 루프백이 아닌 호스트 하나이고, 없으면 `localhost`입니다 |
 | `ledger.admin.passkey.origins` | 관리 웹 | 브라우저가 보이는 origin(스킴, 호스트, 포트): `http://localhost`를 뺀 모든 origin은 `https`입니다. 기본값은 `https://<rp-id>`이고 `localhost`는 `http://localhost:<server.port>`입니다 |
-| `ledger.admin.lockout.max-failures` | 관리 웹 | 한 클라이언트가 잠기기 전의 실패 횟수(관리 토큰, 패스키 로그인, 일회용 코드), 기본 5 |
-| `ledger.admin.lockout.window` | 관리 웹 | 실패를 세는 기간, 기본 60s |
-| `ledger.admin.lockout.lock-period` | 관리 웹 | 클라이언트가 잠겨 있는 시간, 기본 60s |
-| `ledger.admin.lockout.global-max-failures` | 관리 웹 | 전체 클라이언트의 실패가 이 횟수를 넘으면 전역 지연이 시작되는 한도, 기본 50 |
-| `ledger.admin.lockout.global-delay` | 관리 웹 | 전역 한도를 넘은 뒤 토큰을 비교하기 전에 기다리는 시간, 기본 1s. 늦출 뿐 잠그지는 않습니다 |
+| `ledger.admin.lockout.window` | 관리 웹 | 자격 증명 확인(관리 토큰, 패스키 로그인, 일회용 코드)을 세는 기간, 기본 60s |
+| `ledger.admin.lockout.global-max-failures` | 관리 웹 | 기간 안에 모든 호출자의 자격 증명 확인이 이 횟수를 넘으면 지연이 시작되는 한도, 기본 50 |
+| `ledger.admin.lockout.global-delay` | 관리 웹 | 한도를 넘은 뒤 자격 증명을 비교하기 전에 기다리는 시간, 기본 1s. 늦출 뿐 잠그거나 거절하지 않으며, 맞는 자격 증명은 언제나 로그인됩니다 |
 | `ledger.admin.mcp.health-url` | 관리 웹 | 개요 화면에 보여 줄 MCP 서버의 `/healthz` URL. 없으면 설정하지 않은 것입니다 |
 | `ledger.admin.mcp.timeout` | 관리 웹 | 그 확인의 제한 시간, 기본 2s |
 | `ledger.attachments.directory` | 서버, CLI | 첨부 파일을 두는 위치입니다(설치 프로그램이 `<data folder>/attachments`로 정합니다). 정하지 않으면 첨부 도구는 등록되지 않습니다 |
-| `ledger.attachments.key-directory` | 서버, CLI | 키 파일을 두는 위치로 `directory` 밖이어야 합니다(안이면 시작이 실패합니다). 설치 프로그램이 `<settings folder>/secrets/attachment-keys`로 정합니다 |
+| `ledger.attachments.key-directory` | 서버, CLI | 키 파일을 두는 위치로 `directory` 밖이어야 합니다(안이면 시작이 실패합니다). 설치 프로그램이 비밀 디렉터리 안이 아니라 그 옆인 `<settings folder>/attachment-keys`로 정합니다 |
 | `ledger.attachments.active-key-id` | 서버, CLI | 새 업로드를 쓰는 키입니다. `setup`이 `local.yaml`에 적습니다. 키 파일이 없으면 서버가 시작하지 않습니다 |
 | `ledger.attachments.max-file-bytes` | 서버, CLI | 파일 하나의 최대 크기, 기본 64MB |
 | `ledger.attachments.staging-budget-bytes` | 서버, CLI | 열린 업로드 전체가 선언할 수 있는 크기, 기본 512MB |
@@ -218,27 +231,27 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | `ledger.attachments.orphan-grace` | 서버, CLI | 행 없는 파일(또는 대체된 파일)을 `attachments-check`가 `orphans/`로 옮기기 전 유예, 기본 24h |
 | `ledger.attachments.reaper-interval` | MCP 서버 | 만료된 업로드를 지우는 주기, 기본 1m |
 | `ledger.secrets.home` | `ledger-cli` | 설정, 드라이버 등록, 드라이버 jar, 비밀 디렉터리를 담는 설치 디렉터리, 기본 `/etc/pg-ledger-mcp`(Windows 설치기는 자기 것을 지정합니다) |
-| `ledger.secrets.directory` | `ledger-cli` | 비밀 디렉터리, 기본 `/etc/pg-ledger-mcp/secrets` |
+| `ledger.secrets.directory` | `ledger-cli` | 비밀 디렉터리(폴더 `common`, `admin`, `mcp`, `tool`을 담으며 그 자체는 설정 트리가 아닙니다), 기본 `/etc/pg-ledger-mcp/secrets` |
 | `ledger.secrets.instance` | `ledger-cli` | 기본 경로가 따르는 인스턴스 이름, 기본 `pg-ledger-mcp` |
 | `ledger.cli.driver.directory` | `ledger-cli` | `driver-register`가 jar를 가져오는 디렉터리, 기본 `/etc/pg-ledger-mcp/drivers` |
 | `ledger.cli.driver.file` | `ledger-cli` | `driver-register`가 기록하는 등록 파일, 기본 `/etc/pg-ledger-mcp/jdbc-driver.yaml` |
 
-서버는 루프백에서만 수신합니다(MCP `127.0.0.1:8765`, 관리 웹 `127.0.0.1:8865`). 외부에 공개하려면 HTTPS를 종단하는 역방향 프록시를 앞에 두고
-그 공개 호스트 이름을 허용 호스트에 적습니다. 관리 웹은 루프백 주소에서 온 `X-Forwarded-For`와 `X-Forwarded-Proto`만 신뢰합니다.
+서버는 루프백에서만 수신합니다(MCP `127.0.0.1:8765`, 관리 웹 `127.0.0.1:8865`). 두 서버의 코드에 고정되어 있어 주소를 바꾸는 설정은 없습니다. 외부에
+공개하려면 운영자가 고른 역방향 프록시(HTTPS를 종단함)를 같은 호스트에 두고, 그 프록시가 넘기는 호스트 이름 하나를 서비스의 허용 호스트에
+적습니다(`--mcp-host`, `--admin-host`). 관리 웹은 루프백 주소에서 온 `X-Forwarded-For`와 `X-Forwarded-Proto`만 신뢰합니다.
 서버는 드라이버 등록 파일과 비밀 디렉터리를 `spring.config.import`로 읽으며 설치기가 이를 서비스 정의에 넣습니다(설치 참조). `ledger-cli`는 기본으로 읽습니다.
 
 ## 설치
 
-설치기 두 개가 세 가지 대상을 다룹니다. **개인 PC**(Windows)는 `deploy\install.cmd`를 기본값으로 실행합니다. 두 서버는 루프백 주소에서만 듣고,
-역방향 프록시와 TLS는 없습니다. **Windows 서버**는 같은 스크립트를 실행하며, 외부에서 접근하게 할 때는 공개 호스트 이름을 지정하고 운영자가 준비한
-역방향 프록시를 그 앞에 둡니다. **Linux 서버**는 `sudo deploy/install.sh`를 실행하며, 선택적으로 nginx 사이트를 만듭니다. macOS는 지원하지 않습니다.
+설치기 두 개가 세 가지 대상을 다룹니다. 개인 PC와 Windows 서버는 `deploy\install.cmd`를, Linux 서버는 `sudo deploy/install.sh`를 실행합니다.
+대상은 옵션으로만 다르며, 어느 대상에서나 두 서버는 루프백 주소에서만 듣습니다(밖에서 접근하기 참조). macOS는 지원하지 않습니다.
 개인 PC가 Linux 데스크톱이면 Linux 절차를 따릅니다. 빌드에는 JDK 25가 필요하고, 호스트에는 모든 계정이 실행할 수 있는 경로(`/home` 아래가 아닌 곳, 서비스 계정도 실행하기 때문입니다)에 Java 25 런타임이 필요합니다.
 
 모든 대상에 공통인 것은 다음과 같습니다.
 
 - **서비스 계정 하나.** MCP 서버와 관리 웹은 어떤 사람에게도 속하지 않는 운영체제 계정 하나로 실행합니다. Linux는 시스템 사용자 `pg-ledger-mcp`(로그인 없음,
   root 아님), Windows는 내장 계정 LocalService(비밀번호 없음)입니다. 목적은 장부의 비밀인 관리 토큰과 데이터베이스 비밀번호를 그 컴퓨터에서 일하는 사람의
-  계정과 그 아래에서 도는 에이전트로부터 떼어 놓는 것이며, 비밀 디렉터리는 서비스 계정만 읽을 수 있습니다. 한 설치를 인스턴스라고 부르며 서비스 이름은 그것을
+  계정과 그 아래에서 도는 에이전트로부터 떼어 놓는 것이며, 비밀 디렉터리는 서비스 계정만 읽을 수 있습니다(Windows에서는 설치한 사용자와, 읽기만 하는 LocalService가 읽고 다른 누구도 읽지 못합니다). 비밀은 용도마다 폴더 하나에 두고 각 서비스는 자기 폴더와 공통 폴더만 읽어 들이므로, MCP 서버의 프로세스는 더 이상 관리 토큰이나 OpenID Connect 클라이언트 비밀을 설정에 가지지 않습니다(첨부의 키 파일도 어느 서비스의 속성도 아닙니다). 이것이 하지 못하는 일도 있습니다. 두 서비스는 같은 운영체제 사용자로 실행되므로 파일 권한이 한 서비스가 다른 서비스의 폴더를 읽는 것을 막지는 못합니다. 개인판은 설치 대상 전체를 신뢰하며, 이번 변경은 어떤 프로세스도 다른 용도의 비밀을 자기 환경에 싣지 않게 하는 것입니다. 한 설치를 인스턴스라고 부르며 서비스 이름은 그것을
   따릅니다. 인스턴스는 `--name=<name>`이 다른 이름을 주지 않으면 `pg-ledger-mcp`이고, 서비스는 `<name>`과 `<name>-admin`입니다(기본값은 `pg-ledger-mcp`와
   `pg-ledger-mcp-admin`). Linux 사용자, 디렉터리(`/opt/<name>`, `/etc/<name>`, Windows는 `C:\ProgramData\<name>`), WinSW id가 이름을 따르므로, 두 번째
   인스턴스나 기본 이름으로 아직 1.x가 도는 호스트 옆의 설치에는 자기 `--name=<name>`과 자기 포트만 있으면 됩니다.
@@ -261,7 +274,7 @@ cp ledger-cli/build/libs/ledger-cli.jar ledger-mcp-server/build/libs/ledger-mcp-
   설정을 씁니다(`application.yaml`과 서비스별 파일 하나씩이 한 디렉터리에 놓입니다. 운영자의 설정은 그곳의 `local.yaml`에 두며, 마지막에 읽고 교체하지 않습니다).
   이어서 설치기는 `ledger-cli`로 비밀을 저장합니다. 앱 계정의 데이터베이스 비밀번호(숨김 입력), `ledger.admin.token`과 `ledger.mcp.token`(생성하며 그 단계의 끝에
   한 번만 표시), 복사본 `ledger.admin.agent-token`입니다. 그리고 드라이버를 등록하고, DDL 계정으로 `setup`을 실행하고(스키마, 부여, 시드 코드. 첫 설정 참조), 두 서비스를 시작합니다. Java가 할 수 없어
-  스크립트에 남는 것은 운영체제 사용자 생성(`useradd`), 그 사용자로 명령 시작(`runuser`), 서비스 관리자(`systemctl`, WinSW, `sc.exe`), `nginx -t`와 다시 읽기입니다.
+  스크립트에 남는 것은 운영체제 사용자 생성(`useradd`), 그 사용자로 명령 시작(`runuser`), 서비스 관리자(`systemctl`, WinSW, `sc.exe`)입니다.
   Java 25 확인은 JVM이 합니다. jar는 Java 25용으로 컴파일되어 다른 런타임은 읽지 못합니다. 내려받거나 설치하는 것은
   없습니다. 더 새로운 jar로 다시 실행하면 업그레이드입니다. 파일과 서비스는 교체되고, 스키마와 권한은 다시 적용되며, 비밀·토큰·데이터는 유지됩니다. 중간에 멈춘 실행도 같은 방법으로 고칩니다. 같은 옵션으로 다시 실행하면 됩니다(비밀을 저장하는 명령은
   데이터베이스를 쓰지 않습니다).
@@ -282,18 +295,11 @@ cp ledger-cli/build/libs/ledger-cli.jar ledger-mcp-server/build/libs/ledger-mcp-
 | `--schema=<name>` | `ledger.schema.name`, 선택 |
 | `--mcp-port=<n>` | MCP 서버의 루프백 포트, 기본값 8765 |
 | `--admin-port=<n>` | 관리 웹의 루프백 포트, 기본값 8865 |
-| `--mcp-host=<host>[,<host>...]` | MCP 서버의 공개 호스트 이름 하나, 또는 쉼표로 구분한 여러 개(이름마다 한 번, 최대 10개, 소문자, 포트 없음). 모든 이름이 그 `Host` 검사에서 허용되고 nginx 사이트에서 서비스됩니다. `--admin-host` 없이 줄 수 있습니다 |
-| `--admin-host=<host>[,<host>...]` | 관리 웹의 공개 호스트 이름이며 같은 형식입니다. 선택 옵션입니다. 주지 않으면 관리 웹은 루프백으로만 접근하고(그 `Host` 검사는 `127.0.0.1`과 `localhost`만 허용), nginx 사이트에도 관리 웹 블록이 없습니다. 공개 이름이 있으면 설치기가 `admin.yaml`에 `ledger.admin.passkey.rp-id`(첫 번째 이름)와 `ledger.admin.passkey.origins`(첫 번째 이름과 그 아래 이름마다 `https://<name>`)도 써서, 원격 설치의 passkey가 직접 고치지 않아도 동작합니다. 첫 번째 이름 아래가 아닌 이름은 접속은 되지만 passkey를 공유하지 않습니다(다른 구성은 `local.yaml`에 `rp-id`와 `origins`를 지정) |
-| `--nginx-conf=<path>` | Linux: 이 파일에 nginx 사이트를 씁니다. 경로는 호스트의 nginx가 `http` 문맥에 이미 포함하는 경로여야 합니다(예: Debian, Ubuntu 및 RHEL 계열 패키지가 포함하는 `/etc/nginx/conf.d/<name>.conf`). 설치기는 그 경로에 사이트를 쓰고 `nginx -t`와 다시 읽기만 실행하며, `sites-enabled`에는 아무것도 연결하지 않습니다. `--mcp-host`와, `--tls-certificate=<path>` 및 `--tls-key=<path>` 또는 `--tls-acme`가 필요합니다 |
-| `--tls-certificate=<path>` | 운영자의 TLS 인증서. 인증서를 발급하거나 갱신하는 것은 없습니다 |
-| `--tls-key=<path>` | 운영자의 TLS 키 |
-| `--tls-acme` | 운영자의 인증서와 키 대신 주는 플래그입니다. 인증서를 `ledger-cli`가 만들고 갱신합니다(자동 인증서 참조) |
-| `--acme-directory=<url>` | `--tls-acme`와 함께 쓰는 선택 옵션입니다. 인증 기관의 ACME 디렉터리 URL이며, 기본값은 Let's Encrypt의 운영 디렉터리 `https://acme-v02.api.letsencrypt.org/directory`입니다 |
-| `--acme-email=<address>` | `--tls-acme`와 함께 쓰는 선택 옵션입니다. ACME 계정의 연락 주소입니다 |
-| `--agree-tos` | `--tls-acme`와 함께 씁니다. 인증 기관의 서비스 약관을 읽고 동의한다는 표시이며, 첫 주문에 필요합니다 |
+| `--mcp-host=<host>` | 선택 옵션입니다. 운영자의 역방향 프록시가 MCP 서버를 위해 `Host` 헤더로 넘기는 호스트 이름 하나(소문자, 포트 없음)이며, MCP 서버의 `Host` 검사가 `127.0.0.1`과 `localhost`(항상 허용)에 더해 허용합니다. 주지 않으면 서버는 루프백으로만 접근합니다 |
+| `--admin-host=<host>` | 선택 옵션이며 관리 웹에 대해 같은 뜻이고, `--mcp-host`와 다른 이름이어야 합니다. 이 옵션이 있으면 설치기가 `admin.yaml`에 `ledger.admin.passkey.rp-id`(그 이름)와 `ledger.admin.passkey.origins`(`https://<name>`)도 써서, 원격 설치의 passkey가 직접 고치지 않아도 동작합니다(다른 구성은 `local.yaml`에 `rp-id`와 `origins`를 지정) |
 | `--stdin` | 비밀번호를 터미널 대신 표준 입력에서 읽음. 먼저 앱 계정의 비밀번호(아직 저장되어 있지 않을 때만), 그다음 DDL 계정의 비밀번호. `docker login --password-stdin`과 같은 관례입니다 |
 
-`render-deploy`, `prepare-host`, `seal-host`에는 설치기가 스스로 정하는 옵션이 다섯 더 있습니다. `--platform=<platform>`(`linux`가 기본값, 또는 `windows`),
+`render-deploy`와 `prepare-host`에는 설치기가 스스로 정하는 옵션이 다섯 더 있습니다. `--platform=<platform>`(`linux`가 기본값, 또는 `windows`),
 `--home=<path>`(Windows: 설치 디렉터리), `--java=<path>`(Java 실행 파일), `--root=<directory>`(파일을 제 경로 대신 한 디렉터리 아래에 둠. 제자리에 두기 전에
 살펴볼 때 씁니다), 그리고 `render-deploy`에만 있는 플래그 `--check`(모든 옵션을 검증하고 아무것도 바꾸지 않음. 설치기가 가장 먼저 실행하므로, 이름을 포함해
 잘못된 값은 아무것도 없을 때 설치를 멈춥니다)입니다. `prepare-host`는 `--jars=<dir>`, `--driver-jar=<file>`, Windows에서는 `--winsw=<file>`도 받습니다.
@@ -303,81 +309,24 @@ cp ledger-cli/build/libs/ledger-cli.jar ledger-mcp-server/build/libs/ledger-mcp-
 ### Linux 서버
 
 root로 실행합니다. 사용자 `pg-ledger-mcp`가 없으면 만들고, `prepare-host`(Java)가 `/opt/<name>`(root, 0755), `/etc/<name>`(서비스 사용자, 0750), 그 아래
-`drivers` 폴더(root, 0755)와 `secrets` 폴더(서비스 사용자, 0700)를 만들고, jar와 드라이버를 복사하고, 유닛을 `/etc/systemd/system`에 렌더하며, 유닛은 이어서 활성화합니다.
+`drivers` 폴더(root, 0755)와 `secrets` 폴더 및 그 아래의 `common`, `admin`, `mcp`, `tool` 폴더, 키 폴더 `attachment-keys`(서비스 사용자, 0700)를 만들고, jar와 드라이버를 복사하고, 유닛을 `/etc/systemd/system`에 렌더하며, 유닛은 이어서 활성화합니다.
 비밀은 서비스 사용자가 저장합니다. 설치 프로그램이 렌더하지 않은 파일을 렌더한 파일이 대체하면 그 파일은 `<file>.backup`으로 보관합니다. 1.x 설치를 옮기려면 1.x에서 업그레이드를 참조합니다.
 
 ```sh
 sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<driver-class> --owner-account=<ddl-account> --app-account=<app-account> --jdbc-url=<jdbc-url>
 ```
 
-공개 이름과 TLS를 쓰려면 호스트 이름과 인증서·키 경로를 더합니다. nginx 사이트는 `X-Forwarded-For`를 연결 주소로 덮어쓰며, 관리 웹은 이 헤더를
-루프백 프록시에서 온 것만 믿습니다.
+### 밖에서 접근하기
 
-```sh
-sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<driver-class> --owner-account=<ddl-account> --app-account=<app-account> --jdbc-url=<jdbc-url> --mcp-host=<mcp-host> --admin-host=<admin-host> --nginx-conf=/etc/nginx/conf.d/pg-ledger-mcp.conf --tls-certificate=<certificate> --tls-key=<key>
-```
-
-### 자동 인증서
-
-`--tls-certificate`와 `--tls-key` 대신 `--tls-acme`를 주면 `ledger-cli`가 인증서를 직접 만들고 갱신합니다. 표준 ACME 클라이언트(RFC 8555)이며
-라이브러리 acme4j(Apache-2.0)로 만들었습니다. acme4j는 jose4j(Apache-2.0)와 Bouncy Castle(MIT 계열인 Bouncy Castle 라이선스)을 함께 가져오며,
-인증서 요청을 만드는 데 Bouncy Castle을 씁니다. 인증 기관은 ACME 디렉터리를 제공하는 어느 곳이든 됩니다. `--acme-directory=<url>`로 지정하며
-기본값은 Let's Encrypt의 운영 디렉터리입니다. 증명은 HTTP-01만 쓰므로 어떤 업체의 DNS나 CDN 인터페이스도 쓰지 않습니다. 결과는 `/etc/<name>/tls`의
-`fullchain.pem`과 `privkey.pem`이며 계정 키 `account.key`가 그 옆에 있습니다. 표준 PEM 파일이므로 다른 프록시도 그대로 쓸 수 있습니다. 키는 JDK로
-만들고(EC P-256), 서비스 사용자만 읽을 수 있게 저장하며, 출력하지 않습니다. 파일은 원자적으로 교체하므로 갱신이 실패해도 이전 인증서가 그대로 남습니다.
-
-운영자가 할 일은 다음 순서입니다.
-
-1. 호스트 이름, 즉 `--mcp-host`와 `--admin-host`의 DNS 레코드(`A`와 `AAAA`)를 서버로 지정합니다(목록이면 모든 이름. 관리 웹은 공개 이름이 있을 때만 필요합니다).
-2. 방화벽에서 `80`과 `443` 포트를 허용합니다. `80` 포트는 nginx에 닿아야 합니다. 인증 기관이 그곳에서 HTTP로 증명을 가져갑니다.
-3. 서버 앞에 CDN이나 다른 프록시를 두는 경우, 그 프록시는 경로 `/.well-known/acme-challenge/`를 `80` 포트의 서버로 그대로 통과시켜야 하며, 그 경로를
-   캐시하거나 리다이렉트해서는 안 됩니다. 오래 유지되는 MCP 연결(Streamable HTTP)에는 충분히 긴 프록시 타임아웃이 필요합니다. nginx 사이트 자체는 MCP
-   호스트에 `proxy_buffering off`와 `proxy_read_timeout 3600s`를 둡니다.
-4. 인증 기관의 서비스 약관을 읽고 `--agree-tos`를 줍니다. `--acme-email=<address>`는 선택 연락 주소입니다.
-
-```sh
-sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<driver-class> --owner-account=<ddl-account> --app-account=<app-account> --jdbc-url=<jdbc-url> --mcp-host=<mcp-host> --admin-host=<admin-host> --nginx-conf=/etc/nginx/conf.d/pg-ledger-mcp.conf --tls-acme --agree-tos
-```
-
-nginx 사이트에는 자기 호스트 이름의 `server` 블록만 있습니다(MCP 서버의 이름은 한 블록에, 관리 웹의 이름은 있을 때 다른 블록에 둡니다). `default_server`를 차지하지 않고 다른 사이트를 건드리지 않으므로 같은 호스트의 다른 서비스와
-함께 쓸 수 있습니다. 호스트 이름마다 80 포트 블록이 `/.well-known/acme-challenge/`를 웹 루트 `/var/www/<name>-acme`에서 제공하고 나머지는 https로
-리다이렉트하며, 443 블록은 PEM 파일을 씁니다.
-
-80 포트는 네트워크 전체에 열려 있으므로 80 포트 블록은 강화되어 있습니다. 80 포트 블록은 `/.well-known/acme-challenge/<token>` 경로이고 토큰이 base64url의
-문자(`A-Za-z0-9_-`)로만 이루어진 경우에, 그리고 `GET`과 `HEAD` 메서드에만 웹 루트의 파일을 제공합니다. `/.well-known/acme-challenge/` 아래의
-다른 요청에는 404로 응답하고, 나머지는 요청의 `Host` 헤더가 아니라 블록에 고정된 호스트 이름의 https로 리다이렉트합니다. 요청 본문은 `1k`까지만
-받고, 헤더, 본문, 유휴 연결은 `10s`까지만 기다립니다. 주소마다 초당 10건(순간 허용 20건)의 요청과 동시 연결 20개를 허용하고, 이를 넘으면 `429`로
-응답합니다. 이 한도는 인증 기관이 필요로 하는 양보다 훨씬 높습니다. 인증 기관은 여러 곳에서 동시에 확인하지만 각자 다른 주소에서 옵니다.
-nginx의 버전은 숨깁니다(`server_tokens off`, 443 블록에서도 같습니다). 주소를 세는 공유 메모리 영역 두 개는 사이트 파일의 맨 위에 선언하며
-인스턴스 이름을 담으므로(`<name>-acme-req`와 `<name>-acme-conn`) 다른 사이트나 다른 인스턴스에는 영향을 주지 않습니다. 80 포트 블록은
-`default_server`를 차지하지 않고, 다른 사이트를 바꾸지 않으며, 전역 지시어를 설정하지 않고, 서비스로 프록시하지 않습니다.
-
-권장 사항: 그 호스트에서 80 포트를 쓰는 사이트가 이것뿐이면, 그곳에서 아무도 서비스하지 않는 이름과 주소의 요청을 닫는 기본 서버를 따로 두는 것을 권장합니다.
-예를 들어 다음과 같습니다. 제품은 이 설정을 만들지 않습니다.
-
-```nginx
-server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    server_name _;
-    return 444;
-}
-```
-
-첫 발급: nginx는 인증서 파일이 생기기 전에는 443 블록을 읽을 수 없으므로, `render-deploy`는 `fullchain.pem`과 `privkey.pem`이 있을 때만 443 블록을 씁니다.
-그래서 설치기는 80 포트 블록만 있는 사이트를 쓰고, nginx가 읽게 한 뒤, 서비스 사용자로 `tls-issue`를 실행하고, `render-deploy`를 다시 실행하며(이제 443 블록이
-포함됩니다), nginx가 사이트를 다시 읽게 하고, 타이머를 켭니다. 설치기를 다시 실행하면 대신 `tls-renew`를 불러, 갱신할 때가 된 것만 주문합니다.
-
-갱신: `render-deploy --tls-acme`는 systemd 서비스 `<name>-tls-renew.service`와 타이머 `<name>-tls-renew.timer`를 씁니다. 타이머는 하루 두 번, 무작위 시각에
-실행됩니다. `tls-renew`는 현재 인증서가 30일 안에 만료되거나(`--renew-before-days=<n>`) 준 호스트 이름과 정확히 일치하지 않을 때만 새 인증서를 주문하며,
-그렇지 않으면 아무것도 하지 않고 그렇게 알립니다. 서비스는 서비스 사용자로 권한(capability) 없이 실행되고 TLS 디렉터리와 웹 루트만 쓸 수 있으며, 끝난 뒤
-`ExecStartPost=+/usr/bin/systemctl reload nginx`로 nginx를 다시 읽게 합니다. 이는 고정된 명령 한 줄이며, nginx를 다시 읽게 할 수 있는 것은 root뿐이므로
-systemd가 샌드박스 밖에서 전체 권한으로 실행합니다(systemd.service(5)의 `+` 접두사). 서비스 사용자의 입력은 이 명령에 닿지 않고, 관리할 `sudo` 규칙이나 polkit
-규칙도 없으며, 네트워크와 통신하고 키를 쓰는 프로세스는 아무 권한도 갖지 않습니다.
-
-자동 인증서는 Linux에서만 쓸 수 있습니다. nginx 사이트가 Linux용이기 때문입니다. Windows 설치기에는 자체 웹 서버가 없으며(Windows 서버는 운영자가 준비한
-리버스 프록시 뒤에 둡니다), 명령 자체는 어느 호스트에서나 실행됩니다. `--webroot=<dir>`와 `--tls-dir=<dir>`를 주면 증명은 운영자가 고른 웹 서버가 제공하는
-위치에, PEM 파일은 운영자의 프록시가 읽는 위치에 쓰이며, `--name=<name>`은 기본 디렉터리가 속한 인스턴스를 고릅니다.
+두 서버는 `127.0.0.1`에서만 수신하며, 이를 바꾸는 설정은 없습니다. 다른 컴퓨터에서 접근하게 하려면 운영자가 같은 호스트에 역방향 프록시와 TLS 인증서를
+운영자가 고른 도구로 둡니다. 설치기는 프록시 설정을 쓰지 않고, 인증서를 발급하지 않으며, 갱신 장치를 설치하지 않습니다. 프록시는 `127.0.0.1:8765`(MCP 서버)와
+`127.0.0.1:8865`(관리 웹)로 연결하고 클라이언트의 `Host` 헤더를 그대로 넘깁니다. 각 서비스에는 프록시가 그 서비스를 위해 넘기는 호스트 이름 하나를
+`--mcp-host=<host>`와 `--admin-host=<host>`로 줍니다. 그 이름은 해당 서비스의 `Host` 검사에서 `127.0.0.1`과 `localhost`(항상 허용)에 더해 허용됩니다.
+관리 웹의 이름이 있으면 설치기가 그에 맞는 passkey 설정도 씁니다(위의 옵션 참조). 관리 웹은 루프백 주소에서 온 `X-Forwarded-For`와 `X-Forwarded-Proto`만
+신뢰하므로, 프록시는 이 두 헤더를 자신이 받은 연결의 주소와 스킴으로 덮어써야 합니다. 이는 로그인 실패 뒤의 잠금과 이어져 있습니다. 관리 웹은 시도를
+클라이언트 주소별로 세므로, `X-Forwarded-For`를 넘기지 않는 프록시는 모든 클라이언트를 프록시의 루프백 주소 하나로 보이게 하고, 그러면 누군가의 실패한
+시도가 소유자까지 함께 잠급니다. 오래 유지되는 MCP 연결(Streamable HTTP)에는 충분히 긴 프록시 타임아웃이
+필요합니다. 인증서, 그 갱신, 방화벽도 운영자의 몫입니다.
 
 ### Windows: 개인 PC 또는 서버
 
@@ -401,17 +350,18 @@ systemd가 샌드박스 밖에서 전체 권한으로 실행합니다(systemd.se
 deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <app-account> "<jdbc-url>"
 ```
 
-외부에서 접근하는 Windows 서버는 호스트 이름을 더하고, 직접 준비한 역방향 프록시를 두 루프백 포트 앞에 둡니다(설치기는 Windows에서 프록시 사이트를 쓰지
-않습니다).
+외부에서 접근하는 서버는 서비스마다 호스트 이름을 더하고, 직접 준비한 역방향 프록시를 두 루프백 포트 앞에 둡니다(밖에서 접근하기 참조).
 
 ```bat
 deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <app-account> "<jdbc-url>" "pg-ledger-mcp" "--mcp-host=<mcp-host> --admin-host=<admin-host>"
 ```
 
 모든 것은 `C:\ProgramData\<name>`에 놓입니다. 두 서비스는 LocalService로 실행하고, 실패하면 다시 시작하며(WinSW 설정), 로그는 `logs` 폴더에 씁니다.
-`prepare-host`는 폴더를 SYSTEM과 Administrators 외 모든 계정에게 닫고, `seal-host`는 설치 끝에 비밀을 LocalService에 넘깁니다(Java가 ACL로 하며 `icacls`는 쓰지 않습니다).
-설치한 사용자는 파일이 있다는 것만 볼 수 있고, `prepare-host`는 다시 실행하는 동안만 이를 되가져옵니다. 그래서 그 뒤에는
-`ledger-cli`의 소유자 명령이 비밀을 읽지 못합니다. 소유자 작업(프로젝트, 공통코드, 부여, 키)은 관리 웹의 화면에서 합니다(관리 웹 절 참고: 패스키 또는
+`prepare-host`는 폴더를 SYSTEM과 Administrators 외 모든 계정에게 닫고 같은 단계에서 LocalService에 필요한 접근을 줍니다(Java가 ACL로 하며 `icacls`는 쓰지 않습니다).
+jar는 읽고 실행하고, 설정, 로그, 데이터는 바꿀 수 있습니다. 비밀은 설치한 사용자의 것입니다. 비밀 폴더, 그 아래의 용도별 폴더, 키 폴더 `attachment-keys`, 그 안에 만드는 비밀은 설치한 사용자(전체)와
+LocalService(읽기만)의 ACL로 만들어지고 다른 누구에게도 접근이 없으므로, 서비스는 읽을 수 있고 에이전트가 실행되는 계정은 읽을 수 없습니다.
+LocalService에 넘기는 것은 없으므로(설치한 사용자가 소유자로 남고, 소유권을 가져오는 권한도 쓰지 않습니다) `ledger-cli`의 소유자 명령은 설치한 사용자에게 계속 동작하고, 설치기를 다시
+실행해도 모든 것이 그대로입니다. 같은 사용자로 다시 실행합니다(개인판은 사용자가 한 사람입니다). 소유자 작업은 관리 웹에서도 합니다(관리 웹 절 참고: 패스키 또는
 OpenID Connect로 로그인하고, 첫 패스키는 `passkey-code`로 등록합니다). 개인 PC에서는 관리 웹을 `http://localhost:8865`로 엽니다(포트는 `--admin-port=<n>`입니다). 관리 웹은
 `Secure` 세션 쿠키를 설정하는데, 주요 브라우저는 `localhost`를 보안 컨텍스트로 취급하므로 이를 받아들이고, 패스키도 `localhost`에서는 HTTPS 없이 동작합니다.
 
@@ -435,7 +385,7 @@ OpenID Connect로 로그인하고, 첫 패스키는 `passkey-code`로 등록합�
 4. 시드와 데이터베이스를 코드 개수와 SHA-256 다이제스트로 대조하고 보고를 출력합니다. `setup`을 다시 실행해도 아무것도 바뀌지 않고 같은 보고가 나옵니다. 시드와 다른 운영자의
    코드는 바뀐 것으로 세고 그대로 둡니다.
 
-설치 기본값은 시드 번들 한 곳에 적습니다. `render-deploy`, `prepare-host`, `seal-host`는 옵션을 주지 않으면 이름과 포트를 거기서 가져오고, 설치 스크립트는
+설치 기본값은 시드 번들 한 곳에 적습니다. `render-deploy`와 `prepare-host`는 옵션을 주지 않으면 이름과 포트를 거기서 가져오고, 설치 스크립트는
 `install-default <name>`(`instance-name`, `mcp-port`, `admin-port`)으로 받으므로 어느 스크립트도 기본값의 사본을 갖지 않습니다.
 
 ### 설치 뒤
@@ -483,14 +433,11 @@ JDBC 드라이버의 타입 정보는 드라이버가 판단할 수 없는 형�
 | `grants` | `grants [<author>]` | 유효한 부여를 나열합니다 |
 | `attachments-check` | `attachments-check [--purge-orphans]` | 첨부를 그 파일 및 키와 맞춰 봅니다. 어느 행도 가리키지 않는 파일과 `attachments-rekey`가 대체한 파일은 지우지 않고 `orphans/`로 옮기며, `orphans/`에 있던 파일의 행이 다시 생겼으면 되돌립니다. 보고서는 건수와, 없어졌거나 손상되었거나 어느 이력 행도 가리키지 않는 첨부의 ID(저장 키나 경로는 출력하지 않습니다)를 보여 주고, 없어졌거나 손상된 첨부가 있으면 종료 코드는 `1`입니다. `--purge-orphans`는 먼저 `orphans/`를 비우고 그 수를 감사 기록에 남깁니다 |
 | `attachments-rekey` | `attachments-rekey --from=<keyId>` | 키 `<keyId>`로 쓴 첨부 파일을 활성 키 `ledger.attachments.active-key-id`(다른 키여야 합니다)로 다시 씁니다. 옛 파일은 `ledger.attachments.orphan-grace`가 지난 뒤 `attachments-check`가 `orphans/`로 옮깁니다 |
-| `attachments-key-create` | `attachments-key-create` | 키 디렉터리에 새 256비트 키 파일을 만들고(서비스 계정만 읽을 수 있습니다) 키 ID를 출력합니다. 키 자체는 출력하지 않으며, 새 업로드를 그 키로 쓰려면 `ledger.attachments.active-key-id`를 그 값으로 설정합니다 |
+| `attachments-key-create` | `attachments-key-create` | 키 디렉터리에 새 256비트 키 파일을 만들고(서비스 계정만 읽을 수 있습니다. Windows에서는 설치한 사용자와, 읽기만 하는 LocalService) 키 ID를 출력합니다. 키 자체는 출력하지 않으며, 새 업로드를 그 키로 쓰려면 `ledger.attachments.active-key-id`를 그 값으로 설정합니다 |
 | `mcp-check` | `mcp-check [--url=<url>] [--ledger.mcp.token=<token>]` | 실행 중인 MCP 서버에 연결해 도구를 확인합니다 |
-| `render-deploy` | `render-deploy --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>] [--check]` | 서비스 정의(systemd 유닛, Windows에서는 WinSW 설정)와 설정, 선택적 nginx 사이트를 씁니다. 설치기가 호출합니다 |
-| `prepare-host` | `prepare-host --jars=<dir> --driver-jar=<file> [--winsw=<file>] --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>]` | 호스트의 파일을 준비합니다(root로, Windows에서는 관리자 권한으로 실행). 폴더를 소유자·모드 또는 ACL과 함께 만들고, jar와 드라이버(Windows에서는 WinSW도)를 복사하고, `render-deploy`가 쓰는 것을 씁니다. 설치기가 호출합니다 |
-| `seal-host` | `seal-host --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]] [--nginx-conf=<path> (--tls-certificate=<path> --tls-key=<path> | --tls-acme [--acme-directory=<url>])] [--root=<directory>]` | Windows, 마지막 단계: LocalService에 필요한 접근을 주고 비밀을 넘깁니다. 설치기가 호출합니다 |
+| `render-deploy` | `render-deploy --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>] [--admin-host=<host>] [--root=<directory>] [--check]` | 서비스 정의(systemd 유닛, Windows에서는 WinSW 설정)와 설정을 씁니다. 설치기가 호출합니다 |
+| `prepare-host` | `prepare-host --jars=<dir> --driver-jar=<file> [--winsw=<file>] --java=<path> --jdbc-url=<url> --app-account=<account> [--name=<name>] [--platform=<platform>] [--home=<path>] [--schema=<name>] [--mcp-port=<n>] [--admin-port=<n>] [--mcp-host=<host>] [--admin-host=<host>] [--root=<directory>]` | 호스트의 파일을 준비합니다(root로, Windows에서는 관리자 권한으로 실행). 폴더를 소유자·모드 또는 ACL(Windows에서는 LocalService의 접근과 설치한 사용자의 비밀 폴더)과 함께 만들고, jar와 드라이버(Windows에서는 WinSW도)를 복사하고, `render-deploy`가 쓰는 것을 씁니다. 설치기가 호출합니다 |
 | `install-default` | `install-default <name>` | 시드 번들에서 설치 기본값 하나(`instance-name`, `mcp-port`, `admin-port`)를 출력합니다. 설치기가 기본값을 이것으로 받습니다 |
-| `tls-issue` | `tls-issue --mcp-host=<host>[,<host>...] [--admin-host=<host>[,<host>...]] [--name=<name>] [--webroot=<dir>] [--tls-dir=<dir>] [--acme-directory=<url>] [--acme-email=<address>] [--agree-tos]` | ACME를 쓰는 인증 기관에서 준 호스트 이름의 인증서를 발급받아 `fullchain.pem`과 `privkey.pem`을 씁니다. 첫 실행은 계정을 만들며 `--agree-tos`가 필요합니다. 자동 인증서 참조 |
-| `tls-renew` | `tls-renew --mcp-host=<host>[,<host>...] [--admin-host=<host>[,<host>...]] [--name=<name>] [--webroot=<dir>] [--tls-dir=<dir>] [--acme-directory=<url>] [--renew-before-days=<n>]` | 현재 인증서가 `--renew-before-days`(기본 30일) 안에 만료되거나 준 호스트 이름과 정확히 일치하지 않을 때 새 인증서를 발급받고, 그렇지 않으면 아무것도 하지 않습니다. `--tls-acme`의 타이머가 실행합니다 |
 
 ## 관리 웹
 
@@ -499,7 +446,10 @@ JDBC 드라이버의 타입 정보는 드라이버가 판단할 수 없는 형�
 - **로그인, 셋 중 하나**(`ledger.admin.sign-in`). `passkey`(새 설치의 기본값)이면 소유자는 패스키로 로그인합니다. `token`(개인판: 본인 컴퓨터나 서버의 한 사람)이면 애플리케이션의 로그인 페이지에 관리 토큰 `ledger.admin.token`을 입력합니다. `oidc`이면 OpenID Connect로 로그인하며 소유자는
   **이메일 주소 하나**입니다(`ledger.admin.oidc.owner-email`, `ledger.admin.oidc.issuer`의 공급자가 확인한 주소). 다른 주소나 공급자가 확인하지 않은 주소는 거절합니다.
   셋 중 하나만 제공하며, `oidc`나 `passkey`이면 토큰 입력란이 없고 보낸 토큰은 로그인으로 이어지지 않습니다. 관리 토큰 `ledger.admin.token`은 읽기 전용 JSON 엔드포인트의 bearer로도 남습니다. 어떤 로그인이든 변경은 패스키가 승인하므로, 토큰으로 연 세션도 `passkey-code`의 일회용 코드로 첫 패스키를 등록합니다. 에이전트의 토큰은 거절되므로
-  MCP 토큰을 가진 에이전트가 스스로 부여를 줄 수 없습니다. 실패한 시도(패스키, 일회용 코드, 토큰)는 해당 클라이언트를 잠그고 모든 클라이언트를 늦춥니다(`ledger.admin.lockout.*`).
+  MCP 토큰을 가진 에이전트가 스스로 부여를 줄 수 없습니다. 자격 증명 확인(패스키, 일회용 코드, 토큰)은 기간 안에 한도보다 많이 들어오면 늦춰집니다(`ledger.admin.lockout.*`).
+  아무것도 잠그지 않습니다. 틀린 자격 증명으로 누구나 걸 수 있는 잠금은 소유자도 잠그기 때문입니다. 클라이언트별 제한도 없습니다. 공개는 같은 호스트의
+  운영자 역방향 프록시를 거치고, 그 프록시가 넘기는 주소는 요청의 기록일 뿐 신원이 아닙니다(프록시에 따라 모든 사용자가 한 주소로 들어옵니다). 그래서 주소별 잠금은 공격자와 함께 소유자를 잠그며,
+  한 사람뿐인 개인판에는 구분할 상대가 없습니다. `token-generate`가 만든 토큰(`SecureRandom` 256비트)과 일회용 코드(100비트)는 추측할 수 없으므로 지연이면 충분합니다.
 - **어떻게 로그인했든 모든 변경은 패스키로 승인합니다.** 콘솔에서 하는 모든 변경(부여, 세션 키, 공통코드, 프로젝트, 드라이버, 패스키 닫기)은 사용자 확인을 요구하는 패스키로
   승인합니다. 화면이 서버에 바로 그 변경과 세션으로 만든 challenge를 요청하고, 인증기가 그것에 서명하며, 쓰기는 그 서명과 함께 갑니다. 서명은 그 변경 하나에, 한 번, 2분 동안만
   유효하며 다른 변경이나 다른 세션의 서명은 거절합니다. 읽기에는 승인이 필요 없습니다. 서버의 `ledger-cli` 명령은 소유자의 셸이므로 승인이 필요 없습니다.
@@ -525,7 +475,7 @@ JDBC 드라이버의 타입 정보는 드라이버가 판단할 수 없는 형�
 훅은 쓰기 도구 10종에만 서명하며, 도구 이름은 `mcp__<server>__ledger_<op>` 또는 `mcp__<server>__<server>_ledger_<op>`입니다
 (Codex Apps는 `mcp__codex_apps__app_<app>_ledger_<op>`). `_hostAttestation`의 값은
 `pgla2.<author>.<tool>.<operation key>.<arguments digest>.<issued at>.<signature>`이며, 작성자, 도구, 호출의 `operationKey`(`ledger_whoami`와 첨부 도구는 빈 값), 인자의 RFC 8785 정규형(`_hostAttestation` 제외, 배치는 모든 연산과 그 내용, 순서, 배치의 키)의
-SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인자에서 `operationKey`를 읽을 뿐 키를 만들어 넣지 않으며, 키가 없는 호출은 서버가 거절합니다. 가로챈 토큰으로 다른 내용을 보낼 수 없습니다. `pgla1` 토큰은 `ATTESTATION_VERSION_UNSUPPORTED`로 거절됩니다.
+SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인자에서 `operationKey`를 읽을 뿐 키를 만들어 넣지 않으며, 키가 없는 호출은 서버가 거절합니다. 가로챈 토큰으로 다른 내용을 보낼 수 없습니다.
 
 - 훅은 MCP 서버 이름과 작성자마다 Ed25519 키 하나를 소유자 전용 폴더에 보관합니다. 기본은 `~/.pg-ledger-mcp/session-keys`이며, `LEDGER_HOOK_KEY_DIR`에 절대 경로를 주어 바꿀 수 있습니다.
   한 서버용 서명은 다른 서버에서 검증되지 않습니다. Codex Apps의 서버 이름은 `codex_apps.<app>`입니다.
@@ -558,7 +508,7 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인�
 
 | 이전 명령 | 문법 | 하는 일 |
 |---|---|---|
-| `stop-1x` | `stop-1x [--name=<instance>] [--platform=<platform>] [--unit-dir=<dir>] [--home=<dir>] [--env=<file> [--mcp-host=<host>[,<host>...]] [--admin-host=<host>[,<host>...]]]` | 첫 단계입니다. 1.x의 서비스 둘 `<name>`과 `<name>-admin`을 멈추고 비활성화하며, 각 정의를 옆에 백업(`<file>.1x-backup`)으로 보관합니다. `--env`를 주면 먼저 1.x의 공개 호스트 이름을 검사합니다 |
+| `stop-1x` | `stop-1x [--name=<instance>] [--platform=<platform>] [--unit-dir=<dir>] [--home=<dir>] [--env=<file> [--mcp-host=<host>] [--admin-host=<host>]]` | 첫 단계입니다. 1.x의 서비스 둘 `<name>`과 `<name>-admin`을 멈추고 비활성화하며, 각 정의를 옆에 백업(`<file>.1x-backup`)으로 보관합니다. `--env`를 주면 먼저 1.x의 공개 호스트 이름을 검사합니다 |
 | `import-secrets-1x` | `import-secrets-1x --env=<file> [--replace]` 또는 `import-secrets-1x --stdin [--replace]` | 설치 프로그램을 실행한 뒤 1.x의 비밀을 2.0의 비밀 저장소로 옮깁니다. `--replace`를 주면 설치 프로그램이 생성한 토큰을 대체합니다 |
 | `import-1x` | `import-1x [--verify-only] [--owner-account=<account>] [--stdin]` | 1.x 장부를 하나의 트랜잭션으로 새 스키마에 복사하고 모든 표를 행 수와 SHA-256으로 대조합니다. `--verify-only`는 대조만 다시 합니다 |
 | `retire-1x` | `retire-1x [--confirm=<sha256> --backup-tested]` | 2.0을 받아들인 뒤, 1.x 설치기가 데이터베이스에 만든 것을 제거합니다. 옵션 없이 실행하면 목록만 보여 주고 아무것도 바꾸지 않습니다 |
@@ -586,12 +536,12 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인�
      1.x의 유닛에는 `/etc/<name>/env`를 가리키는 `EnvironmentFile=` 줄이 있습니다.
      첫 변경 전에 모든 서비스를 확인하며, 그렇지 않으면 `NOT_1X_SERVICE`로 멈추고 아무것도 바꾸지 않은 상태로 남습니다.
    - **1.x의 공개 호스트 이름.** 1.x의 클라이언트는 1.x 설정 `DBHUB_ALLOWED_HOSTS`(1.1.0의 관리 웹은 `PGLEDGER_ADMIN_ALLOWED_HOSTS`)가 허용하는
-     호스트 이름, 예를 들어 리버스 프록시의 이름으로 1.x 서버에 접속합니다. 2.0의 `Host` 검사는 `127.0.0.1`, `localhost`와 `--mcp-host`, `--admin-host`의 이름만
-     허용하므로, 이름이 빠지면 이전 직후 모든 클라이언트 요청이 HTTP 403으로 실패합니다. 그래서 `--env=<file>`을 주면 명령은 아무것도 멈추기 전에, 파일이 허용하는
-     공개 호스트 이름을 `--mcp-host`(또는 `--admin-host`)가 담지 않을 때 거절합니다. `HOSTS_DROPPED`와 종료 코드 2로 멈추고, 호스트 이름과 옵션을 알리며, 바꾼 것은 없습니다.
-     그 이름을 옵션에 더합니다. 이름 하나 또는 쉼표로 구분한 목록이며(`--mcp-host=<name>[,<name>...]`, `--mcp-host`는 `--admin-host` 없이 줄 수 있습니다),
-     같은 옵션을 설치 프로그램에도 줍니다. 루프백 이름은 옵션이 필요 없고, 파일의 그 밖의 내용은 출력하지 않습니다. 클라이언트가 더 쓰지 않는 이름은 파일의 사본에서 지우고,
-     그 사본을 `--env`로 줍니다. `--env` 없이 두 호스트 옵션만 주면 거절합니다.
+     호스트 이름, 예를 들어 리버스 프록시의 이름으로 1.x 서버에 접속합니다. 2.0의 `Host` 검사는 `127.0.0.1`, `localhost`와 `--mcp-host`의 이름 하나, `--admin-host`의 이름 하나만
+     허용하므로(설치 프로그램은 서비스마다 호스트 이름 하나를 받습니다), 클라이언트가 아직 쓰는 이름이 빠지면 이전 직후 그 요청이 HTTP 403으로 실패합니다. 그래서 `--env=<file>`을 주면 명령은 아무것도 멈추기 전에, 파일이 허용하는
+     공개 호스트 이름 가운데 옵션이 담지 않은 이름을 2.0이 더는 받지 않는 이름으로 알립니다. 호스트 이름과 옵션을 알리며, 이를 이유로 거절하지는 않고 계속합니다.
+     프록시가 넘기는 이름 하나를 옵션에 줍니다(`--mcp-host=<name>`, 설치 프로그램과 같은 형식의 호스트 이름 하나: 소문자, 포트 없음, 목록 없음. `--mcp-host`는 `--admin-host` 없이 줄 수 있습니다).
+     같은 옵션을 설치 프로그램에도 줍니다. 루프백 이름은 옵션이 필요 없고, 파일의 그 밖의 내용은 출력하지 않습니다.
+     `--env` 없이 두 호스트 옵션만 주면 거절합니다.
    - **다시 실행.** 중간에 멈췄다면 다시 실행합니다. 이미 멈춘 서비스는 그렇다고 알리고, 정의와 다른 내용의 백업 파일은 절대 대체하지 않으며(`BACKUP_DIFFERS`), 서비스 관리자 호출이 실패하면
      (`SERVICE_COMMAND_FAILED`) 이미 한 일은 그대로 두고 다음 실행이 이어서 처리합니다. 이 시점부터 1.x의 클라이언트는 2.0 서버가 실행될 때까지 거절됩니다. 1.x를 새 설치와 나란히 두려면
      `stop-1x`를 실행하지 말고 새 설치에 자체 `--name=<name>`과 포트를 줍니다.
@@ -612,12 +562,13 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인�
    ```
 
    - **읽는 것.** 1.x 환경 파일이며, 위처럼 `--stdin`으로 주거나 서비스 사용자로 파일을 읽을 수 있는 운영자는 `--env=<file>`로 줍니다. 둘 중 정확히 하나를 줍니다.
-     토큰 두 개만 읽고, 무엇이든 쓰기 전에 모든 값을 확인합니다(16자 이상이며 관리 토큰이 에이전트 토큰과 달라야 합니다). 데이터베이스는 쓰지 않습니다.
-   - **바꾸는 것.** 설치 프로그램이 이미 자체 토큰을 생성했으므로, `--replace`가 없으면 이미 있는 비밀은 그대로 둡니다. `--replace`를 주면 세 비밀이 1.x의 값을 갖습니다.
-     1.x의 `DBHUB_AUTH_TOKEN`은 `ledger.mcp.token`과 `ledger.admin.agent-token`이 되고, 1.x의 `PGLEDGER_ADMIN_TOKEN`은 `ledger.admin.token`이 됩니다.
-     1.x의 클라이언트가 그대로 동작하고 관리 토큰은 읽기 전용 엔드포인트의 bearer로 남습니다(브라우저는 `ledger.admin.sign-in=token`일 때만 로그인시킵니다).
-     1.0.0 설치에는 관리 웹이 없어 `PGLEDGER_ADMIN_TOKEN`도 없습니다. 이 경우 에이전트용 토큰 두 개만 대체하고 명령이 그 사실을 알리며, 설치 프로그램이 만든 `ledger.admin.token`은 그대로 남습니다.
-     비밀의 이름만 출력하고 값은 출력하지 않습니다.
+     에이전트 토큰만 읽고, 무엇이든 쓰기 전에 그 값을 확인합니다(16자 이상). 데이터베이스는 쓰지 않습니다.
+   - **바꾸는 것.** 설치 프로그램이 이미 자체 토큰을 생성했으므로, `--replace`가 없으면 이미 있는 비밀은 그대로 둡니다. `--replace`를 주면 에이전트용 두 비밀이 1.x의 값을 갖습니다.
+     1.x의 `DBHUB_AUTH_TOKEN`은 `ledger.mcp.token`과 `ledger.admin.agent-token`이 됩니다.
+     1.x의 클라이언트가 그대로 동작합니다. 비밀의 이름만 출력하고 값은 출력하지 않습니다.
+   - **관리 토큰은 가져오지 않습니다.** 1.x의 `PGLEDGER_ADMIN_TOKEN`은 옮기지 않으며(1.x 환경에 있으면 명령이 그 사실을 알립니다), 2.0의 관리 토큰은 설치 프로그램이 `token-generate`로 만든
+     `ledger.admin.token`입니다(`SecureRandom` 256비트, 한 번만 표시). 사람이 정한 토큰은 더 약할 수 있고, 2.0의 자격 증명 확인 제한은 추측할 수 없는 토큰을 전제로 한 지연이기 때문입니다.
+     이 토큰은 읽기 전용 엔드포인트의 bearer로 남습니다(브라우저는 `ledger.admin.sign-in=token`일 때만 로그인시킵니다).
    - 이름이 다른 인스턴스에서는 서비스 사용자가 그 이름이며(`runuser -u <name>`), 도구에는 `--ledger.secrets.instance=<name>`을 줍니다.
 
    서비스는 시작할 때 비밀을 읽으므로 2.0의 두 서비스를 재시작합니다.
@@ -637,7 +588,7 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인�
    가져오기는 장부 전체를 쓰는데 두 앱 계정은 이를 할 수 없으므로, `--owner-account=<account>`가 DDL 계정으로 실행합니다. 그 비밀번호는 숨김 입력으로 받으며 저장하지 않습니다
    (`--stdin`은 대신 표준 입력의 첫 줄에서 받으며 `--owner-account`가 필요합니다). 1.x 스키마는 읽기 전용으로 읽고 새 스키마는 하나의 트랜잭션으로 씁니다. 아래 가져오기가 하는 일을 참조합니다.
 7. **세션 키를 등록합니다.** 1.x의 부여는 세션 키 없이 복사됩니다. 모든 작성자는 `ledger-cli key-register`로 세션 키를 등록해야 하며, 그 뒤에 부여가 동작합니다.
-8. **확인.** `ledger-cli mcp-check --url=<its public URL>`와 `import-1x --verify-only`(1.x 원본의 설정이 필요하며 아무것도 바꾸지 않습니다)를 실행하고, `ledger-cli passkey-code`를 실행해 관리 웹에서 첫 패스키를 등록합니다(1.x의 관리 토큰은
+8. **확인.** `ledger-cli mcp-check --url=<its public URL>`와 `import-1x --verify-only`(1.x 원본의 설정이 필요하며 아무것도 바꾸지 않습니다)를 실행하고, `ledger-cli passkey-code`를 실행해 관리 웹에서 첫 패스키를 등록합니다(설치 프로그램이 만든 관리 토큰은
    `ledger.admin.sign-in=token`일 때만 브라우저를 로그인시키며, 기본값은 `passkey`입니다). 클라이언트: `execute_sql_reader`와 `search_objects_reader` 도구는 제거되었으며 읽기 도구가 대체합니다. 쓰기 도구의 결과는 `rows[0].result` 감싸기 없이 키를 그대로 유지합니다.
    서버를 전환하기 전에 모든 클라이언트 호스트에 훅 jar(Java 25 런타임)를 설치합니다. 확인을 마치면, 가져오기를 위해 1.x 데이터베이스에 만든 읽기 전용 계정은 삭제해도 됩니다.
 9. **되돌리기.** 확인이 실패하면 2.0 서비스를 멈추고, 각 `<unit>.1x-backup`을 2.0 유닛 자리에 원래 이름으로 되돌립니다(백업이 남도록 복사합니다). `sudo systemctl daemon-reload`를 실행한 뒤
@@ -693,8 +644,8 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인�
 | `ledger.import.source.roles` | `retire-1x` | `retire-1x`가 스키마 다음에 제거하는 1.x 설치기의 데이터베이스 역할, 기본 `ledger_owner`, `ledger_author`, `ledger_reviewer`, `ledger_reader` |
 
 **업그레이드 안내: 관리 웹 로그인.** 관리 웹에 OpenID Connect로 로그인했다면 그렇게 하겠다고 밝히십시오. `ledger.admin.sign-in=oidc`를 설정하고(`ledger.admin.oidc.*` 설정이 있는데
-`ledger.admin.sign-in`이 없는 설치는 그 키를 알리는 메시지와 함께 시작할 때 거절됩니다), 목록 `ledger.admin.oidc.owners`는 소유자의 이메일 주소 하나인 `ledger.admin.oidc.owner-email`과 그 주소가 유효한
-발급자 `ledger.admin.oidc.issuer`로 바꾸십시오. 목록이 남아 있는 설정은 시작할 때 거절되고 메시지가 두 키를 알려 줍니다. 여러 사람 중 하나를 조용히 고르는 일은 없습니다. 어떤 방식으로 로그인하든
+`ledger.admin.sign-in`이 없는 설치는 그 키를 알리는 메시지와 함께 시작할 때 거절됩니다), 소유자의 이메일 주소 하나인 `ledger.admin.oidc.owner-email`과 그 주소가 유효한
+발급자 `ledger.admin.oidc.issuer`를 주십시오. 어떤 방식으로 로그인하든
 `passkey-code`로 패스키를 등록하십시오. 모든 변경을 그 패스키가 승인합니다.
 
 ## 빌드와 시험

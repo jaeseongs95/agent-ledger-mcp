@@ -70,17 +70,20 @@ class TokenSignInTest {
     }
 
     @Test
-    @DisplayName("PSK-TOK-03: five wrong tokens lock the client address, and the right token does not help during the lock")
-    void tok03_lockPerAddress() throws Exception {
-        Browser attacker = new Browser(mvc);
+    @DisplayName("PSK-TOK-03 (changed by PSEC, LGN-001): five wrong tokens lock nobody: the right token signs in afterwards, from the same address")
+    void tok03_noLock() throws Exception {
+        Browser browser = new Browser(mvc);
         for (int i = 0; i < 5; i++) {
-            attacker.perform(attacker.form("/login", Form.of("username", "owner", "token", "wrong-" + i + AdminTestSettings.TOKEN),
-                    attacker.csrfOf("/login"))).andExpect(status().is3xxRedirection());
+            browser.perform(browser.form("/login", Form.of("username", "owner", "token", "wrong-" + i + AdminTestSettings.TOKEN),
+                    browser.csrfOf("/login"))).andExpect(status().is3xxRedirection());
         }
+        browser.perform(browser.get("/api/session").accept(MediaType.APPLICATION_JSON)).andExpect(status().isUnauthorized());
 
-        attacker.perform(attacker.form("/login", Form.of("username", "owner", "token", AdminTestSettings.TOKEN),
-                attacker.csrfOf("/login")).accept(MediaType.APPLICATION_JSON)).andExpect(status().is4xxClientError());
-        attacker.perform(attacker.get("/api/session").accept(MediaType.APPLICATION_JSON)).andExpect(status().isUnauthorized());
+        browser.perform(browser.form("/login", Form.of("username", "owner", "token", AdminTestSettings.TOKEN),
+                browser.csrfOf("/login"))).andExpect(status().is3xxRedirection());
+
+        browser.perform(browser.get("/api/session").accept(MediaType.APPLICATION_JSON)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.authenticated").value(true)).andExpect(jsonPath("$.signIn").value("TOKEN"));
     }
 
     @Test

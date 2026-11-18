@@ -16,7 +16,7 @@ import org.springframework.validation.annotation.Validated;
  * constant {@link #CHUNK_BYTES}, the same for every client and every installation.
  *
  * @param directory             where the files of the bodies are kept (below the installation's data directory)
- * @param keyDirectory          where the key files are kept (the installation's {@code secrets/attachment-keys}); outside {@code directory}
+ * @param keyDirectory          where the key files are kept (the installation's {@code <settings folder>/attachment-keys}, beside the secret directory and in no folder that a process imports as a configuration tree, which would make the key files properties of its {@code Environment}); outside {@code directory}
  * @param activeKeyId           the key that new uploads are written with; older keys stay while rows use them. It is null on a new
  *                              installation until {@code setup} has made the first key and written its id (the installer cannot know it
  *                              when it renders the settings, and {@code setup} itself has to start with it missing); a server that has

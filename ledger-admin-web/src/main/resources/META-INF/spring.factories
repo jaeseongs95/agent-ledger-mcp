@@ -1,0 +1,1 @@
+org.springframework.boot.diagnostics.FailureAnalyzer=org.pgledger.admin.app.ManagementPortFailureAnalyzer

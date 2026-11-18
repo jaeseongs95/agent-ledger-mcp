@@ -227,8 +227,8 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
 
     /**
      * An explicit id that has a number is stored only in the form the server writes it (D-0049): the number is at least 1 and
-     * the text is the one of {@code canonical}. The pattern of {@link DefectId} is wider on purpose (reads, the lookup and the
-     * import of 1.x use it), but in a save {@code P-D-0002} and {@code P-D-00002} would be two rows of one number, and the
+     * the text is the one of {@code canonical}. The pattern of {@link DefectId} is wider on purpose (reads and the lookup
+     * use it), but in a save {@code P-D-0002} and {@code P-D-00002} would be two rows of one number, and the
      * number 0 would be a past number that is always free; so only the save refuses them.
      *
      * @param canonical the id that the server writes for a number
@@ -238,7 +238,7 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
             throw ValidationException.invalid("id", ValidationReason.MUST_BE_POSITIVE);
         }
         String written = canonical.apply(number);
-        if (!written.equals(explicit)) {
+        if (!Objects.equals(written, explicit)) {
             throw ValidationException.invalid("id", ValidationReason.ID_NOT_CANONICAL, written);
         }
     }

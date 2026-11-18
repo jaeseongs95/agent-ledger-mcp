@@ -3,15 +3,15 @@ rem deploy\install.cmd: the installer of pg-ledger-mcp 2.x for Windows (a person
 rem like deploy/install.sh: it starts only what Java cannot do (the service manager: the WinSW executables and sc.exe) and
 rem everything else is `java -jar ledger-cli.jar <command>`: render-deploy --check (every option, validated first),
 rem prepare-host (folders, ACLs, the jars, WinSW and the driver copied, the WinSW configurations and the settings), secret-set,
-rem token-generate, driver-register, setup (schema, ANSI GRANTs and the seed codes) and seal-host (the access of the service account and the
-rem hand-over of the secrets). No PowerShell, no download, no package, no icacls, mkdir or copy.
+rem token-generate, driver-register and setup (schema, ANSI GRANTs and the seed codes). The access of the service account is set by
+rem prepare-host when it makes the folders. No PowerShell, no download, no package, no icacls, mkdir or copy.
 rem Documentation it follows: Spring Boot, "Installing Spring Boot Applications", section "Microsoft Windows Services"
 rem (WinSW): https://docs.spring.io/spring-boot/how-to/deployment/installing.html ; the LocalService account:
 rem https://learn.microsoft.com/en-us/windows/win32/services/localservice-account ; sc config (obj=):
 rem https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/sc-config
 rem One service account runs both services: the predefined account LocalService (no person's account, no password). The
-rem secret folder is handed over to it by seal-host and is then readable by it alone (the installing administrator keeps only
-rem the right to see that a file exists), so the accounts the agents run as cannot read the ledger's secrets. Two database
+rem secret folder and the secrets are the installing user's (everything) and are readable by LocalService (read only), because the
+rem services read them and nothing is handed over (the installing user stays the owner, no privilege is used); no other account has access, so the accounts the agents run as cannot read the ledger's secrets. The secrets are in one folder per use (common, admin, mcp, tool) and each service imports only the folders it needs, so the MCP server has none of the secrets of the admin web in its settings (one account runs both, so file permissions do not separate them). Run it again as the same user. Two database
 rem accounts: the application account (both servers and the owner commands) and the DDL account (setup and the grants; its
 rem password is typed and not stored). WinSW.exe (2.x) is obtained by the operator and passed here, like the JDBC driver.
 rem Run in an elevated prompt (Java refuses to change the folders of the installation otherwise; there is no probe here):
@@ -22,8 +22,8 @@ rem The name of the instance (default pg-ledger-mcp) gives the services <name> a
 rem so two instances can live on one host with their own ports; the Java validation of the name comes before any change.
 rem A re-run is an upgrade: jars, driver jar and files are replaced and the services are recreated; secrets, tokens and
 rem data are never replaced. A step that fails after the services were stopped starts again the ones that ran (:fail). The Java 25 check is the JVM's: the jars are compiled for it and no other runtime loads them.
-rem A personal PC gives no host names (loopback only); a Windows server that is reached from outside gives them and puts a
-rem reverse proxy of its own in front.
+rem Both services listen on 127.0.0.1 only. Reaching them from outside is the operator's (a reverse proxy and a certificate, with a tool the
+rem operator chooses): --mcp-host=<name> and --admin-host=<name> in the render-deploy options name the one host name each service accepts besides 127.0.0.1 and localhost.
 rem An installation of an earlier major version is moved with the separate tool ledger-migrate-1x (see the README, Upgrading); this script does not know it.
 setlocal EnableExtensions
 set "STDIN="
@@ -39,7 +39,6 @@ set "CLIJAR=%~1\ledger-cli.jar" & set "JVMOPTS=-Duser.timezone=UTC"
 if "%NAME%"=="" call :ask instance-name NAME abcdefghijklmnopqrstuvwxyz0123456789- || exit /b 1
 call :ask mcp-port MCPPORT 0123456789 || exit /b 1
 set "SVC=%NAME%" & set "ADMIN=%NAME%-admin"
-rem prepare-host and seal-host call the Windows API through Java (the privileges to take over the secrets); the manifest of ledger-cli.jar allows that (Enable-Native-Access), so no option is given here.
 set "ACCOUNT=NT AUTHORITY\LocalService"
 set "WHOME=C:\ProgramData\%NAME%" & set "HOME=C:/ProgramData/%NAME%"
 set RENDER=--platform=windows "--home=%HOME%" "--name=%NAME%" "--java=%JAVA%" "--jdbc-url=%~7" "--app-account=%~6" %~9
@@ -60,8 +59,8 @@ echo install.cmd: done. Check the MCP server with: %CLI% mcp-check --url=http://
 exit /b 0
 
 :steps
-rem Folders and their ACLs, the secrets of an earlier run given back for this run (first, and a failure here changes nothing), the jars,
-rem WinSW and the driver copied, the WinSW configurations and the settings rendered: Java (no secret is read: the home of this call has none).
+rem Folders and their ACLs (the service account LocalService gets its access here; the secret folders are the installing user's with read for
+rem LocalService), the jars, WinSW and the driver copied, the WinSW configurations and the settings rendered: Java (no secret is read: the home of this call has none).
 "%JAVA%" %JVMOPTS% -jar "%~1\ledger-cli.jar" --ledger.secrets.home=C:/nonexistent prepare-host "--jars=%~1" "--winsw=%~2" "--driver-jar=%~3" %RENDER% || exit /b 1
 rem Secrets: typed with hidden input or generated, as the administrator; an existing one is kept. The tokens are shown once.
 %CLI% secret-set ledger.jdbc.password --if-absent %STDIN% || exit /b 1
@@ -74,14 +73,13 @@ rem The first setup through the DDL account (schema, grants, the seed codes); it
 %CLI% setup "--owner-account=%~5" "--app-account=%~6" %STDIN% || exit /b 1
 rem WinSW registers the services from the configurations, sc.exe sets the one account (the service manager again).
 for %%S in (%SVC% %ADMIN%) do "%WHOME%\lib\%%S.exe" uninstall >nul 2>&1 & "%WHOME%\lib\%%S.exe" install && sc.exe config %%S obj= "%ACCOUNT%" >nul || exit /b 1
-rem The service account gets its access and the secrets are handed over to it (Java; the installer keeps no access to them).
-%JARCMD% --ledger.secrets.home=C:/nonexistent seal-host %RENDER% || exit /b 1
+rem The service account has its access since prepare-host made the folders (Java): the jars to read, the settings and the data to change, the secrets to read.
 for %%S in (%SVC% %ADMIN%) do "%WHOME%\lib\%%S.exe" start || exit /b 1
 exit /b 0
 
 :fail
-rem A step failed after the services were stopped: the access of the service account is given again, and the services that ran are started.
-for %%S in (%SVC% %ADMIN%) do if defined UP_%%S %JARCMD% --ledger.secrets.home=C:/nonexistent seal-host %RENDER% & "%WHOME%\lib\%%S.exe" start
+rem A step failed after the services were stopped: the services that ran are started again (a prepare-host that failed has put the access of the folders back).
+for %%S in (%SVC% %ADMIN%) do if defined UP_%%S "%WHOME%\lib\%%S.exe" start
 exit /b 1
 
 :ask

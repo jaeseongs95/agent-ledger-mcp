@@ -13,13 +13,15 @@ import org.pgledger.cli.Command;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.UsageException;
 import org.pgledger.cli.secret.SecretName;
-import org.pgledger.cli.secret.SecretStore;
+import org.pgledger.cli.secret.SecretVault;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.stereotype.Component;
 
 /**
  * {@code token-generate <name> [--print]}: stores a new random token as the secret {@code <name>} of the secret store (the
- * same owner-only file {@code secret-set} writes, owned by the user that runs the command). An existing secret is never
+ * same owner-only file {@code secret-set} writes, owned by the user that runs the command, in the folder that the name belongs
+ * in: {@link org.pgledger.cli.secret.SecretFolder}; {@code --copy-to} may name a secret of another folder, which is how the admin
+ * web gets the token of the agents without the MCP server getting anything of the admin web). An existing secret is never
  * replaced: a re-run of the installation keeps every token, and the command says so. The value is shown only with
  * {@code --print}, only when it was created by this run, and then once; it is never written to a log, and a token that was
  * kept is never shown (nothing in the product prints a stored secret). The agents' token has to be known to the owner to be
@@ -32,12 +34,12 @@ public class TokenGenerateCommand implements Command {
     /** A second name for the same token: the admin web has to know the token of the agents to refuse it. */
     static final String COPY_TO = "copy-to";
 
-    private final SecretStore store;
+    private final SecretVault store;
     private final TokenGenerator generator;
     private final CliOutput output;
     private final CliMessages messages;
 
-    TokenGenerateCommand(SecretStore store, TokenGenerator generator, CliOutput output, CliMessages messages) {
+    TokenGenerateCommand(SecretVault store, TokenGenerator generator, CliOutput output, CliMessages messages) {
         this.store = store;
         this.generator = generator;
         this.output = output;

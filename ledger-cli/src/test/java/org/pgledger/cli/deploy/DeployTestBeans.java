@@ -21,7 +21,7 @@ final class DeployTestBeans {
         HostFiles host = new HostFiles(files);
         HostAccounts accounts = new SystemHostAccounts();
         return new ServicePlatforms(List.of(new LinuxPlatform(accounts, host, files),
-                new WindowsPlatform(accounts, fileSystem -> () -> "tester", new WindowsAccess(new WindowsPrivileges()), host, files)));
+                new WindowsPlatform(accounts, fileSystem -> () -> "tester", new WindowsAccess(), host, files)));
     }
 
     /** The install defaults of the seed bundle that the build made (the class path of the tests has it). */

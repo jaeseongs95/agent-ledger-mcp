@@ -3,7 +3,7 @@ package org.pgledger.admin;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.github.benmanes.caffeine.cache.Ticker;
+import java.util.function.LongSupplier;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
@@ -87,12 +87,12 @@ class SecretsTest {
     static class TokenConfiguration {
 
         @Bean
-        Ticker ticker() {
-            return Ticker.systemTicker();
+        LongSupplier ticker() {
+            return System::nanoTime;
         }
 
         @Bean
-        LoginAttempts loginAttempts(LedgerAdminProperties properties, Ticker ticker) {
+        LoginAttempts loginAttempts(LedgerAdminProperties properties, LongSupplier ticker) {
             return new LoginAttempts(properties, ticker);
         }
 

@@ -52,15 +52,12 @@ class DeployRendererTest {
         return values;
     }
 
-    /** A Linux server with the nginx site. */
-    private static Map<String, String> withSite() {
+    /** A Linux server with the one host name of each service (the names the operator's reverse proxy passes). */
+    private static Map<String, String> withHosts() {
         Map<String, String> values = values();
         values.put(DeployOptions.SCHEMA, "ledger");
         values.put(DeployOptions.MCP_HOST, "mcp.example.org");
         values.put(DeployOptions.ADMIN_HOST, "admin.example.org");
-        values.put(DeployOptions.NGINX_CONF, "/etc/nginx/conf.d/pg-ledger-mcp.conf");
-        values.put(DeployOptions.TLS_CERTIFICATE, "/etc/ssl/ledger/fullchain.pem");
-        values.put(DeployOptions.TLS_KEY, "/etc/ssl/ledger/privkey.pem");
         return values;
     }
 
@@ -97,7 +94,7 @@ class DeployRendererTest {
     @MethodSource("units")
     @DisplayName("INS-015 each unit runs as the one service user, never root, with the hardening set and its own jar and settings file")
     void ins015_theUnitsAreHardenedAndNotRoot(String path, String jar, String settingsFile, String readWritePaths) {
-        String unit = file(render(withSite()), path);
+        String unit = file(render(withHosts()), path);
 
         assertThat(unit.lines().toList()).contains("User=pg-ledger-mcp", "Group=pg-ledger-mcp", "NoNewPrivileges=true",
                 "ProtectSystem=strict", "ProtectHome=true", "PrivateTmp=true", "PrivateDevices=true",
@@ -111,7 +108,8 @@ class DeployRendererTest {
         assertThat(start).isEqualTo("ExecStart=/usr/lib/jvm/java-25/bin/java -Duser.timezone=UTC -jar /opt/pg-ledger-mcp/" + jar
                 + " --spring.config.import=file:/etc/pg-ledger-mcp/application.yaml,file:/etc/pg-ledger-mcp/" + settingsFile
                 + ",optional:file:/etc/pg-ledger-mcp/local.yaml,optional:file:/etc/pg-ledger-mcp/jdbc-driver.yaml,"
-                + "optional:configtree:/etc/pg-ledger-mcp/secrets/");
+                + "optional:configtree:/etc/pg-ledger-mcp/secrets/common/,optional:configtree:/etc/pg-ledger-mcp/secrets/"
+                + ("mcp.yaml".equals(settingsFile) ? "mcp" : "admin") + "/");
     }
 
     static Stream<Arguments> units() {
@@ -132,7 +130,7 @@ class DeployRendererTest {
     @Test
     @DisplayName("INS-016 the shared settings hold the JDBC URL and the one application account; each service file holds its port and hosts; no secret")
     void ins016_theSettings() throws IOException {
-        List<RenderedFile> files = render(withSite());
+        List<RenderedFile> files = render(withHosts());
 
         EnumerablePropertySource<?> shared = yaml(file(files, "/etc/pg-ledger-mcp/application.yaml"));
         assertThat(shared.getProperty("ledger.jdbc.url")).isEqualTo("jdbc:postgresql://db.example.org:5432/ledger");
@@ -177,46 +175,31 @@ class DeployRendererTest {
     }
 
     @Test
-    @DisplayName("INS-016 (PSK-INS-01) the admin host names give the passkey relying party: the rp-id is the first name, the origins are https for each name that is it or below it")
+    @DisplayName("INS-016 (PSK-INS-01, changed by PCS-022) the admin host name gives the passkey relying party: the rp-id is the name and the one origin is https:// that name")
     void ins016_thePasskeyRelyingParty() throws IOException {
         Map<String, String> values = values();
         values.put(DeployOptions.MCP_HOST, "mcp.example.org");
-        values.put(DeployOptions.ADMIN_HOST, "ledger.example.org,a.ledger.example.org,other.example.net");
+        values.put(DeployOptions.ADMIN_HOST, "ledger.example.org");
 
         EnumerablePropertySource<?> admin = yaml(file(render(values), "/etc/pg-ledger-mcp/admin.yaml"));
 
         assertThat(admin.getProperty("ledger.admin.passkey.rp-id")).isEqualTo("ledger.example.org");
         assertThat(admin.getProperty("ledger.admin.passkey.origins[0]")).isEqualTo("https://ledger.example.org");
-        assertThat(admin.getProperty("ledger.admin.passkey.origins[1]")).isEqualTo("https://a.ledger.example.org");
-        assertThat(admin.getProperty("ledger.admin.passkey.origins[2]")).as("not below the rp-id: no origin").isNull();
-        assertThat(admin.getProperty("ledger.admin.allowed-hosts[4]")).isEqualTo("other.example.net");
+        assertThat(admin.getProperty("ledger.admin.passkey.origins[1]")).isNull();
+        assertThat(admin.getProperty("ledger.admin.allowed-hosts[2]")).isEqualTo("ledger.example.org");
+        assertThat(admin.getProperty("ledger.admin.allowed-hosts[3]")).isNull();
     }
 
-    // ---- INS-017: the nginx site ----
+    // ---- INS-017 (removed by PCS: no nginx site) ----
 
     @Test
-    @DisplayName("INS-017 the nginx site overwrites X-Forwarded-For with the connection address, sets Host, proxies to loopback and has no automation of a certificate")
-    void ins017_theNginxSite() {
-        String site = file(render(withSite()), "/etc/nginx/conf.d/pg-ledger-mcp.conf");
+    @DisplayName("PCS-002 a Linux server renders the two units and the three settings files for every option: no proxy site is written, whatever the host names")
+    void pcs002_noSiteIsRendered() {
+        List<String> expected = List.of(MCP_UNIT, ADMIN_UNIT, "/etc/pg-ledger-mcp/application.yaml",
+                "/etc/pg-ledger-mcp/mcp.yaml", "/etc/pg-ledger-mcp/admin.yaml");
 
-        assertThat(site).contains("server_name mcp.example.org;", "server_name admin.example.org;",
-                "ssl_certificate /etc/ssl/ledger/fullchain.pem;", "ssl_certificate_key /etc/ssl/ledger/privkey.pem;",
-                "proxy_pass http://127.0.0.1:8765;", "proxy_pass http://127.0.0.1:8865;");
-        assertThat(site.lines().filter(line -> "proxy_set_header X-Forwarded-For $remote_addr;".equals(line.strip())).count())
-                .isEqualTo(2);
-        assertThat(site.lines().filter(line -> "proxy_set_header Host $host;".equals(line.strip())).count()).isEqualTo(2);
-        assertThat(site.toLowerCase(Locale.ROOT)).doesNotContain("$proxy_add_x_forwarded_for", "x-forwarded-host",
-                "cloudflare", "certbot", "acme", "x-real-ip");
-        assertThat(site.lines().filter(line -> line.strip().startsWith("proxy_set_header X-Forwarded-For")).toList())
-                .allMatch(line -> line.strip().endsWith("$remote_addr;"));
-    }
-
-    @Test
-    @DisplayName("INS-017 without the nginx parameters no site is rendered (a Linux server may also run without a proxy)")
-    void ins017_noSiteWithoutTheParameters() {
-        assertThat(render(values()).stream().map(RenderedFile::path)).containsExactly(MCP_UNIT, ADMIN_UNIT,
-                "/etc/pg-ledger-mcp/application.yaml", "/etc/pg-ledger-mcp/mcp.yaml", "/etc/pg-ledger-mcp/admin.yaml");
-        assertThat(render(withSite()).stream().map(RenderedFile::path)).endsWith("/etc/nginx/conf.d/pg-ledger-mcp.conf");
+        assertThat(render(values()).stream().map(RenderedFile::path)).containsExactlyElementsOf(expected);
+        assertThat(render(withHosts()).stream().map(RenderedFile::path)).containsExactlyElementsOf(expected);
     }
 
     // ---- INS-018 ----
@@ -236,7 +219,7 @@ class DeployRendererTest {
     }
 
     static Stream<Arguments> targets() {
-        return Stream.of(Arguments.of("Linux server", withSite()), Arguments.of("personal PC", personalPc()),
+        return Stream.of(Arguments.of("Linux server", withHosts()), Arguments.of("personal PC", personalPc()),
                 Arguments.of("Windows server", windowsServer()));
     }
 
@@ -263,8 +246,6 @@ class DeployRendererTest {
                 Arguments.of(DeployOptions.MCP_HOST, "mcp.example.org/x"), Arguments.of(DeployOptions.MCP_HOST, "mcp.example.org:443"),
                 Arguments.of(DeployOptions.MCP_HOST, "-mcp.example.org"), Arguments.of(DeployOptions.MCP_HOST, "mcp.example.org\nx"),
                 Arguments.of(DeployOptions.ADMIN_HOST, "mcp.example.org"),
-                Arguments.of(DeployOptions.TLS_CERTIFICATE, "relative/cert.pem"), Arguments.of(DeployOptions.TLS_KEY, "/etc/ssl/key;x"),
-                Arguments.of(DeployOptions.NGINX_CONF, "/etc/nginx/conf.d/../x.conf"),
                 Arguments.of(DeployOptions.PLATFORM, "macos"), Arguments.of(DeployOptions.PLATFORM, "Linux"),
                 Arguments.of(DeployOptions.HOME, "/opt/x"));
     }
@@ -273,7 +254,7 @@ class DeployRendererTest {
     @MethodSource("unsafeValues")
     @DisplayName("INS-019 an unsafe value is refused with the name of the option and never the value")
     void ins019_unsafeValuesAreRefused(String option, String value) {
-        Map<String, String> values = withSite();
+        Map<String, String> values = withHosts();
         values.put(option, value);
 
         assertThatThrownBy(() -> DeployTestBeans.parameters(values)).isInstanceOfSatisfying(UsageException.class, e -> {
@@ -289,20 +270,15 @@ class DeployRendererTest {
                 Arguments.of(DeployOptions.HOME, "C:/x$y"), Arguments.of(DeployOptions.HOME, "C:"),
                 Arguments.of(DeployOptions.JAVA, "/usr/bin/java"), Arguments.of(DeployOptions.JAVA, "C:/Program Files/<x>/java.exe"),
                 Arguments.of(DeployOptions.JAVA, "C:/Program Files/a&b/java.exe"), Arguments.of(DeployOptions.JAVA, "C:/a\"b/java.exe"),
-                Arguments.of(DeployOptions.JAVA, "C:/a\nb/java.exe"),
-                Arguments.of(DeployOptions.NGINX_CONF, "/etc/nginx/conf.d/x.conf"));
+                Arguments.of(DeployOptions.JAVA, "C:/a\nb/java.exe"));
     }
 
     @ParameterizedTest
     @MethodSource("unsafeWindowsValues")
-    @DisplayName("INS-032 on Windows the home and the Java path are refused when they are not plain drive paths (a space is allowed only in the Java path), and nginx is not part of a Windows installation")
+    @DisplayName("INS-032 on Windows the home and the Java path are refused when they are not plain drive paths (a space is allowed only in the Java path)")
     void ins032_unsafeWindowsValuesAreRefused(String option, String value) {
         Map<String, String> values = personalPc();
         values.put(option, value);
-        if (DeployOptions.NGINX_CONF.equals(option)) {
-            values.put(DeployOptions.TLS_CERTIFICATE, "/etc/ssl/c.pem");
-            values.put(DeployOptions.TLS_KEY, "/etc/ssl/k.pem");
-        }
 
         assertThatThrownBy(() -> DeployTestBeans.parameters(values)).isInstanceOfSatisfying(UsageException.class, e -> {
             assertThat(e.code()).isEqualTo(ErrorCode.INVALID_DEPLOY_VALUE);
@@ -311,22 +287,10 @@ class DeployRendererTest {
     }
 
     @Test
-    @DisplayName("INS-019 the nginx site needs the MCP host name (the admin one is optional since REH4), a certificate and a key; a certificate without a site is refused; a missing required option is MISSING_ARGUMENT; Windows needs its home")
+    @DisplayName("INS-019 (changed by PCS) neither host name is required; a missing required option is MISSING_ARGUMENT; Windows needs its home")
     void ins019_incompleteParametersAreRefused() {
-        Map<String, String> noHost = withSite();
-        noHost.remove(DeployOptions.MCP_HOST);
-        assertThatThrownBy(() -> DeployTestBeans.parameters(noHost)).isInstanceOfSatisfying(UsageException.class,
-                e -> assertThat(e.code()).isEqualTo(ErrorCode.INVALID_DEPLOY_VALUE));
-
-        Map<String, String> noKey = withSite();
-        noKey.remove(DeployOptions.TLS_KEY);
-        assertThatThrownBy(() -> DeployTestBeans.parameters(noKey)).isInstanceOfSatisfying(UsageException.class,
-                e -> assertThat(e.code()).isEqualTo(ErrorCode.MISSING_ARGUMENT));
-
-        Map<String, String> orphan = values();
-        orphan.put(DeployOptions.TLS_KEY, "/etc/ssl/ledger/privkey.pem");
-        assertThatThrownBy(() -> DeployTestBeans.parameters(orphan)).isInstanceOfSatisfying(UsageException.class,
-                e -> assertThat(e.code()).isEqualTo(ErrorCode.MISSING_ARGUMENT));
+        assertThat(DeployTestBeans.parameters(values()).mcpHost()).isNull();
+        assertThat(DeployTestBeans.parameters(values()).adminHost()).isNull();
 
         for (String required : List.of(DeployOptions.JAVA, DeployOptions.JDBC_URL, DeployOptions.APP_ACCOUNT)) {
             Map<String, String> missing = values();
@@ -363,7 +327,8 @@ class DeployRendererTest {
         String windows = helper.replacePlaceholders(properties.getProperty("spring.config.import"),
                 placeholder -> "ledger.secrets.home".equals(placeholder) ? HOME + "/etc" : null);
         assertThat(windows).contains("optional:file:" + HOME + "/etc/application.yaml",
-                "optional:configtree:" + HOME + "/etc/secrets/");
+                "optional:configtree:" + HOME + "/etc/secrets/common/", "optional:configtree:" + HOME + "/etc/secrets/mcp/")
+                .doesNotContain("secrets/admin", "secrets/tool");
     }
 
     // ---- INS-032: Windows ----
@@ -391,7 +356,8 @@ class DeployRendererTest {
         assertThat(element(configuration, "arguments")).isEqualTo("-Duser.timezone=UTC -jar " + HOME + "/lib/" + jar
                 + " --spring.config.import=file:" + HOME + "/etc/application.yaml,file:" + HOME + "/etc/" + settingsFile
                 + ",optional:file:" + HOME + "/etc/local.yaml,optional:file:" + HOME + "/etc/jdbc-driver.yaml,"
-                + "optional:configtree:" + HOME + "/etc/secrets/");
+                + "optional:configtree:" + HOME + "/etc/secrets/common/,optional:configtree:" + HOME + "/etc/secrets/"
+                + ("mcp.yaml".equals(settingsFile) ? "mcp" : "admin") + "/");
         assertThat(element(configuration, "logpath")).isEqualTo("C:\\ProgramData\\pg-ledger-mcp\\logs");
         assertThat(element(configuration, "startmode")).isEqualTo("Automatic");
         assertThat(configuration.getElementsByTagName("onfailure").getLength()).isPositive();
@@ -423,7 +389,7 @@ class DeployRendererTest {
     }
 
     @Test
-    @DisplayName("INS-032 a Windows server adds its public host names to the allowed hosts; the reverse proxy in front of it is the operator's own")
+    @DisplayName("INS-032 a Windows server adds its one host name per service to the allowed hosts; the reverse proxy in front of it is the operator's own")
     void ins032_theWindowsServer() throws IOException {
         List<RenderedFile> files = render(windowsServer());
 
@@ -431,7 +397,7 @@ class DeployRendererTest {
                 .isEqualTo("mcp.example.org");
         assertThat(yaml(file(files, HOME + "/etc/admin.yaml")).getProperty("ledger.admin.allowed-hosts[2]"))
                 .isEqualTo("admin.example.org");
-        assertThat(files.stream().map(RenderedFile::path)).noneMatch(path -> path.contains("nginx"));
+        assertThat(files).hasSize(5);
     }
 
     // ---- INS-040: the name of the instance ----
@@ -444,26 +410,24 @@ class DeployRendererTest {
     @Test
     @DisplayName("INS-040 a Linux instance with a name of its own: the units, the user, the jars directory, the settings directory and the secret directory follow the name, and no file names the default instance")
     void ins040_aNamedLinuxInstance() throws IOException {
-        List<RenderedFile> files = render(named(withSite(), "acme-test"));
+        List<RenderedFile> files = render(named(withHosts(), "acme-test"));
 
         assertThat(files.stream().map(RenderedFile::path)).containsExactly("/etc/systemd/system/acme-test.service",
                 "/etc/systemd/system/acme-test-admin.service", "/etc/acme-test/application.yaml", "/etc/acme-test/mcp.yaml",
-                "/etc/acme-test/admin.yaml", "/etc/nginx/conf.d/pg-ledger-mcp.conf");
+                "/etc/acme-test/admin.yaml");
         String mcp = file(files, "/etc/systemd/system/acme-test.service");
         String admin = file(files, "/etc/systemd/system/acme-test-admin.service");
         assertThat(mcp.lines().toList()).contains("User=acme-test", "Group=acme-test", "Description=acme-test: the ledger MCP server",
                 "ExecStart=/usr/lib/jvm/java-25/bin/java -Duser.timezone=UTC -jar /opt/acme-test/ledger-mcp-server.jar "
                         + "--spring.config.import=file:/etc/acme-test/application.yaml,file:/etc/acme-test/mcp.yaml,"
                         + "optional:file:/etc/acme-test/local.yaml,optional:file:/etc/acme-test/jdbc-driver.yaml,"
-                        + "optional:configtree:/etc/acme-test/secrets/");
+                        + "optional:configtree:/etc/acme-test/secrets/common/,optional:configtree:/etc/acme-test/secrets/mcp/");
         assertThat(admin.lines().toList()).contains("User=acme-test", "ReadWritePaths=/etc/acme-test",
                 "After=network-online.target acme-test.service");
         assertThat(yaml(file(files, "/etc/acme-test/admin.yaml")).getProperty("ledger.admin.driver-file"))
                 .isEqualTo("/etc/acme-test/jdbc-driver.yaml");
         for (RenderedFile rendered : files) {
-            if (!rendered.path().contains("nginx")) {
-                assertThat(rendered.path() + rendered.content()).as(rendered.path()).doesNotContain("pg-ledger");
-            }
+            assertThat(rendered.path() + rendered.content()).as(rendered.path()).doesNotContain("pg-ledger");
         }
     }
 
@@ -482,7 +446,8 @@ class DeployRendererTest {
         assertThat(element(admin, "name")).isEqualTo("acme-test-admin");
         assertThat(element(admin, "logpath")).isEqualTo("C:\\ProgramData\\acme-test\\logs");
         assertThat(element(admin, "arguments")).contains("-jar C:/ProgramData/acme-test/lib/ledger-admin-web.jar")
-                .contains("optional:configtree:C:/ProgramData/acme-test/etc/secrets/");
+                .contains("optional:configtree:C:/ProgramData/acme-test/etc/secrets/common/,"
+                        + "optional:configtree:C:/ProgramData/acme-test/etc/secrets/admin/");
         for (RenderedFile rendered : files) {
             assertThat(rendered.path() + rendered.content()).as(rendered.path()).doesNotContain("pg-ledger");
         }
@@ -491,7 +456,7 @@ class DeployRendererTest {
     @Test
     @DisplayName("INS-040 the default name is pg-ledger-mcp: giving it explicitly changes nothing, and the second service is <name>-admin")
     void ins040_theDefaultName() {
-        assertThat(render(named(withSite(), "pg-ledger-mcp"))).isEqualTo(render(withSite()));
+        assertThat(render(named(withHosts(), "pg-ledger-mcp"))).isEqualTo(render(withHosts()));
         assertThat(render(named(personalPc(), "pg-ledger-mcp"))).isEqualTo(render(personalPc()));
         assertThat(DeployTestBeans.defaults().instanceName()).isEqualTo("pg-ledger-mcp");
         assertThat(DeployLayout.linux(DeployTestBeans.defaults().instanceName()).adminName()).isEqualTo("pg-ledger-mcp-admin");
@@ -507,7 +472,7 @@ class DeployRendererTest {
     @MethodSource("badNames")
     @DisplayName("INS-040 a name that is not lower-case letters, digits and single hyphens, starts with a letter, ends with a letter or digit, is at most 23 characters, ends with -admin, or holds a path, a space or a line end is refused with the name of the option")
     void ins040_aBadNameIsRefused(String name) {
-        Map<String, String> values = named(withSite(), name);
+        Map<String, String> values = named(withHosts(), name);
 
         assertThatThrownBy(() -> DeployTestBeans.parameters(values)).isInstanceOfSatisfying(UsageException.class, e -> {
             assertThat(e.code()).isEqualTo(ErrorCode.INVALID_DEPLOY_VALUE);
@@ -537,7 +502,8 @@ class DeployRendererTest {
         String imported = helper.replacePlaceholders(properties.getProperty("spring.config.import"),
                 placeholder -> "ledger.secrets.instance".equals(placeholder) ? "acme-test" : null);
 
-        assertThat(imported).contains("optional:file:/etc/acme-test/application.yaml", "optional:configtree:/etc/acme-test/secrets/")
+        assertThat(imported).contains("optional:file:/etc/acme-test/application.yaml",
+                "optional:configtree:/etc/acme-test/secrets/common/", "optional:configtree:/etc/acme-test/secrets/mcp/")
                 .doesNotContain("pg-ledger");
     }
 }

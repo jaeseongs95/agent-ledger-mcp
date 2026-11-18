@@ -9,7 +9,7 @@ dependencies {
     // Spring MVC with server-side rendering by Thymeleaf; the CSRF token is added to th:action forms by Spring Security.
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
     implementation("org.springframework.boot:spring-boot-starter-thymeleaf")
-    // Login, session, CSRF, Host allow list (firewall), lockout and the security headers in one Spring Security chain.
+    // Login, session, CSRF, Host allow list (firewall) and the security headers in one Spring Security chain.
     implementation("org.springframework.boot:spring-boot-starter-security")
     // The bearer token filter of Spring Security (BearerTokenAuthenticationFilter and its token resolver) reads the admin token of API clients; no JWT is used.
     implementation("org.springframework.boot:spring-boot-starter-security-oauth2-resource-server")
@@ -22,9 +22,6 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-restclient")
     // /healthz is the Actuator health endpoint.
     implementation("org.springframework.boot:spring-boot-starter-actuator")
-    // The failed-login counters and locks are Spring Cache (CaffeineCache) entries that expire by themselves.
-    implementation("org.springframework.boot:spring-boot-starter-cache")
-    implementation("com.github.ben-manes.caffeine:caffeine")
     implementation("org.springframework.boot:spring-boot-starter-jackson")
     implementation("tools.jackson.core:jackson-databind")
     // YAML writer of the driver registration file (the same Jackson 3 mapper family, version from the Boot BOM).

@@ -70,7 +70,12 @@ public enum InfrastructureCode implements ErrorCode {
      */
     ARTIFACT_KEY_MISSING,
     /** The disk could not be read or written (the SSH name of the common table); {0} = the class of the failure. */
-    ARTIFACT_STORAGE_IO_ERROR;
+    ARTIFACT_STORAGE_IO_ERROR,
+    /**
+     * A service is configured with its own port for the actuator ({@code management.server.port} other than {@code server.port}): that
+     * listener is not covered by the loopback-only binding, so the start is refused; {0} = the management port, {1} = the server port.
+     */
+    MANAGEMENT_PORT_SEPARATE;
 
     @Override
     public ErrorCategory category() {

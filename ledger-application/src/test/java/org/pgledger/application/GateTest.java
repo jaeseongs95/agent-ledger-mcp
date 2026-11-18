@@ -566,7 +566,7 @@ class GateTest {
     }
 
     private static SaveResult createIn(Scenario s, String entity, String project) {
-        var fields = entity.equals("task") ? s.taskFields("other") : s.defectFields("other");
+        var fields = "task".equals(entity) ? s.taskFields("other") : s.defectFields("other");
         fields.put("project_id", project);
         return s.bean(SaveService.class).save(Scenario.AUTHOR, s.create(entity, null, fields));
     }
@@ -574,11 +574,13 @@ class GateTest {
     /** The ends of a link of this kind: the first in the project of the scenario, the second in {@code second}. */
     private static Ends ends(Scenario s, String kind, String second) {
         s.grant(Scenario.AUTHOR, second, "defect", "task");
-        return switch (kind) {
-            case "defect_task" -> new Ends(s.newDefect("first").id(), createIn(s, "task", second).id());
-            case "condition_task" -> new Ends(s.newCondition("1", "r1", "c1").id(), createIn(s, "task", second).id());
-            default -> new Ends(s.newCondition("1", "r1", "c1").id(), createIn(s, "defect", second).id());
-        };
+        if ("defect_task".equals(kind)) {
+            return new Ends(s.newDefect("first").id(), createIn(s, "task", second).id());
+        }
+        if ("condition_task".equals(kind)) {
+            return new Ends(s.newCondition("1", "r1", "c1").id(), createIn(s, "task", second).id());
+        }
+        return new Ends(s.newCondition("1", "r1", "c1").id(), createIn(s, "defect", second).id());
     }
 
     private static String newActor(String label) {
@@ -620,11 +622,14 @@ class GateTest {
     @MethodSource("linkKinds")
     @DisplayName("SVC-GATE-44 (VRF-032): both ends in one project need the scope there once, to link and to unlink")
     void gate44_oneProjectIsOneCheck(LinkKindCase kind, Scenario s) {
-        Ends ends = switch (kind.kind()) {
-            case "defect_task" -> new Ends(s.newDefect("one").id(), s.newTask("one").id());
-            case "condition_task" -> new Ends(s.newCondition("1", "r1", "c1").id(), s.newTask("one").id());
-            default -> new Ends(s.newCondition("1", "r1", "c1").id(), s.newDefect("one").id());
-        };
+        Ends ends;
+        if ("defect_task".equals(kind.kind())) {
+            ends = new Ends(s.newDefect("one").id(), s.newTask("one").id());
+        } else if ("condition_task".equals(kind.kind())) {
+            ends = new Ends(s.newCondition("1", "r1", "c1").id(), s.newTask("one").id());
+        } else {
+            ends = new Ends(s.newCondition("1", "r1", "c1").id(), s.newDefect("one").id());
+        }
         String actor = newActor("lk");
         s.grant(actor, s.projectId(), kind.scope().token());
         assertThat(s.bean(LinkService.class).link(actor, link(kind.kind(), ends, null)).removed()).isFalse();

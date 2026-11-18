@@ -94,7 +94,8 @@ class McpCheckTest {
     @Test
     @DisplayName("CLI-040 the bearer token comes from the secret store (the setting ledger.mcp.token, read as a configtree file) when no option gives it; the default URL is the local server")
     void tokenFromTheSecretStore(Cli cli, CapturedOutput captured) throws IOException {
-        Path secrets = Files.createDirectories(tmp.resolve("secrets"));
+        // the folder of the token of the agents (SecretFolder.MCP), a configuration tree of its own that the CLI imports
+        Path secrets = Files.createDirectories(tmp.resolve("secrets").resolve("mcp"));
         Files.writeString(secrets.resolve("ledger.mcp.token"), TOKEN);
         RecordingOutput output = new RecordingOutput();
         try (McpTestServer server = server(ToolContract.all())) {

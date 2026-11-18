@@ -1,8 +1,5 @@
 package org.pgledger.cli.deploy;
 
-import java.util.List;
-import java.util.Objects;
-
 /**
  * The settings files, Spring Boot properties in YAML, the same on every platform: {@code application.yaml} (what the two
  * services and the owner commands share: the JDBC URL, the account of the application, the schema), and one file per
@@ -19,7 +16,7 @@ final class ServiceSettings {
     static String shared(DeployParameters p) {
         StringBuilder yaml = new StringBuilder();
         Text.line(yaml, Text.GENERATED);
-        Text.line(yaml, "# Your own settings (for example ledger.admin.oidc.owners) belong in local.yaml next to this file: it is read after this one and never replaced.");
+        Text.line(yaml, "# Your own settings (for example ledger.admin.oidc.owner-email) belong in local.yaml next to this file: it is read after this one and never replaced.");
         Text.line(yaml, "ledger:");
         Text.line(yaml, "  jdbc:");
         Text.line(yaml, "    url: " + Text.quoted(p.jdbcUrl()));
@@ -40,15 +37,15 @@ final class ServiceSettings {
     static String mcp(DeployParameters p) {
         StringBuilder yaml = head(p.mcpPort());
         Text.line(yaml, "  mcp:");
-        hosts(yaml, p.mcpHosts());
+        hosts(yaml, p.mcpHost());
         return yaml.toString();
     }
 
     static String admin(DeployParameters p) {
         StringBuilder yaml = head(p.adminPort());
         Text.line(yaml, "  admin:");
-        hosts(yaml, p.adminHosts());
-        passkey(yaml, p.adminHosts());
+        hosts(yaml, p.adminHost());
+        passkey(yaml, p.adminHost());
         Text.line(yaml, "    driver-file: " + Text.quoted(p.layout().etc() + "/jdbc-driver.yaml"));
         Text.line(yaml, "    driver-directory: " + Text.quoted(p.layout().etc() + "/drivers"));
         Text.line(yaml, "    mcp:");
@@ -57,29 +54,22 @@ final class ServiceSettings {
     }
 
     /**
-     * The relying party of the owner's passkeys for the public host names of the admin web, so that a remote installation
-     * needs no hand edit: the {@code rp-id} is the first name (a passkey belongs to one host name) and the origins are
-     * {@code https://} and each name that is the {@code rp-id} or below it (the admin web refuses an origin that is not). A
-     * name that is not below the first one can still be reached (the {@code Host} check allows it) but a passkey made on
-     * the first name does not work there. Nothing is written without a public name: the admin web then derives
-     * {@code localhost} and {@code http://localhost:<port>}.
+     * The relying party of the owner's passkeys for the host name of the admin web, so that a remote installation needs no hand
+     * edit: the {@code rp-id} is the name (a passkey belongs to one host name) and the one origin is {@code https://<name>}, the
+     * address of the operator's reverse proxy. Nothing is written without a name: the admin web then derives {@code localhost}
+     * and {@code http://localhost:<port>}.
      */
-    private static void passkey(StringBuilder yaml, List<String> adminHosts) {
-        if (adminHosts.isEmpty()) {
+    private static void passkey(StringBuilder yaml, String adminHost) {
+        if (adminHost == null) {
             return;
         }
-        String rpId = adminHosts.getFirst();
         Text.line(yaml, "    passkey:");
-        Text.line(yaml, "      rp-id: " + Text.quoted(rpId));
+        Text.line(yaml, "      rp-id: " + Text.quoted(adminHost));
         Text.line(yaml, "      origins:");
-        for (String host : adminHosts) {
-            if (Objects.equals(host, rpId) || host.endsWith("." + rpId)) {
-                Text.line(yaml, "        - " + Text.quoted("https://" + host));
-            }
-        }
+        Text.line(yaml, "        - " + Text.quoted("https://" + adminHost));
     }
 
-    /** The port, up to the key {@code ledger:} (left open for the service). Both servers listen on loopback (their own default). */
+    /** The port, up to the key {@code ledger:} (left open for the service). Both servers listen on loopback only (fixed in code, not a setting). */
     private static StringBuilder head(int port) {
         StringBuilder yaml = new StringBuilder();
         Text.line(yaml, Text.GENERATED);
@@ -89,12 +79,12 @@ final class ServiceSettings {
         return yaml;
     }
 
-    /** The loopback names (the health check and a local call) and the public host names there are, in the order of the option. */
-    private static void hosts(StringBuilder yaml, List<String> publicHosts) {
+    /** The loopback names (the health check and a local call), always, and the one host name of the operator's proxy when there is one. */
+    private static void hosts(StringBuilder yaml, String publicHost) {
         Text.line(yaml, "    allowed-hosts:");
         Text.line(yaml, "      - '127.0.0.1'");
         Text.line(yaml, "      - 'localhost'");
-        for (String publicHost : publicHosts) {
+        if (publicHost != null) {
             Text.line(yaml, "      - " + Text.quoted(publicHost));
         }
     }

@@ -63,7 +63,7 @@ class InstallCmdFailureTest {
 
         // every command that can fail after the stop is a step of the routine (an exit of the script itself would skip :fail)
         for (String step : List.of("prepare-host", "secret-set", "token-generate ledger.admin.token", "token-generate ledger.mcp.token",
-                "driver-register", " setup ", "sc.exe config", "seal-host", "\" start ")) {
+                "driver-register", " setup ", "sc.exe config", "\" start ")) {
             assertThat(index(code, step)).as(step).isGreaterThan(steps).isLessThan(fail);
         }
         assertThat(code.subList(stop + 1, steps)).as("no exit of the script between the stop and the routine, but its end")
@@ -71,10 +71,8 @@ class InstallCmdFailureTest {
 
         List<String> onFailure = routine(code, ":fail");
         assertThat(onFailure).hasSize(2);
-        assertThat(onFailure.get(0)).as("only a service that ran is touched").contains("if defined UP_%%S").contains("seal-host %RENDER%")
-                .endsWith("\"%WHOME%\\lib\\%%S.exe\" start");
-        assertThat(onFailure.get(0).indexOf("seal-host")).as("the access is given before the start")
-                .isLessThan(onFailure.get(0).indexOf(" start"));
+        assertThat(onFailure.get(0)).as("only a service that ran is touched, and only started again (PCS-004: no seal-host)")
+                .contains("if defined UP_%%S").doesNotContain("seal-host").endsWith("\"%WHOME%\\lib\\%%S.exe\" start");
         assertThat(onFailure.get(1)).isEqualTo("exit /b 1");
     }
 }

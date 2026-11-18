@@ -52,21 +52,22 @@ class AttachmentDeployTest {
     }
 
     @Test
-    @DisplayName("ATA-036 the layout: Linux keeps the data in /var/lib/<name> and the attachments below it, the keys in /etc/<name>/secrets/attachment-keys; Windows below its home (data, data/attachments); the key folder is never inside the attachment folder")
+    @DisplayName("ATA-036 the layout: Linux keeps the data in /var/lib/<name> and the attachments below it, the keys in /etc/<name>/attachment-keys (beside the secrets, SPL-004); Windows below its home (data, data/attachments); the key folder is never inside the attachment folder or the secret directory")
     void ata036_theLayout() {
         DeployLayout linux = DeployLayout.linux("x");
         DeployLayout windows = DeployLayout.windows("x", "C:/ProgramData/x");
 
         assertThat(linux.data()).isEqualTo("/var/lib/x");
         assertThat(linux.attachmentDirectory()).isEqualTo("/var/lib/x/attachments");
-        assertThat(linux.attachmentKeyDirectory()).isEqualTo("/etc/x/secrets/attachment-keys");
+        assertThat(linux.attachmentKeyDirectory()).isEqualTo("/etc/x/attachment-keys");
         assertThat(windows.data()).isEqualTo("C:/ProgramData/x/data");
         assertThat(windows.attachmentDirectory()).isEqualTo("C:/ProgramData/x/data/attachments");
-        assertThat(windows.attachmentKeyDirectory()).isEqualTo("C:/ProgramData/x/etc/secrets/attachment-keys");
+        assertThat(windows.attachmentKeyDirectory()).isEqualTo("C:/ProgramData/x/etc/attachment-keys");
         for (DeployLayout layout : List.of(linux, windows)) {
             assertThat(Path.of(layout.attachmentKeyDirectory()).startsWith(Path.of(layout.attachmentDirectory())))
                     .as(layout.platform().name()).isFalse();
-            assertThat(layout.attachmentKeyDirectory()).startsWith(layout.etc() + "/secrets/");
+            assertThat(layout.attachmentKeyDirectory()).isEqualTo(layout.etc() + "/attachment-keys")
+                    .doesNotStartWith(layout.secretDirectory());
         }
     }
 
@@ -78,11 +79,11 @@ class AttachmentDeployTest {
 
         EnumerablePropertySource<?> unix = yaml(file(onLinux, "/etc/pg-ledger-mcp/application.yaml"));
         assertThat(unix.getProperty("ledger.attachments.directory")).isEqualTo("/var/lib/pg-ledger-mcp/attachments");
-        assertThat(unix.getProperty("ledger.attachments.key-directory")).isEqualTo("/etc/pg-ledger-mcp/secrets/attachment-keys");
+        assertThat(unix.getProperty("ledger.attachments.key-directory")).isEqualTo("/etc/pg-ledger-mcp/attachment-keys");
         EnumerablePropertySource<?> win = yaml(file(onWindows, "C:/ProgramData/pg-ledger-mcp/etc/application.yaml"));
         assertThat(win.getProperty("ledger.attachments.directory")).isEqualTo("C:/ProgramData/pg-ledger-mcp/data/attachments");
         assertThat(win.getProperty("ledger.attachments.key-directory"))
-                .isEqualTo("C:/ProgramData/pg-ledger-mcp/etc/secrets/attachment-keys");
+                .isEqualTo("C:/ProgramData/pg-ledger-mcp/etc/attachment-keys");
         for (EnumerablePropertySource<?> settings : List.of(unix, win)) {
             assertThat(List.of(settings.getPropertyNames())).filteredOn(name -> name.startsWith("ledger.attachments."))
                     .containsExactlyInAnyOrder("ledger.attachments.directory", "ledger.attachments.key-directory");

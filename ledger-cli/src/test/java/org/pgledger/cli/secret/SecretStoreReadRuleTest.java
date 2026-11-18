@@ -30,7 +30,7 @@ class SecretStoreReadRuleTest {
     Path tmp;
 
     private static SecretStore store(Path directory) {
-        return new SecretStore(new SecretsProperties("pg-ledger-mcp", directory), new SystemProcessUser());
+        return new SecretStore(directory, directory.getParent(), new SystemProcessUser());
     }
 
     private static void assumeProtectable(Path path) {
@@ -55,7 +55,7 @@ class SecretStoreReadRuleTest {
 
         assertThat(Files.readString(file)).isEqualTo("new-value");
         assertThat(BroadAccess.reachedByOthers(directory)).as("the existing directory is not narrowed").isTrue();
-        assertThat(BroadAccess.ownerOnly(file)).as("what the store creates is owner-only").isTrue();
+        assertThat(BroadAccess.ownerAndServiceRead(file)).as("what the store creates is owner-only").isTrue();
     }
 
     @Test
@@ -115,7 +115,7 @@ class SecretStoreReadRuleTest {
 
         Path file = store(directory).store(NAME, "v".toCharArray());
 
-        assertThat(BroadAccess.ownerOnly(directory)).as("directory").isTrue();
-        assertThat(BroadAccess.ownerOnly(file)).as("file").isTrue();
+        assertThat(BroadAccess.ownerAndServiceRead(directory)).as("directory").isTrue();
+        assertThat(BroadAccess.ownerAndServiceRead(file)).as("file").isTrue();
     }
 }

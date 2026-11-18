@@ -106,6 +106,39 @@ class ConfigBindingTest {
                 .run(context -> assertThat(context.getBean(LedgerAdminProperties.class).mcp().healthUrl()).isNull());
     }
 
+    @Test
+    @DisplayName("LGN-011: the settings of the limit are the window, the global budget and the global delay; the removed keys max-failures and lock-period are ignored like any unknown key")
+    void lgn011_theLockSettingsAreGone() {
+        assertThat(Stream.of(LedgerAdminProperties.Lockout.class.getRecordComponents())
+                .map(java.lang.reflect.RecordComponent::getName)).containsExactly("window", "globalMaxFailures",
+                        "globalDelay");
+        runner().withPropertyValues(AdminTestSettings.TOKEN_PROPERTY, AdminTestSettings.AGENT_TOKEN_PROPERTY,
+                "ledger.admin.lockout.max-failures=1", "ledger.admin.lockout.lock-period=1h",
+                "ledger.admin.lockout.global-max-failures=7", "ledger.admin.lockout.global-delay=2s").run(context -> {
+                    assertThat(context).hasNotFailed();
+                    LedgerAdminProperties.Lockout lockout = context.getBean(LedgerAdminProperties.class).lockout();
+                    assertThat(lockout.globalMaxFailures()).isEqualTo(7);
+                    assertThat(lockout.globalDelay()).isEqualTo(java.time.Duration.ofSeconds(2));
+                });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"ledger.admin.lockout.global-max-failures=0", "ledger.admin.lockout.global-delay=-1s"})
+    @DisplayName("LGN-011: a global budget below 1 or a negative delay stops the start and names the setting")
+    void lgn011_unusableLimitStopsTheStart(String property) {
+        // the failure of a constraint on a component names the property as the record does (globalMaxFailures), a failure of the
+        // message of an assertion as the key (global-delay)
+        String key = property.substring(property.lastIndexOf('.') + 1, property.indexOf('='));
+        String camel = org.springframework.util.StringUtils.uncapitalize(
+                java.util.Arrays.stream(key.split("-")).map(org.springframework.util.StringUtils::capitalize)
+                        .collect(java.util.stream.Collectors.joining()));
+        runner().withPropertyValues(AdminTestSettings.TOKEN_PROPERTY, AdminTestSettings.AGENT_TOKEN_PROPERTY, property)
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(FailureText.of(context.getStartupFailure())).containsAnyOf(key, camel);
+                });
+    }
+
     private static ApplicationContextRunner secrets() {
         return runner().withPropertyValues(AdminTestSettings.TOKEN_PROPERTY, AdminTestSettings.AGENT_TOKEN_PROPERTY);
     }
@@ -139,15 +172,15 @@ class ConfigBindingTest {
     }
 
     @Test
-    @DisplayName("PSK-CFG-04: an earlier list of owners (one or several) stops the start with a message that names ledger.admin.oidc.owners and the one e-mail setting; nothing is picked")
-    void psk_theOwnersListIsRefused() {
+    @DisplayName("PCS-042: a list ledger.admin.oidc.owners is no setting of the product (no release had it): it is ignored like any unknown setting, the one owner e-mail binds")
+    void pcs_noRefusalOfAnOwnersList() {
         secrets().withPropertyValues("ledger.admin.sign-in=oidc", "ledger.admin.oidc.issuer=https://issuer.example",
                 "ledger.admin.oidc.owner-email=owner@example.test", "ledger.admin.oidc.owners[0].issuer=https://issuer.example",
                 "ledger.admin.oidc.owners[0].email=a@example.test", "ledger.admin.oidc.owners[1].issuer=https://issuer.example",
                 "ledger.admin.oidc.owners[1].email=b@example.test").run(context -> {
-                    assertThat(context).hasFailed();
-                    assertThat(FailureText.of(context.getStartupFailure())).contains("ledger.admin.oidc.owners")
-                            .contains("ledger.admin.oidc.owner-email");
+                    assertThat(context).hasNotFailed();
+                    assertThat(context.getBean(LedgerAdminProperties.class).oidc().ownerEmail())
+                            .isEqualTo("owner@example.test");
                 });
     }
 

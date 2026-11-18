@@ -166,15 +166,15 @@ class PrivateFilesReadTest {
 
         assertThat(fixture.root().resolve("a").resolve("b")).isDirectory();
         assertThat(last).isDirectory();
-        assertThat(BroadAccess.ownerOnly(last)).as("the last folder is owner-only").isTrue();
+        assertThat(BroadAccess.ownerAndServiceRead(last)).as("the last folder is owner-only").isTrue();
         fixture.files().ensureDirectory(last);
 
         Path keyDirectory = fixture.root().resolve("c").resolve("d").resolve("keys");
         AttachmentProperties properties = AttachmentSettings.properties(last, keyDirectory, "to-be-created");
         String keyId = new AttachmentKeys(properties, fixture.files(), new SecureRandom()).create();
         assertThat(keyDirectory.resolve(keyId)).isRegularFile();
-        assertThat(BroadAccess.ownerOnly(keyDirectory)).as("the key folder is owner-only").isTrue();
-        assertThat(BroadAccess.ownerOnly(keyDirectory.resolve(keyId))).as("the key file is owner-only").isTrue();
+        assertThat(BroadAccess.ownerAndServiceRead(keyDirectory)).as("the key folder is owner-only").isTrue();
+        assertThat(BroadAccess.ownerAndServiceRead(keyDirectory.resolve(keyId))).as("the key file is owner-only").isTrue();
     }
 
     @Test
@@ -195,11 +195,44 @@ class PrivateFilesReadTest {
         byte[] chunk = "owner only".getBytes();
         store.append(storageKey, keyId, 0, 0, chunk, Sha256.ofBytes(chunk));
 
-        assertThat(BroadAccess.ownerOnly(real.keyDirectory())).as("key folder").isTrue();
-        assertThat(BroadAccess.ownerOnly(real.keyDirectory().resolve(keyId))).as("key file").isTrue();
-        assertThat(BroadAccess.ownerOnly(real.directory())).as("storage folder").isTrue();
-        assertThat(BroadAccess.ownerOnly(real.directory().resolve(storageKey.folder()))).as("sub folder").isTrue();
-        assertThat(BroadAccess.ownerOnly(real.directory().resolve(storageKey.folder()).resolve(storageKey.hex())))
+        assertThat(BroadAccess.ownerAndServiceRead(real.keyDirectory())).as("key folder").isTrue();
+        assertThat(BroadAccess.ownerAndServiceRead(real.keyDirectory().resolve(keyId))).as("key file").isTrue();
+        assertThat(BroadAccess.ownerAndServiceRead(real.directory())).as("storage folder").isTrue();
+        assertThat(BroadAccess.ownerAndServiceRead(real.directory().resolve(storageKey.folder()))).as("sub folder").isTrue();
+        assertThat(BroadAccess.ownerAndServiceRead(real.directory().resolve(storageKey.folder()).resolve(storageKey.hex())))
                 .as("stored file").isTrue();
+    }
+
+    @Test
+    @DisplayName("PCS-033: on a file system with ACLs the key folder, a key file, the attachment folder and a file in it have exactly two ALLOW entries, the owner (everything) and the service account LocalService (read only), even when the folder above is open to every account (the entries that the parent hands down are replaced)")
+    void pcs033_ownerAndServiceReadOnly() throws Exception {
+        Path root = fixture.root();
+        assumeTrue(root.getFileSystem().supportedFileAttributeViews().contains("acl")
+                && !root.getFileSystem().supportedFileAttributeViews().contains("posix"), "this needs a file system with ACLs and no POSIX permissions");
+        Files.createDirectory(root.resolve("open-parent"));
+        BroadAccess.open(root.resolve("open-parent"));
+        AttachmentProperties properties = AttachmentSettings.properties(root.resolve("open-parent").resolve("attachments"),
+                root.resolve("open-parent").resolve("keys"), "to-be-created");
+        String keyId = new AttachmentKeys(properties, fixture.files(), new SecureRandom()).create();
+        fixture.files().ensureDirectory(properties.directory());
+        Path file = properties.directory().resolve("a-file");
+        fixture.files().createFile(file);
+
+        var service = org.pgledger.application.attachment.ServiceAccountAccess.principal(root.getFileSystem());
+        for (Path path : List.of(properties.keyDirectory(), properties.keyDirectory().resolve(keyId), properties.directory(), file)) {
+            var entries = Files.getFileAttributeView(path, java.nio.file.attribute.AclFileAttributeView.class,
+                    java.nio.file.LinkOption.NOFOLLOW_LINKS).getAcl();
+            // the account of the process as the product looks it up, not Files.getOwner (an elevated process creates what Administrators own)
+            var owner = root.getFileSystem().getUserPrincipalLookupService()
+                    .lookupPrincipalByName(ProcessHandle.current().info().user().orElseThrow());
+            assertThat(entries).as(path.toString()).hasSize(2)
+                    .allSatisfy(entry -> assertThat(entry.type()).isEqualTo(java.nio.file.attribute.AclEntryType.ALLOW));
+            assertThat(entries.stream().map(java.nio.file.attribute.AclEntry::principal)).as(path.toString())
+                    .containsExactlyInAnyOrder(owner, service);
+            assertThat(entries.stream().filter(entry -> entry.principal().equals(service)).findFirst().orElseThrow().permissions())
+                    .as(path.toString()).containsAll(List.of(java.nio.file.attribute.AclEntryPermission.READ_DATA))
+                    .doesNotContain(java.nio.file.attribute.AclEntryPermission.WRITE_DATA, java.nio.file.attribute.AclEntryPermission.DELETE,
+                            java.nio.file.attribute.AclEntryPermission.WRITE_ACL, java.nio.file.attribute.AclEntryPermission.WRITE_OWNER);
+        }
     }
 }

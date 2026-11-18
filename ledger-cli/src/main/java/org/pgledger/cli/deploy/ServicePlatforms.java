@@ -36,7 +36,7 @@ final class ServicePlatforms {
     }
 
     /**
-     * What only some platforms do ({@link ServiceWrappers}, {@link TlsHosting}, {@link HostSealing}): the platform as that
+     * What only some platforms do ({@link ServiceWrappers}): the platform as that
      * capability, empty when it does not implement it. The command that needs it says what it refuses then.
      */
     <T> Optional<T> capability(Platform platform, Class<T> capability) {

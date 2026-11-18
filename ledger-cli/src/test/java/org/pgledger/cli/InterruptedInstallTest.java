@@ -73,8 +73,8 @@ class InterruptedInstallTest {
         assertThat(password.exitCode()).isZero();
         assertThat(password.failure()).isNull();
         assertThat(token.exitCode()).isZero();
-        assertThat(Files.readString(secrets.resolve("ledger.jdbc.password"))).isEqualTo("the-database-password");
-        assertThat(Files.readString(secrets.resolve("ledger.mcp.token"))).hasSize(43);
+        assertThat(Files.readString(secrets.resolve("common").resolve("ledger.jdbc.password"))).isEqualTo("the-database-password");
+        assertThat(Files.readString(secrets.resolve("mcp").resolve("ledger.mcp.token"))).hasSize(43);
     }
 
     @Test
@@ -86,14 +86,13 @@ class InterruptedInstallTest {
     }
 
     @Test
-    @DisplayName("INS-039 usesDatabase: secret-set, token-generate, mcp-check, render-deploy, prepare-host, seal-host, install-default, tls-issue and tls-renew (TLS) never use the ledger database, every other command does")
+    @DisplayName("INS-039 usesDatabase: secret-set, token-generate, mcp-check, render-deploy, prepare-host and install-default never use the ledger database, every other command does")
     void ins039_whichCommandsUseTheDatabase() {
         for (CliCommand command : CliCommand.values()) {
             boolean without = command == CliCommand.SECRET_SET || command == CliCommand.TOKEN_GENERATE
                     || command == CliCommand.MCP_CHECK
                     || command == CliCommand.RENDER_DEPLOY || command == CliCommand.PREPARE_HOST
-                    || command == CliCommand.SEAL_HOST || command == CliCommand.INSTALL_DEFAULT
-                    || command == CliCommand.TLS_ISSUE || command == CliCommand.TLS_RENEW;
+                    || command == CliCommand.INSTALL_DEFAULT;
             assertThat(command.usesDatabase()).as(command.cliName()).isEqualTo(!without);
         }
     }

@@ -48,11 +48,21 @@ class MessagesTest {
     @Test
     @DisplayName("SFR-016 the messages of the refusals of the read rule name the path or the secret ({0}) in both languages, and the owner of an existing file is no reason of a refusal any more (no FOREIGN_OWNER)")
     void readRuleMessagesNameTheirSubject() throws IOException {
-        for (ErrorCode code : List.of(ErrorCode.EMPTY_SECRET_FILE, ErrorCode.TLS_FILE_UNUSABLE, ErrorCode.UNEXPECTED_FILE_TYPE)) {
+        for (ErrorCode code : List.of(ErrorCode.EMPTY_SECRET_FILE, ErrorCode.UNEXPECTED_FILE_TYPE)) {
             assertThat(load("messages.properties").getProperty(code.messageKey())).as("en %s", code).contains("{0}");
             assertThat(load("messages_ko.properties").getProperty(code.messageKey())).as("ko %s", code).contains("{0}");
         }
         assertThat(ErrorCode.values()).extracting(Enum::name).doesNotContain("FOREIGN_OWNER");
         assertThat(load("messages.properties").stringPropertyNames()).doesNotContain("error.FOREIGN_OWNER");
+    }
+
+    @Test
+    @DisplayName("PCS-001 the removed commands leave no error code and no key in either bundle: no seal-host, tls-issue, tls-renew and no TLS error")
+    void pcs001_noKeyOfTheRemovedCommands() throws IOException {
+        assertThat(ErrorCode.values()).extracting(Enum::name).noneMatch(name -> name.startsWith("TLS_"));
+        for (String bundle : List.of("messages.properties", "messages_ko.properties")) {
+            assertThat(load(bundle).stringPropertyNames()).as(bundle).noneMatch(key -> key.startsWith("usage.seal-host")
+                    || key.startsWith("usage.tls-") || key.startsWith("seal-host.") || key.startsWith("tls.") || key.startsWith("error.TLS_"));
+        }
     }
 }

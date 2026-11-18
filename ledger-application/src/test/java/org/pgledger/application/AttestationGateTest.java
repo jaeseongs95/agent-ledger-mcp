@@ -135,21 +135,16 @@ class AttestationGateTest {
     }
 
     @Test
-    @DisplayName("SVC-GATE-40: a token of the retired version 1 (pgla1, no arguments digest) is ATTESTATION_VERSION_UNSUPPORTED for save, batch and whoami, and writes nothing")
-    void gate40_versionOneIsRefused(Scenario s) {
-        String author = s.actorWith("defect");
-        String operationKey = newOperationKey();
+    @DisplayName("PCS-041: a text with the prefix pgla1 is neither a token of the format nor an author: AUTHOR_ID_FORMAT like any other such text (no release had the version 1 token)")
+    void pcs041_versionOneTextIsMalformed(Scenario s) {
+        SignedAttestationVerifier verifier = s.bean(SignedAttestationVerifier.class);
         String signature = "A".repeat(86);
-        String encodedAuthor = java.util.Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(author.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        String versionOne = String.join(".", "pgla1", encodedAuthor, "bGVkZ2VyX3NhdmU", "", "1700000000", signature);
-        Expect.failure(() -> save(s, versionOne, create(s, operationKey, "v1")), TrustCode.ATTESTATION_VERSION_UNSUPPORTED);
-        Expect.failure(() -> asTool("ledger_batch", () -> s.bean(BatchService.class).batch(versionOne, operationKey,
-                List.of(new BatchOpInput.Save("defect", Fields.of(s.defectFields("v1")), Scenario.REASON, null, null)))),
-                TrustCode.ATTESTATION_VERSION_UNSUPPORTED);
-        Expect.failure(() -> asTool("ledger_whoami", () -> s.bean(WhoamiService.class).whoami(versionOne,
-                Channel.AUTHOR)), TrustCode.ATTESTATION_VERSION_UNSUPPORTED);
-        assertThat(s.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ?", operationKey)).isZero();
+        for (String text : List.of("pgla1.", "pgla1.a.b.c.1.AAAA",
+                String.join(".", "pgla1", "YQ", "bGVkZ2VyX3NhdmU", "", "1700000000", signature))) {
+            LedgerException failure = Expect.failure(() -> verifier.verify(text, CALL, ""), TrustCode.AUTHOR_ID_FORMAT);
+            assertThat(failure.args()).isEmpty();
+            assertThat(Expect.message(failure)).doesNotContain(text);
+        }
     }
 
     @Test

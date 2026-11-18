@@ -5,7 +5,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -15,32 +14,33 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.IOException;
-import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.AclEntry;
+import java.nio.file.attribute.AclEntryPermission;
 import java.nio.file.attribute.UserPrincipal;
-import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
-import org.pgledger.cli.ErrorCode;
-import org.pgledger.cli.FailureException;
+import org.pgledger.application.attachment.ServiceAccountAccess;
+import org.pgledger.cli.secret.SecretFolder;
 import org.pgledger.cli.support.RecordingHostAccounts;
 
 /**
- * WSEC-01 .. WSEC-03 (and WSEC-08 .. WSEC-11): the order of the steps of {@code prepare-host} and {@code seal-host} on Windows
- * ({@link WindowsPlatform}), and what a failed run leaves behind. The platform is run on any operating system: what touches the
- * ACLs ({@link WindowsAccess}) and the copy of the jars ({@link HostFiles}) are replaced by recorders, the folders are real ones
- * below a temporary root (a Windows path becomes a path below the root, {@link WindowsPlatform#hostPath}). The real ACLs, the
- * privileges and the services are {@link WindowsSecretsTest} and the Windows test server.
+ * PCS-034, PCS-035 (and the put-back of WSEC-10, WSEC-11): the steps of {@code prepare-host} on Windows ({@link WindowsPlatform}) and
+ * what a failed run leaves behind. There is no {@code seal-host} and no hand-over of the secrets: the folders are made with the
+ * access of the service account in the same step, and the secret folders with the installing user and the service account (read).
+ * The platform is run on any operating system: what touches the ACLs ({@link WindowsAccess}) and the copy of the jars
+ * ({@link HostFiles}) are replaced by recorders, the folders are real ones below a temporary root (a Windows path becomes a path
+ * below the root, {@link WindowsPlatform#hostPath}). The real ACLs are {@link WindowsSecretsTest} and the Windows test server.
  */
 class WindowsPlatformTest {
 
@@ -56,7 +56,6 @@ class WindowsPlatformTest {
     private static final UserPrincipal ADMINISTRATORS = new Principal("administrators");
     private static final UserPrincipal SERVICE = new Principal("service");
     private static final UserPrincipal INSTALLER = new Principal("installer");
-    private static final UserPrincipal BEFORE = new Principal("before");
 
     @TempDir
     Path tmp;
@@ -67,7 +66,10 @@ class WindowsPlatformTest {
     private WindowsPlatform platform;
     private Path home;
     private Path secrets;
-    private final List<AclEntry> closed = WindowsAccess.closed(SYSTEM, ADMINISTRATORS);
+    /** The folders of the uses below the secrets (SPL-005). */
+    private List<Path> folders;
+    /** The folder of the attachment keys: beside the secrets, in no configuration tree (SPL-004). */
+    private Path keys;
 
     @BeforeEach
     void setUp() throws IOException {
@@ -76,19 +78,23 @@ class WindowsPlatformTest {
         platform = new WindowsPlatform(accounts, fileSystem -> INSTALLER, access, host, new DeployFiles());
         home = tmp.resolve("C/ProgramData/pg-ledger-mcp");
         secrets = home.resolve("etc/secrets");
+        folders = SecretFolder.all().stream().map(folder -> secrets.resolve(folder.directory())).toList();
+        keys = home.resolve("etc/attachment-keys");
         Files.writeString(tmp.resolve("WinSW.exe"), "winsw");
         // what a read of a path finds: a record the test can recognise
-        when(access.save(any())).thenAnswer(call -> new WindowsAccess.Saved(call.getArgument(0), BEFORE, List.of()));
+        when(access.save(any())).thenAnswer(call -> new WindowsAccess.Saved(call.getArgument(0), List.of()));
     }
 
-    /** The host of an earlier installation, sealed: every folder, and two secrets in the secrets folder (in name order). */
-    private List<Path> installed() throws IOException {
-        for (String folder : List.of("lib", "etc", "etc/drivers", "logs", "etc/secrets")) {
+    /** The host of an earlier installation: every folder, the folders of the secrets with two secrets, the folder of the keys. */
+    private void installed() throws IOException {
+        for (String folder : List.of("lib", "etc", "etc/drivers", "logs", "data", "data/attachments", "etc/attachment-keys")) {
             Files.createDirectories(home.resolve(folder));
         }
-        Files.writeString(secrets.resolve("ledger.admin.token"), "never-printed-1");
-        Files.writeString(secrets.resolve("ledger.jdbc.password"), "never-printed-2");
-        return List.of(secrets.resolve("ledger.admin.token"), secrets.resolve("ledger.jdbc.password"));
+        for (Path folder : folders) {
+            Files.createDirectories(folder);
+        }
+        Files.writeString(secrets.resolve("admin").resolve("ledger.admin.token"), "never-printed-1");
+        Files.writeString(secrets.resolve("common").resolve("ledger.jdbc.password"), "never-printed-2");
     }
 
     private void prepare() throws IOException {
@@ -102,193 +108,113 @@ class WindowsPlatformTest {
         return restored.getAllValues().stream().map(WindowsAccess.Saved::path).toList();
     }
 
-    @Test
-    @DisplayName("WSEC-01 seal-host takes the secrets folder first (a sealed one cannot even be listed by an administrator), hands over each file and then the folder, after the grants of the other folders, which skip the secrets folder; the folder is the service account's last")
-    void wsec01_sealTakesTheFolderHandsOverTheFilesAndThenTheFolder() throws IOException {
-        List<Path> files = installed();
-
-        platform.seal(layout, tmp);
-
-        InOrder order = inOrder(access);
-        order.verify(access).grantTree(home.resolve("lib"), SERVICE, WindowsAccess.READ_EXECUTE, secrets);
-        order.verify(access).grantTree(home.resolve("etc"), SERVICE, WindowsAccess.MODIFY, secrets);
-        order.verify(access).grantTree(home.resolve("logs"), SERVICE, WindowsAccess.MODIFY, secrets);
-        // ATA-036: the data folder and the attachment folder get the entry of the service account on the folder itself
-        order.verify(access).grant(home.resolve("data"), SERVICE, WindowsAccess.MODIFY);
-        order.verify(access).grant(home.resolve("data/attachments"), SERVICE, WindowsAccess.MODIFY);
-        order.verify(access).reassign(secrets, INSTALLER, INSTALLER, WindowsAccess.takenBack(INSTALLER, true));
-        for (Path file : files) {
-            order.verify(access).reassign(file, INSTALLER, SERVICE, WindowsAccess.handedOver(SERVICE, ADMINISTRATORS, false));
-        }
-        order.verify(access).reassign(secrets, INSTALLER, SERVICE, WindowsAccess.handedOver(SERVICE, ADMINISTRATORS, true));
-        order.verifyNoMoreInteractions();
+    private List<AclEntry> closedWith(Set<AclEntryPermission> rights) {
+        return WindowsAccess.closedWith(SYSTEM, ADMINISTRATORS, SERVICE, rights);
     }
 
     @Test
-    @DisplayName("ATA-036 seal-host takes the folder of the attachment keys inside the secrets folder, hands over its files with the others, hands the folder over before the secrets folder, and gives the service account its entry on the data folder and the attachment folder only (never on what the service made there)")
-    void ata036_sealHandsOverTheKeyFolder() throws IOException {
-        List<Path> tokens = installed();
-        Path keys = secrets.resolve("attachment-keys");
-        Files.createDirectories(keys);
-        Path key = keys.resolve("key-0123456789abcdef");
-        Files.writeString(key, "never-printed-3");
-        List<Path> files = new ArrayList<>(tokens);
-        files.add(key);
-        files.sort(Comparator.naturalOrder());
-
-        platform.seal(layout, tmp);
-
-        InOrder order = inOrder(access);
-        order.verify(access).grant(home.resolve("data"), SERVICE, WindowsAccess.MODIFY);
-        order.verify(access).grant(home.resolve("data/attachments"), SERVICE, WindowsAccess.MODIFY);
-        order.verify(access).reassign(secrets, INSTALLER, INSTALLER, WindowsAccess.takenBack(INSTALLER, true));
-        order.verify(access).reassign(keys, INSTALLER, INSTALLER, WindowsAccess.takenBack(INSTALLER, true));
-        for (Path file : files) {
-            order.verify(access).reassign(file, INSTALLER, SERVICE, WindowsAccess.handedOver(SERVICE, ADMINISTRATORS, false));
-        }
-        order.verify(access).reassign(keys, INSTALLER, SERVICE, WindowsAccess.handedOver(SERVICE, ADMINISTRATORS, true));
-        order.verify(access).reassign(secrets, INSTALLER, SERVICE, WindowsAccess.handedOver(SERVICE, ADMINISTRATORS, true));
-        verify(access, never()).grantTree(eq(home.resolve("data")), any(), any(), any());
-        verify(access, never()).grantTree(eq(home.resolve("data/attachments")), any(), any(), any());
-    }
-
-    @Test
-    @DisplayName("ATA-036 a first installation: the data folder and the attachment folder are closed like the other folders, and the folder of the keys is made inside the secrets as the installer's alone, after the secrets folder; nothing is read")
-    void ata036_aFirstInstallationMakesTheAttachmentFolders() throws IOException {
+    @DisplayName("PCS-034 a first installation: the home is closed to every account but SYSTEM and Administrators, each folder is closed with the entry of the service account (jars: read and run, settings, logs, data and attachments: modify), and the secret directory, its four folders of the uses (SPL-005) and the folder of the attachment keys beside it are made with the installing user (everything) and the service account (read), nothing is read, nothing is changed in owner")
+    void pcs034_aFirstInstallation() throws IOException {
         prepare();
 
         InOrder order = inOrder(access);
-        for (String folder : List.of("", "lib", "etc", "etc/drivers", "logs", "data", "data/attachments")) {
-            order.verify(access).set(eq(home.resolve(folder)), isNull(), eq(closed));
+        order.verify(access).set(home, WindowsAccess.closed(SYSTEM, ADMINISTRATORS));
+        order.verify(access).set(home.resolve("lib"), closedWith(WindowsAccess.READ_EXECUTE));
+        order.verify(access).set(home.resolve("etc"), closedWith(WindowsAccess.MODIFY));
+        // the services write nothing in the driver folder (the registration file is in etc): read and run, like the jars (item 8 of the review)
+        order.verify(access).set(home.resolve("etc/drivers"), closedWith(WindowsAccess.READ_EXECUTE));
+        order.verify(access).set(home.resolve("logs"), closedWith(WindowsAccess.MODIFY));
+        order.verify(access).set(home.resolve("data"), closedWith(WindowsAccess.MODIFY));
+        order.verify(access).set(home.resolve("data/attachments"), closedWith(WindowsAccess.MODIFY));
+        List<AclEntry> forSecrets = ServiceAccountAccess.ownerAndService(INSTALLER, SERVICE, true);
+        order.verify(access).set(secrets, forSecrets);
+        for (Path folder : folders) {
+            order.verify(access).set(folder, forSecrets);
         }
-        order.verify(access).reassign(eq(secrets), eq(INSTALLER), eq(INSTALLER), eq(WindowsAccess.takenBack(INSTALLER, true)));
-        order.verify(access).reassign(eq(secrets.resolve("attachment-keys")), eq(INSTALLER), eq(INSTALLER),
-                eq(WindowsAccess.takenBack(INSTALLER, true)));
+        order.verify(access).set(keys, forSecrets);
         verify(access, never()).save(any());
-        assertThat(home.resolve("data/attachments")).isDirectory();
-        assertThat(secrets.resolve("attachment-keys")).isDirectory();
-    }
-
-    @Test
-    @DisplayName("ATA-036 prepare-host over an earlier run that has keys: the folder of the keys and its files are taken back by the installer with the other secrets, before anything is closed")
-    void ata036_aRerunTakesTheKeyFolderBack() throws IOException {
-        List<Path> tokens = installed();
-        Path keys = secrets.resolve("attachment-keys");
-        Files.createDirectories(keys);
-        Path key = keys.resolve("key-0123456789abcdef");
-        Files.writeString(key, "never-printed-3");
-        List<Path> files = new ArrayList<>(tokens);
-        files.add(key);
-        files.sort(Comparator.naturalOrder());
-
-        prepare();
-
-        InOrder order = inOrder(access);
-        order.verify(access).reassign(eq(secrets), eq(INSTALLER), eq(INSTALLER), eq(WindowsAccess.takenBack(INSTALLER, true)));
-        order.verify(access).reassign(eq(keys), eq(INSTALLER), eq(INSTALLER), eq(WindowsAccess.takenBack(INSTALLER, true)));
-        for (Path file : files) {
-            order.verify(access).reassign(eq(file), eq(INSTALLER), eq(INSTALLER), eq(WindowsAccess.takenBack(INSTALLER, false)));
-        }
-        order.verify(access).set(eq(home), isNull(), eq(closed));
-        verify(access, never()).set(eq(keys), any(), any());
         verify(access, never()).restore(any());
-    }
-
-    @Test
-    @DisplayName("WSEC-02 prepare-host over the secrets of an earlier run: the secrets folder and each file in it are taken over by the installer (owner and ACL, ownership first), the secrets folder is never closed like the others, and the other folders are closed as before")
-    void wsec02_prepareTakesTheSecretsOver() throws IOException {
-        List<Path> files = installed();
-
-        prepare();
-
-        InOrder order = inOrder(access);
-        order.verify(access).reassign(eq(secrets), eq(INSTALLER), eq(INSTALLER), eq(WindowsAccess.takenBack(INSTALLER, true)));
-        for (Path file : files) {
-            order.verify(access).reassign(eq(file), eq(INSTALLER), eq(INSTALLER), eq(WindowsAccess.takenBack(INSTALLER, false)));
-        }
-        verify(access, never()).set(eq(secrets), any(), any());
-        for (String folder : List.of("", "lib", "etc", "etc/drivers", "logs")) {
-            verify(access).set(eq(home.resolve(folder)), isNull(), eq(closed));
-        }
+        assertThat(forSecrets).hasSize(2);
+        assertThat(folders).extracting(path -> path.getFileName().toString()).containsExactly("common", "admin", "mcp", "tool");
+        assertThat(secrets).isDirectory();
+        assertThat(folders).allSatisfy(folder -> assertThat(folder).isDirectory());
+        assertThat(keys).isDirectory();
+        assertThat(keys.startsWith(secrets)).as("the key folder is in no folder of the secrets (a configuration tree)").isFalse();
         assertThat(Files.readString(home.resolve("lib/pg-ledger-mcp.exe"))).isEqualTo("winsw");
         assertThat(Files.readString(home.resolve("lib/pg-ledger-mcp-admin.exe"))).isEqualTo("winsw");
     }
 
     @Test
-    @DisplayName("WSEC-03 a privilege that the process does not hold is a failure of the host naming the path and the kind (HOST_FAILED, whose text says to run in an elevated prompt), not a raw AccessDeniedException")
-    void wsec03_aMissingPrivilegeIsAFailureOfTheHost() {
-        AccessDeniedException refusal = new AccessDeniedException("x");
-
-        FailureException failure = HostFiles.failure(new PrivilegeNotHeldException(secrets, refusal));
-
-        assertThat(failure.code()).isEqualTo(ErrorCode.HOST_FAILED);
-        assertThat(failure.arguments()).containsExactly(secrets.toString(), "PrivilegeNotHeldException");
-        assertThat(failure).hasRootCause(refusal);
-    }
-
-    @Test
-    @DisplayName("WSEC-08 a re-run over the secrets of an earlier run: prepare-host takes the secrets back first (the folder, then each file), and only then closes the home and its folders, in order")
-    void wsec08_aRerunTakesTheSecretsBackBeforeItClosesAnything() throws IOException {
-        List<Path> files = installed();
+    @DisplayName("PCS-035 a re-run over an installation that has its secrets: the folders get their ACLs again, the secrets folder, the folder of the keys and the secrets are not read, changed or judged, nothing fails (the earlier design handed them to the service account, and a re-run was refused)")
+    void pcs035_aRerunLeavesTheSecretsAlone() throws IOException {
+        installed();
 
         prepare();
 
-        InOrder order = inOrder(access);
-        order.verify(access).reassign(eq(secrets), eq(INSTALLER), eq(INSTALLER), eq(WindowsAccess.takenBack(INSTALLER, true)));
-        for (Path file : files) {
-            order.verify(access).reassign(eq(file), eq(INSTALLER), eq(INSTALLER), eq(WindowsAccess.takenBack(INSTALLER, false)));
+        for (String folder : List.of("", "lib", "etc", "etc/drivers", "logs", "data", "data/attachments")) {
+            verify(access).set(eq(home.resolve(folder)), any());
         }
-        for (String folder : List.of("", "lib", "etc", "etc/drivers", "logs")) {
-            order.verify(access).set(eq(home.resolve(folder)), isNull(), eq(closed));
+        verify(access, never()).set(eq(secrets), any());
+        verify(access, never()).set(eq(keys), any());
+        verify(access, never()).save(eq(secrets));
+        verify(access, never()).save(eq(keys));
+        for (Path folder : folders) {
+            verify(access, never()).set(eq(folder), any());
+            verify(access, never()).save(eq(folder));
         }
         verify(access, never()).restore(any());
+        assertThat(Files.readString(secrets.resolve("admin").resolve("ledger.admin.token"))).isEqualTo("never-printed-1");
+        assertThat(Files.readString(home.resolve("lib/pg-ledger-mcp.exe"))).isEqualTo("winsw");
     }
 
     @Test
-    @DisplayName("WSEC-09 a first installation (nothing exists): no path is read, the home and its folders are closed in order, and the secrets folder is made last and is the installer's alone")
-    void wsec09_aFirstInstallationClosesAndThenMakesTheSecrets() throws IOException {
+    @DisplayName("PCS-034 / SPL-005 only the folders that are missing are made when the secrets folder exists without them (an installation made before the folders of the uses and before the attachments)")
+    void pcs034_theMissingFoldersAloneAreMade() throws IOException {
+        Files.createDirectories(secrets);
+        Files.createDirectories(secrets.resolve("admin"));
+
         prepare();
 
-        InOrder order = inOrder(access);
-        for (String folder : List.of("", "lib", "etc", "etc/drivers", "logs")) {
-            order.verify(access).set(eq(home.resolve(folder)), isNull(), eq(closed));
-        }
-        order.verify(access).reassign(eq(secrets), eq(INSTALLER), eq(INSTALLER), eq(WindowsAccess.takenBack(INSTALLER, true)));
-        verify(access, never()).save(any());
-        verify(access, never()).restore(any());
-        assertThat(secrets).isDirectory();
+        List<AclEntry> forSecrets = ServiceAccountAccess.ownerAndService(INSTALLER, SERVICE, true);
+        verify(access, never()).set(eq(secrets), any());
+        verify(access, never()).set(eq(secrets.resolve("admin")), any());
+        verify(access).set(secrets.resolve("common"), forSecrets);
+        verify(access).set(secrets.resolve("mcp"), forSecrets);
+        verify(access).set(secrets.resolve("tool"), forSecrets);
+        verify(access).set(keys, forSecrets);
     }
 
     @Test
-    @DisplayName("WSEC-10 the file system refuses to give back a secret (the incident: AccessDenied): nothing is closed, nothing is copied, and every path that was read is put back, the last one first; the refusal is the failure that is reported")
-    void wsec10_aRefusedTakeBackChangesNothingElse() throws IOException {
-        List<Path> files = installed();
-        AccessDeniedException refusal = new AccessDeniedException(files.get(1).toString());
-        doThrow(refusal).when(access).reassign(eq(files.get(1)), any(), any(), any());
+    @DisplayName("WSEC-10 (changed by PCS) a failure after the folders were closed (the copy of the jars) puts the ACL back of every folder that was read, the last one first; the failure of the run is the one that is reported")
+    void wsec10_aLaterFailurePutsEverythingBack() throws IOException {
+        installed();
+        IOException full = new IOException("disk full");
+        doThrow(full).when(host).copyProduct(any(), any(), any(), any());
 
-        assertThatThrownBy(this::prepare).isSameAs(refusal);
+        assertThatThrownBy(this::prepare).isSameAs(full);
 
-        verify(access, never()).set(any(), any(), any());
-        verify(host, never()).copyProduct(any(), any(), any(), any());
-        assertThat(home.resolve("lib/pg-ledger-mcp.exe")).doesNotExist();
-        assertThat(restored(8)).as("six folders and the two files that were read, in reverse").containsExactly(files.get(1),
-                files.get(0), home.resolve("logs"), secrets, home.resolve("etc/drivers"), home.resolve("etc"),
-                home.resolve("lib"), home);
+        assertThat(restored(7)).as("the seven folders that exist, in reverse").containsExactly(home.resolve("data/attachments"),
+                home.resolve("data"), home.resolve("logs"), home.resolve("etc/drivers"), home.resolve("etc"), home.resolve("lib"), home);
     }
 
     @Test
-    @DisplayName("WSEC-11 a failure after the folders were closed (the copy of the jars) puts back everything that was read; a path that cannot be put back does not stop the others and is attached to the failure")
-    void wsec11_aLaterFailurePutsEverythingBack() throws IOException {
-        List<Path> files = installed();
+    @DisplayName("WSEC-11 (changed by PCS) a path that cannot be put back does not stop the others and is attached to the failure")
+    void wsec11_aPathThatCannotBePutBackIsAttached() throws IOException {
+        installed();
         IOException full = new IOException("disk full");
         doThrow(full).when(host).copyProduct(any(), any(), any(), any());
         IOException stuck = new IOException("cannot restore");
-        doThrow(stuck).when(access).restore(argThat(saved -> saved != null && Objects.equals(saved.path(), secrets)));
+        doThrow(stuck).when(access).restore(argThat(saved -> saved != null && Objects.equals(saved.path(), home.resolve("etc"))));
 
         assertThatThrownBy(this::prepare).isSameAs(full).hasSuppressedException(stuck);
 
-        verify(access).set(eq(home), isNull(), eq(closed));
-        assertThat(restored(8)).as("all eight, although one failed").containsExactly(files.get(1), files.get(0),
-                home.resolve("logs"), secrets, home.resolve("etc/drivers"), home.resolve("etc"), home.resolve("lib"), home);
+        assertThat(restored(7)).as("all seven, although one failed").hasSize(7).endsWith(home.resolve("lib"), home);
+    }
+
+    @Test
+    @DisplayName("PCS-037 WindowsAccess has no operation that changes an owner or takes a privilege: no reassign, no grantTree, no setOwner")
+    void pcs037_noChangeOfOwner() {
+        assertThat(Arrays.stream(WindowsAccess.class.getDeclaredMethods()).map(method -> method.getName()).toList())
+                .doesNotContain("reassign", "grantTree", "grant", "setOwner", "enable");
     }
 }

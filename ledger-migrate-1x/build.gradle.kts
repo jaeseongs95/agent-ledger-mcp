@@ -19,7 +19,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-validation")
     // The command line machinery (runner, refusals and their report, texts, output) and the secret store of ledger-cli: the tool runs on
     // them and copies none of them, so its secret store is the one the 2.0 services read and cannot drift. Only the classes of that
-    // module (its plain jar) are taken, none of its libraries (H2, ACME, the MCP client): the tool needs none of them.
+    // module (its plain jar) are taken, none of its libraries (H2, the MCP client): the tool needs none of them.
     implementation(project(":ledger-cli")) {
         isTransitive = false
     }

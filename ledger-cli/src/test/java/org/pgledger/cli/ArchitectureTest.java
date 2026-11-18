@@ -132,8 +132,9 @@ class ArchitectureTest {
     void arc036_catchRules() {
         // McpCheckCommand: the MCP client reports every transport failure as an unchecked exception of a type that depends on the layer
         // (SDK, Reactor, JDK); it sorts the cause chain and rethrows each case as a FailureException (see its Javadoc).
-        assertThat(CodingScan.catchProblems(Set.of("CliExtension.java", "McpCheckCommand.java"), null, Path.of("src", "main", "java"),
-                Path.of("src", "test", "java"))).isEmpty();
+        // WindowsEffectiveRights: Java FFM MethodHandle.invokeExact declares throws Throwable by language specification.
+        assertThat(CodingScan.catchProblems(Set.of("CliExtension.java", "McpCheckCommand.java", "WindowsEffectiveRights.java"),
+                null, Path.of("src", "main", "java"), Path.of("src", "test", "java"))).isEmpty();
     }
 
     @Test

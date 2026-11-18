@@ -37,6 +37,16 @@ class TokenGenerateCommandTest {
         return tmp.resolve("secrets");
     }
 
+    /** The folder of {@code ledger.mcp.token} (SPL-002: {@code SecretFolder}). */
+    private Path mcp() {
+        return directory().resolve("mcp");
+    }
+
+    /** The folder of {@code ledger.admin.*}: the admin web alone reads it. */
+    private Path admin() {
+        return directory().resolve("admin");
+    }
+
     private Outcome run(Cli cli, RecordingOutput output, String... args) {
         return cli.run(directory(), null, output, args);
     }
@@ -49,7 +59,7 @@ class TokenGenerateCommandTest {
         Outcome created = run(cli, first, "token-generate", "ledger.mcp.token");
 
         assertThat(created.exitCode()).isZero();
-        Path file = directory().resolve("ledger.mcp.token");
+        Path file = mcp().resolve("ledger.mcp.token");
         String token = Files.readString(file);
         assertThat(token).matches("[A-Za-z0-9_-]{43}");
         assertThat(first.info()).contains("ledger.mcp.token").contains(file.toString()).doesNotContain(token);
@@ -70,7 +80,8 @@ class TokenGenerateCommandTest {
         run(cli, new RecordingOutput(), "token-generate", "ledger.mcp.token");
 
         assertThat(Files.getPosixFilePermissions(directory())).isEqualTo(PosixFilePermissions.fromString("rwx------"));
-        assertThat(Files.getPosixFilePermissions(directory().resolve("ledger.mcp.token")))
+        assertThat(Files.getPosixFilePermissions(mcp())).isEqualTo(PosixFilePermissions.fromString("rwx------"));
+        assertThat(Files.getPosixFilePermissions(mcp().resolve("ledger.mcp.token")))
                 .isEqualTo(PosixFilePermissions.fromString("rw-------"));
     }
 
@@ -80,7 +91,7 @@ class TokenGenerateCommandTest {
     void ins014_printShowsAnewTokenOnce(Cli cli) throws IOException {
         RecordingOutput created = new RecordingOutput();
         run(cli, created, "token-generate", "ledger.admin.token", "--print");
-        String admin = Files.readString(directory().resolve("ledger.admin.token"));
+        String admin = Files.readString(admin().resolve("ledger.admin.token"));
         assertThat(created.info()).contains(admin);
 
         RecordingOutput kept = new RecordingOutput();
@@ -89,7 +100,7 @@ class TokenGenerateCommandTest {
 
         RecordingOutput agent = new RecordingOutput();
         run(cli, agent, "token-generate", "ledger.mcp.token", "--print");
-        String mcp = Files.readString(directory().resolve("ledger.mcp.token"));
+        String mcp = Files.readString(mcp().resolve("ledger.mcp.token"));
         assertThat(agent.info()).contains(mcp);
         assertThat(mcp).as("the agent token differs from the admin token").isNotEqualTo(admin);
     }
@@ -102,22 +113,24 @@ class TokenGenerateCommandTest {
         Outcome created = run(cli, first, "token-generate", "ledger.mcp.token", "--copy-to=ledger.admin.agent-token");
 
         assertThat(created.exitCode()).isZero();
-        String token = Files.readString(directory().resolve("ledger.mcp.token"));
-        assertThat(Files.readString(directory().resolve("ledger.admin.agent-token"))).isEqualTo(token);
+        String token = Files.readString(mcp().resolve("ledger.mcp.token"));
+        assertThat(Files.readString(admin().resolve("ledger.admin.agent-token"))).as("the copy is in the folder of the admin web")
+                .isEqualTo(token);
+        assertThat(Files.exists(mcp().resolve("ledger.admin.agent-token"))).as("and not in the folder of the MCP server").isFalse();
         assertThat(first.info()).contains("ledger.admin.agent-token").doesNotContain(token);
 
-        Files.delete(directory().resolve("ledger.admin.agent-token"));
+        Files.delete(admin().resolve("ledger.admin.agent-token"));
         RecordingOutput second = new RecordingOutput();
         Outcome repaired = run(cli, second, "token-generate", "ledger.mcp.token", "--copy-to=ledger.admin.agent-token");
 
         assertThat(repaired.exitCode()).isZero();
         assertThat(second.info()).contains("already exists");
-        assertThat(Files.readString(directory().resolve("ledger.mcp.token"))).as("the token is kept").isEqualTo(token);
-        assertThat(Files.readString(directory().resolve("ledger.admin.agent-token"))).as("the copy is made again").isEqualTo(token);
+        assertThat(Files.readString(mcp().resolve("ledger.mcp.token"))).as("the token is kept").isEqualTo(token);
+        assertThat(Files.readString(admin().resolve("ledger.admin.agent-token"))).as("the copy is made again").isEqualTo(token);
 
-        Files.writeString(directory().resolve("ledger.admin.agent-token"), "a-different-token-0123456789");
+        Files.writeString(admin().resolve("ledger.admin.agent-token"), "a-different-token-0123456789");
         run(cli, new RecordingOutput(), "token-generate", "ledger.mcp.token", "--copy-to=ledger.admin.agent-token");
-        assertThat(Files.readString(directory().resolve("ledger.admin.agent-token"))).as("a copy that exists is not replaced")
+        assertThat(Files.readString(admin().resolve("ledger.admin.agent-token"))).as("a copy that exists is not replaced")
                 .isEqualTo("a-different-token-0123456789");
         assertThat(captured.getAll()).doesNotContain(token);
     }
@@ -128,7 +141,12 @@ class TokenGenerateCommandTest {
         Outcome same = run(cli, new RecordingOutput(), "token-generate", "ledger.mcp.token", "--copy-to=ledger.mcp.token");
         Outcome blank = run(cli, new RecordingOutput(), "token-generate", "ledger.mcp.token", "--copy-to");
         Outcome bad = run(cli, new RecordingOutput(), "token-generate", "ledger.mcp.token", "--copy-to=../x");
+        Outcome unknown = run(cli, new RecordingOutput(), "token-generate", "ledger.mcp.token", "--copy-to=cloudflare-api-token");
+        Outcome unknownName = run(cli, new RecordingOutput(), "token-generate", "cloudflare-api-token");
 
+        assertThat(unknown.code()).as("the name of the copy is looked at before anything is stored")
+                .contains(ErrorCode.UNKNOWN_SECRET_NAME);
+        assertThat(unknownName.code()).contains(ErrorCode.UNKNOWN_SECRET_NAME);
         assertThat(same.code()).contains(ErrorCode.INVALID_OPTION_VALUE);
         assertThat(same.exitCode()).isEqualTo(ExitStatus.USAGE.code());
         assertThat(blank.code()).contains(ErrorCode.MISSING_OPTION_VALUE);

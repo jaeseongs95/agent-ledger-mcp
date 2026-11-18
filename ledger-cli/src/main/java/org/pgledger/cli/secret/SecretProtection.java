@@ -6,7 +6,6 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.attribute.AclEntry;
-import java.nio.file.attribute.AclEntryFlag;
 import java.nio.file.attribute.AclEntryPermission;
 import java.nio.file.attribute.AclEntryType;
 import java.nio.file.attribute.AclFileAttributeView;
@@ -20,6 +19,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import org.pgledger.application.attachment.ServiceAccountAccess;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.FailureException;
 
@@ -30,12 +30,15 @@ import org.pgledger.cli.FailureException;
  * <ul>
  * <li>{@link Posix}: the permissions {@code rwx------} (directory) and {@code rw-------} (file), given at creation; a path
  *     that was just created with any group or other permission is refused ({@link #settle}).
- * <li>{@link Acl} ({@link AclFileAttributeView}, the Windows file systems): an ACL with one ALLOW entry that grants the
- *     owner everything, and nothing inherited, given at creation (the {@code acl:acl} attribute of the Windows provider);
- *     what the parent hands down is replaced by that ACL right after creation ({@link #settle}). SYSTEM and Administrators
- *     are not exempt: an administrator can take ownership of any file whatever its ACL, and an entry for them would add
- *     exposure only. The same rule and the same harmless set as the key store of the hook ({@code ledger-client-hook},
- *     {@code SessionKeyStore}); the two modules do not depend on each other, so the few lines are repeated. Reference:
+ * <li>{@link Acl} ({@link AclFileAttributeView}, the Windows file systems): an ACL with two ALLOW entries, given at creation
+ *     (the {@code acl:acl} attribute of the Windows provider; no inherited entry is put in, the DACL is not marked protected): the owner (the installing user) with
+ *     everything and the service account LocalService with read ({@link ServiceAccountAccess}); what the parent hands down is
+ *     replaced by that ACL right after creation ({@link #settle}). Why the service account reads: the services run as
+ *     LocalService and must read the secrets that the installing user stores, and the installation has no step that hands the
+ *     secrets over (the installing user stays the owner, no privilege to take ownership is used). SYSTEM and Administrators are not exempt: an
+ *     administrator can take ownership of any file whatever its ACL, and an entry for them would add exposure only. The key
+ *     store of the hook ({@code ledger-client-hook}, {@code SessionKeyStore}) keeps the owner alone: its keys are read by the
+ *     owner's own processes. Reference:
  *     https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/nio/file/attribute/AclFileAttributeView.html
  * </ul>
  *
@@ -77,7 +80,7 @@ public sealed interface SecretProtection {
             return new Posix();
         }
         if (views.contains("acl")) {
-            return new Acl(processUser.current(fileSystem));
+            return new Acl(processUser.current(fileSystem), ServiceAccountAccess.principal(fileSystem));
         }
         throw new FailureException(ErrorCode.NON_POSIX_FILESYSTEM, directory.toString());
     }
@@ -117,30 +120,29 @@ public sealed interface SecretProtection {
         }
     }
 
-    /** An ACL with one entry for the owner (the account of this process, which creates the directory and the files). */
-    record Acl(UserPrincipal owner) implements SecretProtection {
+    /**
+     * An ACL with the entry of the owner (the account of this process, which creates the directory and the files) and the entry of
+     * the service account (read).
+     */
+    record Acl(UserPrincipal owner, UserPrincipal service) implements SecretProtection {
 
         /** What another principal may hold without reaching a secret: its attributes, its ACL, the wait for the handle. */
         private static final Set<AclEntryPermission> HARMLESS = EnumSet.of(AclEntryPermission.READ_ATTRIBUTES,
                 AclEntryPermission.READ_ACL, AclEntryPermission.SYNCHRONIZE);
 
-        /** One ALLOW entry that grants the owner everything; a directory's entry is inherited by what it holds. */
-        private List<AclEntry> ownerOnly(boolean directory) {
-            Set<AclEntryFlag> flags = directory
-                    ? EnumSet.of(AclEntryFlag.FILE_INHERIT, AclEntryFlag.DIRECTORY_INHERIT)
-                    : EnumSet.noneOf(AclEntryFlag.class);
-            return List.of(AclEntry.newBuilder().setType(AclEntryType.ALLOW).setPrincipal(owner)
-                    .setPermissions(EnumSet.allOf(AclEntryPermission.class)).setFlags(flags).build());
+        /** The owner with everything and the service account with read; a directory's entries are inherited by what it holds. */
+        private List<AclEntry> ownerAndService(boolean directory) {
+            return ServiceAccountAccess.ownerAndService(owner, service, directory);
         }
 
         @Override
         public FileAttribute<?>[] directoryAttributes() {
-            return new FileAttribute<?>[] {new AclAttribute(ownerOnly(true))};
+            return new FileAttribute<?>[] {new AclAttribute(ownerAndService(true))};
         }
 
         @Override
         public FileAttribute<?>[] fileAttributes() {
-            return new FileAttribute<?>[] {new AclAttribute(ownerOnly(false))};
+            return new FileAttribute<?>[] {new AclAttribute(ownerAndService(false))};
         }
 
         @Override
@@ -150,7 +152,7 @@ public sealed interface SecretProtection {
             });
         }
 
-        /** What the ACL of the path opens to another principal, empty when the owner alone has access: a query, not a failure. */
+        /** What the ACL of the path opens to another principal than the owner and the service account (read): a query, not a failure. */
         private Optional<String> whatIsOpen(Path path) throws IOException {
             List<AclEntry> acl = Files.getFileAttributeView(path, AclFileAttributeView.class, LinkOption.NOFOLLOW_LINKS)
                     .getAcl();
@@ -162,7 +164,7 @@ public sealed interface SecretProtection {
             for (AclEntry entry : acl) {
                 // only an ALLOW entry grants anything; DENY, AUDIT and ALARM entries do not
                 boolean granting = entry.type() == AclEntryType.ALLOW && !Objects.equals(entry.principal(), owner)
-                        && !HARMLESS.containsAll(entry.permissions());
+                        && !ServiceAccountAccess.isServiceRead(entry, service) && !HARMLESS.containsAll(entry.permissions());
                 if (granting) {
                     return Optional.of("an ACL that allows " + entry.principal().getName());
                 }
@@ -172,7 +174,7 @@ public sealed interface SecretProtection {
 
         /**
          * The ACL given at creation may have been merged with the entries the parent hands down: when it was, it is replaced
-         * by the owner-only ACL before a secret is written. This is the one place where a protection is changed after
+         * by the ACL of the owner and the service account before a secret is written. This is the one place where a protection is changed after
          * creation, and only ever to the narrow one.
          */
         @Override
@@ -184,7 +186,7 @@ public sealed interface SecretProtection {
                 Files.setOwner(path, owner);
             }
             if (whatIsOpen(path).isPresent()) {
-                Files.getFileAttributeView(path, AclFileAttributeView.class).setAcl(ownerOnly(Files.isDirectory(path)));
+                Files.getFileAttributeView(path, AclFileAttributeView.class).setAcl(ownerAndService(Files.isDirectory(path)));
             }
             requireOwnerOnlyAccess(path);
         }

@@ -20,7 +20,7 @@ import org.pgledger.cli.CliMessages;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.FailureException;
 import org.pgledger.cli.secret.SecretName;
-import org.pgledger.cli.secret.SecretStore;
+import org.pgledger.cli.secret.SecretVault;
 import org.pgledger.cli.secret.StandardInput;
 import org.pgledger.migrate1x.support.RecordingOutput;
 import org.pgledger.migrate1x.tool.MigrationError;
@@ -40,7 +40,7 @@ class ImportSecretsPartialTest {
     private static final SecretName AGENT_COPY = new SecretName("ledger.admin.agent-token");
     private static final SecretName ADMIN_TOKEN = new SecretName("ledger.admin.token");
 
-    private static ImportSecrets1xCommand command(SecretStore store, String environment, RecordingOutput output) {
+    private static ImportSecrets1xCommand command(SecretVault store, String environment, RecordingOutput output) {
         return new ImportSecrets1xCommand(store, new StandardInput(new ByteArrayInputStream(
                 environment.getBytes(StandardCharsets.UTF_8))), output, mock(CliMessages.class));
     }
@@ -48,23 +48,31 @@ class ImportSecretsPartialTest {
     private static final String ENVIRONMENT = "DBHUB_AUTH_TOKEN=" + AGENT + "\nPGLEDGER_ADMIN_TOKEN=" + ADMIN + "\n";
 
     @Test
-    @DisplayName("M1X-025 a value that cannot be used (the two tokens equal) is refused before the store is asked to write anything")
+    @DisplayName("M1X-025 / LGN-015 a value that cannot be used (a short token of the agents) is refused before the store is asked to write anything; the admin token of 1.x is not looked at (equal to the agent token, it is no refusal and the store is never asked about ledger.admin.token)")
     void nothingIsWrittenBeforeEveryValueIsChecked() {
-        SecretStore store = mock(SecretStore.class);
-        String equal = "DBHUB_AUTH_TOKEN=" + AGENT + "\nPGLEDGER_ADMIN_TOKEN=" + AGENT + "\n";
+        SecretVault store = mock(SecretVault.class);
+        String shortAgent = "DBHUB_AUTH_TOKEN=short-token\nPGLEDGER_ADMIN_TOKEN=" + ADMIN + "\n";
 
-        assertThatThrownBy(() -> command(store, equal, new RecordingOutput()).run(List.of(),
+        assertThatThrownBy(() -> command(store, shortAgent, new RecordingOutput()).run(List.of(),
                 new DefaultApplicationArguments("--stdin", "--replace"))).isInstanceOf(FailureException.class)
                 .extracting(failure -> ((FailureException) failure).code()).isEqualTo(MigrationError.INVALID_1X_VALUE);
         verify(store, never()).store(any(), any());
+
+        SecretVault equalStore = mock(SecretVault.class);
+        String equal = "DBHUB_AUTH_TOKEN=" + AGENT + "\nPGLEDGER_ADMIN_TOKEN=" + AGENT + "\n";
+        command(equalStore, equal, new RecordingOutput()).run(List.of(), new DefaultApplicationArguments("--stdin", "--replace"));
+        verify(equalStore, never()).exists(eq(ADMIN_TOKEN));
+        verify(equalStore, never()).store(eq(ADMIN_TOKEN), any());
+        verify(equalStore, times(1)).store(eq(MCP), any());
+        verify(equalStore, times(1)).store(eq(AGENT_COPY), any());
     }
 
     @Test
     @DisplayName("M1X-025 a secret path that cannot be used is refused before the first write: nothing is stored")
     void aPathThatCannotBeUsedIsFoundBeforeTheFirstWrite() {
-        SecretStore store = mock(SecretStore.class);
+        SecretVault store = mock(SecretVault.class);
         when(store.exists(any())).thenReturn(true);
-        when(store.exists(ADMIN_TOKEN)).thenThrow(new FailureException(ErrorCode.UNEXPECTED_FILE_TYPE, "/etc/x/secrets/ledger.admin.token"));
+        when(store.exists(AGENT_COPY)).thenThrow(new FailureException(ErrorCode.UNEXPECTED_FILE_TYPE, "/etc/x/secrets/ledger.admin.agent-token"));
 
         assertThatThrownBy(() -> command(store, ENVIRONMENT, new RecordingOutput()).run(List.of(),
                 new DefaultApplicationArguments("--stdin", "--replace"))).isInstanceOf(FailureException.class)
@@ -75,7 +83,7 @@ class ImportSecretsPartialTest {
     @Test
     @DisplayName("M1X-025 a write that fails after another succeeded is SECRETS_PARTIAL naming the secrets that are stored and the one that is not (the cause is kept); a failure of the first write is the failure itself")
     void aFailureAfterAWriteSaysWhatIsStored() {
-        SecretStore store = mock(SecretStore.class);
+        SecretVault store = mock(SecretVault.class);
         when(store.exists(any())).thenReturn(true);
         FailureException cause = new FailureException(ErrorCode.IO_FAILED, "/etc/x/secrets", "IOException");
         doThrow(cause).when(store).store(eq(AGENT_COPY), any());
@@ -90,7 +98,7 @@ class ImportSecretsPartialTest {
         verify(store, times(1)).store(eq(MCP), any());
         verify(store, never()).store(eq(ADMIN_TOKEN), any());
 
-        SecretStore first = mock(SecretStore.class);
+        SecretVault first = mock(SecretVault.class);
         when(first.exists(any())).thenReturn(true);
         doThrow(cause).when(first).store(eq(MCP), any());
         assertThatThrownBy(() -> command(first, ENVIRONMENT, new RecordingOutput()).run(List.of(),

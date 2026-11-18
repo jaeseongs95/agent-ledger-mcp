@@ -1,17 +1,15 @@
 package org.pgledger.cli.deploy;
 
 import java.nio.file.Path;
-import java.util.List;
 import java.util.regex.Pattern;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.UsageException;
 
 /**
  * The plain forms a deployment value may have, as the regular expressions of the Jakarta constraints of
- * {@link DeployParameters}. The values are written into unit files, XML and YAML settings and an nginx site, where a space, a
- * quote, a newline, {@code $} (a Spring placeholder, an nginx variable), {@code %} (a systemd specifier) or {@code <} would
- * change what the file means, so each value is restricted to the plain characters it needs. Nothing is quoted or escaped to
- * make a value pass.
+ * {@link DeployParameters}. The values are written into unit files, XML and YAML settings, where a space, a quote, a newline,
+ * {@code $} (a Spring placeholder), {@code %} (a systemd specifier) or {@code <} would change what the file means, so each value
+ * is restricted to the plain characters it needs. Nothing is quoted or escaped to make a value pass.
  */
 public final class DeployForms {
 
@@ -19,8 +17,6 @@ public final class DeployForms {
     static final int LAST_PORT = 65535;
     static final int MAX_PATH = 200;
     static final int MAX_HOST = 253;
-    /** At most this many names in one comma list ({@code --mcp-host}, {@code --admin-host}). */
-    public static final int MAX_HOSTS = 10;
     static final int MAX_URL = 600;
 
     /**
@@ -41,48 +37,18 @@ public final class DeployForms {
      * user name of a Linux system is at most 32 and the admin service adds {@code -admin}).
      */
     static final String NAME = "[a-z](?:[a-z0-9-]{0,21}[a-z0-9])?";
-    /**
-     * The ACME directory URL of an installation: https, a host name, an optional port and plain path segments. It is written into
-     * a systemd unit, where {@code %} is a specifier, so nothing else is allowed (no user part, no query, no escape).
-     */
-    static final String ACME_URL = "https://[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?(?::[0-9]{1,5})?(?:/[A-Za-z0-9._+-]+)*";
     static final String SCHEMA ="[a-z][a-z0-9_]{0,29}";
 
     private DeployForms() {
     }
 
     /**
-     * The value when it is a plain host name (the form of {@code --mcp-host}).
-     *
-     * @throws UsageException INVALID_DEPLOY_VALUE naming the option, never the value
+     * Whether the value is a plain host name, the form of {@code --mcp-host} and {@code --admin-host}: lower case, no port, no list.
+     * The one place of the rule; the migration tool (which depends on the classes of this module) asks it for its own options of the
+     * same name.
      */
-    public static String requireHost(String value, String option) {
-        if (value == null || value.length() > MAX_HOST || !Pattern.matches(HOST, value)) {
-            throw new UsageException(ErrorCode.INVALID_DEPLOY_VALUE, option);
-        }
-        return value;
-    }
-
-    /**
-     * The names of a comma list ({@code --mcp-host=a.example.org,b.example.org}) in the order given; none for an absent value. An
-     * empty entry is kept as an empty name, which is no host name, so that the constraints refuse it.
-     */
-    public static List<String> splitHosts(String value) {
-        return value == null ? List.of() : List.of(value.split(",", -1));
-    }
-
-    /**
-     * The names of a comma list when each is a plain host name, none twice, at most {@value #MAX_HOSTS}.
-     *
-     * @throws UsageException INVALID_DEPLOY_VALUE naming the option, never the value
-     */
-    public static List<String> requireHosts(String value, String option) {
-        List<String> hosts = splitHosts(value);
-        if (hosts.isEmpty() || hosts.size() > MAX_HOSTS || new java.util.HashSet<>(hosts).size() != hosts.size()) {
-            throw new UsageException(ErrorCode.INVALID_DEPLOY_VALUE, option);
-        }
-        hosts.forEach(host -> requireHost(host, option));
-        return hosts;
+    public static boolean isHostName(String value) {
+        return value != null && value.length() <= MAX_HOST && Pattern.matches(HOST, value);
     }
 
     /**

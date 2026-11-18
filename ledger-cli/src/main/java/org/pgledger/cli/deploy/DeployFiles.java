@@ -22,7 +22,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Writes rendered files below a root. Each file is written the way the secret store writes a secret: a temporary file in the
- * directory of the target, then an atomic move over the target, so a reader (systemd, nginx, the service) never sees half a
+ * directory of the target, then an atomic move over the target, so a reader (systemd, the service) never sees half a
  * file and a failed write leaves the previous file as it was. The mode {@code rw-r--r--} is given when the temporary file
  * is created, never changed afterwards: the files hold no secret and the service users have to read them. The jars and the
  * driver of an installation are copied the same way ({@link #copy}). It is a component because it changes the file system.
