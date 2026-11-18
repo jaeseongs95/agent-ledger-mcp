@@ -8,6 +8,7 @@ import org.pgledger.domain.value.ActorId;
 import org.pgledger.domain.value.CodeValue;
 import org.pgledger.domain.value.ConditionId;
 import org.pgledger.domain.value.DefectId;
+import org.pgledger.domain.value.ProjectId;
 import org.pgledger.domain.value.TaskId;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -100,6 +101,18 @@ public class LinkRepository {
     public boolean remove(ConditionLink link) {
         return jdbc.sql("DELETE FROM condition_link WHERE link_key = :key").param("key", link.linkKey())
                 .update() == 1;
+    }
+
+    /** Pins a task's current project for this transaction; returns false if a committed move changed it. */
+    public boolean pinTaskProject(TaskId task, ProjectId project) {
+        return jdbc.sql("UPDATE task SET project_id = :project WHERE id = :id AND project_id = :project")
+                .param("project", project.value()).param("id", task.value()).update() == 1;
+    }
+
+    /** Pins a release condition's current project for this transaction; returns false if a committed move changed it. */
+    public boolean pinConditionProject(ConditionId condition, ProjectId project) {
+        return jdbc.sql("UPDATE release_condition SET project_id = :project WHERE id = :id AND project_id = :project")
+                .param("project", project.value()).param("id", condition.value()).update() == 1;
     }
 
     /** Ids of the conditions linked to a defect, in id order. */

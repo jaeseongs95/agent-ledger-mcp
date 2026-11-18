@@ -1,6 +1,8 @@
 package org.pgledger.application.gate;
 
 import java.util.Objects;
+import java.util.Optional;
+import org.pgledger.attestation.AttestationClaims;
 import org.pgledger.domain.context.ToolScope;
 
 /**
@@ -26,6 +28,9 @@ public sealed interface ToolCall {
     /** True when the call carries exactly this digest of arguments (the digest an attestation was signed for). */
     boolean carries(String signedDigest);
 
+    /** First bound claim field that disagrees with this call, delegated to {@link AttestationClaims#firstMismatch}. */
+    Optional<AttestationClaims.Field> firstMismatch(AttestationClaims claims, String operationKey);
+
     /**
      * Not inside a tool call (a service that is called directly): no tool and no digest are known, so no signed
      * attestation matches.
@@ -40,6 +45,11 @@ public sealed interface ToolCall {
         @Override
         public boolean carries(String signedDigest) {
             return false;
+        }
+
+        @Override
+        public Optional<AttestationClaims.Field> firstMismatch(AttestationClaims claims, String operationKey) {
+            return claims.firstMismatch(null, operationKey, null);
         }
     }
 
@@ -59,6 +69,11 @@ public sealed interface ToolCall {
         public boolean carries(String signedDigest) {
             return false;
         }
+
+        @Override
+        public Optional<AttestationClaims.Field> firstMismatch(AttestationClaims claims, String operationKey) {
+            return claims.firstMismatch(tool, operationKey, null);
+        }
     }
 
     /** Inside a tool call: the wire name of the tool and the digest of the arguments as the server received them. */
@@ -77,6 +92,11 @@ public sealed interface ToolCall {
         @Override
         public boolean carries(String signedDigest) {
             return Objects.equals(argumentsDigest, signedDigest);
+        }
+
+        @Override
+        public Optional<AttestationClaims.Field> firstMismatch(AttestationClaims claims, String operationKey) {
+            return claims.firstMismatch(tool, operationKey, argumentsDigest);
         }
     }
 }

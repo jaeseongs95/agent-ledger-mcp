@@ -13,9 +13,7 @@ import org.pgledger.application.history.Snapshot;
 import org.pgledger.application.receipt.ReceiptService;
 import org.pgledger.application.write.WriteResult.LinkResult;
 import org.pgledger.database.repository.CommonCodeRepository;
-import org.pgledger.database.repository.DefectRepository;
 import org.pgledger.database.repository.LinkRepository;
-import org.pgledger.database.repository.TaskRepository;
 import org.pgledger.domain.error.TransitionCode;
 import org.pgledger.domain.error.TransitionException;
 import org.pgledger.domain.error.ValidationException;
@@ -37,6 +35,7 @@ import org.pgledger.domain.value.CanonicalPayload;
 import org.pgledger.domain.value.CodeValue;
 import org.pgledger.domain.value.ConditionId;
 import org.pgledger.domain.value.DefectId;
+import org.pgledger.domain.value.ProjectId;
 import org.pgledger.domain.value.TaskId;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
@@ -49,20 +48,18 @@ import org.springframework.stereotype.Component;
 @Component
 public class LinkOperation extends WriteOperation<LinkCommand, LinkResult> {
 
+    private final WriteGate gate;
     private final Rows rows;
     private final CommonCodeRepository codes;
-    private final DefectRepository defects;
-    private final TaskRepository tasks;
     private final LinkRepository links;
     private final HistoryWriter history;
 
     public LinkOperation(WriteGate gate, ReceiptService receipts, Rows rows, CommonCodeRepository codes,
-            DefectRepository defects, TaskRepository tasks, LinkRepository links, HistoryWriter history) {
+            LinkRepository links, HistoryWriter history) {
         super(gate, receipts, ReceiptOperation.LINK, LinkResult.class);
+        this.gate = gate;
         this.rows = rows;
         this.codes = codes;
-        this.defects = defects;
-        this.tasks = tasks;
         this.links = links;
         this.history = history;
     }
@@ -156,26 +153,33 @@ public class LinkOperation extends WriteOperation<LinkCommand, LinkResult> {
         AuthorId author = ctx.author();
         Link link = switch (kind) {
             case DEFECT_TASK -> {
+                DefectId defect = DefectId.of(a);
                 TaskId task = TaskId.of(b);
-                requireTask(task);
-                yield new DefectTaskLink(DefectId.of(a), task, author);
+                authorizeDefect(author, defect, Scope.DEFECT);
+                pinTask(author, task, Scope.DEFECT);
+                yield new DefectTaskLink(defect, task, author);
             }
             case CONDITION_TASK -> {
+                ConditionId condition = ConditionId.of(a);
                 TaskId task = TaskId.of(b);
-                requireTask(task);
-                yield ConditionLink.toTask(ConditionId.of(a), task, author);
+                pinCondition(author, condition, Scope.TASK);
+                pinTask(author, task, Scope.TASK);
+                yield ConditionLink.toTask(condition, task, author);
             }
             case CONDITION_DEFECT -> {
+                ConditionId condition = ConditionId.of(a);
                 DefectId defect = DefectId.of(b);
-                if (!defects.existsById(defect)) {
-                    throw Rows.notFound(HistoryEntity.DEFECT.token(), b);
-                }
-                yield ConditionLink.toDefect(ConditionId.of(a), defect, author);
+                pinCondition(author, condition, Scope.TASK);
+                authorizeDefect(author, defect, Scope.TASK);
+                yield ConditionLink.toDefect(condition, defect, author);
             }
             case RELATION -> {
+                DefectId first = DefectId.of(a);
+                DefectId second = DefectId.of(b);
+                authorizeDefect(author, first, Scope.DEFECT);
+                authorizeDefect(author, second, Scope.DEFECT);
                 // an unlink finds the row by the same rule that stored it: for a directed kind only the given order
-                DefectRelation relation = DefectRelation.between(DefectId.of(a), DefectId.of(b), CodeValue.of(token),
-                        direction, author);
+                DefectRelation relation = DefectRelation.between(first, second, CodeValue.of(token), direction, author);
                 if (!remove) {
                     codes.catalog(CodeGroup.RELATION_KIND).check("defect_relation.kind", relation.relation(), null);
                 }
@@ -205,9 +209,29 @@ public class LinkOperation extends WriteOperation<LinkCommand, LinkResult> {
                 historyId, author.value(), ctx.login());
     }
 
-    private void requireTask(TaskId task) {
-        if (!tasks.existsById(task)) {
-            throw Rows.notFound(HistoryEntity.TASK.token(), task.value());
+    private void authorizeDefect(AuthorId author, DefectId defect, Scope scope) {
+        gate.authorize(author, new Target(rows.defect(defect).projectId(), scope));
+    }
+
+    /** Re-reads, authorizes, and pins a task's project inside the transaction so concurrent moves serialize cleanly. */
+    private void pinTask(AuthorId author, TaskId task, Scope scope) {
+        while (true) {
+            ProjectId project = rows.task(task).projectId();
+            gate.authorize(author, new Target(project, scope));
+            if (links.pinTaskProject(task, project)) {
+                return;
+            }
+        }
+    }
+
+    /** Re-reads, authorizes, and pins a release condition's project inside the transaction. */
+    private void pinCondition(AuthorId author, ConditionId condition, Scope scope) {
+        while (true) {
+            ProjectId project = rows.condition(condition).projectId();
+            gate.authorize(author, new Target(project, scope));
+            if (links.pinConditionProject(condition, project)) {
+                return;
+            }
         }
     }
 

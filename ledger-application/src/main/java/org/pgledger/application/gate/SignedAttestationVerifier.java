@@ -6,7 +6,6 @@ import java.security.PublicKey;
 import java.time.Clock;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import org.pgledger.attestation.AttestationClaims;
 import org.pgledger.attestation.AttestationException;
@@ -147,15 +146,9 @@ public class SignedAttestationVerifier implements AttestationVerifier {
     }
 
     private static void verifyBinding(AttestationClaims claims, ToolCall call, String operationKey) {
-        if (!call.isTool(claims.tool())) {
-            throw mismatch("tool");
-        }
-        if (!Objects.equals(operationKey == null ? "" : operationKey, claims.operationKey())) {
-            throw mismatch(AttestationClaims.Field.OPERATION_KEY.token());
-        }
-        if (!call.carries(claims.argumentsDigest())) {
-            throw mismatch("arguments");
-        }
+        call.firstMismatch(claims, operationKey).ifPresent(field -> {
+            throw mismatch(field.token());
+        });
     }
 
     private static TrustException mismatch(String field) {

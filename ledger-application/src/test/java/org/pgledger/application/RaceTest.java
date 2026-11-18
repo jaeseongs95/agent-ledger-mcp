@@ -379,4 +379,41 @@ class RaceTest {
                 author)).isEqualTo(1);
         assertThat(s.count("SELECT COUNT(*) FROM session_grant WHERE author_id = ?", author)).isEqualTo(succeeded);
     }
+
+    // -------------------------------------------------------------- REM-001 (D-0050)
+
+    @Test
+    @DisplayName("REM-001 (D-0050): linking a task across a concurrent uncommitted move to another project re-authorizes after the move and fails SESSION_NOT_GRANTED")
+    void rem001_linkWaitsAndRechecksMovedProject(Scenario s) throws Exception {
+        String p2 = s.otherProject();
+        String mover = s.actorWith("defect", "task");
+        s.grant(mover, p2, "defect", "task");
+        String p1Only = s.actorWith("defect", "task");
+        SaveResult d = s.newDefect("d1");
+        SaveResult t = s.newTask("t1");
+        SaveResult c = s.newCondition("c1", "r", "code");
+        CountDownLatch moved = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger holderPid = new java.util.concurrent.atomic.AtomicInteger();
+        Future<?> saving = holdingTransaction(s, () -> {
+            holderPid.set(s.ctx().jdbc().sql("SELECT pg_backend_pid()").query(Integer.class).single());
+            return s.bean(SaveService.class).save(mover, s.edit("task", t.id(), 1, Map.of("project_id", p2)));
+        }, moved, release);
+        assertThat(moved.await(60, TimeUnit.SECONDS)).isTrue();
+        Future<Optional<ErrorCode>> linking = Parallel.start(() -> Expect.outcome(() -> s.bean(LinkService.class)
+                .link(p1Only, new LinkCommand(Scenario.uuid(), "defect_task", d.id(), t.id(), Scenario.REASON, null))));
+        org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(15))
+                .pollInterval(java.time.Duration.ofMillis(10))
+                .until(() -> linking.isDone()
+                        || org.pgledger.application.support.LockWaits.waitingFor(s.ctx(), holderPid.get()) > 0);
+        release.countDown();
+        saving.get(60, TimeUnit.SECONDS);
+        assertThat(linking.get(60, TimeUnit.SECONDS)).contains(TrustCode.SESSION_NOT_GRANTED);
+        assertThat(s.count("SELECT COUNT(*) FROM defect_task WHERE defect_id = ? AND task_id = ?", d.id(), t.id()))
+                .isZero();
+        // also check condition_task after committed move into p2
+        Expect.failure(() -> s.bean(LinkService.class).link(p1Only, new LinkCommand(Scenario.uuid(), "condition_task",
+                c.id(), t.id(), Scenario.REASON, null)), TrustCode.SESSION_NOT_GRANTED);
+        assertThat(s.count("SELECT COUNT(*) FROM condition_link WHERE condition_id = ?", c.id())).isZero();
+    }
 }
