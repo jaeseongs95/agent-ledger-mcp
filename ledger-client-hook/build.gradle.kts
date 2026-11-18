@@ -10,6 +10,14 @@ plugins {
 
 val hookJarName = "ledger-client-hook.jar"
 
+configurations.implementation {
+    // YAML and unused logging bridges are excluded across all starters so cold CLI startup does not mount or scan unused jars.
+    exclude(group = "org.yaml", module = "snakeyaml")
+    exclude(group = "org.apache.logging.log4j", module = "log4j-to-slf4j")
+    exclude(group = "org.apache.logging.log4j", module = "log4j-api")
+    exclude(group = "org.slf4j", module = "jul-to-slf4j")
+}
+
 dependencies {
     // Spring Boot core, logging (SLF4J + Logback) and the configuration properties binding; no web server, no JDBC, no data access (HK-018).
     implementation("org.springframework.boot:spring-boot-starter")

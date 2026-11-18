@@ -149,7 +149,7 @@ sealed interface Protection permits Protection.Posix, Protection.Acl, Protection
         /** The ACL given at creation may have been merged with entries inherited from the parent: make it certain. */
         @Override
         public void settle(Path path) throws IOException {
-            delegate().settle(path, false).ifPresent(_ -> {
+            delegate().settle(path, true).ifPresent(_ -> {
                 throw new SessionKeyException(Reason.TOO_OPEN);
             });
         }

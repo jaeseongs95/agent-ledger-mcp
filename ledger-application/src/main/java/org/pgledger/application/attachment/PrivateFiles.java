@@ -165,7 +165,7 @@ public class PrivateFiles {
      */
     private void settle(Path path) throws IOException {
         FileProtection protection = protection(path.getFileSystem());
-        protection.settle(path, false).ifPresent(exposure -> {
+        protection.settle(path, true).ifPresent(exposure -> {
             throw unsafe("newly created path is exposed: " + describe(exposure));
         });
     }

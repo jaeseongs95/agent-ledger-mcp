@@ -76,10 +76,9 @@ jobs:
 
       - name: Run Spotless, Third-Party Notices, and Full Check
         run: |
-          ./gradlew --no-daemon --max-workers=2 \
+          ./gradlew --no-daemon --max-workers=1 \
             -Pledger.test.forks=1 \
             -Pledger.test.maxHeapSize=1g \
-            -Pledger.test.activeProcessorCount=2 \
             -Pledger.test.jdbc-password-file="$RUNNER_TEMP/owner.pw" \
             -Pledger.test.app-password-file="$RUNNER_TEMP/app.pw" \
             spotlessCheck check
@@ -131,10 +130,9 @@ jobs:
         run: |
           $ownerPwFile = ("$env:RUNNER_TEMP\owner.pw" -replace '\\', '/')
           $appPwFile = ("$env:RUNNER_TEMP\app.pw" -replace '\\', '/')
-          .\gradlew.bat --no-daemon --max-workers=2 `
+          .\gradlew.bat --no-daemon --max-workers=1 `
             "-Pledger.test.forks=1" `
             "-Pledger.test.maxHeapSize=1g" `
-            "-Pledger.test.activeProcessorCount=2" `
             "-Pledger.test.jdbc-password-file=$ownerPwFile" `
             "-Pledger.test.app-password-file=$appPwFile" `
             spotlessCheck check

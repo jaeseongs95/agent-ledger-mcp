@@ -9,12 +9,11 @@
   documents is used: https://docs.spring.io/spring-boot/reference/features/logging.html (Custom Log Configuration).
 -->
 <configuration>
-  <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
   <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
     <target>System.err</target>
     <encoder>
-      <pattern>${CONSOLE_LOG_PATTERN}</pattern>
-      <charset>${CONSOLE_LOG_CHARSET}</charset>
+      <pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level %logger{36} - %msg%n</pattern>
+      <charset>UTF-8</charset>
     </encoder>
   </appender>
   <root level="WARN">

@@ -2,8 +2,13 @@
 
 package org.pgledger.hook;
 
+import java.util.List;
 import java.util.Map;
+import org.springframework.boot.Banner;
 import org.springframework.boot.SpringApplication;
+import org.springframework.boot.WebApplicationType;
+import org.springframework.boot.context.logging.LoggingApplicationListener;
+import org.springframework.boot.support.EnvironmentPostProcessorApplicationListener;
 
 /**
  * Entry point of {@code java -jar ledger-client-hook.jar <claude|codex|antigravity>} (the host hook) and
@@ -34,9 +39,20 @@ public final class Main {
     private Main() {}
 
     public static void main(String[] args) {
+        System.setProperty(
+                "org.springframework.boot.logging.LoggingSystem",
+                "org.springframework.boot.logging.logback.LogbackLoggingSystem");
         SpringApplication application = new SpringApplication(HookApplication.class);
+        application.setWebApplicationType(WebApplicationType.NONE);
+        application.setBannerMode(Banner.Mode.OFF);
+        application.setLogStartupInfo(false);
         application.setAddCommandLineProperties(false);
         application.setRegisterShutdownHook(false);
+        application.setInitializers(List.of());
+        application.setListeners(application.getListeners().stream()
+                .filter(listener -> listener instanceof EnvironmentPostProcessorApplicationListener
+                        || listener instanceof LoggingApplicationListener)
+                .toList());
         application.setDefaultProperties(CONFIG_ONLY_FROM_THE_JAR);
         System.exit(SpringApplication.exit(application.run(args)));
     }
