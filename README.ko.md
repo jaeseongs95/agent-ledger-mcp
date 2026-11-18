@@ -171,6 +171,7 @@ MCP를 직접 호출하는 쪽은 호스트로 인증되지 않습니다. bearer
 | `ledger-client-hook` | 모든 클라이언트가 함께 쓰는 훅 jar(`ledger-client-hook.jar`) |
 | `ledger-migrate-1x` | 1.x 설치를 2.0으로 옮기는 별도의 도구(`ledger-migrate-1x.jar`, 1.x에서 업그레이드 참조). `ledger-domain`, `ledger-database`, `ledger-application`을 사용하고, 명령줄 기반과 비밀 저장소를 위해 `ledger-cli`의 클래스(plain jar이며 그 모듈의 라이브러리는 가져오지 않습니다)도 사용하므로 비밀 저장소는 서비스의 것과 같습니다. 다른 모듈은 이 모듈을 사용하지 않습니다 |
 | `ledger-system-test` | 시험 코드만 있는 모듈: 빌드한 jar를 그 컴퓨터의 PostgreSQL에 대해 실행하는, 패키지된 제품의 시스템 시험 |
+| `ledger-arch-checks` | 시험 코드만 있는 모듈: 모듈 간 아키텍처, 빌드 스크립트, SQL·트랜잭션 경계 및 의존성 규칙 검증 |
 
 ## 설정
 
@@ -711,7 +712,7 @@ JVM이 인식하는 프로세서 수를 제한할 수 있습니다. 속성은 �
 ## 구성
 
 - `ledger-domain`, `ledger-attestation`, `ledger-files`, `ledger-database`, `ledger-application`, `ledger-mcp-server`, `ledger-admin-web`,
-  `ledger-cli`, `ledger-client-hook`, `ledger-migrate-1x`: 위의 모듈이며 각각 `src/main`과 `src/test`를 가집니다. `ledger-system-test`는 `src/test`만 가집니다.
+  `ledger-cli`, `ledger-client-hook`, `ledger-migrate-1x`: 위의 모듈이며 각각 `src/main`과 `src/test`를 가집니다. `ledger-system-test`와 `ledger-arch-checks`는 `src/test`만 가집니다.
 - `clients/claude`, `clients/codex`, `clients/antigravity`: 클라이언트별 플러그인의 매니페스트와 README이며, 빌드가 훅 jar와 함께
   `ledger-client-hook/build/client-plugins`에 모읍니다.
 - `docs/`: 시험 사례 목록, 릴리스 노트 형식, 릴리스 노트.

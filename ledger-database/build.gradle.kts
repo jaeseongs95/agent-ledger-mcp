@@ -35,5 +35,7 @@ dependencies {
     testFixturesApi("org.postgresql:postgresql")
     // OwnerOnlyFiles: the copy of the driver jar that a test registers (the product refuses a jar that others can write)
     testFixturesImplementation(testFixtures(project(":ledger-domain")))
+    testFixturesImplementation("org.springframework:spring-jdbc")
+    testFixturesImplementation("org.awaitility:awaitility")
     testFixturesImplementation("tools.jackson.core:jackson-databind")
 }

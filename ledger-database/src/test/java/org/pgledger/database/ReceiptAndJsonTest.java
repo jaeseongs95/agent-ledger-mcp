@@ -9,7 +9,7 @@ import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,6 +24,7 @@ import org.pgledger.database.support.DatabaseTest;
 import org.pgledger.database.support.LedgerTestContext;
 import org.pgledger.database.support.Parallel;
 import org.pgledger.database.support.Seed;
+import org.pgledger.testing.database.LockWaits;
 import org.pgledger.domain.model.Defect;
 import org.pgledger.domain.model.HistoryEntry;
 import org.pgledger.domain.model.Receipt;
@@ -71,11 +72,14 @@ class ReceiptAndJsonTest {
     @Test
     void repo018_aDuplicateWaitsForTheFirstInserterAndSucceedsAfterItsRollback() throws Exception {
         TransactionTemplate tx = ctx.bean(TransactionTemplate.class);
+        org.springframework.jdbc.core.simple.JdbcClient jdbc = ctx.bean(org.springframework.jdbc.core.simple.JdbcClient.class);
         OperationKey id = new OperationKey(UUID.randomUUID().toString());
         CountDownLatch inserted = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger holderPid = new AtomicInteger();
         Future<Void> first = Parallel.start(() -> tx.execute(status -> {
             receipts.insert(reserve(id));
+            holderPid.set(LockWaits.backendPid(jdbc));
             inserted.countDown();
             awaitQuietly(release);
             status.setRollbackOnly();
@@ -83,7 +87,7 @@ class ReceiptAndJsonTest {
         }));
         assertThat(inserted.await(10, TimeUnit.SECONDS)).isTrue();
         Future<Receipt> second = Parallel.start(() -> tx.execute(status -> receipts.insert(reserve(id))));
-        assertThatThrownBy(() -> second.get(1500, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
+        LockWaits.awaitWaitingFor(jdbc, holderPid.get());
         release.countDown();
         first.get(10, TimeUnit.SECONDS);
         // the first inserter rolled back, so the second one succeeds
@@ -93,18 +97,21 @@ class ReceiptAndJsonTest {
     @Test
     void repo018_aDuplicateOfACommittedReceiptFailsAfterTheWait() throws Exception {
         TransactionTemplate tx = ctx.bean(TransactionTemplate.class);
+        org.springframework.jdbc.core.simple.JdbcClient jdbc = ctx.bean(org.springframework.jdbc.core.simple.JdbcClient.class);
         OperationKey id = new OperationKey(UUID.randomUUID().toString());
         CountDownLatch inserted = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger holderPid = new AtomicInteger();
         Future<Receipt> first = Parallel.start(() -> tx.execute(status -> {
             Receipt stored = receipts.insert(reserve(id));
+            holderPid.set(LockWaits.backendPid(jdbc));
             inserted.countDown();
             awaitQuietly(release);
             return stored;
         }));
         assertThat(inserted.await(10, TimeUnit.SECONDS)).isTrue();
         Future<Receipt> second = Parallel.start(() -> tx.execute(status -> receipts.insert(reserve(id))));
-        assertThatThrownBy(() -> second.get(1500, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
+        LockWaits.awaitWaitingFor(jdbc, holderPid.get());
         release.countDown();
         assertThat(first.get(10, TimeUnit.SECONDS).operationKey()).isEqualTo(id);
         assertThatThrownBy(() -> second.get(10, TimeUnit.SECONDS)).hasCauseInstanceOf(DuplicateKeyException.class);

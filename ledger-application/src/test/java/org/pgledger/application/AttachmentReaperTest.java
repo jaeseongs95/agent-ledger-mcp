@@ -29,7 +29,7 @@ import org.pgledger.application.attachment.UploadService.FinishPlan;
 import org.pgledger.application.support.AttachmentContext;
 import org.pgledger.application.support.HeldTransaction;
 import org.pgledger.application.support.LedgerAppContext;
-import org.pgledger.application.support.LockWaits;
+import org.pgledger.testing.database.LockWaits;
 import org.pgledger.application.support.Parallel;
 import org.pgledger.application.support.Scenario;
 import org.pgledger.application.support.TestClock;
@@ -208,7 +208,7 @@ class AttachmentReaperTest {
             HeldTransaction<Boolean> reaping = HeldTransaction.start(ctx, () -> maintenance.removeExpired(p.id(), expiry));
             int holder = reaping.awaitHeld();
             Future<Received> chunk = Parallel.start(() -> service.recordChunk(p.actor(), p.row(), stored, 200, sha));
-            LockWaits.awaitWaitingFor(ctx, holder);
+            LockWaits.awaitWaitingFor(ctx.jdbc(), holder);
             assertThat(reaping.release()).as("one row deleted: the reaper may remove the file").isTrue();
             s.bean(AttachmentStore.class).remove(p.row().storageKey());
 
@@ -237,7 +237,7 @@ class AttachmentReaperTest {
                     () -> service.recordChunk(p.actor(), p.row(), stored, 200, sha));
             int holder = chunk.awaitHeld();
             Future<Integer> reaping = Parallel.start(reaper::reap);
-            LockWaits.awaitWaitingFor(ctx, holder);
+            LockWaits.awaitWaitingFor(ctx.jdbc(), holder);
             assertThat(chunk.release()).isEqualTo(new Received(1, 400));
 
             assertThat(value(reaping)).as("the expiry moved: the delete affected no row (round %d)", round).isZero();
@@ -270,7 +270,7 @@ class AttachmentReaperTest {
                     () -> service.completeUpload(p.actor(), attachmentId, List.of(new ClosedFile(row.id(), length))));
             int holder = finish.awaitHeld();
             Future<Integer> reaping = Parallel.start(reaper::reap);
-            LockWaits.awaitWaitingFor(ctx, holder);
+            LockWaits.awaitWaitingFor(ctx.jdbc(), holder);
             Finished finished = finish.release();
 
             assertThat(value(reaping)).as("no expired upload was removed (round %d)", round).isZero();
@@ -303,7 +303,7 @@ class AttachmentReaperTest {
             int holder = reaping.awaitHeld();
             Future<Finished> finish = Parallel.start(
                     () -> service.completeUpload(p.actor(), attachmentId, List.of(new ClosedFile(row.id(), length))));
-            LockWaits.awaitWaitingFor(ctx, holder);
+            LockWaits.awaitWaitingFor(ctx.jdbc(), holder);
             assertThat(reaping.release()).isTrue();
             s.bean(AttachmentStore.class).remove(row.storageKey());
 

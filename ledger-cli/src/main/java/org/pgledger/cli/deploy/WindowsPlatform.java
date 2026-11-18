@@ -11,7 +11,7 @@ import java.nio.file.attribute.UserPrincipal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import org.pgledger.application.attachment.ServiceAccountAccess;
+import org.pgledger.files.ServicePrincipalAcl;
 import org.pgledger.cli.CliOptions;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.UsageException;
@@ -32,7 +32,7 @@ import org.springframework.stereotype.Component;
  *
  * <p>The secrets are the installing user's: the secret directory with its folders of the uses ({@link SecretFolder}) and the folder of
  * the attachment keys ({@code etc\attachment-keys}, beside the secrets, in no configuration tree) are made with the ACL
- * of {@link ServiceAccountAccess} (the installing user with everything, the service account with read; the entry of the settings
+ * of {@link ServicePrincipalAcl} (the installing user with everything, the service account with read; the entry of the settings
  * folder for the service account to modify is not carried over, because the ACL is written at once), and what the store of
  * secrets and the key setup make in them has the same two entries. Why the service account reads: it runs the services, which
  * read the secrets, and the installation does not hand the secrets over to it (the installing user stays the owner and no
@@ -158,7 +158,7 @@ final class WindowsPlatform implements ServicePlatform, ServiceWrappers {
             // The folders of the secrets and the folder of the attachment keys: the installing user with everything and the
             // service account with read, set when the folder is made. An existing one is never changed. The settings folder holds an
             // entry of the service account to modify that a new folder inherits, so the ACL is written at once, not left to inheritance.
-            List<AclEntry> forSecrets = ServiceAccountAccess.ownerAndService(installer, service, true);
+            List<AclEntry> forSecrets = ServicePrincipalAcl.ownerAndService(installer, service, true);
             for (Path secretFolder : secretFolders) {
                 if (!Files.isDirectory(secretFolder, LinkOption.NOFOLLOW_LINKS)) {
                     Files.createDirectories(secretFolder);

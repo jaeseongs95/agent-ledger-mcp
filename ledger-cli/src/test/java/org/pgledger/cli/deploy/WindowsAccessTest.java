@@ -10,7 +10,7 @@ import java.nio.file.attribute.UserPrincipal;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.pgledger.application.attachment.ServiceAccountAccess;
+import org.pgledger.files.ServicePrincipalAcl;
 
 /**
  * INS-045 (changed by PCS-034): the access of a Windows installation, in Java and not with {@code icacls} ({@link WindowsAccess}): the
@@ -63,13 +63,13 @@ class WindowsAccessTest {
     @Test
     @DisplayName("PCS-034 the secret folders: the installing user with everything and the service account with read and traverse, both inherited, and no entry for anyone else (Administrators and SYSTEM included)")
     void pcs034_theSecretFolders() {
-        List<AclEntry> acl = ServiceAccountAccess.ownerAndService(INSTALLER, SERVICE, true);
+        List<AclEntry> acl = ServicePrincipalAcl.ownerAndService(INSTALLER, SERVICE, true);
 
         assertThat(acl).hasSize(2);
         assertThat(acl.get(0).principal()).isEqualTo(INSTALLER);
         assertThat(acl.get(0).permissions()).isEqualTo(WindowsAccess.FULL);
         assertThat(acl.get(1).principal()).isEqualTo(SERVICE);
-        assertThat(acl.get(1).permissions()).isEqualTo(ServiceAccountAccess.READ_FOLDER)
+        assertThat(acl.get(1).permissions()).isEqualTo(ServicePrincipalAcl.READ_FOLDER)
                 .doesNotContain(AclEntryPermission.WRITE_DATA, AclEntryPermission.APPEND_DATA, AclEntryPermission.DELETE,
                         AclEntryPermission.DELETE_CHILD, AclEntryPermission.WRITE_ACL, AclEntryPermission.WRITE_OWNER);
         assertThat(acl).allSatisfy(entry -> {
@@ -82,11 +82,11 @@ class WindowsAccessTest {
     @Test
     @DisplayName("PCS-030 a secret file: the installing user with everything and the service account with read (no traverse), inherited by nothing; when the owner is the service account itself there is one entry")
     void pcs030_aSecretFile() {
-        List<AclEntry> acl = ServiceAccountAccess.ownerAndService(INSTALLER, SERVICE, false);
+        List<AclEntry> acl = ServicePrincipalAcl.ownerAndService(INSTALLER, SERVICE, false);
 
         assertThat(acl).hasSize(2).allSatisfy(entry -> assertThat(entry.flags()).isEmpty());
-        assertThat(acl.get(1).permissions()).isEqualTo(ServiceAccountAccess.READ_FILE).doesNotContain(AclEntryPermission.EXECUTE);
-        assertThat(ServiceAccountAccess.ownerAndService(SERVICE, SERVICE, false)).hasSize(1);
+        assertThat(acl.get(1).permissions()).isEqualTo(ServicePrincipalAcl.READ_FILE).doesNotContain(AclEntryPermission.EXECUTE);
+        assertThat(ServicePrincipalAcl.ownerAndService(SERVICE, SERVICE, false)).hasSize(1);
     }
 
     @Test

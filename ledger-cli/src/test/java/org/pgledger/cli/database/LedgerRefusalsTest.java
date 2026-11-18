@@ -34,8 +34,10 @@ import org.pgledger.domain.error.ValidationReason;
  */
 class LedgerRefusalsTest {
 
+    private static final LedgerRefusals REFUSALS = new LedgerRefusals();
+
     private static FailureException translate(LedgerException refused, Context context) {
-        FailureException failure = LedgerRefusals.translate(refused, context);
+        FailureException failure = REFUSALS.translate(refused, context);
         assertThat(failure.getCause()).as("the refusal of the ledger is the cause").isSameAs(refused);
         return failure;
     }

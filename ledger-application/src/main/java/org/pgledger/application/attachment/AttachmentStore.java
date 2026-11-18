@@ -10,6 +10,7 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.DosFileAttributeView;
+import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -655,7 +656,11 @@ public class AttachmentStore {
     private static void makeReadOnly(Path file) throws IOException {
         Set<String> views = file.getFileSystem().supportedFileAttributeViews();
         if (views.contains("posix")) {
-            Files.setPosixFilePermissions(file, PosixFilePermissions.fromString(READ_ONLY_MODE));
+            PosixFileAttributeView posix = Files.getFileAttributeView(file, PosixFileAttributeView.class,
+                    LinkOption.NOFOLLOW_LINKS);
+            if (posix != null) {
+                posix.setPermissions(PosixFilePermissions.fromString(READ_ONLY_MODE));
+            }
         } else if (views.contains("dos")) {
             Files.getFileAttributeView(file, DosFileAttributeView.class, LinkOption.NOFOLLOW_LINKS).setReadOnly(true);
         }
@@ -664,7 +669,11 @@ public class AttachmentStore {
     private static void makeWritable(Path file) throws IOException {
         Set<String> views = file.getFileSystem().supportedFileAttributeViews();
         if (views.contains("posix")) {
-            Files.setPosixFilePermissions(file, PosixFilePermissions.fromString(WRITABLE_MODE));
+            PosixFileAttributeView posix = Files.getFileAttributeView(file, PosixFileAttributeView.class,
+                    LinkOption.NOFOLLOW_LINKS);
+            if (posix != null) {
+                posix.setPermissions(PosixFilePermissions.fromString(WRITABLE_MODE));
+            }
         } else if (views.contains("dos")) {
             Files.getFileAttributeView(file, DosFileAttributeView.class, LinkOption.NOFOLLOW_LINKS).setReadOnly(false);
         }

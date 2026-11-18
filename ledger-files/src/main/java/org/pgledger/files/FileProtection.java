@@ -8,6 +8,7 @@ import java.nio.file.attribute.AclEntry;
 import java.nio.file.attribute.AclEntryType;
 import java.nio.file.attribute.AclFileAttributeView;
 import java.nio.file.attribute.FileAttribute;
+import java.nio.file.attribute.FileOwnerAttributeView;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.nio.file.attribute.UserPrincipal;
@@ -172,8 +173,10 @@ public sealed interface FileProtection
 
         @Override
         public Optional<Exposure> settle(Path path, boolean takeOwnershipIfNeeded) throws IOException {
-            if (takeOwnershipIfNeeded && !Objects.equals(Files.getOwner(path, LinkOption.NOFOLLOW_LINKS), owner)) {
-                Files.setOwner(path, owner);
+            FileOwnerAttributeView ownerView = Files.getFileAttributeView(path, FileOwnerAttributeView.class,
+                    LinkOption.NOFOLLOW_LINKS);
+            if (takeOwnershipIfNeeded && ownerView != null && !Objects.equals(ownerView.getOwner(), owner)) {
+                ownerView.setOwner(owner);
             }
             if (openExposure(path).isPresent()) {
                 boolean directory = Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS);

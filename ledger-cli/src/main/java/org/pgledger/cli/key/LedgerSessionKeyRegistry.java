@@ -27,11 +27,14 @@ public final class LedgerSessionKeyRegistry implements SessionKeyRegistry {
     private final SessionKeyService service;
     private final CliActor actor;
     private final SchemaReadiness readiness;
+    private final LedgerRefusals refusals;
 
-    public LedgerSessionKeyRegistry(SessionKeyService service, CliActor actor, SchemaReadiness readiness) {
+    public LedgerSessionKeyRegistry(SessionKeyService service, CliActor actor, SchemaReadiness readiness,
+            LedgerRefusals refusals) {
         this.service = service;
         this.actor = actor;
         this.readiness = readiness;
+        this.refusals = refusals;
     }
 
     @Override
@@ -57,7 +60,7 @@ public final class LedgerSessionKeyRegistry implements SessionKeyRegistry {
         try {
             work.accept(owner);
         } catch (LedgerException failure) {
-            throw LedgerRefusals.translate(failure, context);
+            throw refusals.translate(failure, context);
         } catch (DataAccessException failure) {
             throw new FailureException(ErrorCode.DATABASE_FAILED, failure);
         }

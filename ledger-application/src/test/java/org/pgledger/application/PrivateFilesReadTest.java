@@ -218,7 +218,7 @@ class PrivateFilesReadTest {
         Path file = properties.directory().resolve("a-file");
         fixture.files().createFile(file);
 
-        var service = org.pgledger.application.attachment.ServiceAccountAccess.principal(root.getFileSystem());
+        var service = org.pgledger.files.ServicePrincipalAcl.principal(root.getFileSystem());
         for (Path path : List.of(properties.keyDirectory(), properties.keyDirectory().resolve(keyId), properties.directory(), file)) {
             var entries = Files.getFileAttributeView(path, java.nio.file.attribute.AclFileAttributeView.class,
                     java.nio.file.LinkOption.NOFOLLOW_LINKS).getAcl();

@@ -7,6 +7,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
+import org.pgledger.testing.database.LockWaits;
 
 /**
  * A transaction on its own thread and its own connection that does its work and then stays open: the rows it changed stay locked until
@@ -27,7 +28,7 @@ public final class HeldTransaction<T> {
         this.result = Parallel.start(() -> ctx.tx(() -> {
             try {
                 T value = work.get();
-                backend.set(ctx.jdbc().sql("SELECT pg_backend_pid()").query(Integer.class).single());
+                backend.set(LockWaits.backendPid(ctx.jdbc()));
                 held.countDown();
                 if (!release.await(SECONDS, TimeUnit.SECONDS)) {
                     throw new IllegalStateException("the held transaction was not released");

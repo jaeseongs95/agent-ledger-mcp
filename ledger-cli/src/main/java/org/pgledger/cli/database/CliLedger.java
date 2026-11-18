@@ -27,9 +27,10 @@ public final class CliLedger {
     private final PasskeyService passkeys;
     private final CliActor actor;
     private final SchemaReadiness readiness;
+    private final LedgerRefusals refusals;
 
     public CliLedger(ProjectService projects, CommonCodeService codes, GrantService grants, SessionKeyService keys,
-            PasskeyService passkeys, CliActor actor, SchemaReadiness readiness) {
+            PasskeyService passkeys, CliActor actor, SchemaReadiness readiness, LedgerRefusals refusals) {
         this.projects = projects;
         this.codes = codes;
         this.grants = grants;
@@ -37,6 +38,7 @@ public final class CliLedger {
         this.passkeys = passkeys;
         this.actor = actor;
         this.readiness = readiness;
+        this.refusals = refusals;
     }
 
     public ProjectService projects() {
@@ -75,7 +77,7 @@ public final class CliLedger {
         try {
             return work.get();
         } catch (LedgerException refused) {
-            throw LedgerRefusals.translate(refused, LedgerRefusals.Context.GENERIC);
+            throw refusals.translate(refused, LedgerRefusals.Context.GENERIC);
         } catch (DataAccessException failure) {
             throw new FailureException(ErrorCode.DATABASE_FAILED, failure);
         }

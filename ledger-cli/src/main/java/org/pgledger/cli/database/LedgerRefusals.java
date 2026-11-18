@@ -3,6 +3,7 @@ package org.pgledger.cli.database;
 import java.util.List;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.FailureException;
+import org.springframework.stereotype.Component;
 import org.pgledger.domain.error.AdminException;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ConflictException;
@@ -26,6 +27,7 @@ import org.pgledger.domain.error.ValidationReason;
  * echoed except what the owner needs to go on (the fingerprint and the registration time of a live key). No value the
  * owner typed is part of a message.
  */
+@Component
 public final class LedgerRefusals {
 
     /** What the command was doing when the ledger refused. */
@@ -48,10 +50,7 @@ public final class LedgerRefusals {
         }
     }
 
-    private LedgerRefusals() {
-    }
-
-    public static FailureException translate(LedgerException refused, Context context) {
+    public FailureException translate(LedgerException refused, Context context) {
         return switch (refused) {
             case ConflictException conflict -> conflict(conflict, context);
             case LookupException lookup -> lookup(lookup, context);

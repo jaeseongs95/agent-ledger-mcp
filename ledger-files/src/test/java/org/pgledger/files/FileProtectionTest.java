@@ -73,4 +73,23 @@ class FileProtectionTest {
         Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-r-----"));
         assertThat(posix.openExposure(file)).isPresent();
     }
+
+    @Test
+    @DisplayName("F9 Acl.settle uses NOFOLLOW_LINKS owner lookup without following symlink targets")
+    void aclSettleHandlesMissingOrNonSymlinkPathsSafely(@TempDir Path temp) throws IOException {
+        FileSystem fs = temp.getFileSystem();
+        Assumptions.assumeTrue(fs.supportedFileAttributeViews().contains("acl")
+                && !fs.supportedFileAttributeViews().contains("posix"), "ACL-only file system test");
+        UserPrincipal owner = fs.getUserPrincipalLookupService().lookupPrincipalByName(System.getProperty("user.name"));
+        FileProtection.Acl ownerOnly = new FileProtection.Acl(owner);
+        Path target = Files.createFile(temp.resolve("real.txt"), ownerOnly.fileAttributes());
+        Path link = temp.resolve("link.txt");
+        try {
+            Files.createSymbolicLink(link, target);
+        } catch (IOException | UnsupportedOperationException denied) {
+            Assumptions.assumeTrue(false, "process cannot create symlinks: " + denied.getMessage());
+        }
+        assertThat(ownerOnly.settle(link, true)).isEmpty();
+        assertThat(Files.isSymbolicLink(link)).isTrue();
+    }
 }

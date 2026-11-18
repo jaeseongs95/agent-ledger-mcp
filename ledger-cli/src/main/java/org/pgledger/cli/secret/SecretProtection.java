@@ -6,10 +6,10 @@ import java.nio.file.Path;
 import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.UserPrincipal;
 import java.util.Set;
-import org.pgledger.application.attachment.ServiceAccountAccess;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.FailureException;
 import org.pgledger.files.FileProtection;
+import org.pgledger.files.ServicePrincipalAcl;
 
 /**
  * How the secret directory and its files are made usable by their owner alone on this file system. The file system decides
@@ -20,7 +20,7 @@ import org.pgledger.files.FileProtection;
  *     that was just created with any group or other permission is refused ({@link #settle}).
  * <li>{@link Acl} ({@link AclFileAttributeView}, the Windows file systems): an ACL with two ALLOW entries, given at creation
  *     (the {@code acl:acl} attribute of the Windows provider; no inherited entry is put in, the DACL is not marked protected): the owner (the installing user) with
- *     everything and the service account LocalService with read ({@link ServiceAccountAccess}); what the parent hands down is
+ *     everything and the service account LocalService with read ({@link ServicePrincipalAcl}); what the parent hands down is
  *     replaced by that ACL right after creation ({@link #settle}). Why the service account reads: the services run as
  *     LocalService and must read the secrets that the installing user stores, and the installation has no step that hands the
  *     secrets over (the installing user stays the owner, no privilege to take ownership is used). SYSTEM and Administrators are not exempt: an
@@ -68,7 +68,7 @@ public sealed interface SecretProtection {
             return new Posix();
         }
         if (views.contains("acl")) {
-            return new Acl(processUser.current(fileSystem), ServiceAccountAccess.principal(fileSystem));
+            return new Acl(processUser.current(fileSystem), ServicePrincipalAcl.principal(fileSystem));
         }
         throw new FailureException(ErrorCode.NON_POSIX_FILESYSTEM, directory.toString());
     }

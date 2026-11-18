@@ -30,9 +30,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
-import org.pgledger.application.attachment.ServiceAccountAccess;
 import org.pgledger.cli.secret.SecretFolder;
 import org.pgledger.cli.support.RecordingHostAccounts;
+import org.pgledger.files.ServicePrincipalAcl;
 
 /**
  * PCS-034, PCS-035 (and the put-back of WSEC-10, WSEC-11): the steps of {@code prepare-host} on Windows ({@link WindowsPlatform}) and
@@ -126,7 +126,7 @@ class WindowsPlatformTest {
         order.verify(access).set(home.resolve("logs"), closedWith(WindowsAccess.MODIFY));
         order.verify(access).set(home.resolve("data"), closedWith(WindowsAccess.MODIFY));
         order.verify(access).set(home.resolve("data/attachments"), closedWith(WindowsAccess.MODIFY));
-        List<AclEntry> forSecrets = ServiceAccountAccess.ownerAndService(INSTALLER, SERVICE, true);
+        List<AclEntry> forSecrets = ServicePrincipalAcl.ownerAndService(INSTALLER, SERVICE, true);
         order.verify(access).set(secrets, forSecrets);
         for (Path folder : folders) {
             order.verify(access).set(folder, forSecrets);
@@ -175,7 +175,7 @@ class WindowsPlatformTest {
 
         prepare();
 
-        List<AclEntry> forSecrets = ServiceAccountAccess.ownerAndService(INSTALLER, SERVICE, true);
+        List<AclEntry> forSecrets = ServicePrincipalAcl.ownerAndService(INSTALLER, SERVICE, true);
         verify(access, never()).set(eq(secrets), any());
         verify(access, never()).set(eq(secrets.resolve("admin")), any());
         verify(access).set(secrets.resolve("common"), forSecrets);

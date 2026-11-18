@@ -1,13 +1,12 @@
 package org.pgledger.database;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.pgledger.database.support.DatabaseTest;
@@ -15,6 +14,7 @@ import org.pgledger.database.repository.DefectRepository;
 import org.pgledger.database.support.LedgerTestContext;
 import org.pgledger.database.support.Parallel;
 import org.pgledger.database.support.Seed;
+import org.pgledger.testing.database.LockWaits;
 import org.pgledger.domain.model.Defect;
 import org.pgledger.domain.model.Project;
 import org.pgledger.domain.rule.DefectStatus;
@@ -82,10 +82,13 @@ class CaseSequenceTest {
         Defect source = seed.defect(project, 1, "source", LedgerTestContext.START);
         Defect target = seed.defect(project, 2, "target", LedgerTestContext.START);
         TransactionTemplate tx = ctx.bean(TransactionTemplate.class);
+        JdbcClient txJdbc = ctx.bean(JdbcClient.class);
         CountDownLatch locked = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger holderPid = new AtomicInteger();
         Future<Boolean> recorder = Parallel.start(() -> tx.execute(status -> {
             boolean ok = defects.nextCaseSeq(source.id());
+            holderPid.set(LockWaits.backendPid(txJdbc));
             locked.countDown();
             try {
                 release.await(30, TimeUnit.SECONDS);
@@ -98,7 +101,7 @@ class CaseSequenceTest {
         Future<Defect> merger = Parallel.start(() -> ScopedValue.where(org.pgledger.domain.context.ActorScope.CURRENT,
                 Seed.ALICE).call(() -> tx.execute(status -> defects.save(source.transitioned(DefectStatus.MERGED,
                         target.id(), LedgerTestContext.START.plusSeconds(1))))));
-        assertThatThrownBy(() -> merger.get(1500, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
+        LockWaits.awaitWaitingFor(txJdbc, holderPid.get());
         release.countDown();
         assertThat(recorder.get(10, TimeUnit.SECONDS)).isTrue();
         Defect result = merger.get(10, TimeUnit.SECONDS);

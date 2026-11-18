@@ -2,11 +2,12 @@ package org.pgledger.application.attachment;
 
 import java.io.IOException;
 import java.nio.channels.FileChannel;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.NotDirectoryException;
-import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
@@ -18,6 +19,7 @@ import java.util.Set;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.files.FileProtection;
+import org.pgledger.files.ServicePrincipalAcl;
 import org.springframework.stereotype.Component;
 
 /**
@@ -25,7 +27,7 @@ import org.springframework.stereotype.Component;
  * files, the key directory and the key files. <b>Creation is owner-only</b>, chosen by what the file system supports and never by the
  * name of the operating system: POSIX permissions {@code rwx------} (directory) and {@code rw-------} (file), or on a file system
  * with ACLs an ACL with the entry of the account of this process (everything) and the entry of the service account LocalService
- * (read; the key files that the installing user made are read by the services, {@link ServiceAccountAccess}); a file system with
+ * (read; the key files that the installing user made are read by the services, {@link ServicePrincipalAcl}); a file system with
  * neither view cannot hold a private file and is refused for a creation.
  *
  * <p><b>Reading and using what exists does not look at who may reach it.</b> The personal edition trusts the whole PC: broad
@@ -60,10 +62,20 @@ public class PrivateFiles {
      * {@link #requireFile} (not a regular file) is closed and refused; a link is followed. The caller closes the channel.
      */
     public FileChannel openReadWrite(Path file) throws IOException {
-        Set<OpenOption> options = Set.of(StandardOpenOption.CREATE, StandardOpenOption.READ, StandardOpenOption.WRITE);
-        FileChannel channel = FileChannel.open(file, options, attributesFor(file, false));
+        boolean created = false;
+        FileChannel channel;
         try {
-            settle(file);
+            channel = FileChannel.open(file,
+                    Set.of(StandardOpenOption.CREATE_NEW, StandardOpenOption.READ, StandardOpenOption.WRITE),
+                    attributesFor(file, false));
+            created = true;
+        } catch (FileAlreadyExistsException existing) {
+            channel = FileChannel.open(file, Set.of(StandardOpenOption.READ, StandardOpenOption.WRITE));
+        }
+        try {
+            if (created) {
+                settle(file);
+            }
             requireFile(file);
             return channel;
         } catch (IOException | InfrastructureException failure) {
@@ -146,21 +158,28 @@ public class PrivateFiles {
     }
 
     /**
-     * An ACL that was merged with what the parent hands down is replaced by the owner and service one right after creation, before
-     * anything is written: the only place where a protection is changed after creation, and only to the narrow one.
+     * Settles newly created protection (POSIX verification or inherited ACL replacement) using
+     * {@link LinkOption#NOFOLLOW_LINKS} before bytes are written, refusing any remaining exposure.
      */
     private void settle(Path path) throws IOException {
-        FileSystem fileSystem = path.getFileSystem();
-        if (fileSystem.supportedFileAttributeViews().contains("acl")
-                && !fileSystem.supportedFileAttributeViews().contains("posix")) {
-            protection(fileSystem).settle(path, false);
-        }
+        FileProtection protection = protection(path.getFileSystem());
+        protection.settle(path, false).ifPresent(exposure -> {
+            throw unsafe("newly created path is exposed: " + describe(exposure));
+        });
+    }
+
+    private static String describe(FileProtection.Exposure exposure) {
+        return switch (exposure) {
+            case FileProtection.Exposure.EmptyAcl _ -> "an ACL without an entry";
+            case FileProtection.Exposure.PosixMode(var mode) -> mode;
+            case FileProtection.Exposure.AclPrincipal(var principal) -> "an ACL that allows " + principal;
+        };
     }
 
     /** The service account as a principal of the file system. */
     private static UserPrincipal serviceAccount(FileSystem fileSystem) {
         try {
-            return ServiceAccountAccess.principal(fileSystem);
+            return ServicePrincipalAcl.principal(fileSystem);
         } catch (UserPrincipalNotFoundException unknown) {
             throw unsafe("the service account is not known to the file system");
         } catch (IOException failure) {

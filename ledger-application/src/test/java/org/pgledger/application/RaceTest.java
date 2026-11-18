@@ -1,7 +1,6 @@
 package org.pgledger.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import org.pgledger.testing.TestOwners;
 
 import java.util.ArrayList;
@@ -12,9 +11,10 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
+import org.pgledger.testing.database.LockWaits;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
@@ -94,13 +94,16 @@ class RaceTest {
         String caseAuthor = s.actorWith("defect");
         CountDownLatch merged = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
-        Future<?> merge = holdingTransaction(s, () -> MergeFixture.merge(s, source.id(), 1, target.id()), merged,
-                release);
+        AtomicInteger holderPid = new AtomicInteger();
+        Future<?> merge = holdingTransaction(s, () -> {
+            holderPid.set(LockWaits.backendPid(s.ctx().jdbc()));
+            return MergeFixture.merge(s, source.id(), 1, target.id());
+        }, merged, release);
         assertThat(merged.await(60, TimeUnit.SECONDS)).isTrue();
         Future<Optional<ErrorCode>> recording = Parallel.start(() -> Expect.outcome(() -> s.bean(
                 RecordCaseService.class).recordCase(caseAuthor, new RecordCaseCommand(Scenario.uuid(), source.id(), "seen",
                 Scenario.REASON, null, null, null))));
-        assertThatThrownBy(() -> recording.get(400, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
+        LockWaits.awaitWaitingFor(s.ctx().jdbc(), holderPid.get());
         release.countDown();
         merge.get(60, TimeUnit.SECONDS);
         assertThat(recording.get(60, TimeUnit.SECONDS)).contains(TransitionCode.MERGED_DEFECT);
@@ -116,12 +119,15 @@ class RaceTest {
         String caseAuthor = s.actorWith("defect");
         CountDownLatch recorded = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
-        Future<WriteResult> recording = holdingTransaction(s, () -> s.bean(RecordCaseService.class).recordCase(
-                caseAuthor, new RecordCaseCommand(Scenario.uuid(), source.id(), "seen", Scenario.REASON, null, null, null)),
-                recorded, release);
+        AtomicInteger holderPid = new AtomicInteger();
+        Future<WriteResult> recording = holdingTransaction(s, () -> {
+            holderPid.set(LockWaits.backendPid(s.ctx().jdbc()));
+            return s.bean(RecordCaseService.class).recordCase(
+                    caseAuthor, new RecordCaseCommand(Scenario.uuid(), source.id(), "seen", Scenario.REASON, null, null, null));
+        }, recorded, release);
         assertThat(recorded.await(60, TimeUnit.SECONDS)).isTrue();
         Future<WriteResult> merging = Parallel.start(() -> MergeFixture.merge(s, source.id(), 1, target.id()));
-        assertThatThrownBy(() -> merging.get(400, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
+        LockWaits.awaitWaitingFor(s.ctx().jdbc(), holderPid.get());
         release.countDown();
         var caseResult = (WriteResult.RecordCaseResult) recording.get(60, TimeUnit.SECONDS);
         var mergeResult = (WriteResult.TransitionResult) merging.get(60, TimeUnit.SECONDS);
@@ -270,12 +276,15 @@ class RaceTest {
         String actor = s.actorWith("defect");
         CountDownLatch written = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
-        Future<SaveResult> writing = holdingTransaction(s, () -> s.bean(SaveService.class).save(actor,
-                s.create("defect", null, s.defectFields("held"))), written, release);
+        AtomicInteger holderPid = new AtomicInteger();
+        Future<SaveResult> writing = holdingTransaction(s, () -> {
+            holderPid.set(LockWaits.backendPid(s.ctx().jdbc()));
+            return s.bean(SaveService.class).save(actor, s.create("defect", null, s.defectFields("held")));
+        }, written, release);
         assertThat(written.await(60, TimeUnit.SECONDS)).isTrue();
         Future<Integer> revoking = Parallel.start(() -> s.bean(GrantService.class).revoke(new RevokeCommand(actor,
                 null, null), TestOwners.OWNER));
-        assertThatThrownBy(() -> revoking.get(400, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
+        LockWaits.awaitWaitingFor(s.ctx().jdbc(), holderPid.get());
         release.countDown();
         assertThat(writing.get(60, TimeUnit.SECONDS).version()).isEqualTo(1);
         assertThat(revoking.get(60, TimeUnit.SECONDS)).isEqualTo(1);
@@ -405,7 +414,7 @@ class RaceTest {
         org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(15))
                 .pollInterval(java.time.Duration.ofMillis(10))
                 .until(() -> linking.isDone()
-                        || org.pgledger.application.support.LockWaits.waitingFor(s.ctx(), holderPid.get()) > 0);
+                        || LockWaits.waitingFor(s.ctx().jdbc(), holderPid.get()) > 0);
         release.countDown();
         saving.get(60, TimeUnit.SECONDS);
         assertThat(linking.get(60, TimeUnit.SECONDS)).contains(TrustCode.SESSION_NOT_GRANTED);
@@ -457,7 +466,7 @@ class RaceTest {
         org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(15))
                 .pollInterval(java.time.Duration.ofMillis(10))
                 .until(() -> second.isDone()
-                        || org.pgledger.application.support.LockWaits.waitingFor(s.ctx(), holderPid.get()) > 0);
+                        || LockWaits.waitingFor(s.ctx().jdbc(), holderPid.get()) > 0);
         release.countDown();
         first.get(60, TimeUnit.SECONDS);
         assertThat(second.get(60, TimeUnit.SECONDS)).contains(TransitionCode.MERGE_TARGET_INVALID);
@@ -490,7 +499,7 @@ class RaceTest {
         org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(15))
                 .pollInterval(java.time.Duration.ofMillis(10))
                 .until(() -> merging.isDone()
-                        || org.pgledger.application.support.LockWaits.waitingFor(s.ctx(), holderPid.get()) > 0);
+                        || LockWaits.waitingFor(s.ctx().jdbc(), holderPid.get()) > 0);
         release.countDown();
         verifying.get(60, TimeUnit.SECONDS);
         assertThat(merging.get(60, TimeUnit.SECONDS)).contains(TransitionCode.MERGE_TARGET_INVALID);
@@ -521,7 +530,7 @@ class RaceTest {
         org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(15))
                 .pollInterval(java.time.Duration.ofMillis(10))
                 .until(() -> linking.isDone()
-                        || org.pgledger.application.support.LockWaits.waitingFor(s.ctx(), holderPid.get()) > 0);
+                        || LockWaits.waitingFor(s.ctx().jdbc(), holderPid.get()) > 0);
         release.countDown();
         saving.get(60, TimeUnit.SECONDS);
         assertThat(linking.get(60, TimeUnit.SECONDS)).contains(TrustCode.SESSION_NOT_GRANTED);

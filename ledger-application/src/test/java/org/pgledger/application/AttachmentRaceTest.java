@@ -26,7 +26,7 @@ import org.pgledger.application.support.AttachmentContext;
 import org.pgledger.application.support.Expect;
 import org.pgledger.application.support.HeldTransaction;
 import org.pgledger.application.support.LedgerAppContext;
-import org.pgledger.application.support.LockWaits;
+import org.pgledger.testing.database.LockWaits;
 import org.pgledger.application.support.Parallel;
 import org.pgledger.application.support.Parallel.Outcome;
 import org.pgledger.application.support.Scenario;
@@ -104,7 +104,7 @@ class AttachmentRaceTest {
                     () -> uploads.advance(u.id(), 1, stored, 2 * CHUNK, sha, now.plus(Duration.ofMinutes(10)), now));
             int holder = first.awaitHeld();
             Future<Received> second = Parallel.start(() -> Uploads.send(flow, u.actor(), u.id(), 1, part));
-            LockWaits.awaitWaitingFor(ctx, holder);
+            LockWaits.awaitWaitingFor(ctx.jdbc(), holder);
             assertThat(first.release()).as("the first request moved the row").isTrue();
 
             Received applied = new Received(1, 2 * CHUNK);
@@ -239,7 +239,7 @@ class AttachmentRaceTest {
             Future<Boolean> loser = Parallel.start(
                     () -> maintenance.addRekeyedFile(target.attachmentId, 0, target.first.storageKey(), loserKey,
                             keyId, TestOwners.OWNER));
-            LockWaits.awaitWaitingFor(ctx, holder);
+            LockWaits.awaitWaitingFor(ctx.jdbc(), holder);
             assertThat(winner.release()).isTrue();
 
             assertThatThrownBy(() -> loser.get(60, TimeUnit.SECONDS)).isInstanceOf(ExecutionException.class)

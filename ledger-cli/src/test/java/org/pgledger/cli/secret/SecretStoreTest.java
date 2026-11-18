@@ -31,8 +31,8 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.pgledger.application.attachment.ServiceAccountAccess;
 import org.pgledger.cli.ErrorCode;
+import org.pgledger.files.ServicePrincipalAcl;
 import org.pgledger.cli.FailureException;
 import org.pgledger.cli.support.RequiresPosixPermissions;
 import org.pgledger.cli.support.WindowsEffectiveRights;
@@ -266,7 +266,7 @@ class SecretStoreTest {
 
     /** The service account LocalService as the file system knows it (the lookup is by the file system). */
     private static UserPrincipal serviceAccount() throws IOException {
-        return ServiceAccountAccess.principal(FileSystems.getDefault());
+        return ServicePrincipalAcl.principal(FileSystems.getDefault());
     }
 
     /**
@@ -287,7 +287,7 @@ class SecretStoreTest {
         assertThat(serviceEntry.permissions()).contains(AclEntryPermission.READ_DATA, AclEntryPermission.READ_ATTRIBUTES,
                 AclEntryPermission.READ_ACL).doesNotContain(AclEntryPermission.WRITE_DATA, AclEntryPermission.APPEND_DATA,
                 AclEntryPermission.DELETE, AclEntryPermission.DELETE_CHILD, AclEntryPermission.WRITE_ACL, AclEntryPermission.WRITE_OWNER);
-        assertThat(ServiceAccountAccess.READ_FOLDER).containsAll(serviceEntry.permissions());
+        assertThat(ServicePrincipalAcl.READ_FOLDER).containsAll(serviceEntry.permissions());
     }
 
     @Test
@@ -376,7 +376,7 @@ class SecretStoreTest {
         Path file = store(directory).store(NAME, "never-printed-0123456789".toCharArray());
 
         for (Path path : List.of(directory, file)) {
-            int service = WindowsEffectiveRights.of(path, ServiceAccountAccess.WINDOWS_SERVICE_ACCOUNT);
+            int service = WindowsEffectiveRights.of(path, ServicePrincipalAcl.WINDOWS_SERVICE_ACCOUNT);
             assertThat(service & WindowsEffectiveRights.FILE_READ_DATA).as("read of %s", path).isNotZero();
             assertThat(service & (WindowsEffectiveRights.FILE_WRITE_DATA | WindowsEffectiveRights.FILE_APPEND_DATA
                     | WindowsEffectiveRights.DELETE | WindowsEffectiveRights.WRITE_DAC | WindowsEffectiveRights.WRITE_OWNER))
@@ -384,7 +384,7 @@ class SecretStoreTest {
             assertThat(WindowsEffectiveRights.of(path, "Everyone")).as("Everyone on %s", path).isZero();
             assertThat(WindowsEffectiveRights.of(path, "BUILTIN\\Users")).as("Users on %s", path).isZero();
         }
-        assertThat(WindowsEffectiveRights.of(directory, ServiceAccountAccess.WINDOWS_SERVICE_ACCOUNT)
+        assertThat(WindowsEffectiveRights.of(directory, ServicePrincipalAcl.WINDOWS_SERVICE_ACCOUNT)
                 & WindowsEffectiveRights.FILE_EXECUTE).as("the service account may traverse the folder").isNotZero();
     }
 
@@ -404,7 +404,7 @@ class SecretStoreTest {
 
         assertOwnerAndServiceAcl(directory);
         assertOwnerAndServiceAcl(file);
-        assertThat(WindowsEffectiveRights.of(file, ServiceAccountAccess.WINDOWS_SERVICE_ACCOUNT) & WindowsEffectiveRights.FILE_WRITE_DATA).isZero();
+        assertThat(WindowsEffectiveRights.of(file, ServicePrincipalAcl.WINDOWS_SERVICE_ACCOUNT) & WindowsEffectiveRights.FILE_WRITE_DATA).isZero();
     }
 
     @Test
