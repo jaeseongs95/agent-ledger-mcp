@@ -40,16 +40,16 @@ jobs:
           --health-retries=12
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 25 (Temurin)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "25"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
 
       - name: Provision test PostgreSQL roles and database
         env:
@@ -72,7 +72,7 @@ jobs:
 
       - name: Check Third-Party Dependency Licenses
         run: |
-          ./gradlew --no-daemon --no-configuration-cache --max-workers=2 checkLicense
+          ./gradlew --no-daemon --no-configuration-cache --no-parallel --max-workers=1 checkLicense
 
       - name: Run Spotless, Third-Party Notices, and Full Check
         run: |
@@ -90,16 +90,16 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 25 (Temurin)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "25"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
 
       - name: Install and start PostgreSQL 18 on port 55432 (UTC)
         shell: pwsh
@@ -124,7 +124,7 @@ jobs:
       - name: Check Third-Party Dependency Licenses
         shell: pwsh
         run: |
-          .\gradlew.bat --no-daemon --no-configuration-cache --max-workers=2 checkLicense
+          .\gradlew.bat --no-daemon --no-configuration-cache --no-parallel --max-workers=1 checkLicense
 
       - name: Run Spotless, Third-Party Notices, and Full Check
         shell: pwsh
