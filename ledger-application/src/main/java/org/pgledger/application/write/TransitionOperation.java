@@ -20,6 +20,7 @@ import org.pgledger.application.history.HistoryWriter;
 import org.pgledger.application.history.Snapshot;
 import org.pgledger.application.history.SpecHistory;
 import org.pgledger.application.history.TaskHistory;
+import org.pgledger.application.json.LedgerJson;
 import org.pgledger.application.receipt.ReceiptService;
 import org.pgledger.application.write.WriteResult.TransitionResult;
 import org.pgledger.database.repository.DeliverableRepository;
@@ -32,6 +33,7 @@ import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.model.Criterion;
 import org.pgledger.domain.model.Deliverable;
+import org.pgledger.domain.model.HistoryEntry;
 import org.pgledger.domain.model.Issue;
 import org.pgledger.domain.model.ReceiptOperation;
 import org.pgledger.domain.model.Spec;
@@ -83,12 +85,14 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
     private final MergeChainRepository mergeChain;
     private final HistoryRepository historyRows;
     private final HistoryWriter history;
+    private final LedgerJson json;
     private final AttachmentLinks attachments;
     private final Clock clock;
 
     public TransitionOperation(WriteGate gate, ReceiptService receipts, Rows rows,
             DeliverableRepository deliverables, IssueCaseRepository cases, MergeChainRepository mergeChain,
-            HistoryRepository historyRows, HistoryWriter history, AttachmentLinks attachments, Clock clock) {
+            HistoryRepository historyRows, HistoryWriter history, LedgerJson json, AttachmentLinks attachments,
+            Clock clock) {
         super(gate, receipts, ReceiptOperation.TRANSITION, TransitionResult.class);
         this.gate = gate;
         this.rows = rows;
@@ -97,6 +101,7 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
         this.mergeChain = mergeChain;
         this.historyRows = historyRows;
         this.history = history;
+        this.json = json;
         this.attachments = attachments;
         this.clock = clock;
     }
@@ -251,12 +256,12 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
         if (currentOwner != null) {
             owners.add(currentOwner.sessionKey());
         }
-        for (var entry : historyRows.findByEntityAndEntityIdOrderById(entity, entityId)) {
+        for (HistoryEntry entry : historyRows.findByEntityAndEntityIdOrderById(entity, entityId)) {
             if (entry.beforeData() != null) {
                 String beforeOwner = switch (entity) {
-                    case ISSUE -> parseBeforeOwner(entry.beforeData().text());
-                    case SPEC -> parseBeforeOwner(entry.beforeData().text());
-                    case TASK -> parseBeforeOwner(entry.beforeData().text());
+                    case ISSUE -> json.read(entry.beforeData(), Snapshot.IssueRow.class).ownerActorId();
+                    case SPEC -> json.read(entry.beforeData(), Snapshot.SpecRow.class).ownerActorId();
+                    case TASK -> json.read(entry.beforeData(), Snapshot.TaskRow.class).ownerActorId();
                     default -> null;
                 };
                 if (beforeOwner != null && !beforeOwner.isBlank()) {
@@ -265,26 +270,6 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
             }
         }
         return owners;
-    }
-
-    private static String parseBeforeOwner(String jsonText) {
-        int keyIdx = jsonText.indexOf("\"owner_actor_id\"");
-        if (keyIdx < 0) {
-            return null;
-        }
-        int colon = jsonText.indexOf(':', keyIdx + 16);
-        if (colon < 0) {
-            return null;
-        }
-        int pos = colon + 1;
-        while (pos < jsonText.length() && Character.isWhitespace(jsonText.charAt(pos))) {
-            pos++;
-        }
-        if (pos >= jsonText.length() || jsonText.charAt(pos) != '"') {
-            return null;
-        }
-        int end = jsonText.indexOf('"', pos + 1);
-        return end < 0 ? null : jsonText.substring(pos + 1, end);
     }
 
     private List<SessionKey> reporters(Issue row, IssueStatus to) {
@@ -349,10 +334,17 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
             Evidence evidence, String attachment) {
         Criterion row = rows.criterionForWrite(id, expected);
         recheck(ctx, HistoryEntity.CRITERION, row.projectId(), row.state(), to);
-        CriterionReports reports = new CriterionHistory(
-                historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.CRITERION, id.value())).reports();
-        List<SessionKey> contributors = row.createdBy() == null ? List.of()
-                : List.of(row.createdBy().sessionKey());
+        List<HistoryEntry> entries = historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.CRITERION, id.value());
+        CriterionReports reports = new CriterionHistory(entries).reports();
+        List<SessionKey> contributors = new ArrayList<>();
+        if (row.createdBy() != null) {
+            contributors.add(row.createdBy().sessionKey());
+        }
+        for (HistoryEntry entry : entries) {
+            if (entry.op() == HistoryOp.EDIT && entry.authorId() != null) {
+                contributors.add(entry.authorId().sessionKey());
+            }
+        }
         row.state().requireTransitionTo(to, evidence, ctx.author().sessionKey(), contributors, reports);
         Criterion saved = rows.saveCriterion(row.transitioned(to));
         long historyId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.CRITERION, id.value(),

@@ -128,11 +128,17 @@ jobs:
       - name: Run Spotless, Third-Party Notices, and Full Check
         shell: pwsh
         run: |
+          $testTmp = "$env:RUNNER_TEMP\ledger-tmp"
+          New-Item -ItemType Directory -Force -Path $testTmp | Out-Null
+          $env:TEMP = $testTmp
+          $env:TMP = $testTmp
           $ownerPwFile = ("$env:RUNNER_TEMP\owner.pw" -replace '\\', '/')
           $appPwFile = ("$env:RUNNER_TEMP\app.pw" -replace '\\', '/')
+          $testTmpSlash = ($testTmp -replace '\\', '/')
           .\gradlew.bat --no-daemon --max-workers=1 `
             "-Pledger.test.forks=1" `
             "-Pledger.test.maxHeapSize=1g" `
             "-Pledger.test.jdbc-password-file=$ownerPwFile" `
             "-Pledger.test.app-password-file=$appPwFile" `
+            "-Djava.io.tmpdir=$testTmpSlash" `
             spotlessCheck check

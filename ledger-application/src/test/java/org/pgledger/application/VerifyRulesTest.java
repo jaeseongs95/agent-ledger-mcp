@@ -481,4 +481,70 @@ class VerifyRulesTest {
                         Scenario.REASON, null, null, null)).caseId())
                 .isPositive();
     }
+
+    @Test
+    @DisplayName("AUDIT-F1: literal \"owner_actor_id\" in title/summary/purpose does not bypass prior-owner SAME_SESSION blocking")
+    void auditF1_literalOwnerActorIdInTextDoesNotBypassPriorOwnerBlocking(Scenario s) {
+        String priorIssueOwner = s.actorWith("issue", "verify");
+        String priorSpecOwner = s.actorWith("spec", "verify");
+        String priorTaskOwner = s.actorWith("task", "verify");
+        String recorder = s.actorWith("deliverable", "issue", "spec", "task");
+        String independent = s.actorWith("verify");
+
+        var issueFields = s.issueFields("literal \"owner_actor_id\": \"fake\" in title");
+        issueFields.put("owner_actor_id", priorIssueOwner);
+        SaveResult issue = s.bean(SaveService.class).save(Scenario.AUTHOR, s.create("issue", null, issueFields));
+        s.deliver(recorder, issue.id(), Scenario.ref('a'));
+
+        long issueVersion = s.issue(issue.id()).version();
+        Expect.failure(() -> review(s, priorIssueOwner, "issue", issue.id(), issueVersion, "VERIFIED"),
+                TransitionCode.SAME_SESSION);
+        assertThat(review(s, independent, "issue", issue.id(), issueVersion, "VERIFIED").to()).isEqualTo("VERIFIED");
+
+        SaveResult spec = s.bean(SaveService.class).save(Scenario.AUTHOR, s.create("spec", null,
+                Map.of("project_id", s.projectId(), "title", "spec title",
+                        "summary", "text with \"owner_actor_id\": \"fake\"",
+                        "owner_actor_id", priorSpecOwner)));
+        s.bean(RecordDeliverableService.class).recordDeliverable(recorder,
+                deliverable("spec", spec.id(), Scenario.ref('b'), null, null, true));
+        long specVersion = s.spec(spec.id()).version();
+        Expect.failure(() -> review(s, priorSpecOwner, "spec", spec.id(), specVersion, "VERIFIED"),
+                TransitionCode.SAME_SESSION);
+        assertThat(review(s, independent, "spec", spec.id(), specVersion, "VERIFIED").to()).isEqualTo("VERIFIED");
+
+        SaveResult task = s.bean(SaveService.class).save(Scenario.AUTHOR, s.create("task", null,
+                Map.of("project_id", s.projectId(), "title", "task title",
+                        "purpose", "text with \"owner_actor_id\": \"fake\"",
+                        "success_condition", "done",
+                        "owner_actor_id", priorTaskOwner)));
+        s.bean(RecordDeliverableService.class).recordDeliverable(recorder,
+                deliverable("task", task.id(), Scenario.ref('c'), null, null, false));
+        s.bean(TransitionService.class).transition(recorder,
+                s.move("task", task.id(), s.task(task.id()).version(), "COMPLETED", Scenario.EVIDENCE));
+        long taskVersion = s.task(task.id()).version();
+        Expect.failure(() -> review(s, priorTaskOwner, "task", task.id(), taskVersion, "VERIFIED"),
+                TransitionCode.SAME_SESSION);
+        assertThat(review(s, independent, "task", task.id(), taskVersion, "VERIFIED").to()).isEqualTo("VERIFIED");
+    }
+
+    @Test
+    @DisplayName("AUDIT-F2: a session that edited a milestone criterion (HistoryOp.EDIT) cannot verify it to MET or NOT_MET")
+    void auditF2_criterionEditAuthorCannotSelfVerify(Scenario s) {
+        String editor = s.actorWith("task", "verify");
+        String independent = s.actorWith("verify");
+
+        SaveResult criterion = s.newCriterion("f2-c1", "m1", "initial criterion text");
+        SaveResult edited = s.bean(SaveService.class).save(editor,
+                s.edit("criterion", criterion.id(), 1, Map.of("criterion_text", "edited criterion text")));
+        assertThat(edited.version()).isEqualTo(2);
+
+        Expect.failure(() -> review(s, editor, "criterion", criterion.id(), 2, "MET"),
+                TransitionCode.SAME_SESSION);
+        Expect.failure(() -> review(s, editor, "criterion", criterion.id(), 2, "NOT_MET"),
+                TransitionCode.SAME_SESSION);
+        assertThat(s.criterion(criterion.id()).state()).isEqualTo(CriterionState.UNKNOWN);
+
+        assertThat(review(s, independent, "criterion", criterion.id(), 2, "MET").to()).isEqualTo("MET");
+        assertThat(s.criterion(criterion.id()).state()).isEqualTo(CriterionState.MET);
+    }
 }
