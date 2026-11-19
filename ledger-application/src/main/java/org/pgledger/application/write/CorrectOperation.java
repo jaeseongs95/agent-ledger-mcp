@@ -33,7 +33,6 @@ import org.pgledger.domain.rule.DeliverableTarget;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
 import org.pgledger.domain.rule.Scope;
-import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.CanonicalPayload;
 import org.pgledger.domain.value.CriterionId;
 import org.pgledger.domain.value.IssueId;
@@ -73,6 +72,13 @@ public class CorrectOperation extends WriteOperation<CorrectCommand, CorrectResu
         this.json = json;
     }
 
+    sealed interface EndpointRef {
+        record IssueRef(IssueId id, Scope scope) implements EndpointRef {}
+        record SpecRef(SpecId id, Scope scope) implements EndpointRef {}
+        record TaskRef(TaskId id, Scope scope) implements EndpointRef {}
+        record CriterionRef(CriterionId id, Scope scope) implements EndpointRef {}
+    }
+
     private sealed interface Endpoint {
         record IssueEnd(IssueId id, Scope scope) implements Endpoint {}
         record SpecEnd(SpecId id, Scope scope) implements Endpoint {}
@@ -81,6 +87,20 @@ public class CorrectOperation extends WriteOperation<CorrectCommand, CorrectResu
     }
 
     private record ResolvedPlan(List<Endpoint> endpoints, Resolution resolution) {
+    }
+
+    /** Read-only endpoint discovery for {@link BatchLockPlanner} before Phase 1 locks are acquired. */
+    List<EndpointRef> referencedEndpoints(Long historyId) {
+        if (historyId == null) {
+            return List.of();
+        }
+        return historyRows.findById(historyId).map(row -> inspect(row).endpoints().stream()
+                .map(endpoint -> switch (endpoint) {
+                    case Endpoint.IssueEnd e -> (EndpointRef) new EndpointRef.IssueRef(e.id(), e.scope());
+                    case Endpoint.SpecEnd e -> new EndpointRef.SpecRef(e.id(), e.scope());
+                    case Endpoint.TaskEnd e -> new EndpointRef.TaskRef(e.id(), e.scope());
+                    case Endpoint.CriterionEnd e -> new EndpointRef.CriterionRef(e.id(), e.scope());
+                }).toList()).orElse(List.of());
     }
 
     @Override
@@ -489,8 +509,8 @@ public class CorrectOperation extends WriteOperation<CorrectCommand, CorrectResu
             if (plan.resolution() instanceof Resolution.Unresolved u) {
                 throw u.failure();
             }
-            pinAndAuthorize(ctx.author(), plan.endpoints());
-            long newId = history.append(ctx, HistoryWriter.Entry.of(row.entity(), row.entityId(),
+            pinAndAuthorize(ctx, plan.endpoints());
+            long newId = ctx.appendHistory(history, HistoryWriter.Entry.of(row.entity(), row.entityId(),
                     HistoryOp.CORRECT, ChangeSet.empty()).correcting(id).withAttachment(c.attachmentId()));
             return new CorrectResult(WriteStatus.COMMITTED, id, newId, ctx.author().value(), ctx.login());
         });
@@ -501,19 +521,22 @@ public class CorrectOperation extends WriteOperation<CorrectCommand, CorrectResu
      * every pinned {@code (project, scope)} once in canonical {@code session_grant} order so concurrent project moves
      * cannot slip past authorization or deadlock on {@code session_grant}.
      */
-    private void pinAndAuthorize(AuthorId author, List<Endpoint> endpoints) {
+    private void pinAndAuthorize(WriteContext ctx, List<Endpoint> endpoints) {
         List<Endpoint> ordered = new ArrayList<>(endpoints);
         ordered.sort(Comparator.comparingInt(CorrectOperation::orderRank).thenComparing(CorrectOperation::orderKey));
         List<Target> targets = new ArrayList<>(ordered.size());
         for (Endpoint endpoint : ordered) {
             switch (endpoint) {
-                case Endpoint.IssueEnd e -> targets.add(new Target(rows.issue(e.id()).projectId(), e.scope()));
-                case Endpoint.SpecEnd e -> targets.add(new Target(rows.pinSpec(e.id()), e.scope()));
-                case Endpoint.TaskEnd e -> targets.add(new Target(rows.pinTask(e.id()), e.scope()));
-                case Endpoint.CriterionEnd e -> targets.add(new Target(rows.pinCriterion(e.id()), e.scope()));
+                case Endpoint.IssueEnd e -> {
+                    ctx.requirePinnedIssue(e.id());
+                    targets.add(new Target(rows.issue(e.id()).projectId(), e.scope()));
+                }
+                case Endpoint.SpecEnd e -> targets.add(new Target(ctx.pinSpec(rows, e.id()), e.scope()));
+                case Endpoint.TaskEnd e -> targets.add(new Target(ctx.pinTask(rows, e.id()), e.scope()));
+                case Endpoint.CriterionEnd e -> targets.add(new Target(ctx.pinCriterion(rows, e.id()), e.scope()));
             }
         }
-        gate.authorizeAll(author, targets);
+        ctx.authorize(gate, targets);
     }
 
     private static int orderRank(Endpoint endpoint) {

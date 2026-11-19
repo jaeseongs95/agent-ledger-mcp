@@ -85,6 +85,7 @@ public class RecordCaseOperation extends WriteOperation<RecordCaseCommand, Recor
     private RecordCaseResult execute(WriteContext ctx, IssueId issueId, String observation, String evidence,
             String quote, Instant observedAt, String attachment) {
         attachments.requireOwnedBy(attachment, ctx.author());
+        ctx.requirePinnedIssue(issueId);
         if (!issues.nextCaseSeq(issueId)) {
             Issue issue = rows.issue(issueId);
             if (issue.status() == IssueStatus.VERIFIED) {
@@ -93,13 +94,20 @@ public class RecordCaseOperation extends WriteOperation<RecordCaseCommand, Recor
             throw new TransitionException(TransitionCode.MERGED_ISSUE,
                     List.of(issueId.value(), issue.mergedInto() == null ? "?" : issue.mergedInto().value()));
         }
-        gate.authorizeAll(ctx.author(), List.of(new Target(rows.issue(issueId).projectId(), Scope.ISSUE)));
+        ctx.authorize(gate, List.of(new Target(rows.issue(issueId).projectId(), Scope.ISSUE)));
+        ChangeSet changes = ChangeSet.empty().with("observation", null, observation).with("evidence", null, evidence)
+                .with("source_quote", null, quote).with("observed_at", null, ChangeSet.text(observedAt));
+        if (ctx.isBatched()) {
+            BatchBuffer.DeferredCase deferred = ctx.batch().deferCase(ctx, issueId, observation, evidence, quote,
+                    observedAt, attachment, changes, clock.instant());
+            return new RecordCaseResult(WriteStatus.COMMITTED, HistoryEntity.ISSUE_CASE.token(),
+                    issueId.value() + "|" + deferred.caseSlot(), deferred.caseSlot(), issueId.value(),
+                    deferred.historySlot(), ctx.author().value(), ctx.login());
+        }
         long caseId = ids.next(Counter.ISSUE_CASE);
         cases.insert(IssueCase.observe(caseId, issueId, observation, evidence, quote, observedAt, ctx.author(),
                 clock.instant()));
         String entityId = issueId.value() + "|" + caseId;
-        ChangeSet changes = ChangeSet.empty().with("observation", null, observation).with("evidence", null, evidence)
-                .with("source_quote", null, quote).with("observed_at", null, ChangeSet.text(observedAt));
         long historyId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.ISSUE_CASE, entityId,
                 HistoryOp.CREATE, changes).withAttachment(attachment));
         return new RecordCaseResult(WriteStatus.COMMITTED, HistoryEntity.ISSUE_CASE.token(), entityId, caseId,

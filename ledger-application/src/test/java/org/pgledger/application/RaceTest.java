@@ -26,11 +26,14 @@ import org.pgledger.application.admin.GrantService.GrantCommand;
 import org.pgledger.application.admin.GrantService.RevokeCommand;
 import org.pgledger.application.admin.SessionKeyService;
 import org.pgledger.application.support.Expect;
+import org.pgledger.application.support.Fields;
 import org.pgledger.application.support.LedgerServiceTest;
 import org.pgledger.application.support.MergeFixture;
 import org.pgledger.application.support.Parallel;
 import org.pgledger.application.support.Parallel.Outcome;
 import org.pgledger.application.support.Scenario;
+import org.pgledger.application.write.BatchOpInput;
+import org.pgledger.application.write.BatchService;
 import org.pgledger.application.write.CorrectCommand;
 import org.pgledger.application.write.CorrectService;
 import org.pgledger.application.write.LinkCommand;
@@ -831,9 +834,144 @@ class RaceTest {
                             .as("round %d must never fail with DB deadlock (40P01)", idx)
                             .isInstanceOf(LedgerException.class);
                     ErrorCode code = ((LedgerException) outcome.failure()).code();
-                    assertThat(code).isIn(ConflictCode.VERSION_CONFLICT, TransitionCode.NOTHING_CHANGES);
+                    assertThat(code).isIn(ConflictCode.VERSION_CONFLICT, TransitionCode.NOTHING_CHANGES,
+                            ConflictCode.CONCURRENT_MODIFICATION);
                 }
             }
         }
+    }
+
+    @Test
+    @DisplayName("R6-F1: multi-op batch (reverse project/entity/counter order) concurrent with single writes and grant revocation never deadlocks")
+    void r6F1_batchConcurrentWithSingleWritesAndGrantRevocationNeverDeadlocks(Scenario s) {
+        String p1 = s.projectId();
+        String p2 = s.otherProject();
+        String low = p1.compareTo(p2) <= 0 ? p1 : p2;
+        String high = p1.compareTo(p2) <= 0 ? p2 : p1;
+
+        String batchAuthor = s.actorWith("issue", "spec", "task", "deliverable");
+        s.grant(batchAuthor, p2, "issue", "spec", "task", "deliverable");
+        String peerAuthor = s.actorWith("issue", "spec", "task", "deliverable");
+        s.grant(peerAuthor, p2, "issue", "spec", "task", "deliverable");
+
+        BatchService batch = s.bean(BatchService.class);
+        SaveService save = s.bean(SaveService.class);
+        LinkService link = s.bean(LinkService.class);
+        RecordDeliverableService deliverables = s.bean(RecordDeliverableService.class);
+        RecordCaseService cases = s.bean(RecordCaseService.class);
+        GrantService grants = s.bean(GrantService.class);
+
+        for (int round = 0; round < 8; round++) {
+            int idx = round;
+            String revocableAuthor = s.actorWith("issue", "spec", "task", "deliverable");
+            s.grant(revocableAuthor, p2, "issue", "spec", "task", "deliverable");
+
+            Map<String, String> hiFields = s.issueFields("r6-hi-" + idx);
+            hiFields.put("project_id", high);
+            Map<String, String> loFields = s.issueFields("r6-lo-" + idx);
+            loFields.put("project_id", low);
+            SaveResult issueHigh = save.save(batchAuthor, s.create("issue", null, hiFields));
+            SaveResult issueLow = save.save(batchAuthor, s.create("issue", null, loFields));
+            SaveResult specHigh = save.save(batchAuthor, s.create("spec",
+                    "FREE-R6-SP-" + idx + "-" + Scenario.uuid().substring(0, 6),
+                    Map.of("project_id", high, "title", "spec-" + idx)));
+            SaveResult taskLow = save.save(batchAuthor, s.create("task",
+                    "FREE-R6-TK-" + idx + "-" + Scenario.uuid().substring(0, 6),
+                    Map.of("project_id", low, "title", "task-" + idx, "purpose", "p", "success_condition", "sc")));
+
+            // Batch intentionally lists ops in reverse entity (task -> spec -> issue), reverse project (high -> low),
+            // and reverse counter (record_case -> record_deliverable) order to prove BatchLockPlanner + BatchBuffer
+            // enforce the global canonical DAG.
+            List<BatchOpInput> batchOps = List.of(
+                    new BatchOpInput.Save("task", Fields.of("title", "bt-" + idx), Scenario.REASON, taskLow.id(), 1L),
+                    new BatchOpInput.Save("spec", Fields.of("title", "bs-" + idx), Scenario.REASON, specHigh.id(), 1L),
+                    new BatchOpInput.RecordCase(issueHigh.id(), "batch-case-" + idx, Scenario.REASON, null, null, null,
+                            null),
+                    new BatchOpInput.RecordDeliverable("issue", issueLow.id(), "code_change", Scenario.ref('a'),
+                            Scenario.REASON, "repo/r6", "batch deliv", null, null, null, false, null),
+                    new BatchOpInput.Link("spec_task", specHigh.id(), taskLow.id(), Scenario.REASON, false));
+
+            List<BatchOpInput> revocableBatchOps = List.of(
+                    new BatchOpInput.Save("spec", Fields.of("title", "rv-s-" + idx), Scenario.REASON, specHigh.id(),
+                            1L),
+                    new BatchOpInput.Save("task", Fields.of("title", "rv-t-" + idx), Scenario.REASON, taskLow.id(),
+                            1L));
+
+            List<Outcome<Object>> outcomes = Parallel.all(List.of(
+                    () -> batch.batch(batchAuthor, Scenario.uuid(), batchOps),
+                    () -> batch.batch(revocableAuthor, Scenario.uuid(), revocableBatchOps),
+                    () -> {
+                        grants.revoke(new RevokeCommand(revocableAuthor, null, null), TestOwners.OWNER);
+                        return "revoked";
+                    },
+                    () -> link.link(peerAuthor, new LinkCommand(Scenario.uuid(), "spec_task", specHigh.id(),
+                            taskLow.id(), Scenario.REASON, null)),
+                    () -> deliverables.recordDeliverable(peerAuthor, new RecordDeliverableCommand(Scenario.uuid(),
+                            "issue", issueHigh.id(), "code_change", Scenario.ref('b'), Scenario.REASON, "repo/peer",
+                            "peer deliv", null, null, null, false)),
+                    () -> cases.recordCase(peerAuthor, new RecordCaseCommand(Scenario.uuid(), issueLow.id(),
+                            "peer-case-" + idx, Scenario.REASON, null, null, null, null))), 6);
+
+            for (Outcome<Object> outcome : outcomes) {
+                if (!outcome.succeeded()) {
+                    assertThat(outcome.failure())
+                            .as("round %d must never fail with DB deadlock (40P01) or raw exception", idx)
+                            .isInstanceOf(LedgerException.class);
+                    ErrorCode code = ((LedgerException) outcome.failure()).code();
+                    assertThat(code).isIn(ConflictCode.VERSION_CONFLICT, ConflictCode.CONCURRENT_MODIFICATION,
+                            TransitionCode.NOTHING_CHANGES, TrustCode.SESSION_NOT_GRANTED);
+                }
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("R6-F2: concurrent spec project move past hierarchy pin returns sealed CONCURRENT_MODIFICATION before stale grant check")
+    void r6F2_specHierarchyPinRaceReturnsSealedConcurrentModificationBeforeStaleGrantCheck(Scenario s) throws Exception {
+        String p1 = s.projectId();
+        String p2 = s.otherProject();
+        String p3 = s.otherProject();
+        // Order pLow < pMid < pHigh so moving spec from pMid -> pLow while another tx attempts hierarchy edit on pMid
+        // exercises the exact !pinned branch (movedProject < maxPinned).
+        List<String> sorted = List.of(p1, p2, p3).stream().sorted().toList();
+        String pLow = sorted.get(0);
+        String pMid = sorted.get(1);
+        String pHigh = sorted.get(2);
+
+        String mover = s.actorWith("spec");
+        s.grant(mover, p2, "spec");
+        s.grant(mover, p3, "spec");
+
+        // Editor has spec grant on pMid and pHigh, intentionally NOT on pLow: if !pinned ran after gate.authorizeAll,
+        // this would misreport SESSION_NOT_GRANTED on pLow (or raw IllegalStateException -> INTERNAL_ERROR).
+        String editor = s.actorWith("task");
+        s.grant(editor, pMid, "spec");
+        s.grant(editor, pHigh, "spec");
+
+        SaveService save = s.bean(SaveService.class);
+        SaveResult spec = save.save(mover, s.create("spec",
+                "FREE-R6F2-" + Scenario.uuid().substring(0, 8),
+                Map.of("project_id", pMid, "title", "r6-f2-spec")));
+
+        // Hold move pMid -> pLow uncommitted (locks project pLow then pMid, updates spec.project_id = pLow).
+        CountDownLatch moved = new CountDownLatch(1);
+        CountDownLatch releaseMove = new CountDownLatch(1);
+        AtomicInteger movePid = new AtomicInteger();
+        Future<?> moving = holdingTransaction(s, () -> {
+            movePid.set(LockWaits.backendPid(s.ctx().jdbc()));
+            return save.save(mover, s.edit("spec", spec.id(), 1, Map.of("project_id", pLow)));
+        }, moved, releaseMove);
+        assertThat(moved.await(60, TimeUnit.SECONDS)).isTrue();
+
+        // Editor starts hierarchy edit pMid -> pHigh: sees committed project pMid, blocks trying to pin project pMid
+        // until mover commits pMid -> pLow, then pinSpecInProject(spec, pMid) fails and movedProject=pLow < maxPinned=pHigh.
+        Future<Optional<ErrorCode>> editorOutcome = Parallel.start(() -> Expect.outcome(() -> save.save(editor,
+                s.edit("spec", spec.id(), 1, Map.of("project_id", pHigh)))));
+        LockWaits.awaitWaitingFor(s.ctx().jdbc(), movePid.get());
+        releaseMove.countDown();
+        moving.get(60, TimeUnit.SECONDS);
+
+        assertThat(editorOutcome.get(60, TimeUnit.SECONDS)).contains(ConflictCode.CONCURRENT_MODIFICATION);
+        assertThat(s.spec(spec.id()).projectId().value()).isEqualTo(pLow);
     }
 }

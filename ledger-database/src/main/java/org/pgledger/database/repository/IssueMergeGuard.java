@@ -11,6 +11,14 @@ import org.pgledger.domain.value.IssueId;
 public interface IssueMergeGuard {
 
     /**
+     * Pins {@code id} for this transaction without altering {@code version} or {@code updated_at} (used by multi-op
+     * batches to acquire all issue locks in ascending id order before lower-tier locks).
+     *
+     * @return true when the issue exists
+     */
+    boolean pinRow(IssueId id);
+
+    /**
      * Guards that {@code id} is not already {@code MERGED} before entering {@code MERGED}.
      *
      * @return true when the issue exists and is not {@code MERGED}

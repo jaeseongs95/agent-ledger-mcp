@@ -163,6 +163,9 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
             Map<String, String> mentioned) {
         Instant now = clock.instant();
         Project project = rows.project(fields.projectId().orNull());
+        if (ctx.isBatched()) {
+            ctx.pinProject(rows, project.id());
+        }
         String id;
         long version;
         switch (fields) {
@@ -171,17 +174,19 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
                 codeRules.checkIssue(null, f.category().orNull(), f.severity().orNull());
                 Issue saved = inserted(() -> issues.save(Issue.open(issueId, f, now)), HistoryEntity.ISSUE,
                         issueId.value());
+                ctx.markCreatedIssue(saved.id());
                 id = saved.id().value();
                 version = saved.version();
             }
             case SpecFields f -> {
                 SpecId specId = specId(project, explicitId);
                 if (f.parentId().orNull() != null) {
-                    rows.pinProject(project.id());
+                    ctx.pinProject(rows, project.id());
                 }
                 validateSpecParent(specId, project.id(), f.parentId().orNull());
                 Spec saved = inserted(() -> specs.save(Spec.create(specId, f, now)), HistoryEntity.SPEC,
                         specId.value());
+                ctx.markCreatedSpec(saved.id());
                 id = saved.id().value();
                 version = saved.version();
             }
@@ -189,6 +194,7 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
                 TaskId taskId = taskId(project, explicitId);
                 Task saved = inserted(() -> tasks.save(Task.plan(taskId, f, now)), HistoryEntity.TASK,
                         taskId.value());
+                ctx.markCreatedTask(saved.id());
                 id = saved.id().value();
                 version = saved.version();
             }
@@ -206,18 +212,19 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
                 }
                 Criterion saved = inserted(() -> criteria.save(Criterion.open(criterionId, f)),
                         HistoryEntity.CRITERION, criterionId.value());
+                ctx.markCreatedCriterion(saved.id());
                 id = saved.id().value();
                 version = saved.version();
             }
         }
-        gate.authorizeAll(ctx.author(), List.of(new Target(project.id(), entity.writeScope())));
+        ctx.authorize(gate, List.of(new Target(project.id(), entity.writeScope())));
         ChangeSet changes = ChangeSet.empty();
         for (Map.Entry<String, String> field : mentioned.entrySet()) {
             if (!"".equals(field.getValue())) {
                 changes = changes.with(field.getKey(), null, field.getValue());
             }
         }
-        long historyId = history.append(ctx, HistoryWriter.Entry.of(entity, id, HistoryOp.CREATE, changes));
+        long historyId = ctx.appendHistory(history, HistoryWriter.Entry.of(entity, id, HistoryOp.CREATE, changes));
         return new SaveResult(WriteStatus.COMMITTED, entity.token(), id, version, historyId, ctx.author().value(),
                 ctx.login());
     }
@@ -397,7 +404,9 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
         long version;
         switch (fields) {
             case IssueFields f -> {
-                Issue row = rows.issueForWrite(IssueId.of(id), expectedVersion);
+                IssueId issueId = IssueId.of(id);
+                ctx.requirePinnedIssue(issueId);
+                Issue row = rows.issueForWrite(issueId, expectedVersion);
                 row.requireNotVerified();
                 Issue after = row.edited(f, now);
                 if (after.category() == null || after.severity() == null) {
@@ -409,29 +418,33 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
                 codeRules.checkIssue(row, after.category(), after.severity());
                 before = Snapshot.IssueRow.of(row);
                 version = rows.saveIssue(after).version();
-                gate.authorizeAll(ctx.author(), List.of(new Target(row.projectId(), HistoryEntity.ISSUE.writeScope())));
+                ctx.authorize(gate, List.of(new Target(row.projectId(), HistoryEntity.ISSUE.writeScope())));
             }
             case SpecFields f -> {
                 SpecId specId = SpecId.of(id);
                 ProjectId targetProject = f.projectId().orNull();
                 boolean hierarchyEdit = f.projectId().mentioned() || f.parentId().mentioned();
                 ProjectId currentProject;
-                boolean pinned;
-                if (hierarchyEdit) {
+                if (ctx.isBatched()) {
+                    currentProject = ctx.pinSpec(rows, specId);
+                    if (hierarchyEdit) {
+                        ctx.pinProject(rows, currentProject);
+                        if (targetProject != null) {
+                            ctx.pinProject(rows, targetProject);
+                        }
+                    }
+                } else if (hierarchyEdit) {
                     SpecPinResult result = pinSpecHierarchy(specId, targetProject);
+                    if (!result.pinned()) {
+                        throw new ConflictException(ConflictCode.CONCURRENT_MODIFICATION,
+                                List.of(HistoryEntity.SPEC.token(), specId.value()));
+                    }
                     currentProject = result.projectId();
-                    pinned = result.pinned();
                 } else {
                     currentProject = rows.pinSpec(specId);
-                    pinned = true;
                 }
-                gate.authorizeAll(ctx.author(),
-                        moveTargets(currentProject, targetProject, HistoryEntity.SPEC.writeScope()));
+                ctx.authorize(gate, moveTargets(currentProject, targetProject, HistoryEntity.SPEC.writeScope()));
                 Spec row = rows.specForWrite(specId, expectedVersion);
-                if (!pinned) {
-                    throw new IllegalStateException("Concurrent project move of spec " + specId.value()
-                            + " prevented deterministic hierarchy pin; retry the request");
-                }
                 row.requireNotVerified();
                 Spec after = row.edited(f, now);
                 if (!Objects.equals(row.projectId(), after.projectId())
@@ -446,9 +459,8 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
                 version = rows.saveSpec(after).version();
             }
             case TaskFields f -> {
-                ProjectId currentProject = rows.pinTask(TaskId.of(id));
-                gate.authorizeAll(ctx.author(),
-                        moveTargets(currentProject, f.projectId().orNull(), HistoryEntity.TASK.writeScope()));
+                ProjectId currentProject = ctx.pinTask(rows, TaskId.of(id));
+                ctx.authorize(gate, moveTargets(currentProject, f.projectId().orNull(), HistoryEntity.TASK.writeScope()));
                 Task row = rows.taskForWrite(TaskId.of(id), expectedVersion);
                 row.requireNotVerified();
                 Task after = row.edited(f, now);
@@ -462,8 +474,8 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
                 version = rows.saveTask(after).version();
             }
             case CriterionFields f -> {
-                ProjectId currentProject = rows.pinCriterion(CriterionId.of(id));
-                gate.authorizeAll(ctx.author(),
+                ProjectId currentProject = ctx.pinCriterion(rows, CriterionId.of(id));
+                ctx.authorize(gate,
                         moveTargets(currentProject, f.projectId().orNull(), HistoryEntity.CRITERION.writeScope()));
                 Criterion row = rows.criterionForWrite(CriterionId.of(id), expectedVersion);
                 row.requireOpenForEdit();
@@ -488,7 +500,7 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
         for (String key : mentioned.keySet()) {
             changes = changes.withIfChanged(key, beforeColumns.get(key), afterColumns.get(key));
         }
-        long historyId = history.append(ctx,
+        long historyId = ctx.appendHistory(history,
                 HistoryWriter.Entry.of(entity, id, HistoryOp.EDIT, changes).withBefore(before));
         return new SaveResult(WriteStatus.COMMITTED, entity.token(), id, version, historyId, ctx.author().value(),
                 ctx.login());

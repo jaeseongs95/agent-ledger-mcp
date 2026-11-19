@@ -60,6 +60,14 @@ public abstract class WriteOperation<C extends WriteCommand, R extends WriteResu
      * (derived from the key of the batch and its position).
      */
     public final R run(String actor, String boundOperationKey, Channel channel, C command) {
+        return run(actor, boundOperationKey, channel, command, null);
+    }
+
+    /**
+     * Package-private entry for {@link BatchService}: passes {@code batch} through {@link WriteContext} so locks and
+     * deferred counter/history flushes obey the global canonical lock order across all operations in the batch.
+     */
+    final R run(String actor, String boundOperationKey, Channel channel, C command, BatchBuffer batch) {
         GateSession session = gate.open(actor, boundOperationKey, channel, resolve(command));
         return session.bind(() -> {
             Reason reason = Reason.of(command.reason());
@@ -70,10 +78,19 @@ public abstract class WriteOperation<C extends WriteCommand, R extends WriteResu
             // a replay returns the stored response; the first call writes and stores its response in the receipt
             return switch (receipts.reserve(operationKey, operation, digest, session.author(), session.channel(),
                     resultType)) {
-                case ReceiptService.Reservation.Replayed<R> replayed -> replayed.response();
+                case ReceiptService.Reservation.Replayed<R> replayed -> {
+                    if (batch != null) {
+                        batch.recordReplayed(replayed.response());
+                    }
+                    yield replayed.response();
+                }
                 case ReceiptService.Reservation.Reserved<R> reserved -> {
-                    R result = prepared.execute().apply(new WriteContext(session, reason, operationKey));
-                    receipts.finish(operationKey, session.author(), result);
+                    R result = prepared.execute().apply(new WriteContext(session, reason, operationKey, batch));
+                    if (batch == null) {
+                        receipts.finish(operationKey, session.author(), result);
+                    } else {
+                        batch.recordPendingReceipt(operationKey, session.author(), result);
+                    }
                     yield result;
                 }
             };

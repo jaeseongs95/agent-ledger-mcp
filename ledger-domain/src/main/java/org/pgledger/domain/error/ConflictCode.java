@@ -12,6 +12,11 @@ public enum ConflictCode implements ErrorCode {
      * that follows it: the explicit id is neither accepted nor ahead, and the request is to be sent again. Argument: the project code.
      */
     ID_COUNTER_CHANGED,
+    /**
+     * Concurrent requests moved or modified the target entity while pinning it in canonical lock order; send the request
+     * again. Arguments: entity type, entity id.
+     */
+    CONCURRENT_MODIFICATION,
     KEY_REPLACEMENT_NOT_CONFIRMED,
     /** A grant for an author that has no live session key: no write of this author could be accepted. Argument: the author. */
     SESSION_KEY_REQUIRED,

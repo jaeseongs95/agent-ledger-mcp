@@ -154,9 +154,9 @@ public class RecordDeliverableOperation extends WriteOperation<RecordDeliverable
         Optional<ChangeSet> amended = known.map(row -> amendedChanges(row, checkRef, checkResult, checkedAt));
 
         TargetUpdate targetUpdate = switch (target) {
-            case ISSUE -> updateIssue(IssueId.of(targetId), known.isPresent(), author, mark, now);
-            case SPEC -> updateSpec(SpecId.of(targetId), known.isPresent(), author, mark, now);
-            case TASK -> updateTask(TaskId.of(targetId), known.isPresent(), author, mark, now);
+            case ISSUE -> updateIssue(ctx, IssueId.of(targetId), known.isPresent(), author, mark, now);
+            case SPEC -> updateSpec(ctx, SpecId.of(targetId), known.isPresent(), author, mark, now);
+            case TASK -> updateTask(ctx, TaskId.of(targetId), known.isPresent(), author, mark, now);
         };
 
         String delivHistoryId = HistoryKey.deliverableEntityId(target.token(), targetId, kind.value(), deliverableRef);
@@ -170,13 +170,13 @@ public class RecordDeliverableOperation extends WriteOperation<RecordDeliverable
         if (targetUpdate.op() == HistoryOp.TRANSITION) {
             ChangeSet changes = ChangeSet.empty().with("deliverable", null, deliverableRef)
                     .withIfChanged("owner_actor_id", targetUpdate.oldOwner(), targetUpdate.newOwner());
-            transitionHistoryId = history.append(ctx, HistoryWriter.Entry.of(target.historyEntity(), targetId,
+            transitionHistoryId = ctx.appendHistory(history, HistoryWriter.Entry.of(target.historyEntity(), targetId,
                     HistoryOp.TRANSITION, changes)
                     .withStates(targetUpdate.fromState(), targetUpdate.toState())
                     .withEvidence(evidence)
                     .withBefore(targetUpdate.before()));
         } else if (targetUpdate.op() == HistoryOp.EDIT) {
-            transitionHistoryId = history.append(ctx, HistoryWriter.Entry.of(target.historyEntity(), targetId,
+            transitionHistoryId = ctx.appendHistory(history, HistoryWriter.Entry.of(target.historyEntity(), targetId,
                     HistoryOp.EDIT, ChangeSet.empty().with("owner_actor_id", targetUpdate.oldOwner(),
                             targetUpdate.newOwner()))
                     .withEvidence(evidence)
@@ -192,7 +192,9 @@ public class RecordDeliverableOperation extends WriteOperation<RecordDeliverable
             long version, Snapshot before) {
     }
 
-    private TargetUpdate updateIssue(IssueId id, boolean exists, AuthorId author, boolean mark, Instant now) {
+    private TargetUpdate updateIssue(WriteContext ctx, IssueId id, boolean exists, AuthorId author, boolean mark,
+            Instant now) {
+        ctx.requirePinnedIssue(id);
         Issue row = rows.issueForWrite(id, null);
         row.requireNotVerified();
         ActorId nextOwner = exists ? row.ownerActorId() : author;
@@ -202,20 +204,21 @@ public class RecordDeliverableOperation extends WriteOperation<RecordDeliverable
         if (row.status() == IssueStatus.OPEN && mark) {
             Issue after = row.transitioned(IssueStatus.RESOLVED, null, now).ownedBy(nextOwner, now);
             long version = rows.saveIssue(after).version();
-            gate.authorizeAll(author, List.of(new Target(row.projectId(), Scope.DELIVERABLE)));
+            ctx.authorize(gate, List.of(new Target(row.projectId(), Scope.DELIVERABLE)));
             return new TargetUpdate(HistoryOp.TRANSITION, IssueStatus.OPEN.name(), IssueStatus.RESOLVED.name(),
                     oldOwner, newOwner, version, before);
         }
         Issue after = row.ownedBy(nextOwner, now);
         long version = rows.saveIssue(after).version();
-        gate.authorizeAll(author, List.of(new Target(row.projectId(), Scope.DELIVERABLE)));
+        ctx.authorize(gate, List.of(new Target(row.projectId(), Scope.DELIVERABLE)));
         HistoryOp op = Objects.equals(oldOwner, newOwner) ? null : HistoryOp.EDIT;
         return new TargetUpdate(op, row.status().name(), row.status().name(), oldOwner, newOwner, version, before);
     }
 
-    private TargetUpdate updateSpec(SpecId id, boolean exists, AuthorId author, boolean mark, Instant now) {
-        ProjectId pinnedProject = rows.pinSpec(id);
-        gate.authorizeAll(author, List.of(new Target(pinnedProject, Scope.DELIVERABLE)));
+    private TargetUpdate updateSpec(WriteContext ctx, SpecId id, boolean exists, AuthorId author, boolean mark,
+            Instant now) {
+        ProjectId pinnedProject = ctx.pinSpec(rows, id);
+        ctx.authorize(gate, List.of(new Target(pinnedProject, Scope.DELIVERABLE)));
         Spec row = rows.specForWrite(id, null);
         row.requireNotVerified();
         ActorId nextOwner = exists ? row.ownerActorId() : author;
@@ -236,9 +239,10 @@ public class RecordDeliverableOperation extends WriteOperation<RecordDeliverable
         return new TargetUpdate(op, row.status().name(), row.status().name(), oldOwner, newOwner, version, before);
     }
 
-    private TargetUpdate updateTask(TaskId id, boolean exists, AuthorId author, boolean mark, Instant now) {
-        ProjectId pinnedProject = rows.pinTask(id);
-        gate.authorizeAll(author, List.of(new Target(pinnedProject, Scope.DELIVERABLE)));
+    private TargetUpdate updateTask(WriteContext ctx, TaskId id, boolean exists, AuthorId author, boolean mark,
+            Instant now) {
+        ProjectId pinnedProject = ctx.pinTask(rows, id);
+        ctx.authorize(gate, List.of(new Target(pinnedProject, Scope.DELIVERABLE)));
         Task row = rows.taskForWrite(id, null);
         row.requireNotVerified();
         ActorId nextOwner = exists ? row.ownerActorId() : author;
@@ -279,7 +283,7 @@ public class RecordDeliverableOperation extends WriteOperation<RecordDeliverable
                 .with("summary", null, summary)
                 .with("check_ref", null, checkRef)
                 .with("check_result", null, name(checkResult));
-        long historyId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.DELIVERABLE, delivHistoryId,
+        long historyId = ctx.appendHistory(history, HistoryWriter.Entry.of(HistoryEntity.DELIVERABLE, delivHistoryId,
                 HistoryOp.CREATE, changes).withEvidence(evidence).withAttachment(attachment));
         return new DeliverableWrite(deliverableId, historyId);
     }
@@ -303,7 +307,7 @@ public class RecordDeliverableOperation extends WriteOperation<RecordDeliverable
             String checkRef, CheckResult checkResult, Instant checkedAt, Evidence evidence, ChangeSet changes,
             String attachment) {
         deliverables.update(known.withCheck(checkRef, checkResult, checkedAt));
-        long historyId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.DELIVERABLE, delivHistoryId,
+        long historyId = ctx.appendHistory(history, HistoryWriter.Entry.of(HistoryEntity.DELIVERABLE, delivHistoryId,
                 HistoryOp.EDIT, changes).withEvidence(evidence).withBefore(Snapshot.DeliverableRow.of(known))
                 .withAttachment(attachment));
         return new DeliverableWrite(known.id(), historyId);

@@ -21,9 +21,13 @@ import org.pgledger.application.support.Scenario;
 import org.pgledger.application.write.BatchOpInput;
 import org.pgledger.application.write.BatchResult;
 import org.pgledger.application.write.BatchService;
+import org.pgledger.application.write.RecordCaseCommand;
+import org.pgledger.application.write.RecordCaseService;
 import org.pgledger.application.write.SaveCommand;
 import org.pgledger.application.write.SaveService;
 import org.pgledger.application.write.WriteResult.LinkResult;
+import org.pgledger.application.write.WriteResult.RecordCaseResult;
+import org.pgledger.application.write.WriteResult.RecordDeliverableResult;
 import org.pgledger.application.write.WriteResult.SaveResult;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ErrorCode;
@@ -193,5 +197,48 @@ class BatchTest {
         Snapshot.IssueRow before = s.before(second.historyId(), Snapshot.IssueRow.class);
         assertThat(before.title()).isEqualTo("x1");
         assertThat(before.version()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("R6-F1: deferred batch case/history flush resolves positive surrogate IDs, preserves unlink before_data, and replays identically")
+    void r6F1_deferredFlushResolvesIdsAndReplaysIdentically(Scenario s) {
+        SaveResult issue = s.newIssue("batch-flush");
+        SaveResult spec = s.newSpec("batch-spec");
+        String batchId = Scenario.uuid();
+        OperationKey batchKey = OperationKey.parse(batchId);
+        List<BatchOpInput> ops = List.of(
+                new BatchOpInput.RecordCase(issue.id(), "first case", Scenario.REASON, "ev-1", null, null, null),
+                new BatchOpInput.RecordDeliverable("issue", issue.id(), "code_change", Scenario.ref('b'),
+                        Scenario.REASON, "repo/batch", "batch deliverable", null, null, null, false, null),
+                new BatchOpInput.Link("issue_spec", issue.id(), spec.id(), Scenario.REASON, false),
+                new BatchOpInput.Link("issue_spec", issue.id(), spec.id(), Scenario.REASON, true));
+
+        BatchResult first = batch(s, Scenario.AUTHOR, batchId, ops);
+        assertThat(first.count()).isEqualTo(4);
+
+        RecordCaseResult caseRes = (RecordCaseResult) first.results().get(0);
+        RecordDeliverableResult delivRes = (RecordDeliverableResult) first.results().get(1);
+        LinkResult linkRes = (LinkResult) first.results().get(2);
+        LinkResult unlinkRes = (LinkResult) first.results().get(3);
+
+        assertThat(caseRes.caseId()).isPositive();
+        assertThat(caseRes.id()).isEqualTo(issue.id() + "|" + caseRes.caseId());
+        assertThat(caseRes.historyId()).isPositive();
+        assertThat(delivRes.historyId()).isPositive();
+        assertThat(linkRes.historyId()).isPositive();
+        assertThat(unlinkRes.historyId()).isPositive();
+        assertThat(caseRes.historyId()).isLessThan(delivRes.historyId());
+        assertThat(delivRes.historyId()).isLessThan(linkRes.historyId());
+        assertThat(linkRes.historyId()).isLessThan(unlinkRes.historyId());
+
+        Snapshot.IssueSpecRow unlinkBefore = s.before(unlinkRes.historyId(), Snapshot.IssueSpecRow.class);
+        assertThat(unlinkBefore.createdBy()).isEqualTo(Scenario.AUTHOR);
+
+        // Batch replay and derived-key single replay both return the exact resolved IDs
+        assertThat(batch(s, Scenario.AUTHOR, batchId, ops)).isEqualTo(first);
+        RecordCaseResult byDerivedKey = s.bean(RecordCaseService.class).recordCase(Scenario.AUTHOR,
+                new RecordCaseCommand(batchKey.derive(0).toString(), issue.id(), "first case", Scenario.REASON, "ev-1",
+                        null, null, null));
+        assertThat(byDerivedKey).isEqualTo(caseRes);
     }
 }

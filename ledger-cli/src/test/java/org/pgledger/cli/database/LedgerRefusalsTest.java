@@ -126,11 +126,13 @@ class LedgerRefusalsTest {
     }
 
     @Test
-    @DisplayName("VRF-051: every conflict code is named by the translation; ID_COUNTER_CHANGED is LEDGER_REFUSED with its code")
+    @DisplayName("VRF-051 & R6-F2: every conflict code is named by the translation; ID_COUNTER_CHANGED and CONCURRENT_MODIFICATION are LEDGER_REFUSED with their code")
     void everyConflictCodeIsTranslated() {
         for (Context context : Context.values()) {
             assertRefusedAs(new ConflictException(ConflictCode.ID_COUNTER_CHANGED, List.of("E2E")), context,
                     ErrorCode.LEDGER_REFUSED, "ID_COUNTER_CHANGED");
+            assertRefusedAs(new ConflictException(ConflictCode.CONCURRENT_MODIFICATION, List.of("spec", "SP-1")),
+                    context, ErrorCode.LEDGER_REFUSED, "CONCURRENT_MODIFICATION");
             for (ConflictCode code : ConflictCode.values()) {
                 if (code == ConflictCode.KEY_REPLACEMENT_NOT_CONFIRMED || code == ConflictCode.SESSION_KEY_REQUIRED
                         || code == ConflictCode.DUPLICATE_KEY) {

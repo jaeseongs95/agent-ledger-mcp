@@ -15,6 +15,12 @@ public class IssueMergeGuardImpl implements IssueMergeGuard {
     }
 
     @Override
+    public boolean pinRow(IssueId id) {
+        return jdbc.sql("UPDATE issue SET status = status WHERE id = :id")
+                .param("id", id.value()).update() == 1;
+    }
+
+    @Override
     public boolean guardMergeSource(IssueId id) {
         return jdbc.sql("UPDATE issue SET status = status WHERE id = :id AND status <> 'MERGED'")
                 .param("id", id.value()).update() == 1;

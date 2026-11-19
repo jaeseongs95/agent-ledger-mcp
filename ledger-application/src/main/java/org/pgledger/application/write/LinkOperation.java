@@ -184,61 +184,66 @@ public class LinkOperation extends WriteOperation<LinkCommand, LinkResult> {
             case ISSUE_TASK -> {
                 IssueId issue = IssueId.of(a);
                 TaskId task = TaskId.of(b);
+                ctx.requirePinnedIssue(issue);
                 ProjectId issueProject = rows.issue(issue).projectId();
-                ProjectId taskProject = rows.pinTask(task);
-                gate.authorizeAll(author, List.of(new Target(issueProject, Scope.ISSUE),
+                ProjectId taskProject = ctx.pinTask(rows, task);
+                ctx.authorize(gate, List.of(new Target(issueProject, Scope.ISSUE),
                         new Target(taskProject, Scope.ISSUE)));
                 yield new IssueTaskLink(issue, task, author);
             }
             case ISSUE_SPEC -> {
                 IssueId issue = IssueId.of(a);
                 SpecId spec = SpecId.of(b);
+                ctx.requirePinnedIssue(issue);
                 ProjectId issueProject = rows.issue(issue).projectId();
-                ProjectId specProject = rows.pinSpec(spec);
-                gate.authorizeAll(author, List.of(new Target(issueProject, Scope.SPEC),
+                ProjectId specProject = ctx.pinSpec(rows, spec);
+                ctx.authorize(gate, List.of(new Target(issueProject, Scope.SPEC),
                         new Target(specProject, Scope.SPEC)));
                 yield new IssueSpecLink(issue, spec, author);
             }
             case SPEC_TASK -> {
                 SpecId spec = SpecId.of(a);
                 TaskId task = TaskId.of(b);
-                ProjectId specProject = rows.pinSpec(spec);
-                ProjectId taskProject = rows.pinTask(task);
-                gate.authorizeAll(author, List.of(new Target(specProject, Scope.SPEC),
+                ProjectId specProject = ctx.pinSpec(rows, spec);
+                ProjectId taskProject = ctx.pinTask(rows, task);
+                ctx.authorize(gate, List.of(new Target(specProject, Scope.SPEC),
                         new Target(taskProject, Scope.SPEC)));
                 yield new SpecTaskLink(spec, task, author);
             }
             case CRITERION_TASK -> {
                 CriterionId criterion = CriterionId.of(a);
                 TaskId task = TaskId.of(b);
-                ProjectId taskProject = rows.pinTask(task);
-                ProjectId criterionProject = rows.pinCriterion(criterion);
-                gate.authorizeAll(author, List.of(new Target(taskProject, Scope.TASK),
+                ProjectId taskProject = ctx.pinTask(rows, task);
+                ProjectId criterionProject = ctx.pinCriterion(rows, criterion);
+                ctx.authorize(gate, List.of(new Target(taskProject, Scope.TASK),
                         new Target(criterionProject, Scope.TASK)));
                 yield CriterionLink.toTask(criterion, task, author);
             }
             case CRITERION_ISSUE -> {
                 CriterionId criterion = CriterionId.of(a);
                 IssueId issue = IssueId.of(b);
+                ctx.requirePinnedIssue(issue);
                 ProjectId issueProject = rows.issue(issue).projectId();
-                ProjectId criterionProject = rows.pinCriterion(criterion);
-                gate.authorizeAll(author, List.of(new Target(issueProject, Scope.TASK),
+                ProjectId criterionProject = ctx.pinCriterion(rows, criterion);
+                ctx.authorize(gate, List.of(new Target(issueProject, Scope.TASK),
                         new Target(criterionProject, Scope.TASK)));
                 yield CriterionLink.toIssue(criterion, issue, author);
             }
             case CRITERION_SPEC -> {
                 CriterionId criterion = CriterionId.of(a);
                 SpecId spec = SpecId.of(b);
-                ProjectId specProject = rows.pinSpec(spec);
-                ProjectId criterionProject = rows.pinCriterion(criterion);
-                gate.authorizeAll(author, List.of(new Target(specProject, Scope.TASK),
+                ProjectId specProject = ctx.pinSpec(rows, spec);
+                ProjectId criterionProject = ctx.pinCriterion(rows, criterion);
+                ctx.authorize(gate, List.of(new Target(specProject, Scope.TASK),
                         new Target(criterionProject, Scope.TASK)));
                 yield CriterionLink.toSpec(criterion, spec, author);
             }
             case RELATION -> {
                 IssueId first = IssueId.of(a);
                 IssueId second = IssueId.of(b);
-                gate.authorizeAll(author, List.of(new Target(rows.issue(first).projectId(), Scope.ISSUE),
+                ctx.requirePinnedIssue(first);
+                ctx.requirePinnedIssue(second);
+                ctx.authorize(gate, List.of(new Target(rows.issue(first).projectId(), Scope.ISSUE),
                         new Target(rows.issue(second).projectId(), Scope.ISSUE)));
                 IssueRelation relation = IssueRelation.between(first, second, CodeValue.of(token), direction, author);
                 if (!remove) {
@@ -252,7 +257,7 @@ public class LinkOperation extends WriteOperation<LinkCommand, LinkResult> {
                 remove ? ChangeSet.empty().with("kind", token, null) : ChangeSet.empty().with("kind", null, token));
         try {
             if (remove) {
-                Snapshot stored = stored(link).orElseThrow(
+                Snapshot stored = stored(ctx, link).orElseThrow(
                         () -> new TransitionException(TransitionCode.NOTHING_CHANGES, List.of()));
                 if (!removeLink(link)) {
                     throw new TransitionException(TransitionCode.NOTHING_CHANGES, List.of());
@@ -264,7 +269,7 @@ public class LinkOperation extends WriteOperation<LinkCommand, LinkResult> {
         } catch (DuplicateKeyException e) {
             throw new TransitionException(TransitionCode.NOTHING_CHANGES, List.of(), e);
         }
-        long historyId = history.append(ctx, entry);
+        long historyId = ctx.appendHistory(history, entry);
         return new LinkResult(WriteStatus.COMMITTED, link.historyEntity().token(), link.historyId(), remove,
                 historyId, author.value(), ctx.login());
     }
@@ -289,18 +294,18 @@ public class LinkOperation extends WriteOperation<LinkCommand, LinkResult> {
         };
     }
 
-    private Optional<Snapshot> stored(Link link) {
+    private Optional<Snapshot> stored(WriteContext ctx, Link link) {
         return switch (link) {
             case IssueTaskLink l -> links.tasksOf(l.issueId()).stream()
                     .filter(x -> Objects.equals(x.taskId(), l.taskId()))
                     .findFirst().<Snapshot>map(Snapshot.IssueTaskRow::of);
             case IssueSpecLink l -> links.specsOfIssue(l.issueId()).contains(l.specId().value())
                     ? Optional.of(new Snapshot.IssueSpecRow(l.issueId().value(), l.specId().value(),
-                            latestCreator(HistoryEntity.ISSUE_SPEC, l.historyId())))
+                            latestCreator(ctx, HistoryEntity.ISSUE_SPEC, l.historyId())))
                     : Optional.empty();
             case SpecTaskLink l -> links.tasksOfSpec(l.specId()).contains(l.taskId().value())
                     ? Optional.of(new Snapshot.SpecTaskRow(l.specId().value(), l.taskId().value(),
-                            latestCreator(HistoryEntity.SPEC_TASK, l.historyId())))
+                            latestCreator(ctx, HistoryEntity.SPEC_TASK, l.historyId())))
                     : Optional.empty();
             case IssueRelation l -> links.relationsOf(l.a()).stream()
                     .filter(x -> Objects.equals(x.a(), l.a()) && Objects.equals(x.b(), l.b())
@@ -312,7 +317,13 @@ public class LinkOperation extends WriteOperation<LinkCommand, LinkResult> {
         };
     }
 
-    private String latestCreator(HistoryEntity entity, String historyId) {
+    private String latestCreator(WriteContext ctx, HistoryEntity entity, String historyId) {
+        if (ctx.isBatched()) {
+            Optional<AuthorId> buffered = ctx.batch().latestLinkAuthor(entity, historyId);
+            if (buffered.isPresent()) {
+                return buffered.orElseThrow().value();
+            }
+        }
         List<HistoryEntry> entries = historyRows.findByEntityAndEntityIdOrderById(entity, historyId);
         for (int i = entries.size() - 1; i >= 0; i--) {
             HistoryEntry entry = entries.get(i);

@@ -129,6 +129,23 @@ public class WriteGate {
                 .thenComparing(Target::scope)).forEach(target -> authorize(author, target));
     }
 
+    /**
+     * Conditionally updates ({@code last_used_at}) and locks every live grant among {@code targets} in ascending
+     * {@code (project_id, grant_scope)} order, returning the subset that was authorized. Missing or revoked grants are
+     * left out so a multi-operation batch reports {@code SESSION_NOT_GRANTED} at the exact failing operation index.
+     */
+    public Set<Target> authorizeAvailable(AuthorId author, Collection<Target> targets) {
+        Set<Target> distinct = new LinkedHashSet<>(targets);
+        Set<Target> authorized = new LinkedHashSet<>();
+        distinct.stream().sorted(Comparator.comparing((Target t) -> t.project().value())
+                .thenComparing(Target::scope)).forEach(target -> {
+                    if (grants.markUsed(author, target.project(), target.scope(), clock.instant())) {
+                        authorized.add(target);
+                    }
+                });
+        return Set.copyOf(authorized);
+    }
+
     /** Checks (and stamps) one grant of an author that already passed the gate. */
     public void authorize(AuthorId author, Target target) {
         if (!grants.markUsed(author, target.project(), target.scope(), clock.instant())) {

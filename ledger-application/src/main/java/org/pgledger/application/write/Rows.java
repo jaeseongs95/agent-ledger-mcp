@@ -117,8 +117,12 @@ public class Rows {
                 return;
             }
         }
-        throw new IllegalStateException("Could not pin project " + id.value() + " after " + MAX_PIN_ATTEMPTS
-                + " concurrent updates");
+        throw new ConflictException(ConflictCode.CONCURRENT_MODIFICATION, List.of("project", id.value()));
+    }
+
+    /** Pins an existing issue row for the transaction without altering version or updated_at. */
+    public boolean pinIssue(IssueId id) {
+        return issues.pinRow(id);
     }
 
     /** Pins a spec in its current project in a bounded loop and returns the pinned project id. */
@@ -129,8 +133,8 @@ public class Rows {
                 return current;
             }
         }
-        throw new IllegalStateException("Could not pin spec " + id.value() + " after " + MAX_PIN_ATTEMPTS
-                + " concurrent project moves");
+        throw new ConflictException(ConflictCode.CONCURRENT_MODIFICATION,
+                List.of(HistoryEntity.SPEC.token(), id.value()));
     }
 
     /** Attempts once to pin a spec in {@code project}, returning false if a concurrent move changed it. */
@@ -146,8 +150,8 @@ public class Rows {
                 return current;
             }
         }
-        throw new IllegalStateException("Could not pin task " + id.value() + " after " + MAX_PIN_ATTEMPTS
-                + " concurrent project moves");
+        throw new ConflictException(ConflictCode.CONCURRENT_MODIFICATION,
+                List.of(HistoryEntity.TASK.token(), id.value()));
     }
 
     /** Pins a milestone criterion in its current project in a bounded loop and returns the pinned project id. */
@@ -158,8 +162,8 @@ public class Rows {
                 return current;
             }
         }
-        throw new IllegalStateException("Could not pin criterion " + id.value() + " after " + MAX_PIN_ATTEMPTS
-                + " concurrent project moves");
+        throw new ConflictException(ConflictCode.CONCURRENT_MODIFICATION,
+                List.of(HistoryEntity.CRITERION.token(), id.value()));
     }
 
     /** Guards an issue entering MERGED via its owning {@link IssueRepository}. */

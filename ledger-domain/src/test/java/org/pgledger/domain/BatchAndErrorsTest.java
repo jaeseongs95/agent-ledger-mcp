@@ -121,7 +121,8 @@ class BatchAndErrorsTest {
         // runner (the database waits, RUN-012), and the three codes of the unit verifyrules (VERIFIED_DEFECT, ID_NUMBER_AHEAD, ID_COUNTER_CHANGED)
         // PCS-041: ATTESTATION_VERSION_UNSUPPORTED is gone (no release had the version 1 token), so 87
         // PCS-014: MANAGEMENT_PORT_SEPARATE (the start is refused with a port of the actuator of its own) is one more: 88
-        assertThat(codes).hasSize(88);
+        // R6-F2: CONCURRENT_MODIFICATION (concurrent entity move/pin contention) is one more: 89
+        assertThat(codes).hasSize(89);
         assertThat(codes.stream().map(ErrorCode::token)).doesNotHaveDuplicates();
         assertThat(codes.stream().map(ErrorCode::token)).contains("AUTHOR_ID_FORMAT", "SESSION_NOT_GRANTED",
                 "HOST_ATTESTATION_REQUIRED", "VERSION_CONFLICT", "SAME_SESSION", "MERGED_ISSUE", "VERIFIED_ENTITY",

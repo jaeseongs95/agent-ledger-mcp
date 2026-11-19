@@ -199,12 +199,16 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
     private void recheck(WriteContext ctx, HistoryEntity entity, ProjectId project, LifecycleState from,
             LifecycleState to) {
         Scope scope = requireChannel(ctx, entity, from, to);
-        gate.authorizeAll(ctx.author(), List.of(new Target(project, scope)));
+        ctx.authorize(gate, List.of(new Target(project, scope)));
     }
 
     private TransitionResult issue(WriteContext ctx, IssueId id, long expected, IssueStatus to, Evidence evidence,
             IssueId mergedInto, String attachment) {
         Instant now = clock.instant();
+        ctx.requirePinnedIssue(id);
+        if (to == IssueStatus.MERGED && mergedInto != null) {
+            ctx.requirePinnedIssue(mergedInto);
+        }
         boolean locked = false;
         boolean sourceReady = true;
         boolean targetReady = true;
@@ -233,7 +237,7 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
             target = new MergeTarget(targetRow.id(), targetRow.status());
         }
         if (locked) {
-            gate.authorizeAll(ctx.author(), authTargets);
+            ctx.authorize(gate, authTargets);
         } else {
             authTargets.forEach(t -> gate.requireLive(ctx.author(), t));
         }
@@ -245,11 +249,11 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
         row.status().requireTransitionTo(to, evidence, delivHistory, ctx.author().sessionKey(), id, target);
         Issue saved = rows.saveIssue(row.transitioned(to, to == IssueStatus.MERGED ? mergedInto : null, now));
         if (!locked) {
-            gate.authorizeAll(ctx.author(), authTargets);
+            ctx.authorize(gate, authTargets);
         }
         ChangeSet changes = to == IssueStatus.MERGED
                 ? ChangeSet.empty().with("merged_into", null, mergedInto.value()) : ChangeSet.empty();
-        long historyId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.ISSUE, id.value(),
+        long historyId = ctx.appendHistory(history, HistoryWriter.Entry.of(HistoryEntity.ISSUE, id.value(),
                 HistoryOp.TRANSITION, changes).withStates(row.status().name(), to.name()).withEvidence(evidence)
                 .withBefore(Snapshot.IssueRow.of(row)).withAttachment(attachment));
         return result(ctx, HistoryEntity.ISSUE, id.value(), row.status().name(), to.name(), saved.version(),
@@ -328,7 +332,7 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
     private TransitionResult spec(WriteContext ctx, SpecId id, long expected, SpecStatus to, Evidence evidence,
             String attachment) {
         Instant now = clock.instant();
-        ProjectId pinnedProject = rows.pinSpec(id);
+        ProjectId pinnedProject = ctx.pinSpec(rows, id);
         Spec current = rows.spec(id);
         recheck(ctx, HistoryEntity.SPEC, pinnedProject, current.status(), to);
         Spec row = rows.specForWrite(id, expected);
@@ -346,7 +350,7 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
         }
         row.status().requireTransitionTo(to, evidence, ctx.author().sessionKey(), contributors, reports);
         Spec saved = rows.saveSpec(row.transitioned(to, now));
-        long historyId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.SPEC, id.value(),
+        long historyId = ctx.appendHistory(history, HistoryWriter.Entry.of(HistoryEntity.SPEC, id.value(),
                 HistoryOp.TRANSITION, ChangeSet.empty()).withStates(row.status().name(), to.name())
                 .withEvidence(evidence).withBefore(Snapshot.SpecRow.of(row)).withAttachment(attachment));
         return result(ctx, HistoryEntity.SPEC, id.value(), row.status().name(), to.name(), saved.version(), historyId);
@@ -355,7 +359,7 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
     private TransitionResult task(WriteContext ctx, TaskId id, long expected, TaskState to, Evidence evidence,
             String attachment) {
         Instant now = clock.instant();
-        ProjectId pinnedProject = rows.pinTask(id);
+        ProjectId pinnedProject = ctx.pinTask(rows, id);
         Task current = rows.task(id);
         recheck(ctx, HistoryEntity.TASK, pinnedProject, current.state(), to);
         Task row = rows.taskForWrite(id, expected);
@@ -373,7 +377,7 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
         }
         row.state().requireTransitionTo(to, evidence, ctx.author().sessionKey(), registrants, reports);
         Task saved = rows.saveTask(row.transitioned(to, now));
-        long historyId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.TASK, id.value(),
+        long historyId = ctx.appendHistory(history, HistoryWriter.Entry.of(HistoryEntity.TASK, id.value(),
                 HistoryOp.TRANSITION, ChangeSet.empty()).withStates(row.state().name(), to.name())
                 .withEvidence(evidence).withBefore(Snapshot.TaskRow.of(row)).withAttachment(attachment));
         return result(ctx, HistoryEntity.TASK, id.value(), row.state().name(), to.name(), saved.version(),
@@ -382,7 +386,7 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
 
     private TransitionResult criterion(WriteContext ctx, CriterionId id, long expected, CriterionState to,
             Evidence evidence, String attachment) {
-        ProjectId pinnedProject = rows.pinCriterion(id);
+        ProjectId pinnedProject = ctx.pinCriterion(rows, id);
         Criterion current = rows.criterion(id);
         recheck(ctx, HistoryEntity.CRITERION, pinnedProject, current.state(), to);
         Criterion row = rows.criterionForWrite(id, expected);
@@ -399,7 +403,7 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
         }
         row.state().requireTransitionTo(to, evidence, ctx.author().sessionKey(), contributors, reports);
         Criterion saved = rows.saveCriterion(row.transitioned(to));
-        long historyId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.CRITERION, id.value(),
+        long historyId = ctx.appendHistory(history, HistoryWriter.Entry.of(HistoryEntity.CRITERION, id.value(),
                 HistoryOp.TRANSITION, ChangeSet.empty()).withStates(row.state().name(), to.name())
                 .withEvidence(evidence).withBefore(Snapshot.CriterionRow.of(row)).withAttachment(attachment));
         return result(ctx, HistoryEntity.CRITERION, id.value(), row.state().name(), to.name(), saved.version(),
