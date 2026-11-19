@@ -6,7 +6,6 @@ import org.pgledger.hook.keys.KeyStoreProperties;
 import org.pgledger.hook.keys.SessionKeyStore;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
-import org.springframework.boot.autoconfigure.context.PropertyPlaceholderAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration;
 import org.springframework.context.annotation.ComponentScan;
@@ -36,6 +35,6 @@ import org.springframework.context.annotation.Import;
     ProcessChannels.class,
     SessionKeyStore.class
 })
-@ImportAutoConfiguration({PropertyPlaceholderAutoConfiguration.class, JacksonAutoConfiguration.class})
+@ImportAutoConfiguration(JacksonAutoConfiguration.class)
 @EnableConfigurationProperties(KeyStoreProperties.class)
 public class HookApplication {}

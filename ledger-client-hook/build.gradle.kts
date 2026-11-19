@@ -91,6 +91,10 @@ val springAotJar = tasks.register<Jar>("springAotJar") {
         exclude("previous-compilation-data.bin")
     }
     from(processAot.flatMap { it.classesOutput })
+    from(resources.text.fromString("org.pgledger.hook.HookLoggingSystem\$LogbackConfigurator\n")) {
+        into("META-INF/services")
+        rename { "ch.qos.logback.classic.spi.Configurator" }
+    }
     isPreserveFileTimestamps = false
     isReproducibleFileOrder = true
 }
@@ -99,6 +103,7 @@ val springAotJar = tasks.register<Jar>("springAotJar") {
 // of the module (classifier "plain", not executable) is not used by anything.
 tasks.bootJar {
     archiveFileName = hookJarName
+    includeTools = false
     classpath(springAotJar)
     // The licence and notice texts of each dependency stay in the jar under META-INF/third-party/<jar>/, as they did in the
     // hand-merged jar of the earlier versions (the dependency jars themselves are nested unchanged in BOOT-INF/lib, each with

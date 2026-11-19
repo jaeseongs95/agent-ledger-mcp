@@ -6,9 +6,11 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.LoggerContext;
 import ch.qos.logback.classic.encoder.PatternLayoutEncoder;
+import ch.qos.logback.classic.spi.Configurator;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.ConsoleAppender;
 import ch.qos.logback.core.encoder.EncoderBase;
+import ch.qos.logback.core.spi.ContextAwareBase;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -23,7 +25,7 @@ import org.springframework.core.env.PropertySource;
  * {@code ConsoleAppender}, UTF-8 pattern, root {@code WARN}) without loading Joran XML, {@code java.xml} SAX parsers,
  * {@code ApplicationConversionService}, or Logback's pattern compiler unless a log record is actually emitted.
  */
-final class HookLoggingSystem {
+public final class HookLoggingSystem {
 
     private static final String CONSOLE_APPENDER = "CONSOLE";
     private static final String STDERR_TARGET = "System.err";
@@ -36,8 +38,16 @@ final class HookLoggingSystem {
 
     static void initialize(MutablePropertySources sources) {
         LoggerContext context = (LoggerContext) LoggerFactory.getILoggerFactory();
-        context.stop();
-        context.reset();
+        Logger root = context.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
+        if (root.getAppender(CONSOLE_APPENDER) == null) {
+            context.stop();
+            context.reset();
+            attachConsole(context);
+        }
+        applyLevels(context, root, sources);
+    }
+
+    private static void attachConsole(LoggerContext context) {
         LazyPatternEncoder encoder = new LazyPatternEncoder(context);
         encoder.start();
         ConsoleAppender<ILoggingEvent> appender = new ConsoleAppender<>();
@@ -49,7 +59,21 @@ final class HookLoggingSystem {
         Logger root = context.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
         root.setLevel(Level.WARN);
         root.addAppender(appender);
-        applyLevels(context, root, sources);
+    }
+
+    /**
+     * Logback {@link Configurator} registered inside the packaged AOT jar so first-touch logging setup installs the
+     * lazy stderr appender directly instead of scanning every nested jar for XML files and running BasicConfigurator.
+     */
+    public static final class LogbackConfigurator extends ContextAwareBase implements Configurator {
+
+        public LogbackConfigurator() {}
+
+        @Override
+        public ExecutionStatus configure(LoggerContext context) {
+            attachConsole(context);
+            return ExecutionStatus.DO_NOT_INVOKE_NEXT_IF_ANY;
+        }
     }
 
     private static void applyLevels(LoggerContext context, Logger root, MutablePropertySources sources) {
