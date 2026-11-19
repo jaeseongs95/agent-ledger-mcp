@@ -355,9 +355,7 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
             Spec moved = rows.spec(spec);
             gate.authorize(author, new Target(moved.projectId(), HistoryEntity.SPEC.writeScope()));
             rows.specForWrite(spec, expectedVersion);
-            throw new ConflictException(ConflictCode.VERSION_CONFLICT, List.of(HistoryEntity.SPEC.token(),
-                    spec.value(), Long.toString(expectedVersion == null ? -1L : expectedVersion),
-                    Long.toString(moved.version())));
+            rows.specForWrite(spec, moved.version() - 1L);
         }
     }
 
