@@ -197,6 +197,7 @@ class SetupSystemTest {
         List<String> all = new ArrayList<>(List.of(arguments));
         all.add("--ledger.secrets.home=" + InstalledInstance.slash(etc));
         all.add("--ledger.jdbc.pool-size=2");
+        all.addAll(instance.attachmentArguments());
         Map<String, String> environment = new LinkedHashMap<>();
         database.appPassword().ifPresent(password -> environment.put(PASSWORD_VARIABLE, password));
         try {

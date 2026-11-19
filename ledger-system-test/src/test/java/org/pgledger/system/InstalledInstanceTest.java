@@ -47,5 +47,9 @@ class InstalledInstanceTest {
         assertThat(arguments.getLast()).startsWith("--spring.config.import=").contains("optional:configtree:")
                 .contains(InstalledInstance.slash(instance.etc())).doesNotContain("file:/etc/systest")
                 .doesNotContain("configtree:/etc/systest");
+        List<String> attachmentArguments = instance.attachmentArguments();
+        assertThat(attachmentArguments).containsExactly(
+                "--ledger.attachments.directory=" + InstalledInstance.slash(work.resolve("root/var/lib/systest/attachments")),
+                "--ledger.attachments.key-directory=" + InstalledInstance.slash(instance.etc().resolve("attachment-keys")));
     }
 }

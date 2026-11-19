@@ -301,6 +301,7 @@ class PackagedProductSystemTest {
             arguments.add(i > 0 && serverArguments.get(i - 1).equals("-jar") ? mcpJar.toString() : argument);
         }
         arguments.add("--ledger.jdbc.pool-size=2");
+        arguments.addAll(instance.attachmentArguments());
         server = JavaProcess.start(runs, appEnvironment(), work.resolve("server.log"), arguments);
 
         awaitHealthy();
@@ -504,6 +505,7 @@ class PackagedProductSystemTest {
         List<String> all = new ArrayList<>(List.of(arguments));
         all.add("--ledger.secrets.home=" + slash(etc));
         all.add("--ledger.jdbc.pool-size=2");
+        all.addAll(instance.attachmentArguments());
         try {
             return JavaProcess.run(runs, asApplication ? appEnvironment() : Map.of(), stdin, PROCESS_SECONDS, cliJar,
                     all.toArray(String[]::new));

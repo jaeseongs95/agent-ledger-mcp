@@ -139,6 +139,21 @@ final class InstalledInstance {
         return List.copyOf(mapped);
     }
 
+    /**
+     * Spring property overrides that map the Linux FHS attachment paths ({@code /var/lib/<name>/attachments} and
+     * {@code /etc/<name>/attachment-keys}) below the temporary {@code --root} so non-root system tests never touch
+     * {@code /var/lib} or {@code /etc}. Empty on Windows, where {@code render-deploy --home} already writes paths below
+     * the temporary home.
+     */
+    List<String> attachmentArguments() {
+        if (platform != Platform.LINUX) {
+            return List.of();
+        }
+        return List.of(
+                "--ledger.attachments.directory=" + slash(directory.resolve("var").resolve("lib").resolve(LINUX_NAME).resolve("attachments")),
+                "--ledger.attachments.key-directory=" + slash(etc().resolve("attachment-keys")));
+    }
+
     static String slash(Path path) {
         return path.toAbsolutePath().toString().replace('\\', '/');
     }
