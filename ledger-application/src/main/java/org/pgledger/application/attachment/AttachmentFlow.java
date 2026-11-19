@@ -26,6 +26,7 @@ import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.model.UploadStaging;
 import org.pgledger.domain.value.Sha256;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
 
 /**
@@ -59,7 +60,11 @@ public class AttachmentFlow {
             }
         }
         store.requireDiskSpace(declaredBytes);
-        return service.begin(actor, command);
+        try {
+            return service.begin(actor, command);
+        } catch (DuplicateKeyException race) {
+            return service.resolveDuplicateBegin(actor, command);
+        }
     }
 
     /**

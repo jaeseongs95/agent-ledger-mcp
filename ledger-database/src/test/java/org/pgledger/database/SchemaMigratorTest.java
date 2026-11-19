@@ -173,7 +173,7 @@ class SchemaMigratorTest {
     void sch001_aFreshDatabaseGetsEveryRealFileInOrderWithItsDigest() {
         SchemaMigrator real = TestSchemaServices.migrator(pool,
                 new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, true, null), clock);
-        assertThat(real.migrate()).containsExactly(1, 2, 3, 4, 5, 6, 7, 8);
+        assertThat(real.migrate()).containsExactly(1, 2, 3, 4, 5, 6, 7, 8, 9);
         assertThat(history()).isEqualTo(List.of(
                 succeeded(1, 1, "V1__core_tables.sql", resource("db/V1__core_tables.sql"), T0),
                 succeeded(2, 1, "V2__history_and_receipts.sql", resource("db/V2__history_and_receipts.sql"), T0),
@@ -182,7 +182,9 @@ class SchemaMigratorTest {
                 succeeded(5, 1, "V5__common_code_version.sql", resource("db/V5__common_code_version.sql"), T0),
                 succeeded(6, 1, "V6__driver_audit_key.sql", resource("db/V6__driver_audit_key.sql"), T0),
                 succeeded(7, 1, "V7__owner_passkey.sql", resource("db/V7__owner_passkey.sql"), T0),
-                succeeded(8, 1, "V8__attachments.sql", resource("db/V8__attachments.sql"), T0)));
+                succeeded(8, 1, "V8__attachments.sql", resource("db/V8__attachments.sql"), T0),
+                succeeded(9, 1, "V9__spec_parent_and_upload_gate.sql",
+                        resource("db/V9__spec_parent_and_upload_gate.sql"), T0)));
         assertThat(tableExists("issue")).isTrue();
         assertThat(tableExists("spec")).isTrue();
     }

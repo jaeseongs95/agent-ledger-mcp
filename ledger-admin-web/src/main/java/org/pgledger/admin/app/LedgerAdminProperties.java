@@ -69,6 +69,13 @@ public record LedgerAdminProperties(String token, String agentToken,
                 + ", passkey=" + passkey + "]";
     }
 
+    /** The maximum request size must be at least 1 byte and fit in an in-memory buffer check ({@code maxBytes + 1}). */
+    @AssertTrue(message = "ledger.admin.max-request-size must be between 1B and 2147483646B")
+    public boolean isMaxRequestSizeUsable() {
+        return maxRequestSize != null && maxRequestSize.toBytes() >= 1L
+                && maxRequestSize.toBytes() < Integer.MAX_VALUE;
+    }
+
     /** The sign-in that is in force: the chosen one, {@code passkey} when none was chosen. */
     public SignInMethod effectiveSignIn() {
         return signIn == null ? SignInMethod.PASSKEY : signIn;

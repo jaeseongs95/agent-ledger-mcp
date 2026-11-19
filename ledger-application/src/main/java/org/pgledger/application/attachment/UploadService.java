@@ -172,6 +172,7 @@ public class UploadService {
                     Map.of());
         }
         List<ValidatedFile> checkedFiles = declared.stream().map(UploadService::toValidated).toList();
+        uploads.lockQuotaGate();
         List<UploadStaging> existing = uploads.findByOwnerAndOperationKey(owner.value(), operationKey);
         if (!existing.isEmpty()) {
             return replayOrConflict(existing, checkedFiles, operationKey);
@@ -226,6 +227,26 @@ public class UploadService {
             begunFiles.add(new BegunFile(seq, uploadId));
         }
         return new Begun(attachmentId, List.copyOf(begunFiles), AttachmentProperties.CHUNK_BYTES, expiresAt);
+    }
+
+    /**
+     * Resolves a concurrent duplicate {@code artifact_begin} after a rolled-back {@code DuplicateKeyException} by
+     * re-reading the committed staging bundle in a fresh transaction and returning an idempotent replay or
+     * {@code ARTIFACT_OPERATION_CONFLICT}.
+     */
+    @Transactional(readOnly = true)
+    public Begun resolveDuplicateBegin(String actor, Begin command) {
+        AuthorId owner = requireOwner(actor);
+        if (command == null || command.operationKey() == null || command.files() == null) {
+            throw new ConflictException(ConflictCode.ARTIFACT_OPERATION_CONFLICT,
+                    List.of(command == null || command.operationKey() == null ? "" : command.operationKey()));
+        }
+        List<ValidatedFile> checkedFiles = command.files().stream().map(UploadService::toValidated).toList();
+        List<UploadStaging> existing = uploads.findByOwnerAndOperationKey(owner.value(), command.operationKey());
+        if (existing.isEmpty()) {
+            throw new ConflictException(ConflictCode.ARTIFACT_OPERATION_CONFLICT, List.of(command.operationKey()));
+        }
+        return replayOrConflict(existing, checkedFiles, command.operationKey());
     }
 
     @Transactional(readOnly = true)

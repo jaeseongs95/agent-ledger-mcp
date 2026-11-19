@@ -144,6 +144,12 @@ public class LinkRepository {
                 .update() == 1;
     }
 
+    /** Pins a project row at its current version for this transaction; returns false if a concurrent project edit changed it. */
+    public boolean pinProject(ProjectId project, long version) {
+        return jdbc.sql("UPDATE project SET version = :version WHERE id = :project AND version = :version")
+                .param("project", project.value()).param("version", version).update() == 1;
+    }
+
     /** Pins a task's current project for this transaction; returns false if a committed move changed it. */
     public boolean pinTaskProject(TaskId task, ProjectId project) {
         return jdbc.sql("UPDATE task SET project_id = :project WHERE id = :id AND project_id = :project")

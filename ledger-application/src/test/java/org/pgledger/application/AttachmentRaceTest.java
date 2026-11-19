@@ -20,6 +20,9 @@ import org.pgledger.application.attachment.AttachmentMaintenanceService;
 import org.pgledger.application.attachment.AttachmentProperties;
 import org.pgledger.application.attachment.AttachmentStore;
 import org.pgledger.application.attachment.StorageKeys;
+import org.pgledger.application.attachment.UploadCommands.Begin;
+import org.pgledger.application.attachment.UploadCommands.BeginFile;
+import org.pgledger.application.attachment.UploadCommands.Begun;
 import org.pgledger.application.attachment.UploadCommands.Finished;
 import org.pgledger.application.attachment.UploadCommands.Received;
 import org.pgledger.application.attachment.UploadService;
@@ -286,6 +289,118 @@ class AttachmentRaceTest {
             assertThat(s.count("SELECT COUNT(*) FROM attachment_storage WHERE attachment_id = ?", target.attachmentId)).isEqualTo(2);
             assertThat(s.count("SELECT COUNT(*) FROM owner_audit WHERE operation = 'ATTACHMENT_REKEY' AND subject = ?",
                     target.attachmentId)).isEqualTo(1);
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------------ R4-F3
+
+    @Test
+    @DisplayName("R4-F3 (a): concurrent artifact_begin with the same (owner, operationKey) and identical files replays idempotently without INTEGRITY_VIOLATION")
+    void r4F3_concurrentBeginSameOperationKeyIdempotent(Scenario s) {
+        AttachmentFlow flow = s.bean(AttachmentFlow.class);
+        for (int round = 0; round < ROUNDS; round++) {
+            String actor = s.actorWith("issue");
+            String opKey = "r4f3-idem-" + round + "-" + Scenario.uuid();
+            byte[] body = Uploads.body(256, 900L + round);
+            Begin command = Uploads.begin(opKey, body);
+            List<Outcome<Begun>> outcomes = Parallel.all(List.of(
+                    () -> flow.begin(actor, command),
+                    () -> flow.begin(actor, command),
+                    () -> flow.begin(actor, command),
+                    () -> flow.begin(actor, command)), 4);
+            assertThat(outcomes).allSatisfy(o -> assertThat(o.failure()).isNull());
+            Begun expected = outcomes.getFirst().value();
+            assertThat(outcomes).allSatisfy(o -> {
+                assertThat(o.value().attachmentId()).isEqualTo(expected.attachmentId());
+                assertThat(o.value().files()).isEqualTo(expected.files());
+            });
+            assertThat(s.count("SELECT COUNT(*) FROM upload_staging WHERE owner = ? AND operation_key = ?",
+                    actor, opKey)).isEqualTo(1);
+        }
+    }
+
+    @Test
+    @DisplayName("R4-F3 (b): concurrent artifact_begin with the same (owner, operationKey) and different files fails ARTIFACT_OPERATION_CONFLICT, never INTEGRITY_VIOLATION")
+    void r4F3_concurrentBeginSameOperationKeyDifferentFilesConflicts(Scenario s) {
+        AttachmentFlow flow = s.bean(AttachmentFlow.class);
+        for (int round = 0; round < ROUNDS; round++) {
+            String actor = s.actorWith("issue");
+            String opKey = "r4f3-conf-" + round + "-" + Scenario.uuid();
+            Begin first = Uploads.begin(opKey, Uploads.body(128, 1000L + round));
+            Begin second = Uploads.begin(opKey, Uploads.body(192, 2000L + round));
+            List<Outcome<Begun>> outcomes = Parallel.all(List.of(
+                    () -> flow.begin(actor, first),
+                    () -> flow.begin(actor, second)));
+            assertThat(outcomes.stream().filter(Outcome::succeeded)).hasSize(1);
+            Outcome<Begun> loser = outcomes.stream().filter(o -> !o.succeeded()).findFirst().orElseThrow();
+            assertThat(loser.failure()).isInstanceOfSatisfying(ConflictException.class,
+                    ex -> assertThat(ex.code()).isEqualTo(ConflictCode.ARTIFACT_OPERATION_CONFLICT));
+            assertThat(s.count("SELECT COUNT(*) FROM upload_staging WHERE owner = ? AND operation_key = ?",
+                    actor, opKey)).isEqualTo(1);
+        }
+    }
+
+    @Test
+    @DisplayName("R4-F3 (c): concurrent artifact_begin burst enforces max-open-per-owner and staging-budget-bytes quotas without overshooting")
+    void r4F3_concurrentBeginRespectsQuotaLimits(Scenario s) {
+        AttachmentFlow flow = s.bean(AttachmentFlow.class);
+        UploadStagingRepository uploads = s.bean(UploadStagingRepository.class);
+        AttachmentProperties properties = s.bean(AttachmentProperties.class);
+
+        // 1) max-open-per-owner serialization under concurrent begins
+        String actor = s.actorWith("issue");
+        int maxOpen = properties.maxOpenPerOwner();
+        int burst = maxOpen + 4;
+        List<java.util.concurrent.Callable<Begun>> openCalls = new java.util.ArrayList<>(burst);
+        for (int i = 0; i < burst; i++) {
+            int idx = i;
+            openCalls.add(() -> flow.begin(actor, Uploads.begin("r4f3-open-" + idx + "-" + Scenario.uuid(),
+                    Uploads.body(64, 3000L + idx))));
+        }
+        List<Outcome<Begun>> openOutcomes = Parallel.all(openCalls, burst);
+        assertThat(openOutcomes.stream().filter(Outcome::succeeded)).hasSize(maxOpen);
+        assertThat(openOutcomes.stream().filter(o -> !o.succeeded())).allSatisfy(o ->
+                assertThat(o.failure()).isInstanceOfSatisfying(ConflictException.class,
+                        ex -> assertThat(ex.code()).isEqualTo(ConflictCode.ARTIFACT_LIMIT)));
+        assertThat(uploads.countOpenBundles(actor)).isEqualTo(maxOpen);
+
+        // 2) staging-budget-bytes serialization across distinct owners (multi-file bundles exceeding half remaining budget)
+        long stagingBudget = properties.stagingBudgetBytes().toBytes();
+        long maxFile = properties.maxFileBytes().toBytes();
+        long existingOpen = uploads.declaredOpenBytes();
+        long remaining = stagingBudget - existingOpen;
+        long targetBundleBytes = (remaining / 2L) + 1L;
+        List<BeginFile> bundleFiles = new java.util.ArrayList<>();
+        String sha = "a".repeat(64);
+        long left = targetBundleBytes;
+        int fileIdx = 0;
+        while (left > 0 && fileIdx < UploadService.MAX_FILES) {
+            long size = Math.min(maxFile, left);
+            bundleFiles.add(new BeginFile("part-" + fileIdx + ".bin", "application/octet-stream", size, sha));
+            left -= size;
+            fileIdx++;
+        }
+        assertThat(left).as("bundle fits within MAX_FILES").isZero();
+        String ownerA = s.actorWith("issue");
+        String ownerB = s.actorWith("issue");
+        Begin beginA = new Begin("r4f3-stage-a-" + Scenario.uuid(), List.copyOf(bundleFiles), null);
+        Begin beginB = new Begin("r4f3-stage-b-" + Scenario.uuid(), List.copyOf(bundleFiles), null);
+        List<Outcome<Begun>> budgetOutcomes = Parallel.all(List.of(
+                () -> flow.begin(ownerA, beginA),
+                () -> flow.begin(ownerB, beginB)));
+        try {
+            assertThat(budgetOutcomes.stream().filter(Outcome::succeeded)).hasSize(1);
+            Outcome<Begun> budgetLoser = budgetOutcomes.stream().filter(o -> !o.succeeded()).findFirst().orElseThrow();
+            assertThat(budgetLoser.failure()).isInstanceOfSatisfying(ConflictException.class,
+                    ex -> assertThat(ex.code()).isEqualTo(ConflictCode.ARTIFACT_LIMIT));
+            assertThat(uploads.declaredOpenBytes()).isLessThanOrEqualTo(stagingBudget);
+        } finally {
+            for (Outcome<Begun> outcome : budgetOutcomes) {
+                if (outcome.succeeded()) {
+                    s.ctx().jdbc().sql("DELETE FROM upload_staging WHERE attachment_id = ?")
+                            .param(outcome.value().attachmentId()).update();
+                }
+            }
         }
     }
 }

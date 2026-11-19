@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import org.pgledger.database.time.UtcTime;
+import org.pgledger.domain.error.InfrastructureCode;
+import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.domain.model.UploadStaging;
 import org.pgledger.domain.rule.UploadState;
 import org.pgledger.domain.value.AuthorId;
@@ -52,6 +54,19 @@ public class UploadStagingRepository {
     public UploadStagingRepository(JdbcClient jdbc, SqlBuilder sql) {
         this.jdbc = jdbc;
         this.sql = sql;
+    }
+
+    /**
+     * Acquires an ANSI row lock on the single-row {@code upload_quota_gate} table for the caller's transaction so
+     * concurrent {@code artifact_begin} requests serialize idempotent key lookup and quota accounting.
+     */
+    // ceiling: single-row ANSI gate serializing upload begin quota checks; shard by owner if begin throughput requires it.
+    public void lockQuotaGate() {
+        int rows = jdbc.sql("UPDATE upload_quota_gate SET revision = revision + 1 WHERE id = 1").update();
+        if (rows != 1) {
+            throw new InfrastructureException(InfrastructureCode.INTEGRITY_VIOLATION,
+                    List.of("upload_quota_gate row missing"));
+        }
     }
 
     public void insert(UploadStaging row) {

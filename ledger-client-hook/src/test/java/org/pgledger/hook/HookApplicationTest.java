@@ -4,10 +4,14 @@ package org.pgledger.hook;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.nio.file.Path;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.pgledger.testing.CodingScan;
+import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.DefaultApplicationArguments;
 import org.springframework.boot.ExitCodeGenerator;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.test.context.ConfigDataApplicationContextInitializer;
@@ -57,5 +61,26 @@ class HookApplicationTest {
             assertThat(environment.getProperty("spring.main.banner-mode")).isEqualTo("off");
             assertThat(environment.getProperty("spring.main.log-startup-info")).isEqualTo("false");
         });
+    }
+
+    @Test
+    @DisplayName("R4-F2 Main bootstrap preserves DefaultApplicationArguments LSP, SpringApplication.exit, and zero internal bean-name surgery")
+    void mainBootstrapFollowsStandardSpringContract() throws Exception {
+        ApplicationArguments parsed = new DefaultApplicationArguments("--debug", "claude");
+        assertThat(parsed.containsOption("debug")).isTrue();
+        assertThat(parsed.getOptionNames()).containsExactly("debug");
+        assertThat(parsed.getNonOptionArgs()).containsExactly("claude");
+        assertThat(parsed.getSourceArgs()).containsExactly("--debug", "claude");
+
+        int status = Main.execute(Main.jarOnlyEnvironment(), Main.class.getClassLoader(), new String[] {"--unknown-flag"});
+        assertThat(status).isEqualTo(2);
+
+        String mainSource = CodingScan.strip(Path.of("src", "main", "java", "org", "pgledger", "hook", "Main.java"));
+        assertThat(mainSource)
+                .doesNotContain("removeBeanDefinition")
+                .doesNotContain("AotHookApplicationContext")
+                .doesNotContain("RawApplicationArguments")
+                .contains("DefaultApplicationArguments")
+                .contains("SpringApplication.exit");
     }
 }

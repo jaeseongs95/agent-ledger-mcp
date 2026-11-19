@@ -26,12 +26,13 @@ public class EntityLookupRepository {
         this.jdbc = jdbc;
     }
 
+    /** Exact case-sensitive lookup of issues by id. */
     public List<Found> issues(Collection<String> ids) {
-        return jdbc.sql("SELECT id, project_id, status, version, merged_into FROM issue WHERE id IN (:ids) "
+        return exactly(ids, jdbc.sql("SELECT id, project_id, status, version, merged_into FROM issue WHERE id IN (:ids) "
                 + "ORDER BY id").param("ids", ids)
                 .query((rs, n) -> new Found(rs.getString("id"), rs.getString("project_id"), rs.getString("status"),
                         rs.getLong("version"), rs.getString("merged_into")))
-                .list();
+                .list());
     }
 
     /** Exact case-sensitive lookup of specifications by id. */

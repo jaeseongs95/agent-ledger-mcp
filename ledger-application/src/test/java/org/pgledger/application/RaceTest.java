@@ -656,4 +656,128 @@ class RaceTest {
         assertThat(editingCrit.get(60, TimeUnit.SECONDS)).contains(TrustCode.SESSION_NOT_GRANTED);
         assertThat(s.criterion(criterion.id()).criterionText()).isNotEqualTo("unauthorized edit");
     }
+
+    @Test
+    @DisplayName("R4-F1 (a): concurrent 2-node spec cycle A->B vs B->A serializes on project lock and never commits a cycle")
+    void r4F1_concurrentTwoNodeSpecCycleIsPrevented(Scenario s) throws Exception {
+        // Deterministic held transaction: Tx1 sets A.parent = B (uncommitted), Tx2 sets B.parent = A -> waits and fails VALIDATION_FAILED
+        SaveResult aHeld = s.newSpec("held-a");
+        SaveResult bHeld = s.newSpec("held-b");
+        CountDownLatch updated = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger holderPid = new AtomicInteger();
+        Future<?> tx1 = holdingTransaction(s, () -> {
+            holderPid.set(LockWaits.backendPid(s.ctx().jdbc()));
+            return s.bean(SaveService.class).save(Scenario.AUTHOR,
+                    s.edit("spec", aHeld.id(), 1, Map.of("parent_id", bHeld.id())));
+        }, updated, release);
+        assertThat(updated.await(60, TimeUnit.SECONDS)).isTrue();
+        Future<Optional<ErrorCode>> tx2 = Parallel.start(() -> Expect.outcome(() -> s.bean(SaveService.class)
+                .save(Scenario.AUTHOR, s.edit("spec", bHeld.id(), 1, Map.of("parent_id", aHeld.id())))));
+        LockWaits.awaitWaitingFor(s.ctx().jdbc(), holderPid.get());
+        release.countDown();
+        tx1.get(60, TimeUnit.SECONDS);
+        assertThat(tx2.get(60, TimeUnit.SECONDS)).contains(ValidationCode.VALIDATION_FAILED);
+        assertThat(s.spec(aHeld.id()).parentId().value()).isEqualTo(bHeld.id());
+        assertThat(s.spec(bHeld.id()).parentId()).isNull();
+
+        // Barrier rounds: simultaneous A->B and B->A never both commit
+        for (int round = 0; round < 10; round++) {
+            SaveResult a = s.newSpec("r2-a-" + round);
+            SaveResult b = s.newSpec("r2-b-" + round);
+            List<Outcome<WriteResult>> outcomes = Parallel.all(List.of(
+                    () -> s.bean(SaveService.class).save(Scenario.AUTHOR,
+                            s.edit("spec", a.id(), 1, Map.of("parent_id", b.id()))),
+                    () -> s.bean(SaveService.class).save(Scenario.AUTHOR,
+                            s.edit("spec", b.id(), 1, Map.of("parent_id", a.id())))));
+            assertThat(outcomes.stream().filter(Outcome::succeeded)).hasSize(1);
+            assertThat(codes(outcomes)).containsExactlyInAnyOrder(Optional.empty(),
+                    Optional.of(ValidationCode.VALIDATION_FAILED));
+            var rowA = s.spec(a.id());
+            var rowB = s.spec(b.id());
+            assertThat(rowA.parentId() != null && rowB.parentId() != null).isFalse();
+        }
+    }
+
+    @Test
+    @DisplayName("R4-F1 (b): concurrent 3-node spec cycle A->B, B->C, C->A never commits a cycle")
+    void r4F1_concurrentThreeNodeSpecCycleIsPrevented(Scenario s) {
+        for (int round = 0; round < 10; round++) {
+            SaveResult a = s.newSpec("r3-a-" + round);
+            SaveResult b = s.newSpec("r3-b-" + round);
+            SaveResult c = s.newSpec("r3-c-" + round);
+            List<Outcome<WriteResult>> outcomes = Parallel.all(List.of(
+                    () -> s.bean(SaveService.class).save(Scenario.AUTHOR,
+                            s.edit("spec", a.id(), 1, Map.of("parent_id", b.id()))),
+                    () -> s.bean(SaveService.class).save(Scenario.AUTHOR,
+                            s.edit("spec", b.id(), 1, Map.of("parent_id", c.id()))),
+                    () -> s.bean(SaveService.class).save(Scenario.AUTHOR,
+                            s.edit("spec", c.id(), 1, Map.of("parent_id", a.id())))), 3);
+            assertThat(outcomes.stream().filter(Outcome::succeeded)).hasSize(2);
+            assertThat(codes(outcomes)).containsExactlyInAnyOrder(Optional.empty(), Optional.empty(),
+                    Optional.of(ValidationCode.VALIDATION_FAILED));
+            long withParent = List.of(s.spec(a.id()), s.spec(b.id()), s.spec(c.id())).stream()
+                    .filter(sp -> sp.parentId() != null).count();
+            assertThat(withParent).as("at least one node remains a root (no 3-node cycle)").isEqualTo(2);
+        }
+    }
+
+    @Test
+    @DisplayName("R4-F1 (c): concurrent spec project move A(P1->P2) and attaching child B(P1, parent=A) serializes without cross-project parent")
+    void r4F1_concurrentSpecMoveAndAttachChildIsSerialized(Scenario s) throws Exception {
+        String p2 = s.otherProject();
+        String mover = s.actorWith("spec");
+        s.grant(mover, p2, "spec");
+
+        // Case 1: move A(P1->P2) held uncommitted while Tx2 creates child B(P1, parent=A) and Tx3 edits C(P1, parent=A)
+        SaveResult a1 = s.bean(SaveService.class).save(mover, s.create("spec",
+                "FREE-M1-" + Scenario.uuid().substring(0, 8),
+                Map.of("project_id", s.projectId(), "title", "movable parent")));
+        SaveResult c1 = s.newSpec("existing-c1");
+        CountDownLatch moved = new CountDownLatch(1);
+        CountDownLatch releaseMove = new CountDownLatch(1);
+        AtomicInteger movePid = new AtomicInteger();
+        Future<?> moving = holdingTransaction(s, () -> {
+            movePid.set(LockWaits.backendPid(s.ctx().jdbc()));
+            return s.bean(SaveService.class).save(mover, s.edit("spec", a1.id(), 1, Map.of("project_id", p2)));
+        }, moved, releaseMove);
+        assertThat(moved.await(60, TimeUnit.SECONDS)).isTrue();
+
+        Future<Optional<ErrorCode>> creatingChild = Parallel.start(() -> Expect.outcome(() -> s.bean(SaveService.class)
+                .save(Scenario.AUTHOR, s.create("spec", "FREE-CH-" + Scenario.uuid().substring(0, 8),
+                        Map.of("project_id", s.projectId(), "title", "child", "parent_id", a1.id())))));
+        Future<Optional<ErrorCode>> reparenting = Parallel.start(() -> Expect.outcome(() -> s.bean(SaveService.class)
+                .save(Scenario.AUTHOR, s.edit("spec", c1.id(), 1, Map.of("parent_id", a1.id())))));
+        LockWaits.awaitWaitingFor(s.ctx().jdbc(), movePid.get());
+        releaseMove.countDown();
+        moving.get(60, TimeUnit.SECONDS);
+        assertThat(creatingChild.get(60, TimeUnit.SECONDS)).contains(ValidationCode.VALIDATION_FAILED);
+        assertThat(reparenting.get(60, TimeUnit.SECONDS)).contains(ValidationCode.VALIDATION_FAILED);
+        assertThat(s.spec(a1.id()).projectId().value()).isEqualTo(p2);
+        assertThat(s.spec(c1.id()).parentId()).isNull();
+        assertThat(s.count("SELECT COUNT(*) FROM spec WHERE parent_id = ?", a1.id())).isZero();
+
+        // Case 2: attach child held uncommitted while Tx2 attempts to move A(P1->P2) -> move waits and fails PROJECT_MOVE_FORBIDDEN
+        SaveResult a2 = s.bean(SaveService.class).save(mover, s.create("spec",
+                "FREE-M2-" + Scenario.uuid().substring(0, 8),
+                Map.of("project_id", s.projectId(), "title", "movable parent 2")));
+        CountDownLatch attached = new CountDownLatch(1);
+        CountDownLatch releaseAttach = new CountDownLatch(1);
+        AtomicInteger attachPid = new AtomicInteger();
+        Future<?> attaching = holdingTransaction(s, () -> {
+            attachPid.set(LockWaits.backendPid(s.ctx().jdbc()));
+            return s.bean(SaveService.class).save(Scenario.AUTHOR, s.create("spec",
+                    "FREE-CH2-" + Scenario.uuid().substring(0, 8),
+                    Map.of("project_id", s.projectId(), "title", "child 2", "parent_id", a2.id())));
+        }, attached, releaseAttach);
+        assertThat(attached.await(60, TimeUnit.SECONDS)).isTrue();
+
+        Future<Optional<ErrorCode>> movingAfterAttach = Parallel.start(() -> Expect.outcome(() -> s
+                .bean(SaveService.class).save(mover, s.edit("spec", a2.id(), 1, Map.of("project_id", p2)))));
+        LockWaits.awaitWaitingFor(s.ctx().jdbc(), attachPid.get());
+        releaseAttach.countDown();
+        attaching.get(60, TimeUnit.SECONDS);
+        assertThat(movingAfterAttach.get(60, TimeUnit.SECONDS)).contains(TransitionCode.PROJECT_MOVE_FORBIDDEN);
+        assertThat(s.spec(a2.id()).projectId().value()).isEqualTo(s.projectId());
+    }
 }

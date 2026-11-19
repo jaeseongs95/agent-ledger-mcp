@@ -46,8 +46,8 @@ class SchemaCatalogTest {
             "issue_task", "issue_spec", "spec_task", "issue_relation", "milestone_criterion", "criterion_link",
             "session_grant", "session_key", "session_token", "owner_audit", "history", "request_receipt", "common_code",
             "code_revision", "id_counter", "schema_history", "driver_audit_key", "owner_passkey_user",
-            "owner_passkey", "owner_passkey_revocation", "owner_passkey_code", "upload_staging", "attachment",
-            "attachment_file", "attachment_storage");
+            "owner_passkey", "owner_passkey_revocation", "owner_passkey_code", "upload_staging", "upload_quota_gate",
+            "attachment", "attachment_file", "attachment_storage");
 
     /** The timestamp columns of the schema, exactly as the catalogue lists them (SCH-018). */
     static final Set<String> TIMESTAMP_COLUMNS = Set.of("issue.created_at", "issue.updated_at", "spec.created_at",
@@ -508,6 +508,7 @@ class SchemaCatalogTest {
                 .containsExactly("DELIVERABLE", "HISTORY", "ISSUE_CASE", "OWNER_AUDIT", "SESSION_GRANT",
                         "SESSION_KEY", "SESSION_TOKEN");
         assertThat(jdbc.sql("SELECT COUNT(*) FROM code_revision").query(Integer.class).single()).isEqualTo(1);
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM upload_quota_gate").query(Integer.class).single()).isEqualTo(1);
         Project fresh = new Seed(ctx).project();
         assertThat(jdbc.sql("SELECT next_issue_no + next_spec_no + next_task_no FROM project WHERE id = :id")
                 .param("id", fresh.id().value()).query(Long.class).single()).isZero();
@@ -523,5 +524,22 @@ class SchemaCatalogTest {
         // ANSI-014 (catalog): no column of any type has a time default
         assertThat(columns()).noneMatch(c -> c.defaultValue() != null
                 && TIME_DEFAULT.matcher(c.defaultValue().toUpperCase(Locale.ROOT)).find());
+    }
+
+    @Test
+    void r4F1_specParentCompositeFkRefusesCrossProjectParent() {
+        Seed seed = new Seed(ctx);
+        Project p1 = seed.project();
+        Project p2 = seed.project();
+        String insert = "INSERT INTO spec (id, id_key, project_id, parent_id, title, status, version, created_at, "
+                + "updated_at, created_by) VALUES (:id, :key, :project, :parent, 't', 'DRAFT', 1, "
+                + "TIMESTAMP '2026-11-19 10:00:00', TIMESTAMP '2026-11-19 10:00:00', 'claude:a')";
+        jdbc.sql(insert).param("id", "SP-P1-ROOT").param("key", "SP-P1-ROOT")
+                .param("project", p1.id().value()).param("parent", null).update();
+        Throwable crossProject = catchThrowable(() -> jdbc.sql(insert)
+                .param("id", "SP-P2-CHILD").param("key", "SP-P2-CHILD")
+                .param("project", p2.id().value()).param("parent", "SP-P1-ROOT").update());
+        assertThat(crossProject).isInstanceOf(DataIntegrityViolationException.class);
+        assertThat(sqlState(crossProject)).startsWith("23");
     }
 }

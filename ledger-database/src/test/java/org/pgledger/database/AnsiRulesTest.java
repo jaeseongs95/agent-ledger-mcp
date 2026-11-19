@@ -63,6 +63,11 @@ class AnsiRulesTest {
     private static final Pattern COLUMN_DEFINITION = Pattern.compile(
             "(?is)(VARCHAR\\(\\d+\\)|TEXT|INTEGER|BIGINT|TIMESTAMP|DECIMAL(\\(\\d+,\\d+\\))?)(\\s.*)?");
     private static final Pattern CHECK_DEFINITION = Pattern.compile("(?is)CHECK\\s*\\(.*\\)");
+    private static final Pattern UNIQUE_DEFINITION =
+            Pattern.compile("(?is)UNIQUE\\s*\\(\\s*[a-z][a-z0-9_]*(\\s*,\\s*[a-z][a-z0-9_]*)*\\s*\\)");
+    private static final Pattern FOREIGN_KEY_DEFINITION = Pattern.compile(
+            "(?is)FOREIGN\\s+KEY\\s*\\(\\s*[a-z][a-z0-9_]*(\\s*,\\s*[a-z][a-z0-9_]*)*\\s*\\)\\s+"
+                    + "REFERENCES\\s+[a-z][a-z0-9_]*\\s*\\(\\s*[a-z][a-z0-9_]*(\\s*,\\s*[a-z][a-z0-9_]*)*\\s*\\)");
     private static final Pattern SQL_LITERAL =Pattern.compile("\"((?:[^\"\\\\\\n]|\\\\.)*)\"");
 
     private static String read(Path file) {
@@ -169,8 +174,12 @@ class AnsiRulesTest {
             if ("ADD COLUMN".equals(action)) {
                 assertThat(rest).as(alter).matches(COLUMN_DEFINITION);
             } else if ("ADD CONSTRAINT".equals(action)) {
-                assertThat(rest).as(alter).matches(CHECK_DEFINITION);
-                assertThat(FUNCTION_CALL.matcher(rest).find() || rest.contains("~")).as(alter).isFalse();
+                if (CHECK_DEFINITION.matcher(rest).matches()) {
+                    assertThat(FUNCTION_CALL.matcher(rest).find() || rest.contains("~")).as(alter).isFalse();
+                } else {
+                    assertThat(UNIQUE_DEFINITION.matcher(rest).matches()
+                            || FOREIGN_KEY_DEFINITION.matcher(rest).matches()).as(alter).isTrue();
+                }
             } else {
                 assertThat(rest).as(alter).isEmpty();
             }

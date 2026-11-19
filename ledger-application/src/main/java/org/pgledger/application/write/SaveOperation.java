@@ -179,6 +179,9 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
             }
             case SpecFields f -> {
                 SpecId specId = specId(project, explicitId);
+                if (f.parentId().orNull() != null) {
+                    pinProject(project.id());
+                }
                 validateSpecParent(specId, project.id(), f.parentId().orNull());
                 Spec saved = inserted(() -> specs.save(Spec.create(specId, f, now)), HistoryEntity.SPEC,
                         specId.value());
@@ -324,6 +327,40 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
         }
     }
 
+    // ceiling: project-level ANSI row lock serializes spec parent/move mutations (lock order: project -> spec).
+    private void pinProject(ProjectId project) {
+        while (true) {
+            Project current = rows.project(project);
+            if (links.pinProject(project, current.version())) {
+                return;
+            }
+        }
+    }
+
+    private void pinSpecHierarchy(AuthorId author, SpecId spec, ProjectId targetProject, Long expectedVersion) {
+        ProjectId current = rows.spec(spec).projectId();
+        gate.authorize(author, new Target(current, HistoryEntity.SPEC.writeScope()));
+        if (targetProject != null && !Objects.equals(targetProject, current)) {
+            if (current.value().compareTo(targetProject.value()) <= 0) {
+                pinProject(current);
+                pinProject(targetProject);
+            } else {
+                pinProject(targetProject);
+                pinProject(current);
+            }
+        } else {
+            pinProject(current);
+        }
+        if (!links.pinSpecProject(spec, current)) {
+            Spec moved = rows.spec(spec);
+            gate.authorize(author, new Target(moved.projectId(), HistoryEntity.SPEC.writeScope()));
+            rows.specForWrite(spec, expectedVersion);
+            throw new ConflictException(ConflictCode.VERSION_CONFLICT, List.of(HistoryEntity.SPEC.token(),
+                    spec.value(), Long.toString(expectedVersion == null ? -1L : expectedVersion),
+                    Long.toString(moved.version())));
+        }
+    }
+
     private void pinSpec(AuthorId author, SpecId spec) {
         while (true) {
             ProjectId project = rows.spec(spec).projectId();
@@ -392,8 +429,13 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
                 version = rows.saveIssue(after).version();
             }
             case SpecFields f -> {
-                pinSpec(ctx.author(), SpecId.of(id));
-                Spec row = rows.specForWrite(SpecId.of(id), expectedVersion);
+                SpecId specId = SpecId.of(id);
+                if (f.projectId().mentioned() || f.parentId().mentioned()) {
+                    pinSpecHierarchy(ctx.author(), specId, f.projectId().orNull(), expectedVersion);
+                } else {
+                    pinSpec(ctx.author(), specId);
+                }
+                Spec row = rows.specForWrite(specId, expectedVersion);
                 row.requireNotVerified();
                 Spec after = row.edited(f, now);
                 if (!Objects.equals(row.projectId(), after.projectId())) {
