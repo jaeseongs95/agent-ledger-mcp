@@ -161,7 +161,7 @@ Read tools (no attestation and no grant; structured queries that replace the raw
 | `ledger_specs` | specifications of a project, filtered by status, parent id, priority, owner and attention kind |
 | `ledger_tasks` | tasks of a project, filtered by state, owner and attention kind |
 | `ledger_criteria` | milestone criteria of a project, filtered by state and `milestone_name` |
-| `ledger_attention` | items needing action: `OPEN_WITH_DELIVERABLE`, `RESOLVED_WITHOUT_DELIVERABLE`, `OPEN_NO_OWNER`, `SPEC_DRAFT_WITH_DELIVERABLE`, `SPEC_COMPLETED_NOT_VERIFIED`, `TASK_UNKNOWN`, `DONE_NOT_VERIFIED` |
+| `ledger_attention` | items needing action: `OPEN_WITH_DELIVERABLE`, `RESOLVED_WITHOUT_DELIVERABLE`, `OPEN_NO_OWNER`, `SPEC_COMPLETED_NOT_VERIFIED`, `TASK_UNKNOWN`, `DONE_NOT_VERIFIED` |
 | `ledger_stats` | counts per state and severity of one project or of all; `bucket` = `day` adds new items per UTC day |
 | `ledger_projects` | projects with id, code and title |
 | `ledger_codes` | common codes; retired codes included with `include_inactive` |

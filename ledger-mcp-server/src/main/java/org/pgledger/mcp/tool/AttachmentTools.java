@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import java.util.List;
 import org.pgledger.application.attachment.AttachmentFlow;
+import org.pgledger.application.attachment.AttachmentProperties;
 import org.pgledger.application.attachment.ConditionalOnAttachments;
 import org.pgledger.application.attachment.UploadCommands;
 import org.pgledger.domain.error.ValidationException;
@@ -93,8 +94,9 @@ public class AttachmentTools implements ToolAdapter {
         if (offsetBytes == null || offsetBytes < 0) {
             throw ValidationException.invalid("offsetBytes", ValidationReason.MUST_NOT_BE_NEGATIVE);
         }
-        if (maxBytes == null || maxBytes < 1 || maxBytes > Integer.MAX_VALUE) {
-            throw ValidationException.invalid("maxBytes", ValidationReason.OUT_OF_RANGE, "1", "262144");
+        if (maxBytes == null || maxBytes < 1 || maxBytes > AttachmentProperties.CHUNK_BYTES) {
+            throw ValidationException.invalid("maxBytes", ValidationReason.OUT_OF_RANGE, "1",
+                    Integer.toString(AttachmentProperties.CHUNK_BYTES));
         }
         return AttachmentOutputs.of(flow.read(_hostAttestation, attachmentId, fileSeq, offsetBytes,
                 maxBytes.intValue()));

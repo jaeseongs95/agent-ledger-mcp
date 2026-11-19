@@ -124,7 +124,7 @@ MCP를 직접 호출하는 쪽은 작성자별 `Bearer` 세션 토큰(`STANDARD`
 | `ledger_specs` | 프로젝트의 명세를 상태, 상위 ID, 우선순위, 담당, 주의 종류로 거릅니다 |
 | `ledger_tasks` | 프로젝트의 작업을 상태, 담당, 주의 종류로 거릅니다 |
 | `ledger_criteria` | 프로젝트의 마일스톤 기준을 상태와 `milestone_name`으로 거릅니다 |
-| `ledger_attention` | 조치가 필요한 항목입니다: `OPEN_WITH_DELIVERABLE`, `RESOLVED_WITHOUT_DELIVERABLE`, `OPEN_NO_OWNER`, `SPEC_DRAFT_WITH_DELIVERABLE`, `SPEC_COMPLETED_NOT_VERIFIED`, `TASK_UNKNOWN`, `DONE_NOT_VERIFIED` |
+| `ledger_attention` | 조치가 필요한 항목입니다: `OPEN_WITH_DELIVERABLE`, `RESOLVED_WITHOUT_DELIVERABLE`, `OPEN_NO_OWNER`, `SPEC_COMPLETED_NOT_VERIFIED`, `TASK_UNKNOWN`, `DONE_NOT_VERIFIED` |
 | `ledger_stats` | 한 프로젝트 또는 전체의 상태별, 심각도별 건수입니다. `bucket`을 `day`로 주면 UTC 일별 신규 건수를 더합니다 |
 | `ledger_projects` | 프로젝트의 ID, 코드, 제목입니다 |
 | `ledger_codes` | 공통코드입니다. 폐기한 코드는 `include_inactive`를 주면 포함됩니다 |

@@ -330,4 +330,22 @@ class AttachmentToolsTest {
                 .isEqualTo("ARTIFACT_UNSUPPORTED_PURPOSE");
         session.ok("artifact_begin", begin.withPurpose("evidence"), AttachmentOutputs.Begun.class);
     }
+
+    @Test
+    @DisplayName("R2-BLOCKING-2: artifact_read allows maxBytes up to 262144 and refuses 262145 and Integer.MAX_VALUE with VALIDATION_FAILED")
+    void r2Blocking2_artifactReadEnforcesMaxBytesUpperBound(McpSession session, Scenario scenario) {
+        String author = scenario.actorWith("r2b2", "issue");
+        byte[] body = textBody(64);
+        String attachmentId = upload(session, author, "text/plain", body);
+
+        AttachmentOutputs.Page ok = session.ok("artifact_read",
+                new Read(attachmentId, 0, 0L, 262_144L, author), AttachmentOutputs.Page.class);
+        assertThat(ok.size()).isEqualTo(body.length);
+
+        for (long tooLarge : List.of(262_145L, (long) Integer.MAX_VALUE)) {
+            ToolError refused = session.failed("artifact_read", new Read(attachmentId, 0, 0L, tooLarge, author));
+            assertThat(refused.code()).isEqualTo("VALIDATION_FAILED");
+            assertThat(refused.issues()).extracting(ToolError.Issue::path).containsExactly("maxBytes");
+        }
+    }
 }

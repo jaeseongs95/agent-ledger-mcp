@@ -547,4 +547,45 @@ class VerifyRulesTest {
         assertThat(review(s, independent, "criterion", criterion.id(), 2, "MET").to()).isEqualTo("MET");
         assertThat(s.criterion(criterion.id()).state()).isEqualTo(CriterionState.MET);
     }
+
+    @Test
+    @DisplayName("R2-BLOCKING-1: HistoryOp.EDIT authors on issue/spec/task and OPEN->RESOLVED transition authors on issue cannot self-verify")
+    void r2Blocking1_editAuthorsAndIssueResolveReporterCannotSelfVerify(Scenario s) {
+        String issueEditor = s.actorWith("issue", "verify");
+        String issueResolver = s.actorWith("issue", "verify");
+        String specEditor = s.actorWith("spec", "verify");
+        String taskEditor = s.actorWith("task", "verify");
+        String recorder = s.actorWith("deliverable", "issue", "spec", "task");
+        String independent = s.actorWith("verify");
+
+        SaveResult issue = s.newIssue("r2-b1-issue");
+        s.bean(SaveService.class).save(issueEditor, s.edit("issue", issue.id(), 1, Map.of("title", "edited issue")));
+        s.bean(RecordDeliverableService.class).recordDeliverable(recorder,
+                deliverable("issue", issue.id(), Scenario.ref('a'), null, null, false));
+        long openVersion = s.issue(issue.id()).version();
+        s.bean(TransitionService.class).transition(issueResolver,
+                s.move("issue", issue.id(), openVersion, "RESOLVED", null));
+        long resolvedVersion = s.issue(issue.id()).version();
+        Expect.failure(() -> review(s, issueEditor, "issue", issue.id(), resolvedVersion, "VERIFIED"),
+                TransitionCode.SAME_SESSION);
+        Expect.failure(() -> review(s, issueResolver, "issue", issue.id(), resolvedVersion, "VERIFIED"),
+                TransitionCode.SAME_SESSION);
+        assertThat(review(s, independent, "issue", issue.id(), resolvedVersion, "VERIFIED").to()).isEqualTo("VERIFIED");
+
+        SaveResult spec = s.newSpec("r2-b1-spec");
+        s.bean(SaveService.class).save(specEditor,
+                s.edit("spec", spec.id(), 1, Map.of("acceptance_criteria", "tampered criteria")));
+        s.bean(TransitionService.class).transition(recorder,
+                s.move("spec", spec.id(), 2, "COMPLETED", Scenario.EVIDENCE));
+        Expect.failure(() -> review(s, specEditor, "spec", spec.id(), 3, "VERIFIED"), TransitionCode.SAME_SESSION);
+        assertThat(review(s, independent, "spec", spec.id(), 3, "VERIFIED").to()).isEqualTo("VERIFIED");
+
+        SaveResult task = s.newTask("r2-b1-task");
+        s.bean(SaveService.class).save(taskEditor,
+                s.edit("task", task.id(), 1, Map.of("success_condition", "tampered condition")));
+        s.bean(TransitionService.class).transition(recorder,
+                s.move("task", task.id(), 2, "COMPLETED", Scenario.EVIDENCE));
+        Expect.failure(() -> review(s, taskEditor, "task", task.id(), 3, "VERIFIED"), TransitionCode.SAME_SESSION);
+        assertThat(review(s, independent, "task", task.id(), 3, "VERIFIED").to()).isEqualTo("VERIFIED");
+    }
 }

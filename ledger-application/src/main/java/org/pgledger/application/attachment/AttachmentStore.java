@@ -26,6 +26,8 @@ import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ConflictException;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
+import org.pgledger.domain.error.ValidationException;
+import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.value.Sha256;
 import org.pgledger.domain.value.StorageKey;
 import org.springframework.stereotype.Component;
@@ -353,6 +355,13 @@ public class AttachmentStore {
      * @throws InfrastructureException ARTIFACT_CORRUPTED when the file is missing, its structure or a tag does not hold
      */
     public Page read(StorageKey key, String keyId, long offset, int maxBytes) {
+        if (offset < 0) {
+            throw ValidationException.invalid("offsetBytes", ValidationReason.MUST_NOT_BE_NEGATIVE);
+        }
+        if (maxBytes < 1 || maxBytes > AttachmentProperties.CHUNK_BYTES) {
+            throw ValidationException.invalid("maxBytes", ValidationReason.OUT_OF_RANGE, "1",
+                    Integer.toString(AttachmentProperties.CHUNK_BYTES));
+        }
         AttachmentKeys.Key aes = keys.byId(keyId);
         Path file = pathOf(key);
         if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {

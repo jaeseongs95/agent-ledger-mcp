@@ -124,6 +124,13 @@ public class AttachmentFlow {
     }
 
     public Page read(String actor, String attachmentId, int seq, long offsetBytes, int maxBytes) {
+        if (offsetBytes < 0) {
+            throw ValidationException.invalid("offsetBytes", ValidationReason.MUST_NOT_BE_NEGATIVE);
+        }
+        if (maxBytes < 1 || maxBytes > AttachmentProperties.CHUNK_BYTES) {
+            throw ValidationException.invalid("maxBytes", ValidationReason.OUT_OF_RANGE, "1",
+                    Integer.toString(AttachmentProperties.CHUNK_BYTES));
+        }
         FileView view = service.fileView(actor, attachmentId, seq);
         AttachmentStore.Page page = store.read(view.current().storageKey(), view.current().keyId(), offsetBytes, maxBytes);
         return new Page(

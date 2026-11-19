@@ -35,6 +35,8 @@ import org.pgledger.application.write.LinkCommand;
 import org.pgledger.application.write.LinkService;
 import org.pgledger.application.write.RecordCaseCommand;
 import org.pgledger.application.write.RecordCaseService;
+import org.pgledger.application.write.RecordDeliverableCommand;
+import org.pgledger.application.write.RecordDeliverableService;
 import org.pgledger.application.write.ReviewService;
 import org.pgledger.application.write.SaveService;
 import org.pgledger.application.write.TransitionService;
@@ -520,5 +522,63 @@ class RaceTest {
         saving.get(60, TimeUnit.SECONDS);
         assertThat(linking.get(60, TimeUnit.SECONDS)).contains(TrustCode.SESSION_NOT_GRANTED);
         assertThat(s.count("SELECT COUNT(*) FROM criterion_link WHERE criterion_id = ?", c.id())).isZero();
+    }
+
+    @Test
+    @DisplayName("R2-BLOCKING-3: record_deliverable on a spec or task across a concurrent uncommitted move to another project re-authorizes after the move and fails SESSION_NOT_GRANTED")
+    void r2Blocking3_recordDeliverableWaitsAndRechecksMovedProject(Scenario s) throws Exception {
+        String p2 = s.otherProject();
+        String mover = s.actorWith("spec", "task");
+        s.grant(mover, p2, "spec", "task");
+        String p1Only = s.actorWith("deliverable", "spec", "task");
+        SaveResult spec = s.bean(SaveService.class).save(mover, s.create("spec",
+                "FREE-SP-" + Scenario.uuid().substring(0, 8),
+                Map.of("project_id", s.projectId(), "title", "movable spec")));
+        SaveResult task = s.bean(SaveService.class).save(mover, s.create("task",
+                "FREE-TK-" + Scenario.uuid().substring(0, 8), s.taskFields("movable task")));
+
+        CountDownLatch specMoved = new CountDownLatch(1);
+        CountDownLatch specRelease = new CountDownLatch(1);
+        AtomicInteger specHolderPid = new AtomicInteger();
+        Future<?> movingSpec = holdingTransaction(s, () -> {
+            specHolderPid.set(s.ctx().jdbc().sql("SELECT pg_backend_pid()").query(Integer.class).single());
+            return s.bean(SaveService.class).save(mover, s.edit("spec", spec.id(), 1, Map.of("project_id", p2)));
+        }, specMoved, specRelease);
+        assertThat(specMoved.await(60, TimeUnit.SECONDS)).isTrue();
+        Future<Optional<ErrorCode>> deliveringSpec = Parallel.start(() -> Expect.outcome(() -> s
+                .bean(RecordDeliverableService.class).recordDeliverable(p1Only, new RecordDeliverableCommand(
+                        Scenario.uuid(), "spec", spec.id(), "code_change", Scenario.ref('s'), Scenario.REASON,
+                        "repo/e2e", "summary", null, null, null, true))));
+        org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(15))
+                .pollInterval(java.time.Duration.ofMillis(10))
+                .until(() -> deliveringSpec.isDone()
+                        || LockWaits.waitingFor(s.ctx().jdbc(), specHolderPid.get()) > 0);
+        specRelease.countDown();
+        movingSpec.get(60, TimeUnit.SECONDS);
+        assertThat(deliveringSpec.get(60, TimeUnit.SECONDS)).contains(TrustCode.SESSION_NOT_GRANTED);
+        assertThat(s.count("SELECT COUNT(*) FROM deliverable WHERE target_entity = 'SPEC' AND target_id = ?",
+                spec.id())).isZero();
+
+        CountDownLatch taskMoved = new CountDownLatch(1);
+        CountDownLatch taskRelease = new CountDownLatch(1);
+        AtomicInteger taskHolderPid = new AtomicInteger();
+        Future<?> movingTask = holdingTransaction(s, () -> {
+            taskHolderPid.set(s.ctx().jdbc().sql("SELECT pg_backend_pid()").query(Integer.class).single());
+            return s.bean(SaveService.class).save(mover, s.edit("task", task.id(), 1, Map.of("project_id", p2)));
+        }, taskMoved, taskRelease);
+        assertThat(taskMoved.await(60, TimeUnit.SECONDS)).isTrue();
+        Future<Optional<ErrorCode>> deliveringTask = Parallel.start(() -> Expect.outcome(() -> s
+                .bean(RecordDeliverableService.class).recordDeliverable(p1Only, new RecordDeliverableCommand(
+                        Scenario.uuid(), "task", task.id(), "code_change", Scenario.ref('t'), Scenario.REASON,
+                        "repo/e2e", "summary", null, null, null, true))));
+        org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(15))
+                .pollInterval(java.time.Duration.ofMillis(10))
+                .until(() -> deliveringTask.isDone()
+                        || LockWaits.waitingFor(s.ctx().jdbc(), taskHolderPid.get()) > 0);
+        taskRelease.countDown();
+        movingTask.get(60, TimeUnit.SECONDS);
+        assertThat(deliveringTask.get(60, TimeUnit.SECONDS)).contains(TrustCode.SESSION_NOT_GRANTED);
+        assertThat(s.count("SELECT COUNT(*) FROM deliverable WHERE target_entity = 'TASK' AND target_id = ?",
+                task.id())).isZero();
     }
 }

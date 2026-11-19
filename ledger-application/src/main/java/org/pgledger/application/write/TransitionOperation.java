@@ -280,6 +280,16 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
         mergeChain.mergedInto(row.id()).forEach(merged -> sources.add(rows.issue(merged)));
         List<SessionKey> reporters = new ArrayList<>(
                 ownerContributors(HistoryEntity.ISSUE, row.id().value(), row.ownerActorId()));
+        for (HistoryEntry entry : historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.ISSUE, row.id().value())) {
+            if (entry.authorId() == null) {
+                continue;
+            }
+            if (entry.op() == HistoryOp.EDIT) {
+                reporters.add(entry.authorId().sessionKey());
+            } else if (entry.op() == HistoryOp.TRANSITION && IssueStatus.RESOLVED.name().equals(entry.toState())) {
+                reporters.add(entry.authorId().sessionKey());
+            }
+        }
         for (Issue source : sources) {
             if (source.createdBy() != null) {
                 reporters.add(source.createdBy().sessionKey());
@@ -294,12 +304,17 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
         Instant now = clock.instant();
         Spec row = rows.specForWrite(id, expected);
         recheck(ctx, HistoryEntity.SPEC, row.projectId(), row.status(), to);
-        SpecReports reports = new SpecHistory(
-                historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.SPEC, id.value())).reports();
+        List<HistoryEntry> entries = historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.SPEC, id.value());
+        SpecReports reports = new SpecHistory(entries).reports();
         List<SessionKey> contributors = new ArrayList<>(deliverableContributors(DeliverableTarget.SPEC, id.value()));
         contributors.addAll(ownerContributors(HistoryEntity.SPEC, id.value(), row.ownerActorId()));
         if (row.createdBy() != null) {
             contributors.add(row.createdBy().sessionKey());
+        }
+        for (HistoryEntry entry : entries) {
+            if (entry.op() == HistoryOp.EDIT && entry.authorId() != null) {
+                contributors.add(entry.authorId().sessionKey());
+            }
         }
         row.status().requireTransitionTo(to, evidence, ctx.author().sessionKey(), contributors, reports);
         Spec saved = rows.saveSpec(row.transitioned(to, now));
@@ -314,12 +329,17 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
         Instant now = clock.instant();
         Task row = rows.taskForWrite(id, expected);
         recheck(ctx, HistoryEntity.TASK, row.projectId(), row.state(), to);
-        TaskReports reports = new TaskHistory(historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.TASK,
-                id.value())).reports();
+        List<HistoryEntry> entries = historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.TASK, id.value());
+        TaskReports reports = new TaskHistory(entries).reports();
         List<SessionKey> registrants = new ArrayList<>(deliverableContributors(DeliverableTarget.TASK, id.value()));
         registrants.addAll(ownerContributors(HistoryEntity.TASK, id.value(), row.ownerActorId()));
         if (row.createdBy() != null) {
             registrants.add(row.createdBy().sessionKey());
+        }
+        for (HistoryEntry entry : entries) {
+            if (entry.op() == HistoryOp.EDIT && entry.authorId() != null) {
+                registrants.add(entry.authorId().sessionKey());
+            }
         }
         row.state().requireTransitionTo(to, evidence, ctx.author().sessionKey(), registrants, reports);
         Task saved = rows.saveTask(row.transitioned(to, now));

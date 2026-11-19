@@ -21,6 +21,7 @@ import org.pgledger.application.write.WriteResult.RecordDeliverableResult;
 import org.pgledger.database.repository.Counter;
 import org.pgledger.database.repository.DeliverableRepository;
 import org.pgledger.database.repository.IdAllocator;
+import org.pgledger.database.repository.LinkRepository;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ConflictException;
 import org.pgledger.domain.error.TransitionCode;
@@ -41,6 +42,7 @@ import org.pgledger.domain.rule.Scope;
 import org.pgledger.domain.rule.SpecStatus;
 import org.pgledger.domain.rule.TaskState;
 import org.pgledger.domain.value.ActorId;
+import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.CanonicalPayload;
 import org.pgledger.domain.value.CodeValue;
 import org.pgledger.domain.value.Evidence;
@@ -65,7 +67,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class RecordDeliverableOperation extends WriteOperation<RecordDeliverableCommand, RecordDeliverableResult> {
 
+    private final WriteGate gate;
     private final Rows rows;
+    private final LinkRepository links;
     private final CodeRules codeRules;
     private final DeliverableRepository deliverables;
     private final IdAllocator ids;
@@ -73,11 +77,13 @@ public class RecordDeliverableOperation extends WriteOperation<RecordDeliverable
     private final AttachmentLinks attachments;
     private final Clock clock;
 
-    public RecordDeliverableOperation(WriteGate gate, ReceiptService receipts, Rows rows, CodeRules codeRules,
-            DeliverableRepository deliverables, IdAllocator ids, HistoryWriter history, AttachmentLinks attachments,
-            Clock clock) {
+    public RecordDeliverableOperation(WriteGate gate, ReceiptService receipts, Rows rows, LinkRepository links,
+            CodeRules codeRules, DeliverableRepository deliverables, IdAllocator ids, HistoryWriter history,
+            AttachmentLinks attachments, Clock clock) {
         super(gate, receipts, ReceiptOperation.RECORD_DELIVERABLE, RecordDeliverableResult.class);
+        this.gate = gate;
         this.rows = rows;
+        this.links = links;
         this.codeRules = codeRules;
         this.deliverables = deliverables;
         this.ids = ids;
@@ -141,7 +147,7 @@ public class RecordDeliverableOperation extends WriteOperation<RecordDeliverable
             CheckResult checkResult, Instant checkedAt, boolean mark, String attachment) {
         attachments.requireOwnedBy(attachment, ctx.author());
         Instant now = clock.instant();
-        ActorId author = ctx.author();
+        AuthorId author = ctx.author();
         Evidence evidence = Evidence.of(checkRef, null);
         Optional<Deliverable> known = deliverables.findByTargetEntityAndTargetIdAndKindAndDeliverableRef(
                 target, targetId, kind, deliverableRef);
@@ -208,7 +214,8 @@ public class RecordDeliverableOperation extends WriteOperation<RecordDeliverable
         return new TargetUpdate(op, row.status().name(), row.status().name(), oldOwner, newOwner, version, before);
     }
 
-    private TargetUpdate updateSpec(SpecId id, boolean exists, ActorId author, boolean mark, Instant now) {
+    private TargetUpdate updateSpec(SpecId id, boolean exists, AuthorId author, boolean mark, Instant now) {
+        pinSpec(author, id);
         Spec row = rows.specForWrite(id, null);
         row.requireNotVerified();
         ActorId nextOwner = exists ? row.ownerActorId() : author;
@@ -229,7 +236,8 @@ public class RecordDeliverableOperation extends WriteOperation<RecordDeliverable
         return new TargetUpdate(op, row.status().name(), row.status().name(), oldOwner, newOwner, version, before);
     }
 
-    private TargetUpdate updateTask(TaskId id, boolean exists, ActorId author, boolean mark, Instant now) {
+    private TargetUpdate updateTask(TaskId id, boolean exists, AuthorId author, boolean mark, Instant now) {
+        pinTask(author, id);
         Task row = rows.taskForWrite(id, null);
         row.requireNotVerified();
         ActorId nextOwner = exists ? row.ownerActorId() : author;
@@ -249,6 +257,26 @@ public class RecordDeliverableOperation extends WriteOperation<RecordDeliverable
         }
         HistoryOp op = Objects.equals(oldOwner, newOwner) ? null : HistoryOp.EDIT;
         return new TargetUpdate(op, row.state().name(), row.state().name(), oldOwner, newOwner, version, before);
+    }
+
+    private void pinSpec(AuthorId author, SpecId spec) {
+        while (true) {
+            ProjectId project = rows.spec(spec).projectId();
+            gate.authorize(author, new Target(project, Scope.DELIVERABLE));
+            if (links.pinSpecProject(spec, project)) {
+                return;
+            }
+        }
+    }
+
+    private void pinTask(AuthorId author, TaskId task) {
+        while (true) {
+            ProjectId project = rows.task(task).projectId();
+            gate.authorize(author, new Target(project, Scope.DELIVERABLE));
+            if (links.pinTaskProject(task, project)) {
+                return;
+            }
+        }
     }
 
     private record DeliverableWrite(long deliverableId, long historyId) {
