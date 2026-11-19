@@ -286,7 +286,8 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
             }
             if (entry.op() == HistoryOp.EDIT) {
                 reporters.add(entry.authorId().sessionKey());
-            } else if (entry.op() == HistoryOp.TRANSITION && IssueStatus.RESOLVED.name().equals(entry.toState())) {
+            } else if (entry.op() == HistoryOp.TRANSITION
+                    && Objects.equals(IssueStatus.RESOLVED.name(), entry.toState())) {
                 reporters.add(entry.authorId().sessionKey());
             }
         }
