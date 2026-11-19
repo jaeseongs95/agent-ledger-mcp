@@ -31,6 +31,8 @@ import org.pgledger.application.support.MergeFixture;
 import org.pgledger.application.support.Parallel;
 import org.pgledger.application.support.Parallel.Outcome;
 import org.pgledger.application.support.Scenario;
+import org.pgledger.application.write.CorrectCommand;
+import org.pgledger.application.write.CorrectService;
 import org.pgledger.application.write.LinkCommand;
 import org.pgledger.application.write.LinkService;
 import org.pgledger.application.write.RecordCaseCommand;
@@ -779,5 +781,59 @@ class RaceTest {
         attaching.get(60, TimeUnit.SECONDS);
         assertThat(movingAfterAttach.get(60, TimeUnit.SECONDS)).contains(TransitionCode.PROJECT_MOVE_FORBIDDEN);
         assertThat(s.spec(a2.id()).projectId().value()).isEqualTo(s.projectId());
+    }
+
+    @Test
+    @DisplayName("R5-F1: same-author concurrent move (high->low project) and edit/link/deliverable/correct never deadlock on session_grant")
+    void r5F1_sameAuthorConcurrentMoveAndWriteBetweenTwoProjectsNeverDeadlocks(Scenario s) {
+        String p1 = s.projectId();
+        String p2 = s.otherProject();
+        String low = p1.compareTo(p2) <= 0 ? p1 : p2;
+        String high = p1.compareTo(p2) <= 0 ? p2 : p1;
+        String sameAuthor = s.actorWith("issue", "spec", "task", "deliverable");
+        s.grant(sameAuthor, p2, "issue", "spec", "task", "deliverable");
+
+        SaveService save = s.bean(SaveService.class);
+        LinkService link = s.bean(LinkService.class);
+        RecordDeliverableService deliverables = s.bean(RecordDeliverableService.class);
+        CorrectService correct = s.bean(CorrectService.class);
+
+        for (int round = 0; round < 8; round++) {
+            int idx = round;
+            SaveResult spec = save.save(sameAuthor, s.create("spec",
+                    "FREE-R5-SP-" + idx + "-" + Scenario.uuid().substring(0, 6),
+                    Map.of("project_id", high, "title", "spec-" + idx)));
+            SaveResult task = save.save(sameAuthor, s.create("task",
+                    "FREE-R5-TK-" + idx + "-" + Scenario.uuid().substring(0, 6),
+                    Map.of("project_id", high, "title", "task-" + idx, "purpose", "p", "success_condition", "sc")));
+
+            List<Outcome<WriteResult>> outcomes = Parallel.all(List.of(
+                    // Moves spec high -> low (touches grants on high & low)
+                    () -> save.save(sameAuthor, s.edit("spec", spec.id(), 1, Map.of("project_id", low))),
+                    // Concurrent same-author edit on spec currently in high
+                    () -> save.save(sameAuthor, s.edit("spec", spec.id(), 1, Map.of("title", "edited-" + idx))),
+                    // Concurrent same-author link spec -> task
+                    () -> link.link(sameAuthor, new LinkCommand(Scenario.uuid(), "spec_task", spec.id(), task.id(),
+                            Scenario.REASON, null)),
+                    // Concurrent same-author deliverable on spec
+                    () -> deliverables.recordDeliverable(sameAuthor, new RecordDeliverableCommand(
+                            Scenario.uuid(), "spec", spec.id(), "code_change", Scenario.ref('r'), Scenario.REASON,
+                            "repo/r5", "summary", null, null, null, false)),
+                    // Concurrent same-author correct on spec create history
+                    () -> correct.correct(sameAuthor, new CorrectCommand(Scenario.uuid(), spec.historyId(),
+                            Scenario.REASON, null)),
+                    // Moves task high -> low concurrently with link
+                    () -> save.save(sameAuthor, s.edit("task", task.id(), 1, Map.of("project_id", low)))), 6);
+
+            for (Outcome<WriteResult> outcome : outcomes) {
+                if (!outcome.succeeded()) {
+                    assertThat(outcome.failure())
+                            .as("round %d must never fail with DB deadlock (40P01)", idx)
+                            .isInstanceOf(LedgerException.class);
+                    ErrorCode code = ((LedgerException) outcome.failure()).code();
+                    assertThat(code).isIn(ConflictCode.VERSION_CONFLICT, TransitionCode.NOTHING_CHANGES);
+                }
+            }
+        }
     }
 }

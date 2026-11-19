@@ -10,7 +10,7 @@ import org.pgledger.domain.value.ProjectId;
 import org.springframework.data.repository.Repository;
 
 /** Projects: insert and read. The counters are advanced by {@link IdAllocator}. */
-public interface ProjectRepository extends Repository<Project, ProjectId>, Insertable<Project> {
+public interface ProjectRepository extends Repository<Project, ProjectId>, Insertable<Project>, ProjectPin {
 
     Optional<Project> findById(ProjectId id);
 

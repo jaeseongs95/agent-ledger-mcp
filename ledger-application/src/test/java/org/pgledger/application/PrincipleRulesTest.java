@@ -95,16 +95,17 @@ class PrincipleRulesTest {
     }
 
     @Test
-    @DisplayName("TXP-002 an assignment of a column to itself in the SET clause of a SQL literal is found (SET version = version, SET note = note, also inside a list); a counter, a bind parameter and a text outside a literal are not")
+    @DisplayName("TXP-002 an assignment of a column to itself (or parameterized col = :p under WHERE col = :p) in the SET clause of a SQL literal is found; a counter, a real update and text outside a literal are not")
     void lockOnlyUpdate() throws IOException {
         source("Planted.java", "class Planted { String a = \"UPDATE defect SET version = version WHERE id = :id\"; }");
         source("PlantedList.java", "class PlantedList { String a = \"UPDATE session_key SET \" + \"revoked_at = :now, note = note WHERE id = :id\"; }");
+        source("PlantedParam.java", "class PlantedParam { String a = \"UPDATE spec SET project_id = :project WHERE id = :id AND project_id = :project\"; }");
         source("Clean.java", "class Clean { String a = \"UPDATE c SET n = n + 1 WHERE id = :id\"; "
                 + "String b = \"UPDATE d SET a = :a, b = :b WHERE id = :id\"; "
                 + "String c = \"SELECT x FROM t WHERE y = y\"; } // SET q = q");
 
         assertThat(keys(PrincipleRules.lockOnlyUpdates(sources))).containsExactlyInAnyOrder("Planted.java",
-                "PlantedList.java");
+                "PlantedList.java", "PlantedParam.java");
     }
 
     private Path source(String name, String text) throws IOException {

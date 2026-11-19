@@ -17,7 +17,7 @@ import org.springframework.data.repository.Repository;
  * <p>Ids are compared case-sensitively in Java via {@link #findById} while {@link #findByIdKey} detects
  * case-folded duplicates via {@code id_key}.
  */
-public interface SpecRepository extends Repository<Spec, SpecId> {
+public interface SpecRepository extends Repository<Spec, SpecId>, SpecPin {
 
     <S extends Spec> S save(S spec);
 

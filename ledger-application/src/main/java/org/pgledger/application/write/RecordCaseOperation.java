@@ -38,6 +38,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class RecordCaseOperation extends WriteOperation<RecordCaseCommand, RecordCaseResult> {
 
+    private final WriteGate gate;
     private final Rows rows;
     private final IssueRepository issues;
     private final IssueCaseRepository cases;
@@ -50,6 +51,7 @@ public class RecordCaseOperation extends WriteOperation<RecordCaseCommand, Recor
             IssueCaseRepository cases, IdAllocator ids, HistoryWriter history, AttachmentLinks attachments,
             Clock clock) {
         super(gate, receipts, ReceiptOperation.RECORD_CASE, RecordCaseResult.class);
+        this.gate = gate;
         this.rows = rows;
         this.issues = issues;
         this.cases = cases;
@@ -91,6 +93,7 @@ public class RecordCaseOperation extends WriteOperation<RecordCaseCommand, Recor
             throw new TransitionException(TransitionCode.MERGED_ISSUE,
                     List.of(issueId.value(), issue.mergedInto() == null ? "?" : issue.mergedInto().value()));
         }
+        gate.authorizeAll(ctx.author(), List.of(new Target(rows.issue(issueId).projectId(), Scope.ISSUE)));
         long caseId = ids.next(Counter.ISSUE_CASE);
         cases.insert(IssueCase.observe(caseId, issueId, observation, evidence, quote, observedAt, ctx.author(),
                 clock.instant()));

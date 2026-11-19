@@ -852,4 +852,26 @@ class DocsTest {
         assertThat(readme.toLowerCase(java.util.Locale.ROOT)).doesNotContain("nginx", "acme", "let's encrypt", "certbot", "caddy", "traefik",
                 "cloudflare", "tls-issue", "tls-renew", "seal-host", "--tls-acme", "--nginx-conf", "--tls-certificate", "--tls-key");
     }
+
+    @ParameterizedTest
+    @MethodSource("clientCases")
+    @DisplayName("R5-F4 every client plugin README (EN and KO) matches the personal-edition session-key policy: creates owner-only, reads existing folder/file whoever owns or reaches it, and never claims ACL or elevated-hook refusal")
+    void r5F4_clientReadmesMatchPersonalEditionKeyPolicy(Language language, String directory) {
+        String file = directory + "/" + (language == Language.EN ? "README.md" : "README.ko.md");
+        String text = Repository.read(file);
+
+        if (language == Language.EN) {
+            assertThat(text).as(file)
+                    .contains("reads an existing folder and key file whoever may reach or own them")
+                    .contains("personal edition trusts the whole PC")
+                    .doesNotContain("grants access to another principal is refused")
+                    .doesNotContain("runs elevated is refused");
+        } else {
+            assertThat(text).as(file)
+                    .contains("이미 있는 폴더와 키 파일은 누가 접근할 수 있든 누가 소유하든 그대로 읽습니다")
+                    .contains("개인판은 PC 전체를 신뢰합니다")
+                    .doesNotContain("다른 주체에 접근을 허용한 키 폴더는 거부")
+                    .doesNotContain("상승된 권한으로 실행한 훅도 거부");
+        }
+    }
 }

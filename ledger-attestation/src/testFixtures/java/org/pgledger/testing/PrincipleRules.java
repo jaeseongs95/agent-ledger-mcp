@@ -71,6 +71,13 @@ public final class PrincipleRules {
     /** {@code col = col} and nothing after the second {@code col} that makes it a calculation ({@code col = col + 1}). */
     private static final Pattern SELF_ASSIGNMENT = Pattern.compile(
             "(?i)(?<![\\w.:])([a-z_][a-z0-9_]*)\\s*=\\s*\\1(?![\\w.(:])(?!\\s*[-+*/%|])");
+    /**
+     * An {@code UPDATE} whose entire {@code SET} clause assigns {@code col = :param} while its {@code WHERE} clause
+     * requires {@code col = :param}: a parameterized no-op write equivalent to {@code SET col = col}.
+     */
+    private static final Pattern PARAM_SELF_UPDATE = Pattern.compile(
+            "(?is)\\bUPDATE\\s+[a-z_][a-z0-9_]*\\s+SET\\s+([a-z_][a-z0-9_]*)\\s*=\\s*(:[a-z_][a-z0-9_]*)\\s+WHERE\\s+"
+                    + "(?:(?!\\b(?:SELECT|INSERT|UPDATE|DELETE)\\b).)*?(?<![\\w.:])\\1\\s*=\\s*\\2(?![\\w.(:])");
     private static final Pattern OR_ELSE_NULL_CALL = Pattern.compile("\\.\\s*orElse\\s*\\(\\s*null\\s*\\)");
     /** {@code equals} only: {@code equalsIgnoreCase} has no null-safe static form, so two variables are compared with it. */
     private static final Pattern EQUALS_CALL = Pattern.compile("\\.\\s*equals\\s*\\(");
@@ -350,8 +357,9 @@ public final class PrincipleRules {
 
     /**
      * TXP-002 (principle 4.4): a lock-only UPDATE: an assignment of a column to itself in the SET clause of a SQL string literal
-     * ({@code SET version = version}, {@code SET note = note}), a statement that writes nothing and exists to take a row lock. A
-     * counter ({@code SET n = n + 1}) is a real write and is not found. The key is the file name.
+     * ({@code SET version = version}, {@code SET note = note}) or an UPDATE whose sole SET assignment sets {@code col = :param}
+     * under a WHERE predicate {@code col = :param}, a statement that writes nothing and exists to take a row lock. A counter
+     * ({@code SET n = n + 1}) is a real write and is not found. The key is the file name.
      */
     public static List<Finding> lockOnlyUpdates(Path mainJava) {
         Map<String, Finding> found = new LinkedHashMap<>();
@@ -365,6 +373,14 @@ public final class PrincipleRules {
                             file + ": SET " + assignment.group() + ": an UPDATE that writes nothing to take a lock; "
                                     + "the write of the use case decides a race (a conditional UPDATE by its row count)"));
                 }
+            }
+            Matcher paramSelf = PARAM_SELF_UPDATE.matcher(text);
+            if (paramSelf.find()) {
+                found.putIfAbsent(file.getFileName().toString(), new Finding(file.getFileName().toString(),
+                        file + ": SET " + paramSelf.group(1) + " = " + paramSelf.group(2)
+                                + " under WHERE " + paramSelf.group(1) + " = " + paramSelf.group(2)
+                                + ": a parameterized UPDATE that writes nothing to take a lock; "
+                                + "the write of the use case decides a race or explicitly justifies the guard in PRINCIPLE_ALLOWED"));
             }
         }
         return List.copyOf(found.values());

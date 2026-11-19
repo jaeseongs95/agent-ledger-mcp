@@ -12,7 +12,7 @@ import org.springframework.data.repository.Repository;
 /**
  * Milestone criteria ({@code milestone_criterion}): save and exact-id read.
  */
-public interface CriterionRepository extends Repository<Criterion, CriterionId> {
+public interface CriterionRepository extends Repository<Criterion, CriterionId>, CriterionPin {
 
     <S extends Criterion> S save(S criterion);
 

@@ -12,7 +12,6 @@ import org.pgledger.domain.value.ActorId;
 import org.pgledger.domain.value.CodeValue;
 import org.pgledger.domain.value.CriterionId;
 import org.pgledger.domain.value.IssueId;
-import org.pgledger.domain.value.ProjectId;
 import org.pgledger.domain.value.SpecId;
 import org.pgledger.domain.value.TaskId;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -142,30 +141,6 @@ public class LinkRepository {
     public boolean remove(CriterionLink link) {
         return jdbc.sql("DELETE FROM criterion_link WHERE link_key = :key").param("key", link.linkKey())
                 .update() == 1;
-    }
-
-    /** Pins a project row at its current version for this transaction; returns false if a concurrent project edit changed it. */
-    public boolean pinProject(ProjectId project, long version) {
-        return jdbc.sql("UPDATE project SET version = :version WHERE id = :project AND version = :version")
-                .param("project", project.value()).param("version", version).update() == 1;
-    }
-
-    /** Pins a task's current project for this transaction; returns false if a committed move changed it. */
-    public boolean pinTaskProject(TaskId task, ProjectId project) {
-        return jdbc.sql("UPDATE task SET project_id = :project WHERE id = :id AND project_id = :project")
-                .param("project", project.value()).param("id", task.value()).update() == 1;
-    }
-
-    /** Pins a spec's current project for this transaction; returns false if a committed move changed it. */
-    public boolean pinSpecProject(SpecId spec, ProjectId project) {
-        return jdbc.sql("UPDATE spec SET project_id = :project WHERE id = :id AND project_id = :project")
-                .param("project", project.value()).param("id", spec.value()).update() == 1;
-    }
-
-    /** Pins a milestone criterion's current project for this transaction; returns false if a committed move changed it. */
-    public boolean pinCriterionProject(CriterionId criterion, ProjectId project) {
-        return jdbc.sql("UPDATE milestone_criterion SET project_id = :project WHERE id = :id AND project_id = :project")
-                .param("project", project.value()).param("id", criterion.value()).update() == 1;
     }
 
     /** Ids of the criteria linked to an issue, in id order. */

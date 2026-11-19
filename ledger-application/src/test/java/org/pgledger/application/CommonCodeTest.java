@@ -280,5 +280,11 @@ class CommonCodeTest {
                 .orElseThrow();
         assertThat(kept.nameKo()).isEqualTo("내 이름");
         assertThat(kept.state()).isEqualTo(CodeState.INACTIVE);
+
+        // R5-NB2: service enforces reactivation confirmation atomically inside CommonCodeService.set
+        CodeCommand reactivate = new CodeCommand("ISSUE_CATEGORY", seedName, "내 이름", "My name", "내 설명",
+                "My description", 77, "ACTIVE");
+        Expect.failure(() -> real.set(reactivate, false, TestOwners.OWNER), ValidationCode.VALIDATION_FAILED);
+        assertThat(real.set(reactivate, true, TestOwners.OWNER).code().state()).isEqualTo(CodeState.ACTIVE);
     }
 }

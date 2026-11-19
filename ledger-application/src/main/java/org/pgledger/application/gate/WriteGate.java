@@ -3,6 +3,7 @@
 package org.pgledger.application.gate;
 
 import java.time.Clock;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -21,11 +22,14 @@ import org.springframework.stereotype.Component;
  * Decides whether a write may start. The order is fixed: a verification through the author channel, the host
  * attestation (present; a signed token with an author of the right format; the signature under the live key of the
  * author, which is read and not locked; the tool, operation key and arguments digest of the call; the time
- * window), the project, the grant. The attestation is
- * checked by the {@link AttestationVerifier}: nothing is looked up for a caller that cannot prove its author, and the
- * grant is only asked for the author the signature proves. The grant check is a conditional UPDATE in the
- * transaction of the write: it affects one row only for a live grant, stamps its last use, and keeps the row
- * locked until commit, so a revocation waits for the write and a committed revocation fails the check.
+ * window), the project, the grant. The attestation is checked by the {@link AttestationVerifier}: nothing is looked up
+ * for a caller that cannot prove its author, and the grant is only asked for the author the signature proves.
+ *
+ * <p>To prevent {@code session_grant} AB-BA deadlocks when movable entities change projects concurrently, {@link #open}
+ * performs a read-only grant liveness pre-check (taking no {@code session_grant} row locks), and each write operation
+ * acquires its entity locks first in canonical order ({@code project -> issue -> spec -> task -> milestone_criterion})
+ * before calling {@link #authorizeAll} once to conditionally update and lock all final {@code session_grant} rows in
+ * ascending {@code (project_id, grant_scope)} order.
  */
 @Component
 public class WriteGate {
@@ -41,7 +45,7 @@ public class WriteGate {
     }
 
     /**
-     * Runs the checks and returns the trusted session.
+     * Runs the gate checks (read-only grant pre-check) and returns the trusted session.
      *
      * @param actor        the host attestation or caller token as the caller sent it
      * @param operationKey the operation key the attestation must be bound to (the key of the call; of a batch, the one
@@ -66,9 +70,8 @@ public class WriteGate {
                     requireReviewerForVerification(channel, resolved.targets());
                 }
                 Set<Target> distinct = new LinkedHashSet<>(resolved.targets());
-                // one fixed order of grant rows, so two writes that need the same grants cannot wait for each other
                 distinct.stream().sorted(Comparator.comparing((Target t) -> t.project().value())
-                        .thenComparing(t -> t.scope())).forEach(target -> authorize(author, target));
+                        .thenComparing(Target::scope)).forEach(target -> requireLive(author, target));
                 yield new GateSession(author, channel);
             }
         };
@@ -109,13 +112,34 @@ public class WriteGate {
         return callerResolver.hasAmbientCaller();
     }
 
-    /** Checks (and stamps) one more grant of an author that already passed the gate. */
+    /** Read-only liveness check for one grant without locking {@code session_grant}. */
+    public void requireLive(AuthorId author, Target target) {
+        if (!grants.hasLive(author, target.project(), target.scope(), clock.instant())) {
+            throw notGranted(author, target);
+        }
+    }
+
+    /**
+     * Conditionally updates ({@code last_used_at}) and locks every required grant in ascending
+     * {@code (project_id, grant_scope)} order. Call after all entity pins/locks of the operation have been acquired.
+     */
+    public void authorizeAll(AuthorId author, Collection<Target> targets) {
+        Set<Target> distinct = new LinkedHashSet<>(targets);
+        distinct.stream().sorted(Comparator.comparing((Target t) -> t.project().value())
+                .thenComparing(Target::scope)).forEach(target -> authorize(author, target));
+    }
+
+    /** Checks (and stamps) one grant of an author that already passed the gate. */
     public void authorize(AuthorId author, Target target) {
         if (!grants.markUsed(author, target.project(), target.scope(), clock.instant())) {
-            throw new TrustException(TrustCode.SESSION_NOT_GRANTED,
-                    List.of(author.value(), target.scope().token(), target.project().value()),
-                    Map.of("author", List.of(author.value()), "scope", List.of(target.scope().token()),
-                            "project", List.of(target.project().value())));
+            throw notGranted(author, target);
         }
+    }
+
+    private static TrustException notGranted(AuthorId author, Target target) {
+        return new TrustException(TrustCode.SESSION_NOT_GRANTED,
+                List.of(author.value(), target.scope().token(), target.project().value()),
+                Map.of("author", List.of(author.value()), "scope", List.of(target.scope().token()),
+                        "project", List.of(target.project().value())));
     }
 }

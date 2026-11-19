@@ -17,7 +17,7 @@ import org.springframework.data.repository.Repository;
  * <p>Ids are compared case-sensitively in Java via {@link #findById} and {@link #existsById} so case-insensitive DBMS
  * collations never return a differently cased row.
  */
-public interface IssueRepository extends Repository<Issue, IssueId>, CaseSequence {
+public interface IssueRepository extends Repository<Issue, IssueId>, CaseSequence, IssueMergeGuard {
 
     <S extends Issue> S save(S issue);
 

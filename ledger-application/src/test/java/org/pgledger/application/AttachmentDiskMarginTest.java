@@ -7,11 +7,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.pgledger.application.attachment.AttachmentFlow;
 import org.pgledger.application.attachment.AttachmentProperties;
 import org.pgledger.application.attachment.AttachmentStore;
+import org.pgledger.application.attachment.StorageKeys;
+import org.pgledger.application.attachment.UploadCommands.Begin;
+import org.pgledger.application.attachment.UploadCommands.BeginFile;
+import org.pgledger.application.attachment.UploadCommands.Begun;
 import org.pgledger.application.support.AttachmentContext;
 import org.pgledger.application.support.Expect;
 import org.pgledger.application.support.AttachmentSettings;
@@ -19,12 +28,17 @@ import org.pgledger.application.support.Scenario;
 import org.pgledger.application.support.StoreFixture;
 import org.pgledger.application.support.TestTrees;
 import org.pgledger.application.support.Uploads;
+import org.pgledger.database.repository.UploadStagingRepository;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ConflictException;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.domain.error.LedgerException;
 import org.pgledger.domain.error.TrustCode;
+import org.pgledger.domain.error.ValidationCode;
+import org.pgledger.domain.model.UploadStaging;
+import org.pgledger.domain.rule.UploadState;
+import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.Sha256;
 import org.pgledger.domain.value.StorageKey;
 import org.springframework.test.context.TestPropertySource;
@@ -53,6 +67,57 @@ class AttachmentDiskMarginTest {
         assertThat(Long.parseLong(full.details().get("marginBytes").getFirst())).isEqualTo(DataSize.ofGigabytes(1_000_000).toBytes());
         assertThat(s.count("SELECT COUNT(*) FROM upload_staging WHERE owner = ?", actor)).as("no row").isZero();
         Expect.failure(() -> flow.begin(null, Uploads.begin(Uploads.body(600, 52))), TrustCode.HOST_ATTESTATION_REQUIRED);
+    }
+
+    @Test
+    @DisplayName("R5-F3: on a full disk, an idempotent begin replay succeeds without touching disk, and invalid or over-limit requests fail VALIDATION_FAILED/ARTIFACT_LIMIT without creating the attachment directory")
+    void r5F3_lowDiskIdempotentReplayAndInvalidOrOverLimitBegin(Scenario s) throws Exception {
+        String actor = s.actorWith("issue");
+        AttachmentFlow flow = s.bean(AttachmentFlow.class);
+        AttachmentProperties properties = s.bean(AttachmentProperties.class);
+        Path dir = properties.directory();
+        TestTrees.delete(dir);
+        assertThat(dir).doesNotExist();
+
+        // 1) Invalid begin fails VALIDATION_FAILED without touching disk or creating directory
+        Expect.failure(() -> flow.begin(actor, new Begin(" ", List.of(), null)), ValidationCode.VALIDATION_FAILED);
+        assertThat(dir).as("invalid begin must not create attachment directory").doesNotExist();
+
+        // 2) Over-limit (100 GB > max-file-bytes) fails ARTIFACT_LIMIT without touching disk or creating directory
+        Begin huge = new Begin("r5f3-huge-" + Scenario.uuid(),
+                List.of(new BeginFile("huge.bin", "application/octet-stream", 100_000_000_000L, "a".repeat(64))), null);
+        Expect.failure(() -> flow.begin(actor, huge), ConflictCode.ARTIFACT_LIMIT);
+        assertThat(dir).as("over-limit begin must not create attachment directory").doesNotExist();
+
+        // 3) Existing begun bundle replays idempotently on a full disk instead of failing ARTIFACT_STORAGE_FULL
+        String opKey = "r5f3-replay-" + Scenario.uuid();
+        byte[] body = Uploads.body(512, 55);
+        Begin replayCmd = Uploads.begin(opKey, body);
+        BeginFile declared = replayCmd.files().getFirst();
+        String attachmentId = UUID.randomUUID().toString();
+        String uploadId = UUID.randomUUID().toString();
+        Instant now = s.bean(Clock.class).instant().truncatedTo(ChronoUnit.MILLIS);
+        Instant expiresAt = now.plus(properties.uploadTtl());
+        s.ctx().tx(() -> {
+            s.bean(UploadStagingRepository.class).insert(new UploadStaging(
+                    uploadId, attachmentId, 0, AuthorId.of(actor), opKey, declared.fileName(), declared.mediaType(),
+                    declared.size(), Sha256.of(declared.sha256()), 0L, 0L, 0L, null, s.bean(StorageKeys.class).next(),
+                    properties.activeKeyId(), UploadState.STAGING, expiresAt, now, now));
+            return null;
+        });
+
+        Begun replayed = flow.begin(actor, replayCmd);
+        assertThat(replayed.attachmentId()).isEqualTo(attachmentId);
+        assertThat(replayed.files()).singleElement().satisfies(f -> {
+            assertThat(f.seq()).isZero();
+            assertThat(f.uploadId()).isEqualTo(uploadId);
+        });
+        assertThat(dir).as("idempotent replay must not create attachment directory").doesNotExist();
+
+        // 4) Conflicting payload for the same operationKey fails ARTIFACT_OPERATION_CONFLICT without touching disk
+        Expect.failure(() -> flow.begin(actor, Uploads.begin(opKey, Uploads.body(256, 56))),
+                ConflictCode.ARTIFACT_OPERATION_CONFLICT);
+        assertThat(dir).as("conflicting replay must not create attachment directory").doesNotExist();
     }
 
     @Test

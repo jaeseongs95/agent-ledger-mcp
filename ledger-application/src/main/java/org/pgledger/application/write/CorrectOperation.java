@@ -497,44 +497,23 @@ public class CorrectOperation extends WriteOperation<CorrectCommand, CorrectResu
     }
 
     /**
-     * Re-authorizes and pins mutable-project targets in canonical order (issue -> spec -> task -> criterion) inside
-     * the write transaction so a concurrent project move cannot slip past authorization (F7).
+     * Pins mutable-project targets in canonical entity order (issue -> spec -> task -> criterion) first, then authorizes
+     * every pinned {@code (project, scope)} once in canonical {@code session_grant} order so concurrent project moves
+     * cannot slip past authorization or deadlock on {@code session_grant}.
      */
     private void pinAndAuthorize(AuthorId author, List<Endpoint> endpoints) {
         List<Endpoint> ordered = new ArrayList<>(endpoints);
         ordered.sort(Comparator.comparingInt(CorrectOperation::orderRank).thenComparing(CorrectOperation::orderKey));
+        List<Target> targets = new ArrayList<>(ordered.size());
         for (Endpoint endpoint : ordered) {
             switch (endpoint) {
-                case Endpoint.IssueEnd e -> gate.authorize(author, new Target(rows.issue(e.id()).projectId(), e.scope()));
-                case Endpoint.SpecEnd e -> {
-                    while (true) {
-                        ProjectId project = rows.spec(e.id()).projectId();
-                        gate.authorize(author, new Target(project, e.scope()));
-                        if (links.pinSpecProject(e.id(), project)) {
-                            break;
-                        }
-                    }
-                }
-                case Endpoint.TaskEnd e -> {
-                    while (true) {
-                        ProjectId project = rows.task(e.id()).projectId();
-                        gate.authorize(author, new Target(project, e.scope()));
-                        if (links.pinTaskProject(e.id(), project)) {
-                            break;
-                        }
-                    }
-                }
-                case Endpoint.CriterionEnd e -> {
-                    while (true) {
-                        ProjectId project = rows.criterion(e.id()).projectId();
-                        gate.authorize(author, new Target(project, e.scope()));
-                        if (links.pinCriterionProject(e.id(), project)) {
-                            break;
-                        }
-                    }
-                }
+                case Endpoint.IssueEnd e -> targets.add(new Target(rows.issue(e.id()).projectId(), e.scope()));
+                case Endpoint.SpecEnd e -> targets.add(new Target(rows.pinSpec(e.id()), e.scope()));
+                case Endpoint.TaskEnd e -> targets.add(new Target(rows.pinTask(e.id()), e.scope()));
+                case Endpoint.CriterionEnd e -> targets.add(new Target(rows.pinCriterion(e.id()), e.scope()));
             }
         }
+        gate.authorizeAll(author, targets);
     }
 
     private static int orderRank(Endpoint endpoint) {

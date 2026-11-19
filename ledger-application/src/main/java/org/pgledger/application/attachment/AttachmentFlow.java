@@ -7,21 +7,19 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Objects;
 import org.pgledger.application.attachment.UploadCommands.Begin;
-import org.pgledger.application.attachment.UploadCommands.BeginFile;
 import org.pgledger.application.attachment.UploadCommands.Begun;
 import org.pgledger.application.attachment.UploadCommands.Chunk;
 import org.pgledger.application.attachment.UploadCommands.Finished;
 import org.pgledger.application.attachment.UploadCommands.Page;
 import org.pgledger.application.attachment.UploadCommands.Received;
 import org.pgledger.application.attachment.UploadCommands.Status;
+import org.pgledger.application.attachment.UploadService.BeginPlan;
 import org.pgledger.application.attachment.UploadService.ChunkPlan;
 import org.pgledger.application.attachment.UploadService.ClosedFile;
 import org.pgledger.application.attachment.UploadService.FileView;
 import org.pgledger.application.attachment.UploadService.FinishPlan;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ConflictException;
-import org.pgledger.domain.error.TrustCode;
-import org.pgledger.domain.error.TrustException;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.model.UploadStaging;
@@ -48,23 +46,17 @@ public class AttachmentFlow {
     }
 
     public Begun begin(String actor, Begin command) {
-        service.admit(actor);
-        long declaredBytes = 0L;
-        if (command != null && command.files() != null) {
-            for (BeginFile file : command.files()) {
-                if (file != null && file.size() > 0) {
-                    declaredBytes = declaredBytes > Long.MAX_VALUE - file.size()
-                            ? Long.MAX_VALUE
-                            : declaredBytes + file.size();
+        return switch (service.planBegin(actor, command)) {
+            case BeginPlan.Replay replay -> replay.begun();
+            case BeginPlan.Create create -> {
+                store.requireDiskSpace(create.totalDeclaredBytes());
+                try {
+                    yield service.begin(actor, command);
+                } catch (DuplicateKeyException race) {
+                    yield service.resolveDuplicateBegin(actor, command);
                 }
             }
-        }
-        store.requireDiskSpace(declaredBytes);
-        try {
-            return service.begin(actor, command);
-        } catch (DuplicateKeyException race) {
-            return service.resolveDuplicateBegin(actor, command);
-        }
+        };
     }
 
     /**

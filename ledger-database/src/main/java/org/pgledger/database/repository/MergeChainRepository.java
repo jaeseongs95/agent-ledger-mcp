@@ -42,31 +42,4 @@ public class MergeChainRepository {
         }
         return found;
     }
-
-    /**
-     * Conditionally enforces that an issue entering {@code MERGED} is not already {@code MERGED}, acquiring a row lock
-     * without altering {@code version} or {@code updated_at}.
-     */
-    public int pinMergeSource(IssueId id) {
-        return jdbc.sql("UPDATE issue SET merged_into = NULL WHERE id = :id AND status <> 'MERGED'")
-                .param("id", id.value()).update();
-    }
-
-    /**
-     * Conditionally enforces that a merge target is neither {@code MERGED} nor {@code VERIFIED}, acquiring a row lock
-     * on the target.
-     */
-    public int pinMergeTarget(IssueId id) {
-        return jdbc.sql("UPDATE issue SET merged_into = NULL WHERE id = :id AND status NOT IN ('MERGED', 'VERIFIED')")
-                .param("id", id.value()).update();
-    }
-
-    /**
-     * Conditionally enforces that an issue being verified is still {@code RESOLVED} before scanning its merge chain,
-     * serializing incoming merges onto the verified row.
-     */
-    public int pinVerifyCandidate(IssueId id) {
-        return jdbc.sql("UPDATE issue SET merged_into = NULL WHERE id = :id AND status = 'RESOLVED'")
-                .param("id", id.value()).update();
-    }
 }

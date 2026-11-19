@@ -64,6 +64,15 @@ public class UploadService {
     private static final Pattern MEDIA_TYPE =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*(;[ -~]*)?");
 
+    /** Decision for {@link AttachmentFlow#begin}: already begun idempotently, or validated within quotas and ready to create. */
+    public sealed interface BeginPlan {
+        record Replay(Begun begun) implements BeginPlan {
+        }
+
+        record Create(long totalDeclaredBytes) implements BeginPlan {
+        }
+    }
+
     /** Decision for {@link AttachmentFlow#chunk}: already applied idempotently, or ready to append to {@code row}. */
     public sealed interface ChunkPlan {
         record AlreadyApplied(UploadCommands.Received received) implements ChunkPlan {
@@ -122,11 +131,6 @@ public class UploadService {
         return clock.instant().truncatedTo(ChronoUnit.MILLIS);
     }
 
-    /** Verifies host attestation, live session key, and at least one live grant before touching disk. */
-    public void admit(String actor) {
-        gate.openWithAnyGrant(actor, Channel.AUTHOR);
-    }
-
     private AuthorId requireOwner(String actor) {
         return gate.openWithAnyGrant(actor, Channel.AUTHOR).author();
     }
@@ -137,64 +141,35 @@ public class UploadService {
                 : gate.openWithAnyGrant(actor, Channel.AUTHOR).author();
     }
 
+    /**
+     * Read-only pre-flight for {@link AttachmentFlow#begin}: verifies caller identity and grant, validates input,
+     * resolves idempotent operation-key replay/conflict, and checks file-size and quota limits before disk space is
+     * checked or directories are created.
+     */
+    @Transactional(readOnly = true)
+    public BeginPlan planBegin(String actor, Begin command) {
+        AuthorId owner = requireOwner(actor);
+        List<ValidatedFile> checkedFiles = validateBegin(command);
+        List<UploadStaging> existing = uploads.findByOwnerAndOperationKey(owner.value(), command.operationKey());
+        if (!existing.isEmpty()) {
+            return new BeginPlan.Replay(replayOrConflict(existing, checkedFiles, command.operationKey()));
+        }
+        long totalDeclared = totalDeclaredBytes(checkedFiles);
+        checkQuotas(owner, totalDeclared);
+        return new BeginPlan.Create(totalDeclared);
+    }
+
     public Begun begin(String actor, Begin command) {
         AuthorId owner = requireOwner(actor);
-        List<ValidationIssue> issues = new ArrayList<>();
-        if (command == null) {
-            throw ValidationException.invalid("request", ValidationReason.REQUIRED);
-        }
+        List<ValidatedFile> checkedFiles = validateBegin(command);
         String operationKey = command.operationKey();
-        if (operationKey == null || operationKey.isBlank()) {
-            issues.add(new ValidationIssue("operationKey", ValidationReason.REQUIRED, List.of()));
-        } else if (operationKey.length() > MAX_OPERATION_KEY) {
-            issues.add(new ValidationIssue("operationKey", ValidationReason.MUST_BE_AT_MOST_CHARS,
-                    List.of(Integer.toString(MAX_OPERATION_KEY))));
-        }
-        List<BeginFile> declared = command.files();
-        if (declared == null || declared.isEmpty()) {
-            issues.add(new ValidationIssue("files", ValidationReason.MUST_HOLD_ITEMS,
-                    List.of("1", Integer.toString(MAX_FILES))));
-        } else if (declared.size() > MAX_FILES) {
-            throw limitConflict("file-count", "Too many files in one bundle: " + declared.size() + " (max " + MAX_FILES + ")");
-        } else {
-            for (int seq = 0; seq < declared.size(); seq++) {
-                validateFile("files[" + seq + "]", declared.get(seq), issues);
-            }
-        }
-        if (!issues.isEmpty()) {
-            throw validation(issues);
-        }
-        String purpose = command.purpose();
-        if (purpose != null && !PURPOSE_EVIDENCE.equals(purpose)) {
-            throw new ValidationException(ValidationCode.ARTIFACT_UNSUPPORTED_PURPOSE, List.of(purpose),
-                    List.of(new ValidationIssue("purpose", ValidationReason.UNKNOWN_VALUE, List.of(purpose),
-                            List.of(PURPOSE_EVIDENCE))),
-                    Map.of());
-        }
-        List<ValidatedFile> checkedFiles = declared.stream().map(UploadService::toValidated).toList();
         uploads.lockQuotaGate();
         List<UploadStaging> existing = uploads.findByOwnerAndOperationKey(owner.value(), operationKey);
         if (!existing.isEmpty()) {
             return replayOrConflict(existing, checkedFiles, operationKey);
         }
         long totalDeclared = totalDeclaredBytes(checkedFiles);
-        long openBundles = uploads.countOpenBundles(owner.value());
-        if (openBundles >= properties.maxOpenPerOwner()) {
-            throw limitConflict("open-uploads",
-                    "Author has too many open upload bundles (" + openBundles + ", max " + properties.maxOpenPerOwner() + ")");
-        }
-        long declaredOpen = uploads.declaredOpenBytes();
-        long stagingBudget = properties.stagingBudgetBytes().toBytes();
-        if (addSaturating(declaredOpen, totalDeclared) > stagingBudget) {
-            throw limitConflict("staging-budget",
-                    "Staging upload budget exceeded (" + addSaturating(declaredOpen, totalDeclared) + " > " + stagingBudget + ")");
-        }
-        long keptBytes = files.totalBytes();
-        long attachmentBudget = properties.attachmentBudgetBytes().toBytes();
-        if (addSaturating(keptBytes, addSaturating(declaredOpen, totalDeclared)) > attachmentBudget) {
-            throw limitConflict("attachment-budget",
-                    "Total kept attachments plus open uploads budget exceeded");
-        }
+        checkQuotas(owner, totalDeclared);
         Instant now = now();
         Instant expiresAt = now.plus(properties.uploadTtl());
         String attachmentId = UUID.randomUUID().toString();
@@ -227,6 +202,62 @@ public class UploadService {
             begunFiles.add(new BegunFile(seq, uploadId));
         }
         return new Begun(attachmentId, List.copyOf(begunFiles), AttachmentProperties.CHUNK_BYTES, expiresAt);
+    }
+
+    private List<ValidatedFile> validateBegin(Begin command) {
+        List<ValidationIssue> issues = new ArrayList<>();
+        if (command == null) {
+            throw ValidationException.invalid("request", ValidationReason.REQUIRED);
+        }
+        String operationKey = command.operationKey();
+        if (operationKey == null || operationKey.isBlank()) {
+            issues.add(new ValidationIssue("operationKey", ValidationReason.REQUIRED, List.of()));
+        } else if (operationKey.length() > MAX_OPERATION_KEY) {
+            issues.add(new ValidationIssue("operationKey", ValidationReason.MUST_BE_AT_MOST_CHARS,
+                    List.of(Integer.toString(MAX_OPERATION_KEY))));
+        }
+        List<BeginFile> declared = command.files();
+        if (declared == null || declared.isEmpty()) {
+            issues.add(new ValidationIssue("files", ValidationReason.MUST_HOLD_ITEMS,
+                    List.of("1", Integer.toString(MAX_FILES))));
+        } else if (declared.size() > MAX_FILES) {
+            throw limitConflict("file-count", "Too many files in one bundle: " + declared.size() + " (max " + MAX_FILES + ")");
+        } else {
+            for (int seq = 0; seq < declared.size(); seq++) {
+                validateFile("files[" + seq + "]", declared.get(seq), issues);
+            }
+        }
+        if (!issues.isEmpty()) {
+            throw validation(issues);
+        }
+        String purpose = command.purpose();
+        if (purpose != null && !PURPOSE_EVIDENCE.equals(purpose)) {
+            throw new ValidationException(ValidationCode.ARTIFACT_UNSUPPORTED_PURPOSE, List.of(purpose),
+                    List.of(new ValidationIssue("purpose", ValidationReason.UNKNOWN_VALUE, List.of(purpose),
+                            List.of(PURPOSE_EVIDENCE))),
+                    Map.of());
+        }
+        return declared.stream().map(UploadService::toValidated).toList();
+    }
+
+    private void checkQuotas(AuthorId owner, long totalDeclared) {
+        long openBundles = uploads.countOpenBundles(owner.value());
+        if (openBundles >= properties.maxOpenPerOwner()) {
+            throw limitConflict("open-uploads",
+                    "Author has too many open upload bundles (" + openBundles + ", max " + properties.maxOpenPerOwner() + ")");
+        }
+        long declaredOpen = uploads.declaredOpenBytes();
+        long stagingBudget = properties.stagingBudgetBytes().toBytes();
+        if (addSaturating(declaredOpen, totalDeclared) > stagingBudget) {
+            throw limitConflict("staging-budget",
+                    "Staging upload budget exceeded (" + addSaturating(declaredOpen, totalDeclared) + " > " + stagingBudget + ")");
+        }
+        long keptBytes = files.totalBytes();
+        long attachmentBudget = properties.attachmentBudgetBytes().toBytes();
+        if (addSaturating(keptBytes, addSaturating(declaredOpen, totalDeclared)) > attachmentBudget) {
+            throw limitConflict("attachment-budget",
+                    "Total kept attachments plus open uploads budget exceeded");
+        }
     }
 
     /**

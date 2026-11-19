@@ -31,6 +31,23 @@ public class GrantStateRepository {
     }
 
     /**
+     * Read-only pre-check that the author holds a live grant (not revoked, not expired) for the scope without taking a
+     * row lock on {@code session_grant}. Write operations use this in {@code WriteGate.open} and acquire the
+     * {@code session_grant} row lock via {@link #markUsed} in canonical order after entity pins.
+     */
+    public boolean hasLive(AuthorId author, ProjectId project, Scope scope, Instant now) {
+        return jdbc.sql("SELECT COUNT(*) FROM session_grant "
+                + "WHERE author_id = :author AND project_id = :project AND grant_scope = :scope "
+                + "AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > :now)")
+                .param("now", UtcTime.toDb(now))
+                .param("author", author.value())
+                .param("project", project.value())
+                .param("scope", scope.name())
+                .query(Long.class)
+                .single() > 0;
+    }
+
+    /**
      * True when the author holds a live grant (not revoked, not expired) for the scope and its last use is stamped (the
      * affected row count of the conditional UPDATE is the answer); false when no live grant exists.
      */
@@ -68,6 +85,7 @@ public class GrantStateRepository {
         if (scope != null) {
             sql += " AND grant_scope = :scope";
         }
+        sql += " ORDER BY project_id, grant_scope, id";
         JdbcClient.StatementSpec spec = jdbc.sql(sql).param("author", author.value());
         if (project != null) {
             spec = spec.param("project", project.value());

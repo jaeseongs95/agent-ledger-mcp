@@ -36,6 +36,8 @@ import org.springframework.stereotype.Component;
 @Component
 public class Rows {
 
+    private static final int MAX_PIN_ATTEMPTS = 16;
+
     private final ProjectRepository projects;
     private final IssueRepository issues;
     private final SpecRepository specs;
@@ -105,6 +107,74 @@ public class Rows {
 
     public Criterion criterion(CriterionId id) {
         return criteria.findById(id).orElseThrow(() -> notFound(HistoryEntity.CRITERION.token(), id.value()));
+    }
+
+    /** Pins a project row at its current version in a bounded loop to serialize spec hierarchy mutations. */
+    public void pinProject(ProjectId id) {
+        for (int attempt = 0; attempt < MAX_PIN_ATTEMPTS; attempt++) {
+            Project current = project(id);
+            if (projects.pinVersion(id, current.version())) {
+                return;
+            }
+        }
+        throw new IllegalStateException("Could not pin project " + id.value() + " after " + MAX_PIN_ATTEMPTS
+                + " concurrent updates");
+    }
+
+    /** Pins a spec in its current project in a bounded loop and returns the pinned project id. */
+    public ProjectId pinSpec(SpecId id) {
+        for (int attempt = 0; attempt < MAX_PIN_ATTEMPTS; attempt++) {
+            ProjectId current = spec(id).projectId();
+            if (specs.pinProject(id, current)) {
+                return current;
+            }
+        }
+        throw new IllegalStateException("Could not pin spec " + id.value() + " after " + MAX_PIN_ATTEMPTS
+                + " concurrent project moves");
+    }
+
+    /** Attempts once to pin a spec in {@code project}, returning false if a concurrent move changed it. */
+    public boolean pinSpecInProject(SpecId id, ProjectId project) {
+        return specs.pinProject(id, project);
+    }
+
+    /** Pins a task in its current project in a bounded loop and returns the pinned project id. */
+    public ProjectId pinTask(TaskId id) {
+        for (int attempt = 0; attempt < MAX_PIN_ATTEMPTS; attempt++) {
+            ProjectId current = task(id).projectId();
+            if (tasks.pinProject(id, current)) {
+                return current;
+            }
+        }
+        throw new IllegalStateException("Could not pin task " + id.value() + " after " + MAX_PIN_ATTEMPTS
+                + " concurrent project moves");
+    }
+
+    /** Pins a milestone criterion in its current project in a bounded loop and returns the pinned project id. */
+    public ProjectId pinCriterion(CriterionId id) {
+        for (int attempt = 0; attempt < MAX_PIN_ATTEMPTS; attempt++) {
+            ProjectId current = criterion(id).projectId();
+            if (criteria.pinProject(id, current)) {
+                return current;
+            }
+        }
+        throw new IllegalStateException("Could not pin criterion " + id.value() + " after " + MAX_PIN_ATTEMPTS
+                + " concurrent project moves");
+    }
+
+    /** Guards an issue entering MERGED via its owning {@link IssueRepository}. */
+    public boolean guardMergeSource(IssueId id) {
+        return issues.guardMergeSource(id);
+    }
+
+    /** Guards an issue receiving a MERGED link via its owning {@link IssueRepository}. */
+    public boolean guardMergeTarget(IssueId id) {
+        return issues.guardMergeTarget(id);
+    }
+
+    /** Guards an issue entering VERIFIED via its owning {@link IssueRepository}. */
+    public boolean guardVerifyCandidate(IssueId id) {
+        return issues.guardVerifyCandidate(id);
     }
 
     public Issue issueForWrite(IssueId id, Long expectedVersion) {

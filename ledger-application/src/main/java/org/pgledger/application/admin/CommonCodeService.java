@@ -87,11 +87,25 @@ public class CommonCodeService {
      *         another action created the code at the same moment
      */
     public CodeResult set(CodeCommand command, OwnerIdentity actor) {
+        return set(command, true, actor);
+    }
+
+    /**
+     * Same as {@link #set(CodeCommand, OwnerIdentity)}, requiring explicit confirmation ({@code confirmReactivation})
+     * inside the transaction before reactivating an {@code INACTIVE} code to {@code ACTIVE}.
+     */
+    public CodeResult set(CodeCommand command, boolean confirmReactivation, OwnerIdentity actor) {
         CodeGroup group = Tokens.parse("group", command.group(), CodeGroup.values());
         CodeValue code = CodeValue.of(command.code());
         CodeState state = stateOf(command);
         return codes.findVersioned(group, code)
-                .map(existing -> change(existing, command, state, actor))
+                .map(existing -> {
+                    if (!confirmReactivation && existing.code().state() == CodeState.INACTIVE
+                            && state == CodeState.ACTIVE) {
+                        throw ValidationException.invalid("confirm_reactivation", ValidationReason.REQUIRED);
+                    }
+                    return change(existing, command, state, actor);
+                })
                 .orElseGet(() -> create(command, group, code, state, actor));
     }
 

@@ -20,7 +20,7 @@ The jar is not committed to the repository. `./gradlew :ledger-client-hook:assem
 
 ## Registering the key of a session
 
-1. The first write call of an author for a server creates the key pair of that author and server. The keys are kept in an owner-only folder: `~/.pg-ledger-mcp/session-keys`, or the absolute path in `LEDGER_HOOK_KEY_DIR`. On Windows the folder gets an ACL for its owner only (and new key files are created owner-only); a key folder that grants access to another principal is refused, while existing key files are accepted as-is. A hook that runs elevated is refused, because the key folder then belongs to another owner.
+1. The first write call of an author for a server creates the key pair of that author and server. The keys are kept in `~/.pg-ledger-mcp/session-keys`, or the absolute path in `LEDGER_HOOK_KEY_DIR`. The hook creates a new key folder and new key files owner-only (on Windows, with an ACL for its owner only), and reads an existing folder and key file whoever may reach or own them (a link is followed): the personal edition trusts the whole PC. A directory where the key file belongs, and an empty key file, are refused.
 2. `java -jar lib/ledger-client-hook.jar session-key <server> <author>` prints the server, the author, the public key and its fingerprint. `<server>` is the name of the MCP server as the host shows it in the tool name, for example `ledger` for `mcp__ledger__ledger_issue_save`.
 3. The owner compares the fingerprint with the one the session showed and registers the public key with `key-register` of `ledger-cli`, or on the grants page of the admin web. Only then do the grants of the author work.
 

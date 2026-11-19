@@ -55,7 +55,23 @@ class ArchitectureTest {
             PrincipleRules.OPTIONAL_STORED, Map.of(
                     "LedgerJdbcConfiguration.jdbcMappingContext",
                     "it overrides AbstractJdbcConfiguration.jdbcMappingContext of Spring Data JDBC, whose signature takes an "
-                            + "Optional<NamingStrategy>; an override cannot change the type of a parameter"));
+                            + "Optional<NamingStrategy>; an override cannot change the type of a parameter"),
+            PrincipleRules.NO_LOCK_ONLY_UPDATE, Map.of(
+                    "ProjectPinImpl.java",
+                    "ANSI SQL (ANSI-004 forbids SELECT FOR UPDATE) requires a conditional row pin on project to serialize "
+                            + "spec parent-chain and cross-project move write skew under READ COMMITTED without altering version",
+                    "SpecPinImpl.java",
+                    "ANSI SQL (ANSI-004 forbids SELECT FOR UPDATE) requires a conditional project pin on spec to serialize "
+                            + "concurrent project moves with cross-entity links, deliverables, edits and corrections without altering version",
+                    "TaskPinImpl.java",
+                    "ANSI SQL (ANSI-004 forbids SELECT FOR UPDATE) requires a conditional project pin on task to serialize "
+                            + "concurrent project moves with cross-entity links, deliverables, edits and corrections without altering version",
+                    "CriterionPinImpl.java",
+                    "ANSI SQL (ANSI-004 forbids SELECT FOR UPDATE) requires a conditional project pin on milestone_criterion to "
+                            + "serialize concurrent project moves with links, edits and corrections without altering version",
+                    "IssueMergeGuardImpl.java",
+                    "ANSI SQL (ANSI-004 forbids SELECT FOR UPDATE) requires conditional status guards on issue to serialize "
+                            + "two-row merge cycles and concurrent merge-versus-verify transitions without altering version"));
 
     static Stream<PrincipleRules.Rule> principleRules() {
         return PrincipleRules.all(MAIN, MAIN_JAVA, PRINCIPLE_ALLOWED).stream();

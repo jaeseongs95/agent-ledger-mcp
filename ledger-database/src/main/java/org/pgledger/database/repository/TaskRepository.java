@@ -20,7 +20,7 @@ import org.springframework.data.repository.Repository;
  * else. Ids that differ only in case cannot be created ({@link #findByIdKey} finds the id a new one would equal, and the key
  * column is UNIQUE), so there is never a sibling row to choose between.
  */
-public interface TaskRepository extends Repository<Task, TaskId> {
+public interface TaskRepository extends Repository<Task, TaskId>, TaskPin {
 
     <S extends Task> S save(S task);
 

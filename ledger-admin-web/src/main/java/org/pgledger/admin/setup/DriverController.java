@@ -11,8 +11,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * The driver page: what is registered, and the form that registers another (the owner only; also in setup mode). A
- * registration is recorded with the signed-in owner.
+ * The driver page: what is registered, and the form that registers another (the owner only). A registration is recorded
+ * with the signed-in owner.
  */
 @Controller
 public class DriverController {

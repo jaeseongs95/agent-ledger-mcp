@@ -188,41 +188,65 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
         });
     }
 
-    private void recheck(WriteContext ctx, HistoryEntity entity, ProjectId project, LifecycleState from,
-            LifecycleState to) {
+    private Scope requireChannel(WriteContext ctx, HistoryEntity entity, LifecycleState from, LifecycleState to) {
         Scope scope = Scope.forTransition(entity, from, to);
         if (scope == Scope.VERIFY && !ctx.session().channel().mayVerify()) {
             throw new TrustException(TrustCode.VERIFY_NEEDS_REVIEWER_LOGIN, List.of());
         }
-        gate.authorize(ctx.author(), new Target(project, scope));
+        return scope;
+    }
+
+    private void recheck(WriteContext ctx, HistoryEntity entity, ProjectId project, LifecycleState from,
+            LifecycleState to) {
+        Scope scope = requireChannel(ctx, entity, from, to);
+        gate.authorizeAll(ctx.author(), List.of(new Target(project, scope)));
     }
 
     private TransitionResult issue(WriteContext ctx, IssueId id, long expected, IssueStatus to, Evidence evidence,
             IssueId mergedInto, String attachment) {
         Instant now = clock.instant();
+        boolean locked = false;
+        boolean sourceReady = true;
+        boolean targetReady = true;
+        boolean verifyReady = true;
         if (to == IssueStatus.MERGED && mergedInto != null && !Objects.equals(id, mergedInto)) {
             if (id.value().compareTo(mergedInto.value()) <= 0) {
-                mergeChain.pinMergeSource(id);
-                mergeChain.pinMergeTarget(mergedInto);
+                sourceReady = rows.guardMergeSource(id);
+                targetReady = rows.guardMergeTarget(mergedInto);
             } else {
-                mergeChain.pinMergeTarget(mergedInto);
-                mergeChain.pinMergeSource(id);
+                targetReady = rows.guardMergeTarget(mergedInto);
+                sourceReady = rows.guardMergeSource(id);
             }
+            locked = sourceReady && targetReady;
         } else if (to == IssueStatus.VERIFIED) {
-            mergeChain.pinVerifyCandidate(id);
+            verifyReady = rows.guardVerifyCandidate(id);
+            locked = verifyReady;
         }
         Issue row = rows.issueForWrite(id, expected);
-        recheck(ctx, HistoryEntity.ISSUE, row.projectId(), row.status(), to);
-        List<SessionKey> contributors = deliverableContributors(DeliverableTarget.ISSUE, id.value());
-        DeliverableHistory delivHistory = new DeliverableHistory(contributors, reporters(row, to));
+        Scope scope = requireChannel(ctx, HistoryEntity.ISSUE, row.status(), to);
+        List<Target> authTargets = new ArrayList<>(2);
+        authTargets.add(new Target(row.projectId(), scope));
         MergeTarget target = null;
         if (to == IssueStatus.MERGED && mergedInto != null) {
             Issue targetRow = rows.issue(mergedInto);
-            gate.authorize(ctx.author(), new Target(targetRow.projectId(), HistoryEntity.ISSUE.writeScope()));
+            authTargets.add(new Target(targetRow.projectId(), HistoryEntity.ISSUE.writeScope()));
             target = new MergeTarget(targetRow.id(), targetRow.status());
         }
+        if (locked) {
+            gate.authorizeAll(ctx.author(), authTargets);
+        } else {
+            authTargets.forEach(t -> gate.requireLive(ctx.author(), t));
+        }
+        List<SessionKey> contributors = sourceReady && targetReady && verifyReady
+                ? deliverableContributors(DeliverableTarget.ISSUE, id.value())
+                : List.of();
+        DeliverableHistory delivHistory = new DeliverableHistory(contributors,
+                verifyReady ? reporters(row, to) : List.of());
         row.status().requireTransitionTo(to, evidence, delivHistory, ctx.author().sessionKey(), id, target);
         Issue saved = rows.saveIssue(row.transitioned(to, to == IssueStatus.MERGED ? mergedInto : null, now));
+        if (!locked) {
+            gate.authorizeAll(ctx.author(), authTargets);
+        }
         ChangeSet changes = to == IssueStatus.MERGED
                 ? ChangeSet.empty().with("merged_into", null, mergedInto.value()) : ChangeSet.empty();
         long historyId = history.append(ctx, HistoryWriter.Entry.of(HistoryEntity.ISSUE, id.value(),
@@ -304,8 +328,10 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
     private TransitionResult spec(WriteContext ctx, SpecId id, long expected, SpecStatus to, Evidence evidence,
             String attachment) {
         Instant now = clock.instant();
+        ProjectId pinnedProject = rows.pinSpec(id);
+        Spec current = rows.spec(id);
+        recheck(ctx, HistoryEntity.SPEC, pinnedProject, current.status(), to);
         Spec row = rows.specForWrite(id, expected);
-        recheck(ctx, HistoryEntity.SPEC, row.projectId(), row.status(), to);
         List<HistoryEntry> entries = historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.SPEC, id.value());
         SpecReports reports = new SpecHistory(entries).reports();
         List<SessionKey> contributors = new ArrayList<>(deliverableContributors(DeliverableTarget.SPEC, id.value()));
@@ -329,8 +355,10 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
     private TransitionResult task(WriteContext ctx, TaskId id, long expected, TaskState to, Evidence evidence,
             String attachment) {
         Instant now = clock.instant();
+        ProjectId pinnedProject = rows.pinTask(id);
+        Task current = rows.task(id);
+        recheck(ctx, HistoryEntity.TASK, pinnedProject, current.state(), to);
         Task row = rows.taskForWrite(id, expected);
-        recheck(ctx, HistoryEntity.TASK, row.projectId(), row.state(), to);
         List<HistoryEntry> entries = historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.TASK, id.value());
         TaskReports reports = new TaskHistory(entries).reports();
         List<SessionKey> registrants = new ArrayList<>(deliverableContributors(DeliverableTarget.TASK, id.value()));
@@ -354,8 +382,10 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
 
     private TransitionResult criterion(WriteContext ctx, CriterionId id, long expected, CriterionState to,
             Evidence evidence, String attachment) {
+        ProjectId pinnedProject = rows.pinCriterion(id);
+        Criterion current = rows.criterion(id);
+        recheck(ctx, HistoryEntity.CRITERION, pinnedProject, current.state(), to);
         Criterion row = rows.criterionForWrite(id, expected);
-        recheck(ctx, HistoryEntity.CRITERION, row.projectId(), row.state(), to);
         List<HistoryEntry> entries = historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.CRITERION, id.value());
         CriterionReports reports = new CriterionHistory(entries).reports();
         List<SessionKey> contributors = new ArrayList<>();

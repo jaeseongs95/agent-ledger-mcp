@@ -93,6 +93,10 @@ class GrantStateTest {
         Project other = seed.project();
         SessionGrant granted = grant(project, Seed.ALICE, Scope.ISSUE, admission.expiresAt());
         Project asked = admission.otherProject() ? other : project;
+        assertThat(ctx.tx(() -> grants.hasLive(admission.asker(), asked.id(), admission.asked(), NOW)))
+                .isEqualTo(admission.admitted());
+        assertThat(store.findById(granted.id()).orElseThrow().lastUsedAt())
+                .as("hasLive is read-only and does not stamp last_used_at").isNull();
         assertThat(ctx.tx(() -> grants.markUsed(admission.asker(), asked.id(), admission.asked(), NOW)))
                 .isEqualTo(admission.admitted());
         assertThat(store.findById(granted.id()).orElseThrow().lastUsedAt())

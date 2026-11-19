@@ -179,55 +179,67 @@ public class LinkOperation extends WriteOperation<LinkCommand, LinkResult> {
     private LinkResult execute(WriteContext ctx, LinkKind kind, String token, String a, String b,
             CodeDirection direction, boolean remove) {
         AuthorId author = ctx.author();
-        // Canonical entity pin order: spec -> task -> criterion (issues cannot move projects).
+        // Canonical entity pin order: spec -> task -> criterion (issues cannot move projects), then session_grant asc.
         Link link = switch (kind) {
             case ISSUE_TASK -> {
                 IssueId issue = IssueId.of(a);
                 TaskId task = TaskId.of(b);
-                authorizeIssue(author, issue, Scope.ISSUE);
-                pinTask(author, task, Scope.ISSUE);
+                ProjectId issueProject = rows.issue(issue).projectId();
+                ProjectId taskProject = rows.pinTask(task);
+                gate.authorizeAll(author, List.of(new Target(issueProject, Scope.ISSUE),
+                        new Target(taskProject, Scope.ISSUE)));
                 yield new IssueTaskLink(issue, task, author);
             }
             case ISSUE_SPEC -> {
                 IssueId issue = IssueId.of(a);
                 SpecId spec = SpecId.of(b);
-                authorizeIssue(author, issue, Scope.SPEC);
-                pinSpec(author, spec, Scope.SPEC);
+                ProjectId issueProject = rows.issue(issue).projectId();
+                ProjectId specProject = rows.pinSpec(spec);
+                gate.authorizeAll(author, List.of(new Target(issueProject, Scope.SPEC),
+                        new Target(specProject, Scope.SPEC)));
                 yield new IssueSpecLink(issue, spec, author);
             }
             case SPEC_TASK -> {
                 SpecId spec = SpecId.of(a);
                 TaskId task = TaskId.of(b);
-                pinSpec(author, spec, Scope.SPEC);
-                pinTask(author, task, Scope.SPEC);
+                ProjectId specProject = rows.pinSpec(spec);
+                ProjectId taskProject = rows.pinTask(task);
+                gate.authorizeAll(author, List.of(new Target(specProject, Scope.SPEC),
+                        new Target(taskProject, Scope.SPEC)));
                 yield new SpecTaskLink(spec, task, author);
             }
             case CRITERION_TASK -> {
                 CriterionId criterion = CriterionId.of(a);
                 TaskId task = TaskId.of(b);
-                pinTask(author, task, Scope.TASK);
-                pinCriterion(author, criterion, Scope.TASK);
+                ProjectId taskProject = rows.pinTask(task);
+                ProjectId criterionProject = rows.pinCriterion(criterion);
+                gate.authorizeAll(author, List.of(new Target(taskProject, Scope.TASK),
+                        new Target(criterionProject, Scope.TASK)));
                 yield CriterionLink.toTask(criterion, task, author);
             }
             case CRITERION_ISSUE -> {
                 CriterionId criterion = CriterionId.of(a);
                 IssueId issue = IssueId.of(b);
-                authorizeIssue(author, issue, Scope.TASK);
-                pinCriterion(author, criterion, Scope.TASK);
+                ProjectId issueProject = rows.issue(issue).projectId();
+                ProjectId criterionProject = rows.pinCriterion(criterion);
+                gate.authorizeAll(author, List.of(new Target(issueProject, Scope.TASK),
+                        new Target(criterionProject, Scope.TASK)));
                 yield CriterionLink.toIssue(criterion, issue, author);
             }
             case CRITERION_SPEC -> {
                 CriterionId criterion = CriterionId.of(a);
                 SpecId spec = SpecId.of(b);
-                pinSpec(author, spec, Scope.TASK);
-                pinCriterion(author, criterion, Scope.TASK);
+                ProjectId specProject = rows.pinSpec(spec);
+                ProjectId criterionProject = rows.pinCriterion(criterion);
+                gate.authorizeAll(author, List.of(new Target(specProject, Scope.TASK),
+                        new Target(criterionProject, Scope.TASK)));
                 yield CriterionLink.toSpec(criterion, spec, author);
             }
             case RELATION -> {
                 IssueId first = IssueId.of(a);
                 IssueId second = IssueId.of(b);
-                authorizeIssue(author, first, Scope.ISSUE);
-                authorizeIssue(author, second, Scope.ISSUE);
+                gate.authorizeAll(author, List.of(new Target(rows.issue(first).projectId(), Scope.ISSUE),
+                        new Target(rows.issue(second).projectId(), Scope.ISSUE)));
                 IssueRelation relation = IssueRelation.between(first, second, CodeValue.of(token), direction, author);
                 if (!remove) {
                     codes.catalog(CodeGroup.RELATION_KIND).check("issue_relation.kind", relation.relation(), null);
@@ -255,40 +267,6 @@ public class LinkOperation extends WriteOperation<LinkCommand, LinkResult> {
         long historyId = history.append(ctx, entry);
         return new LinkResult(WriteStatus.COMMITTED, link.historyEntity().token(), link.historyId(), remove,
                 historyId, author.value(), ctx.login());
-    }
-
-    private void authorizeIssue(AuthorId author, IssueId issue, Scope scope) {
-        gate.authorize(author, new Target(rows.issue(issue).projectId(), scope));
-    }
-
-    private void pinSpec(AuthorId author, SpecId spec, Scope scope) {
-        while (true) {
-            ProjectId project = rows.spec(spec).projectId();
-            gate.authorize(author, new Target(project, scope));
-            if (links.pinSpecProject(spec, project)) {
-                return;
-            }
-        }
-    }
-
-    private void pinTask(AuthorId author, TaskId task, Scope scope) {
-        while (true) {
-            ProjectId project = rows.task(task).projectId();
-            gate.authorize(author, new Target(project, scope));
-            if (links.pinTaskProject(task, project)) {
-                return;
-            }
-        }
-    }
-
-    private void pinCriterion(AuthorId author, CriterionId criterion, Scope scope) {
-        while (true) {
-            ProjectId project = rows.criterion(criterion).projectId();
-            gate.authorize(author, new Target(project, scope));
-            if (links.pinCriterionProject(criterion, project)) {
-                return;
-            }
-        }
     }
 
     private boolean addLink(Link link) {
