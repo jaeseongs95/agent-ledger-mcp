@@ -40,6 +40,10 @@ public final class Main {
     private static final List<String> UNUSED_INFRASTRUCTURE_BEANS = List.of(
             "org.springframework.context.event.internalEventListenerProcessor",
             "org.springframework.context.event.internalEventListenerFactory",
+            "org.springframework.boot.context.properties.EnableConfigurationPropertiesRegistrar.methodValidationExcludeFilter",
+            "org.springframework.boot.autoconfigure.context.PropertyPlaceholderAutoConfiguration",
+            "propertySourcesPlaceholderConfigurer",
+            "org.springframework.boot.jackson.autoconfigure.JacksonAutoConfiguration$JacksonMixinConfiguration",
             "jsonComponentModule",
             "jacksonMixinModule",
             "jacksonMixinModuleEntries");
@@ -73,7 +77,7 @@ public final class Main {
         }
         context.refresh();
         context.getBean(ApplicationRunner.class).run(new DefaultApplicationArguments(args));
-        return SpringApplication.exit(context);
+        return context.getBean(HookExitCode.class).getExitCode();
     }
 
     private static int runDynamic(StandardEnvironment environment, String[] args) {
