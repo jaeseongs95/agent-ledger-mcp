@@ -523,7 +523,9 @@ public class CorrectOperation extends WriteOperation<CorrectCommand, CorrectResu
      */
     private void pinAndAuthorize(WriteContext ctx, List<Endpoint> endpoints) {
         List<Endpoint> ordered = new ArrayList<>(endpoints);
-        ordered.sort(Comparator.comparingInt(CorrectOperation::orderRank).thenComparing(CorrectOperation::orderKey));
+        ordered.sort(Comparator.comparingInt(CorrectOperation::orderRank)
+                .thenComparing(CorrectOperation::entityId)
+                .thenComparing(CorrectOperation::endpointScope, Scope.LOCK_ORDER));
         List<Target> targets = new ArrayList<>(ordered.size());
         for (Endpoint endpoint : ordered) {
             switch (endpoint) {
@@ -548,12 +550,21 @@ public class CorrectOperation extends WriteOperation<CorrectCommand, CorrectResu
         };
     }
 
-    private static String orderKey(Endpoint endpoint) {
+    private static String entityId(Endpoint endpoint) {
         return switch (endpoint) {
-            case Endpoint.IssueEnd e -> e.id().value() + ":" + e.scope().ordinal();
-            case Endpoint.SpecEnd e -> e.id().value() + ":" + e.scope().ordinal();
-            case Endpoint.TaskEnd e -> e.id().value() + ":" + e.scope().ordinal();
-            case Endpoint.CriterionEnd e -> e.id().value() + ":" + e.scope().ordinal();
+            case Endpoint.IssueEnd e -> e.id().value();
+            case Endpoint.SpecEnd e -> e.id().value();
+            case Endpoint.TaskEnd e -> e.id().value();
+            case Endpoint.CriterionEnd e -> e.id().value();
+        };
+    }
+
+    private static Scope endpointScope(Endpoint endpoint) {
+        return switch (endpoint) {
+            case Endpoint.IssueEnd e -> e.scope();
+            case Endpoint.SpecEnd e -> e.scope();
+            case Endpoint.TaskEnd e -> e.scope();
+            case Endpoint.CriterionEnd e -> e.scope();
         };
     }
 }

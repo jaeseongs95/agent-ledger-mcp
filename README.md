@@ -517,7 +517,7 @@ default limit when the length is left out, the declaration carries a length. The
 driver may report it in a form that cannot be judged.
 
 The ledger does not use Flyway: a current Flyway release needs a module for each DBMS and refuses a database it has none for, while the
-ledger asks for ANSI SQL on any database whose driver you register. And the ledger migrates by this explicit command and not when a server
+ledger asks for ANSI SQL on any database whose driver you register (PostgreSQL is the database that is tested; other products are not tested). And the ledger migrates by this explicit command and not when a server
 starts, because the servers never hold the password of the DDL account: a server only checks the schema at start and, when files are
 pending, refuses to start and names `ledger-cli migrate`, so a server that is taken over cannot change the schema.
 

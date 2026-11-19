@@ -974,4 +974,97 @@ class RaceTest {
         assertThat(editorOutcome.get(60, TimeUnit.SECONDS)).contains(ConflictCode.CONCURRENT_MODIFICATION);
         assertThat(s.spec(spec.id()).projectId().value()).isEqualTo(pLow);
     }
+
+    @Test
+    @DisplayName("R7-B1 (a): same-project {ISSUE, SPEC, TASK} + DELIVERABLE batch concurrent with GrantService.revoke never deadlocks")
+    void r7B1_sameProjectDeliverableAndWriteScopesBatchVsRevokeNeverDeadlocks(Scenario s) {
+        String p = s.projectId();
+        BatchService batch = s.bean(BatchService.class);
+        SaveService save = s.bean(SaveService.class);
+        GrantService grants = s.bean(GrantService.class);
+
+        for (int round = 0; round < 12; round++) {
+            int idx = round;
+            String author = s.actorWith("issue", "spec", "task", "deliverable");
+            SaveResult issue = save.save(author, s.create("issue", null, s.issueFields("r7b1-i-" + idx)));
+            SaveResult spec = save.save(author, s.create("spec",
+                    "FREE-R7B1-SP-" + idx + "-" + Scenario.uuid().substring(0, 6),
+                    Map.of("project_id", p, "title", "r7b1-s-" + idx)));
+            SaveResult task = save.save(author, s.create("task",
+                    "FREE-R7B1-TK-" + idx + "-" + Scenario.uuid().substring(0, 6),
+                    Map.of("project_id", p, "title", "r7b1-t-" + idx, "purpose", "p", "success_condition", "sc")));
+
+            // Batch requires ISSUE, SPEC, TASK, and DELIVERABLE on the SAME project p.
+            // Prior to Scope.LOCK_ORDER, WriteGate locked ISSUE->SPEC->TASK->DELIVERABLE (enum ordinal) while
+            // GrantStateRepository.revokeLive locked DELIVERABLE->ISSUE->SPEC->TASK (SQL ORDER BY grant_scope).
+            List<BatchOpInput> ops = List.of(
+                    new BatchOpInput.Save("issue", Fields.of("title", "r7b1-i-ed-" + idx), Scenario.REASON, issue.id(),
+                            1L),
+                    new BatchOpInput.Save("spec", Fields.of("title", "r7b1-s-ed-" + idx), Scenario.REASON, spec.id(),
+                            1L),
+                    new BatchOpInput.Save("task", Fields.of("title", "r7b1-t-ed-" + idx), Scenario.REASON, task.id(),
+                            1L),
+                    new BatchOpInput.RecordDeliverable("issue", issue.id(), "code_change", Scenario.ref('d'),
+                            Scenario.REASON, "repo/r7b1", "r7b1 deliv", null, null, null, false, null));
+
+            List<Outcome<Object>> outcomes = Parallel.all(List.of(
+                    () -> batch.batch(author, Scenario.uuid(), ops),
+                    () -> {
+                        grants.revoke(new RevokeCommand(author, p, null), TestOwners.OWNER);
+                        return "revoked";
+                    },
+                    () -> grants.grant(new GrantCommand(author, p, List.of("task", "spec", "issue", "deliverable"),
+                            null, "r7b1 re-grant"), TestOwners.OWNER)), 3);
+
+            for (Outcome<Object> outcome : outcomes) {
+                if (!outcome.succeeded()) {
+                    assertThat(outcome.failure())
+                            .as("round %d must never fail with DB deadlock (40P01) or raw exception", idx)
+                            .isInstanceOf(LedgerException.class);
+                    ErrorCode code = ((LedgerException) outcome.failure()).code();
+                    assertThat(code).isIn(TrustCode.SESSION_NOT_GRANTED, ConflictCode.DUPLICATE_KEY,
+                            ConflictCode.VERSION_CONFLICT, ConflictCode.CONCURRENT_MODIFICATION);
+                }
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("R7-B1 (b): concurrent reverse-scope GrantService.grant calls on live grants never deadlock and preserve return order")
+    void r7B1_concurrentReverseScopeGrantsNeverDeadlock(Scenario s) {
+        String p = s.projectId();
+        GrantService grants = s.bean(GrantService.class);
+
+        for (int round = 0; round < 12; round++) {
+            int idx = round;
+            String author = s.actorWith("issue", "spec", "task", "deliverable");
+
+            List<Outcome<List<Long>>> outcomes = Parallel.all(List.of(
+                    () -> grants.grant(new GrantCommand(author, p, List.of("task", "spec", "issue", "deliverable"),
+                            null, "rev-" + idx), TestOwners.OWNER),
+                    () -> grants.grant(new GrantCommand(author, p, List.of("deliverable", "issue", "spec", "task"),
+                            null, "fwd-" + idx), TestOwners.OWNER),
+                    () -> grants.grant(new GrantCommand(author, p, List.of("task", "deliverable"),
+                            null, "sub1-" + idx), TestOwners.OWNER),
+                    () -> grants.grant(new GrantCommand(author, p, List.of("deliverable", "issue"),
+                            null, "sub2-" + idx), TestOwners.OWNER)), 4);
+
+            for (Outcome<List<Long>> outcome : outcomes) {
+                if (!outcome.succeeded()) {
+                    assertThat(outcome.failure())
+                            .as("round %d must never fail with DB deadlock (40P01) or raw exception", idx)
+                            .isInstanceOf(LedgerException.class);
+                    ErrorCode code = ((LedgerException) outcome.failure()).code();
+                    assertThat(code).isIn(ConflictCode.DUPLICATE_KEY, ConflictCode.CONCURRENT_MODIFICATION);
+                }
+            }
+
+            // Verify caller-requested scope order is preserved in returned grant IDs
+            List<Long> orderedIds = grants.grant(new GrantCommand(author, p, List.of("task", "deliverable", "issue"),
+                    null, "order-" + idx), TestOwners.OWNER);
+            assertThat(orderedIds).hasSize(3);
+            assertThat(orderedIds.get(0)).isLessThan(orderedIds.get(1));
+            assertThat(orderedIds.get(1)).isLessThan(orderedIds.get(2));
+        }
+    }
 }

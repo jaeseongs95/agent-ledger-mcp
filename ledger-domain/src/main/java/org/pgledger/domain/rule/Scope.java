@@ -2,6 +2,7 @@
 
 package org.pgledger.domain.rule;
 
+import java.util.Comparator;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.value.Token;
@@ -13,6 +14,13 @@ public enum Scope implements Token {
     TASK("task"),
     DELIVERABLE("deliverable"),
     VERIFY("verify");
+
+    /**
+     * Canonical lock order matching SQL {@code ORDER BY grant_scope} ({@code 'DELIVERABLE' < 'ISSUE' < 'SPEC' < 'TASK'
+     * < 'VERIFY'}). Every Java path that locks {@code session_grant} rows ({@code WriteGate}, {@code GrantService})
+     * must sort by this comparator so lock order matches {@code GrantStateRepository.revokeLive}.
+     */
+    public static final Comparator<Scope> LOCK_ORDER = Comparator.comparing(Scope::name);
 
     private final String token;
 

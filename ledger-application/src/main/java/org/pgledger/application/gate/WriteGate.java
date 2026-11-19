@@ -25,14 +25,20 @@ import org.springframework.stereotype.Component;
  * window), the project, the grant. The attestation is checked by the {@link AttestationVerifier}: nothing is looked up
  * for a caller that cannot prove its author, and the grant is only asked for the author the signature proves.
  *
- * <p>To prevent {@code session_grant} AB-BA deadlocks when movable entities change projects concurrently, {@link #open}
- * performs a read-only grant liveness pre-check (taking no {@code session_grant} row locks), and each write operation
- * acquires its entity locks first in canonical order ({@code project -> issue -> spec -> task -> milestone_criterion})
- * before calling {@link #authorizeAll} once to conditionally update and lock all final {@code session_grant} rows in
- * ascending {@code (project_id, grant_scope)} order.
+ * <p>To prevent {@code session_grant} AB-BA deadlocks when movable entities change projects concurrently or grants are
+ * revoked/re-issued concurrently, {@link #open} performs a read-only grant liveness pre-check (taking no
+ * {@code session_grant} row locks), and each write operation acquires its mutating/movable entity locks first in
+ * canonical order ({@code project -> issue -> spec -> task -> milestone_criterion}; read-only issue checks stay
+ * compatible with {@code FOR KEY SHARE} / {@code FOR NO KEY UPDATE}) before calling {@link #authorizeAll} (or
+ * {@link #authorizeAvailable} in a batch) once in {@link #TARGET_LOCK_ORDER}, which sorts {@code (project_id,
+ * grant_scope)} using {@link Scope#LOCK_ORDER} to match SQL {@code ORDER BY project_id, grant_scope, id}.
  */
 @Component
 public class WriteGate {
+
+    private static final Comparator<Target> TARGET_LOCK_ORDER = Comparator
+            .comparing((Target t) -> t.project().value())
+            .thenComparing(Target::scope, Scope.LOCK_ORDER);
 
     private final McpCallerResolver callerResolver;
     private final GrantStateRepository grants;
@@ -70,8 +76,7 @@ public class WriteGate {
                     requireReviewerForVerification(channel, resolved.targets());
                 }
                 Set<Target> distinct = new LinkedHashSet<>(resolved.targets());
-                distinct.stream().sorted(Comparator.comparing((Target t) -> t.project().value())
-                        .thenComparing(Target::scope)).forEach(target -> requireLive(author, target));
+                distinct.stream().sorted(TARGET_LOCK_ORDER).forEach(target -> requireLive(author, target));
                 yield new GateSession(author, channel);
             }
         };
@@ -120,29 +125,29 @@ public class WriteGate {
     }
 
     /**
-     * Conditionally updates ({@code last_used_at}) and locks every required grant in ascending
-     * {@code (project_id, grant_scope)} order. Call after all entity pins/locks of the operation have been acquired.
+     * Conditionally updates ({@code last_used_at}) and locks every required grant in canonical
+     * {@link #TARGET_LOCK_ORDER} ({@code project_id} asc, {@link Scope#LOCK_ORDER}). Call after all entity pins/locks
+     * of the operation have been acquired.
      */
     public void authorizeAll(AuthorId author, Collection<Target> targets) {
         Set<Target> distinct = new LinkedHashSet<>(targets);
-        distinct.stream().sorted(Comparator.comparing((Target t) -> t.project().value())
-                .thenComparing(Target::scope)).forEach(target -> authorize(author, target));
+        distinct.stream().sorted(TARGET_LOCK_ORDER).forEach(target -> authorize(author, target));
     }
 
     /**
-     * Conditionally updates ({@code last_used_at}) and locks every live grant among {@code targets} in ascending
-     * {@code (project_id, grant_scope)} order, returning the subset that was authorized. Missing or revoked grants are
-     * left out so a multi-operation batch reports {@code SESSION_NOT_GRANTED} at the exact failing operation index.
+     * Conditionally updates ({@code last_used_at}) and locks every live grant among {@code targets} in canonical
+     * {@link #TARGET_LOCK_ORDER} ({@code project_id} asc, {@link Scope#LOCK_ORDER}), returning the subset that was
+     * authorized. Missing or revoked grants are left out so a multi-operation batch reports
+     * {@code SESSION_NOT_GRANTED} at the exact failing operation index.
      */
     public Set<Target> authorizeAvailable(AuthorId author, Collection<Target> targets) {
         Set<Target> distinct = new LinkedHashSet<>(targets);
         Set<Target> authorized = new LinkedHashSet<>();
-        distinct.stream().sorted(Comparator.comparing((Target t) -> t.project().value())
-                .thenComparing(Target::scope)).forEach(target -> {
-                    if (grants.markUsed(author, target.project(), target.scope(), clock.instant())) {
-                        authorized.add(target);
-                    }
-                });
+        distinct.stream().sorted(TARGET_LOCK_ORDER).forEach(target -> {
+            if (grants.markUsed(author, target.project(), target.scope(), clock.instant())) {
+                authorized.add(target);
+            }
+        });
         return Set.copyOf(authorized);
     }
 

@@ -23,6 +23,7 @@ import org.pgledger.domain.error.LookupCode;
 import org.pgledger.domain.error.LookupException;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationReason;
+import org.pgledger.domain.model.Project;
 import org.pgledger.domain.model.SessionGrant;
 import org.pgledger.domain.rule.OwnerAction;
 import org.pgledger.domain.rule.Scope;
@@ -52,6 +53,8 @@ public class GrantService {
     /** What to revoke: all live grants of an author, narrowed by project and, with a project, by scope. */
     public record RevokeCommand(String author, String project, String scope) {
     }
+
+    private static final int MAX_PIN_ATTEMPTS = 16;
 
     private final GrantStateRepository state;
     private final SessionGrantRepository grants;
@@ -113,9 +116,8 @@ public class GrantService {
     private List<Long> issueAll(GrantCommand command, OwnerIdentity actor) {
         AuthorId author = Authors.of(command.author());
         ProjectId project = ProjectId.of(command.project());
-        if (!projects.existsById(project)) {
-            throw new LookupException(LookupCode.NOT_FOUND, List.of("project", project.value()));
-        }
+        Project current = projects.findById(project)
+                .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND, List.of("project", project.value())));
         if (command.scopes() == null || command.scopes().isEmpty()) {
             throw ValidationException.invalid("scopes", ValidationReason.MUST_NAME_A_SCOPE,
                     Tokens.allowed(Scope.values()));
@@ -126,15 +128,38 @@ public class GrantService {
                 : UtcInstant.parse("expires_at", command.expiresAt()).value();
         Instant now = clock.instant();
         requireLiveKey(author, now);
-        List<Long> issued = new ArrayList<>();
-        for (Scope scope : scopes) {
-            issued.add(issue(author, project, scope, now, expiresAt, command.note()));
+        // Pin project row (Tier 1) first to serialize concurrent multi-scope GrantService.grant calls on the same
+        // project along the global lock DAG (Tier 1 project -> Tier 6 session_grant in Scope.LOCK_ORDER -> Tier 9
+        // Counter.SESSION_GRANT), preventing active_key vs revoke AB-BA deadlocks.
+        pinProject(project, current);
+        // Phase 1: close all existing live grants in canonical Scope.LOCK_ORDER (matching SQL ORDER BY grant_scope and
+        // WriteGate) BEFORE allocating Counter.SESSION_GRANT so concurrent grant/revoke/batch calls never AB-BA deadlock.
+        List<Scope> requested = new ArrayList<>(scopes);
+        for (Scope scope : requested.stream().sorted(Scope.LOCK_ORDER).toList()) {
+            closeLive(author, project, scope, now);
+        }
+        // Phase 2: allocate IDs and insert new grants in caller-requested order so returned IDs preserve input order.
+        List<Long> issued = new ArrayList<>(requested.size());
+        for (Scope scope : requested) {
+            issued.add(insertGrant(author, project, scope, now, expiresAt, command.note()));
         }
         audit.record(actor, OwnerAction.GRANT_ISSUED, author.value() + "|" + project.value(),
-                "scopes=" + scopes.stream().map(Scope::token).collect(Collectors.joining(",")) + " expires="
+                "scopes=" + requested.stream().map(Scope::token).collect(Collectors.joining(",")) + " expires="
                         + (expiresAt == null ? "never" : expiresAt) + " grants="
                         + issued.stream().map(String::valueOf).collect(Collectors.joining(",")));
         return issued;
+    }
+
+    private void pinProject(ProjectId id, Project initial) {
+        Project current = initial;
+        for (int attempt = 0; attempt < MAX_PIN_ATTEMPTS; attempt++) {
+            if (projects.pinVersion(id, current.version())) {
+                return;
+            }
+            current = projects.findById(id)
+                    .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND, List.of("project", id.value())));
+        }
+        throw new ConflictException(ConflictCode.CONCURRENT_MODIFICATION, List.of("project", id.value()));
     }
 
     /**
@@ -154,9 +179,8 @@ public class GrantService {
         }
     }
 
-    private long issue(AuthorId author,ProjectId project, Scope scope, Instant now, Instant expiresAt,
+    private long insertGrant(AuthorId author, ProjectId project, Scope scope, Instant now, Instant expiresAt,
             String note) {
-        closeLive(author, project, scope, now);
         long id = ids.next(Counter.SESSION_GRANT);
         try {
             grants.insert(SessionGrant.issue(id, author, project, scope, AuthorId.OWNER, now, expiresAt, note));
