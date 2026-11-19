@@ -581,4 +581,79 @@ class RaceTest {
         assertThat(s.count("SELECT COUNT(*) FROM deliverable WHERE target_entity = 'TASK' AND target_id = ?",
                 task.id())).isZero();
     }
+
+    @Test
+    @DisplayName("R3-F1: save edit on spec, task, or criterion across a concurrent uncommitted move re-authorizes after the move and fails SESSION_NOT_GRANTED")
+    void r3F1_saveEditWaitsAndRechecksMovedProject(Scenario s) throws Exception {
+        String p2 = s.otherProject();
+        String mover = s.actorWith("spec", "task");
+        s.grant(mover, p2, "spec", "task");
+        String p1Only = s.actorWith("spec", "task");
+        SaveResult spec = s.bean(SaveService.class).save(mover, s.create("spec",
+                "FREE-SP-F1-" + Scenario.uuid().substring(0, 8),
+                Map.of("project_id", s.projectId(), "title", "movable spec")));
+        SaveResult task = s.bean(SaveService.class).save(mover, s.create("task",
+                "FREE-TK-F1-" + Scenario.uuid().substring(0, 8), s.taskFields("movable task")));
+        SaveResult criterion = s.newCriterion("FREE-CR-F1-" + Scenario.uuid().substring(0, 8), "m1", "c1");
+
+        // Spec move vs edit
+        CountDownLatch specMoved = new CountDownLatch(1);
+        CountDownLatch specRelease = new CountDownLatch(1);
+        AtomicInteger specHolderPid = new AtomicInteger();
+        Future<?> movingSpec = holdingTransaction(s, () -> {
+            specHolderPid.set(s.ctx().jdbc().sql("SELECT pg_backend_pid()").query(Integer.class).single());
+            return s.bean(SaveService.class).save(mover, s.edit("spec", spec.id(), 1, Map.of("project_id", p2)));
+        }, specMoved, specRelease);
+        assertThat(specMoved.await(60, TimeUnit.SECONDS)).isTrue();
+        Future<Optional<ErrorCode>> editingSpec = Parallel.start(() -> Expect.outcome(() -> s.bean(SaveService.class)
+                .save(p1Only, s.edit("spec", spec.id(), 1, Map.of("title", "unauthorized edit")))));
+        org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(15))
+                .pollInterval(java.time.Duration.ofMillis(10))
+                .until(() -> editingSpec.isDone()
+                        || LockWaits.waitingFor(s.ctx().jdbc(), specHolderPid.get()) > 0);
+        specRelease.countDown();
+        movingSpec.get(60, TimeUnit.SECONDS);
+        assertThat(editingSpec.get(60, TimeUnit.SECONDS)).contains(TrustCode.SESSION_NOT_GRANTED);
+        assertThat(s.spec(spec.id()).title()).isEqualTo("movable spec");
+
+        // Task move vs edit
+        CountDownLatch taskMoved = new CountDownLatch(1);
+        CountDownLatch taskRelease = new CountDownLatch(1);
+        AtomicInteger taskHolderPid = new AtomicInteger();
+        Future<?> movingTask = holdingTransaction(s, () -> {
+            taskHolderPid.set(s.ctx().jdbc().sql("SELECT pg_backend_pid()").query(Integer.class).single());
+            return s.bean(SaveService.class).save(mover, s.edit("task", task.id(), 1, Map.of("project_id", p2)));
+        }, taskMoved, taskRelease);
+        assertThat(taskMoved.await(60, TimeUnit.SECONDS)).isTrue();
+        Future<Optional<ErrorCode>> editingTask = Parallel.start(() -> Expect.outcome(() -> s.bean(SaveService.class)
+                .save(p1Only, s.edit("task", task.id(), 1, Map.of("title", "unauthorized edit")))));
+        org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(15))
+                .pollInterval(java.time.Duration.ofMillis(10))
+                .until(() -> editingTask.isDone()
+                        || LockWaits.waitingFor(s.ctx().jdbc(), taskHolderPid.get()) > 0);
+        taskRelease.countDown();
+        movingTask.get(60, TimeUnit.SECONDS);
+        assertThat(editingTask.get(60, TimeUnit.SECONDS)).contains(TrustCode.SESSION_NOT_GRANTED);
+        assertThat(s.task(task.id()).title()).isEqualTo("movable task");
+
+        // Criterion move vs edit
+        CountDownLatch critMoved = new CountDownLatch(1);
+        CountDownLatch critRelease = new CountDownLatch(1);
+        AtomicInteger critHolderPid = new AtomicInteger();
+        Future<?> movingCrit = holdingTransaction(s, () -> {
+            critHolderPid.set(s.ctx().jdbc().sql("SELECT pg_backend_pid()").query(Integer.class).single());
+            return s.bean(SaveService.class).save(mover, s.edit("criterion", criterion.id(), 1, Map.of("project_id", p2)));
+        }, critMoved, critRelease);
+        assertThat(critMoved.await(60, TimeUnit.SECONDS)).isTrue();
+        Future<Optional<ErrorCode>> editingCrit = Parallel.start(() -> Expect.outcome(() -> s.bean(SaveService.class)
+                .save(p1Only, s.edit("criterion", criterion.id(), 1, Map.of("criterion_text", "unauthorized edit")))));
+        org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(15))
+                .pollInterval(java.time.Duration.ofMillis(10))
+                .until(() -> editingCrit.isDone()
+                        || LockWaits.waitingFor(s.ctx().jdbc(), critHolderPid.get()) > 0);
+        critRelease.countDown();
+        movingCrit.get(60, TimeUnit.SECONDS);
+        assertThat(editingCrit.get(60, TimeUnit.SECONDS)).contains(TrustCode.SESSION_NOT_GRANTED);
+        assertThat(s.criterion(criterion.id()).criterionText()).isNotEqualTo("unauthorized edit");
+    }
 }

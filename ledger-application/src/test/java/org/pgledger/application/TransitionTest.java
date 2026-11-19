@@ -280,11 +280,14 @@ class TransitionTest {
     }
 
     @Test
-    @DisplayName("SVC-TRN-16: MET back to UNKNOWN needs the verify scope but no evidence")
-    void trn16_backToUnknownNeedsNoEvidence(Scenario s) {
+    @DisplayName("SVC-TRN-16 / R3-F6: MET back to UNKNOWN needs the verify scope and evidence")
+    void trn16_backToUnknownNeedsEvidence(Scenario s) {
         SaveResult c = s.newCriterion("1", "r", "c");
         review(s, Scenario.REVIEWER, "criterion", c.id(), 1, "MET", Scenario.EVIDENCE);
-        assertThat(review(s, Scenario.REVIEWER, "criterion", c.id(), 2, "UNKNOWN", null).to()).isEqualTo("UNKNOWN");
+        Expect.failure(() -> review(s, Scenario.REVIEWER, "criterion", c.id(), 2, "UNKNOWN", null),
+                TransitionCode.EVIDENCE_REQUIRED);
+        assertThat(review(s, Scenario.REVIEWER, "criterion", c.id(), 2, "UNKNOWN", Scenario.EVIDENCE).to())
+                .isEqualTo("UNKNOWN");
     }
 
     @Test

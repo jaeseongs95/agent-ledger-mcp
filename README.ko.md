@@ -90,7 +90,7 @@ MCP를 직접 호출하는 쪽은 작성자별 `Bearer` 세션 토큰(`STANDARD`
 | `ledger_spec_save` | author | 명세를 만들거나 수정합니다(`project_id`, `parent_id`, `title`, `summary`, `acceptance_criteria`, `priority`, `owner_actor_id`, `origin_ref`, `origin_quote`, `id`, `expected_version`, `reason`) |
 | `ledger_task_save` | author | 작업을 만들거나 수정합니다(`project_id`, `title`, `purpose`, `success_condition`, `owner_actor_id`, `origin_ref`, `origin_quote`, `id`, `expected_version`, `reason`) |
 | `ledger_criterion_save` | author | 마일스톤 기준을 만들거나 수정합니다(`project_id`, `id`, `milestone_name`, `goal_label`, `code`, `criterion_text`, `expected_version`, `reason`) |
-| `ledger_transition` | author | 작성자 채널 상태를 바꿉니다(`OPEN`, `IN_PROGRESS`, `RESOLVED`, `MERGED`, `DRAFT`, `PLANNED`, `ACTIVE`, `COMPLETED`, `BLOCKED`, `PENDING` 등) |
+| `ledger_transition` | author | 작성자 채널 상태를 바꿉니다(`OPEN`, `RESOLVED`, `NOT_AN_ISSUE`, `DISPUTED`, `MERGED`, `DRAFT`, `PLANNED`, `ACTIVE`, `BLOCKED`, `COMPLETED`, `CANCELLED`, `UNKNOWN`) |
 | `ledger_record_deliverable` | author | `issue`, `spec`, `task`에 산출물(`document`, `commit`, `media`, `scene`, `dataset`, `design`, `artifact`, `other`)을 기록하거나 보완하고, 선택으로 `RESOLVED` 또는 `COMPLETED` 처리합니다(`mark_done`) |
 | `ledger_record_case` | author | 이슈 아래에 관찰된 사례를 추가합니다(`MERGED` 이슈는 거절되며 병합 대상을 알려 줍니다) |
 | `ledger_link` | author | 이슈, 명세, 작업, 기준을 연결(`issue_task`, `issue_spec`, `spec_task`, `criterion_task`, `criterion_issue`, `criterion_spec` 또는 이슈 `RELATION_KIND` 코드)하거나 연결을 제거합니다 |

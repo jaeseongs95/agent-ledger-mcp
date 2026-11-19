@@ -18,9 +18,9 @@ public enum CriterionState implements LifecycleState {
     }
 
     /**
-     * Checks a move from this state to {@code to}. Moving to {@link #COMPLETED} needs evidence; moving to
-     * {@link #MET} or {@link #NOT_MET} needs evidence and a session different from every registrant or completion
-     * reporter.
+     * Checks a move from this state to {@code to}. Moving to {@link #COMPLETED} needs evidence; leaving
+     * {@link #MET} or {@link #NOT_MET} needs evidence; moving to {@link #MET} or {@link #NOT_MET} needs evidence and
+     * a session different from every registrant or completion reporter.
      */
     public void requireTransitionTo(CriterionState to, Evidence evidence, SessionKey actor,
             List<SessionKey> contributors, CriterionReports reports) {
@@ -28,6 +28,9 @@ public enum CriterionState implements LifecycleState {
             throw new TransitionException(TransitionCode.TRANSITION_INVALID, List.of(name(), to.name()));
         }
         if (to == COMPLETED && !evidence.provided()) {
+            throw new TransitionException(TransitionCode.EVIDENCE_REQUIRED, List.of(to.name()));
+        }
+        if (this.verification() && !evidence.provided()) {
             throw new TransitionException(TransitionCode.EVIDENCE_REQUIRED, List.of(to.name()));
         }
         if (to.verification() && !evidence.provided()) {

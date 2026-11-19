@@ -218,6 +218,7 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
         MergeTarget target = null;
         if (to == IssueStatus.MERGED && mergedInto != null) {
             Issue targetRow = rows.issue(mergedInto);
+            gate.authorize(ctx.author(), new Target(targetRow.projectId(), HistoryEntity.ISSUE.writeScope()));
             target = new MergeTarget(targetRow.id(), targetRow.status());
         }
         row.status().requireTransitionTo(to, evidence, delivHistory, ctx.author().sessionKey(), id, target);

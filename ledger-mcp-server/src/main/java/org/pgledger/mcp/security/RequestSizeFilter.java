@@ -57,14 +57,16 @@ public final class RequestSizeFilter extends OncePerRequestFilter {
             refuse(request, response);
             return;
         }
-        if (declared < 0 && request.getHeader("Transfer-Encoding") != null) {
+        if (declared < 0) {
             byte[] body = request.getInputStream().readNBytes(Math.toIntExact(maxBytes + 1));
             if (body.length > maxBytes) {
                 refuse(request, response);
                 return;
             }
-            chain.doFilter(new BufferedBodyRequest(request, body), response);
-            return;
+            if (body.length > 0) {
+                chain.doFilter(new BufferedBodyRequest(request, body), response);
+                return;
+            }
         }
         chain.doFilter(request, response);
     }

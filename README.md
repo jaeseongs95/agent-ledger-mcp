@@ -127,7 +127,7 @@ Write tools (authenticated author and a live grant are needed). Every write tool
 | `ledger_spec_save` | author | create or edit a specification (`project_id`, `parent_id`, `title`, `summary`, `acceptance_criteria`, `priority`, `owner_actor_id`, `origin_ref`, `origin_quote`, `id`, `expected_version`, `reason`) |
 | `ledger_task_save` | author | create or edit a task (`project_id`, `title`, `purpose`, `success_condition`, `owner_actor_id`, `origin_ref`, `origin_quote`, `id`, `expected_version`, `reason`) |
 | `ledger_criterion_save` | author | create or edit a milestone criterion (`project_id`, `id`, `milestone_name`, `goal_label`, `code`, `criterion_text`, `expected_version`, `reason`) |
-| `ledger_transition` | author | change author-side status or state (`OPEN`, `IN_PROGRESS`, `RESOLVED`, `MERGED`, `DRAFT`, `PLANNED`, `ACTIVE`, `COMPLETED`, `BLOCKED`, `PENDING`, and so on) |
+| `ledger_transition` | author | change author-side status or state (`OPEN`, `RESOLVED`, `NOT_AN_ISSUE`, `DISPUTED`, `MERGED`, `DRAFT`, `PLANNED`, `ACTIVE`, `BLOCKED`, `COMPLETED`, `CANCELLED`, `UNKNOWN`) |
 | `ledger_record_deliverable` | author | record or amend a deliverable (`document`, `commit`, `media`, `scene`, `dataset`, `design`, `artifact`, `other`) on an `issue`, `spec` or `task`, optionally marking it `RESOLVED` or `COMPLETED` (`mark_done`) |
 | `ledger_record_case` | author | add an observed case under an issue (`MERGED` issues are refused and name their target) |
 | `ledger_link` | author | link issues, specs, tasks and criteria (`issue_task`, `issue_spec`, `spec_task`, `criterion_task`, `criterion_issue`, `criterion_spec`, or issue `RELATION_KIND` codes), or remove a link |

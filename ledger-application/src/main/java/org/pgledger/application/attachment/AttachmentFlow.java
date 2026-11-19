@@ -155,8 +155,8 @@ public class AttachmentFlow {
         } catch (IllegalArgumentException invalidBase64) {
             throw ValidationException.invalid("data", ValidationReason.MUST_MATCH, invalidBase64, "base64");
         }
-        if (decoded.length > AttachmentProperties.CHUNK_BYTES) {
-            throw ValidationException.invalid("data", ValidationReason.OUT_OF_RANGE, "0",
+        if (decoded.length < 1 || decoded.length > AttachmentProperties.CHUNK_BYTES) {
+            throw ValidationException.invalid("data", ValidationReason.OUT_OF_RANGE, "1",
                     Integer.toString(AttachmentProperties.CHUNK_BYTES));
         }
         return decoded;

@@ -233,6 +233,10 @@ public class UploadService {
         if (sequence < 0) {
             throw ValidationException.invalid("sequence", ValidationReason.MUST_NOT_BE_NEGATIVE);
         }
+        if (chunkBytes < 1 || chunkBytes > AttachmentProperties.CHUNK_BYTES) {
+            throw ValidationException.invalid("data", ValidationReason.OUT_OF_RANGE, "1",
+                    Integer.toString(AttachmentProperties.CHUNK_BYTES));
+        }
         AuthorId caller = optionalOwner(actor);
         UploadStaging row = findOwnedUpload(caller, uploadId);
         if (row.state() != UploadState.STAGING) {
@@ -258,7 +262,20 @@ public class UploadService {
             throw new ConflictException(ConflictCode.ARTIFACT_HASH_MISMATCH,
                     List.of("Chunk bytes exceed declared size " + row.declaredSize()));
         }
+        long maxSegments = maxSegmentsFor(row.declaredSize());
+        if (row.nextSequence() >= maxSegments) {
+            throw limitConflict("chunk-count",
+                    "Upload exceeds maximum chunk count (" + maxSegments + ") for declared size " + row.declaredSize());
+        }
         return new ChunkPlan.Append(row);
+    }
+
+    static long maxSegmentsFor(long declaredSize) {
+        if (declaredSize <= 0) {
+            return 0L;
+        }
+        long byFloor = (declaredSize + 4095L) / 4096L;
+        return Math.max(16L, byFloor);
     }
 
     @Transactional

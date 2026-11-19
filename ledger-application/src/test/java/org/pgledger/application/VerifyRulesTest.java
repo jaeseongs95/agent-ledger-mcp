@@ -32,6 +32,7 @@ import org.pgledger.domain.context.ActorScope;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.LedgerException;
 import org.pgledger.domain.error.TransitionCode;
+import org.pgledger.domain.error.TrustCode;
 import org.pgledger.domain.error.ValidationCode;
 import org.pgledger.domain.rule.CriterionState;
 import org.pgledger.domain.rule.IssueStatus;
@@ -147,7 +148,7 @@ class VerifyRulesTest {
 
         review(s, Scenario.REVIEWER, "spec", sp.id(), 3, "ACTIVE");
         review(s, Scenario.REVIEWER, "task", t.id(), 3, "ACTIVE");
-        s.bean(ReviewService.class).review(Scenario.REVIEWER, s.move("criterion", cMet.id(), 2, "UNKNOWN", null));
+        review(s, Scenario.REVIEWER, "criterion", cMet.id(), 2, "UNKNOWN");
 
         assertThat(s.bean(SaveService.class).save(Scenario.AUTHOR,
                 s.edit("spec", sp.id(), 4, Map.of("title", "reopened spec"))).version()).isEqualTo(5);
@@ -328,8 +329,10 @@ class VerifyRulesTest {
         assertThat(s.bean(Rows.class).criterion(CriterionId.of(c.id())).state()).isEqualTo(CriterionState.COMPLETED);
         String independent = s.actorWith("verify");
         assertThat(review(s, independent, "criterion", c.id(), 2, "MET").to()).isEqualTo("MET");
+        Expect.failure(() -> s.bean(ReviewService.class).review(Scenario.AUTHOR,
+                s.move("criterion", c.id(), 3, "UNKNOWN", null)), TransitionCode.EVIDENCE_REQUIRED);
         assertThat(s.bean(ReviewService.class).review(Scenario.AUTHOR,
-                s.move("criterion", c.id(), 3, "UNKNOWN", null)).to()).isEqualTo("UNKNOWN");
+                s.move("criterion", c.id(), 3, "UNKNOWN", Scenario.EVIDENCE)).to()).isEqualTo("UNKNOWN");
     }
 
     @Test
@@ -587,5 +590,74 @@ class VerifyRulesTest {
                 s.move("task", task.id(), 2, "COMPLETED", Scenario.EVIDENCE));
         Expect.failure(() -> review(s, taskEditor, "task", task.id(), 3, "VERIFIED"), TransitionCode.SAME_SESSION);
         assertThat(review(s, independent, "task", task.id(), 3, "VERIFIED").to()).isEqualTo("VERIFIED");
+    }
+
+    @Test
+    @DisplayName("R3-F2: merging an issue into a target in another project requires issue grant on the target project")
+    void r3F2_mergeAuthorizesTargetProjectUnderLock(Scenario s) {
+        String p2 = s.otherProject();
+        String p2Author = s.actorWith("issue");
+        s.grant(p2Author, p2, "issue");
+        String p1Only = s.actorWith("issue");
+
+        SaveResult source = s.newIssue("r3-f2-src");
+        var p2Fields = s.issueFields("r3-f2-target");
+        p2Fields.put("project_id", p2);
+        SaveResult target = s.bean(SaveService.class).save(p2Author, s.create("issue", null, p2Fields));
+
+        Expect.failure(() -> s.bean(TransitionService.class).transition(p1Only,
+                new org.pgledger.application.write.TransitionCommand(Scenario.uuid(), "issue", source.id(), 1L,
+                        "MERGED", Scenario.REASON, null, null, target.id())),
+                TrustCode.SESSION_NOT_GRANTED);
+        assertThat(s.issue(source.id()).status()).isEqualTo(IssueStatus.OPEN);
+
+        assertThat(s.bean(TransitionService.class).transition(p2Author,
+                new org.pgledger.application.write.TransitionCommand(Scenario.uuid(), "issue", source.id(), 1L,
+                        "MERGED", Scenario.REASON, null, null, target.id())).to()).isEqualTo("MERGED");
+    }
+
+    @Test
+    @DisplayName("R3-F3: spec parent must stay in the same project, be acyclic, and block orphaning project moves")
+    void r3F3_specParentSameProjectAcyclicAndProjectMoveGuard(Scenario s) {
+        String p2 = s.otherProject();
+        String actor = s.actorWith("spec");
+        s.grant(actor, p2, "spec");
+
+        SaveResult specA = s.bean(SaveService.class).save(actor, s.create("spec",
+                "FREE-A-" + Scenario.uuid().substring(0, 8), Map.of("project_id", s.projectId(), "title", "A")));
+        SaveResult specB = s.bean(SaveService.class).save(actor, s.create("spec",
+                "FREE-B-" + Scenario.uuid().substring(0, 8),
+                Map.of("project_id", s.projectId(), "title", "B", "parent_id", specA.id())));
+        SaveResult specC = s.bean(SaveService.class).save(actor, s.create("spec",
+                "FREE-C-" + Scenario.uuid().substring(0, 8),
+                Map.of("project_id", s.projectId(), "title", "C", "parent_id", specB.id())));
+        SaveResult otherProjectSpec = s.bean(SaveService.class).save(actor, s.create("spec",
+                "FREE-P2-" + Scenario.uuid().substring(0, 8), Map.of("project_id", p2, "title", "P2")));
+
+        // Cross-project parent refused on create and edit
+        Expect.failure(() -> s.bean(SaveService.class).save(actor, s.create("spec", null,
+                Map.of("project_id", s.projectId(), "title", "bad", "parent_id", otherProjectSpec.id()))),
+                ValidationCode.VALIDATION_FAILED);
+        Expect.failure(() -> s.bean(SaveService.class).save(actor, s.edit("spec", specA.id(), 1,
+                Map.of("parent_id", otherProjectSpec.id()))), ValidationCode.VALIDATION_FAILED);
+
+        // 2-node and 3-node cycles refused
+        Expect.failure(() -> s.bean(SaveService.class).save(actor, s.edit("spec", specA.id(), 1,
+                Map.of("parent_id", specB.id()))), ValidationCode.VALIDATION_FAILED);
+        Expect.failure(() -> s.bean(SaveService.class).save(actor, s.edit("spec", specA.id(), 1,
+                Map.of("parent_id", specC.id()))), ValidationCode.VALIDATION_FAILED);
+
+        // Moving parent spec with children is forbidden; moving child with old parent_id is refused
+        Expect.failure(() -> s.bean(SaveService.class).save(actor, s.edit("spec", specA.id(), 1,
+                Map.of("project_id", p2))), TransitionCode.PROJECT_MOVE_FORBIDDEN);
+        Expect.failure(() -> s.bean(SaveService.class).save(actor, s.edit("spec", specC.id(), 1,
+                Map.of("project_id", p2))), ValidationCode.VALIDATION_FAILED);
+
+        // Clearing parent_id while moving succeeds
+        SaveResult moved = s.bean(SaveService.class).save(actor, s.edit("spec", specC.id(), 1,
+                Map.of("project_id", p2, "parent_id", "")));
+        assertThat(moved.version()).isEqualTo(2);
+        assertThat(s.spec(specC.id()).projectId().value()).isEqualTo(p2);
+        assertThat(s.spec(specC.id()).parentId()).isNull();
     }
 }

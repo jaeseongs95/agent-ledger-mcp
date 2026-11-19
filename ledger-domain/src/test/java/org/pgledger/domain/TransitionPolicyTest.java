@@ -347,7 +347,9 @@ class TransitionPolicyTest {
             assertThatCode(() -> CriterionState.UNKNOWN.requireTransitionTo(to, EVIDENCE, ME.sessionKey(), List.of(),
                     none)).doesNotThrowAnyException();
         }
-        assertThatCode(() -> CriterionState.MET.requireTransitionTo(CriterionState.UNKNOWN, Evidence.NONE,
+        Expect.failsWith(TransitionCode.EVIDENCE_REQUIRED, () -> CriterionState.MET.requireTransitionTo(
+                CriterionState.UNKNOWN, Evidence.NONE, ME.sessionKey(), List.of(), none));
+        assertThatCode(() -> CriterionState.MET.requireTransitionTo(CriterionState.UNKNOWN, EVIDENCE,
                 ME.sessionKey(), List.of(), none)).doesNotThrowAnyException();
         Expect.failsWith(TransitionCode.TRANSITION_INVALID,
                 () -> CriterionState.MET.requireTransitionTo(CriterionState.MET, EVIDENCE, ME.sessionKey(), List.of(),
@@ -368,7 +370,9 @@ class TransitionPolicyTest {
                     AuthorId.of("claude:independent").sessionKey(), registrants, completedByOther))
                     .doesNotThrowAnyException();
         }
-        assertThatCode(() -> CriterionState.MET.requireTransitionTo(CriterionState.UNKNOWN, Evidence.NONE,
+        Expect.failsWith(TransitionCode.EVIDENCE_REQUIRED, () -> CriterionState.MET.requireTransitionTo(
+                CriterionState.UNKNOWN, Evidence.NONE, ME.sessionKey(), registrants, completedByOther));
+        assertThatCode(() -> CriterionState.MET.requireTransitionTo(CriterionState.UNKNOWN, EVIDENCE,
                 ME.sessionKey(), registrants, completedByOther)).doesNotThrowAnyException();
         Expect.failsWith(TransitionCode.EVIDENCE_REQUIRED, () -> CriterionState.UNKNOWN.requireTransitionTo(
                 CriterionState.MET, Evidence.NONE, ME.sessionKey(), registrants, completedByOther));

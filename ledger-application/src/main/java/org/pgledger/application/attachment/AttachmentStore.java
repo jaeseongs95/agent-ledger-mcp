@@ -136,6 +136,10 @@ public class AttachmentStore {
      * @throws InfrastructureException ARTIFACT_CORRUPTED when the file is shorter than the database says
      */
     public long append(StorageKey key, String keyId, long storedBytes, long sequence, byte[] plain, Sha256 chunkSha256) {
+        if (plain == null || plain.length < 1 || plain.length > AttachmentProperties.CHUNK_BYTES) {
+            throw ValidationException.invalid("data", ValidationReason.OUT_OF_RANGE, "1",
+                    Integer.toString(AttachmentProperties.CHUNK_BYTES));
+        }
         AttachmentKeys.Key aes = keys.byId(keyId);
         Path file = pathOf(key);
         try {

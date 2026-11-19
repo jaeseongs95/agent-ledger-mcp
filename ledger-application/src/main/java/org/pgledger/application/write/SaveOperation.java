@@ -4,9 +4,12 @@ package org.pgledger.application.write;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 import java.util.function.LongFunction;
 import java.util.function.Supplier;
 import org.pgledger.application.gate.Lookup;
@@ -20,6 +23,7 @@ import org.pgledger.application.write.WriteResult.SaveResult;
 import org.pgledger.database.repository.CriterionRepository;
 import org.pgledger.database.repository.IdAllocator;
 import org.pgledger.database.repository.IssueRepository;
+import org.pgledger.database.repository.LinkRepository;
 import org.pgledger.database.repository.SpecRepository;
 import org.pgledger.database.repository.TaskRepository;
 import org.pgledger.domain.error.ConflictCode;
@@ -44,6 +48,7 @@ import org.pgledger.domain.model.TaskFields;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
 import org.pgledger.domain.rule.Scope;
+import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.CanonicalPayload;
 import org.pgledger.domain.value.CriterionId;
 import org.pgledger.domain.value.IssueId;
@@ -60,6 +65,7 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
 
     private static final String CLEARED = "\u0000";
 
+    private final WriteGate gate;
     private final EntityEditors editors;
     private final Rows rows;
     private final CodeRules codeRules;
@@ -67,14 +73,16 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
     private final SpecRepository specs;
     private final TaskRepository tasks;
     private final CriterionRepository criteria;
+    private final LinkRepository links;
     private final IdAllocator ids;
     private final HistoryWriter history;
     private final Clock clock;
 
     public SaveOperation(WriteGate gate, ReceiptService receipts, EntityEditors editors, Rows rows,
             CodeRules codeRules, IssueRepository issues, SpecRepository specs, TaskRepository tasks,
-            CriterionRepository criteria, IdAllocator ids, HistoryWriter history, Clock clock) {
+            CriterionRepository criteria, LinkRepository links, IdAllocator ids, HistoryWriter history, Clock clock) {
         super(gate, receipts, ReceiptOperation.SAVE, SaveResult.class);
+        this.gate = gate;
         this.editors = editors;
         this.rows = rows;
         this.codeRules = codeRules;
@@ -82,6 +90,7 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
         this.specs = specs;
         this.tasks = tasks;
         this.criteria = criteria;
+        this.links = links;
         this.ids = ids;
         this.history = history;
         this.clock = clock;
@@ -170,7 +179,7 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
             }
             case SpecFields f -> {
                 SpecId specId = specId(project, explicitId);
-                validateSpecParent(specId, f.parentId().orNull());
+                validateSpecParent(specId, project.id(), f.parentId().orNull());
                 Spec saved = inserted(() -> specs.save(Spec.create(specId, f, now)), HistoryEntity.SPEC,
                         specId.value());
                 id = saved.id().value();
@@ -286,14 +295,63 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
         return candidate;
     }
 
-    private void validateSpecParent(SpecId selfId, SpecId parentId) {
+    private void validateSpecParent(SpecId selfId, ProjectId projectId, SpecId parentId) {
         if (parentId == null) {
             return;
         }
         if (Objects.equals(selfId.key(), parentId.key())) {
             throw ValidationException.invalid("parent_id", ValidationReason.MUST_DIFFER_FROM, "id");
         }
-        rows.spec(parentId);
+        Spec parent = rows.spec(parentId);
+        if (!Objects.equals(parent.projectId(), projectId)) {
+            throw ValidationException.invalid("parent_id", ValidationReason.MUST_MATCH, projectId.value());
+        }
+        Set<String> seen = new HashSet<>();
+        seen.add(selfId.key());
+        Spec cursor = parent;
+        while (true) {
+            if (!seen.add(cursor.id().key())) {
+                throw ValidationException.invalid("parent_id", ValidationReason.MUST_DIFFER_FROM, "id");
+            }
+            if (cursor.parentId() == null) {
+                break;
+            }
+            Optional<Spec> next = specs.findById(cursor.parentId());
+            if (next.isEmpty()) {
+                break;
+            }
+            cursor = next.orElseThrow();
+        }
+    }
+
+    private void pinSpec(AuthorId author, SpecId spec) {
+        while (true) {
+            ProjectId project = rows.spec(spec).projectId();
+            gate.authorize(author, new Target(project, HistoryEntity.SPEC.writeScope()));
+            if (links.pinSpecProject(spec, project)) {
+                return;
+            }
+        }
+    }
+
+    private void pinTask(AuthorId author, TaskId task) {
+        while (true) {
+            ProjectId project = rows.task(task).projectId();
+            gate.authorize(author, new Target(project, HistoryEntity.TASK.writeScope()));
+            if (links.pinTaskProject(task, project)) {
+                return;
+            }
+        }
+    }
+
+    private void pinCriterion(AuthorId author, CriterionId criterion) {
+        while (true) {
+            ProjectId project = rows.criterion(criterion).projectId();
+            gate.authorize(author, new Target(project, HistoryEntity.CRITERION.writeScope()));
+            if (links.pinCriterionProject(criterion, project)) {
+                return;
+            }
+        }
     }
 
     private static void requireCanonical(String explicit, long number, LongFunction<String> canonical) {
@@ -334,13 +392,17 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
                 version = rows.saveIssue(after).version();
             }
             case SpecFields f -> {
+                pinSpec(ctx.author(), SpecId.of(id));
                 Spec row = rows.specForWrite(SpecId.of(id), expectedVersion);
                 row.requireNotVerified();
                 Spec after = row.edited(f, now);
-                if (!Objects.equals(row.projectId(), after.projectId()) && row.id().number().isPresent()) {
-                    throw new TransitionException(TransitionCode.PROJECT_MOVE_FORBIDDEN, List.of());
+                if (!Objects.equals(row.projectId(), after.projectId())) {
+                    if (row.id().number().isPresent() || !specs.findByParentId(row.id()).isEmpty()) {
+                        throw new TransitionException(TransitionCode.PROJECT_MOVE_FORBIDDEN, List.of());
+                    }
+                    gate.authorize(ctx.author(), new Target(after.projectId(), HistoryEntity.SPEC.writeScope()));
                 }
-                validateSpecParent(row.id(), after.parentId());
+                validateSpecParent(row.id(), after.projectId(), after.parentId());
                 beforeColumns = editors.columns(row);
                 afterColumns = editors.columns(after);
                 requireChange(mentioned, beforeColumns, afterColumns);
@@ -348,11 +410,15 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
                 version = rows.saveSpec(after).version();
             }
             case TaskFields f -> {
+                pinTask(ctx.author(), TaskId.of(id));
                 Task row = rows.taskForWrite(TaskId.of(id), expectedVersion);
                 row.requireNotVerified();
                 Task after = row.edited(f, now);
-                if (!Objects.equals(row.projectId(), after.projectId()) && row.id().number().isPresent()) {
-                    throw new TransitionException(TransitionCode.PROJECT_MOVE_FORBIDDEN, List.of());
+                if (!Objects.equals(row.projectId(), after.projectId())) {
+                    if (row.id().number().isPresent()) {
+                        throw new TransitionException(TransitionCode.PROJECT_MOVE_FORBIDDEN, List.of());
+                    }
+                    gate.authorize(ctx.author(), new Target(after.projectId(), HistoryEntity.TASK.writeScope()));
                 }
                 beforeColumns = editors.columns(row);
                 afterColumns = editors.columns(after);
@@ -361,9 +427,13 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
                 version = rows.saveTask(after).version();
             }
             case CriterionFields f -> {
+                pinCriterion(ctx.author(), CriterionId.of(id));
                 Criterion row = rows.criterionForWrite(CriterionId.of(id), expectedVersion);
                 row.requireOpenForEdit();
                 Criterion after = row.edited(f);
+                if (!Objects.equals(row.projectId(), after.projectId())) {
+                    gate.authorize(ctx.author(), new Target(after.projectId(), HistoryEntity.CRITERION.writeScope()));
+                }
                 beforeColumns = editors.columns(row);
                 afterColumns = editors.columns(after);
                 requireChange(mentioned, beforeColumns, afterColumns);
