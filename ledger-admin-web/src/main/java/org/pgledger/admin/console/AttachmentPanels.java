@@ -46,8 +46,8 @@ public class AttachmentPanels {
     /** The text shown on a page is at most this many bytes of the file (the size of one chunk of the upload tools). */
     static final int TEXT_BYTES = AttachmentProperties.CHUNK_BYTES;
 
-    /** A download reads the file in pages of this size: each page opens the segments it covers, so larger pages mean fewer passes. */
-    private static final int DOWNLOAD_PAGE = 1 << 20;
+    /** A download reads the file in pages bounded by the attachment chunk limit (256 KiB). */
+    private static final int DOWNLOAD_PAGE = AttachmentProperties.CHUNK_BYTES;
 
     /** How the page presents an attachment. */
     public enum State {
