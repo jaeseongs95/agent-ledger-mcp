@@ -36,7 +36,6 @@ import org.pgledger.domain.value.CriterionId;
 import org.pgledger.domain.value.IssueId;
 import org.pgledger.domain.value.SpecId;
 import org.pgledger.domain.value.TaskId;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -106,7 +105,6 @@ public class DetailService {
     private final HistoryRepository historyRows;
     private final HistoryQueryRepository historyQueries;
 
-    @Autowired
     public DetailService(IssueRepository issues, SpecRepository specs, TaskRepository tasks,
             CriterionRepository criteria, DeliverableRepository deliverables, IssueCaseRepository cases,
             LinkRepository links, MergeChainRepository mergeChain, HistoryRepository historyRows,
@@ -121,12 +119,6 @@ public class DetailService {
         this.mergeChain = mergeChain;
         this.historyRows = historyRows;
         this.historyQueries = historyQueries;
-    }
-
-    public DetailService(IssueRepository issues, SpecRepository specs, TaskRepository tasks,
-            DeliverableRepository deliverables, IssueCaseRepository cases, LinkRepository links,
-            MergeChainRepository mergeChain, HistoryRepository historyRows, HistoryQueryRepository historyQueries) {
-        this(issues, specs, tasks, null, deliverables, cases, links, mergeChain, historyRows, historyQueries);
     }
 
     public IssueDetail issue(String rawId) {

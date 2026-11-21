@@ -4,8 +4,10 @@ package org.pgledger.database.repository;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 import org.pgledger.database.time.UtcTime;
 import org.pgledger.domain.value.MaxRows;
 import org.pgledger.domain.value.ProjectId;
@@ -28,14 +30,19 @@ public class SearchQueryRepository {
         ISSUE, SPEC, TASK, CRITERION
     }
 
-    /** The criteria; {@code project} and the time limits may be null, {@code excludeStatuses} are state names. */
+    /**
+     * The criteria; {@code project} and the time limits may be null, {@code excludeStatuses} are state names. The sets are
+     * kept in their natural order, so the text of a filter (the source of the digest in a cursor) is the same in every
+     * start of the JVM: the order of {@code Set.copyOf} is chosen again by each start, and a cursor made before a restart
+     * would be refused after it.
+     */
     public record Filter(ProjectId project, Set<Kind> kinds, List<String> keywords, KeywordMatch match,
             Set<String> excludeStatuses, Instant createdFrom, Instant createdTo) {
 
         public Filter {
-            kinds = Set.copyOf(kinds);
+            kinds = Collections.unmodifiableSortedSet(new TreeSet<>(kinds));
             keywords = List.copyOf(keywords);
-            excludeStatuses = Set.copyOf(excludeStatuses);
+            excludeStatuses = Collections.unmodifiableSortedSet(new TreeSet<>(excludeStatuses));
         }
     }
 

@@ -13,10 +13,14 @@ import java.util.Set;
 import java.util.TreeSet;
 import org.pgledger.application.gate.Target;
 import org.pgledger.application.gate.WriteGate;
+import org.pgledger.database.repository.CommonCodeRepository;
 import org.pgledger.database.repository.ProjectRepository;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ConflictException;
+import org.pgledger.domain.model.CodeCatalog;
 import org.pgledger.domain.model.Project;
+import org.pgledger.domain.rule.CodeDirection;
+import org.pgledger.domain.rule.CodeGroup;
 import org.pgledger.domain.rule.DeliverableTarget;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.IssueStatus;
@@ -24,6 +28,7 @@ import org.pgledger.domain.rule.LinkKind;
 import org.pgledger.domain.rule.LockOrder;
 import org.pgledger.domain.rule.Scope;
 import org.pgledger.domain.value.AuthorId;
+import org.pgledger.domain.value.CodeValue;
 import org.pgledger.domain.value.CriterionId;
 import org.pgledger.domain.value.IssueId;
 import org.pgledger.domain.value.ProjectCode;
@@ -37,7 +42,7 @@ import org.springframework.stereotype.Component;
  * Plans and acquires all entity and {@code session_grant} locks for a multi-operation {@link BatchService#batch}
  * transaction in the exact global canonical lock order:
  * {@code project (id asc) -> issue (id asc) -> spec (id asc) -> task (id asc) -> milestone_criterion (id asc) ->
- * session_grant (project_id asc, grant_scope asc)}.
+ * session_grant (project_id asc, grant_scope asc) -> common_code of the relation kinds (code asc)}.
  */
 @Component
 class BatchLockPlanner {
@@ -50,12 +55,15 @@ class BatchLockPlanner {
     private final ProjectRepository projects;
     private final CorrectOperation correctOperation;
     private final WriteGate gate;
+    private final CommonCodeRepository codes;
 
-    BatchLockPlanner(Rows rows, ProjectRepository projects, CorrectOperation correctOperation, WriteGate gate) {
+    BatchLockPlanner(Rows rows, ProjectRepository projects, CorrectOperation correctOperation, WriteGate gate,
+            CommonCodeRepository codes) {
         this.rows = rows;
         this.projects = projects;
         this.correctOperation = correctOperation;
         this.gate = gate;
+        this.codes = codes;
     }
 
     /**
@@ -117,7 +125,37 @@ class BatchLockPlanner {
         Set<Target> candidates = collectGrantTargets(ops, issueProjects, specProjects, taskProjects, criterionProjects);
         Set<Target> authorized = gate.authorizeAvailable(author, candidates);
 
-        return new BatchBuffer(projectIds, issueIds, specIds, taskIds, criterionIds, authorized);
+        // Phase 1.6: the codes of the relation kinds that the batch writes, in the order of their characters
+        Map<String, CodeDirection> heldKinds = holdRelationKinds(ops);
+
+        return new BatchBuffer(projectIds, issueIds, specIds, taskIds, criterionIds, authorized, heldKinds);
+    }
+
+    /**
+     * Holds the code of every relation kind that a link of the batch names (see {@link CommonCodeRepository#holdDirection}),
+     * sorted by the characters of the code, so that two batches never hold two codes in two orders. A kind that is not a code
+     * of the group is left out: the link refuses it itself.
+     */
+    private Map<String, CodeDirection> holdRelationKinds(List<BatchOpInput> ops) {
+        TreeSet<String> kinds = new TreeSet<>();
+        for (BatchOpInput op : ops) {
+            if (op instanceof BatchOpInput.Link l && l.kind() != null && CodeValue.FORMAT.matcher(l.kind()).matches()
+                    && LinkKind.ofToken(l.kind()) == LinkKind.RELATION) {
+                kinds.add(l.kind());
+            }
+        }
+        Map<String, CodeDirection> held = new HashMap<>();
+        CodeCatalog catalog = codes.catalog(CodeGroup.RELATION_KIND);
+        for (String kind : kinds) {
+            Optional<CodeDirection> direction = catalog.directionOf(CodeValue.of(kind));
+            if (direction.isPresent()) {
+                if (!codes.holdDirection(CodeGroup.RELATION_KIND, CodeValue.of(kind), direction.orElseThrow())) {
+                    throw new ConflictException(ConflictCode.CONCURRENT_MODIFICATION, List.of("common_code", kind));
+                }
+                held.put(kind, direction.orElseThrow());
+            }
+        }
+        return held;
     }
 
     private void discoverEntities(BatchOpInput op, TreeSet<ProjectId> projectIds, TreeSet<IssueId> issueIds,

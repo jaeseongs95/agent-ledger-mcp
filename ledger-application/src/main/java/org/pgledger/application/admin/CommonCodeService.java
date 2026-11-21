@@ -214,7 +214,10 @@ public class CommonCodeService {
     /**
      * The stored relations of a code keep their two ends under its direction (a directed kind in the order of the caller, any
      * other in canonical order), so the direction of a code that has relations cannot change: a relation stored under the
-     * other direction would be read, and unlinked, the wrong way round.
+     * other direction would be read, and unlinked, the wrong way round. A relation that is being written at the same moment is
+     * not counted yet, but it holds the entry of its kind (the version is raised, {@code LinkOperation}): the conditional update
+     * of {@link #change} waits for it and, when it committed, finds another version and ends with VERSION_CONFLICT, so the
+     * owner decides again and then finds the relation.
      */
     private void requireDirectionNotInUse(CommonCode existing, CommonCode wanted) {
         if (existing.direction() == wanted.direction() || existing.group() != CodeGroup.RELATION_KIND) {

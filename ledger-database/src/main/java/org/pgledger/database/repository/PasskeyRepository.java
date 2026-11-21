@@ -53,6 +53,12 @@ public class PasskeyRepository {
                 .query(Integer.class).single() > 0;
     }
 
+    /** The passkey with this credential id, live or closed: the row is never changed, so what it says never goes stale. */
+    public Optional<OwnerPasskey> find(String credentialId) {
+        return jdbc.sql("SELECT " + COLUMNS + " FROM owner_passkey p WHERE p.credential_id = :id")
+                .param("id", credentialId).query((rs, n) -> read(rs)).list().stream().findFirst();
+    }
+
     /** The live passkey with this credential id. */
     public Optional<OwnerPasskey> findLive(String credentialId) {
         return jdbc.sql("SELECT " + COLUMNS + " FROM owner_passkey p WHERE p.credential_id = :id AND" + LIVE)

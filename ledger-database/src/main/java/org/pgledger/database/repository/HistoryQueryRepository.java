@@ -4,6 +4,7 @@ package org.pgledger.database.repository;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.function.UnaryOperator;
 import org.pgledger.database.time.UtcTime;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
@@ -32,24 +33,38 @@ public class HistoryQueryRepository {
         }
     }
 
-    /** Rows whose entity id starts with the id of a parent row, then a separator (the id of a case or link row). */
-    private static final String CHILD_OF = "SUBSTRING(h.entity_id FROM 1 FOR CHAR_LENGTH(p.id)) = p.id "
-            + "AND SUBSTRING(h.entity_id FROM CHAR_LENGTH(p.id) + 1 FOR 1) IN ('@', '|')";
+    /** Rows whose entity id starts with the id of the entity {@code alias}, then a separator (the id of a case or link row). */
+    private static String childOf(String alias) {
+        return "(SUBSTRING(h.entity_id FROM 1 FOR CHAR_LENGTH(" + alias + ".id)) = " + alias + ".id "
+                + "AND SUBSTRING(h.entity_id FROM CHAR_LENGTH(" + alias + ".id) + 1 FOR 1) IN ('@', '|'))";
+    }
 
-    private static final String DELIVERABLE_ISSUE = "(" + CHILD_OF + " OR ("
-            + "SUBSTRING(h.entity_id FROM 1 FOR 6) = 'issue:' "
-            + "AND SUBSTRING(h.entity_id FROM 7 FOR CHAR_LENGTH(p.id)) = p.id "
-            + "AND SUBSTRING(h.entity_id FROM 7 + CHAR_LENGTH(p.id) FOR 1) = '@'))";
+    /**
+     * As {@link #childOf}, or a deliverable of the entity: {@code <prefix><id>@...}, the prefix being the SQL literal
+     * {@code 'issue:'} and so on (a literal of this class, never a value of a caller).
+     */
+    private static String childOrDeliverableOf(String alias, String prefixLiteral) {
+        int length = prefixLiteral.length() - 2;
+        int from = length + 1;
+        return "(" + childOf(alias) + " OR ("
+                + "SUBSTRING(h.entity_id FROM 1 FOR " + length + ") = " + prefixLiteral + " "
+                + "AND SUBSTRING(h.entity_id FROM " + from + " FOR CHAR_LENGTH(" + alias + ".id)) = " + alias + ".id "
+                + "AND SUBSTRING(h.entity_id FROM " + from + " + CHAR_LENGTH(" + alias + ".id) FOR 1) = '@'))";
+    }
 
-    private static final String DELIVERABLE_SPEC = "(" + CHILD_OF + " OR ("
-            + "SUBSTRING(h.entity_id FROM 1 FOR 5) = 'spec:' "
-            + "AND SUBSTRING(h.entity_id FROM 6 FOR CHAR_LENGTH(p.id)) = p.id "
-            + "AND SUBSTRING(h.entity_id FROM 6 + CHAR_LENGTH(p.id) FOR 1) = '@'))";
-
-    private static final String DELIVERABLE_TASK = "(" + CHILD_OF + " OR ("
-            + "SUBSTRING(h.entity_id FROM 1 FOR 5) = 'task:' "
-            + "AND SUBSTRING(h.entity_id FROM 6 FOR CHAR_LENGTH(p.id)) = p.id "
-            + "AND SUBSTRING(h.entity_id FROM 6 + CHAR_LENGTH(p.id) FOR 1) = '@'))";
+    /**
+     * The history row belongs to an entity of {@code table} in the project, and to no other entity of the table that has the
+     * longer id. The id of a spec, task or criterion is free text (it may hold {@code |} and {@code @}), so the id of one entity
+     * can continue the id of another and the row of a link or deliverable of the longer one also starts with the shorter one:
+     * the row is the one of the entity whose id is the longest that it starts with.
+     *
+     * @param owns the condition that the row of the entity named by the alias given belongs to it
+     */
+    private static String ownedInProject(String table, UnaryOperator<String> owns) {
+        return "EXISTS (SELECT 1 FROM " + table + " p WHERE p.project_id = :project AND " + owns.apply("p")
+                + " AND NOT EXISTS (SELECT 1 FROM " + table + " q WHERE CHAR_LENGTH(q.id) > CHAR_LENGTH(p.id) AND "
+                + owns.apply("q") + "))";
+    }
 
     private static final String IN_PROJECT = "("
             + "(h.entity = 'ISSUE' AND h.entity_id IN (SELECT i.id FROM issue i WHERE i.project_id = :project)) "
@@ -57,18 +72,15 @@ public class HistoryQueryRepository {
             + "OR (h.entity = 'TASK' AND h.entity_id IN (SELECT t.id FROM task t WHERE t.project_id = :project)) "
             + "OR (h.entity = 'CRITERION' AND h.entity_id IN (SELECT c.id FROM milestone_criterion c "
             + "WHERE c.project_id = :project)) "
-            + "OR (h.entity IN ('ISSUE_CASE', 'ISSUE_TASK', 'ISSUE_RELATION') AND EXISTS "
-            + "(SELECT 1 FROM issue p WHERE p.project_id = :project AND " + CHILD_OF + ")) "
-            + "OR (h.entity = 'ISSUE_SPEC' AND EXISTS "
-            + "(SELECT 1 FROM issue p WHERE p.project_id = :project AND " + CHILD_OF + ")) "
-            + "OR (h.entity = 'SPEC_TASK' AND EXISTS "
-            + "(SELECT 1 FROM spec p WHERE p.project_id = :project AND " + CHILD_OF + ")) "
+            + "OR (h.entity IN ('ISSUE_CASE', 'ISSUE_TASK', 'ISSUE_RELATION', 'ISSUE_SPEC') AND "
+            + ownedInProject("issue", HistoryQueryRepository::childOf) + ") "
+            + "OR (h.entity = 'SPEC_TASK' AND " + ownedInProject("spec", HistoryQueryRepository::childOf) + ") "
             + "OR (h.entity = 'DELIVERABLE' AND ("
-            + "EXISTS (SELECT 1 FROM issue p WHERE p.project_id = :project AND " + DELIVERABLE_ISSUE + ") "
-            + "OR EXISTS (SELECT 1 FROM spec p WHERE p.project_id = :project AND " + DELIVERABLE_SPEC + ") "
-            + "OR EXISTS (SELECT 1 FROM task p WHERE p.project_id = :project AND " + DELIVERABLE_TASK + "))) "
-            + "OR (h.entity = 'CRITERION_LINK' AND EXISTS "
-            + "(SELECT 1 FROM milestone_criterion p WHERE p.project_id = :project AND " + CHILD_OF + ")))";
+            + ownedInProject("issue", alias -> childOrDeliverableOf(alias, "'issue:'")) + " "
+            + "OR " + ownedInProject("spec", alias -> childOrDeliverableOf(alias, "'spec:'")) + " "
+            + "OR " + ownedInProject("task", alias -> childOrDeliverableOf(alias, "'task:'")) + ")) "
+            + "OR (h.entity = 'CRITERION_LINK' AND "
+            + ownedInProject("milestone_criterion", HistoryQueryRepository::childOf) + "))";
 
     private final JdbcClient jdbc;
     private final SqlBuilder sqlBuilder;

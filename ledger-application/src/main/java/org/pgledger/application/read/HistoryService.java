@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Objects;
 import org.pgledger.database.repository.HistoryQueryRepository;
 import org.pgledger.database.repository.HistoryRepository;
+import org.pgledger.domain.error.ValidationException;
+import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.model.HistoryEntry;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
@@ -74,6 +76,11 @@ public class HistoryService {
     }
 
     public Page<HistoryView> history(@Valid HistoryQuery q) {
+        // @Size counts the list and does not look at its items: an item that is null is refused here, as a blank keyword of a
+        // search is, and does not reach the filter (whose copy of the list refuses a null with a NullPointerException)
+        if (q.ids() != null && q.ids().stream().anyMatch(Objects::isNull)) {
+            throw ValidationException.invalid("ids", ValidationReason.REQUIRED);
+        }
         HistoryQueryRepository.Filter filter = new HistoryQueryRepository.Filter(q.ids(), q.idFrom(), q.idTo(),
                 q.entity() == null ? null : Tokens.parse("entity", q.entity(), HistoryEntity.values()),
                 q.entityId(),

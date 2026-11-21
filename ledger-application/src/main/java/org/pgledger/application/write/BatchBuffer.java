@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -23,6 +24,7 @@ import org.pgledger.database.repository.Counter;
 import org.pgledger.database.repository.IdAllocator;
 import org.pgledger.database.repository.IssueCaseRepository;
 import org.pgledger.domain.model.IssueCase;
+import org.pgledger.domain.rule.CodeDirection;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
 import org.pgledger.domain.value.AuthorId;
@@ -68,18 +70,26 @@ final class BatchBuffer {
     private final Set<TaskId> pinnedTasks;
     private final Set<CriterionId> pinnedCriteria;
     private final Set<Target> authorizedGrants;
+    private final Map<String, CodeDirection> heldRelationKinds;
     private final List<PendingCase> pendingCases = new ArrayList<>();
     private final List<PendingHistory> pendingHistories = new ArrayList<>();
     private final List<PendingReceipt> pendingReceipts = new ArrayList<>();
 
     BatchBuffer(Set<ProjectId> pinnedProjects, Set<IssueId> pinnedIssues, Set<SpecId> pinnedSpecs,
-            Set<TaskId> pinnedTasks, Set<CriterionId> pinnedCriteria, Set<Target> authorizedGrants) {
+            Set<TaskId> pinnedTasks, Set<CriterionId> pinnedCriteria, Set<Target> authorizedGrants,
+            Map<String, CodeDirection> heldRelationKinds) {
         this.pinnedProjects = new HashSet<>(pinnedProjects);
         this.pinnedIssues = new HashSet<>(pinnedIssues);
         this.pinnedSpecs = new HashSet<>(pinnedSpecs);
         this.pinnedTasks = new HashSet<>(pinnedTasks);
         this.pinnedCriteria = new HashSet<>(pinnedCriteria);
         this.authorizedGrants = Set.copyOf(authorizedGrants);
+        this.heldRelationKinds = Map.copyOf(heldRelationKinds);
+    }
+
+    /** Whether the code of the relation kind was held in this direction by the planner (Phase 1.6). */
+    boolean hasHeldRelationKind(String kind, CodeDirection direction) {
+        return direction == heldRelationKinds.get(kind);
     }
 
     boolean hasPinnedProject(ProjectId id) {

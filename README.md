@@ -166,7 +166,7 @@ Read tools (no attestation and no grant; structured queries that replace the raw
 | `ledger_projects` | projects with id, code and title |
 | `ledger_codes` | common codes; retired codes included with `include_inactive` |
 
-The list read tools take `max_rows` (1 to 1000, default 50) and `cursor`; their answers carry `truncated` and `next_cursor`.
+The list read tools take `max_rows` (1 to 1000, default 50) and `cursor`; their answers carry `truncated` and `next_cursor`. `ledger_search` applies `created_from` and `created_to` to issues, specs and tasks; a criterion has no creation time, so a search with either bound leaves criteria out (a search for criteria only with a bound returns nothing).
 The tools `execute_sql_reader` and `search_objects_reader` of 1.x were removed: use the read tools above.
 
 When a common code changes, the server sends `notifications/tools/list_changed`, so a connected client reloads the tool

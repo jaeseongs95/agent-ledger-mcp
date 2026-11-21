@@ -10,6 +10,8 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import org.pgledger.database.repository.CommonCodeRepository;
 import org.pgledger.database.repository.ProjectRepository;
+import org.pgledger.domain.error.ValidationException;
+import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.model.CommonCode;
 import org.pgledger.domain.model.Project;
 import org.pgledger.domain.rule.CodeDirection;
@@ -57,7 +59,7 @@ public class CatalogService {
         List<Project> all = projects.findAllByOrderByCode();
         Function<Project, String> key = p -> p.code().value();
         int start = cursors.decode(q.cursor(), PageCursor.Kind.PROJECTS, criteria)
-                .map(after -> firstAfter(all, key, after)).orElse(0);
+                .map(after -> startAfter(all, p -> true, key, after)).orElse(0);
         return slice(all, start, maxRows, PageCursor.Kind.PROJECTS, criteria, key,
                 p -> new ProjectView(p.id().value(), p.code().value(), p.title()));
     }
@@ -78,19 +80,32 @@ public class CatalogService {
         List<CommonCode> listed = all.stream().filter(shown).toList();
         Function<CommonCode, String> key = c -> c.group().name() + ":" + c.code().value();
         int start = cursors.decode(q.cursor(), PageCursor.Kind.CODES, criteria)
-                .map(after -> firstAfter(listed, key, after)).orElse(0);
+                .map(after -> startAfter(all, shown, key, after)).orElse(0);
         return slice(listed, start, maxRows, PageCursor.Kind.CODES, criteria, key,
                 c -> new CodeView(c.group().name(), c.code().value(), c.nameKo(), c.nameEn(), c.descriptionKo(),
                         c.descriptionEn(), c.sortOrder(), c.state(), c.direction()));
     }
 
-    /** The index after the row the cursor names (the end of the list when it names none). */
-    private static <T> int firstAfter(List<T> ordered, Function<T, String> key, Cursors.Position after) {
-        int at = 0;
-        while (at < ordered.size() && !Objects.equals(key.apply(ordered.get(at)), after.id())) {
-            at++;
+    /**
+     * The index, in the list of the rows that are shown, of the first row after the row the cursor names. The place of that row
+     * is looked up in the whole ordered list: a code that was retired after the page was read has left the shown list but
+     * still has its place, so the rows after it are not lost. A row that the whole list does not have is a damaged cursor,
+     * never the end of the list.
+     *
+     * @throws ValidationException VALIDATION_FAILED on {@code cursor} (CURSOR_DAMAGED)
+     */
+    private static <T> int startAfter(List<T> ordered, Predicate<T> shown, Function<T, String> key,
+            Cursors.Position after) {
+        int shownUpToRow = 0;
+        for (T row : ordered) {
+            if (shown.test(row)) {
+                shownUpToRow++;
+            }
+            if (Objects.equals(key.apply(row), after.id())) {
+                return shownUpToRow;
+            }
         }
-        return Math.min(at + 1, ordered.size());
+        throw ValidationException.invalid("cursor", ValidationReason.CURSOR_DAMAGED);
     }
 
     /** The items from {@code start} (by key, in list order), at most max rows, with the cursor when more follow. */

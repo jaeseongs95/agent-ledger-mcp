@@ -129,7 +129,7 @@ MCP를 직접 호출하는 쪽은 작성자별 `Bearer` 세션 토큰(`STANDARD`
 | `ledger_projects` | 프로젝트의 ID, 코드, 제목입니다 |
 | `ledger_codes` | 공통코드입니다. 폐기한 코드는 `include_inactive`를 주면 포함됩니다 |
 
-목록형 읽기 도구는 `max_rows`(1에서 1000, 기본 50)와 `cursor`를 받으며, 응답에 `truncated`와 `next_cursor`가 붙습니다.
+목록형 읽기 도구는 `max_rows`(1에서 1000, 기본 50)와 `cursor`를 받으며, 응답에 `truncated`와 `next_cursor`가 붙습니다. `ledger_search`의 `created_from`, `created_to`는 이슈, 명세, 작업에 적용됩니다. 기준은 생성 시각이 없으므로 둘 중 하나라도 주면 검색에서 빠집니다(범위와 함께 기준만 검색하면 결과가 없습니다).
 1.x의 `execute_sql_reader`와 `search_objects_reader` 도구는 제거되었으므로 위의 읽기 도구를 사용합니다.
 
 공통코드가 바뀌면 서버가 `notifications/tools/list_changed`를 보내므로, 연결된 클라이언트는 재시작 없이 도구 정의를 다시 읽습니다. 다른 프로세스(관리 웹, `ledger-cli`)가

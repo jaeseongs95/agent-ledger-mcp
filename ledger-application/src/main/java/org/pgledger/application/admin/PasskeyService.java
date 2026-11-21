@@ -46,6 +46,13 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>The code is made from {@link SecureRandom} (20 characters of a 32-letter alphabet without look-alikes, 100 bits), shown
  * once, stored only as its SHA-256, valid {@link #CODE_TTL} and spent by one conditional UPDATE: a second use, an expired or an
  * unknown code is {@code PASSKEY_CODE_INVALID}. Asking for a new code ends the earlier one that was not used.
+ *
+ * <p>The checks of these operations read the passkeys and the codes that the other operations wrote ("the last live passkey is
+ * never closed", "a new code ends the earlier one"), so two of them at the same moment must not run side by side. Every one
+ * that changes the passkeys or the codes starts with its audit row, the write of the owner's operation that takes the row of
+ * the counter {@code OWNER_AUDIT} and keeps it until the transaction ends: the second one waits for the first one's commit
+ * and then reads what it wrote (READ COMMITTED). It is the only number of the transaction, so the order of the numbers of
+ * {@code Counter} holds. A refusal (or any failure) rolls the audit row back with everything else.
  */
 @Service
 @Transactional
@@ -93,12 +100,14 @@ public class PasskeyService {
      */
     public IssuedCode issueCode(OwnerIdentity actor, boolean removeExisting) {
         Instant now = clock.instant();
+        Instant expiresAt = now.plus(CODE_TTL);
+        // the first write: it takes the row of the counter of the audit rows, which serializes the owner's operations on the
+        // passkeys (see the class comment), so what follows reads what the operation before it committed
+        audit.record(actor, OwnerAction.PASSKEY_CODE_ISSUED, PASSKEY_SUBJECT, "expires=" + expiresAt);
         int closed = removeExisting ? passkeys.revokeAllLive(actor.value(), now) : 0;
         codes.expireOpen(now);
         String code = newCode();
-        Instant expiresAt = now.plus(CODE_TTL);
         codes.insert(hash(code), actor.value(), now, expiresAt);
-        audit.record(actor, OwnerAction.PASSKEY_CODE_ISSUED, PASSKEY_SUBJECT, "expires=" + expiresAt);
         if (removeExisting) {
             audit.record(actor, OwnerAction.PASSKEY_RESET, PASSKEY_SUBJECT, "closed=" + closed);
         }
@@ -153,13 +162,18 @@ public class PasskeyService {
      * @throws AdminException PASSKEY_LAST_KEY
      */
     public void revoke(String credentialId, OwnerIdentity actor) {
-        OwnerPasskey passkey = passkeys.findLive(credentialId)
+        // the fingerprint and the label of a credential never change (the history is append-only), so the audit row can be
+        // written first, as the write that takes the row of the audit counter and serializes the owner's operations on the
+        // passkeys; a refusal below rolls it back with the rest of the transaction
+        OwnerPasskey known = passkeys.find(credentialId)
+                .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND, List.of("passkey", credentialId)));
+        audit.record(actor, OwnerAction.PASSKEY_REVOKED, known.fingerprint(), "label=" + known.label());
+        passkeys.findLive(credentialId)
                 .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND, List.of("passkey", credentialId)));
         if (passkeys.countLive() <= 1) {
             throw new AdminException(AdminCode.PASSKEY_LAST_KEY, List.of());
         }
         passkeys.revoke(credentialId, actor.value(), clock.instant());
-        audit.record(actor, OwnerAction.PASSKEY_REVOKED, passkey.fingerprint(), "label=" + passkey.label());
     }
 
     /** The live passkey with this id. */

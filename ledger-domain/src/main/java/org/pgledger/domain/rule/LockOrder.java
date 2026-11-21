@@ -13,6 +13,10 @@ import org.pgledger.domain.value.ProjectId;
  * relies on an {@code ORDER BY}, because the order of a database depends on its collation (en_US.UTF-8 puts {@code alpha}
  * before {@code Zeta}, the order of {@code String} puts it after).
  *
+ * <p>After the grants, a write of an issue relation holds the code of its relation kind ({@code CommonCodeRepository.holdDirection}:
+ * the owner's change of a direction waits for it), and a batch holds the codes of all its relation kinds before the first
+ * write, sorted by the characters of the code (Phase 1.6 of {@code BatchLockPlanner}).
+ *
  * <p>The order of the numbers, which the same transactions take last, is documented at {@code Counter}.
  */
 public final class LockOrder {

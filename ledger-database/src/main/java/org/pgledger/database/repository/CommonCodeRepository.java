@@ -74,6 +74,22 @@ public class CommonCodeRepository {
     }
 
     /**
+     * The write of a relation holds the entry of its kind: raises the version of the entry, but only while it still has the
+     * direction that the caller read. The row is locked until the transaction ends, so a change of the direction (the
+     * conditional {@link #update}, which counts the stored relations first) waits for the relation to be committed, and a
+     * relation is never stored under the direction that the entry had before a change that was committed first. False when the
+     * entry has another direction now (or does not exist): nothing was written, and the caller sends its request again.
+     */
+    public boolean holdDirection(CodeGroup group, CodeValue code, CodeDirection direction) {
+        return jdbc.sql("UPDATE common_code SET version = version + 1 WHERE code_group = :group AND code = :code "
+                + "AND direction = :direction")
+                .param("group", group.name())
+                .param("code", code.value())
+                .param("direction", direction.name())
+                .update() == 1;
+    }
+
+    /**
      * Changes text, order, state and direction of an entry and raises its version, but only when the row still has the version
      * that the caller read ({@code expectedVersion}, from {@link #findVersioned}). False when it does not: another change got
      * there first (or the entry does not exist), and nothing was written. The key and creator stay. Whether a direction may

@@ -245,6 +245,9 @@ public class LinkOperation extends WriteOperation<LinkCommand, LinkResult> {
                 ctx.requirePinnedIssue(second);
                 ctx.authorize(gate, List.of(new Target(rows.issue(first).projectId(), Scope.ISSUE),
                         new Target(rows.issue(second).projectId(), Scope.ISSUE)));
+                // the direction that decided the order of the two ends must still be the one of the code until this
+                // transaction ends (the owner cannot change it while a relation is being stored)
+                ctx.holdRelationDirection(codes, token, direction);
                 IssueRelation relation = IssueRelation.between(first, second, CodeValue.of(token), direction, author);
                 if (!remove) {
                     codes.catalog(CodeGroup.RELATION_KIND).check("issue_relation.kind", relation.relation(), null);

@@ -8,10 +8,14 @@ import org.pgledger.application.gate.GateSession;
 import org.pgledger.application.gate.Target;
 import org.pgledger.application.gate.WriteGate;
 import org.pgledger.application.history.HistoryWriter;
+import org.pgledger.database.repository.CommonCodeRepository;
 import org.pgledger.domain.error.ConflictCode;
 import org.pgledger.domain.error.ConflictException;
+import org.pgledger.domain.rule.CodeDirection;
+import org.pgledger.domain.rule.CodeGroup;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.value.AuthorId;
+import org.pgledger.domain.value.CodeValue;
 import org.pgledger.domain.value.CriterionId;
 import org.pgledger.domain.value.IssueId;
 import org.pgledger.domain.value.OperationKey;
@@ -131,6 +135,22 @@ public record WriteContext(GateSession session, Reason reason, OperationKey oper
                 throw new ConflictException(ConflictCode.CONCURRENT_MODIFICATION,
                         List.of("session_grant", target.project().value() + ":" + target.scope().token()));
             }
+        }
+    }
+
+    /**
+     * Holds the code of the relation kind in the direction the caller read (see {@link CommonCodeRepository#holdDirection}),
+     * after the entities and the grants and before the first number: the last lock of the order of {@code LockOrder}
+     * except the numbers. Inside a batch the entry was held in Phase 1.6 (in the order of the codes), never here.
+     *
+     * @throws ConflictException CONCURRENT_MODIFICATION when the direction is another one now
+     */
+    void holdRelationDirection(CommonCodeRepository codes, String kind, CodeDirection direction) {
+        boolean held = batch == null
+                ? codes.holdDirection(CodeGroup.RELATION_KIND, CodeValue.of(kind), direction)
+                : batch.hasHeldRelationKind(kind, direction);
+        if (!held) {
+            throw new ConflictException(ConflictCode.CONCURRENT_MODIFICATION, List.of("common_code", kind));
         }
     }
 
