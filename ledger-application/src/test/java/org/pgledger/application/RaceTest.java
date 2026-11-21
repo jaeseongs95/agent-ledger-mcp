@@ -995,8 +995,8 @@ class RaceTest {
                     Map.of("project_id", p, "title", "r7b1-t-" + idx, "purpose", "p", "success_condition", "sc")));
 
             // Batch requires ISSUE, SPEC, TASK, and DELIVERABLE on the SAME project p.
-            // Prior to Scope.LOCK_ORDER, WriteGate locked ISSUE->SPEC->TASK->DELIVERABLE (enum ordinal) while
-            // GrantStateRepository.revokeLive locked DELIVERABLE->ISSUE->SPEC->TASK (SQL ORDER BY grant_scope).
+            // Stress of the one lock order (LockOrder): this round has no fixed schedule, so it can miss an inversion; the
+            // inversions are proved in order, with held rows, by GrantLockOrderTest (SVC-LOCK-01 .. 03).
             List<BatchOpInput> ops = List.of(
                     new BatchOpInput.Save("issue", Fields.of("title", "r7b1-i-ed-" + idx), Scenario.REASON, issue.id(),
                             1L),

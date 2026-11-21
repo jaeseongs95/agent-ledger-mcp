@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.pgledger.database.time.UtcTime;
 import org.pgledger.domain.model.SessionGrant;
+import org.pgledger.domain.rule.LockOrder;
 import org.pgledger.domain.rule.Scope;
 import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.ProjectId;
@@ -33,7 +34,7 @@ public class GrantStateRepository {
     /**
      * Read-only pre-check that the author holds a live grant (not revoked, not expired) for the scope without taking a
      * row lock on {@code session_grant}. Write operations use this in {@code WriteGate.open} and acquire the
-     * {@code session_grant} row lock via {@link #markUsed} in canonical order after entity pins.
+     * {@code session_grant} row lock via {@link #markUsed} in {@link LockOrder} after entity pins.
      */
     public boolean hasLive(AuthorId author, ProjectId project, Scope scope, Instant now) {
         return jdbc.sql("SELECT COUNT(*) FROM session_grant "
@@ -72,20 +73,25 @@ public class GrantStateRepository {
                 .update() == 1;
     }
 
+    /** One grant row to revoke, with what {@link LockOrder} sorts by. */
+    private record LiveRow(long id, ProjectId project, Scope scope) {
+    }
+
     /**
      * Revokes the live grants of an author, optionally narrowed to a project and a scope, and returns how many.
-     * Grants that were revoked meanwhile by someone else are not counted.
+     * Grants that were revoked meanwhile by someone else are not counted. The rows are read without a lock, sorted in Java by
+     * {@link LockOrder} (the order in which the write gate locks the same rows, which no collation of the database changes)
+     * and updated one by one in that order, so a revocation and a write of the same author never wait for each other.
      */
     public int revokeLive(AuthorId author, ProjectId project, Scope scope, Instant now) {
         // a read of the live grants and then a conditional update of each, in the transaction of the calling service method
-        String sql = "SELECT id FROM session_grant WHERE author_id = :author AND revoked_at IS NULL";
+        String sql = "SELECT id, project_id, grant_scope FROM session_grant WHERE author_id = :author AND revoked_at IS NULL";
         if (project != null) {
             sql += " AND project_id = :project";
         }
         if (scope != null) {
             sql += " AND grant_scope = :scope";
         }
-        sql += " ORDER BY project_id, grant_scope, id";
         JdbcClient.StatementSpec spec = jdbc.sql(sql).param("author", author.value());
         if (project != null) {
             spec = spec.param("project", project.value());
@@ -94,8 +100,11 @@ public class GrantStateRepository {
             spec = spec.param("scope", scope.name());
         }
         int revoked = 0;
-        for (Long id : spec.query(Long.class).list()) {
-            if (revoke(id, now)) {
+        List<LiveRow> rows = new ArrayList<>(spec.query((rs, n) -> new LiveRow(rs.getLong("id"),
+                ProjectId.of(rs.getString("project_id")), Scope.valueOf(rs.getString("grant_scope")))).list());
+        rows.sort(LockOrder.<LiveRow>grant(LiveRow::project, LiveRow::scope).thenComparingLong(LiveRow::id));
+        for (LiveRow row : rows) {
+            if (revoke(row.id(), now)) {
                 revoked++;
             }
         }

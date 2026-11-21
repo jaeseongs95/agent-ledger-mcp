@@ -21,6 +21,7 @@ import org.pgledger.domain.rule.DeliverableTarget;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.IssueStatus;
 import org.pgledger.domain.rule.LinkKind;
+import org.pgledger.domain.rule.LockOrder;
 import org.pgledger.domain.rule.Scope;
 import org.pgledger.domain.value.AuthorId;
 import org.pgledger.domain.value.CriterionId;
@@ -62,7 +63,7 @@ class BatchLockPlanner {
      * before any operation in {@code ops} executes.
      */
     BatchBuffer acquireLocks(AuthorId author, List<BatchOpInput> ops) {
-        TreeSet<ProjectId> projectIds = new TreeSet<>(Comparator.comparing(ProjectId::value));
+        TreeSet<ProjectId> projectIds = new TreeSet<>(LockOrder.PROJECT);
         TreeSet<IssueId> issueIds = new TreeSet<>(Comparator.comparing(IssueId::value));
         TreeSet<SpecId> specIds = new TreeSet<>(Comparator.comparing(SpecId::value));
         Map<SpecId, ProjectId> hierarchySpecs = new LinkedHashMap<>();

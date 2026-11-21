@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.pgledger.application.admin.SessionKeyService.RegisterCommand;
+import org.pgledger.application.gate.ProjectPinner;
 import org.pgledger.database.repository.Counter;
 import org.pgledger.database.repository.GrantStateRepository;
 import org.pgledger.database.repository.IdAllocator;
@@ -23,8 +24,8 @@ import org.pgledger.domain.error.LookupCode;
 import org.pgledger.domain.error.LookupException;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationReason;
-import org.pgledger.domain.model.Project;
 import org.pgledger.domain.model.SessionGrant;
+import org.pgledger.domain.rule.LockOrder;
 import org.pgledger.domain.rule.OwnerAction;
 import org.pgledger.domain.rule.Scope;
 import org.pgledger.domain.value.AuthorId;
@@ -41,6 +42,10 @@ import org.springframework.transaction.annotation.Transactional;
  * closes the live grant of the same key first and rows are never deleted. Two grants of one key at the same time
  * end with exactly one live row. An author without a live session key is refused (SESSION_KEY_REQUIRED): the rule is
  * here, once, for every caller.
+ *
+ * <p>The order of the locks of every method is the one of the writes: the project row, then the {@code session_grant} rows (in
+ * {@link LockOrder}), then the numbers (see {@code Counter}). The key of the grant screen is therefore
+ * bound after the grants are issued: its numbers (the key, the audit row) come after the number of the grant.
  */
 @Service
 @Transactional
@@ -54,27 +59,27 @@ public class GrantService {
     public record RevokeCommand(String author, String project, String scope) {
     }
 
-    private static final int MAX_PIN_ATTEMPTS = 16;
-
     private final GrantStateRepository state;
     private final SessionGrantRepository grants;
     private final SessionKeyStateRepository keys;
     private final SessionTokenStateRepository tokens;
     private final SessionKeyService sessionKeys;
     private final ProjectRepository projects;
+    private final ProjectPinner projectPinner;
     private final IdAllocator ids;
     private final OwnerAuditWriter audit;
     private final Clock clock;
 
     public GrantService(GrantStateRepository state, SessionGrantRepository grants, SessionKeyStateRepository keys,
             SessionTokenStateRepository tokens, SessionKeyService sessionKeys, ProjectRepository projects,
-            IdAllocator ids, OwnerAuditWriter audit, Clock clock) {
+            ProjectPinner projectPinner, IdAllocator ids, OwnerAuditWriter audit, Clock clock) {
         this.state = state;
         this.keys = keys;
         this.tokens = tokens;
         this.sessionKeys = sessionKeys;
         this.grants = grants;
         this.projects = projects;
+        this.projectPinner = projectPinner;
         this.ids = ids;
         this.audit = audit;
         this.clock = clock;
@@ -88,18 +93,25 @@ public class GrantService {
      * DUPLICATE_KEY, and no call is run again.
      */
     public List<Long> grant(GrantCommand command, OwnerIdentity actor) {
-        return issueAll(command, actor);
+        Plan plan = plan(command);
+        requireLiveKey(plan.author(), plan.now());
+        return issueAll(plan, actor);
     }
 
     /**
-     * The use case of the grant screen: binds the public key to the author (the key is registered as
-     * {@link SessionKeyService#register} does, the repeated registration of the key the author has is accepted) and issues
-     * the grants, in one transaction. A refused grant takes the registration of the key back with it, and a refused key
-     * issues no grant; the owner's audit trail gets the rows of both operations or none.
+     * The use case of the grant screen: issues the grants and binds the public key to the author (the key is registered as
+     * {@link SessionKeyService#register} does, the repeated registration of the key the author has is accepted), in one
+     * transaction. A refused grant takes the registration of the key back with it, and a refused key issues no grant; the
+     * owner's audit trail gets the rows of both operations or none. The key is bound after the grants, so that the numbers of
+     * the key and of the audit rows are taken after the project row, the grant rows and the number of the grant: the order of
+     * every grant. (The live key that {@link #grant} requires is the one this call binds.)
      */
     public List<Long> grantWithKey(GrantCommand command, String publicKey, OwnerIdentity actor) {
+        Plan plan = plan(command);
+        List<Long> issued = insertGrants(plan);
         sessionKeys.register(new RegisterCommand(command.author(), publicKey, null), actor);
-        return issueAll(command, actor);
+        recordIssued(plan, issued, actor);
+        return issued;
     }
 
     /**
@@ -109,15 +121,23 @@ public class GrantService {
      */
     public List<Long> grantReplacingKey(GrantCommand command, String publicKey, String replacedFingerprint,
             OwnerIdentity actor) {
+        Plan plan = plan(command);
+        List<Long> issued = insertGrants(plan);
         sessionKeys.registerReplacing(new RegisterCommand(command.author(), publicKey, null), actor, replacedFingerprint);
-        return issueAll(command, actor);
+        recordIssued(plan, issued, actor);
+        return issued;
     }
 
-    private List<Long> issueAll(GrantCommand command, OwnerIdentity actor) {
+    /** What a grant call asks for, checked: the author, the project, the scopes in the order given, the expiry and the time. */
+    private record Plan(AuthorId author, ProjectId project, List<Scope> scopes, Instant expiresAt, String note, Instant now) {
+    }
+
+    private Plan plan(GrantCommand command) {
         AuthorId author = Authors.of(command.author());
         ProjectId project = ProjectId.of(command.project());
-        Project current = projects.findById(project)
-                .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND, List.of("project", project.value())));
+        if (!projects.existsById(project)) {
+            throw new LookupException(LookupCode.NOT_FOUND, List.of("project", project.value()));
+        }
         if (command.scopes() == null || command.scopes().isEmpty()) {
             throw ValidationException.invalid("scopes", ValidationReason.MUST_NAME_A_SCOPE,
                     Tokens.allowed(Scope.values()));
@@ -126,40 +146,39 @@ public class GrantService {
         command.scopes().forEach(token -> scopes.add(Tokens.parse("scopes", token, Scope.values())));
         Instant expiresAt = command.expiresAt() == null || command.expiresAt().isBlank() ? null
                 : UtcInstant.parse("expires_at", command.expiresAt()).value();
-        Instant now = clock.instant();
-        requireLiveKey(author, now);
-        // Pin project row (Tier 1) first to serialize concurrent multi-scope GrantService.grant calls on the same
-        // project along the global lock DAG (Tier 1 project -> Tier 6 session_grant in Scope.LOCK_ORDER -> Tier 9
-        // Counter.SESSION_GRANT), preventing active_key vs revoke AB-BA deadlocks.
-        pinProject(project, current);
-        // Phase 1: close all existing live grants in canonical Scope.LOCK_ORDER (matching SQL ORDER BY grant_scope and
-        // WriteGate) BEFORE allocating Counter.SESSION_GRANT so concurrent grant/revoke/batch calls never AB-BA deadlock.
-        List<Scope> requested = new ArrayList<>(scopes);
-        for (Scope scope : requested.stream().sorted(Scope.LOCK_ORDER).toList()) {
-            closeLive(author, project, scope, now);
+        return new Plan(author, project, List.copyOf(scopes), expiresAt, command.note(), clock.instant());
+    }
+
+    /**
+     * Pins the project row first (the first lock of the order of the locks, which serializes concurrent multi-scope grants of
+     * one project and keeps the unique key of the live grant from deadlocking with a revocation), then closes the live grants of
+     * the same key in {@link LockOrder} before the number of {@code Counter.SESSION_GRANT} is taken, then inserts the new ones
+     * in the order the caller gave, so that the ids returned keep it.
+     */
+    private List<Long> insertGrants(Plan plan) {
+        projectPinner.pin(plan.project());
+        for (Scope scope : plan.scopes().stream().sorted(LockOrder.SCOPE).toList()) {
+            closeLive(plan.author(), plan.project(), scope, plan.now());
         }
-        // Phase 2: allocate IDs and insert new grants in caller-requested order so returned IDs preserve input order.
-        List<Long> issued = new ArrayList<>(requested.size());
-        for (Scope scope : requested) {
-            issued.add(insertGrant(author, project, scope, now, expiresAt, command.note()));
+        List<Long> issued = new ArrayList<>(plan.scopes().size());
+        for (Scope scope : plan.scopes()) {
+            issued.add(insertGrant(plan.author(), plan.project(), scope, plan.now(), plan.expiresAt(), plan.note()));
         }
-        audit.record(actor, OwnerAction.GRANT_ISSUED, author.value() + "|" + project.value(),
-                "scopes=" + requested.stream().map(Scope::token).collect(Collectors.joining(",")) + " expires="
-                        + (expiresAt == null ? "never" : expiresAt) + " grants="
-                        + issued.stream().map(String::valueOf).collect(Collectors.joining(",")));
         return issued;
     }
 
-    private void pinProject(ProjectId id, Project initial) {
-        Project current = initial;
-        for (int attempt = 0; attempt < MAX_PIN_ATTEMPTS; attempt++) {
-            if (projects.pinVersion(id, current.version())) {
-                return;
-            }
-            current = projects.findById(id)
-                    .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND, List.of("project", id.value())));
-        }
-        throw new ConflictException(ConflictCode.CONCURRENT_MODIFICATION, List.of("project", id.value()));
+    private List<Long> issueAll(Plan plan, OwnerIdentity actor) {
+        List<Long> issued = insertGrants(plan);
+        recordIssued(plan, issued, actor);
+        return issued;
+    }
+
+    /** The last step of every grant: the owner's audit row (its number is the last one a grant takes). */
+    private void recordIssued(Plan plan, List<Long> issued, OwnerIdentity actor) {
+        audit.record(actor, OwnerAction.GRANT_ISSUED, plan.author().value() + "|" + plan.project().value(),
+                "scopes=" + plan.scopes().stream().map(Scope::token).collect(Collectors.joining(",")) + " expires="
+                        + (plan.expiresAt() == null ? "never" : plan.expiresAt()) + " grants="
+                        + issued.stream().map(String::valueOf).collect(Collectors.joining(",")));
     }
 
     /**

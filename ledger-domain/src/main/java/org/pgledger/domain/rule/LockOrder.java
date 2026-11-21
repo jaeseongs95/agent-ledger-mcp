@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package org.pgledger.domain.rule;
+
+import java.util.Comparator;
+import java.util.function.Function;
+import org.pgledger.domain.value.ProjectId;
+
+/**
+ * The one order in which the rows of a project and of a session grant are locked. Two transactions that lock the same rows in
+ * different orders can wait for each other, so every path that locks them sorts in Java with the comparators of this class and
+ * locks in the sorted order: the write gate, the batch, the project moves, the correction and the revocation of grants. No path
+ * relies on an {@code ORDER BY}, because the order of a database depends on its collation (en_US.UTF-8 puts {@code alpha}
+ * before {@code Zeta}, the order of {@code String} puts it after).
+ *
+ * <p>The order of the numbers, which the same transactions take last, is documented at {@code Counter}.
+ */
+public final class LockOrder {
+
+    /**
+     * Projects by the characters of their id ({@code String.compareTo}). A project id is {@code [A-Za-z0-9_-]{1,64}}, so this
+     * is the order of the bytes: {@code Zeta} before {@code _x} before {@code a-b} before {@code alpha}.
+     */
+    public static final Comparator<ProjectId> PROJECT = Comparator.comparing(ProjectId::value);
+
+    /** Scopes by their names: {@code DELIVERABLE}, {@code ISSUE}, {@code SPEC}, {@code TASK}, {@code VERIFY}. */
+    public static final Comparator<Scope> SCOPE = Comparator.comparing(Scope::name);
+
+    private LockOrder() {
+    }
+
+    /** The order of the grant rows of the callers' type: by project, then by scope. */
+    public static <T> Comparator<T> grant(Function<T, ProjectId> project, Function<T, Scope> scope) {
+        return Comparator.comparing(project, PROJECT).thenComparing(scope, SCOPE);
+    }
+}

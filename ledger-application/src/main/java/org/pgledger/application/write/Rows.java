@@ -4,6 +4,7 @@ package org.pgledger.application.write;
 
 import java.util.List;
 import java.util.Optional;
+import org.pgledger.application.gate.ProjectPinner;
 import org.pgledger.application.gate.Resolution;
 import org.pgledger.application.gate.Target;
 import org.pgledger.database.repository.CriterionRepository;
@@ -39,14 +40,16 @@ public class Rows {
     private static final int MAX_PIN_ATTEMPTS = 16;
 
     private final ProjectRepository projects;
+    private final ProjectPinner projectPinner;
     private final IssueRepository issues;
     private final SpecRepository specs;
     private final TaskRepository tasks;
     private final CriterionRepository criteria;
 
-    public Rows(ProjectRepository projects, IssueRepository issues, SpecRepository specs, TaskRepository tasks,
-            CriterionRepository criteria) {
+    public Rows(ProjectRepository projects, ProjectPinner projectPinner, IssueRepository issues, SpecRepository specs,
+            TaskRepository tasks, CriterionRepository criteria) {
         this.projects = projects;
+        this.projectPinner = projectPinner;
         this.issues = issues;
         this.specs = specs;
         this.tasks = tasks;
@@ -111,13 +114,7 @@ public class Rows {
 
     /** Pins a project row at its current version in a bounded loop to serialize spec hierarchy mutations. */
     public void pinProject(ProjectId id) {
-        for (int attempt = 0; attempt < MAX_PIN_ATTEMPTS; attempt++) {
-            Project current = project(id);
-            if (projects.pinVersion(id, current.version())) {
-                return;
-            }
-        }
-        throw new ConflictException(ConflictCode.CONCURRENT_MODIFICATION, List.of("project", id.value()));
+        projectPinner.pin(id);
     }
 
     /** Pins an existing issue row for the transaction without altering version or updated_at. */

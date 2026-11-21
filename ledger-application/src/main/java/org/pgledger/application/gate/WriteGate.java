@@ -14,6 +14,7 @@ import org.pgledger.database.repository.GrantStateRepository;
 import org.pgledger.domain.error.TrustCode;
 import org.pgledger.domain.error.TrustException;
 import org.pgledger.domain.rule.Channel;
+import org.pgledger.domain.rule.LockOrder;
 import org.pgledger.domain.rule.Scope;
 import org.pgledger.domain.value.AuthorId;
 import org.springframework.stereotype.Component;
@@ -30,15 +31,15 @@ import org.springframework.stereotype.Component;
  * {@code session_grant} row locks), and each write operation acquires its mutating/movable entity locks first in
  * canonical order ({@code project -> issue -> spec -> task -> milestone_criterion}; read-only issue checks stay
  * compatible with {@code FOR KEY SHARE} / {@code FOR NO KEY UPDATE}) before calling {@link #authorizeAll} (or
- * {@link #authorizeAvailable} in a batch) once in {@link #TARGET_LOCK_ORDER}, which sorts {@code (project_id,
- * grant_scope)} using {@link Scope#LOCK_ORDER} to match SQL {@code ORDER BY project_id, grant_scope, id}.
+ * {@link #authorizeAvailable} in a batch) once in {@link #TARGET_LOCK_ORDER}, which sorts the targets in Java by
+ * {@link LockOrder#grant}, the one order of the project and grant locks; the revocation of grants
+ * ({@code GrantStateRepository.revokeLive}) sorts its rows with the same comparators, so no path takes the rows in the order
+ * of a database {@code ORDER BY}.
  */
 @Component
 public class WriteGate {
 
-    private static final Comparator<Target> TARGET_LOCK_ORDER = Comparator
-            .comparing((Target t) -> t.project().value())
-            .thenComparing(Target::scope, Scope.LOCK_ORDER);
+    private static final Comparator<Target> TARGET_LOCK_ORDER = LockOrder.grant(Target::project, Target::scope);
 
     private final McpCallerResolver callerResolver;
     private final GrantStateRepository grants;
@@ -126,7 +127,7 @@ public class WriteGate {
 
     /**
      * Conditionally updates ({@code last_used_at}) and locks every required grant in canonical
-     * {@link #TARGET_LOCK_ORDER} ({@code project_id} asc, {@link Scope#LOCK_ORDER}). Call after all entity pins/locks
+     * {@link #TARGET_LOCK_ORDER} ({@link LockOrder}). Call after all entity pins/locks
      * of the operation have been acquired.
      */
     public void authorizeAll(AuthorId author, Collection<Target> targets) {
@@ -136,7 +137,7 @@ public class WriteGate {
 
     /**
      * Conditionally updates ({@code last_used_at}) and locks every live grant among {@code targets} in canonical
-     * {@link #TARGET_LOCK_ORDER} ({@code project_id} asc, {@link Scope#LOCK_ORDER}), returning the subset that was
+     * {@link #TARGET_LOCK_ORDER} ({@link LockOrder}), returning the subset that was
      * authorized. Missing or revoked grants are left out so a multi-operation batch reports
      * {@code SESSION_NOT_GRANTED} at the exact failing operation index.
      */

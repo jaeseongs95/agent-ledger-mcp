@@ -32,6 +32,7 @@ import org.pgledger.domain.model.ReceiptOperation;
 import org.pgledger.domain.rule.DeliverableTarget;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
+import org.pgledger.domain.rule.LockOrder;
 import org.pgledger.domain.rule.Scope;
 import org.pgledger.domain.value.CanonicalPayload;
 import org.pgledger.domain.value.CriterionId;
@@ -525,7 +526,7 @@ public class CorrectOperation extends WriteOperation<CorrectCommand, CorrectResu
         List<Endpoint> ordered = new ArrayList<>(endpoints);
         ordered.sort(Comparator.comparingInt(CorrectOperation::orderRank)
                 .thenComparing(CorrectOperation::entityId)
-                .thenComparing(CorrectOperation::endpointScope, Scope.LOCK_ORDER));
+                .thenComparing(CorrectOperation::endpointScope, LockOrder.SCOPE));
         List<Target> targets = new ArrayList<>(ordered.size());
         for (Endpoint endpoint : ordered) {
             switch (endpoint) {

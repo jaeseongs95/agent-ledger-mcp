@@ -47,6 +47,7 @@ import org.pgledger.domain.model.Task;
 import org.pgledger.domain.model.TaskFields;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
+import org.pgledger.domain.rule.LockOrder;
 import org.pgledger.domain.rule.Scope;
 import org.pgledger.domain.value.CanonicalPayload;
 import org.pgledger.domain.value.CriterionId;
@@ -340,7 +341,7 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
         ProjectId current = rows.spec(spec).projectId();
         ProjectId maxPinned;
         if (targetProject != null && !Objects.equals(targetProject, current)) {
-            if (current.value().compareTo(targetProject.value()) <= 0) {
+            if (LockOrder.PROJECT.compare(current, targetProject) <= 0) {
                 rows.pinProject(current);
                 rows.pinProject(targetProject);
                 maxPinned = targetProject;
@@ -361,7 +362,7 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
         if (alreadyPinned && rows.pinSpecInProject(spec, movedProject)) {
             return new SpecPinResult(movedProject, true);
         }
-        if (!alreadyPinned && movedProject.value().compareTo(maxPinned.value()) > 0) {
+        if (!alreadyPinned && LockOrder.PROJECT.compare(movedProject, maxPinned) > 0) {
             rows.pinProject(movedProject);
             if (rows.pinSpecInProject(spec, movedProject)) {
                 return new SpecPinResult(movedProject, true);
