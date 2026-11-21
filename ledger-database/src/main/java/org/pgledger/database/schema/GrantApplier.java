@@ -6,6 +6,8 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
 import org.pgledger.domain.error.InfrastructureCode;
@@ -56,6 +58,13 @@ public class GrantApplier {
 
     /** A plain unquoted identifier: a letter, then letters, digits or underscores, at most 30 characters in all. */
     private static final Pattern ACCOUNT = Pattern.compile("[A-Za-z][A-Za-z0-9_]{0,29}");
+
+    /**
+     * The words that SQL accepts in the place of the grantee without quotes and that name no account: {@code PUBLIC} is every
+     * role, the others are the role of the session. They are plain identifiers by their form, but {@code GRANT ... TO public}
+     * would give every role of the database the rights of the template.
+     */
+    private static final Set<String> NOT_AN_ACCOUNT = Set.of("PUBLIC", "CURRENT_USER", "SESSION_USER", "CURRENT_ROLE");
     private static final String PLACEHOLDER = "${dml_account}";
 
     private final DataSource dataSource;
@@ -64,9 +73,13 @@ public class GrantApplier {
         this.dataSource = dataSource;
     }
 
-    /** Whether the text can be an account name in the template; no other text is ever put into the SQL. */
+    /**
+     * Whether the text can be an account name in the template; no other text is ever put into the SQL. A plain unquoted
+     * identifier that is not one of the words that stand for a group of accounts ({@code PUBLIC}, {@code CURRENT_USER},
+     * {@code SESSION_USER}, {@code CURRENT_ROLE}, in any case).
+     */
     public static boolean isAccountName(String text) {
-        return text != null && ACCOUNT.matcher(text).matches();
+        return text != null && ACCOUNT.matcher(text).matches() && !NOT_AN_ACCOUNT.contains(text.toUpperCase(Locale.ROOT));
     }
 
     /**

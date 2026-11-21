@@ -73,8 +73,26 @@ class InstallCmdFailureTest {
 
         List<String> onFailure = routine(code, ":fail");
         assertThat(onFailure).hasSize(2);
-        assertThat(onFailure.get(0)).as("only a service that ran is touched, and only started again (PCS-004: no seal-host)")
-                .contains("if defined UP_%%S").doesNotContain("seal-host").endsWith("\"%WHOME%\\lib\\%%S.exe\" start");
+        assertThat(onFailure.get(0)).as("only a service that ran is touched, and started again (PCS-004: no seal-host)")
+                .contains("if defined UP_%%S").doesNotContain("seal-host").contains("\"%WHOME%\\lib\\%%S.exe\" start");
         assertThat(onFailure.get(1)).isEqualTo("exit /b 1");
+    }
+
+    @Test
+    @DisplayName("R9-D0067 a service whose step failed after its uninstall is registered again before it is started: :fail runs install and sc.exe config (the one service account) of each service that ran, then start, in that order; a service that was never removed answers the install with an error that is ignored")
+    void r9D0067_aFailedUpgradeRegistersTheServicesAgain() throws IOException {
+        List<String> code = code();
+        String line = routine(code, ":fail").get(0);
+
+        int install = line.indexOf("\"%WHOME%\\lib\\%%S.exe\" install");
+        int config = line.indexOf("sc.exe config %%S obj= \"%ACCOUNT%\"");
+        int start = line.indexOf("\"%WHOME%\\lib\\%%S.exe\" start");
+        assertThat(install).as("registered again").isNotNegative();
+        assertThat(config).as("with the one service account, as the main path does").isGreaterThan(install);
+        assertThat(start).as("and then started").isGreaterThan(config);
+        // the same two commands as in :steps, so that the account is the one of the main path
+        assertThat(code.get(index(code, "\" install &&"))).contains("sc.exe config %%S obj= \"%ACCOUNT%\"");
+        // an install of a service that exists fails and must not end the recovery: its answer is not shown and not tested
+        assertThat(line.substring(install, config)).contains(">nul 2>&1").doesNotContain("||");
     }
 }

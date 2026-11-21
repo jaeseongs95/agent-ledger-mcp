@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import org.pgledger.application.admin.OwnerAuditWriter;
 import org.pgledger.database.repository.CodeRevisionRepository;
 import org.pgledger.database.repository.CommonCodeRepository;
@@ -141,7 +142,7 @@ public class LegacyImportService {
             Map<LegacyTable, Map<String, ColumnRule>> rules = columnRules();
             ImportCounters counters = new ImportCounters();
             refuse(validate(source, rules, counters));
-            Map<LegacyTable, TableDigest> legacySide = pass(source, rules, counters, true);
+            Map<LegacyTable, TableDigest> legacySide = pass(source, rules, counters, true, TableDigest::new);
             for (Counter counter : COPIED_COUNTERS) {
                 ids.raise(counter, counters.highest(counter));
             }
@@ -166,7 +167,36 @@ public class LegacyImportService {
             Map<LegacyTable, Map<String, ColumnRule>> rules = columnRules();
             ImportCounters counters = new ImportCounters();
             refuse(validate(source, rules, counters));
-            return withUnknownDirections(compare(source.schema(), pass(source, rules, counters, false)), source);
+            return withUnknownDirections(compare(source.schema(), pass(source, rules, counters, false, TableDigest::new)),
+                    source);
+        });
+    }
+
+    /**
+     * Checks that the new schema still holds what the legacy ledger held, after 2.0 has been used: what {@code retire-1x} asks
+     * before it removes the legacy objects. {@link #verify()} cannot answer that once an author has written to the new ledger (it
+     * counts the rows 2.0 added and compares the rows 2.0 edited and the counters it moved on); this one holds each table to what
+     * 2.0 may do to its rows ({@link MovedComparison}): nothing is written. The legacy ledger is validated
+     * first, as for {@link #verify()}.
+     *
+     * @throws InfrastructureException INTEGRITY_VIOLATION: a row of the legacy ledger is gone from the new schema, or a row
+     *         that must be as imported is not (the arguments are as for {@link #importLegacy})
+     */
+    @Transactional(readOnly = true)
+    public ImportReport verifyMoved() {
+        LegacySourceRepository source = requireSource();
+        return snapshot.read(() -> {
+            requireSteps(source);
+            Map<LegacyTable, Map<String, ColumnRule>> rules = columnRules();
+            ImportCounters counters = new ImportCounters();
+            refuse(validate(source, rules, counters));
+            Map<LegacyTable, TableDigest> legacySide = pass(source, rules, counters, false, TableDigest::moved);
+            MovedComparison moved = new MovedComparison(target);
+            List<TableCheck> checks = new ArrayList<>();
+            for (LegacyTable table : LegacyTable.values()) {
+                moved.check(table, legacySide.get(table)).ifPresent(checks::add);
+            }
+            return conclude(source.schema(), checks);
         });
     }
 
@@ -268,10 +298,11 @@ public class LegacyImportService {
      * new schema, added to the digest of its table and, when {@code write} is set, written.
      */
     private Map<LegacyTable, TableDigest> pass(LegacySourceRepository source,
-            Map<LegacyTable, Map<String, ColumnRule>> rules, ImportCounters counters, boolean write) {
+            Map<LegacyTable, Map<String, ColumnRule>> rules, ImportCounters counters, boolean write,
+            Function<LegacyTable, TableDigest> digestOf) {
         Map<LegacyTable, TableDigest> digests = new EnumMap<>(LegacyTable.class);
         for (LegacyTable table : LegacyTable.values()) {
-            TableDigest digest = new TableDigest(table);
+            TableDigest digest = digestOf.apply(table);
             digests.put(table, digest);
             Map<String, ColumnRule> tableRules = rules.get(table);
             if (table == LegacyTable.DEFECT) {
@@ -317,6 +348,11 @@ public class LegacyImportService {
             }
             checks.add(new TableCheck(table, legacy.count(), current.count(), legacy.digest(), current.digest()));
         }
+        return conclude(schema, checks);
+    }
+
+    /** The report of the checks when every table matched, else the refusal that names every table that did not. */
+    private static ImportReport conclude(String schema, List<TableCheck> checks) {
         List<String> differences = new ArrayList<>();
         for (TableCheck check : checks) {
             if (!check.matches()) {

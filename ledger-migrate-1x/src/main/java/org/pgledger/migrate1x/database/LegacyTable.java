@@ -45,13 +45,15 @@ public enum LegacyTable {
     PROJECT("project", "project", List.of("id"), List.of("id"),
             List.of(text("id"), text("code"), text("title"), text("created_by")),
             List.of(text("id"), text("code"), text("title"), number("next_issue_no"), number("next_spec_no"),
-                    number("next_task_no"), number("version"), text("created_by")), false),
+                    number("next_task_no"), number("version"), text("created_by")), false, After.VERSIONED,
+            List.of("next_issue_no", "next_spec_no", "next_task_no")),
 
     COMMON_CODE("common_code", "common_code", List.of("code_group", "code"), List.of("code_group", "code"),
             List.of(text("code_group"), text("code"), text("name_ko"), text("name_en"), text("description_ko"),
                     text("description_en"), number("sort_order"), flag("active"), text("created_by")),
             List.of(text("code_group"), text("code"), text("name_ko"), text("name_en"), text("description_ko"),
-                    text("description_en"), number("sort_order"), text("state"), text("created_by")), true),
+                    text("description_en"), number("sort_order"), text("state"), text("created_by")), true, After.EDITED,
+            List.of()),
 
     TASK("task", "task", List.of("id"), List.of("id"),
             List.of(text("id"), text("project_id"), text("title"), text("purpose"), text("success_condition"),
@@ -60,7 +62,7 @@ public enum LegacyTable {
             List.of(text("id"), text("id_key"), text("project_id"), text("title"), text("purpose"),
                     text("success_condition"), text("state"), text("owner_actor_id"), text("origin_ref"),
                     text("origin_quote"), number("version"), instant("created_at"), instant("updated_at"),
-                    text("created_by")), false),
+                    text("created_by")), false, After.VERSIONED, List.of()),
 
     DEFECT("defect", "issue", List.of("id"), List.of("id"),
             List.of(text("id"), text("project_id"), text("title"), text("category"), text("severity"), text("status"),
@@ -68,7 +70,8 @@ public enum LegacyTable {
                     instant("created_at"), instant("updated_at"), text("created_by")),
             List.of(text("id"), text("project_id"), text("title"), text("category"), text("severity"), text("status"),
                     text("merged_into"), text("symptom"), text("root_cause"), text("owner_actor_id"), number("case_seq"),
-                    number("version"), instant("created_at"), instant("updated_at"), text("created_by")), false),
+                    number("version"), instant("created_at"), instant("updated_at"), text("created_by")), false,
+            After.VERSIONED, List.of("case_seq")),
 
     DEFECT_FIX("defect_fix", "deliverable", List.of("id"), List.of("id"),
             List.of(number("id"), text("defect_id"), text("repo"), text("commit_sha"), text("branch"), text("ci_ref"),
@@ -76,41 +79,42 @@ public enum LegacyTable {
                     flag("imported")),
             List.of(number("id"), text("target_entity"), text("target_id"), text("kind"), text("deliverable_ref"),
                     text("location"), text("summary"), text("check_ref"), text("check_result"), instant("checked_at"),
-                    text("recorded_by"), instant("recorded_at"), text("origin")), false),
+                    text("recorded_by"), instant("recorded_at"), text("origin")), false, After.EDITED, List.of()),
 
     DEFECT_CASE("defect_case", "issue_case", List.of("id"), List.of("id"),
             List.of(number("id"), text("defect_id"), text("observation"), text("evidence"), text("user_quote"),
                     instant("observed_at"), text("recorded_by"), instant("recorded_at")),
             List.of(number("id"), text("issue_id"), text("observation"), text("evidence"), text("source_quote"),
-                    instant("observed_at"), text("recorded_by"), instant("recorded_at")), false),
+                    instant("observed_at"), text("recorded_by"), instant("recorded_at")), false, After.UNCHANGED, List.of()),
 
     DEFECT_TASK("defect_task", "issue_task", List.of("defect_id", "task_id"), List.of("issue_id", "task_id"),
             List.of(text("defect_id"), text("task_id"), text("created_by")),
-            List.of(text("issue_id"), text("task_id"), text("created_by")), false),
+            List.of(text("issue_id"), text("task_id"), text("created_by")), false, After.REMOVABLE, List.of()),
 
     DEFECT_RELATION("defect_relation", "issue_relation", List.of("a", "b", "kind"), List.of("a", "b", "kind"),
             List.of(text("a"), text("b"), text("kind"), text("created_by")),
-            List.of(text("a"), text("b"), text("kind"), text("created_by")), false),
+            List.of(text("a"), text("b"), text("kind"), text("created_by")), false, After.REMOVABLE, List.of()),
 
     /** The legacy table is named {@code condition} and its milestone column {@code release}; both are reserved words. */
     RELEASE_CONDITION("condition", "milestone_criterion", List.of("id"), List.of("id"),
             List.of(text("id"), text("project_id"), text("release"), text("goal_label"), text("code"),
                     text("condition_text"), text("state"), number("version"), text("created_by")),
             List.of(text("id"), text("id_key"), text("project_id"), text("milestone_name"), text("goal_label"),
-                    text("code"), text("criterion_text"), text("state"), number("version"), text("created_by")), false),
+                    text("code"), text("criterion_text"), text("state"), number("version"), text("created_by")), false,
+            After.VERSIONED, List.of()),
 
     /** The legacy table has no key column: the new schema's {@code link_key} is made from the target id columns. */
     CONDITION_LINK("condition_link", "criterion_link", List.of("condition_id"), List.of("link_key"),
             List.of(text("condition_id"), text("task_id"), text("defect_id"), text("created_by")),
             List.of(text("link_key"), text("criterion_id"), text("task_id"), text("issue_id"), text("spec_id"),
-                    text("created_by")), false),
+                    text("created_by")), false, After.REMOVABLE, List.of()),
 
     SESSION_GRANT("session_grant", "session_grant", List.of("id"), List.of("id"),
             List.of(number("id"), text("author_id"), text("project"), text("scope"), text("granted_by"),
                     instant("granted_at"), instant("expires_at"), instant("revoked_at"), text("note")),
             List.of(number("id"), text("author_id"), text("project_id"), text("grant_scope"), text("granted_by"),
                     instant("granted_at"), instant("expires_at"), instant("revoked_at"), instant("last_used_at"),
-                    text("note"), text("active_key")), false),
+                    text("note"), text("active_key")), false, After.EDITED, List.of()),
 
     HISTORY("history", "history", List.of("id"), List.of("id"),
             List.of(number("id"), instant("at"), text("author_id"), text("login"), text("actor_assurance"),
@@ -120,7 +124,26 @@ public enum LegacyTable {
             List.of(number("id"), instant("occurred_at"), text("author_id"), text("login"), text("actor_assurance"),
                     text("entity"), text("entity_id"), text("op"), text("from_state"), text("to_state"), text("changes"),
                     text("before_data"), text("reason"), text("evidence_uri"), text("evidence_sha256"),
-                    number("corrects_id"), text("operation_key"), text("source_ref")), false);
+                    number("corrects_id"), text("operation_key"), text("source_ref")), false, After.UNCHANGED, List.of());
+
+    /**
+     * What 2.0 may do to a row of the table once it was imported, and so what a later check ({@code retire-1x}) can still hold the
+     * new schema to. The grants of the application account say it: an {@code UPDATE} or a {@code DELETE} is there or it is not.
+     */
+    public enum After {
+        /** Never updated and never deleted (the history, the cases): the row must be as imported. */
+        UNCHANGED,
+        /**
+         * Updated only by a write that raises its {@code version}: a row still at the imported version must be as imported, a row
+         * at a higher version was edited and has only to exist. The counters that 2.0 moves on without a version
+         * ({@link LegacyTable#advancingColumns}) are not compared.
+         */
+        VERSIONED,
+        /** Updated without a version (a check fact of a deliverable, the use of a grant, a code set by the owner): the row has to exist. */
+        EDITED,
+        /** A link that {@code unlink} deletes: 2.0 may have removed it, so it is not checked. */
+        REMOVABLE
+    }
 
     private final String sourceName;
     private final String targetName;
@@ -129,9 +152,12 @@ public enum LegacyTable {
     private final List<LegacyColumn> sourceColumns;
     private final List<LegacyColumn> targetColumns;
     private final boolean targetMayHoldOtherRows;
+    private final After after;
+    private final List<String> advancingColumns;
 
     LegacyTable(String sourceName, String targetName, List<String> sourceKey, List<String> targetKey,
-            List<LegacyColumn> sourceColumns, List<LegacyColumn> targetColumns, boolean targetMayHoldOtherRows) {
+            List<LegacyColumn> sourceColumns, List<LegacyColumn> targetColumns, boolean targetMayHoldOtherRows, After after,
+            List<String> advancingColumns) {
         this.sourceName = sourceName;
         this.targetName = targetName;
         this.sourceKey = sourceKey;
@@ -139,6 +165,26 @@ public enum LegacyTable {
         this.sourceColumns = sourceColumns;
         this.targetColumns = targetColumns;
         this.targetMayHoldOtherRows = targetMayHoldOtherRows;
+        this.after = after;
+        this.advancingColumns = advancingColumns;
+    }
+
+    /** What 2.0 may do to a row of this table after the import. */
+    public After after() {
+        return after;
+    }
+
+    /**
+     * The columns of the new table that 2.0 moves on by use, without any edit of the row (the next numbers of a project, the case
+     * counter of an issue): they are what the import left, and not what a later check compares.
+     */
+    public List<String> advancingColumns() {
+        return advancingColumns;
+    }
+
+    /** The columns of the new table that a check after the import compares: all but the {@linkplain #advancingColumns advancing} ones. */
+    public List<LegacyColumn> comparedColumns() {
+        return targetColumns.stream().filter(column -> !advancingColumns.contains(column.name())).toList();
     }
 
     /** The table of the legacy schema. */

@@ -39,6 +39,8 @@ DRIVER_CLASS=
 OWNER=
 APP_ACCOUNT=
 STDIN=
+# The address the hint at the end gives to mcp-check: only with --mcp-port, else mcp-check uses the install default port itself.
+MCP_URL=
 
 die() { echo "install.sh: $*" >&2; exit 1; }
 # runuser: a Java process cannot become another user, so the commands that touch the secrets are started as the service user.
@@ -55,6 +57,7 @@ for arg in "$@"; do
     --driver-class=*) DRIVER_CLASS=${arg#*=} ;;
     --owner-account=*) OWNER=${arg#*=} ;;
     --app-account=*) APP_ACCOUNT=${arg#*=}; set -- "$@" "$arg" ;;
+    --mcp-port=*) MCP_URL=" --url=http://127.0.0.1:${arg#*=}/mcp"; set -- "$@" "$arg" ;;
     --stdin) STDIN=--stdin ;;
     *) set -- "$@" "$arg" ;;
   esac
@@ -81,7 +84,7 @@ ETC=/etc/$NAME
 
 # useradd: Java has no API to create an operating system user. Status 9 is "name in use": the user of an earlier run stays.
 useradd --system --user-group --no-create-home --shell /usr/sbin/nologin "$SVC" || [ $? = 9 ]
-# runuser: the service user has to run the Java too; a runtime in a home directory (mode 0750) it cannot, so this stops before anything is made.
+# runuser: the service user has to run the Java too; a runtime in a home directory (mode 0750) it cannot, so this stops before the directories, the jars and the secrets are made (the user itself is made first, the check runs as that user; a re-run finds it).
 runuser -u "$SVC" -- "$JAVA" -version >/dev/null 2>&1 || die "the service user $SVC cannot run $JAVA: use a Java 25 runtime outside the home directories that every account can read and execute"
 # Directories with owner and mode, the jars, the driver, the units and the settings: Java, as root.
 "$JAVA" $JVM_OPTS -jar "$JARS/ledger-cli.jar" --ledger.secrets.home=/nonexistent prepare-host --jars="$JARS" --driver-jar="$DRIVER_JAR" --java="$JAVA" "$@"
@@ -102,4 +105,4 @@ as_svc setup --owner-account="$OWNER" --app-account="$APP_ACCOUNT" $STDIN
 systemctl daemon-reload
 systemctl enable "$SVC" "$ADMIN"
 systemctl restart "$SVC" "$ADMIN"
-echo "install.sh: done. Check the MCP server with: $JAVA -jar $LIB/ledger-cli.jar mcp-check (the MCP server listens on 127.0.0.1)"
+echo "install.sh: done. Check the MCP server (it listens on 127.0.0.1) as the service user, which alone reads its token: runuser -u $SVC -- $JAVA $JVM_OPTS -jar $LIB/ledger-cli.jar --ledger.secrets.instance=$NAME mcp-check$MCP_URL"

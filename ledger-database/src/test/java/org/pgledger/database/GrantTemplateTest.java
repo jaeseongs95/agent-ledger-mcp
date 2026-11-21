@@ -146,6 +146,24 @@ class GrantTemplateTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = { "public", "PUBLIC", "Public", "current_user", "CURRENT_USER", "Session_User", "session_user",
+            "current_role", "CURRENT_ROLE" })
+    @DisplayName("R9-D0068 the words that name no account but a group of them (PUBLIC, CURRENT_USER, SESSION_USER, CURRENT_ROLE, in any case) are not account names: a GRANT ... TO public would give every role the DML rights; refused before any statement runs")
+    void r9D0068_aReservedGranteeIsNotAnAccountName(String name) {
+        assertThat(GrantApplier.isAccountName(name)).isFalse();
+        DataSource untouched = null;
+        GrantApplier applier = new GrantApplier(untouched);
+        assertThatThrownBy(() -> applier.apply(name)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = { "publicity", "public_app", "current_users", "my_public", "session_user_x" })
+    @DisplayName("R9-D0068 a name that only contains such a word is still an account name")
+    void r9D0068_aNameContainingTheWordIsAnAccountName(String name) {
+        assertThat(GrantApplier.isAccountName(name)).isTrue();
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = { "a", "APP_ACCOUNT", "ledger_app", "A1_b2", "abcdefghijklmnopqrstuvwxyz0123" })
     @DisplayName("INS-009 a plain identifier is an account name")
     void ins009_aPlainIdentifierIsAnAccountName(String name) {

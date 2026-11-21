@@ -78,8 +78,8 @@ for %%S in (%SVC% %ADMIN%) do "%WHOME%\lib\%%S.exe" start || exit /b 1
 exit /b 0
 
 :fail
-rem A step failed after the services were stopped: the services that ran are started again (a prepare-host that failed has put the access of the folders back).
-for %%S in (%SVC% %ADMIN%) do if defined UP_%%S "%WHOME%\lib\%%S.exe" start
+rem A step failed after the services were stopped: the services that ran are registered again (the step may have failed after the uninstall of one; for a service that still exists the install fails and is ignored) with the one account, and started (a prepare-host that failed has put the access of the folders back).
+for %%S in (%SVC% %ADMIN%) do if defined UP_%%S ("%WHOME%\lib\%%S.exe" install >nul 2>&1 & sc.exe config %%S obj= "%ACCOUNT%" >nul 2>&1 & "%WHOME%\lib\%%S.exe" start)
 exit /b 1
 
 :ask

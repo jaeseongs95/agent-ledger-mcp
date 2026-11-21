@@ -291,7 +291,7 @@ cp ledger-cli/build/libs/ledger-cli.jar ledger-mcp-server/build/libs/ledger-mcp-
 | 옵션 | 뜻 |
 |---|---|
 | `--name=<name>` | 인스턴스 이름, 기본값 `pg-ledger-mcp`: 소문자, 숫자, 하이픈, 23자 이내, `-admin`으로 끝나지 않음. Java가 무엇이든 만들기 전에 검증합니다 |
-| `--java=<path>` | Java 25 런타임. 기본값은 root의 `PATH`에 있는 `java`이며, 서비스 사용자도 실행하므로 모든 계정이 실행할 수 있는 경로(`/home` 아래가 아닌 곳)여야 하고, 스크립트가 아무것도 만들기 전에 이를 확인합니다 |
+| `--java=<path>` | Java 25 런타임. 기본값은 root의 `PATH`에 있는 `java`이며, 서비스 사용자도 실행하므로 모든 계정이 실행할 수 있는 경로(`/home` 아래가 아닌 곳)여야 하고, 스크립트가 서비스 사용자를 만든 직후, 다른 것을 만들기 전에 이를 확인합니다 |
 | `--jars=<dir>` | jar 세 개가 있는 디렉터리 |
 | `--driver-jar=<file>` | JDBC 드라이버 jar |
 | `--driver-class=<class>` | 드라이버 클래스. JDBC URL을 받아들여야 합니다 |
@@ -611,7 +611,8 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인�
     sudo runuser -u pg-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar retire-1x --ledger.import.source.username=<owner-account>
     ```
 
-    이 명령은 `import-1x --verify-only`가 일치하는지, 다른 세션이 1.x 역할로 실행 중이거나 1.x 스키마에 잠금을 잡고 있지 않은지, 계정이 객체를 소유하는지 확인하고,
+    이 명령은 2.0 장부가 1.x가 가졌던 것을 여전히 가지고 있는지(그 뒤 2.0을 썼을 수 있으므로 2.0이 추가한 행과 앞으로 옮긴 카운터는 보지 않고, 2.0이 고친 행은 받아들이며,
+    이력·사례와 가져온 버전 그대로인 행은 가져온 그대로여야 합니다. `import-1x --verify-only`는 더 엄격해서 2.0이 추가하거나 바꾼 것을 차이로 보고합니다), 다른 세션이 1.x 역할로 실행 중이거나 1.x 스키마에 잠금을 잡고 있지 않은지, 계정이 객체를 소유하는지 확인하고,
     모든 객체를 제거 순서대로 보여 주며 그 목록의 SHA-256을 출력할 뿐 아무것도 바꾸지 않습니다. 목록을 읽은 뒤 `retire-1x --confirm=<sha256> --backup-tested`를 실행합니다.
 
     ```sh

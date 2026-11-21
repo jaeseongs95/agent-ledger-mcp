@@ -376,7 +376,7 @@ The options of `deploy/install.sh` are given as `--name=value`; the ones it does
 | Option | Meaning |
 |---|---|
 | `--name=<name>` | the name of the instance, default `pg-ledger-mcp`: lower-case letters, digits and hyphens, at most 23 characters, not ending with `-admin`; Java validates it before anything is created |
-| `--java=<path>` | the Java 25 runtime, default the `java` on the `PATH` of root; the service user runs it too, so it is at a path every account can execute (not under `/home`), which the script checks before it creates anything |
+| `--java=<path>` | the Java 25 runtime, default the `java` on the `PATH` of root; the service user runs it too, so it is at a path every account can execute (not under `/home`), which the script checks right after it creates the service user and before it makes anything else |
 | `--jars=<dir>` | the directory that holds the three jars |
 | `--driver-jar=<file>` | the JDBC driver jar |
 | `--driver-class=<class>` | the driver class, which must accept the JDBC URL |
@@ -764,7 +764,9 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
     sudo runuser -u pg-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar retire-1x --ledger.import.source.username=<owner-account>
     ```
 
-    It checks that `import-1x --verify-only` matches, that no other session runs as a 1.x
+    It checks that the ledger of 2.0 still holds what 1.x held (2.0 may have been used since: the rows it added and the counters it
+    moved on are not looked at, a row it edited is accepted, and history, cases and every row still at its imported version must be as
+    imported; `import-1x --verify-only` is stricter and reports what 2.0 added or changed as a difference), that no other session runs as a 1.x
     role or holds a lock in the 1.x schema and that the account owns the objects; it prints every object in the order it is dropped and
     the SHA-256 of that list, and changes nothing. Read the list, then run `retire-1x --confirm=<sha256> --backup-tested`:
 

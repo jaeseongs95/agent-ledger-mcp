@@ -15,7 +15,9 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer push cancels the older run of the same ref, except on main and the release branches: there every commit is a
+  # candidate of a release and the result of its run is the record that it was checked.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/release/') }}
 
 jobs:
   ubuntu:

@@ -14,21 +14,26 @@ import org.pgledger.migrate1x.database.LegacySchemaRepository;
 import org.pgledger.migrate1x.database.LegacySourceRepository;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Removes what the 1.x installer made in the database (functions, triggers, views, tables, the schema and its roles) after the
  * move to 2.0 was accepted. One use case, one service method, one transaction: the transaction is the one of the legacy data
  * source ({@link LegacySourceRepository#TRANSACTION_MANAGER}), where the drops are made; PostgreSQL DDL is transactional, so a
- * failure leaves everything in place. The ledger of 2.0 is only read (by {@link LegacyImportService#verify}, which opens its own
- * transaction on the ledger).
+ * failure leaves everything in place. The ledger of 2.0 is only read (by {@link LegacyImportService#verifyMoved}, which opens its
+ * own transaction on the ledger). The check reads the legacy ledger through {@link LegacySnapshotService}, which joins the
+ * transaction of this service, so a joined transaction has the isolation of the one that opened it: both methods are
+ * REPEATABLE READ, the isolation the snapshot declares (the transaction manager cannot check a join: the check of Spring reads the
+ * transaction of the ledger, which the verification opens in between, so a test holds it: {@code LegacyRetireAfterUseTest}).
  *
  * <p>Both operations check the same preconditions first, in this order, and refuse with {@link RetireRefusedException} or with
  * the {@code LedgerException} of the verification:
  * <ol>
  * <li>the legacy schema is not the schema of 2.0 ({@link RetireRefusal#OWN_SCHEMA}: it holds a {@code schema_history});</li>
- * <li>{@code import-1x --verify-only} matches: the ledger of 2.0 holds what the legacy ledger holds, table by table (a mismatch
- * is {@code INTEGRITY_VIOLATION}), so what is removed has been moved;</li>
+ * <li>the ledger of 2.0 still holds what the legacy ledger holds ({@link LegacyImportService#verifyMoved}: after 2.0 has been
+ * used it has rows, versions and counters of its own, so each table is held to what 2.0 may do to its rows; a mismatch is
+ * {@code INTEGRITY_VIOLATION}), so what is removed has been moved;</li>
  * <li>no other session runs as a 1.x role or uses the schema ({@link RetireRefusal#SESSIONS_CONNECTED});</li>
  * <li>the account owns the objects it is to drop ({@link RetireRefusal#NOT_OWNER}).</li>
  * </ol>
@@ -39,7 +44,7 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>Like the import it is imported by the database configuration of the tool ({@link ImportServices}) and exists only there.
  */
 @Service
-@Transactional(transactionManager = LegacySourceRepository.TRANSACTION_MANAGER)
+@Transactional(transactionManager = LegacySourceRepository.TRANSACTION_MANAGER, isolation = Isolation.REPEATABLE_READ)
 public class LegacyRetireService {
 
     /** The table of the migration bookkeeping of 2.0 ({@code schema_history}); a schema that holds it is the ledger's own. */
@@ -62,7 +67,8 @@ public class LegacyRetireService {
      * @throws LookupException NOT_FOUND: the legacy schema lacks installer steps
      * @throws ValidationException VALIDATION_FAILED: legacy rows that cannot be imported as they are
      */
-    @Transactional(transactionManager = LegacySourceRepository.TRANSACTION_MANAGER, readOnly = true)
+    @Transactional(transactionManager = LegacySourceRepository.TRANSACTION_MANAGER, readOnly = true,
+            isolation = Isolation.REPEATABLE_READ)
     public LegacyRetirePlan plan(Set<String> protectedAccounts) {
         return prepare(requireRepository(), protectedAccounts);
     }
@@ -91,7 +97,7 @@ public class LegacyRetireService {
         if (repository.holdsTable(LEDGER_2_TABLE)) {
             throw new RetireRefusedException(RetireRefusal.OWN_SCHEMA, List.of(repository.schema()));
         }
-        importer.verify();
+        importer.verifyMoved();
         LegacyInventory inventory = repository.inventory(protectedAccounts);
         if (!inventory.sessions().isEmpty()) {
             throw new RetireRefusedException(RetireRefusal.SESSIONS_CONNECTED, inventory.sessions());

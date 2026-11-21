@@ -630,6 +630,42 @@ class InstallScriptsTest {
                 .isEqualTo(2);
     }
 
+    @Test
+    @DisplayName("R9-D0065 the last hint of install.sh names the MCP port of --mcp-port (the option still goes on to Java), the instance (--ledger.secrets.instance) and the service user that alone reads the token: a hint without them answers MCP_UNREACHABLE or finds no token of an instance with another name")
+    void r9d0065_theHintFollowsThePortAndTheInstance() {
+        List<String> code = shCodeLines();
+        String option = "--" + DeployOptions.MCP_PORT;
+
+        assertThat(code).as("the port is read from the option, which is also kept for render-deploy and prepare-host")
+                .anySatisfy(line -> assertThat(line).contains(option + "=*)").contains("${arg#*=}").contains("/mcp")
+                        .contains("set -- \"$@\" \"$arg\""));
+        List<String> hints = code.stream().filter(line -> line.startsWith("echo ") && line.contains("mcp-check")).toList();
+        assertThat(hints).hasSize(1);
+        String hint = hints.getFirst();
+        assertThat(hint).contains("mcp-check$MCP_URL").contains("--ledger.secrets.instance=$NAME")
+                .contains("runuser -u $SVC -- $JAVA").contains("-jar $LIB/ledger-cli.jar");
+        assertThat(firstIndex(code, option + "=*)")).as("the port is known before the hint").isLessThan(firstIndex(code, "mcp-check"));
+        assertThat(text(SH)).as("no fixed port").doesNotContain("127.0.0.1:" + new InstallDefaults(new PackagedSeed()).mcpPort());
+    }
+
+    @Test
+    @DisplayName("R9-D0066 install.sh makes the service user first and checks that it can run the Java directly after, before the directories, the jars and the secrets (the check runs as that user, so it cannot come before it exists); neither the script nor the README says that the check comes before anything is created")
+    void r9d0066_theCheckOfTheJavaIsNotPromisedBeforeTheUser() {
+        List<String> code = shCodeLines();
+        int check = firstIndex(code, "runuser -u \"$SVC\" -- \"$JAVA\" -version");
+
+        assertThat(check).isGreaterThan(firstIndex(code, "useradd")).isLessThan(firstIndex(code, "prepare-host"));
+        assertThat(text(SH)).doesNotContain("so this stops before anything is made")
+                .contains("stops before the directories, the jars and the secrets are made");
+        String english = Repository.read("README.md").lines().filter(line -> line.startsWith("| `--java=<path>`")).findFirst()
+                .orElseThrow();
+        assertThat(english).doesNotContain("before it creates anything")
+                .contains("right after it creates the service user and before it makes anything else");
+        String korean = Repository.read("README.ko.md").lines().filter(line -> line.startsWith("| `--java=<path>`")).findFirst()
+                .orElseThrow();
+        assertThat(korean).doesNotContain("아무것도 만들기 전에").contains("서비스 사용자를 만든 직후, 다른 것을 만들기 전에");
+    }
+
     // ---- helpers ----
 
     private static Properties usageTexts() throws IOException {
