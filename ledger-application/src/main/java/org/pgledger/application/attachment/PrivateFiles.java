@@ -86,6 +86,22 @@ public class PrivateFiles {
         }
     }
 
+    /**
+     * Opens a file that has to exist for reading and writing and never creates it: a file that is gone (its upload was removed) is a
+     * {@link java.nio.file.NoSuchFileException}, not a new empty file without a row. A path that fails {@link #requireFile} is closed
+     * and refused; a link is followed. The caller closes the channel.
+     */
+    public FileChannel openExistingReadWrite(Path file) throws IOException {
+        FileChannel channel = FileChannel.open(file, Set.of(StandardOpenOption.READ, StandardOpenOption.WRITE));
+        try {
+            requireFile(file);
+            return channel;
+        } catch (InfrastructureException failure) {
+            channel.close();
+            throw failure;
+        }
+    }
+
     /** Opens an existing regular file for reading (a link is followed). The caller closes the channel. */
     public FileChannel openRead(Path file) throws IOException {
         requireFile(file);
@@ -113,8 +129,13 @@ public class PrivateFiles {
                 if (parent != null) {
                     Files.createDirectories(parent);
                 }
-                Files.createDirectory(directory, attributesFor(directory, true));
-                settle(directory);
+                try {
+                    Files.createDirectory(directory, attributesFor(directory, true));
+                    settle(directory);
+                } catch (FileAlreadyExistsException madeByAnother) {
+                    // another request made it between the check and the creation: it is used when it is a folder
+                    requireDirectory(directory);
+                }
             }
         } catch (IOException failure) {
             throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_IO_ERROR,

@@ -13,6 +13,7 @@ import org.pgledger.application.attachment.AttachmentMaintenanceService.KeyUse;
 import org.pgledger.application.attachment.AttachmentMaintenanceService.StoredEntry;
 import org.pgledger.application.attachment.AttachmentStore.Content;
 import org.pgledger.application.attachment.AttachmentStore.StoredFile;
+import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.domain.value.OwnerIdentity;
 import org.springframework.stereotype.Component;
@@ -123,7 +124,12 @@ public class AttachmentCheck {
                         || !Objects.equals(verified.sha256(), entry.file().contentSha256())) {
                     damaged.add(attachmentId);
                 }
-            } catch (InfrastructureException corrupted) {
+            } catch (InfrastructureException failure) {
+                if (failure.code() != InfrastructureCode.ARTIFACT_CORRUPTED) {
+                    // a missing key or a disk that cannot be read says nothing about the file: it is not reported as a damaged
+                    // file, the check stops and names the cause
+                    throw failure;
+                }
                 damaged.add(attachmentId);
             }
         }
@@ -142,8 +148,12 @@ public class AttachmentCheck {
                 unreferenced);
     }
 
+    /**
+     * Deletes the files in the quarantine that no row names. A file whose row exists again (a restore) is not deleted: a following
+     * {@link #run(boolean) run} moves it back.
+     */
     public int purgeQuarantine(OwnerIdentity actor) {
-        int deleted = store.purgeQuarantine();
+        int deleted = store.purgeQuarantine(key -> maintenance.keyUse(key).state() != KeyState.IN_USE);
         if (deleted > 0) {
             maintenance.auditOrphansPurged(actor, deleted);
         }

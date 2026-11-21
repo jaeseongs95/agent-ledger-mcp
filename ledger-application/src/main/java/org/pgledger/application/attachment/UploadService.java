@@ -408,11 +408,13 @@ public class UploadService {
             UploadStaging row = rows.get(seq);
             ClosedFile closedFile = closed.get(seq);
             if (!Objects.equals(row.id(), closedFile.uploadId()) || !uploads.complete(row.id(), closedFile.storedBytes(), now)) {
-                List<UploadStaging> current = uploads.findByAttachmentId(attachmentId);
-                if (!current.isEmpty() && current.getFirst().state() == UploadState.COMPLETED) {
-                    return finishedOf(attachmentId);
-                }
-                throw notFound(attachmentId);
+                // A finish that another request committed first is the attachment row that it inserted in the same transaction. The
+                // rows of this transaction (the ones completed above) are no evidence of it: a row that is gone ends this transaction
+                // with an error and rolls the completed rows back.
+                return attachments.findById(attachmentId)
+                        .filter(kept -> Objects.equals(kept.createdBy(), caller))
+                        .map(kept -> finishedOf(kept.id()))
+                        .orElseThrow(() -> notFound(attachmentId));
             }
         }
         AuthorId owner = rows.getFirst().owner();

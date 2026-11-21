@@ -9,6 +9,7 @@ import java.nio.channels.FileLock;
 import java.nio.channels.OverlappingFileLockException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.DosFileAttributeView;
@@ -20,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 import org.pgledger.attestation.Sha256Hex;
 import org.pgledger.domain.error.ConflictCode;
@@ -151,7 +153,8 @@ public class AttachmentStore {
             if (Files.exists(file, LinkOption.NOFOLLOW_LINKS) && endSegmentFollows(file, key, aes, storedBytes, sequence)) {
                 throw conflict();
             }
-            try (FileChannel channel = files.openReadWrite(file); FileLock lock = channel.tryLock(LOCK_POSITION, 1, false)) {
+            try (FileChannel channel = openForWriting(file, sequence == 0);
+                    FileLock lock = channel.tryLock(LOCK_POSITION, 1, false)) {
                 if (lock == null) {
                     throw busy(null);
                 }
@@ -173,6 +176,23 @@ public class AttachmentStore {
             throw busy(failure);
         } catch (IOException failure) {
             throw failed(failure);
+        }
+    }
+
+    /**
+     * Opens the file for writing. Only an upload that has no chunk recorded yet ({@code mayCreate}: the first chunk, or the finish of
+     * an upload of no chunk) makes its file; the file of an upload that has chunks exists, and when it does not the upload was removed
+     * (the reaper) after the plan of this request: that is ARTIFACT_CORRUPTED, the answer for a missing file, and no new empty file
+     * without a row is made.
+     */
+    private FileChannel openForWriting(Path file, boolean mayCreate) throws IOException {
+        if (mayCreate) {
+            return files.openReadWrite(file);
+        }
+        try {
+            return files.openExistingReadWrite(file);
+        } catch (NoSuchFileException missing) {
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
         }
     }
 
@@ -239,7 +259,7 @@ public class AttachmentStore {
                 // the file is open for more bytes whatever its bit says: this class owns it and makes it writable
                 makeWritable(file);
             }
-            try (FileChannel channel = sealed ? files.openRead(file) : files.openReadWrite(file);
+            try (FileChannel channel = sealed ? files.openRead(file) : openForWriting(file, nextSequence == 0);
                     FileLock lock = channel.tryLock(LOCK_POSITION, 1, sealed)) {
                 if (lock == null) {
                     throw busy(null);
@@ -379,12 +399,14 @@ public class AttachmentStore {
             long wantedEnd = offset + maxBytes;
             ByteBuffer collected = ByteBuffer.allocate(maxBytes);
             while (position < size) {
-                byte[] body = readBody(channel, position, size);
-                long next = position + SegmentCipher.LENGTH_BYTES + body.length;
+                // only the length is read to follow the structure; the body of a segment is read when it is opened
+                int length = readLength(channel, position, size);
+                long next = position + SegmentCipher.LENGTH_BYTES + length;
                 boolean last = next == size;
-                long plainLength = body.length - SegmentCipher.IV_BYTES - SegmentCipher.TAG_BYTES;
+                long plainLength = (long) length - SegmentCipher.IV_BYTES - SegmentCipher.TAG_BYTES;
                 boolean overlaps = !last && plainStart + plainLength > offset && plainStart < wantedEnd;
                 if (last || overlaps) {
+                    byte[] body = readFully(channel, position + SegmentCipher.LENGTH_BYTES, length);
                     byte[] plain = cipher.open(aes, key, index, last, body);
                     if (last) {
                         if (plain.length != 0) {
@@ -575,10 +597,16 @@ public class AttachmentStore {
         move(quarantined(key), pathOf(key));
     }
 
-    /** Empties the quarantine (the explicit command only) and returns how many files were deleted. */
-    public int purgeQuarantine() {
+    /**
+     * Deletes the quarantined files that {@code deletable} accepts (the explicit command only) and returns how many files were
+     * deleted; the other files stay in the quarantine.
+     */
+    public int purgeQuarantine(Predicate<StorageKey> deletable) {
         int deleted = 0;
         for (StoredFile stored : listQuarantined()) {
+            if (!deletable.test(stored.key())) {
+                continue;
+            }
             try {
                 Path file = quarantined(stored.key());
                 makeWritable(file);
@@ -634,6 +662,12 @@ public class AttachmentStore {
 
     /** The bytes after the length of the segment that starts at {@code position}; the segment has to end inside {@code limit}. */
     private static byte[] readBody(FileChannel channel, long position, long limit) throws IOException {
+        int length = readLength(channel, position, limit);
+        return readFully(channel, position + SegmentCipher.LENGTH_BYTES, length);
+    }
+
+    /** The length of the segment that starts at {@code position}, read from its 4 bytes only; the segment has to end inside {@code limit}. */
+    private static int readLength(FileChannel channel, long position, long limit) throws IOException {
         if (limit - position < SegmentCipher.LENGTH_BYTES) {
             throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
         }
@@ -645,8 +679,12 @@ public class AttachmentStore {
                 || position + SegmentCipher.LENGTH_BYTES + length > limit) {
             throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
         }
+        return length;
+    }
+
+    private static byte[] readFully(FileChannel channel, long position, int length) throws IOException {
         ByteBuffer body = ByteBuffer.allocate(length);
-        readFully(channel, body, position + SegmentCipher.LENGTH_BYTES);
+        readFully(channel, body, position);
         return body.array();
     }
 
