@@ -2,9 +2,11 @@
 
 package org.pgledger.application.write;
 
+import java.util.List;
 import java.util.function.Function;
 import org.pgledger.application.gate.GateSession;
 import org.pgledger.application.gate.Lookup;
+import org.pgledger.application.gate.Target;
 import org.pgledger.application.gate.WriteGate;
 import org.pgledger.application.receipt.ReceiptService;
 import org.pgledger.domain.model.ReceiptOperation;
@@ -18,7 +20,8 @@ import org.pgledger.domain.value.Sha256;
  * The fixed shape of every write, in the order of the gate: find out what the request touches, check the actor
  * and the grants (in the transaction of the write), validate the reason, validate and normalise the input, insert
  * the receipt first (a replay returns the stored response here), then apply the business rules and write, and
- * finally store the response in the receipt. Each write is a subclass that fills in the three steps that differ.
+ * finally store the response in the receipt. The grants of a replay are those of the call that was answered
+ * ({@link #targetsAnswered}). Each write is a subclass that fills in the three steps that differ.
  * The class has no transaction of its own: it runs inside the transaction of the service that calls it.
  */
 public abstract class WriteOperation<C extends WriteCommand, R extends WriteResult> {
@@ -47,6 +50,16 @@ public abstract class WriteOperation<C extends WriteCommand, R extends WriteResu
     protected abstract Prepared<R> prepare(C command);
 
     /**
+     * The targets that the call needed when it was answered, for the replay of an answer that is stored. By default
+     * they are the targets the request needs now ({@code now}); an operation whose targets depend on the state of the
+     * entities (a transition needs {@code verify} for a verification) derives them from the stored response instead,
+     * so that a replay is not refused or answered otherwise because the entity has changed since.
+     */
+    protected List<Target> targetsAnswered(C command, R stored, List<Target> now) {
+        return now;
+    }
+
+    /**
      * Runs the write for {@code actor} (the raw host attestation, possibly absent) through {@code channel}. Must be
      * called inside a transaction.
      */
@@ -68,7 +81,9 @@ public abstract class WriteOperation<C extends WriteCommand, R extends WriteResu
      * deferred counter/history flushes obey the global canonical lock order across all operations in the batch.
      */
     final R run(String actor, String boundOperationKey, Channel channel, C command, BatchBuffer batch) {
-        GateSession session = gate.open(actor, boundOperationKey, channel, resolve(command));
+        GateSession session = gate.open(actor, boundOperationKey, channel, resolve(command),
+                (author, now) -> receipts.answered(author, command.operationKey(), operation, resultType)
+                        .map(stored -> targetsAnswered(command, stored, now)));
         return session.bind(() -> {
             Reason reason = Reason.of(command.reason());
             OperationKey operationKey = OperationKey.parse(command.operationKey());

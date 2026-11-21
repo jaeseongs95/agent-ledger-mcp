@@ -140,4 +140,23 @@ class LinksAndHistoryTest {
         assertThat(author(HistoryOp.CREATE, null, null, null).changes()).isEqualTo(JsonDocument.EMPTY_OBJECT);
         assertThat(HistoryEntry.class.isRecord()).isTrue();
     }
+
+    private static HistoryEntry deliverableEntry(String entityId) {
+        return new HistoryEntry(null, DomainFixtures.NOW, AuthorId.of("claude:me"), Channel.AUTHOR.login(),
+                ActorAssurance.DECLARED, HistoryEntity.DELIVERABLE, entityId, HistoryOp.CREATE, null, null, null, null,
+                REASON, null, null, null, REQUEST, null, null);
+    }
+
+    /** R9-D0055: the entity id of a history row is 300 characters (code points, as the column counts them), not 300 UTF-16 units. */
+    @Test
+    void r9D0055_theEntityIdOfAHistoryRowIsCountedInCharacters() {
+        String longest = "r".repeat(HistoryEntry.MAX_ENTITY_ID_LENGTH);
+        assertThat(HistoryEntry.MAX_ENTITY_ID_LENGTH).isEqualTo(300);
+        assertThat(deliverableEntry(longest).entityId()).isEqualTo(longest);
+        Expect.invalid(() -> deliverableEntry(longest + "x"));
+        String astral = Character.toString(0x1F600).repeat(HistoryEntry.MAX_ENTITY_ID_LENGTH);
+        assertThat(astral).hasSize(2 * HistoryEntry.MAX_ENTITY_ID_LENGTH);
+        assertThat(deliverableEntry(astral).entityId()).isEqualTo(astral);
+        Expect.invalid(() -> deliverableEntry(astral + "x"));
+    }
 }

@@ -5,6 +5,7 @@ package org.pgledger.application.receipt;
 import java.time.Clock;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import org.pgledger.application.json.LedgerJson;
 import org.pgledger.database.repository.ReceiptCompletionRepository;
 import org.pgledger.database.repository.ReceiptRepository;
@@ -75,6 +76,19 @@ public class ReceiptService {
                 .<Reservation<R>>map(stored -> new Reservation.Replayed<>(storedResponse(stored, id, operation, digest,
                         channel, responseType)))
                 .orElseGet(() -> insertReservation(id, operation, digest, author, channel));
+    }
+
+    /**
+     * The response that the receipt of this author and key stores, when the receipt is of {@code operation} and finished:
+     * what a replay of the key answers if the rest of the request is the same. Nothing is reserved and nothing is
+     * compared ({@link #reserve} compares the request); the gate asks it to find out which grants the call that was
+     * answered needed, because a replay is checked against those and not against the state the world has now.
+     */
+    public <R> Optional<R> answered(AuthorId author, String operationKey, ReceiptOperation operation,
+            Class<R> responseType) {
+        return OperationKey.find(operationKey).flatMap(id -> receipts.findByAuthorIdAndOperationKey(author, id))
+                .filter(stored -> stored.operation() == operation && stored.response() != null)
+                .map(stored -> json.read(stored.response(), responseType));
     }
 
     private <R> Reservation<R> insertReservation(OperationKey id, ReceiptOperation operation, Sha256 digest,

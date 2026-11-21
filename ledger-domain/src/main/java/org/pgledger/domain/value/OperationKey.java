@@ -3,6 +3,7 @@
 package org.pgledger.domain.value;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 import java.util.UUID;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationReason;
@@ -22,7 +23,7 @@ public record OperationKey(String value) {
         if (value == null) {
             throw ValidationException.invalid(WIRE_NAME, ValidationReason.REQUIRED);
         }
-        if (value.length() < MIN_LENGTH || value.length() > MAX_LENGTH || value.isBlank()) {
+        if (!inRange(value)) {
             throw ValidationException.invalid(WIRE_NAME, ValidationReason.MUST_BE_CHARS_RANGE,
                     Integer.toString(MIN_LENGTH), Integer.toString(MAX_LENGTH));
         }
@@ -30,6 +31,15 @@ public record OperationKey(String value) {
 
     public static OperationKey parse(String text) {
         return new OperationKey(text);
+    }
+
+    /** The key of the text, or none when the text is not a key; nothing is thrown. */
+    public static Optional<OperationKey> find(String text) {
+        return text != null && inRange(text) ? Optional.of(new OperationKey(text)) : Optional.empty();
+    }
+
+    private static boolean inRange(String text) {
+        return text.length() >= MIN_LENGTH && text.length() <= MAX_LENGTH && !text.isBlank();
     }
 
     /** The key of operation {@code index} of a batch: deterministic, different per index and per batch key. */

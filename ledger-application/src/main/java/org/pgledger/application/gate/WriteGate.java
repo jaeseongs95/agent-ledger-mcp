@@ -24,7 +24,10 @@ import org.springframework.stereotype.Component;
  * attestation (present; a signed token with an author of the right format; the signature under the live key of the
  * author, which is read and not locked; the tool, operation key and arguments digest of the call; the time
  * window), the project, the grant. The attestation is checked by the {@link AttestationVerifier}: nothing is looked up
- * for a caller that cannot prove its author, and the grant is only asked for the author the signature proves.
+ * for a caller that cannot prove its author, and the grant is only asked for the author the signature proves. The grant
+ * of a replay of a call that was answered is the grant of that call ({@link AnsweredCall}), still live: what changed in
+ * the entities since (a verification, a move) neither refuses the replay nor changes what it answers, and a revoked
+ * grant refuses it.
  *
  * <p>To prevent {@code session_grant} AB-BA deadlocks when movable entities change projects concurrently or grants are
  * revoked/re-issued concurrently, {@link #open} performs a read-only grant liveness pre-check (taking no
@@ -57,30 +60,49 @@ public class WriteGate {
      * @param actor        the host attestation or caller token as the caller sent it
      * @param operationKey the operation key the attestation must be bound to (the key of the call; of a batch, the one
      *                     of the whole batch), as the caller sent it
+     * @param answered     the targets of the call that this author already got an answer to under the key of the call, if
+     *                     any: a replay needs the grants of that call and not those the entities need now (see
+     *                     {@link AnsweredCall})
      */
-    public GateSession open(String actor, String operationKey, Channel channel, Lookup lookup) {
-        // a verification through the author channel is refused first, so it is looked up first (once)
+    public GateSession open(String actor, String operationKey, Channel channel, Lookup lookup,
+            AnsweredCall answered) {
+        // a verification through the author channel is refused first, so it is looked up first (once); it is refused
+        // here, before the attestation, for a caller that cannot prove its author, and for the author that has no
+        // answer to the key (below), so a replay of a call that was answered before the entity was verified goes on
         Optional<Resolution> early = !channel.mayVerify() && lookup.mayVerify() ? Optional.of(lookup.find().get())
                 : Optional.empty();
-        early.ifPresent(found -> {
-            if (found instanceof Resolution.Resolved resolved) {
-                requireReviewerForVerification(channel, resolved.targets());
-            }
-        });
         // outside a tool call there is no tool and no digest: that is the call ToolCall.Outside, which matches nothing signed
-        AuthorId author = callerResolver.verifyForWrite(actor, ToolCall.current(), operationKey);
+        AuthorId author = early.filter(WriteGate::needsVerification).isPresent() ? provenOrRefusedAsVerification(actor,
+                operationKey) : callerResolver.verifyForWrite(actor, ToolCall.current(), operationKey);
         Resolution resolution = early.orElseGet(lookup.find());
         return switch (resolution) {
             case Resolution.Unresolved unresolved -> throw unresolved.failure();
             case Resolution.Resolved resolved -> {
-                if (early.isEmpty()) {
-                    requireReviewerForVerification(channel, resolved.targets());
-                }
-                Set<Target> distinct = new LinkedHashSet<>(resolved.targets());
+                List<Target> needed = answered.targets(author, resolved.targets()).orElse(resolved.targets());
+                requireReviewerForVerification(channel, needed);
+                Set<Target> distinct = new LinkedHashSet<>(needed);
                 distinct.stream().sorted(TARGET_LOCK_ORDER).forEach(target -> requireLive(author, target));
                 yield new GateSession(author, channel);
             }
         };
+    }
+
+    private static boolean needsVerification(Resolution resolution) {
+        return resolution instanceof Resolution.Resolved resolved
+                && resolved.targets().stream().anyMatch(t -> t.scope() == Scope.VERIFY);
+    }
+
+    /**
+     * The author of a call that looks like a verification through the author channel. A caller that cannot prove its
+     * author is refused as a verification, as it always was; one that can goes on, and is refused as a verification
+     * unless it has an answer to the key of the call (the targets of that answer are checked, not these).
+     */
+    private AuthorId provenOrRefusedAsVerification(String actor, String operationKey) {
+        try {
+            return callerResolver.verifyForWrite(actor, ToolCall.current(), operationKey);
+        } catch (TrustException unproven) {
+            throw new TrustException(TrustCode.VERIFY_NEEDS_REVIEWER_LOGIN, List.of());
+        }
     }
 
     /**

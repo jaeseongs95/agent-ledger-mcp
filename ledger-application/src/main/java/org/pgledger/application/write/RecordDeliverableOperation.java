@@ -6,7 +6,6 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.function.Supplier;
 import org.pgledger.application.attachment.AttachmentLinks;
 import org.pgledger.application.gate.Lookup;
@@ -62,6 +61,12 @@ import org.springframework.stereotype.Component;
  * <p>The target entity row is read and conditionally saved ({@code @Version}) before any counter is allocated so
  * concurrent target transitions (especially verification) decide the race cleanly via {@code VERSION_CONFLICT}.
  * Recording on a {@code VERIFIED} entity is refused ({@code VERIFIED_ENTITY}).
+ *
+ * <p>The deliverable itself is read only after the target entity is pinned (spec, task) or read (issue): every
+ * write to a deliverable of a target is a write to that target too, so a deliverable read at that point is the row the
+ * write goes on from, and what a concurrent write changed in between is either seen (the pin waited for it) or ends
+ * in {@code VERSION_CONFLICT} when the target is saved. Read before, it would be overwritten with the values it had
+ * before the other write ({@code deliverable} has no version column).
  */
 @Component
 public class RecordDeliverableOperation extends WriteOperation<RecordDeliverableCommand, RecordDeliverableResult> {
@@ -146,25 +151,22 @@ public class RecordDeliverableOperation extends WriteOperation<RecordDeliverable
         Instant now = clock.instant();
         AuthorId author = ctx.author();
         Evidence evidence = Evidence.of(checkRef, null);
-        Optional<Deliverable> known = deliverables.findByTargetEntityAndTargetIdAndKindAndDeliverableRef(
-                target, targetId, kind, deliverableRef);
-        if (known.isEmpty()) {
-            codeRules.checkDeliverableKind(kind);
-        }
-        Optional<ChangeSet> amended = known.map(row -> amendedChanges(row, checkRef, checkResult, checkedAt));
+        Supplier<Known> afterTheTarget = () -> readKnown(target, targetId, kind, deliverableRef, checkRef,
+                checkResult, checkedAt);
 
         TargetUpdate targetUpdate = switch (target) {
-            case ISSUE -> updateIssue(ctx, IssueId.of(targetId), known.isPresent(), author, mark, now);
-            case SPEC -> updateSpec(ctx, SpecId.of(targetId), known.isPresent(), author, mark, now);
-            case TASK -> updateTask(ctx, TaskId.of(targetId), known.isPresent(), author, mark, now);
+            case ISSUE -> updateIssue(ctx, IssueId.of(targetId), afterTheTarget, author, mark, now);
+            case SPEC -> updateSpec(ctx, SpecId.of(targetId), afterTheTarget, author, mark, now);
+            case TASK -> updateTask(ctx, TaskId.of(targetId), afterTheTarget, author, mark, now);
         };
 
         String delivHistoryId = HistoryKey.deliverableEntityId(target.token(), targetId, kind.value(), deliverableRef);
-        DeliverableWrite write = known
-                .map(row -> amendDeliverable(ctx, row, delivHistoryId, checkRef, checkResult, checkedAt, evidence,
-                        amended.orElseThrow(), attachment))
-                .orElseGet(() -> insertDeliverable(ctx, target, targetId, delivHistoryId, kind, deliverableRef,
-                        location, summary, checkRef, checkResult, checkedAt, evidence, now, attachment));
+        DeliverableWrite write = switch (targetUpdate.known()) {
+            case Known.Recorded recorded -> amendDeliverable(ctx, recorded.row(), delivHistoryId, checkRef,
+                    checkResult, checkedAt, evidence, recorded.amended(), attachment);
+            case Known.New unrecorded -> insertDeliverable(ctx, target, targetId, delivHistoryId, kind,
+                    deliverableRef, location, summary, checkRef, checkResult, checkedAt, evidence, now, attachment);
+        };
 
         Long transitionHistoryId = null;
         if (targetUpdate.op() == HistoryOp.TRANSITION) {
@@ -188,16 +190,49 @@ public class RecordDeliverableOperation extends WriteOperation<RecordDeliverable
                 transitionHistoryId, author.value(), ctx.login());
     }
 
-    private record TargetUpdate(HistoryOp op, String fromState, String toState, String oldOwner, String newOwner,
-            long version, Snapshot before) {
+    /** The deliverable of the request as it is when the target is held, and what an amendment would change in it. */
+    private sealed interface Known {
+
+        /** No such deliverable yet: the request records it. */
+        record New() implements Known {
+        }
+
+        /** The deliverable is recorded: the request amends its check facts, with these changes. */
+        record Recorded(Deliverable row, ChangeSet amended) implements Known {
+        }
+
+        default boolean exists() {
+            return this instanceof Recorded;
+        }
     }
 
-    private TargetUpdate updateIssue(WriteContext ctx, IssueId id, boolean exists, AuthorId author, boolean mark,
-            Instant now) {
+    /**
+     * Reads the deliverable of the request. Called by the update of the target once it has the row of the target and
+     * not before (see the class comment); refuses a kind that is not a code when the deliverable is new, and an
+     * amendment that changes nothing.
+     */
+    private Known readKnown(DeliverableTarget target, String targetId, CodeValue kind, String deliverableRef,
+            String checkRef, CheckResult checkResult, Instant checkedAt) {
+        return deliverables.findByTargetEntityAndTargetIdAndKindAndDeliverableRef(target, targetId, kind,
+                deliverableRef)
+                .<Known>map(row -> new Known.Recorded(row, amendedChanges(row, checkRef, checkResult, checkedAt)))
+                .orElseGet(() -> {
+                    codeRules.checkDeliverableKind(kind);
+                    return new Known.New();
+                });
+    }
+
+    private record TargetUpdate(HistoryOp op, String fromState, String toState, String oldOwner, String newOwner,
+            long version, Snapshot before, Known known) {
+    }
+
+    private TargetUpdate updateIssue(WriteContext ctx, IssueId id, Supplier<Known> afterTheTarget, AuthorId author,
+            boolean mark, Instant now) {
         ctx.requirePinnedIssue(id);
         Issue row = rows.issueForWrite(id, null);
+        Known known = afterTheTarget.get();
         row.requireNotVerified();
-        ActorId nextOwner = exists ? row.ownerActorId() : author;
+        ActorId nextOwner = known.exists() ? row.ownerActorId() : author;
         String oldOwner = row.ownerActorId() == null ? null : row.ownerActorId().value();
         String newOwner = nextOwner == null ? null : nextOwner.value();
         Snapshot before = Snapshot.IssueRow.of(row);
@@ -206,22 +241,24 @@ public class RecordDeliverableOperation extends WriteOperation<RecordDeliverable
             long version = rows.saveIssue(after).version();
             ctx.authorize(gate, List.of(new Target(row.projectId(), Scope.DELIVERABLE)));
             return new TargetUpdate(HistoryOp.TRANSITION, IssueStatus.OPEN.name(), IssueStatus.RESOLVED.name(),
-                    oldOwner, newOwner, version, before);
+                    oldOwner, newOwner, version, before, known);
         }
         Issue after = row.ownedBy(nextOwner, now);
         long version = rows.saveIssue(after).version();
         ctx.authorize(gate, List.of(new Target(row.projectId(), Scope.DELIVERABLE)));
         HistoryOp op = Objects.equals(oldOwner, newOwner) ? null : HistoryOp.EDIT;
-        return new TargetUpdate(op, row.status().name(), row.status().name(), oldOwner, newOwner, version, before);
+        return new TargetUpdate(op, row.status().name(), row.status().name(), oldOwner, newOwner, version, before,
+                known);
     }
 
-    private TargetUpdate updateSpec(WriteContext ctx, SpecId id, boolean exists, AuthorId author, boolean mark,
-            Instant now) {
+    private TargetUpdate updateSpec(WriteContext ctx, SpecId id, Supplier<Known> afterTheTarget, AuthorId author,
+            boolean mark, Instant now) {
         ProjectId pinnedProject = ctx.pinSpec(rows, id);
         ctx.authorize(gate, List.of(new Target(pinnedProject, Scope.DELIVERABLE)));
         Spec row = rows.specForWrite(id, null);
+        Known known = afterTheTarget.get();
         row.requireNotVerified();
-        ActorId nextOwner = exists ? row.ownerActorId() : author;
+        ActorId nextOwner = known.exists() ? row.ownerActorId() : author;
         String oldOwner = row.ownerActorId() == null ? null : row.ownerActorId().value();
         String newOwner = nextOwner == null ? null : nextOwner.value();
         Snapshot before = Snapshot.SpecRow.of(row);
@@ -231,21 +268,23 @@ public class RecordDeliverableOperation extends WriteOperation<RecordDeliverable
             Spec after = row.transitioned(SpecStatus.COMPLETED, now).ownedBy(nextOwner, now);
             long version = rows.saveSpec(after).version();
             return new TargetUpdate(HistoryOp.TRANSITION, row.status().name(), SpecStatus.COMPLETED.name(), oldOwner,
-                    newOwner, version, before);
+                    newOwner, version, before, known);
         }
         Spec after = row.ownedBy(nextOwner, now);
         long version = rows.saveSpec(after).version();
         HistoryOp op = Objects.equals(oldOwner, newOwner) ? null : HistoryOp.EDIT;
-        return new TargetUpdate(op, row.status().name(), row.status().name(), oldOwner, newOwner, version, before);
+        return new TargetUpdate(op, row.status().name(), row.status().name(), oldOwner, newOwner, version, before,
+                known);
     }
 
-    private TargetUpdate updateTask(WriteContext ctx, TaskId id, boolean exists, AuthorId author, boolean mark,
-            Instant now) {
+    private TargetUpdate updateTask(WriteContext ctx, TaskId id, Supplier<Known> afterTheTarget, AuthorId author,
+            boolean mark, Instant now) {
         ProjectId pinnedProject = ctx.pinTask(rows, id);
         ctx.authorize(gate, List.of(new Target(pinnedProject, Scope.DELIVERABLE)));
         Task row = rows.taskForWrite(id, null);
+        Known known = afterTheTarget.get();
         row.requireNotVerified();
-        ActorId nextOwner = exists ? row.ownerActorId() : author;
+        ActorId nextOwner = known.exists() ? row.ownerActorId() : author;
         String oldOwner = row.ownerActorId() == null ? null : row.ownerActorId().value();
         String newOwner = nextOwner == null ? null : nextOwner.value();
         Snapshot before = Snapshot.TaskRow.of(row);
@@ -258,10 +297,11 @@ public class RecordDeliverableOperation extends WriteOperation<RecordDeliverable
         long version = rows.saveTask(after).version();
         if (nextState != row.state()) {
             return new TargetUpdate(HistoryOp.TRANSITION, row.state().name(), nextState.name(), oldOwner, newOwner,
-                    version, before);
+                    version, before, known);
         }
         HistoryOp op = Objects.equals(oldOwner, newOwner) ? null : HistoryOp.EDIT;
-        return new TargetUpdate(op, row.state().name(), row.state().name(), oldOwner, newOwner, version, before);
+        return new TargetUpdate(op, row.state().name(), row.state().name(), oldOwner, newOwner, version, before,
+                known);
     }
 
     private record DeliverableWrite(long deliverableId, long historyId) {

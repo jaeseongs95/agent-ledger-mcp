@@ -153,6 +153,37 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
                 .orElseGet(() -> Resolution.unresolved(Tokens.unknown("to", c.to(), states)));
     }
 
+    /**
+     * The first target of a transition (the one of the entity itself; a merge adds the target issue after it) needs
+     * the scope of the state change that was answered, from and to as the stored response has them: the scope of the
+     * state the entity has now says nothing about it (an entity that has been verified since would ask for
+     * {@code verify} and the reviewer channel for the replay of a transition that was none).
+     */
+    @Override
+    protected List<Target> targetsAnswered(TransitionCommand c, TransitionResult stored, List<Target> now) {
+        List<Target> answered = new ArrayList<>(now);
+        answered.set(0, new Target(now.getFirst().project(), answeredScope(stored)));
+        return answered;
+    }
+
+    private static Scope answeredScope(TransitionResult stored) {
+        HistoryEntity entity = Tokens.parse("entity", stored.entity(), STATEFUL);
+        return switch (entity) {
+            case ISSUE -> scopeOf(entity, stored, IssueStatus.values());
+            case SPEC -> scopeOf(entity, stored, SpecStatus.values());
+            case TASK -> scopeOf(entity, stored, TaskState.values());
+            case CRITERION -> scopeOf(entity, stored, CriterionState.values());
+            case DELIVERABLE, ISSUE_TASK, ISSUE_SPEC, SPEC_TASK, ISSUE_RELATION, CRITERION_LINK, ISSUE_CASE ->
+                throw new IllegalStateException("Tokens.parse refused it");
+        };
+    }
+
+    private static <S extends Enum<S> & LifecycleState> Scope scopeOf(HistoryEntity entity, TransitionResult stored,
+            S[] states) {
+        return Scope.forTransition(entity, Tokens.parse("from", stored.from(), states),
+                Tokens.parse("to", stored.to(), states));
+    }
+
     @Override
     protected Prepared<TransitionResult> prepare(TransitionCommand c) {
         HistoryEntity entity = Tokens.parse("entity", c.entity(), STATEFUL);

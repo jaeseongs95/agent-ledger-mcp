@@ -36,6 +36,9 @@ public record HistoryEntry(@Id Long id, @Column("occurred_at") Instant at, Actor
         JsonDocument beforeData, String reason, String evidenceUri, Sha256 evidenceSha256, Long correctsId,
         OperationKey operationKey, String sourceRef, String attachmentId) {
 
+    /** The longest {@code entity_id}, in characters (code points): the length of the column {@code history.entity_id}. */
+    public static final int MAX_ENTITY_ID_LENGTH = 300;
+
     private static final Set<HistoryOp> OPS_WITH_BEFORE_DATA = EnumSet.of(HistoryOp.EDIT, HistoryOp.TRANSITION,
             HistoryOp.UNLINK);
     private static final String OPS_WITH_BEFORE_DATA_TEXT = OPS_WITH_BEFORE_DATA.stream().map(HistoryOp::name)
@@ -66,8 +69,9 @@ public record HistoryEntry(@Id Long id, @Column("occurred_at") Instant at, Actor
                 ValidationReason.REQUIRED_FOR_IMPORTED_OPERATIONS);
         require(beforeData == null || OPS_WITH_BEFORE_DATA.contains(op), "before_data",
                 ValidationReason.EXISTS_ONLY_FOR, OPS_WITH_BEFORE_DATA_TEXT);
-        require(entityId != null && !entityId.isBlank() && entityId.length() <= 300, "entity_id",
-                ValidationReason.MUST_BE_CHARS_RANGE, "1", "300");
+        require(entityId != null && !entityId.isBlank()
+                && entityId.codePointCount(0, entityId.length()) <= MAX_ENTITY_ID_LENGTH, "entity_id",
+                ValidationReason.MUST_BE_CHARS_RANGE, "1", Integer.toString(MAX_ENTITY_ID_LENGTH));
         require(reason != null && !reason.isBlank(), "reason", ValidationReason.REQUIRED);
         if (sourceRef == null) {
             Reason.validated(reason);

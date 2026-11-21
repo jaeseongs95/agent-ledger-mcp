@@ -151,7 +151,10 @@ class IdentityTest {
             assertThat(issue.reason()).isEqualTo(ValidationReason.MUST_BE_CHARS_RANGE);
             assertThat(issue.reasonArgs()).containsExactly("1", "128");
             Expect.invalid(() -> new OperationKey(bad));
+            assertThat(OperationKey.find(bad)).as("find of '%s' throws nothing and finds nothing", bad).isEmpty();
         }
+        assertThat(OperationKey.find(null)).isEmpty();
+        assertThat(OperationKey.find("k".repeat(128))).hasValue(OperationKey.parse("k".repeat(128)));
         for (String ok : List.of("k", "k".repeat(128), "not-a-uuid", "1-1-1-1-1", "한글 키 01",
                 UUID.randomUUID().toString())) {
             assertThat(OperationKey.parse(ok).value()).isEqualTo(ok);
