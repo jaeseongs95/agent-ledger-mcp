@@ -57,4 +57,12 @@ public class PasskeyConfiguration {
         registration.setEnabled(false);
         return registration;
     }
+
+    /** The gate of the passkey endpoints runs in the security chain only, for the same reason as the guard. */
+    @Bean
+    FilterRegistrationBean<PasskeyEndpointGate> passkeyEndpointGateRegistration(PasskeyEndpointGate gate) {
+        FilterRegistrationBean<PasskeyEndpointGate> registration = new FilterRegistrationBean<>(gate);
+        registration.setEnabled(false);
+        return registration;
+    }
 }

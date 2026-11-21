@@ -115,6 +115,18 @@ class OidcTest {
     }
 
     @Test
+    @DisplayName("PSK-SIN-03 (D-0058): with sign-in=oidc a passkey does not sign in: the options of a passkey sign-in and the sign-in itself are refused, and no session follows")
+    void sin03_noPasskeySignIn() throws Exception {
+        Browser browser = new Browser(mvc);
+        String csrf = browser.csrfOf("/login");
+
+        browser.perform(browser.json("/webauthn/authenticate/options", csrf, null)).andExpect(status().is4xxClientError());
+        browser.perform(browser.json("/login/webauthn", csrf, "{}")).andExpect(status().is4xxClientError());
+
+        browser.perform(browser.get("/api/session").accept(MediaType.APPLICATION_JSON)).andExpect(status().isUnauthorized());
+    }
+
+    @Test
     @DisplayName("ADM-031: a valid ID token of an allowed, verified e-mail signs the owner in")
     void adm031_allowedEmailSignsIn() throws Exception {
         Browser browser = new Browser(mvc);

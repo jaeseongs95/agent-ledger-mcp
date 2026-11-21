@@ -7,8 +7,6 @@ import java.util.List;
 import org.pgledger.admin.web.FormErrors;
 import org.pgledger.application.admin.CommonCodeService;
 import org.pgledger.application.admin.CommonCodeService.CodeCommand;
-import org.pgledger.application.read.CatalogService;
-import org.pgledger.application.read.CatalogService.CodesQuery;
 import org.pgledger.domain.error.AdminCode;
 import org.pgledger.domain.error.AdminException;
 import org.pgledger.domain.rule.CodeDirection;
@@ -43,19 +41,19 @@ public class CodesController {
             String confirmReactivation) {
     }
 
-    private final CatalogService catalog;
+    private final Choices choices;
     private final CommonCodeService codes;
     private final FormErrors forms;
 
-    public CodesController(CatalogService catalog, CommonCodeService codes, FormErrors forms) {
-        this.catalog = catalog;
+    public CodesController(Choices choices, CommonCodeService codes, FormErrors forms) {
+        this.choices = choices;
         this.codes = codes;
         this.forms = forms;
     }
 
     @GetMapping("/codes")
     String page(Model model) {
-        model.addAttribute("codes", catalog.codes(new CodesQuery(null, true, Choices.ALL, null)).items());
+        model.addAttribute("codes", choices.allCodes());
         model.addAttribute("groups", CodeGroup.values());
         model.addAttribute("states", CodeState.values());
         model.addAttribute("directions", CodeDirection.values());

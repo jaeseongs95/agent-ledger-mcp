@@ -28,10 +28,11 @@ server:
       remote-ip-header: X-Forwarded-For
       protocol-header: X-Forwarded-Proto
       # The host and the port a request is for are never taken from a forwarded header: the Host allow list of the
-      # firewall (DNS rebinding guard) must see the Host header the client sent. Tomcat reads the headers named here
-      # instead of X-Forwarded-Host and X-Forwarded-Port; no client or proxy sends these names.
-      host-header: X-Ledger-Ignored-Forwarded-Host
-      port-header: X-Ledger-Ignored-Forwarded-Port
+      # firewall (DNS rebinding guard) must see the Host header the client sent. An empty name switches the reading off
+      # (Spring Boot's default names are X-Forwarded-Host and X-Forwarded-Port); a name that no one sends would still be
+      # believed from the one who does send it: a script of a rebound page from the machine of the proxy.
+      host-header: ''
+      port-header: ''
   servlet:
     session:
       timeout: 12h

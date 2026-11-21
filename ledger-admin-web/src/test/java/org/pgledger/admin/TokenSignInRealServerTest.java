@@ -57,4 +57,22 @@ class TokenSignInRealServerTest {
         assertThat(http.get("/api/session", "Cookie", RealHttp.cookie(before), "Accept", "application/json").status())
                 .as("the session id from before the sign-in is not a session any more").isEqualTo(401);
     }
+
+    @Test
+    @DisplayName("ADM-081 (D-0060): a body that declares no length (sent in chunks) is read as it is: the token form signs in with it, and one above the limit is 413 PAYLOAD_TOO_LARGE before the sign-in reads it")
+    void adm081_chunkedBodies() {
+        RealHttp http = new RealHttp(port);
+        Reply page = http.get("/login");
+        String cookie = RealHttp.cookie(page.sessionId().orElseThrow());
+
+        Reply tooLarge = http.postFormChunked("/login", "username=owner&token=" + "x".repeat(100_000) + "&_csrf=" + page.csrf(),
+                "Cookie", cookie, "Accept", "application/json");
+        Reply login = http.postFormChunked("/login",
+                "username=owner&token=" + AdminTestSettings.TOKEN + "&_csrf=" + page.csrf(), "Cookie", cookie);
+
+        assertThat(tooLarge.status()).isEqualTo(413);
+        assertThat(login.status()).isEqualTo(302);
+        assertThat(http.get("/api/session", "Cookie", RealHttp.cookie(login.sessionId().orElseThrow()), "Accept",
+                "application/json").status()).isEqualTo(200);
+    }
 }

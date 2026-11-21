@@ -122,6 +122,13 @@ public final class Browser {
         return csrf == null ? request : request.param("_csrf", csrf);
     }
 
+    /** A JSON post as the scripts of the passkey page send it (the CSRF token in the header); the body may be absent. */
+    public MockHttpServletRequestBuilder json(String uri, String csrf, String body) {
+        MockHttpServletRequestBuilder request = withClient(MockMvcRequestBuilders.post(uri))
+                .accept(MediaType.APPLICATION_JSON).contentType(MediaType.APPLICATION_JSON).header("X-CSRF-TOKEN", csrf);
+        return body == null ? request : request.content(body);
+    }
+
     /** The approval of a write: what the page does before it posts the form. */
     public String approval(String uri, MultiValueMap<String, String> fields, String csrf) throws Exception {
         ApprovalService.Options options = approvalOptions(uri, fields, csrf);

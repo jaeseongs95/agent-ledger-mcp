@@ -34,7 +34,11 @@
       </tbody>
     </table>
   </section>
-  <section th:attr="aria-label=#{passkeys.add}">
+  <section th:if="${!enrolling}" th:attr="aria-label=#{passkeys.add}">
+    <h2 th:text="#{passkeys.add}">Register a passkey</h2>
+    <p th:text="#{passkeys.addByCode}">To register another passkey, run ledger-cli passkey-code.</p>
+  </section>
+  <section th:if="${enrolling}" th:attr="aria-label=#{passkeys.add}">
     <h2 th:text="#{passkeys.add}">Register a passkey</h2>
     <label for="passkey-label" th:text="#{passkeys.label}">Label</label>
     <input id="passkey-label" type="text" maxlength="60" autocomplete="off" th:value="#{passkeys.defaultLabel}">

@@ -332,6 +332,27 @@ class PasskeyTest {
     }
 
     @Test
+    @DisplayName("PSK-ENR-05 (D-0057): a session of the owner (a passkey sign-in) cannot register a passkey: the registration endpoints are 403 for it, nothing is stored, and it still reads and closes passkeys on the page; only the session of a one-time code registers")
+    void enr05_anOwnerSessionCannotRegister() throws Exception {
+        Browser owner = Browser.signedIn(mvc);
+        String csrf = owner.csrfOf("/passkeys");
+        int before = passkeys.live().size();
+        SoftwarePasskey added = new SoftwarePasskey();
+        String challenge = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        SoftwarePasskey.Registration registration = added.registration(challenge, TestPasskeys.RP_ID, TestPasskeys.ORIGIN);
+        String body = "{\"publicKey\":{\"credential\":{\"id\":\"" + registration.credentialId() + "\",\"rawId\":\""
+                + registration.credentialId() + "\",\"response\":{\"attestationObject\":\"" + registration.attestationObject()
+                + "\",\"clientDataJSON\":\"" + registration.clientDataJson() + "\",\"transports\":[]},\"type\":\"public-key\","
+                + "\"clientExtensionResults\":{}},\"label\":\"intruder\"}}";
+
+        owner.perform(owner.json("/webauthn/register/options", csrf, null)).andExpect(status().isForbidden());
+        owner.perform(owner.json("/webauthn/register", csrf, body)).andExpect(status().isForbidden());
+
+        assertThat(passkeys.live()).hasSize(before).extracting(live -> live.label()).doesNotContain("intruder");
+        owner.perform(owner.get("/passkeys")).andExpect(status().isOk());
+    }
+
+    @Test
     @DisplayName("PSK-APR-09: the challenge is the SHA-256 of an intent that names the change and the session: two requests for the same change give two challenges")
     void apr09_challengesDiffer() throws Exception {
         Browser owner = Browser.signedIn(mvc);

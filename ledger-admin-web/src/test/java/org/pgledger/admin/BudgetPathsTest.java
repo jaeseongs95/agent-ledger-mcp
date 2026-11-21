@@ -85,7 +85,7 @@ class BudgetPathsTest {
     }
 
     private static MockHttpServletRequestBuilder post(Browser browser, String path, String csrf, String json) {
-        var request = MockMvcRequestBuilders.post(path).session(browser.session()).accept(MediaType.APPLICATION_JSON)
+        var request = MockMvcRequestBuilders.post(java.net.URI.create(path)).session(browser.session()).accept(MediaType.APPLICATION_JSON)
                 .contentType(MediaType.APPLICATION_JSON).header("X-CSRF-TOKEN", csrf).with(r -> {
                     r.setRemoteAddr(browser.address());
                     return r;
@@ -102,12 +102,17 @@ class BudgetPathsTest {
 
     /** One sign-in with a passkey through the endpoints, by the passkey given: the status of {@code /login/webauthn}. */
     private int signInWith(SoftwarePasskey passkey) throws Exception {
+        return signInWith(passkey, "/login/webauthn");
+    }
+
+    /** The same at the given path of the sign-in (the path as the client wrote it: a letter may be percent-encoded). */
+    private int signInWith(SoftwarePasskey passkey, String loginPath) throws Exception {
         Browser browser = new Browser(mvc);
         String csrf = browser.csrfOf("/login");
         MvcResult options = browser.perform(post(browser, "/webauthn/authenticate/options", csrf, null)).andReturn();
         String challenge = JsonPath.read(options.getResponse().getContentAsString(), "$.challenge");
         SoftwarePasskey.Assertion assertion = passkey.assertion(challenge, TestPasskeys.RP_ID, TestPasskeys.ORIGIN);
-        return browser.perform(post(browser, "/login/webauthn", csrf, loginBody(assertion))).andReturn().getResponse().getStatus();
+        return browser.perform(post(browser, loginPath, csrf, loginBody(assertion))).andReturn().getResponse().getStatus();
     }
 
     @Test
@@ -159,5 +164,17 @@ class BudgetPathsTest {
         bearer(AdminTestSettings.TOKEN).andExpect(status().isOk());
 
         assertThat(since(start)).containsExactly(Duration.ZERO, Duration.ZERO, Duration.ZERO, Duration.ZERO);
+    }
+
+    @Test
+    @DisplayName("LGN-016 (D-0061): the passkey sign-in is counted at the path of the framework's own matching: two wrong assertions at /login/%77ebauthn (a letter percent-encoded, which the framework reads as /login/webauthn) use the budget up like the plain path, and a bearer after them is delayed")
+    void lgn013_aPercentEncodedPathIsCounted() throws Exception {
+        int start = freshWindow();
+        assertThat(signInWith(new SoftwarePasskey(), "/login/%77ebauthn")).isGreaterThanOrEqualTo(400);
+        assertThat(signInWith(new SoftwarePasskey(), "/login/%77ebauthn")).isGreaterThanOrEqualTo(400);
+
+        bearer(AdminTestSettings.TOKEN).andExpect(status().isOk());
+
+        assertThat(since(start)).containsExactly(Duration.ZERO, Duration.ZERO, DELAY);
     }
 }

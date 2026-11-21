@@ -82,6 +82,13 @@ public final class RealHttp {
                 .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8)).build());
     }
 
+    /** A form post whose length is not declared: the body goes in chunks (a proxy that streams the body does this). */
+    public Reply postFormChunked(String target, String body, String... headers) {
+        return send(request(target, headers).header("Content-Type", "application/x-www-form-urlencoded")
+                .POST(HttpRequest.BodyPublishers.fromPublisher(HttpRequest.BodyPublishers.ofString(body,
+                        StandardCharsets.UTF_8))).build());
+    }
+
     private HttpRequest.Builder request(String target, String... headers) {
         HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + target))
                 .timeout(Duration.ofSeconds(30));

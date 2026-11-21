@@ -9,6 +9,7 @@ import org.pgledger.admin.app.AdminMode;
 import org.pgledger.admin.app.LedgerAdminProperties;
 import org.pgledger.admin.app.SignInMethod;
 import org.pgledger.admin.passkey.EnrollmentTokenService;
+import org.pgledger.admin.passkey.PasskeyEndpointGate;
 import org.pgledger.admin.passkey.OwnerAccounts;
 import org.pgledger.admin.passkey.PasskeyLoginGuard;
 import org.pgledger.admin.passkey.PasskeyRelyingParty;
@@ -107,7 +108,8 @@ public class AdminSecurityConfiguration {
     SecurityFilterChain adminSecurity(HttpSecurity http, AdminMode mode, LedgerAdminProperties properties,
             AdminTokenProvider tokens, SecurityFailures failures, ObjectProvider<ClientRegistrationRepository> clients,
             OwnerOidcUserService owners, ServerProperties server, ObjectProvider<PasskeyRelyingParty> parties,
-            ObjectProvider<PasskeyLoginGuard> guards, ObjectProvider<EnrollmentTokenService> codes) throws Exception {
+            ObjectProvider<PasskeyLoginGuard> guards, ObjectProvider<PasskeyEndpointGate> gates,
+            ObjectProvider<EnrollmentTokenService> codes) throws Exception {
         AuthenticationManager bearer = new ProviderManager(tokens);
         boolean console = mode == AdminMode.CONSOLE;
         boolean oidc = properties.effectiveSignIn() == SignInMethod.OIDC;
@@ -137,7 +139,11 @@ public class AdminSecurityConfiguration {
                             .hasAnyAuthority(AdminTokenProvider.OWNER_AUTHORITY, AdminTokenProvider.API_READ_AUTHORITY)
                             .requestMatchers("/api/**").hasAuthority(AdminTokenProvider.OWNER_AUTHORITY)
                             .requestMatchers(HttpMethod.DELETE, "/webauthn/register/**").denyAll()
-                            .requestMatchers("/webauthn/register/**", "/passkeys")
+                            // a passkey is registered only in the enrolment session of a one-time code, whatever the owner
+                            // signed in with; the filters of the framework answer these paths before this rule is asked, so
+                            // PasskeyEndpointGate enforces it in front of them, and this rule is the second line
+                            .requestMatchers("/webauthn/register/**").hasAuthority(OwnerAccounts.ENROLL_AUTHORITY)
+                            .requestMatchers("/passkeys")
                             .hasAnyAuthority(AdminTokenProvider.OWNER_AUTHORITY, OwnerAccounts.ENROLL_AUTHORITY)
                             .anyRequest().hasAuthority(AdminTokenProvider.OWNER_AUTHORITY);
                 })
@@ -162,7 +168,7 @@ public class AdminSecurityConfiguration {
                         .referrerPolicy(referrer -> referrer.policy(ReferrerPolicy.NO_REFERRER))
                         .permissionsPolicyHeader(policy -> policy.policy("camera=(), microphone=(), geolocation=()")));
         if (console) {
-            passkeys(http, failures, parties.getObject(), guards.getObject(), codes.getObject());
+            passkeys(http, failures, parties.getObject(), guards.getObject(), gates.getObject(), codes.getObject());
         }
         if (console && properties.effectiveSignIn() == SignInMethod.TOKEN) {
             // the admin token as the password of the application's own page (the personal edition): the budget of checks
@@ -207,9 +213,10 @@ public class AdminSecurityConfiguration {
      * nothing but register a passkey).
      */
     private static void passkeys(HttpSecurity http, SecurityFailures failures, PasskeyRelyingParty party,
-            PasskeyLoginGuard guard, EnrollmentTokenService codes) throws Exception {
+            PasskeyLoginGuard guard, PasskeyEndpointGate gate, EnrollmentTokenService codes) throws Exception {
         RedirectStrategy redirects = new DefaultRedirectStrategy();
-        http.addFilterBefore(guard, LogoutFilter.class)
+        // the gate stands in front of the guard: a refused sign-in is not a check that counts against the budget
+        http.addFilterBefore(guard, LogoutFilter.class).addFilterBefore(gate, PasskeyLoginGuard.class)
                 .webAuthn(web -> web.rpName(party.rpName()).rpId(party.rpId()).allowedOrigins(party.origins())
                         .disableDefaultRegistrationPage(true))
                 // loginPage: the application's own page, so Spring Security generates no default login page (which would also

@@ -4,8 +4,6 @@ package org.pgledger.admin.console;
 
 import org.pgledger.application.admin.ProjectService;
 import org.pgledger.application.admin.ProjectService.ProjectCommand;
-import org.pgledger.application.read.CatalogService;
-import org.pgledger.application.read.CatalogService.ProjectsQuery;
 import org.pgledger.domain.value.OwnerIdentity;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -17,17 +15,17 @@ import org.springframework.web.bind.annotation.PostMapping;
 @Controller
 public class ProjectsController {
 
-    private final CatalogService catalog;
+    private final Choices choices;
     private final ProjectService projects;
 
-    public ProjectsController(CatalogService catalog, ProjectService projects) {
-        this.catalog = catalog;
+    public ProjectsController(Choices choices, ProjectService projects) {
+        this.choices = choices;
         this.projects = projects;
     }
 
     @GetMapping("/projects")
     String page(Model model) {
-        model.addAttribute("projects", catalog.projects(new ProjectsQuery(Choices.ALL, null)).items());
+        model.addAttribute("projects", choices.projects());
         return "projects";
     }
 

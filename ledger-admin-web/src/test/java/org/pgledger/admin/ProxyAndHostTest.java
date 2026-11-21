@@ -124,4 +124,19 @@ class ProxyAndHostTest {
         assertThat(forged.body()).contains("\"DNS_REBINDING_BLOCKED\"");
         assertThat(ignored.status()).isEqualTo(200);
     }
+
+    @Test
+    @DisplayName("ADM-079 (D-0059): the names that the forwarded host and port were moved to are not believed either: an unlisted Host with a listed X-Ledger-Ignored-Forwarded-Host (and -Port) is refused with 403 DNS_REBINDING_BLOCKED, as a script of a rebound page could send it from the machine of the proxy")
+    void adm051_theRenamedForwardedHeadersAreNotBelieved() {
+        RealHttp http = new RealHttp(port);
+
+        Reply host = http.get("/healthz", "Host", "rebinding.example", "X-Ledger-Ignored-Forwarded-Host", "localhost",
+                "Accept", "application/json");
+        Reply hostAndPort = http.get("/healthz", "Host", "rebinding.example", "X-Ledger-Ignored-Forwarded-Host",
+                "localhost", "X-Ledger-Ignored-Forwarded-Port", "8865", "Accept", "application/json");
+
+        assertThat(host.status()).isEqualTo(403);
+        assertThat(host.body()).contains("\"DNS_REBINDING_BLOCKED\"");
+        assertThat(hostAndPort.status()).isEqualTo(403);
+    }
 }

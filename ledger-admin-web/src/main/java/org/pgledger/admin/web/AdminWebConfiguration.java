@@ -32,14 +32,15 @@ public class AdminWebConfiguration implements WebMvcConfigurer {
     /**
      * A {@code @Bean} method because a registration bean is the Spring Boot type that puts a filter into the servlet
      * container at a URL pattern and an order, and it is built from values (the pattern and the order), not injected: the
-     * filter itself is the component {@link RequestSizeFilter}. It runs after the security chain, so a request that is not
-     * allowed is not read.
+     * filter itself is the component {@link RequestSizeFilter}. It runs before the security chain: the chain answers some
+     * paths itself (the passkey sign-in, the registration, the sign-in forms) and reads the body of a request that is not
+     * signed in, so the limit has to stand in front of it.
      */
     @Bean
     FilterRegistrationBean<RequestSizeFilter> requestSizeFilterRegistration(RequestSizeFilter filter) {
         FilterRegistrationBean<RequestSizeFilter> registration = new FilterRegistrationBean<>(filter);
         registration.addUrlPatterns("/*");
-        registration.setOrder(SecurityFilterProperties.DEFAULT_FILTER_ORDER + 1);
+        registration.setOrder(SecurityFilterProperties.DEFAULT_FILTER_ORDER - 1);
         return registration;
     }
 }

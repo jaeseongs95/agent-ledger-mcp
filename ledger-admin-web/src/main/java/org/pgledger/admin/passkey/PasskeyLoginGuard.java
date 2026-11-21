@@ -7,12 +7,14 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.util.Objects;
 import org.pgledger.admin.security.AdminAuthenticationException;
 import org.pgledger.admin.security.LoginAttempts;
 import org.pgledger.admin.security.LoginDelay;
 import org.pgledger.admin.security.SecurityFailures;
 import org.pgledger.domain.error.AdminCode;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -27,7 +29,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Component
 public final class PasskeyLoginGuard extends OncePerRequestFilter {
 
-    static final String LOGIN_PATH = "/login/webauthn";
+    /** The sign-in as the framework matches it (decoded, within the context path), not as the text of the request reads. */
+    private static final RequestMatcher LOGIN = PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST,
+            "/login/webauthn");
 
     private final LoginAttempts attempts;
     private final LoginDelay delays;
@@ -41,8 +45,7 @@ public final class PasskeyLoginGuard extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !"POST".equals(request.getMethod())
-                || !Objects.equals(request.getContextPath() + LOGIN_PATH, request.getRequestURI());
+        return !LOGIN.matches(request);
     }
 
     @Override

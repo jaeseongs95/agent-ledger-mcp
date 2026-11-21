@@ -77,9 +77,11 @@ public final class ApprovalIntents {
                 sorted.put(name, values.stream().sorted().toList());
             }
         });
+        // every name and value is written with its length in front, so no character inside one (a line break, an equals
+        // sign) can move the boundary between a field and the next: two different sets of parameters never give the same text
         StringBuilder canonical = new StringBuilder();
-        sorted.forEach((name, values) -> values.forEach(value -> canonical.append(name).append('=').append(value)
-                .append('\n')));
+        sorted.forEach((name, values) -> values.forEach(value -> canonical.append(name.length()).append(':').append(name)
+                .append(value.length()).append(':').append(value)));
         return new Binding(method, path, Sha256.ofText(canonical.toString()).hex(), Sha256.ofText(sessionId).hex());
     }
 

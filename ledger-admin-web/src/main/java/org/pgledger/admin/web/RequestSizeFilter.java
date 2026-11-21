@@ -13,9 +13,16 @@ import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.URLDecoder;
+import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.pgledger.admin.app.LedgerAdminProperties;
 import org.pgledger.domain.error.AdminCode;
 import org.pgledger.domain.error.AdminException;
@@ -79,14 +86,80 @@ public final class RequestSizeFilter extends OncePerRequestFilter {
         errors.resolveException(request, response, null, new AdminException(AdminCode.PAYLOAD_TOO_LARGE, List.of()));
     }
 
-    /** The request with the body that was read: the handler reads it again from memory. */
+    /**
+     * The request with the body that was read: the handler reads it again from memory. The body of a form was consumed from
+     * the container's own request, which can no longer parse it, so the parameters of the form are read from the buffered body
+     * here (the filter stands in front of the security chain, which asks for the CSRF token of the form).
+     */
     private static final class BufferedBodyRequest extends HttpServletRequestWrapper {
 
+        private static final String FORM = "application/x-www-form-urlencoded";
+
         private final byte[] body;
+        private Map<String, String[]> parameters;
 
         BufferedBodyRequest(HttpServletRequest request, byte[] body) {
             super(request);
             this.body = body;
+        }
+
+        @Override
+        public String getParameter(String name) {
+            String[] values = getParameterMap().get(name);
+            return values == null || values.length == 0 ? null : values[0];
+        }
+
+        @Override
+        public String[] getParameterValues(String name) {
+            return getParameterMap().get(name);
+        }
+
+        @Override
+        public Enumeration<String> getParameterNames() {
+            return Collections.enumeration(getParameterMap().keySet());
+        }
+
+        /** The parameters of the query string, then those of the form body when the body is a form. */
+        @Override
+        public synchronized Map<String, String[]> getParameterMap() {
+            if (parameters == null) {
+                Map<String, List<String>> merged = new LinkedHashMap<>();
+                super.getParameterMap().forEach((name, values) -> merged.put(name, new ArrayList<>(List.of(values))));
+                String type = getContentType();
+                if (type != null && type.regionMatches(true, 0, FORM, 0, FORM.length())) {
+                    addForm(merged, charset().decode(ByteBuffer.wrap(body)).toString());
+                }
+                Map<String, String[]> built = new LinkedHashMap<>();
+                merged.forEach((name, values) -> built.put(name, values.toArray(String[]::new)));
+                parameters = Collections.unmodifiableMap(built);
+            }
+            return parameters;
+        }
+
+        private void addForm(Map<String, List<String>> into, String form) {
+            for (String pair : form.split("&")) {
+                if (pair.isEmpty()) {
+                    continue;
+                }
+                int equals = pair.indexOf('=');
+                String name = equals < 0 ? pair : pair.substring(0, equals);
+                String value = equals < 0 ? "" : pair.substring(equals + 1);
+                String decodedName;
+                String decodedValue;
+                try {
+                    decodedName = URLDecoder.decode(name, charset());
+                    decodedValue = URLDecoder.decode(value, charset());
+                } catch (IllegalArgumentException malformed) {
+                    // a pair with a broken percent escape is dropped, as the container drops it
+                    continue;
+                }
+                into.computeIfAbsent(decodedName, key -> new ArrayList<>()).add(decodedValue);
+            }
+        }
+
+        private Charset charset() {
+            String name = getCharacterEncoding();
+            return name == null ? StandardCharsets.UTF_8 : Charset.forName(name);
         }
 
         @Override
@@ -123,9 +196,7 @@ public final class RequestSizeFilter extends OncePerRequestFilter {
 
         @Override
         public BufferedReader getReader() {
-            String name = getCharacterEncoding();
-            Charset charset = name == null ? StandardCharsets.UTF_8 : Charset.forName(name);
-            return new BufferedReader(new InputStreamReader(getInputStream(), charset));
+            return new BufferedReader(new InputStreamReader(getInputStream(), charset()));
         }
     }
 }

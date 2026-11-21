@@ -109,4 +109,16 @@ class ApprovalIntentsTest {
         assertThat(refused(() -> intents.spend(key(oldest), binding))).isEqualTo(AdminCode.PASSKEY_APPROVAL_INVALID);
         intents.spend(key(newest), binding);
     }
+
+    @Test
+    @DisplayName("PSK-INT-06 (D-0062): a line break or an equals sign inside a name or a value does not move a boundary: one field whose value holds a break and \"b=y\" is not two fields, and the name \"a=x\" with the value \"y\" is not the name \"a\" with the value \"x=y\"")
+    void int06_separatorsInValuesDoNotMerge() {
+        Binding oneField = binding(Map.of("a", List.of("x\nb=y")), "session");
+        Binding twoFields = binding(Map.of("a", List.of("x"), "b", List.of("y")), "session");
+        Binding equalsInName = binding(Map.of("a=x", List.of("y")), "session");
+        Binding equalsInValue = binding(Map.of("a", List.of("x=y")), "session");
+
+        assertThat(oneField).isNotEqualTo(twoFields);
+        assertThat(equalsInName).isNotEqualTo(equalsInValue);
+    }
 }

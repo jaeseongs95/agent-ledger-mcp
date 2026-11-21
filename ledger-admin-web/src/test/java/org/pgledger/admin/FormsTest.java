@@ -12,6 +12,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.pgledger.admin.support.AdminTest;
 import org.pgledger.admin.support.AuthorKeys;
 import org.pgledger.admin.support.Browser;
@@ -300,6 +301,29 @@ class FormsTest {
         String csrf = browser.csrfOf("/projects");
 
         browser.perform(browser.form("/projects", Form.of(), csrf).content("id=big&code=BIG&title=" + "x".repeat(100_000))
+                .accept(MediaType.APPLICATION_JSON)).andExpect(status().isContentTooLarge())
+                .andExpect(jsonPath("$.code").value("PAYLOAD_TOO_LARGE"));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"/login/webauthn", "/webauthn/register", "/webauthn/authenticate/options"})
+    @DisplayName("ADM-080 (D-0060): a JSON body above the limit is 413 PAYLOAD_TOO_LARGE also at the endpoints that Spring Security answers itself (the passkey sign-in and the registration), for a client that is not signed in")
+    void adm034_oversizeBodyAtTheSecurityEndpoints(String path) throws Exception {
+        Browser anonymous = new Browser(mvc);
+        String csrf = anonymous.csrfOf("/login");
+
+        anonymous.perform(anonymous.json(path, csrf, "{\"x\":\"" + "x".repeat(100_000) + "\"}"))
+                .andExpect(status().isContentTooLarge()).andExpect(jsonPath("$.code").value("PAYLOAD_TOO_LARGE"));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"/login", "/login/ott"})
+    @DisplayName("ADM-080 (D-0060): a form body above the limit is 413 PAYLOAD_TOO_LARGE also at the sign-in forms, before they read it")
+    void adm034_oversizeFormAtTheSignIn(String path) throws Exception {
+        Browser anonymous = new Browser(mvc);
+        String csrf = anonymous.csrfOf("/login");
+
+        anonymous.perform(anonymous.formWithoutApproval(path, Form.of(), csrf).content("token=" + "x".repeat(100_000))
                 .accept(MediaType.APPLICATION_JSON)).andExpect(status().isContentTooLarge())
                 .andExpect(jsonPath("$.code").value("PAYLOAD_TOO_LARGE"));
     }

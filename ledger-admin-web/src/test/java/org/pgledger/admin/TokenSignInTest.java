@@ -106,6 +106,30 @@ class TokenSignInTest {
         assertThat(count(id)).isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("PSK-ENR-05 (D-0057): a session opened with the token cannot register a passkey without the one-time code: the registration endpoints are 403 for it")
+    void enr05_aTokenSessionCannotRegister() throws Exception {
+        Browser owner = new Browser(mvc);
+        owner.perform(owner.form("/login", Form.of("username", "owner", "token", AdminTestSettings.TOKEN),
+                owner.csrfOf("/login"))).andExpect(status().is3xxRedirection());
+        String csrf = owner.csrfOf("/passkeys");
+
+        owner.perform(owner.json("/webauthn/register/options", csrf, null)).andExpect(status().isForbidden());
+        owner.perform(owner.json("/webauthn/register", csrf, "{}")).andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("PSK-SIN-03 (D-0058): with sign-in=token the passkey is for approvals only: the options of a passkey sign-in and the sign-in itself are refused before the framework's filters answer, and no session follows")
+    void sin03_noPasskeySignIn() throws Exception {
+        Browser browser = new Browser(mvc);
+        String csrf = browser.csrfOf("/login");
+
+        browser.perform(browser.json("/webauthn/authenticate/options", csrf, null)).andExpect(status().is4xxClientError());
+        browser.perform(browser.json("/login/webauthn", csrf, "{}")).andExpect(status().is4xxClientError());
+
+        browser.perform(browser.get("/api/session").accept(MediaType.APPLICATION_JSON)).andExpect(status().isUnauthorized());
+    }
+
     private int count(String id) {
         return jdbc.sql("SELECT COUNT(*) FROM project WHERE id = :id").param("id", id).query(Integer.class).single();
     }
