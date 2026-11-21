@@ -29,6 +29,7 @@ import org.springframework.context.annotation.Import;
     HookCli.class,
     HookExitCode.class,
     HookClockConfiguration.class,
+    HookMessagesConfiguration.class,
     HostDialects.class,
     JsonCodec.class,
     LedgerHook.class,
