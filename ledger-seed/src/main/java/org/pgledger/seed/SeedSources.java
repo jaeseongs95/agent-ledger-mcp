@@ -20,7 +20,7 @@ import java.util.regex.Pattern;
  * <ul>
  * <li>{@value #CATEGORIES}: tab separated, a header line and one line per code: {@code code}, the Korean and the English name,
  * the Korean and the English description. The sort order is the position in the file (10, 20, ...), the group is
- * {@code DEFECT_CATEGORY}, the state {@code ACTIVE}.</li>
+ * {@code ISSUE_CATEGORY}, the state {@code ACTIVE}.</li>
  * <li>{@value #DEFAULTS}: {@code name=value} lines, {@code #} starts a comment line; the defaults of the installation (the
  * instance name, the ports).</li>
  * </ul>

@@ -31,7 +31,7 @@ import org.pgledger.mcp.support.Seed;
 import org.pgledger.mcp.support.ToolNames;
 import org.pgledger.mcp.tool.ReadOutputs;
 
-/** MCR cases common to the twelve read tools: schemas, the removed SQL tools, the bearer. */
+/** MCR cases common to the 15 read tools: schemas, the removed SQL tools, the bearer. */
 @McpServerTest
 class ReadContractTest {
 

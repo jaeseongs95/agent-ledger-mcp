@@ -296,7 +296,7 @@ cp ledger-cli/build/libs/ledger-cli.jar ledger-mcp-server/build/libs/ledger-mcp-
 | `--java=<path>` | Java 25 런타임. 기본값은 root의 `PATH`에 있는 `java`이며, 서비스 사용자도 실행하므로 모든 계정이 실행할 수 있는 경로(`/home` 아래가 아닌 곳)여야 하고, 스크립트가 서비스 사용자를 만든 직후, 다른 것을 만들기 전에 이를 확인합니다 |
 | `--jars=<dir>` | jar 세 개가 있는 디렉터리 |
 | `--driver-jar=<file>` | JDBC 드라이버 jar |
-| `--driver-class=<class>` | 드라이버 클래스. JDBC URL을 받아들여야 합니다 |
+| `--driver-class=<class>` | 드라이버 클래스. JDBC URL을 받아들여야 합니다(PostgreSQL JDBC 드라이버는 `org.postgresql.Driver`) |
 | `--owner-account=<account>` | DDL 계정(비밀번호를 물어봅니다) |
 | `--app-account=<account>` | 앱 계정 |
 | `--jdbc-url=<url>` | 장부 데이터베이스의 JDBC URL(비밀번호를 넣지 않습니다) |
@@ -323,6 +323,8 @@ root로 실행합니다. 사용자 `pg-ledger-mcp`가 없으면 만들고, `prep
 ```sh
 sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<driver-class> --owner-account=<ddl-account> --app-account=<app-account> --jdbc-url=<jdbc-url>
 ```
+
+설치 프로그램은 서비스 둘(`<name>`과 `<name>-admin`, 기본값은 `pg-ledger-mcp`와 `pg-ledger-mcp-admin`)을 활성화하고 재시작합니다. `systemctl status pg-ledger-mcp pg-ledger-mcp-admin`으로 확인합니다.
 
 ### 밖에서 접근하기
 
@@ -374,7 +376,7 @@ OpenID Connect로 로그인하고, 첫 패스키는 `passkey-code`로 등록합�
 ### 첫 설정
 
 설치 스크립트는 `setup`을 호출하며, 업그레이드한 뒤나 직접 준비한 데이터베이스에서는 운영자가 직접 실행합니다. 새 장부는 처음에 담을 데이터가 필요하므로 `ledger-cli`는
-시드 번들을 함께 가지고 있습니다. 시드 번들은 파일 `ledger-seed.mv.db`이며, 빌드가 `ledger-cli` 모듈의 텍스트 파일 `src/seed/defect-categories.tsv`와
+시드 번들을 함께 가지고 있습니다. 시드 번들은 파일 `ledger-seed.mv.db`이며, 빌드가 `ledger-cli` 모듈의 텍스트 파일 `src/seed/issue-categories.tsv`와
 `src/seed/install-defaults.properties`에서 Java 프로그램으로 만들어 `ledger-cli.jar`에 넣습니다. 이 파일은 저장소에 커밋하지 않습니다. 번들에는 기본 결함 분류 14개
 (코드, 한국어·영어 이름과 설명)와 설치 기본값(인스턴스 이름과 두 포트)이 들어 있으며, 비밀값은 없습니다. 파일 형식이 H2 데이터베이스일 뿐이며 H2는 여기서 그 용도로만
 쓰입니다. 장부는 언제나 운영자가 설치한 데이터베이스 시스템에 저장되고, H2 드라이버나 H2의 JDBC URL을 등록하려 하면 `driver-register`와 관리 웹의 드라이버 화면이
@@ -541,7 +543,7 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인�
 
 | 이전 명령 | 문법 | 하는 일 |
 |---|---|---|
-| `stop-1x` | `stop-1x [--name=<instance>] [--platform=<platform>] [--unit-dir=<dir>] [--home=<dir>] [--env=<file> [--mcp-host=<host>] [--admin-host=<host>]]` | 첫 단계입니다. 1.x의 서비스 둘 `<name>`과 `<name>-admin`을 멈추고 비활성화하며, 각 정의를 옆에 백업(`<file>.1x-backup`)으로 보관합니다. `--env`를 주면 먼저 1.x의 공개 호스트 이름을 검사합니다 |
+| `stop-1x` | `stop-1x [--name=<instance>] [--platform=<platform>] [--unit-dir=<dir>] [--env=<file> [--mcp-host=<host>] [--admin-host=<host>]]` | 첫 단계입니다. 1.x의 서비스 둘 `<name>`과 `<name>-admin`을 멈추고 비활성화하며, 각 정의를 옆에 백업(`<file>.1x-backup`)으로 보관합니다. `--env`를 주면 먼저 1.x의 공개 호스트 이름을 검사합니다 |
 | `import-secrets-1x` | `import-secrets-1x --env=<file> [--replace]` 또는 `import-secrets-1x --stdin [--replace]` | 설치 프로그램을 실행한 뒤 1.x의 비밀을 2.0의 비밀 저장소로 옮깁니다. `--replace`를 주면 설치 프로그램이 생성한 토큰을 대체합니다 |
 | `import-1x` | `import-1x [--verify-only] [--owner-account=<account>] [--stdin]` | 1.x 장부를 하나의 트랜잭션으로 새 스키마에 복사하고 모든 표를 행 수와 SHA-256으로 대조합니다. `--verify-only`는 대조만 다시 합니다 |
 | `retire-1x` | `retire-1x [--confirm=<sha256> --backup-tested]` | 2.0을 받아들인 뒤, 1.x 설치기가 데이터베이스에 만든 것을 제거합니다. 옵션 없이 실행하면 목록만 보여 주고 아무것도 바꾸지 않습니다 |
@@ -618,7 +620,7 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인�
    sudo runuser -u pg-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar import-1x --owner-account=<ddl-account> --ledger.import.source.url=<jdbc-url> --ledger.import.source.username=<account>
    ```
 
-   가져오기는 장부 전체를 쓰는데 두 앱 계정은 이를 할 수 없으므로, `--owner-account=<account>`가 DDL 계정으로 실행합니다. 그 비밀번호는 숨김 입력으로 받으며 저장하지 않습니다
+   가져오기는 장부 전체를 쓰며, `--owner-account=<account>`가 DDL 계정으로 실행합니다. 그 비밀번호는 숨김 입력으로 받으며 저장하지 않습니다
    (`--stdin`은 대신 표준 입력의 첫 줄에서 받으며 `--owner-account`가 필요합니다). 1.x 스키마는 읽기 전용으로 읽고 새 스키마는 하나의 트랜잭션으로 씁니다. 아래 가져오기가 하는 일을 참조합니다.
 7. **세션 키를 등록합니다.** 1.x의 부여는 세션 키 없이 복사됩니다. 모든 작성자는 `ledger-cli key-register`로 세션 키를 등록해야 하며, 그 뒤에 부여가 동작합니다.
 8. **확인.** `ledger-cli mcp-check --url=<its public URL>`와 `import-1x --verify-only`(1.x 원본의 설정이 필요하며 아무것도 바꾸지 않습니다)를 실행하고, `ledger-cli passkey-code`를 실행해 관리 웹에서 첫 패스키를 등록합니다(설치 프로그램이 만든 관리 토큰은

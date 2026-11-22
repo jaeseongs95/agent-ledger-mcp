@@ -382,7 +382,7 @@ The options of `deploy/install.sh` are given as `--name=value`; the ones it does
 | `--java=<path>` | the Java 25 runtime, default the `java` on the `PATH` of root; the service user runs it too, so it is at a path every account can execute (not under `/home`), which the script checks right after it creates the service user and before it makes anything else |
 | `--jars=<dir>` | the directory that holds the three jars |
 | `--driver-jar=<file>` | the JDBC driver jar |
-| `--driver-class=<class>` | the driver class, which must accept the JDBC URL |
+| `--driver-class=<class>` | the driver class, which must accept the JDBC URL (for the PostgreSQL JDBC driver, `org.postgresql.Driver`) |
 | `--owner-account=<account>` | the DDL account (its password is asked for) |
 | `--app-account=<account>` | the application account |
 | `--jdbc-url=<url>` | the JDBC URL of the ledger database (no password in it) |
@@ -413,6 +413,8 @@ see Upgrading from 1.x.
 ```sh
 sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<driver-class> --owner-account=<ddl-account> --app-account=<app-account> --jdbc-url=<jdbc-url>
 ```
+
+The installer enables and restarts the two services (`<name>` and `<name>-admin`, `pg-ledger-mcp` and `pg-ledger-mcp-admin` by default); check them with `systemctl status pg-ledger-mcp pg-ledger-mcp-admin`.
 
 ### Reaching the servers from outside
 
@@ -474,7 +476,7 @@ without HTTPS.
 
 The installers call `setup`, and you run it yourself after an upgrade or against a database that you prepared by hand. A new ledger
 has to start with some data, so `ledger-cli` carries a seed bundle: the file `ledger-seed.mv.db`, which the build writes with a Java
-program from the text files `src/seed/defect-categories.tsv` and `src/seed/install-defaults.properties` of the module `ledger-cli`
+program from the text files `src/seed/issue-categories.tsv` and `src/seed/install-defaults.properties` of the module `ledger-cli`
 and packs into `ledger-cli.jar`. It is never committed. The bundle holds the 14 default defect categories (code, Korean and English
 name and description) and the defaults of an installation (the instance name and the two ports); it holds no secret. The file has the
 format of the H2 database, and that is all H2 is here: the ledger is always kept by the database system that you install, and the
@@ -680,7 +682,7 @@ driver; `stop-1x` and `import-secrets-1x` need none.
 
 | Migration command | Syntax | What |
 |---|---|---|
-| `stop-1x` | `stop-1x [--name=<instance>] [--platform=<platform>] [--unit-dir=<dir>] [--home=<dir>] [--env=<file> [--mcp-host=<host>] [--admin-host=<host>]]` | first step: stop and disable the two services of 1.x, `<name>` and `<name>-admin`, and keep each definition as a backup next to it (`<file>.1x-backup`); with `--env` it first checks the public host names of 1.x |
+| `stop-1x` | `stop-1x [--name=<instance>] [--platform=<platform>] [--unit-dir=<dir>] [--env=<file> [--mcp-host=<host>] [--admin-host=<host>]]` | first step: stop and disable the two services of 1.x, `<name>` and `<name>-admin`, and keep each definition as a backup next to it (`<file>.1x-backup`); with `--env` it first checks the public host names of 1.x |
 | `import-secrets-1x` | `import-secrets-1x --env=<file> [--replace]` or `import-secrets-1x --stdin [--replace]` | after the installer: move the secrets of 1.x into the secret store of 2.0; with `--replace` they replace the tokens that the installer generated |
 | `import-1x` | `import-1x [--verify-only] [--owner-account=<account>] [--stdin]` | copy the 1.x ledger into the new schema in one transaction and compare every table by row count and SHA-256; `--verify-only` repeats only the comparison |
 | `retire-1x` | `retire-1x [--confirm=<sha256> --backup-tested]` | after you accept 2.0, remove what the 1.x installer made in the database; without options it lists it and changes nothing |
@@ -768,7 +770,7 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
    sudo runuser -u pg-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar import-1x --owner-account=<ddl-account> --ledger.import.source.url=<jdbc-url> --ledger.import.source.username=<account>
    ```
 
-   The import writes the whole ledger, which neither application account may do, so `--owner-account=<account>` runs it as the DDL account, whose
+   The import writes the whole ledger; `--owner-account=<account>` runs it as the DDL account, whose
    password is typed with hidden input and is not stored (`--stdin` takes it from the first line of standard input instead and needs `--owner-account`).
    It reads the 1.x schema read only and writes the new schema in one transaction; see What the import does below.
 7. **Register the session keys.** The grants of 1.x are copied without a session key. Every author registers a session key with

@@ -34,7 +34,7 @@ class WriteSchemaTest {
     }
 
     @Test
-    @DisplayName("MCW-001: tools/list holds the ten write tools and no tool that executes SQL or searches objects")
+    @DisplayName("MCW-001: tools/list holds the 13 write tools and no tool that executes SQL or searches objects")
     void listHoldsTheWriteToolsAndNoSqlTool(McpSession session) {
         List<String> names = session.tools().stream().map(Tool::name).toList();
 

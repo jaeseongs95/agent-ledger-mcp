@@ -33,9 +33,10 @@ import org.springframework.transaction.TransactionException;
 /**
  * {@code driver-register --jar=<path> --class=<class>}: registers the JDBC driver the owner supplies. It is the one command
  * that needs no database (a new installation has no driver). The checks are those of the admin web driver page
- * ({@link DriverRegistrar}): the jar must be inside the allowed directory ({@code ledger.cli.driver.directory}), readable,
- * owned and writable only by trusted accounts, and the class must be a {@code java.sql.Driver} that accepts the configured
- * JDBC URL ({@code ledger.jdbc.url}); then the SHA-256 of the jar is taken and the registration file is replaced
+ * ({@link DriverRegistrar}): the jar must be given as an absolute path inside the allowed directory
+ * ({@code ledger.cli.driver.directory}) and be a readable regular file that opens as an archive, and the class must be a
+ * {@code java.sql.Driver} that accepts the configured JDBC URL ({@code ledger.jdbc.url}); the owner and the permissions of
+ * the jar are not checked (the allowed directory is the control); then the SHA-256 of the jar is taken and the registration file is replaced
  * atomically. A refused registration leaves the file as it was. As in the admin web, every refusal about the jar or the
  * class has the one fixed text and the specific reason goes to the log. The running products keep their pool: the new
  * driver is used after their next start.
