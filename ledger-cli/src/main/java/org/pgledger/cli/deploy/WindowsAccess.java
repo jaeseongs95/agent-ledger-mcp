@@ -37,9 +37,6 @@ import org.springframework.stereotype.Component;
 @Component
 final class WindowsAccess {
 
-    static final String SYSTEM = "NT AUTHORITY\\SYSTEM";
-    static final String ADMINISTRATORS = "BUILTIN\\Administrators";
-
     static final Set<AclEntryPermission> FULL = Collections.unmodifiableSet(EnumSet.allOf(AclEntryPermission.class));
     /** icacls {@code RX}. */
     static final Set<AclEntryPermission> READ_EXECUTE = Collections.unmodifiableSet(EnumSet.of(AclEntryPermission.READ_DATA,

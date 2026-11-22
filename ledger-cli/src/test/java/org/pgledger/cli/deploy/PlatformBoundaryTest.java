@@ -108,7 +108,7 @@ class PlatformBoundaryTest {
     }
 
     @Test
-    @DisplayName("DPL-07 (changed by PCS-037) the installer takes no privilege and changes no owner: no class of privileges, no native call, WindowsAccess is a component with no collaborator, and the sources of the module name none of them")
+    @DisplayName("DPL-07 (changed by PCS-037) the installer takes no privilege and changes no owner: no class of privileges, no native call in the module (the one boundary is in ledger-files), WindowsAccess is a component with no collaborator, and the sources of the module name none of them")
     void dpl07_noPrivilegesAndNoChangeOfOwner() throws IOException, NoSuchMethodException {
         assertThat(WindowsAccess.class).hasAnnotation(Component.class);
         assertThat(WindowsAccess.class.getDeclaredConstructors()).allSatisfy(constructor -> assertThat(constructor.getParameterCount()).isZero());
@@ -153,13 +153,17 @@ class PlatformBoundaryTest {
     }
 
     @Test
-    @DisplayName("DPL-08 (changed by PCS-037) the executable jar has no manifest attribute Enable-Native-Access (the product calls no native code), and no installer gives --enable-native-access on a command line")
-    void dpl08_theJarCallsNoNativeCode() throws IOException {
+    @DisplayName("DPL-08 (changed by R9-D0095-A) the executable jars of the programs that reach the Windows boundary (the command line tool, the MCP server, the admin web, the migration tool) carry the manifest attribute Enable-Native-Access: ALL-UNNAMED, the hook jar does not, and no installer gives --enable-native-access on a command line")
+    void dpl08_theJarsThatCallTheOperatingSystemAllowItInTheirManifest() throws IOException {
         Path root = Path.of(Objects.requireNonNull(System.getProperty("ledger.docs.root"),
                 "ledger.docs.root is set by the test task of ledger-cli"));
 
-        assertThat(Files.readString(root.resolve("ledger-cli/build.gradle.kts"), StandardCharsets.UTF_8))
-                .doesNotContain("\"Enable-Native-Access\" to");
+        for (String module : new String[] { "ledger-cli", "ledger-mcp-server", "ledger-admin-web", "ledger-migrate-1x" }) {
+            assertThat(Files.readString(root.resolve(module + "/build.gradle.kts"), StandardCharsets.UTF_8)).as(module)
+                    .contains("\"Enable-Native-Access\" to \"ALL-UNNAMED\"");
+        }
+        assertThat(Files.readString(root.resolve("ledger-client-hook/build.gradle.kts"), StandardCharsets.UTF_8))
+                .as("the hook reaches no account of Windows").doesNotContain("Enable-Native-Access");
         for (String script : new String[] { "deploy/install.cmd", "deploy/install.sh" }) {
             assertThat(Files.readString(root.resolve(script), StandardCharsets.UTF_8).toLowerCase(Locale.ROOT)).as(script)
                     .doesNotContain("--enable-native-access").doesNotContain("%native%");

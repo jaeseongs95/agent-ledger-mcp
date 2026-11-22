@@ -8,8 +8,12 @@ import java.nio.file.FileSystem;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.nio.file.WatchService;
+import java.nio.file.attribute.GroupPrincipal;
+import java.nio.file.attribute.UserPrincipal;
 import java.nio.file.attribute.UserPrincipalLookupService;
+import java.nio.file.attribute.UserPrincipalNotFoundException;
 import java.nio.file.spi.FileSystemProvider;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -25,10 +29,33 @@ final class FileSystemWithViews extends FileSystem {
 
     private final FileSystem delegate;
     private final Set<String> views;
+    private final UserPrincipalLookupService lookup;
 
     FileSystemWithViews(FileSystem delegate, Set<String> views) {
         this.delegate = delegate;
         this.views = views;
+        this.lookup = delegate.getUserPrincipalLookupService();
+    }
+
+    /** As above, and the accounts of this file system are these (by name): the lookup of any other name is refused. */
+    FileSystemWithViews(FileSystem delegate, Set<String> views, Map<String, UserPrincipal> accounts) {
+        this.delegate = delegate;
+        this.views = views;
+        this.lookup = new UserPrincipalLookupService() {
+            @Override
+            public UserPrincipal lookupPrincipalByName(String name) throws IOException {
+                UserPrincipal found = accounts.get(name);
+                if (found == null) {
+                    throw new UserPrincipalNotFoundException(name);
+                }
+                return found;
+            }
+
+            @Override
+            public GroupPrincipal lookupPrincipalByGroupName(String group) throws IOException {
+                throw new UserPrincipalNotFoundException(group);
+            }
+        };
     }
 
     @Override
@@ -83,7 +110,7 @@ final class FileSystemWithViews extends FileSystem {
 
     @Override
     public UserPrincipalLookupService getUserPrincipalLookupService() {
-        return delegate.getUserPrincipalLookupService();
+        return lookup;
     }
 
     @Override

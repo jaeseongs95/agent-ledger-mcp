@@ -45,10 +45,23 @@ dependencies {
 }
 
 tasks.test {
+    // The tests reach the Windows boundary (the names of the well-known accounts, R9-D0095-A) with the foreign function API, which
+    // Java 25 restricts; the executable jar allows it with its manifest, a test JVM is given the option.
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
     // The Host allow list tests send a Host header that differs from the address they connect to.
     jvmArgs("-Djdk.httpclient.allowRestrictedHeaders=host")
 }
 
 tasks.bootJar {
     archiveFileName = "ledger-admin-web.jar"
+    // On Windows this program asks the operating system for the name of a well-known account (the service account, SYSTEM, the
+    // administrators) by its SID, with the foreign function API of the JDK (java.lang.foreign), in one class (WindowsAccountNames of
+    // ledger-files; R9-D0095-A). Java 25 restricts it and warns on the standard error of a program that has not allowed it, so the jar
+    // allows it itself with the main attribute of its manifest, which applies to the code of an executable jar started with
+    // `java -jar` (the installers, the services and the README all start it so): no command line option, no change of an output.
+    // Sources: JEP 454 (https://openjdk.org/jeps/454, "Restricted methods"), JEP 472 (https://openjdk.org/jeps/472, which names the
+    // manifest attribute) and the JAR File Specification of Java SE 25 ("Main Attributes").
+    manifest {
+        attributes("Enable-Native-Access" to "ALL-UNNAMED")
+    }
 }

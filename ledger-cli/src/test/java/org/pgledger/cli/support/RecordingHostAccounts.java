@@ -10,22 +10,45 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.pgledger.cli.deploy.HostAccounts;
+import org.pgledger.files.ServicePrincipalAcl;
+import org.pgledger.files.WellKnownAccount;
+import org.pgledger.files.WellKnownAccounts;
 
 /**
  * Test double for the accounts of the host: a name that is given maps to the principal the test chose (only an administrator may
  * give a file to another account, so a test hands out its own account), every other name is looked up in the file system as the
- * product does. It records the names that were asked for.
+ * product does. A well-known account (by its meaning) maps to the principal the test chose, or is found by its SID as the product
+ * does. It records the names and the accounts that were asked for.
  */
 public final class RecordingHostAccounts implements HostAccounts {
 
     private final Map<String, UserPrincipal> users;
     private final Map<String, GroupPrincipal> groups;
+    private final Map<WellKnownAccount, UserPrincipal> wellKnown;
+    private final List<WellKnownAccount> askedWellKnown = new ArrayList<>();
     private final List<String> askedUsers = new ArrayList<>();
     private final List<String> askedGroups = new ArrayList<>();
 
     public RecordingHostAccounts(Map<String, UserPrincipal> users, Map<String, GroupPrincipal> groups) {
+        this(users, groups, Map.of());
+    }
+
+    public RecordingHostAccounts(Map<String, UserPrincipal> users, Map<String, GroupPrincipal> groups,
+            Map<WellKnownAccount, UserPrincipal> wellKnown) {
         this.users = users;
         this.groups = groups;
+        this.wellKnown = wellKnown;
+    }
+
+    @Override
+    public UserPrincipal wellKnown(FileSystem fileSystem, WellKnownAccount account) throws IOException {
+        askedWellKnown.add(account);
+        UserPrincipal chosen = wellKnown.get(account);
+        return chosen != null ? chosen : ServicePrincipalAcl.principal(fileSystem, account, WellKnownAccounts.host());
+    }
+
+    public List<WellKnownAccount> askedWellKnown() {
+        return List.copyOf(askedWellKnown);
     }
 
     @Override

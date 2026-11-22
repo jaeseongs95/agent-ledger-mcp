@@ -40,8 +40,8 @@ dependencies {
 
 // WindowsEffectiveRights (a test class, PCS-031) calls the Windows API with the foreign function API; javac reports its restricted
 // methods as [restricted] warnings, and the build turns warnings into errors. The one category is switched off for the compilation of
-// the tests of this module only: the main sources of every module keep the whole of -Xlint:all as errors (and the product calls no
-// native code).
+// the tests of this module only: the main sources of every module keep the whole of -Xlint:all as errors (the one class of the
+// product that calls the operating system, WindowsAccountNames of ledger-files, suppresses it for itself).
 tasks.named<JavaCompile>("compileTestJava") {
     options.compilerArgs.add("-Xlint:-restricted")
 }
@@ -55,6 +55,16 @@ tasks.jar {
 
 tasks.bootJar {
     archiveFileName = "ledger-cli.jar"
+    // On Windows this program asks the operating system for the name of a well-known account (the service account, SYSTEM, the
+    // administrators) by its SID, with the foreign function API of the JDK (java.lang.foreign), in one class (WindowsAccountNames of
+    // ledger-files; R9-D0095-A). Java 25 restricts it and warns on the standard error of a program that has not allowed it, so the jar
+    // allows it itself with the main attribute of its manifest, which applies to the code of an executable jar started with
+    // `java -jar` (the installers, the services and the README all start it so): no command line option, no change of an output.
+    // Sources: JEP 454 (https://openjdk.org/jeps/454, "Restricted methods"), JEP 472 (https://openjdk.org/jeps/472, which names the
+    // manifest attribute) and the JAR File Specification of Java SE 25 ("Main Attributes").
+    manifest {
+        attributes("Enable-Native-Access" to "ALL-UNNAMED")
+    }
 }
 
 // The seed bundle (SETUP): the build writes the H2 file ledger-seed.mv.db from the text files of src/seed with a Java program
@@ -105,7 +115,8 @@ run {
 // the code a document mirrors runs the tests again.
 tasks.test {
     // PCS-031: the test of the effective rights of the service account calls the Windows API (GetEffectiveRightsFromAclW) with the
-    // foreign function API, which Java 25 restricts; the product itself calls no native code, only this test does.
+    // foreign function API, which Java 25 restricts; and so does the product, in one class (R9-D0095-A). The executable jar allows
+    // it with its manifest, a test JVM is given the option.
     jvmArgs("--enable-native-access=ALL-UNNAMED")
     systemProperty("ledger.docs.root", rootProject.layout.projectDirectory.asFile.absolutePath)
     inputs.files(rootProject.fileTree(rootProject.layout.projectDirectory) {

@@ -102,4 +102,15 @@ class BoundariesAndExceptionsTest {
                 .orShould().callMethod(Files.class, "setPosixFilePermissions", Path.class, Set.class)
                 .check(ALL_MAIN);
     }
+
+    @Test
+    @DisplayName("ARC-BND-07 (R9-D0095-B): the foreign function API is used by one boundary class, WindowsAccountNames, and only WellKnownAccounts reaches that class")
+    void theOperatingSystemIsCalledFromOneBoundaryClass() {
+        String boundary = "org\\.pgledger\\.files\\.WindowsAccountNames(\\$.*)?";
+        noClasses().that().haveNameNotMatching(boundary)
+                .should().dependOnClassesThat().resideInAnyPackage("java.lang.foreign..", "jdk.internal.foreign..")
+                .check(ALL_MAIN);
+        noClasses().that().haveNameNotMatching(boundary).and().doNotHaveFullyQualifiedName("org.pgledger.files.WellKnownAccounts")
+                .should().dependOnClassesThat().haveNameMatching(boundary).check(ALL_MAIN);
+    }
 }

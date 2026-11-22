@@ -37,3 +37,9 @@ val testSupport = configurations.create("testSupport") {
     isCanBeResolved = false
 }
 artifacts.add(testSupport.name, testSupportJar)
+
+// The tests reach the Windows boundary (the name of the service account, R9-D0095-A) with the foreign function API, which Java 25
+// restricts; the executable jars allow it with their manifest, a test JVM is given the option.
+tasks.test {
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
+}

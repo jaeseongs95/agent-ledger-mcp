@@ -39,6 +39,9 @@ import org.pgledger.cli.support.RecordingHostAccounts;
 import org.pgledger.cli.support.RecordingOutput;
 import org.pgledger.cli.support.RequiresNonPosixFileSystem;
 import org.pgledger.cli.support.RequiresPosixPermissions;
+import org.pgledger.files.ServicePrincipalAcl;
+import org.pgledger.files.WellKnownAccount;
+import org.pgledger.files.WellKnownAccounts;
 
 /**
  * INS-044: {@code prepare-host} does in Java what {@code install -d}, {@code install -m}, {@code mkdir}, {@code icacls} and
@@ -311,9 +314,9 @@ class PrepareHostCommandTest {
                 "--winsw=" + jars().resolve("WinSW.exe"), "--java=C:/Program Files/Java/jdk-25/bin/java.exe");
 
         assertThat(result.code()).isEmpty();
-        UserPrincipal system = fileSystem.getUserPrincipalLookupService().lookupPrincipalByName(WindowsAccess.SYSTEM);
-        UserPrincipal administrators = fileSystem.getUserPrincipalLookupService().lookupPrincipalByName(WindowsAccess.ADMINISTRATORS);
-        UserPrincipal service = fileSystem.getUserPrincipalLookupService().lookupPrincipalByName(DeployLayout.WINDOWS_SERVICE_ACCOUNT);
+        UserPrincipal system = ServicePrincipalAcl.principal(fileSystem, WellKnownAccount.SYSTEM, WellKnownAccounts.host());
+        UserPrincipal administrators = ServicePrincipalAcl.principal(fileSystem, WellKnownAccount.ADMINISTRATORS, WellKnownAccounts.host());
+        UserPrincipal service = ServicePrincipalAcl.principal(fileSystem);
         List<AclEntry> homeAcl = Files.getFileAttributeView(home, AclFileAttributeView.class).getAcl();
         assertThat(homeAcl.stream().map(AclEntry::principal)).as(home.toString()).containsExactlyInAnyOrder(system, administrators);
         for (Path folder : List.of(home.resolve("lib"), home.resolve("etc"), home.resolve("etc/drivers"), home.resolve("logs"),

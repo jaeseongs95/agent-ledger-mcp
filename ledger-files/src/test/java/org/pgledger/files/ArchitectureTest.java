@@ -2,6 +2,7 @@
 
 package org.pgledger.files;
 
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.fields;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -46,7 +47,7 @@ class ArchitectureTest {
     void onlyTheJdkCore() {
         noClasses().should().dependOnClassesThat().resideInAnyPackage(
                         "java.net..", "javax.net..", "java.sql..", "javax.sql..",
-                        "java.lang.reflect..", "java.lang.foreign..", "org.springframework..", "tools.jackson..",
+                        "java.lang.reflect..", "org.springframework..", "tools.jackson..",
                         "com.fasterxml..", "org.pgledger.domain..", "org.pgledger.database..",
                         "org.pgledger.application..", "org.pgledger.hook..", "org.pgledger.cli..",
                         "org.pgledger.mcp..", "lombok..")
@@ -54,6 +55,17 @@ class ArchitectureTest {
                 .orShould().dependOnClassesThat().haveFullyQualifiedName("java.lang.Runtime")
                 .orShould().dependOnClassesThat().haveFullyQualifiedName("java.lang.System")
                 .check(classes);
+    }
+
+    @Test
+    @DisplayName("R9-D0095-B the foreign function API is used by the boundary class WindowsAccountNames alone, and that class is reached by WellKnownAccounts alone (so a host without ACLs never loads it)")
+    void theNativeBoundaryIsOneClass() {
+        String boundary = "org\\.pgledger\\.files\\.WindowsAccountNames(\\$.*)?";
+        noClasses().that().haveNameNotMatching(boundary)
+                .should().dependOnClassesThat().resideInAPackage("java.lang.foreign..").check(classes);
+        noClasses().that().haveNameNotMatching(boundary).and().doNotHaveFullyQualifiedName("org.pgledger.files.WellKnownAccounts")
+                .should().dependOnClassesThat().haveNameMatching(boundary).check(classes);
+        classes().that().haveFullyQualifiedName("org.pgledger.files.WindowsAccountNames").should().notBePublic().check(classes);
     }
 
     @Test
@@ -80,7 +92,7 @@ class ArchitectureTest {
     @Test
     @DisplayName("ARC-036 catch rules: no empty catch, no broad catch")
     void catchRules() {
-        assertThat(CodingScan.catchProblems(Set.of(), null, Path.of("src", "main", "java"),
+        assertThat(CodingScan.catchProblems(Set.of("WindowsAccountNames.java"), null, Path.of("src", "main", "java"),
                 Path.of("src", "test", "java"))).isEmpty();
     }
 

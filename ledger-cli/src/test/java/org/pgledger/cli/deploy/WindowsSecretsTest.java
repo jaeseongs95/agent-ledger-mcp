@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
 import org.pgledger.cli.ErrorCode;
-import org.pgledger.files.ServicePrincipalAcl;
+import org.pgledger.files.WellKnownAccount;
 import org.pgledger.cli.support.CliExtension;
 import org.pgledger.cli.support.CliExtension.Cli;
 import org.pgledger.cli.support.CliExtension.Outcome;
@@ -42,7 +42,7 @@ class WindowsSecretsTest {
 
     private static final String HOME_OPTION = "--home=C:/ProgramData/pg-ledger-mcp";
     private static final String JAVA = "--java=C:/Program Files/Java/jdk-25/bin/java.exe";
-    private static final String SERVICE = ServicePrincipalAcl.WINDOWS_SERVICE_ACCOUNT;
+    private static final WellKnownAccount SERVICE = WellKnownAccount.SERVICE;
 
     @TempDir
     Path tmp;

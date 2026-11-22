@@ -6,7 +6,6 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Pattern;
 import java.util.Locale;
 import org.pgledger.cli.secret.SecretFolder;
-import org.pgledger.files.ServicePrincipalAcl;
 
 /**
  * Where an installation puts its files, and the names of it. An installation is an <em>instance</em> with a name (the default
@@ -58,8 +57,14 @@ public record DeployLayout(Platform platform,
      * (https://learn.microsoft.com/en-us/windows/win32/services/localservice-account). It is no person's account, it needs no
      * password, and the installer can create nothing else without a PowerShell script or {@code net user} (see
      * {@code deploy/install.cmd}). It is shared by every instance of the host and by every other service that runs as it.
+     *
+     * <p>This is the name that the service control manager takes for the account in {@code sc.exe config obj=} (what
+     * {@code CreateService} documents for {@code lpServiceStartName}: "If this parameter is NT AUTHORITY\LocalService,
+     * CreateService uses the LocalService account", https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-createservicew),
+     * which is the same in every language of Windows; no SID form is documented there. It is an argument of the service manager and not
+     * an account that the product looks up: the file system finds the account by its SID ({@link org.pgledger.files.WellKnownAccount#SERVICE}).
      */
-    public static final String WINDOWS_SERVICE_ACCOUNT = ServicePrincipalAcl.WINDOWS_SERVICE_ACCOUNT;
+    public static final String WINDOWS_SERVICE_ACCOUNT = "NT AUTHORITY\\LocalService";
     public static final String MCP_JAR = "ledger-mcp-server.jar";
     public static final String ADMIN_JAR = "ledger-admin-web.jar";
     public static final String CLI_JAR = "ledger-cli.jar";

@@ -35,6 +35,7 @@ import org.mockito.InOrder;
 import org.pgledger.cli.secret.SecretFolder;
 import org.pgledger.cli.support.RecordingHostAccounts;
 import org.pgledger.files.ServicePrincipalAcl;
+import org.pgledger.files.WellKnownAccount;
 
 /**
  * PCS-034, PCS-035 (and the put-back of WSEC-10, WSEC-11): the steps of {@code prepare-host} on Windows ({@link WindowsPlatform}) and
@@ -75,8 +76,8 @@ class WindowsPlatformTest {
 
     @BeforeEach
     void setUp() throws IOException {
-        RecordingHostAccounts accounts = new RecordingHostAccounts(Map.of(WindowsAccess.SYSTEM, SYSTEM,
-                WindowsAccess.ADMINISTRATORS, ADMINISTRATORS, DeployLayout.WINDOWS_SERVICE_ACCOUNT, SERVICE), Map.of());
+        RecordingHostAccounts accounts = new RecordingHostAccounts(Map.of(), Map.of(), Map.of(WellKnownAccount.SYSTEM, SYSTEM,
+                WellKnownAccount.ADMINISTRATORS, ADMINISTRATORS, WellKnownAccount.SERVICE, SERVICE));
         platform = new WindowsPlatform(accounts, fileSystem -> INSTALLER, access, host, new DeployFiles());
         home = tmp.resolve("C/ProgramData/pg-ledger-mcp");
         secrets = home.resolve("etc/secrets");

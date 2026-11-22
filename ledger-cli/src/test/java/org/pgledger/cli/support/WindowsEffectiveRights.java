@@ -11,13 +11,16 @@ import java.lang.foreign.SymbolLookup;
 import java.lang.foreign.ValueLayout;
 import java.lang.invoke.MethodHandle;
 import java.nio.file.Path;
+import org.pgledger.files.WellKnownAccount;
+import org.pgledger.files.WellKnownAccounts;
 
 /**
  * The effective rights of an account on a file, computed by Windows from the DACL of the file ({@code GetNamedSecurityInfoW} and
  * {@code GetEffectiveRightsFromAclW} of advapi32, https://learn.microsoft.com/en-us/windows/win32/api/aclapi/nf-aclapi-geteffectiverightsfromaclw):
  * what the ACL grants to the account itself or to a group it belongs to. It answers the question of PCS-031 for the service account
  * LocalService without running as it (a logged-on LocalService needs a service or a tool that is not part of the build). The call goes
- * through the foreign function API; the test task of this module allows native access (the product calls no native code).
+ * through the foreign function API; the test task of this module allows native access. The product calls the operating system from
+ * one class only ({@code WindowsAccountNames} of ledger-files), and this is a test class.
  */
 public final class WindowsEffectiveRights {
 
@@ -34,6 +37,11 @@ public final class WindowsEffectiveRights {
     private static final int TRUSTEE_SIZE = 64;
 
     private WindowsEffectiveRights() {
+    }
+
+    /** As {@link #of(Path, String)} for a well-known account, by the name this host gives it (found by its SID). */
+    public static int of(Path path, WellKnownAccount account) throws IOException {
+        return of(path, WellKnownAccounts.host().nameOf(account));
     }
 
     /**

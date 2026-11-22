@@ -22,12 +22,6 @@ import java.util.Set;
  */
 public final class ServicePrincipalAcl {
 
-    /**
-     * The predefined local account that services run as when reading secrets and attachment keys created by the
-     * installing user ({@code NT AUTHORITY\LocalService}).
-     */
-    public static final String WINDOWS_SERVICE_ACCOUNT = "NT AUTHORITY\\LocalService";
-
     /** Permissions that allow another principal to inspect metadata or wait on a handle without reading file content. */
     public static final Set<AclEntryPermission> HARMLESS = Collections.unmodifiableSet(EnumSet.of(
             AclEntryPermission.READ_ATTRIBUTES, AclEntryPermission.READ_ACL, AclEntryPermission.SYNCHRONIZE));
@@ -49,9 +43,18 @@ public final class ServicePrincipalAcl {
     private ServicePrincipalAcl() {
     }
 
-    /** Looks up the predefined service account principal on {@code fileSystem}. */
+    /**
+     * Looks up the predefined service account principal ({@link WellKnownAccount#SERVICE}, which services run as when reading
+     * secrets and attachment keys created by the installing user) on {@code fileSystem}, by the name this host gives it.
+     */
     public static UserPrincipal principal(FileSystem fileSystem) throws IOException {
-        return fileSystem.getUserPrincipalLookupService().lookupPrincipalByName(WINDOWS_SERVICE_ACCOUNT);
+        return principal(fileSystem, WellKnownAccount.SERVICE, WellKnownAccounts.host());
+    }
+
+    /** Looks up a well-known account on {@code fileSystem} by the name that {@code accounts} gives it. */
+    public static UserPrincipal principal(FileSystem fileSystem, WellKnownAccount account, WellKnownAccounts accounts)
+            throws IOException {
+        return fileSystem.getUserPrincipalLookupService().lookupPrincipalByName(accounts.nameOf(account));
     }
 
     /** Single-owner full-control ACL without extra readers. */
@@ -75,10 +78,19 @@ public final class ServicePrincipalAcl {
                 && READ_FOLDER.containsAll(entry.permissions());
     }
 
-    /** Whether {@code principal} is a built-in administrative principal allowed by attachment runtime settlement. */
-    public static boolean isAdministrative(UserPrincipal principal) {
+    /**
+     * Whether {@code principal} is a built-in administrative principal allowed by attachment runtime settlement: the system or the
+     * group of the administrators ({@link WellKnownAccount}), by the name this host gives them.
+     */
+    public static boolean isAdministrative(UserPrincipal principal) throws IOException {
+        return isAdministrative(principal, WellKnownAccounts.host());
+    }
+
+    /** As {@link #isAdministrative(UserPrincipal)}, with the names of the well-known accounts that {@code accounts} gives. */
+    public static boolean isAdministrative(UserPrincipal principal, WellKnownAccounts accounts) throws IOException {
         String name = principal.getName();
-        return name.endsWith("\\SYSTEM") || name.endsWith("\\Administrators");
+        return name.equalsIgnoreCase(accounts.nameOf(WellKnownAccount.SYSTEM))
+                || name.equalsIgnoreCase(accounts.nameOf(WellKnownAccount.ADMINISTRATORS));
     }
 
     private static AclEntry entry(UserPrincipal who, Set<AclEntryPermission> permissions, boolean directory) {
