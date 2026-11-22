@@ -75,7 +75,7 @@ class MigrationToolJarTest {
     }
 
     @Test
-    @DisplayName("M1X-041 the tool jar as a process: no command is exit 2 with the usage of the four commands on the standard error; stop-1x on a directory without units is exit 1 and starts no program; import-secrets-1x --stdin stores the three secrets without printing a value")
+    @DisplayName("M1X-041 the tool jar as a process: no command is exit 2 with the usage of the four commands on the standard error; stop-1x on a directory without units is exit 1 and starts no program; import-secrets-1x --stdin stores the two secrets without printing a value and does not import the admin token")
     void m1x041_theToolRunsAsAProcess(@TempDir Path work) throws IOException {
         Path tool = jar("ledger.migrate.jar");
         Path home = Files.createDirectories(work.resolve("etc"));
