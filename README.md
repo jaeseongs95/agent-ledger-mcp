@@ -743,7 +743,7 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
    sudo runuser -u pg-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar import-1x --owner-account=<ddl-account> --ledger.import.source.url=<jdbc-url> --ledger.import.source.username=<account>
    ```
 
-   The import writes the whole ledger, which neither application account may do, so `--owner-account=<account>` runs it as the DDL account, whose
+   The import writes the whole ledger; `--owner-account=<account>` runs it as the DDL account, whose
    password is typed with hidden input and is not stored (`--stdin` takes it from the first line of standard input instead and needs `--owner-account`).
    It reads the 1.x schema read only and writes the new schema in one transaction; see What the import does below.
 7. **Register the session keys.** The grants of 1.x are copied without a session key. Every author registers a session key with

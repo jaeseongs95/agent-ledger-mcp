@@ -597,7 +597,7 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인�
    sudo runuser -u pg-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar import-1x --owner-account=<ddl-account> --ledger.import.source.url=<jdbc-url> --ledger.import.source.username=<account>
    ```
 
-   가져오기는 장부 전체를 쓰는데 두 앱 계정은 이를 할 수 없으므로, `--owner-account=<account>`가 DDL 계정으로 실행합니다. 그 비밀번호는 숨김 입력으로 받으며 저장하지 않습니다
+   가져오기는 장부 전체를 쓰며, `--owner-account=<account>`가 DDL 계정으로 실행합니다. 그 비밀번호는 숨김 입력으로 받으며 저장하지 않습니다
    (`--stdin`은 대신 표준 입력의 첫 줄에서 받으며 `--owner-account`가 필요합니다). 1.x 스키마는 읽기 전용으로 읽고 새 스키마는 하나의 트랜잭션으로 씁니다. 아래 가져오기가 하는 일을 참조합니다.
 7. **세션 키를 등록합니다.** 1.x의 부여는 세션 키 없이 복사됩니다. 모든 작성자는 `ledger-cli key-register`로 세션 키를 등록해야 하며, 그 뒤에 부여가 동작합니다.
 8. **확인.** `ledger-cli mcp-check --url=<its public URL>`와 `import-1x --verify-only`(1.x 원본의 설정이 필요하며 아무것도 바꾸지 않습니다)를 실행하고, `ledger-cli passkey-code`를 실행해 관리 웹에서 첫 패스키를 등록합니다(설치 프로그램이 만든 관리 토큰은
