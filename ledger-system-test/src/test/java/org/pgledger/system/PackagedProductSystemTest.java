@@ -486,6 +486,14 @@ class PackagedProductSystemTest {
         database.appPassword().ifPresent(passwords::add);
         try (Stream<Path> files = Files.walk(work)) {
             for (Path file : files.filter(Files::isRegularFile).toList()) {
+                // The resident hook program is still alive here (cleanUp ends it) and holds instance.lock for its whole life: on
+                // Windows a locked file cannot be read, whatever the reader. A file of no bytes holds no password, and the size
+                // of a locked file can be read, so only an empty file is left out; every file with content is read, so a locked
+                // file that someone fills fails this test instead of being skipped. The address file with its secret and the
+                // log of the program are read while it runs.
+                if (Files.size(file) == 0) {
+                    continue;
+                }
                 String content = new String(Files.readAllBytes(file), StandardCharsets.ISO_8859_1);
                 for (String password : passwords) {
                     if (content.contains(new String(password.getBytes(StandardCharsets.UTF_8), StandardCharsets.ISO_8859_1))) {
