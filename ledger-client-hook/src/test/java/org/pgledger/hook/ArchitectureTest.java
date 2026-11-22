@@ -138,6 +138,7 @@ class ArchitectureTest {
     @DisplayName("ARC-033 no operating system detection in main and test code")
     void noOperatingSystemDetection() {
         ArchitectureRules.noOperatingSystemDetection().check(hook);
+        ArchitectureRules.fileSystemCapabilityIsProbedInFilesOnly().check(hook);
         assertThat(SourceRules.operatingSystemDetection(Path.of("src", "main", "java"), Path.of("src", "test", "java")))
                 .isEmpty();
     }

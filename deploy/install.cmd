@@ -50,9 +50,11 @@ for %%P in (%~9) do if defined TAKE (set "MCPPORT=%%~P" & set "TAKE=") else if /
 rem Every option, the name included, is validated by Java before anything is created (the name is only ever used in quotes until then).
 "%JAVA%" %JVMOPTS% -jar "%~1\ledger-cli.jar" --ledger.secrets.home=C:/nonexistent render-deploy --check %RENDER% || exit /b 1
 
-rem WinSW: note which services run (the STATE of sc.exe is 4 when one does, in any language) and stop them (the service manager is not
-rem Java's to talk to; the jars of a running service are locked). The steps after this point run in :steps (given the first six arguments, which a routine reads as its own); a failure goes to :fail.
-for %%S in (%SVC% %ADMIN%) do for /f "tokens=1,3" %%A in (' sc.exe query %%S 2^>nul') do if "%%A"=="STATE" if "%%B"=="4" set "UP=1" & set "UP_%%S=1"
+rem WinSW: note which services run and stop them (the service manager is not Java's to talk to; the jars of a running service are locked).
+rem The state is the number (4 when it runs) on the third line of the answer of sc.exe query, which is the state in every language: the
+rem words in front of the numbers are in the language of the machine (the state is a Korean word on a Korean Windows), so no word is looked for.
+rem The steps after this point run in :steps (given the first six arguments, which a routine reads as its own); a failure goes to :fail.
+for %%S in (%SVC% %ADMIN%) do for /f "skip=2 tokens=3" %%A in (' sc.exe query %%S 2^>nul') do if "%%A"=="4" set "UP=1" & set "UP_%%S=1"
 for %%S in (%SVC% %ADMIN%) do if exist "%WHOME%\lib\%%S.exe" "%WHOME%\lib\%%S.exe" stop /stopwait >nul 2>&1
 call :steps %1 %2 %3 %4 %5 %6 || goto :fail
 echo install.cmd: done. Check the MCP server with: %CLI% mcp-check --url=http://127.0.0.1:%MCPPORT%/mcp

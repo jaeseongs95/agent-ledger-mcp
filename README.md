@@ -92,7 +92,9 @@ for a client is stated in the [release notes](docs/release-notes/2.0.0.md); the 
   one relation in either order (`ledger_codes` shows the direction, and `code-set` sets it).
 - **Creation provenance is immutable.** New rows receive `created_by` automatically; edits and reviewer transitions keep it.
 - **Time is UTC.** Timestamps are stored and transmitted in UTC (ISO-8601 with `Z`); the server converts no time zone. The JVM and
-  the database session must run in UTC, and a server that finds otherwise does not start (`ledger.schema.require-utc`).
+  the database session must run in UTC, and a server that finds otherwise does not start (`ledger.schema.require-utc`). Each program
+  sets the default time zone of its own JVM to UTC when it starts, so a command given as in this README needs no
+  `-Duser.timezone=UTC` whatever time zone the host has (the service definitions of the installers pass the option as well).
 - **ANSI SQL.** The product does not bundle a JDBC driver: the user obtains the JDBC driver of the database of their choice
   and registers it with `driver-register`. The SQL is ANSI and uses the JDBC standard, and no DBMS-specific feature is used: the
   schema files have no triggers, procedures, views, sequences, identity columns or boolean columns, and the rules that the database
@@ -306,11 +308,11 @@ configuration tree (Spring Boot makes every file below a tree a property of the 
 | `ledger.attachments.upload-ttl` | servers, CLI | how long an upload lives after its last chunk, default 10m |
 | `ledger.attachments.orphan-grace` | servers, CLI | how long a file without a row (or a replaced file) waits before `attachments-check` moves it to `orphans/`, default 24h |
 | `ledger.attachments.reaper-interval` | MCP server | how often expired uploads are removed, default 1m |
-| `ledger.secrets.home` | `ledger-cli` | the directory of the installation that holds the settings, the driver registration, the driver jars and the secret directory, default `/etc/pg-ledger-mcp` (the Windows installer gives its own) |
-| `ledger.secrets.directory` | `ledger-cli` | the secret directory (it holds the folders `common`, `admin`, `mcp` and `tool` and is itself no configuration tree), default `/etc/pg-ledger-mcp/secrets` |
+| `ledger.secrets.home` | `ledger-cli` | the directory of the installation that holds the settings, the driver registration, the driver jars and the secret directory, default `/etc/pg-ledger-mcp` on Linux and `C:/ProgramData/pg-ledger-mcp/etc` on Windows, where the installer of the host puts it |
+| `ledger.secrets.directory` | `ledger-cli` | the secret directory (it holds the folders `common`, `admin`, `mcp` and `tool` and is itself no configuration tree), default `secrets` below `ledger.secrets.home` (`/etc/pg-ledger-mcp/secrets` on Linux) |
 | `ledger.secrets.instance` | `ledger-cli` | the instance name that the default paths follow, default `pg-ledger-mcp` |
-| `ledger.cli.driver.directory` | `ledger-cli` | the directory `driver-register` takes a jar from, default `/etc/pg-ledger-mcp/drivers` |
-| `ledger.cli.driver.file` | `ledger-cli` | the registration file `driver-register` writes, default `/etc/pg-ledger-mcp/jdbc-driver.yaml` |
+| `ledger.cli.driver.directory` | `ledger-cli` | the directory `driver-register` takes a jar from, default `drivers` below `ledger.secrets.home` (`/etc/pg-ledger-mcp/drivers` on Linux) |
+| `ledger.cli.driver.file` | `ledger-cli` | the registration file `driver-register` writes, default `jdbc-driver.yaml` in `ledger.secrets.home` (`/etc/pg-ledger-mcp/jdbc-driver.yaml` on Linux) |
 
 The servers listen on loopback only (MCP `127.0.0.1:8765`, admin web `127.0.0.1:8865`), fixed in the code of both: there is no setting
 for the address. To publish them, the operator puts a reverse proxy of their choice, which terminates HTTPS, on the same host and
@@ -529,7 +531,7 @@ service user), and every owner operation is recorded with that user.
 
 | Command | Syntax | What |
 |---|---|---|
-| `secret-set` | `secret-set <name> [--stdin] [--if-absent]` | store a secret from hidden input, or with `--stdin` from the first line of standard input (never from an argument or the environment); `--if-absent` keeps an existing secret and asks for nothing |
+| `secret-set` | `secret-set <name> [--stdin] [--if-absent]` | store a secret from hidden input, or with `--stdin` from the first line of standard input (never from an argument or the environment); `--if-absent` keeps an existing secret and asks for nothing; the line read with `--stdin` is UTF-8 and a line that is not is refused (`INVALID_ENCODING`): Windows PowerShell 5.1 encodes what it pipes to a program with `$OutputEncoding`, which is ASCII unless it is changed, so set `$OutputEncoding = [System.Text.UTF8Encoding]::new($false)` (UTF-8 without a byte order mark) before piping a secret that has other characters |
 | `driver-register` | `driver-register --jar=<path> --class=<driver-class>` | register the JDBC driver; needs no database |
 | `token-generate` | `token-generate <name> [--print] [--copy-to=<name>]` | store a random token (32 bytes from `SecureRandom`) as a secret; an existing secret is kept; `--print` shows a token that was just created, once; `--copy-to` stores the same token under a second name, once |
 | `migrate` | `migrate [--owner-account=<account>] [--app-account=<account>] [--stdin]` | apply the pending schema files, as the DDL account when `--owner-account` is given (its password is typed, or with `--stdin` read from standard input, and not stored), and then the grants of `dml-grants.sql` to the application account |

@@ -59,7 +59,8 @@ class InstallCmdFailureTest {
         int fail = code.indexOf(":fail");
 
         assertThat(note).as("the state is read before the stop").isNotNegative().isLessThan(stop);
-        assertThat(code.get(note)).contains("\"%%A\"==\"STATE\"", "\"%%B\"==\"4\"", "set \"UP_%%S=1\"");
+        assertThat(code.get(note)).contains("\"skip=2 tokens=3\"", "\"%%A\"==\"4\"", "set \"UP_%%S=1\"")
+                .as("no word of sc.exe is looked for: the words are in the language of the machine").doesNotContain("STATE");
         assertThat(code.get(index(code, "call :steps"))).as("a failed step of the routine goes to :fail").endsWith("|| goto :fail");
         assertThat(index(code, "call :steps")).isGreaterThan(stop).isLessThan(steps);
 
@@ -94,5 +95,32 @@ class InstallCmdFailureTest {
         assertThat(code.get(index(code, "\" install &&"))).contains("sc.exe config %%S obj= \"%ACCOUNT%\"");
         // an install of a service that exists fails and must not end the recovery: its answer is not shown and not tested
         assertThat(line.substring(install, config)).contains(">nul 2>&1").doesNotContain("||");
+    }
+
+    /**
+     * R9-D0095 (e): the line of install.cmd that notes which services run, run by cmd.exe against real services. The words that
+     * {@code sc.exe query} prints in front of the numbers are in the language of the machine ({@code STATE} is a Korean word on a
+     * Korean Windows), so a line that looks for the word never saw a running service there, and a failed upgrade started none of the
+     * services that ran. Only the numbers are the same in every language.
+     */
+    @Test
+    @DisplayName("R9-D0095 e: the line that notes the running services finds a running service whatever the language of sc.exe is (run by cmd.exe against RpcSs, which always runs, and against a service that does not exist)")
+    void r9D0095_theNoteOfRunningServicesIsLanguageFree(@org.junit.jupiter.api.io.TempDir Path tmp) throws Exception {
+        java.nio.file.FileSystem files = tmp.getFileSystem();
+        org.junit.jupiter.api.Assumptions.assumeTrue(files.supportedFileAttributeViews().contains("acl")
+                && !files.supportedFileAttributeViews().contains("posix"), "needs cmd.exe and the service manager of Windows");
+        String note = code().get(index(code(), "sc.exe query"));
+        Path script = tmp.resolve("note.cmd");
+        Files.writeString(script, String.join("\r\n", "@echo off", "setlocal EnableExtensions",
+                "set \"SVC=RpcSs\" & set \"ADMIN=NoSuchServiceOfR9D0095\"", note,
+                "if defined UP_RpcSs (echo RUNNING-RpcSs) else (echo NOT-RUNNING-RpcSs)",
+                "if defined UP_NoSuchServiceOfR9D0095 (echo RUNNING-none) else (echo NOT-RUNNING-none)", ""),
+                StandardCharsets.US_ASCII);
+
+        Process process = new ProcessBuilder("cmd.exe", "/d", "/c", script.toString()).redirectErrorStream(true).start();
+        String output = process.inputReader(StandardCharsets.ISO_8859_1).lines().collect(java.util.stream.Collectors.joining("\n"));
+        assertThat(process.waitFor(60, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+
+        assertThat(output).contains("RUNNING-RpcSs").doesNotContain("NOT-RUNNING-RpcSs").contains("NOT-RUNNING-none");
     }
 }

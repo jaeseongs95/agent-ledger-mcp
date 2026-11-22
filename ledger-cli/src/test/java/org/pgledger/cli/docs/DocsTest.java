@@ -874,4 +874,32 @@ class DocsTest {
                     .doesNotContain("상승된 권한으로 실행한 훅도 거부");
         }
     }
+
+    @ParameterizedTest
+    @EnumSource(Language.class)
+    @DisplayName("R9-D0095 f the README of each language says that the line of --stdin is UTF-8 and how Windows PowerShell 5.1 pipes text ($OutputEncoding: ASCII unless changed; UTF-8 without a byte order mark)")
+    void r9d0095_theReadmeSaysHowAStdinSecretIsEncoded(Language language) {
+        String readme = language.readme().text();
+
+        assertThat(readme).contains("$OutputEncoding", "UTF8Encoding]::new($false)", "INVALID_ENCODING");
+    }
+
+    @ParameterizedTest
+    @EnumSource(Language.class)
+    @DisplayName("R9-D0089 the README of each language names the settings directory of each host as the default of ledger.secrets.home (/etc/<name> on Linux, C:/ProgramData/<name>/etc on Windows)")
+    void r9d0089_theReadmeNamesTheDefaultOfEachHost(Language language) {
+        String readme = language.readme().text();
+
+        assertThat(readme).contains("`/etc/pg-ledger-mcp`", "`C:/ProgramData/pg-ledger-mcp/etc`");
+        assertThat(readme).doesNotContain("(the Windows installer gives its own)").doesNotContain("(Windows 설치기는 자기 것을 지정합니다)");
+    }
+
+    @ParameterizedTest
+    @EnumSource(Language.class)
+    @DisplayName("R9-D0090 the README of each language says that the programs set their own JVM to UTC, so a command needs no -Duser.timezone")
+    void r9d0090_theReadmeSaysTheProgramsPinUtc(Language language) {
+        String readme = language.readme().text();
+
+        assertThat(readme).contains("-Duser.timezone=UTC");
+    }
 }

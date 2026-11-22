@@ -2,6 +2,7 @@
 
 package org.pgledger.cli;
 
+import org.pgledger.database.time.JvmZone;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
@@ -19,6 +20,7 @@ import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
 public class LedgerCliApplication {
 
     public static void main(String[] args) {
+        JvmZone.pinUtc();
         System.exit(SpringApplication.exit(SpringApplication.run(LedgerCliApplication.class, args)));
     }
 }

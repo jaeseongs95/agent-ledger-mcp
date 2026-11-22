@@ -232,6 +232,7 @@ class ArchitectureTest {
         assertThat(SourceRules.vendorNames(MAIN_JAVA)).isEmpty();
         assertThat(SourceRules.operatingSystemDetection(MAIN_JAVA, Path.of("src", "test", "java"))).isEmpty();
         ArchitectureRules.noOperatingSystemDetection().check(MAIN);
+        ArchitectureRules.fileSystemCapabilityIsProbedInFilesOnly().check(MAIN);
         assertThat(SourceRules.forbiddenBuildSwitches(List.of(Path.of("build.gradle.kts")))).isEmpty();
     }
 

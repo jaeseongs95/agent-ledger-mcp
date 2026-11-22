@@ -2,6 +2,7 @@
 
 package org.pgledger.migrate1x;
 
+import org.pgledger.database.time.JvmZone;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
@@ -27,6 +28,7 @@ import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
 public class Migrate1xApplication {
 
     public static void main(String[] args) {
+        JvmZone.pinUtc();
         System.exit(SpringApplication.exit(SpringApplication.run(Migrate1xApplication.class, args)));
     }
 }

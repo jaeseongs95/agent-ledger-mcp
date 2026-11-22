@@ -105,6 +105,32 @@ public final class ArchitectureRules {
                 .orShould().dependOnClassesThat().haveFullyQualifiedName("org.junit.jupiter.api.condition.DisabledOnOs");
     }
 
+    /**
+     * ARC-033 (file system capability part): which kind of file system the process works on (POSIX modes, ACLs, DOS attributes) is
+     * asked in one place, the module {@code ledger-files}. No other class asks {@code FileSystem.supportedFileAttributeViews()}: it
+     * takes the choice (a file protection, a mode, a platform default) from there. The one other asker is
+     * {@code org.pgledger.cli.deploy.HostFiles}, which does not choose but refuses a host that lacks the view an installation needs.
+     */
+    public static ArchRule fileSystemCapabilityIsProbedInFilesOnly() {
+        return noClasses().that().resideOutsideOfPackage("org.pgledger.files..")
+                .and().doNotHaveFullyQualifiedName("org.pgledger.cli.deploy.HostFiles")
+                .should().callMethod(java.nio.file.FileSystem.class, "supportedFileAttributeViews");
+    }
+
+    /**
+     * R9-D0090: the entry point of a program that works with the database makes its JVM run in UTC before it does anything else
+     * ({@code JvmZone.pinUtc()}), so the host's time zone does not decide whether the program runs. Every class with a
+     * {@code main} method calls it (the check that it is the first statement is the test of {@code JvmZone}: the zone is read
+     * once, so a program whose zone was read earlier is still refused by the check of the database layer).
+     */
+    public static ArchRule mainPinsTheJvmZone() {
+        return com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes()
+                .that(DescribedPredicate.describe("have a main method",
+                        (JavaClass type) -> type.getMethods().stream().anyMatch(method -> "main".equals(method.getName())
+                                && method.getRawParameterTypes().size() == 1 && method.getRawParameterTypes().get(0).isArray())))
+                .should().callMethod("org.pgledger.database.time.JvmZone", "pinUtc");
+    }
+
     /** ARC-018. */
     public static ArchRule noThreadLocalAndNoMutableStatics() {
         return noClasses().should().dependOnClassesThat().haveFullyQualifiedName("java.lang.ThreadLocal");

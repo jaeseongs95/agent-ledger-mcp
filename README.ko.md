@@ -62,7 +62,8 @@
   `same_site`, `same_family`, `same_work_unit`, `same_fix_unit`, `regression_of`는 방향이 없어(`CANONICAL`) 어느 순서로 주어도 하나의 관계입니다(`ledger_codes`가 방향을 보여 주고 `code-set`이 정합니다).
 - **생성 출처는 바뀌지 않습니다.** 새 행에는 `created_by`가 자동으로 기록되며, 수정과 검토자 전이는 이를 유지합니다.
 - **시각은 UTC입니다.** 시각은 UTC(`Z`가 붙은 ISO-8601)로 저장하고 전송하며, 서버는 시간대를 변환하지 않습니다. JVM과 데이터베이스 세션은 UTC로 실행되어야 하며,
-  그렇지 않으면 서버가 시작되지 않습니다(`ledger.schema.require-utc`).
+  그렇지 않으면 서버가 시작되지 않습니다(`ledger.schema.require-utc`). 각 프로그램은 시작할 때 자기 JVM의 기본 시간대를 UTC로 설정하므로,
+  호스트의 시간대가 무엇이든 이 README에 적힌 대로 준 명령에는 `-Duser.timezone=UTC`가 필요 없습니다(설치 프로그램의 서비스 정의도 이 옵션을 함께 줍니다).
 - **ANSI SQL.** 제품은 JDBC 드라이버를 동봉하지 않습니다. 사용자가 원하는 데이터베이스의 JDBC 드라이버를 직접 구해 `driver-register`로 등록합니다.
   SQL은 ANSI이며 JDBC 표준을 사용하고, DBMS 고유 기능은 사용하지 않습니다. 스키마 파일에는 트리거, 프로시저, 뷰, 시퀀스, 자동 증가 열, 불리언 열이 없고,
   데이터베이스가 맡던 규칙은 애플리케이션 서비스가 강제합니다. 제품마다 다른 곳은 목록의 행 수 제한, 긴 텍스트 열 타입의 선언, 데이터베이스의 인코딩을 확인하는 탐침 세 곳이며, `SqlBuilder`가 연결의 제품에 따라 셋 다 고릅니다.
@@ -236,11 +237,11 @@ MCP를 직접 호출하는 쪽은 작성자별 `Bearer` 세션 토큰(`STANDARD`
 | `ledger.attachments.upload-ttl` | 서버, CLI | 마지막 청크 뒤 업로드가 사는 시간, 기본 10m |
 | `ledger.attachments.orphan-grace` | 서버, CLI | 행 없는 파일(또는 대체된 파일)을 `attachments-check`가 `orphans/`로 옮기기 전 유예, 기본 24h |
 | `ledger.attachments.reaper-interval` | MCP 서버 | 만료된 업로드를 지우는 주기, 기본 1m |
-| `ledger.secrets.home` | `ledger-cli` | 설정, 드라이버 등록, 드라이버 jar, 비밀 디렉터리를 담는 설치 디렉터리, 기본 `/etc/pg-ledger-mcp`(Windows 설치기는 자기 것을 지정합니다) |
-| `ledger.secrets.directory` | `ledger-cli` | 비밀 디렉터리(폴더 `common`, `admin`, `mcp`, `tool`을 담으며 그 자체는 설정 트리가 아닙니다), 기본 `/etc/pg-ledger-mcp/secrets` |
+| `ledger.secrets.home` | `ledger-cli` | 설정, 드라이버 등록, 드라이버 jar, 비밀 디렉터리를 담는 설치 디렉터리, 기본값은 Linux에서 `/etc/pg-ledger-mcp`, Windows에서 `C:/ProgramData/pg-ledger-mcp/etc`로, 그 호스트의 설치 프로그램이 두는 곳입니다 |
+| `ledger.secrets.directory` | `ledger-cli` | 비밀 디렉터리(폴더 `common`, `admin`, `mcp`, `tool`을 담으며 그 자체는 설정 트리가 아닙니다), 기본값은 `ledger.secrets.home` 아래 `secrets`(Linux에서 `/etc/pg-ledger-mcp/secrets`) |
 | `ledger.secrets.instance` | `ledger-cli` | 기본 경로가 따르는 인스턴스 이름, 기본 `pg-ledger-mcp` |
-| `ledger.cli.driver.directory` | `ledger-cli` | `driver-register`가 jar를 가져오는 디렉터리, 기본 `/etc/pg-ledger-mcp/drivers` |
-| `ledger.cli.driver.file` | `ledger-cli` | `driver-register`가 기록하는 등록 파일, 기본 `/etc/pg-ledger-mcp/jdbc-driver.yaml` |
+| `ledger.cli.driver.directory` | `ledger-cli` | `driver-register`가 jar를 가져오는 디렉터리, 기본값은 `ledger.secrets.home` 아래 `drivers`(Linux에서 `/etc/pg-ledger-mcp/drivers`) |
+| `ledger.cli.driver.file` | `ledger-cli` | `driver-register`가 기록하는 등록 파일, 기본값은 `ledger.secrets.home`의 `jdbc-driver.yaml`(Linux에서 `/etc/pg-ledger-mcp/jdbc-driver.yaml`) |
 
 서버는 루프백에서만 수신합니다(MCP `127.0.0.1:8765`, 관리 웹 `127.0.0.1:8865`). 두 서버의 코드에 고정되어 있어 주소를 바꾸는 설정은 없습니다. 외부에
 공개하려면 운영자가 고른 역방향 프록시(HTTPS를 종단함)를 같은 호스트에 두고, 그 프록시가 넘기는 호스트 이름 하나를 서비스의 허용 호스트에
@@ -421,7 +422,7 @@ JDBC 드라이버의 타입 정보는 드라이버가 판단할 수 없는 형�
 
 | 명령 | 구문 | 내용 |
 |---|---|---|
-| `secret-set` | `secret-set <name> [--stdin] [--if-absent]` | 숨김 입력으로 비밀을 저장합니다. `--stdin`이면 표준 입력의 첫 줄에서 받으며(인수나 환경 변수로는 받지 않습니다), `--if-absent`이면 이미 있는 비밀을 그대로 두고 아무것도 묻지 않습니다 |
+| `secret-set` | `secret-set <name> [--stdin] [--if-absent]` | 숨김 입력으로 비밀을 저장합니다. `--stdin`이면 표준 입력의 첫 줄에서 받으며(인수나 환경 변수로는 받지 않습니다), `--if-absent`이면 이미 있는 비밀을 그대로 두고 아무것도 묻지 않습니다. `--stdin`으로 읽는 줄은 UTF-8이며 그렇지 않은 줄은 거절합니다(`INVALID_ENCODING`). Windows PowerShell 5.1은 프로그램으로 파이프하는 글자를 `$OutputEncoding`으로 인코딩하고 이 값은 바꾸지 않으면 ASCII이므로, 다른 문자가 든 비밀을 파이프하기 전에 `$OutputEncoding = [System.Text.UTF8Encoding]::new($false)`(바이트 순서 표시 없는 UTF-8)를 설정합니다 |
 | `driver-register` | `driver-register --jar=<path> --class=<driver-class>` | JDBC 드라이버를 등록합니다. 데이터베이스가 필요하지 않습니다 |
 | `token-generate` | `token-generate <name> [--print] [--copy-to=<name>]` | 무작위 토큰(`SecureRandom` 32바이트)을 비밀로 저장합니다. 이미 있는 비밀은 그대로 두며, `--print`는 방금 만든 토큰을 한 번만 보여 줍니다. `--copy-to`는 같은 토큰을 두 번째 이름으로도 한 번 저장합니다 |
 | `migrate` | `migrate [--owner-account=<account>] [--app-account=<account>] [--stdin]` | 아직 적용하지 않은 스키마 파일을 적용하며(`--owner-account`를 주면 DDL 계정으로 실행하고 그 비밀번호는 입력받거나 `--stdin`이면 표준 입력에서 읽으며 저장하지 않습니다), 이어서 `dml-grants.sql`의 권한을 앱 계정에 부여합니다 |

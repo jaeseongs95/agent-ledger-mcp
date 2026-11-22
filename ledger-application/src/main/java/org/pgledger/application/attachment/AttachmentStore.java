@@ -2,25 +2,25 @@
 
 package org.pgledger.application.attachment;
 
+import static org.pgledger.files.FileModes.makeReadOnly;
+import static org.pgledger.files.FileModes.makeWritable;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.channels.OverlappingFileLockException;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.attribute.DosFileAttributeView;
-import java.nio.file.attribute.PosixFileAttributeView;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 import org.pgledger.attestation.Sha256Hex;
@@ -48,6 +48,15 @@ import org.springframework.stereotype.Component;
  * segment that was appended and not recorded (a request that lost the race, or one whose transaction failed); it is opened with the
  * number of this chunk and kept when it holds the same bytes, and the chunk is a conflict when it holds others. Shorter: the
  * file is damaged. The tail is never cut off, because it may be the segment of a request that is still running.
+ *
+ * <p>What the lock keeps apart, and what it does not (R9-D0095 g): it keeps the appenders of one upload apart inside the one
+ * process that appends, the MCP server ({@code AttachmentFlow}: the tools {@code artifact_chunk} and {@code artifact_finish}). Inside
+ * one JVM the file lock table of the JDK refuses a second lock on the same file ({@link OverlappingFileLockException}) whatever the
+ * operating system does; between two processes the lock is the lock of the operating system, and on a POSIX system such a lock is
+ * released when the same process closes any other channel of that file (the JDK documentation of {@link FileLock}), for instance a
+ * reader that finishes. So a second process must never append to an upload: the command line tool does not ({@code attachments-rekey}
+ * writes a new file under a new storage key, and the other attachment commands read, move and delete files); a new process that
+ * appends has to be given its own guard.
  */
 @Component
 @ConditionalOnAttachments
@@ -72,8 +81,6 @@ public class AttachmentStore {
      * Windows (its locks are mandatory); a lock past the end keeps the appenders of one upload apart and blocks no read.
      */
     private static final long LOCK_POSITION = Long.MAX_VALUE - 1;
-    private static final String READ_ONLY_MODE = "r--------";
-    private static final String WRITABLE_MODE = "rw-------";
 
     private final AttachmentProperties properties;
     private final PrivateFiles files;
@@ -636,10 +643,20 @@ public class AttachmentStore {
 
     // ------------------------------------------------------------------------------------------------ details
 
+    /**
+     * Moves a file to a name that is free. A name that exists is never overwritten: the move fails instead (FileAlreadyExistsException,
+     * as {@code Files.move} without {@code REPLACE_EXISTING} does). {@code ATOMIC_MOVE} alone does not say that: "if the target file
+     * exists then it is implementation specific if the existing file is replaced or this method fails", and the Windows provider and
+     * the {@code rename} of Linux both replace it. So the name is looked at first. The look and the move are two steps: a name is the
+     * random key of one file, so a second file can come to it only by a repeat of the same move, which the caller (the check of the
+     * attachments, one run at a time) does not make in parallel.
+     */
     private void move(Path from, Path to) {
         try {
             if (Files.exists(from, LinkOption.NOFOLLOW_LINKS)) {
-                // a name that exists is never overwritten: the move fails instead
+                if (Files.exists(to, LinkOption.NOFOLLOW_LINKS)) {
+                    throw new FileAlreadyExistsException(to.toString());
+                }
                 Files.move(from, to, StandardCopyOption.ATOMIC_MOVE);
             }
         } catch (IOException failure) {
@@ -703,40 +720,6 @@ public class AttachmentStore {
         long at = position;
         while (buffer.hasRemaining()) {
             at += channel.write(buffer, at);
-        }
-    }
-
-    private static void makeReadOnly(Path file) throws IOException {
-        Set<String> views = file.getFileSystem().supportedFileAttributeViews();
-        if (views.contains("posix")) {
-            PosixFileAttributeView posix = Files.getFileAttributeView(file, PosixFileAttributeView.class,
-                    LinkOption.NOFOLLOW_LINKS);
-            if (posix != null) {
-                posix.setPermissions(PosixFilePermissions.fromString(READ_ONLY_MODE));
-            }
-        } else if (views.contains("dos")) {
-            DosFileAttributeView dos = Files.getFileAttributeView(file, DosFileAttributeView.class,
-                    LinkOption.NOFOLLOW_LINKS);
-            if (dos != null) {
-                dos.setReadOnly(true);
-            }
-        }
-    }
-
-    private static void makeWritable(Path file) throws IOException {
-        Set<String> views = file.getFileSystem().supportedFileAttributeViews();
-        if (views.contains("posix")) {
-            PosixFileAttributeView posix = Files.getFileAttributeView(file, PosixFileAttributeView.class,
-                    LinkOption.NOFOLLOW_LINKS);
-            if (posix != null) {
-                posix.setPermissions(PosixFilePermissions.fromString(WRITABLE_MODE));
-            }
-        } else if (views.contains("dos")) {
-            DosFileAttributeView dos = Files.getFileAttributeView(file, DosFileAttributeView.class,
-                    LinkOption.NOFOLLOW_LINKS);
-            if (dos != null) {
-                dos.setReadOnly(false);
-            }
         }
     }
 

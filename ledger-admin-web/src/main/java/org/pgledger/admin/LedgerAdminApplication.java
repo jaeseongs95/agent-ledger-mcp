@@ -3,6 +3,7 @@
 package org.pgledger.admin;
 
 import org.pgledger.admin.console.ConsoleConfiguration;
+import org.pgledger.database.time.JvmZone;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
@@ -25,6 +26,7 @@ import org.springframework.context.annotation.Import;
 public class LedgerAdminApplication {
 
     public static void main(String[] arguments) {
+        JvmZone.pinUtc();
         SpringApplication.run(LedgerAdminApplication.class, arguments);
     }
 }

@@ -92,21 +92,52 @@ final class LinuxPlatform implements ServicePlatform {
         // the accounts are looked up before the first change: a host without the service user is refused with nothing done
         UserPrincipal user = accounts.user(fileSystem, layout.serviceUser());
         GroupPrincipal group = accounts.group(fileSystem, layout.serviceUser());
-        host.directory(lib, "rwxr-xr-x", null, null);
-        host.directory(etc, "rwxr-x---", user, group);
-        host.directory(etc.resolve("drivers"), "rwxr-xr-x", null, null);
+        Path drivers = etc.resolve("drivers");
         // the secrets: the directory and one folder per use (SecretFolder), each the service user's alone; the key folder of the
         // attachments is beside them, in no folder that a process imports as a configuration tree
-        host.directory(hostPath(root, layout.secretDirectory()), "rwx------", user, group);
+        List<Path> secretFolders = new ArrayList<>(List.of(hostPath(root, layout.secretDirectory())));
         for (SecretFolder folder : SecretFolder.all()) {
-            host.directory(hostPath(root, layout.secretFolder(folder)), "rwx------", user, group);
+            secretFolders.add(hostPath(root, layout.secretFolder(folder)));
         }
         // the attachments: the key folder, the data folder and the attachment folder below it, all the service user's
         // alone (a folder that exists gets the same owner and mode as a new one); the data of the installation is new with
         // this version, so nothing of it exists before
-        host.directory(hostPath(root, layout.attachmentKeyDirectory()), "rwx------", user, group);
-        host.directory(hostPath(root, layout.data()), "rwx------", user, group);
-        host.directory(hostPath(root, layout.attachmentDirectory()), "rwx------", user, group);
-        host.copyProduct(jars, driver, lib, etc.resolve("drivers"));
+        secretFolders.add(hostPath(root, layout.attachmentKeyDirectory()));
+        secretFolders.add(hostPath(root, layout.data()));
+        secretFolders.add(hostPath(root, layout.attachmentDirectory()));
+        // What a run changes is read first, so that a failed run can put it back, as the Windows platform does with the ACLs
+        // (nothing is changed by reading): the services stopped for the run can then start again.
+        List<HostFiles.Saved> saved = new ArrayList<>();
+        List<Path> changed = new ArrayList<>(List.of(lib, etc, drivers));
+        changed.addAll(secretFolders);
+        for (Path path : changed) {
+            host.save(path).ifPresent(saved::add);
+        }
+        try {
+            host.directory(lib, "rwxr-xr-x", null, null);
+            host.directory(etc, "rwxr-x---", user, group);
+            host.directory(drivers, "rwxr-xr-x", null, null);
+            for (Path secretFolder : secretFolders) {
+                host.directory(secretFolder, "rwx------", user, group);
+            }
+            host.copyProduct(jars, driver, lib, drivers);
+        } catch (IOException failure) {
+            putBack(saved, failure);
+            throw failure;
+        }
+    }
+
+    /**
+     * Puts back what was saved, the last one first, and goes on when one cannot be put back: the failure of the run stays the one
+     * that is reported, and what could not be put back is attached to it.
+     */
+    private void putBack(List<HostFiles.Saved> saved, IOException failure) {
+        for (HostFiles.Saved before : saved.reversed()) {
+            try {
+                host.restore(before);
+            } catch (IOException e) {
+                failure.addSuppressed(e);
+            }
+        }
     }
 }

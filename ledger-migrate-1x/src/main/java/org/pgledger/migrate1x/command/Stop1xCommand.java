@@ -22,8 +22,7 @@ import org.pgledger.cli.FailureException;
 import org.pgledger.cli.UsageException;
 import org.pgledger.cli.deploy.DeployForms;
 import org.pgledger.migrate1x.host.Hosts1x;
-import org.pgledger.migrate1x.host.ServiceControl;
-import org.pgledger.migrate1x.host.ServiceControl.Result;
+import org.pgledger.migrate1x.host.SystemdServices;
 import org.pgledger.migrate1x.tool.MigrationError;
 import org.pgledger.migrate1x.tool.ToolCommand;
 import org.springframework.boot.ApplicationArguments;
@@ -40,8 +39,8 @@ import org.springframework.stereotype.Component;
  * of 1.x to stop on Windows, and a service of that name there is one of 2.0 or of the system.
  *
  * <p><b>Why a process:</b> Java has no API for the service manager of the host. The command composes the calls of
- * {@code systemctl} with fixed arguments and the validated name, and {@link ServiceControl} runs them; see
- * {@code SystemServiceControl} for the one place that starts a process.
+ * {@code systemctl} with fixed arguments and the validated name; {@link SystemdServices} (the Linux platform of this command) composes
+ * them and {@code SystemServiceControl} is the one place that starts a process.
  *
  * <p>It never touches a service that is not the 1.x ledger: the names are exactly {@code <name>} and {@code <name>-admin}, and
  * the definition must be that of 1.x (the unit has {@code EnvironmentFile=} naming {@code /etc/<name>/env}, which the 1.x
@@ -68,7 +67,6 @@ public class Stop1xCommand implements Command {
 
     /** The name of the instance of an installation made with the default name (the 1.x installer's default too). */
     static final String DEFAULT_NAME = "pg-ledger-mcp";
-    static final String DEFAULT_UNIT_DIR = "/etc/systemd/system";
     static final String LINUX = "linux";
     static final String WINDOWS = "windows";
     /** What the definition of a 1.x service is kept as: {@code <definition>.1x-backup}. */
@@ -80,12 +78,12 @@ public class Stop1xCommand implements Command {
      * installer of 2.0 has its own, narrower rule for the names it makes.
      */
     private static final Pattern INSTANCE_NAME = Pattern.compile("[a-z][a-z0-9-]{0,40}");
-    private final ServiceControl control;
+    private final SystemdServices serviceManager;
     private final CliOutput output;
     private final CliMessages messages;
 
-    Stop1xCommand(ServiceControl control, CliOutput output, CliMessages messages) {
-        this.control = control;
+    Stop1xCommand(SystemdServices serviceManager, CliOutput output, CliMessages messages) {
+        this.serviceManager = serviceManager;
         this.output = output;
         this.messages = messages;
     }
@@ -130,7 +128,7 @@ public class Stop1xCommand implements Command {
         }
         Optional<String> unitDir = CliOptions.value(arguments, UNIT_DIR);
         tellHostNames(arguments);
-        stopLinux(List.of(name, name + "-admin"), name, Path.of(unitDir.orElse(DEFAULT_UNIT_DIR)));
+        stopLinux(List.of(name, name + "-admin"), name, unitDir.map(Path::of).orElseGet(serviceManager::defaultUnitDirectory));
     }
 
     /**
@@ -178,15 +176,15 @@ public class Stop1xCommand implements Command {
                 case ABSENT -> output.info(messages.get("stop-1x.absent", unit.service()));
                 case STOPPED -> output.info(messages.get("stop-1x.done", unit.service(), unit.backup().toString()));
                 case TO_STOP -> {
-                    call("systemctl", "stop", unit.service());
-                    call("systemctl", "disable", unit.service());
+                    serviceManager.stop(unit.service());
+                    serviceManager.disable(unit.service());
                     keep(unit);
                     output.info(messages.get("stop-1x.stopped", unit.service(), unit.backup().toString()));
                 }
             }
         }
         // the units are gone from the directory: the service manager reads its units again (it is cheap and repeatable)
-        call("systemctl", "daemon-reload");
+        serviceManager.reloadUnits();
         output.info(messages.get("stop-1x.rollback", services.getFirst()));
     }
 
@@ -197,7 +195,7 @@ public class Stop1xCommand implements Command {
             if (!Files.exists(unit)) {
                 return new Unit(service, unit, backup, Files.exists(backup) ? State.STOPPED : State.ABSENT);
             }
-            if (!isOneXUnit(Files.readString(unit, StandardCharsets.UTF_8), name)) {
+            if (!serviceManager.isUnitOf1x(Files.readString(unit, StandardCharsets.UTF_8), name)) {
                 throw new FailureException(MigrationError.NOT_1X_SERVICE, unit.toString());
             }
             if (Files.exists(backup) && Files.mismatch(unit, backup) != -1) {
@@ -207,24 +205,6 @@ public class Stop1xCommand implements Command {
         } catch (IOException e) {
             throw new FailureException(ErrorCode.IO_FAILED, e, unit.toString(), e.getClass().getSimpleName());
         }
-    }
-
-    /** The unit of 1.x reads the environment file {@code /etc/<name>/env} ({@code EnvironmentFile=}, the value may start with {@code -}). */
-    static boolean isOneXUnit(String text, String name) {
-        String environment = "/etc/" + name + "/env";
-        for (String raw : (Iterable<String>) text.lines()::iterator) {
-            String line = raw.strip();
-            if (line.startsWith("EnvironmentFile=")) {
-                String value = line.substring("EnvironmentFile=".length()).strip();
-                if (value.startsWith("-")) {
-                    value = value.substring(1).strip();
-                }
-                if (Objects.equals(value, environment)) {
-                    return true;
-                }
-            }
-        }
-        return false;
     }
 
     /** The definition is kept as the backup: moved when the backup is not there, removed when the backup has its bytes already. */
@@ -237,14 +217,6 @@ public class Stop1xCommand implements Command {
             }
         } catch (IOException e) {
             throw new FailureException(MigrationError.STOP_WRITE_FAILED, e, unit.unit().toString(), e.getClass().getSimpleName());
-        }
-    }
-
-    private void call(String... command) {
-        Result result = control.run(List.of(command));
-        if (result.exitCode() != 0) {
-            throw new FailureException(MigrationError.SERVICE_COMMAND_FAILED, String.join(" ", command),
-                    String.valueOf(result.exitCode()));
         }
     }
 

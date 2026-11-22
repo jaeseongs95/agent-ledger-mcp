@@ -165,6 +165,27 @@ class PrepareHostCommandTest {
         assertThat(Files.readString(unit.resolveSibling("pg-ledger-mcp.service.backup"))).isEqualTo(FOREIGN_UNIT);
     }
 
+    @Test
+    @RequiresPosixPermissions
+    @DisplayName("R9-D0094 Linux: a run that fails after it changed the mode of a directory puts the mode back as it found it, as the Windows platform does with the ACLs: the services that were stopped for the run can start again")
+    void r9d0094_aFailedLinuxRunPutsTheModesBack(Cli cli) throws IOException {
+        Path lib = tmp.resolve("root/opt/pg-ledger-mcp");
+        Files.createDirectories(lib);
+        Files.setPosixFilePermissions(lib, PosixFilePermissions.fromString("rwx------"));
+        Path etc = tmp.resolve("root/etc/pg-ledger-mcp");
+        Files.createDirectories(etc);
+        Files.setPosixFilePermissions(etc, PosixFilePermissions.fromString("rwxrwxrwx"));
+        // a file stands where the folder of the driver jars has to be: the run fails there, after lib and etc were changed
+        Files.writeString(etc.resolve("drivers"), "not a folder");
+
+        Outcome result = run(cli.withHostAccounts(testUser()), new RecordingOutput());
+
+        assertThat(result.code()).contains(ErrorCode.HOST_FAILED);
+        assertThat(mode(lib)).as("lib as it was").isEqualTo("rwx------");
+        assertThat(mode(etc)).as("etc as it was").isEqualTo("rwxrwxrwx");
+        assertThat(Files.getOwner(etc)).isEqualTo(Files.getOwner(tmp));
+    }
+
     /** A unit that this command did not render (it has no marker of the renderer). */
     private static final String FOREIGN_UNIT = "[Unit]\nDescription=hand-written\n";
 

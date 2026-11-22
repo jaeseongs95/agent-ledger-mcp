@@ -4,6 +4,7 @@ package org.pgledger.mcp;
 
 import org.pgledger.application.LedgerApplicationConfiguration;
 import org.pgledger.database.LedgerDatabaseConfiguration;
+import org.pgledger.database.time.JvmZone;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
@@ -21,6 +22,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 public class LedgerMcpServerApplication {
 
     public static void main(String[] arguments) {
+        JvmZone.pinUtc();
         SpringApplication.run(LedgerMcpServerApplication.class, arguments);
     }
 }

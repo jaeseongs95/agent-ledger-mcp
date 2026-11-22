@@ -309,6 +309,12 @@ class DeployRendererTest {
 
     // ---- INS-030 ----
 
+    /** The two properties of a Linux host that the post-processor supplies (R9-D0089): the tool then reads /etc/<name>. */
+    private static String linuxHost(String placeholder) {
+        Object value = HostDefaults.settingsPlaceholders(org.pgledger.files.FileKind.POSIX).get(placeholder);
+        return value == null ? null : value.toString();
+    }
+
     @Test
     @DisplayName("INS-030 the command line tool imports for the installation the four sources the units import (without the file of a service), and nothing else")
     void ins030_theToolAndTheServicesReadTheSameSources() throws IOException {
@@ -318,7 +324,7 @@ class DeployRendererTest {
         }
         PropertyPlaceholderHelper helper = new PropertyPlaceholderHelper("${", "}", ":", null, true);
         String imported = helper.replacePlaceholders(properties.getProperty("spring.config.import"),
-                placeholder -> null);
+                DeployRendererTest::linuxHost);
         String unitImport = file(render(values()), MCP_UNIT).lines().filter(line -> line.startsWith("ExecStart="))
                 .findFirst().orElseThrow().replaceFirst(".*--spring\\.config\\.import=", "");
 
@@ -327,7 +333,7 @@ class DeployRendererTest {
         assertThat(List.of(imported.split(","))).containsExactlyElementsOf(expected);
         // the placeholder carries the home: the Windows installation gives its own on the command line
         String windows = helper.replacePlaceholders(properties.getProperty("spring.config.import"),
-                placeholder -> "ledger.secrets.home".equals(placeholder) ? HOME + "/etc" : null);
+                placeholder -> "ledger.secrets.home".equals(placeholder) ? HOME + "/etc" : linuxHost(placeholder));
         assertThat(windows).contains("optional:file:" + HOME + "/etc/application.yaml",
                 "optional:configtree:" + HOME + "/etc/secrets/common/", "optional:configtree:" + HOME + "/etc/secrets/mcp/")
                 .doesNotContain("secrets/admin", "secrets/tool");
@@ -502,7 +508,7 @@ class DeployRendererTest {
         }
         PropertyPlaceholderHelper helper = new PropertyPlaceholderHelper("${", "}", ":", null, true);
         String imported = helper.replacePlaceholders(properties.getProperty("spring.config.import"),
-                placeholder -> "ledger.secrets.instance".equals(placeholder) ? "acme-test" : null);
+                placeholder -> "ledger.secrets.instance".equals(placeholder) ? "acme-test" : linuxHost(placeholder));
 
         assertThat(imported).contains("optional:file:/etc/acme-test/application.yaml",
                 "optional:configtree:/etc/acme-test/secrets/common/", "optional:configtree:/etc/acme-test/secrets/mcp/")

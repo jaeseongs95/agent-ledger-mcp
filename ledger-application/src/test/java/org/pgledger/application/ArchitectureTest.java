@@ -215,4 +215,10 @@ class ArchitectureTest {
                 .map(java.lang.reflect.Field::getName)).as("LedgerJson has no strict mapper any more")
                 .doesNotContain("strict");
     }
+
+    @Test
+    @DisplayName("R9-D0091 R9-D0092 the kind of the file system (POSIX, ACL, DOS) is asked in ledger-files only")
+    void r9d0091_fileSystemCapabilityIsProbedInFilesOnly() {
+        ArchitectureRules.fileSystemCapabilityIsProbedInFilesOnly().check(MAIN);
+    }
 }

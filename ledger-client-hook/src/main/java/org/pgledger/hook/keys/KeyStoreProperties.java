@@ -2,6 +2,7 @@
 
 package org.pgledger.hook.keys;
 
+import org.pgledger.files.ProcessAccount;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -18,11 +19,19 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param userHome the home folder of the account that runs the hook ({@code user.home}, set in
  *                 {@code application.properties}): the key folder is {@code <home>/.pg-ledger-mcp/session-keys} when
  *                 {@code keyDir} is not set
- * @param userName the account that the owner-only entry of a new key folder and key file names, on a file system with ACLs
- *                 ({@code user.name}, set in {@code application.properties}); the owner of an existing one is not looked at
+ * @param userName the account that the owner-only entry of a new key folder and key file names, on a file system with ACLs; the
+ *                 owner of an existing one is not looked at. Not set (the usual case), it is the account of the process as the
+ *                 server and the command line tool know it ({@link ProcessAccount}: {@code DOMAIN\name} on Windows), and never
+ *                 {@code user.name}, which has no domain and can name another account of that name
  */
 @ConfigurationProperties("ledger.hook")
 public record KeyStoreProperties(String keyDir, String userHome, String userName) {
+
+    /** The account that is named, or, when none is, the account of the process (blank when the JDK cannot tell: then ACLs refuse). */
+    @Override
+    public String userName() {
+        return userName == null || userName.isBlank() ? ProcessAccount.name().orElse("") : userName;
+    }
 
     /** The key folder these settings name: {@link KeyFolder#resolve}. */
     public KeyFolder folder() {

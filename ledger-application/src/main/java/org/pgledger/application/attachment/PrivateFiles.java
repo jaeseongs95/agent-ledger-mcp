@@ -21,6 +21,7 @@ import java.util.Set;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.files.FileProtection;
+import org.pgledger.files.ProcessAccount;
 import org.pgledger.files.ServicePrincipalAcl;
 import org.springframework.stereotype.Component;
 
@@ -170,14 +171,15 @@ public class PrivateFiles {
     }
 
     private FileProtection protection(FileSystem fileSystem) {
-        Set<String> views = fileSystem.supportedFileAttributeViews();
-        if (views.contains("posix")) {
-            return new FileProtection.Posix();
+        try {
+            return FileProtection
+                    .select(fileSystem, aclSystem -> new FileProtection.Acl(processUser(aclSystem),
+                            serviceAccount(aclSystem), true))
+                    .orElseThrow(() -> unsafe("the file system has neither POSIX permissions nor ACLs"));
+        } catch (IOException failure) {
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_STORAGE_IO_ERROR,
+                    List.of(failure.getClass().getSimpleName()), failure);
         }
-        if (views.contains("acl")) {
-            return new FileProtection.Acl(processUser(fileSystem), serviceAccount(fileSystem), true);
-        }
-        throw unsafe("the file system has neither POSIX permissions nor ACLs");
     }
 
     /**
@@ -214,9 +216,7 @@ public class PrivateFiles {
     /** The account of this process (JDK ProcessHandle) as a principal of the file system, so that it compares equal to a file owner. */
     private static UserPrincipal processUser(FileSystem fileSystem) {
         try {
-            String name = ProcessHandle.current().info().user()
-                    .orElseThrow(() -> unsafe("the account of this process is not known"));
-            return fileSystem.getUserPrincipalLookupService().lookupPrincipalByName(name);
+            return ProcessAccount.principal(fileSystem);
         } catch (UserPrincipalNotFoundException unknown) {
             // the account of the process is not known to the file system: an owner-only file cannot be made for it (not a disk failure)
             throw unsafe("the account of this process is not known to the file system");

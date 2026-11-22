@@ -3,11 +3,9 @@
 package org.pgledger.cli.secret;
 
 import java.io.IOException;
-import java.nio.file.FileSystem;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.UserPrincipal;
-import java.util.Set;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.FailureException;
 import org.pgledger.files.FileProtection;
@@ -64,15 +62,14 @@ public sealed interface SecretProtection {
      *         permissions nor ACLs
      */
     static SecretProtection of(Path directory, ProcessUser processUser) throws IOException {
-        FileSystem fileSystem = directory.getFileSystem();
-        Set<String> views = fileSystem.supportedFileAttributeViews();
-        if (views.contains("posix")) {
-            return new Posix();
-        }
-        if (views.contains("acl")) {
-            return new Acl(processUser.current(fileSystem), ServicePrincipalAcl.principal(fileSystem));
-        }
-        throw new FailureException(ErrorCode.NON_POSIX_FILESYSTEM, directory.toString());
+        FileProtection chosen = FileProtection.select(directory.getFileSystem(),
+                fileSystem -> new FileProtection.Acl(processUser.current(fileSystem), ServicePrincipalAcl.principal(fileSystem),
+                        false))
+                .orElseThrow(() -> new FailureException(ErrorCode.NON_POSIX_FILESYSTEM, directory.toString()));
+        return switch (chosen) {
+            case FileProtection.Acl acl -> new Acl(acl.owner(), acl.reader());
+            default -> new Posix();
+        };
     }
 
     /** POSIX permissions. */

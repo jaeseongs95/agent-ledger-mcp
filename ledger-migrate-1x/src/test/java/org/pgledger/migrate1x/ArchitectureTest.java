@@ -95,6 +95,8 @@ class ArchitectureTest {
     @DisplayName("M1X-007 ARC-033 no operating system detection in main and test code")
     void m1x007_noOperatingSystemDetection() {
         ArchitectureRules.noOperatingSystemDetection().check(MAIN);
+        ArchitectureRules.fileSystemCapabilityIsProbedInFilesOnly().check(MAIN);
+        ArchitectureRules.mainPinsTheJvmZone().check(MAIN);
         assertThat(SourceRules.operatingSystemDetection(Path.of("src", "main", "java"), Path.of("src", "test", "java")))
                 .isEmpty();
     }

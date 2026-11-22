@@ -112,6 +112,7 @@ class ArchitectureTest {
                 new Rule("ARC-018 static fields are final", ArchitectureRules.staticFieldsAreFinal()),
                 new Rule("ARC-019/024 no ambient time", ArchitectureRules.noAmbientTime()),
                 new Rule("ARC-033 no operating system detection", ArchitectureRules.noOperatingSystemDetection()),
+                new Rule("R9-D0090 the entry point pins the JVM zone to UTC", ArchitectureRules.mainPinsTheJvmZone()),
                 new Rule("ARC-015 no switch over a String", noClasses().should().callMethodWhere(CALLS_STRING_HASH_CODE)),
                 new Rule("ARC-012 JDBC clients are not used by the admin", noClasses().should()
                         .dependOnClassesThat().haveFullyQualifiedName("org.springframework.jdbc.core.simple.JdbcClient")

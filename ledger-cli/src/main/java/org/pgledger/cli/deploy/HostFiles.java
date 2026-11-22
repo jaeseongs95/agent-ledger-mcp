@@ -10,10 +10,15 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.attribute.GroupPrincipal;
 import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFileAttributes;
+import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.nio.file.attribute.UserPrincipal;
 import java.nio.file.attribute.UserPrincipalNotFoundException;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.FailureException;
 import org.springframework.stereotype.Component;
@@ -41,6 +46,36 @@ final class HostFiles {
             view.setGroup(group);
         }
         view.setPermissions(PosixFilePermissions.fromString(mode));
+    }
+
+    /** The owner, the group and the mode of a directory as they were before a run changed them (POSIX file systems). */
+    record Saved(Path path, UserPrincipal owner, GroupPrincipal group, Set<PosixFilePermission> mode) {
+    }
+
+    /**
+     * Reads the owner, the group and the mode of {@code path} when it exists (nothing is changed by reading), so that a run that
+     * fails can put them back with {@link #restore}; empty when there is no such directory.
+     */
+    Optional<Saved> save(Path path) throws IOException {
+        if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
+            return Optional.empty();
+        }
+        PosixFileAttributes attributes = Files.readAttributes(path, PosixFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        return Optional.of(new Saved(path, attributes.owner(), attributes.group(), attributes.permissions()));
+    }
+
+    /** Puts the owner, the group and the mode of a directory back as {@link #save} read them. */
+    void restore(Saved saved) throws IOException {
+        PosixFileAttributeView view = Files.getFileAttributeView(saved.path(), PosixFileAttributeView.class,
+                LinkOption.NOFOLLOW_LINKS);
+        PosixFileAttributes now = view.readAttributes();
+        if (!Objects.equals(now.owner(), saved.owner())) {
+            view.setOwner(saved.owner());
+        }
+        if (!Objects.equals(now.group(), saved.group())) {
+            view.setGroup(saved.group());
+        }
+        view.setPermissions(saved.mode());
     }
 
     /** The three jars of the product to {@code lib} and the JDBC driver jar to {@code drivers}. */

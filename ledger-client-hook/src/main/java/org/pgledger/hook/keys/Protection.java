@@ -7,7 +7,6 @@ import java.nio.file.FileSystem;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.UserPrincipal;
-import java.util.Set;
 import org.pgledger.files.FileProtection;
 import org.pgledger.hook.keys.SessionKeyException.Reason;
 
@@ -65,17 +64,16 @@ sealed interface Protection permits Protection.Posix, Protection.Acl, Protection
      * @throws IOException         if the account is not known to the file system
      */
     static Protection of(FileSystem system, String userName) throws IOException {
-        Set<String> views = system.supportedFileAttributeViews();
-        if (views.contains("posix")) {
-            return new Posix();
-        }
-        if (!views.contains("acl")) {
-            return new Unprotected();
-        }
-        if (userName == null || userName.isBlank()) {
-            throw new SessionKeyException(Reason.OWNER_UNKNOWN);
-        }
-        return new Acl(system.getUserPrincipalLookupService().lookupPrincipalByName(userName));
+        return switch (FileProtection.select(system, aclSystem -> {
+            if (userName == null || userName.isBlank()) {
+                throw new SessionKeyException(Reason.OWNER_UNKNOWN);
+            }
+            return new FileProtection.Acl(aclSystem.getUserPrincipalLookupService().lookupPrincipalByName(userName));
+        }).orElseGet(FileProtection.Unprotected::new)) {
+            case FileProtection.Posix _ -> new Posix();
+            case FileProtection.Acl acl -> new Acl(acl.owner());
+            case FileProtection.Unprotected _ -> new Unprotected();
+        };
     }
 
     /** Neither view: nothing to set and nothing to check. */

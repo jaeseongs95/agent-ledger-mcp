@@ -6,13 +6,13 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
+import org.pgledger.files.FileModes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -152,9 +152,7 @@ public final class DriverRegistrationFile {
             Files.createDirectories(directory);
             temporary = Files.createTempFile(directory, "..jdbc-driver-", ".tmp");
             YAML.writeValue(temporary, document);
-            if (directory.getFileSystem().supportedFileAttributeViews().contains("posix")) {
-                Files.setPosixFilePermissions(temporary, PosixFilePermissions.fromString("rw-r-----"));
-            }
+            FileModes.apply(temporary, FileModes.GROUP_READABLE);
             prepared = true;
             return new Pending(temporary, file);
         } catch (IOException e) {

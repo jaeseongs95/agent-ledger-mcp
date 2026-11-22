@@ -74,6 +74,18 @@ public record DeployLayout(Platform platform,
         return new DeployLayout(Platform.LINUX, name, "/opt/" + name, "/etc/" + name, "/var/lib/" + name, null);
     }
 
+    /**
+     * The directory below which the installer of Windows ({@code deploy/install.cmd}) puts the home of an instance,
+     * {@code C:/ProgramData/<name>}; the tool that works for an installation finds it there when it is not told another home
+     * ({@link HostDefaults}).
+     */
+    public static final String WINDOWS_HOME_ROOT = "C:/ProgramData";
+
+    /** The layout of a Windows instance in the home that the installer gives it, {@code C:/ProgramData/<name>}. */
+    public static DeployLayout windows(String name) {
+        return windows(name, WINDOWS_HOME_ROOT + "/" + name);
+    }
+
     /** The layout of a Windows instance below one directory (for example {@code C:/ProgramData/<name>}). */
     public static DeployLayout windows(String name, String home) {
         return new DeployLayout(Platform.WINDOWS, name, home + "/lib", home + "/etc", home + "/data", home + "/logs");

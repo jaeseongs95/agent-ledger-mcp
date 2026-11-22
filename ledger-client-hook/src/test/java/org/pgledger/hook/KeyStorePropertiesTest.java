@@ -75,13 +75,22 @@ class KeyStorePropertiesTest {
     }
 
     @Test
-    @DisplayName("HK-051 the home folder and the account are those of the process: user.home and user.name")
+    @DisplayName("HK-051 R9-D0095 c: the home folder is that of the process (user.home) and the account is the account of the process as the server and the command line tool know it (ProcessHandle: with its domain on Windows), not the bare user.name")
     void homeAndAccountAreThoseOfTheProcess() {
         runner(Map.of()).run(context -> {
             assertThat(context).hasNotFailed();
             KeyStoreProperties settings = context.getBean(KeyStoreProperties.class);
             assertThat(settings.userHome()).isEqualTo(System.getProperty("user.home"));
-            assertThat(settings.userName()).isEqualTo(System.getProperty("user.name"));
+            assertThat(settings.userName()).isEqualTo(ProcessHandle.current().info().user().orElseThrow());
+        });
+    }
+
+    @Test
+    @DisplayName("R9-D0095 c: an account named by the setting ledger.hook.user-name is used as it is")
+    void anAccountGivenIsUsedAsItIs() {
+        runner(Map.of(), "ledger.hook.user-name=someone").run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context.getBean(KeyStoreProperties.class).userName()).isEqualTo("someone");
         });
     }
 

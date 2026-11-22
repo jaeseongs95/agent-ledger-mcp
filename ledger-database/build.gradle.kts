@@ -4,6 +4,9 @@ plugins {
 
 dependencies {
     api(project(":ledger-domain"))
+    // The modes of the temporary files of the driver (owner only) and of the registration file: what depends on the kind of the file
+    // system is decided in this one module (JDK only), shared with the server, the command line tool and the hook.
+    implementation(project(":ledger-files"))
     // Spring JDBC, Spring Data JDBC and Hikari. No JDBC driver: the driver is registered by the user at run time.
     api("org.springframework.boot:spring-boot-starter-data-jdbc")
     // DatabaseDriver names the product of a JDBC URL or of a connection (SqlBuilder); the starter above brings the module, it

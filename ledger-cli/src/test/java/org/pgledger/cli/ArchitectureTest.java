@@ -125,6 +125,18 @@ class ArchitectureTest {
     @DisplayName("ARC-033 no operating system detection in main and test code")
     void noOperatingSystemDetection() {
         ArchitectureRules.noOperatingSystemDetection().check(MAIN);
+        ArchitectureRules.fileSystemCapabilityIsProbedInFilesOnly().check(MAIN);
+    }
+
+    @Test
+    @DisplayName("R9-D0090 the entry point of the command line tool pins the JVM zone to UTC before it does anything else")
+    void r9d0090_theEntryPointPinsTheZone() {
+        ArchitectureRules.mainPinsTheJvmZone().check(MAIN);
+    }
+
+    @Test
+    @DisplayName("ARC-033 no operating system detection in the sources")
+    void noOperatingSystemDetectionInSources() {
         assertThat(SourceRules.operatingSystemDetection(Path.of("src", "main", "java"), Path.of("src", "test", "java")))
                 .isEmpty();
     }

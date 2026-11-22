@@ -16,7 +16,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.sql.Driver;
 import java.time.Instant;
 import java.util.List;
@@ -27,6 +26,7 @@ import java.util.zip.ZipFile;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.domain.value.Sha256;
+import org.pgledger.files.FileModes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -46,7 +46,7 @@ import org.springframework.stereotype.Component;
  * <p>The jar is opened once and read once into memory from that open channel. The digest is taken of exactly those bytes,
  * the bytes are written to a private
  * copy (a temporary file; on a file system with POSIX permissions it is created with {@code rw-------} through
- * {@link PosixFilePermissions#asFileAttribute}, elsewhere with the default of {@link Files#createTempFile}, which the
+ * {@link FileModes#creation} of {@code ledger-files}, elsewhere with the default of {@link Files#createTempFile}, which the
  * documentation says may be more restrictive than {@code File.createTempFile} but does not fix), and the class loader
  * opens the copy. A swap of the
  * registered file between the check and the load (a time-of-check to time-of-use race) therefore cannot change what
@@ -55,8 +55,6 @@ import org.springframework.stereotype.Component;
  *
  * <p>Standard API used: {@link Files#newByteChannel(Path, Set, java.nio.file.attribute.FileAttribute[])}, {@link Channels#newInputStream} (https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/nio/channels/Channels.html) and {@link Files#createTempFile(String, String,
  * java.nio.file.attribute.FileAttribute[])} (https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/nio/file/Files.html),
- * {@link PosixFilePermissions} (https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/nio/file/attribute/PosixFilePermissions.html),
- * {@link java.nio.file.FileSystem#supportedFileAttributeViews()} (https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/nio/file/FileSystem.html)
  * and {@link URLClassLoader} (https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/net/URLClassLoader.html).
  *
  * <p>Why this is code of ours and not Spring Boot's (principle 8.2, "a reflection that must be written is confined to
@@ -79,8 +77,6 @@ public final class DriverLoader {
 
     /** A Spring property placeholder: it would be resolved when the registration file is read back. */
     private static final String PLACEHOLDER_START = "${";
-
-    private static final String POSIX = "posix";
 
     /** The loaded driver and the digest of the bytes it was loaded from. */
     private record Opened(RegisteredDriver driver, Sha256 digest) {
@@ -208,13 +204,8 @@ public final class DriverLoader {
      */
     private static Path createPrivateCopy() {
         try {
-            Path copy;
-            if (FileSystems.getDefault().supportedFileAttributeViews().contains(POSIX)) {
-                copy = Files.createTempFile(COPY_PREFIX, COPY_SUFFIX,
-                        PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
-            } else {
-                copy = Files.createTempFile(COPY_PREFIX, COPY_SUFFIX);
-            }
+            Path copy = Files.createTempFile(COPY_PREFIX, COPY_SUFFIX,
+                    FileModes.creation(FileSystems.getDefault(), FileModes.PRIVATE));
             copy.toFile().deleteOnExit();
             return copy;
         } catch (IOException e) {

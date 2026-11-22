@@ -12,14 +12,13 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.attribute.FileAttribute;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiConsumer;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.FailureException;
 import org.pgledger.cli.UsageException;
+import org.pgledger.files.FileModes;
 import org.springframework.stereotype.Component;
 
 /**
@@ -38,9 +37,6 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public final class DeployFiles {
-
-    private static final FileAttribute<?> READABLE = PosixFilePermissions
-            .asFileAttribute(PosixFilePermissions.fromString("rw-r--r--"));
 
     /** What a file that this command did not render and that is replaced is kept as. */
     public static final String BACKUP_SUFFIX = ".backup";
@@ -213,9 +209,8 @@ public final class DeployFiles {
     private void replace(Path target, Content content) throws IOException {
         Path directory = target.toAbsolutePath().getParent();
         Files.createDirectories(directory);
-        Path temporary = directory.getFileSystem().supportedFileAttributeViews().contains("posix")
-                ? Files.createTempFile(directory, "..render-", ".tmp", READABLE)
-                : Files.createTempFile(directory, "..render-", ".tmp");
+        Path temporary = Files.createTempFile(directory, "..render-", ".tmp",
+                FileModes.creation(directory.getFileSystem(), FileModes.WORLD_READABLE));
         try {
             try (OutputStream out = Files.newOutputStream(temporary)) {
                 content.writeTo(out);

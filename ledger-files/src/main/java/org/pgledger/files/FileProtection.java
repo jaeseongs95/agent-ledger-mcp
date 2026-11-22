@@ -3,6 +3,7 @@
 package org.pgledger.files;
 
 import java.io.IOException;
+import java.nio.file.FileSystem;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
@@ -42,6 +43,28 @@ public sealed interface FileProtection
         /** An ACL ALLOW entry grants more than harmless metadata access to another principal. */
         record AclPrincipal(String principalName) implements Exposure {
         }
+    }
+
+    /** What a caller makes of an ACL file system: its {@link Acl} (the owner and the reader differ by caller). */
+    @FunctionalInterface
+    interface AclChoice {
+
+        Acl on(FileSystem fileSystem) throws IOException;
+    }
+
+    /**
+     * The protection of {@code fileSystem}, chosen by what it supports ({@link FileKind}): {@link Posix} where it has POSIX
+     * permissions, else the {@link Acl} that {@code acl} makes where it has ACLs (only then is it asked, because an account is
+     * looked up for it), else nothing. The three users of this module (the attachments, the secret store, the key store of the hook)
+     * take the choice from here and decide for themselves what a file system with neither view means: the first two refuse it, the
+     * hook leaves the protection of the user profile ({@link Unprotected}).
+     */
+    static Optional<FileProtection> select(FileSystem fileSystem, AclChoice acl) throws IOException {
+        return switch (FileKind.of(fileSystem)) {
+            case POSIX -> Optional.of(new Posix());
+            case ACL -> Optional.of(acl.on(fileSystem));
+            case OTHER -> Optional.empty();
+        };
     }
 
     /** Attributes supplied when creating a private directory. */
