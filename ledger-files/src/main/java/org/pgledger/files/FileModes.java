@@ -42,10 +42,13 @@ public final class FileModes {
                 : new FileAttribute<?>[0];
     }
 
-    /** Gives an existing file {@code mode}; nothing where the file system has no POSIX permissions. */
+    /**
+     * Gives an existing file {@code mode}; nothing where the file system has no POSIX permissions. The file itself is changed, never
+     * what a symbolic link points to ({@link LinkOption#NOFOLLOW_LINKS}: {@code Files.setPosixFilePermissions} follows links).
+     */
     public static void apply(Path file, String mode) throws IOException {
         if (FileKind.of(file.getFileSystem()) == FileKind.POSIX) {
-            Files.setPosixFilePermissions(file, PosixFilePermissions.fromString(mode));
+            setPermissions(file, mode);
         }
     }
 
@@ -62,15 +65,19 @@ public final class FileModes {
     private static void change(Path file, String mode, boolean readOnly) throws IOException {
         FileSystem fileSystem = file.getFileSystem();
         if (FileKind.of(fileSystem) == FileKind.POSIX) {
-            PosixFileAttributeView posix = Files.getFileAttributeView(file, PosixFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
-            if (posix != null) {
-                posix.setPermissions(PosixFilePermissions.fromString(mode));
-            }
+            setPermissions(file, mode);
         } else if (FileKind.hasDosView(fileSystem)) {
             DosFileAttributeView dos = Files.getFileAttributeView(file, DosFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
             if (dos != null) {
                 dos.setReadOnly(readOnly);
             }
+        }
+    }
+
+    private static void setPermissions(Path file, String mode) throws IOException {
+        PosixFileAttributeView posix = Files.getFileAttributeView(file, PosixFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
+        if (posix != null) {
+            posix.setPermissions(PosixFilePermissions.fromString(mode));
         }
     }
 }
