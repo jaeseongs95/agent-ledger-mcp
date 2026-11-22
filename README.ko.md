@@ -375,7 +375,7 @@ OpenID Connect로 로그인하고, 첫 패스키는 `passkey-code`로 등록합�
 ### 첫 설정
 
 설치 스크립트는 `setup`을 호출하며, 업그레이드한 뒤나 직접 준비한 데이터베이스에서는 운영자가 직접 실행합니다. 새 장부는 처음에 담을 데이터가 필요하므로 `ledger-cli`는
-시드 번들을 함께 가지고 있습니다. 시드 번들은 파일 `ledger-seed.mv.db`이며, 빌드가 `ledger-cli` 모듈의 텍스트 파일 `src/seed/defect-categories.tsv`와
+시드 번들을 함께 가지고 있습니다. 시드 번들은 파일 `ledger-seed.mv.db`이며, 빌드가 `ledger-cli` 모듈의 텍스트 파일 `src/seed/issue-categories.tsv`와
 `src/seed/install-defaults.properties`에서 Java 프로그램으로 만들어 `ledger-cli.jar`에 넣습니다. 이 파일은 저장소에 커밋하지 않습니다. 번들에는 기본 결함 분류 14개
 (코드, 한국어·영어 이름과 설명)와 설치 기본값(인스턴스 이름과 두 포트)이 들어 있으며, 비밀값은 없습니다. 파일 형식이 H2 데이터베이스일 뿐이며 H2는 여기서 그 용도로만
 쓰입니다. 장부는 언제나 운영자가 설치한 데이터베이스 시스템에 저장되고, H2 드라이버나 H2의 JDBC URL을 등록하려 하면 `driver-register`와 관리 웹의 드라이버 화면이

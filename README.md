@@ -475,7 +475,7 @@ without HTTPS.
 
 The installers call `setup`, and you run it yourself after an upgrade or against a database that you prepared by hand. A new ledger
 has to start with some data, so `ledger-cli` carries a seed bundle: the file `ledger-seed.mv.db`, which the build writes with a Java
-program from the text files `src/seed/defect-categories.tsv` and `src/seed/install-defaults.properties` of the module `ledger-cli`
+program from the text files `src/seed/issue-categories.tsv` and `src/seed/install-defaults.properties` of the module `ledger-cli`
 and packs into `ledger-cli.jar`. It is never committed. The bundle holds the 14 default defect categories (code, Korean and English
 name and description) and the defaults of an installation (the instance name and the two ports); it holds no secret. The file has the
 format of the H2 database, and that is all H2 is here: the ledger is always kept by the database system that you install, and the
