@@ -518,7 +518,7 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인�
 
 | 이전 명령 | 문법 | 하는 일 |
 |---|---|---|
-| `stop-1x` | `stop-1x [--name=<instance>] [--platform=<platform>] [--unit-dir=<dir>] [--home=<dir>] [--env=<file> [--mcp-host=<host>] [--admin-host=<host>]]` | 첫 단계입니다. 1.x의 서비스 둘 `<name>`과 `<name>-admin`을 멈추고 비활성화하며, 각 정의를 옆에 백업(`<file>.1x-backup`)으로 보관합니다. `--env`를 주면 먼저 1.x의 공개 호스트 이름을 검사합니다 |
+| `stop-1x` | `stop-1x [--name=<instance>] [--platform=<platform>] [--unit-dir=<dir>] [--env=<file> [--mcp-host=<host>] [--admin-host=<host>]]` | 첫 단계입니다. 1.x의 서비스 둘 `<name>`과 `<name>-admin`을 멈추고 비활성화하며, 각 정의를 옆에 백업(`<file>.1x-backup`)으로 보관합니다. `--env`를 주면 먼저 1.x의 공개 호스트 이름을 검사합니다 |
 | `import-secrets-1x` | `import-secrets-1x --env=<file> [--replace]` 또는 `import-secrets-1x --stdin [--replace]` | 설치 프로그램을 실행한 뒤 1.x의 비밀을 2.0의 비밀 저장소로 옮깁니다. `--replace`를 주면 설치 프로그램이 생성한 토큰을 대체합니다 |
 | `import-1x` | `import-1x [--verify-only] [--owner-account=<account>] [--stdin]` | 1.x 장부를 하나의 트랜잭션으로 새 스키마에 복사하고 모든 표를 행 수와 SHA-256으로 대조합니다. `--verify-only`는 대조만 다시 합니다 |
 | `retire-1x` | `retire-1x [--confirm=<sha256> --backup-tested]` | 2.0을 받아들인 뒤, 1.x 설치기가 데이터베이스에 만든 것을 제거합니다. 옵션 없이 실행하면 목록만 보여 주고 아무것도 바꾸지 않습니다 |
