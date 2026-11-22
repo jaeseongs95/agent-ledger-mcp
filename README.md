@@ -241,7 +241,8 @@ The build is a Gradle multi-module project.
 | `ledger-cli` | the owner command line tool (`ledger-cli.jar`) |
 | `ledger-seed` | the seed bundle of a new installation, the default defect categories and the install defaults in one H2 file, and its reader; only `ledger-cli` uses it |
 | `ledger-migrate-1x` | the separate tool that moves a 1.x installation to 2.0 (`ledger-migrate-1x.jar`, see Upgrading from 1.x); it uses `ledger-domain`, `ledger-database` and `ledger-application`, and the classes (the plain jar, none of its libraries) of `ledger-cli` for its command line machinery and secret store, so that the secret store is the one of the services; no other module uses it |
-| `ledger-client-hook` | the one hook jar of all clients (`ledger-client-hook.jar`) |
+| `ledger-hook-client` | the light client of the hook (`ledger-client-hook.jar`, `java.base` only), the wire format, the state folder and the address file |
+| `ledger-client-hook` | the resident program of the hook (`ledger-hook-resident.jar`, a Spring Boot application) |
 | `ledger-system-test` | test code only: the system test of the packaged product, which starts the built jars against the local PostgreSQL |
 | `ledger-arch-checks` | test code only: cross-module architecture, build-script, SQL/transaction boundary, and module dependency checks |
 
@@ -602,10 +603,15 @@ the service account of the installation and never as root.
 
 ## Client hooks
 
-One executable jar, `ledger-client-hook.jar`, serves all clients; the first argument selects the client:
-`java -jar ledger-client-hook.jar claude`, `codex` or `antigravity`. The plugin directories are in `clients/claude`,
-`clients/codex` and `clients/antigravity` (see the README of each). The hook needs a Java 25 runtime on the `PATH` of the client
-host; with no hook, or a failing hook, a write is refused with `HOST_ATTESTATION_REQUIRED`.
+The hook is two programs that lie next to each other in the plugin folder. The hosts run the **light client**,
+`ledger-client-hook.jar`, which serves all clients; the first argument selects the client:
+`java -jar ledger-client-hook.jar claude`, `codex` or `antigravity`. It loads nothing but `java.base` (no Spring, no Jackson, no
+logging library) and, for every call, carries the input of the host over the loopback to the **resident program**,
+`ledger-hook-resident.jar` (a Spring Boot application), and prints what that answers. What the host sees did not change: the host
+JSON on the standard input, only the answer on the standard output (no JVM line, no log line), the exit codes and what a failure
+means. The plugin directories are in `clients/claude`, `clients/codex` and `clients/antigravity` (see the README of each). The hook
+needs a Java 25 runtime on the `PATH` of the client host; with no hook, or a failing hook, a write is refused with
+`HOST_ATTESTATION_REQUIRED`.
 
 The hook signs only the thirteen write tools and five attachment tools, named `mcp__<server>__ledger_<op>` or `mcp__<server>__<server>_ledger_<op>`
 (Codex Apps: `mcp__codex_apps__app_<app>_ledger_<op>`). The value of `_hostAttestation` is
@@ -618,6 +624,27 @@ cannot carry other content.
 - The hook keeps one Ed25519 key per MCP server name and author in an owner-only folder: `~/.pg-ledger-mcp/session-keys`, or the
   absolute path in `LEDGER_HOOK_KEY_DIR`. A signature made for one server never verifies on another. For Codex Apps the server name
   is `codex_apps.<app>`.
+- The resident program is started by the first call and needs no installation step: when the address file is missing, names a process
+  that is gone (the process id and the start time must both match, so a reused id is not taken for it) or does not answer, the client
+  starts `java -jar` of a copy of the program, and only one starts even when several calls arrive together (a lock on the state
+  folder; the program holds a second lock of its own). The first call takes about a second, the later ones about a tenth of a second
+  (measurements in the release notes). The program keeps running after the call and ends by itself after 15 minutes without a call
+  (`LEDGER_HOOK_RESIDENT_IDLE_TIMEOUT`, an ISO-8601 duration such as `PT30M`), or with `java -jar ledger-client-hook.jar stop`.
+- There is one resident program per key folder. Its state folder, `~/.pg-ledger-mcp/resident/<id>/`, holds the address file (the port,
+  the process id and start time, the build, and a secret that is new for every start), the two lock files and `resident.log`, which
+  has the output of the program and never a secret. The program listens on `127.0.0.1` only, at a port that the system chooses. Every
+  request must carry the secret of the address file; it is compared in constant time and a request without it is refused with 401, so
+  another account of the same PC cannot call the program. The folder and its files are owner-only (POSIX permissions, or an ACL for
+  the owner, chosen by what the file system can do).
+- The program runs from a copy in `~/.pg-ledger-mcp/resident-runtime/<build>/`, so a running program never locks the jars of the
+  plugin folder: the plugin can be updated or removed at any time. A client whose program file is another build (an updated plugin)
+  asks the running program to end, ends it if it does not, and starts the new one.
+- If the program cannot be reached or started, the call fails the way an unanswerable call always failed: exit code 2 and, on the
+  standard error, `ledger: the hook program is not available` with the reason; the server then refuses the write with
+  `HOST_ATTESTATION_REQUIRED`. Read `resident.log` in the state folder; check that `ledger-client-hook.jar` and
+  `ledger-hook-resident.jar` are in the same folder and that `java` is JDK 25 or later. `java -jar ledger-client-hook.jar stop` ends a
+  program that behaves oddly; the next call starts a new one. The folders `resident` and `resident-runtime` can be deleted while no
+  program runs; the keys are in `session-keys` and are not touched.
 - `java -jar ledger-client-hook.jar session-key <server> <author>` prints the server, the author, the public key and its fingerprint.
   The owner compares the fingerprint and registers the key on that server with `ledger-cli key-register` or on the grants page.
 - The server verifies the signature, the tool, the operation key, the arguments and the time (`ledger.attestation.window`) before it
@@ -749,7 +776,7 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
 8. **Check.** Run `ledger-cli mcp-check --url=<its public URL>` and `import-1x --verify-only` (it needs the settings of the 1.x source and
    changes nothing), and run `ledger-cli passkey-code` and register your first passkey in the admin web (the admin token of the installer signs a
    browser in only with `ledger.admin.sign-in=token`; the default is `passkey`). Clients: the tools `execute_sql_reader` and `search_objects_reader` were removed; the read tools replace them. The results of the write
-   tools keep their keys without the `rows[0].result` wrapping. Install the hook jar (a Java 25 runtime) on every client host before the server is switched.
+   tools keep their keys without the `rows[0].result` wrapping. Install the hook (the two jars of the plugin folder and a Java 25 runtime) on every client host before the server is switched.
    When the checks have passed, the read-only account of the 1.x database that was made for the import may be dropped.
 9. **Roll back** if the check fails: stop the services of 2.0, put each `<unit>.1x-backup` back under its own name in place of the unit of 2.0
    (copy it, so that the backup stays), run `sudo systemctl daemon-reload`, and run `sudo systemctl enable --now <name>` and the same for
@@ -894,7 +921,7 @@ together with the properties above.
 - `ledger-domain`, `ledger-attestation`, `ledger-files`, `ledger-database`, `ledger-application`, `ledger-mcp-server`, `ledger-admin-web`,
   `ledger-cli`, `ledger-client-hook`, `ledger-migrate-1x`: the modules above, each with `src/main` and `src/test`; `ledger-system-test` and `ledger-arch-checks` have `src/test` only.
 - `clients/claude`, `clients/codex`, `clients/antigravity`: the manifests and README of each client plugin; the build stages them with
-  the hook jar into `ledger-client-hook/build/client-plugins`.
+  the hook jar into `ledger-client-hook/build/client-plugins`, with both jars of the hook.
 - `docs/`: the test case catalogue, the release note format and the release notes.
 - `gradle/`, `build.gradle.kts`, `settings.gradle.kts`: the build.
 - `deploy/`: the two installers, `install.sh` (Linux) and `install.cmd` (Windows).

@@ -128,8 +128,12 @@ class PackagedProductSystemTest {
     }
 
     @AfterAll
-    void cleanUp() {
+    void cleanUp() throws IOException {
         // also when a step failed: no process and no schema is left (SYS-011 does the same and checks it)
+        if (keys != null && hookJar != null) {
+            // the resident program of the hook that the steps started (nothing happens if there is none)
+            assertThat(hook(keys, "", "stop").exit()).as("the resident hook program is stopped").isZero();
+        }
         close();
         if (owner != null && schema != null) {
             for (String name : List.of(schema, otherSchema)) {
@@ -514,8 +518,15 @@ class PackagedProductSystemTest {
         }
     }
 
+    /**
+     * The hook as a host starts it: the light client, whose first call starts the resident program of this test. The home folder
+     * of the process is a folder of the test, so the real home folder is never touched and the program is found again by the next
+     * call; {@link #cleanUp} ends it.
+     */
     private JavaProcess.Result hook(Path keyFolder, String stdin, String... arguments) throws IOException {
-        return JavaProcess.run(runs, Map.of("LEDGER_HOOK_KEY_DIR", keyFolder.toString()), stdin, 60, hookJar, arguments);
+        return JavaProcess.run(runs, List.of("-Duser.home=" + work.resolve("hook-home")),
+                Map.of("LEDGER_HOOK_KEY_DIR", keyFolder.toString(), "LEDGER_HOOK_RESIDENT_IDLE_TIMEOUT", "PT2M"), stdin, 60,
+                hookJar, arguments);
     }
 
     /** The environment of a process that connects as the application account: its password, as the settings bind it. */

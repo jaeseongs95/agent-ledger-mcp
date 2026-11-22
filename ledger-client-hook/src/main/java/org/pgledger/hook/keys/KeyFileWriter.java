@@ -19,8 +19,9 @@ import java.util.Set;
  *
  * <p>ceiling: a process that reads the file in the moment between the winner's create and its write (a few hundred
  * bytes) sees an empty file and refuses with {@link SessionKeyException.Reason#CORRUPT}; the hook call is denied once and
- * the next call works. A temporary file plus an atomic link would close the window, at the cost of a file system without
- * links.
+ * the next call works. Within one process (the resident program, the one process that answers the calls of a key folder)
+ * {@link SessionKeyStore#load} takes turns and the window does not exist; between processes it remains. A temporary file plus
+ * an atomic link would close the window, at the cost of a file system without links.
  *
  * @param protection how the key folder and the key files are protected on this file system
  */

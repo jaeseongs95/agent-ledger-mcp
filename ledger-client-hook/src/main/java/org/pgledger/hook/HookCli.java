@@ -24,8 +24,8 @@ import org.springframework.stereotype.Component;
  *       server, the author, the public key and the fingerprint (four lines on {@code out}) for the owner, who registers
  *       the key on that server. A key is kept per server: the owner registers each server's key separately.</li>
  * </ul>
- * The streams are passed in, the codec, the attestation rule ({@link LedgerHook}) and the key store are injected, so the
- * places that touch the process are {@link Main} and {@link ProcessChannels}.
+ * The streams are passed in, the codec, the attestation rule ({@link LedgerHook}) and the key store are injected, so no class
+ * of the hook touches the standard streams: the resident program gives it the bytes of a call and takes the bytes of the answer.
  * Every outcome, a failed read of stdin included, is a {@link Response}; the one complete {@code switch} in
  * {@link #render} turns it into the output and the exit code.
  */

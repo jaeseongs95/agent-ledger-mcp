@@ -172,7 +172,8 @@ MCP를 직접 호출하는 쪽은 작성자별 `Bearer` 세션 토큰(`STANDARD`
 | `ledger-admin-web` | 소유자용 Spring Boot 관리 웹(`ledger-admin-web.jar`) |
 | `ledger-cli` | 소유자용 명령줄 도구(`ledger-cli.jar`) |
 | `ledger-seed` | 새 설치의 시드 번들(기본 결함 분류와 설치 기본값을 담은 H2 파일 하나)과 그 읽기 코드. `ledger-cli`만 사용합니다 |
-| `ledger-client-hook` | 모든 클라이언트가 함께 쓰는 훅 jar(`ledger-client-hook.jar`) |
+| `ledger-hook-client` | 훅의 가벼운 클라이언트(`ledger-client-hook.jar`, `java.base`만 사용), 통신 형식, 상태 폴더, 주소 파일 |
+| `ledger-client-hook` | 훅의 상주 프로그램(`ledger-hook-resident.jar`, Spring Boot 애플리케이션) |
 | `ledger-migrate-1x` | 1.x 설치를 2.0으로 옮기는 별도의 도구(`ledger-migrate-1x.jar`, 1.x에서 업그레이드 참조). `ledger-domain`, `ledger-database`, `ledger-application`을 사용하고, 명령줄 기반과 비밀 저장소를 위해 `ledger-cli`의 클래스(plain jar이며 그 모듈의 라이브러리는 가져오지 않습니다)도 사용하므로 비밀 저장소는 서비스의 것과 같습니다. 다른 모듈은 이 모듈을 사용하지 않습니다 |
 | `ledger-system-test` | 시험 코드만 있는 모듈: 빌드한 jar를 그 컴퓨터의 PostgreSQL에 대해 실행하는, 패키지된 제품의 시스템 시험 |
 | `ledger-arch-checks` | 시험 코드만 있는 모듈: 모듈 간 아키텍처, 빌드 스크립트, SQL·트랜잭션 경계 및 의존성 규칙 검증 |
@@ -478,9 +479,13 @@ JDBC 드라이버의 타입 정보는 드라이버가 판단할 수 없는 형�
 
 ## 클라이언트 훅
 
-실행 jar 하나 `ledger-client-hook.jar`가 모든 클라이언트를 처리하며, 첫 인자로 클라이언트를 고릅니다:
-`java -jar ledger-client-hook.jar claude`, `codex`, `antigravity`. 플러그인 디렉터리는 `clients/claude`, `clients/codex`, `clients/antigravity`에 있습니다(각 README 참조).
-훅에는 클라이언트 호스트의 `PATH`에 Java 25 런타임이 필요하며, 훅이 없거나 실패하면 쓰기는 `HOST_ATTESTATION_REQUIRED`로 거절됩니다.
+훅은 플러그인 폴더에 나란히 있는 두 프로그램입니다. 호스트는 **가벼운 클라이언트** `ledger-client-hook.jar`를 실행하며, 이 jar가
+모든 클라이언트를 처리하고 첫 인자로 클라이언트를 고릅니다: `java -jar ledger-client-hook.jar claude`, `codex`, `antigravity`.
+클라이언트는 `java.base`만 불러오며(Spring, Jackson, 로깅 라이브러리 없음) 호출마다 호스트의 입력을 루프백으로 **상주 프로그램**
+`ledger-hook-resident.jar`(Spring Boot 애플리케이션)에 보내고 그 답을 출력합니다. 호스트가 보는 것은 바뀌지 않았습니다. 표준 입력은
+호스트 JSON이고, 표준 출력에는 답만 나가며(JVM 줄도 로그 줄도 없음), 종료 코드와 실패의 의미도 같습니다. 플러그인 디렉터리는
+`clients/claude`, `clients/codex`, `clients/antigravity`에 있습니다(각 README 참조). 훅에는 클라이언트 호스트의 `PATH`에 Java 25
+런타임이 필요하며, 훅이 없거나 실패하면 쓰기는 `HOST_ATTESTATION_REQUIRED`로 거절됩니다.
 
 훅은 쓰기 도구 13종과 첨부 도구 5종에만 서명하며, 도구 이름은 `mcp__<server>__ledger_<op>` 또는 `mcp__<server>__<server>_ledger_<op>`입니다
 (Codex Apps는 `mcp__codex_apps__app_<app>_ledger_<op>`). `_hostAttestation`의 값은
@@ -489,6 +494,24 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인�
 
 - 훅은 MCP 서버 이름과 작성자마다 Ed25519 키 하나를 소유자 전용 폴더에 보관합니다. 기본은 `~/.pg-ledger-mcp/session-keys`이며, `LEDGER_HOOK_KEY_DIR`에 절대 경로를 주어 바꿀 수 있습니다.
   한 서버용 서명은 다른 서버에서 검증되지 않습니다. Codex Apps의 서버 이름은 `codex_apps.<app>`입니다.
+- 상주 프로그램은 첫 호출이 띄우며 설치 단계가 따로 없습니다. 주소 파일이 없거나, 이미 사라진 프로세스를 가리키거나(프로세스 번호와 시작
+  시각이 모두 맞아야 하므로 재사용된 번호는 그 프로그램으로 보지 않습니다) 응답하지 않으면 클라이언트가 프로그램의 복사본으로 `java -jar`를
+  실행하며, 호출 여러 개가 동시에 와도 하나만 뜹니다(상태 폴더의 잠금이 하나, 프로그램 자신의 잠금이 또 하나). 첫 호출은 약 1초, 이후
+  호출은 약 0.1초 걸립니다(측정은 릴리스 노트). 프로그램은 호출이 끝난 뒤에도 남아 있다가 15분 동안 호출이 없으면 스스로 끝납니다
+  (`LEDGER_HOOK_RESIDENT_IDLE_TIMEOUT`, `PT30M` 같은 ISO-8601 기간). `java -jar ledger-client-hook.jar stop`으로도 끝낼 수 있습니다.
+- 상주 프로그램은 키 폴더마다 하나입니다. 상태 폴더 `~/.pg-ledger-mcp/resident/<id>/`에는 주소 파일(포트, 프로세스 번호와 시작 시각, 판,
+  시작할 때마다 새로 만드는 비밀 값), 잠금 파일 둘, 프로그램의 출력이 담긴 `resident.log`(비밀 값은 절대 쓰지 않음)가 있습니다. 프로그램은
+  시스템이 고른 포트에서 `127.0.0.1`로만 연결을 받습니다. 모든 요청은 주소 파일의 비밀 값을 가져야 하고, 값은 상수 시간으로 비교하며
+  없으면 401로 거절하므로 같은 PC의 다른 계정은 프로그램을 부를 수 없습니다. 폴더와 파일은 소유자 전용입니다(POSIX 권한, 또는 파일
+  시스템이 지원하는 경우 소유자만 허용하는 ACL).
+- 프로그램은 `~/.pg-ledger-mcp/resident-runtime/<build>/`의 복사본에서 실행되므로 실행 중인 프로그램이 플러그인 폴더의 jar를 잠그지 않습니다.
+  플러그인은 언제든 갱신하거나 삭제할 수 있습니다. 프로그램 파일의 판이 다른 클라이언트(갱신된 플러그인)는 실행 중인 프로그램에 끝내 달라고
+  요청하고, 끝나지 않으면 끝낸 뒤 새 프로그램을 띄웁니다.
+- 프로그램에 닿지 못하거나 띄우지 못하면 호출은 답할 수 없는 호출이 늘 그랬듯 실패합니다. 종료 코드 2와 표준 오류의
+  `ledger: the hook program is not available`(뒤에 이유)이며, 서버는 그 쓰기를 `HOST_ATTESTATION_REQUIRED`로 거절합니다. 상태 폴더의
+  `resident.log`를 읽고, `ledger-client-hook.jar`와 `ledger-hook-resident.jar`가 같은 폴더에 있는지, `java`가 JDK 25 이상인지 확인합니다.
+  `java -jar ledger-client-hook.jar stop`은 이상하게 동작하는 프로그램을 끝내며, 다음 호출이 새 프로그램을 띄웁니다. 프로그램이 실행 중이
+  아닐 때는 `resident`와 `resident-runtime` 폴더를 지워도 되며, 키는 `session-keys`에 있으므로 건드리지 않습니다.
 - `java -jar ledger-client-hook.jar session-key <server> <author>`는 서버, 작성자, 공개 키, 지문을 출력합니다.
   소유자는 지문을 대조한 뒤 그 서버에서 `ledger-cli key-register` 또는 부여 화면으로 키를 등록합니다.
 - 서버는 부여를 보기 전에 서명, 도구, 작업 키, 인자, 시각(`ledger.attestation.window`)을 검증합니다. 키가 없는 경우와 서명이 틀린 경우는 같은 거절인 `ATTESTATION_SIGNATURE_INVALID`이고,
@@ -600,7 +623,7 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인�
 7. **세션 키를 등록합니다.** 1.x의 부여는 세션 키 없이 복사됩니다. 모든 작성자는 `ledger-cli key-register`로 세션 키를 등록해야 하며, 그 뒤에 부여가 동작합니다.
 8. **확인.** `ledger-cli mcp-check --url=<its public URL>`와 `import-1x --verify-only`(1.x 원본의 설정이 필요하며 아무것도 바꾸지 않습니다)를 실행하고, `ledger-cli passkey-code`를 실행해 관리 웹에서 첫 패스키를 등록합니다(설치 프로그램이 만든 관리 토큰은
    `ledger.admin.sign-in=token`일 때만 브라우저를 로그인시키며, 기본값은 `passkey`입니다). 클라이언트: `execute_sql_reader`와 `search_objects_reader` 도구는 제거되었으며 읽기 도구가 대체합니다. 쓰기 도구의 결과는 `rows[0].result` 감싸기 없이 키를 그대로 유지합니다.
-   서버를 전환하기 전에 모든 클라이언트 호스트에 훅 jar(Java 25 런타임)를 설치합니다. 확인을 마치면, 가져오기를 위해 1.x 데이터베이스에 만든 읽기 전용 계정은 삭제해도 됩니다.
+   서버를 전환하기 전에 모든 클라이언트 호스트에 훅(플러그인 폴더의 두 jar와 Java 25 런타임)을 설치합니다. 확인을 마치면, 가져오기를 위해 1.x 데이터베이스에 만든 읽기 전용 계정은 삭제해도 됩니다.
 9. **되돌리기.** 확인이 실패하면 2.0 서비스를 멈추고, 각 `<unit>.1x-backup`을 2.0 유닛 자리에 원래 이름으로 되돌립니다(백업이 남도록 복사합니다). `sudo systemctl daemon-reload`를 실행한 뒤
    `sudo systemctl enable --now <name>`과 `<name>-admin`에 대한 같은 명령으로 1.x 서비스를 이전 설정으로 시작합니다. `stop-1x`가 이 절차를 출력합니다. 1.x 데이터베이스는 읽기만 했으므로 1.x는 그대로 이어집니다.
 10. **2.0을 받아들인 뒤 `retire-1x`로 1.x 데이터베이스 객체를 제거합니다.** 그때까지는 보관한 유닛(`<unit>.1x-backup`)과 1.x 데이터베이스가 되돌아갈 길이며, 어느 것도 그 전에 삭제하지 않습니다.
@@ -673,7 +696,7 @@ JDK 25와 Gradle 래퍼만 있으면 되며, 래퍼가 Gradle을 직접 내려�
 릴리스 노트를 코드와 대조합니다.
 
 `ledger-system-test`의 시스템 시험(SYS-001부터 SYS-012까지)에도 같은 로컬 PostgreSQL과 빌드된 jar가 필요합니다. 이 시험은 설치 명령, `ledger-cli.jar`,
-`ledger-mcp-server.jar`, 훅 jar를 각각 별도의 Java 프로세스로 시험 데이터베이스에 대해 실행하므로, 빌드가 시험 전에 jar를 먼저 만듭니다.
+`ledger-mcp-server.jar`, 훅(가벼운 클라이언트와 상주 프로그램)을 각각 별도의 Java 프로세스로 시험 데이터베이스에 대해 실행하므로, 빌드가 시험 전에 jar를 먼저 만듭니다.
 `./gradlew build`에 포함되며, `./gradlew :ledger-system-test:test`로 단독 실행할 수 있습니다.
 
 ### 시험 데이터베이스
@@ -720,7 +743,7 @@ JVM이 인식하는 프로세서 수를 제한할 수 있습니다. 속성은 �
 
 - `ledger-domain`, `ledger-attestation`, `ledger-files`, `ledger-database`, `ledger-application`, `ledger-mcp-server`, `ledger-admin-web`,
   `ledger-cli`, `ledger-client-hook`, `ledger-migrate-1x`: 위의 모듈이며 각각 `src/main`과 `src/test`를 가집니다. `ledger-system-test`와 `ledger-arch-checks`는 `src/test`만 가집니다.
-- `clients/claude`, `clients/codex`, `clients/antigravity`: 클라이언트별 플러그인의 매니페스트와 README이며, 빌드가 훅 jar와 함께
+- `clients/claude`, `clients/codex`, `clients/antigravity`: 클라이언트별 플러그인의 매니페스트와 README이며, 빌드가 훅의 두 jar와 함께
   `ledger-client-hook/build/client-plugins`에 모읍니다.
 - `docs/`: 시험 사례 목록, 릴리스 노트 형식, 릴리스 노트.
 - `gradle/`, `build.gradle.kts`, `settings.gradle.kts`: 빌드.

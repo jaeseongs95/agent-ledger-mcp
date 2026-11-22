@@ -6,7 +6,7 @@
 
 ## 동작
 
-`plugin.json`과 `hooks.json`은 플러그인 루트에 있습니다. 플러그인 훅의 명령은 플러그인 루트에서 실행되므로, `hooks.json`은 도구를 호출하기 전에 `java -jar "./lib/ledger-client-hook.jar" antigravity`를 실행합니다. matcher는 `call_mcp_tool`과 쓰기 도구의 직접 MCP 이름(`mcp:...ledger_<op>`)을 고르고, 훅은 도구 이름을 다시 검사합니다. 훅은 쓰기 도구 13종(`issue_save`, `spec_save`, `task_save`, `criterion_save`, `transition`, `record_deliverable`, `record_case`, `link`, `correct`, `batch`, `review`, `review_correct`, `whoami`)과 첨부 도구 5종(`artifact_begin`, `artifact_chunk`, `artifact_finish`, `artifact_status`, `artifact_read`)만 처리하며, 서버 이름이 드러나는 이름에만 서명합니다. 첨부 도구는 `whoami`와 같이 증명에 `operationKey`가 없습니다.
+`plugin.json`과 `hooks.json`은 플러그인 루트에 있습니다. 플러그인 훅의 명령은 플러그인 루트에서 실행되므로, `hooks.json`은 도구를 호출하기 전에 `java -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:-UsePerfData -Xlog:disable -jar "./lib/ledger-client-hook.jar" antigravity`를 실행합니다. matcher는 `call_mcp_tool`과 쓰기 도구의 직접 MCP 이름(`mcp:...ledger_<op>`)을 고르고, 훅은 도구 이름을 다시 검사합니다. 훅은 쓰기 도구 13종(`issue_save`, `spec_save`, `task_save`, `criterion_save`, `transition`, `record_deliverable`, `record_case`, `link`, `correct`, `batch`, `review`, `review_correct`, `whoami`)과 첨부 도구 5종(`artifact_begin`, `artifact_chunk`, `artifact_finish`, `artifact_status`, `artifact_read`)만 처리하며, 서버 이름이 드러나는 이름에만 서명합니다. 첨부 도구는 `whoami`와 같이 증명에 `operationKey`가 없습니다.
 
 - 직접 호출: `mcp:<server><:|/|_>[<server>_]ledger_<op>` 또는 `mcp:<server><:|/|_>[<server>_]artifact_<op>`
 - `call_mcp_tool` 호출: `ServerName`이 서버 이름(`A-Za-z0-9._-` 1~100자)이고 `ToolName`이 `ledger_<op>`, `artifact_<op>`, `<ServerName>_ledger_<op>` 또는 `<ServerName>_artifact_<op>`인 경우
@@ -23,7 +23,7 @@
 
 ## 설치
 
-jar는 저장소에 커밋하지 않습니다. `./gradlew :ledger-client-hook:assemble`을 실행하면 `ledger-client-hook/build/client-plugins/antigravity/`에 플러그인 디렉터리가 만들어지며, jar는 `lib/ledger-client-hook.jar`에 들어 있습니다. 이 디렉터리를 Antigravity의 플러그인 위치에 복사합니다.
+jar는 저장소에 커밋하지 않습니다. `./gradlew :ledger-client-hook:assemble`을 실행하면 `ledger-client-hook/build/client-plugins/antigravity/`에 플러그인 디렉터리가 만들어지며, 가벼운 클라이언트는 `lib/ledger-client-hook.jar`에, 상주 프로그램은 `lib/ledger-hook-resident.jar`에 들어 있으며 두 jar는 나란히 있어야 합니다. 이 디렉터리를 Antigravity의 플러그인 위치에 복사합니다.
 
 프로젝트 훅으로 쓰려면 `<workspace>/.agents/hooks.json`의 이름 붙은 훅 그룹에 병합하고 jar의 경로를 절대 경로로 바꿉니다. 전역 파일은 `~/.gemini/config/hooks.json`입니다. 기존 설정을 덮어쓰거나 훅을 두 번 설치하지 않습니다.
 
@@ -34,6 +34,15 @@ jar는 저장소에 커밋하지 않습니다. `./gradlew :ledger-client-hook:as
 3. 소유자는 지문을 세션이 보여 준 지문과 대조한 뒤, `ledger-cli`의 `key-register`로 또는 관리 웹의 권한 부여 화면에서 공개 키를 등록합니다. 그 뒤에야 작성자의 권한 부여가 동작합니다.
 
 키는 서버 하나와 작성자 하나에 속합니다. 시험 서버나 이름이 비슷한 서버를 위해 만든 서명은 운영 서버에서 검증되지 않으므로 서버마다 따로 등록합니다. 서버는 권한 부여를 보기 전에 서명, 도구, `operationKey`, 인자, 시각을 검증합니다.
+
+## 상주 프로그램
+
+가벼운 클라이언트는 직접 서명하지 않습니다. 호스트의 입력을 루프백으로 같은 폴더의 상주 프로그램 `ledger-hook-resident.jar`에 보내고, 그 답을 그대로 출력합니다. 호스트와의 계약은 이전 훅과 같습니다. 표준 입력은 호스트 JSON, 표준 출력에는 답만(JVM 줄도 로그 줄도 없음), 종료 코드, 실패의 의미가 같습니다.
+
+- 실행 중인 프로그램이 없으면 첫 호출이 프로그램을 띄웁니다(약 1초). 이후 호출은 약 0.1초 걸립니다. 프로그램은 호출이 끝난 뒤에도 남아 있다가, 15분 동안 호출이 없으면 스스로 끝납니다(`LEDGER_HOOK_RESIDENT_IDLE_TIMEOUT`, `PT30M` 같은 ISO-8601 기간). `java -jar lib/ledger-client-hook.jar stop`으로 끝낼 수도 있습니다.
+- `127.0.0.1`에서만 연결을 받습니다. 모든 요청은 시작할 때마다 새로 만드는 비밀 값을 가져야 하며, 이 값은 상태 폴더 `~/.pg-ledger-mcp/resident/<id>/`의 주소 파일에만 있습니다. 폴더와 그 안의 파일은 소유자 전용입니다. 프로그램의 출력은 그 폴더의 `resident.log`에 남습니다.
+- 프로그램은 `~/.pg-ledger-mcp/resident-runtime/<build>/`의 복사본에서 실행되므로, 실행 중인 프로그램 때문에 플러그인의 갱신이나 삭제가 막히지 않습니다. 판이 다른 클라이언트(갱신된 플러그인)는 실행 중인 프로그램을 교체합니다.
+- 프로그램에 닿지 못하거나 띄우지 못하면 호출은 종료 코드 2와 표준 오류의 `ledger: the hook program is not available` 줄(뒤에 이유)로 실패하고, 서버는 쓰기를 `HOST_ATTESTATION_REQUIRED`로 거절합니다. `resident.log`를 읽고, 두 jar가 `lib`에 있는지, `java`가 JDK 25 이상인지 확인합니다.
 
 ## 한계
 

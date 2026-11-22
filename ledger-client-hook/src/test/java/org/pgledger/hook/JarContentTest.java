@@ -25,7 +25,7 @@ import org.junit.jupiter.api.Test;
  */
 class JarContentTest {
 
-    private static final Path JAR = Path.of(System.getProperty("ledger.hook.jar"));
+    private static final Path JAR = Path.of(System.getProperty("ledger.hook.resident.jar"));
 
     private static final String CLASSES = "BOOT-INF/classes/";
     private static final String LIB = "BOOT-INF/lib/";
@@ -49,7 +49,7 @@ class JarContentTest {
             Pattern.compile("META-INF/(LICENSE|NOTICE)[A-Za-z0-9._-]*"),
             Pattern.compile("META-INF/services/[A-Za-z0-9._$]+"),
             // the nested jars: the attestation and file protection modules (JDK only), Jackson, and Spring Boot with its logging
-            Pattern.compile("BOOT-INF/lib/(ledger-attestation|ledger-files|jackson-(core|databind|annotations)|spring-[a-z-]+|logback-(classic|core)"
+            Pattern.compile("BOOT-INF/lib/(ledger-attestation|ledger-files|ledger-hook-client|jackson-(core|databind|annotations)|spring-[a-z-]+|logback-(classic|core)"
                     + "|log4j-(api|to-slf4j)|jul-to-slf4j|slf4j-api|commons-logging|jspecify|jakarta\\.annotation-api|snakeyaml"
                     + "|micrometer-(commons|observation))"
                     + "-[0-9][A-Za-z0-9._-]*\\.jar"),

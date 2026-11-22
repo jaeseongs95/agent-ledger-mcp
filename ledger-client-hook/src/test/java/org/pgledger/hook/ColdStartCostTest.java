@@ -43,17 +43,26 @@ class ColdStartCostTest {
             .withUserConfiguration(HookApplication.class);
 
     @Test
-    @DisplayName("R9-D0096 a cold start of the real jar loads neither the message source of Spring that lists the JDK locales nor that listing")
-    void aColdStartDoesNotListTheLocalesOfTheJdk(HookJar jar, TestWorkspace workspace) throws IOException {
+    @DisplayName("R9-D0096 the start of the resident program and its first call (changed by the user decision of 2026-11-22: the program is the resident Spring Boot jar) load neither the message source of Spring that lists the JDK locales nor that listing")
+    void aColdStartDoesNotListTheLocalesOfTheJdk(HookJar jar, TestWorkspace workspace) throws Exception {
         CodexHost codex = new CodexHost();
         JsonNode input = Json.tree(Map.of("note", "x"));
         Path classLog = workspace.work().resolve("class-load.log");
         // -Xlog with a file writes nothing on stdout or stderr: the answer of the hook stays the only output
-        HookJar.Timed timed = jar.start(HookJar.JAVA, List.of("-Xlog:class+load:file=" + classLog), Map.of(),
-                codex.event(codex.toolName("issue_save"), input), "codex");
-        assertThat(timed.run().err()).isEmpty();
-        Attestations.Stamp stamp = jar.stamp(codex, "issue_save", input, timed.run());
-        assertThat(timed.run().document()).isEqualTo(codex.allowed(input, stamp.token()));
+        try (ResidentProbe probe = ResidentProbe.start(workspace, workspace.work().resolve("probe-state"),
+                List.of("-Xlog:class+load:file=" + classLog), Map.of())) {
+            org.pgledger.hookclient.ResidentAddress address = probe.awaitAddress(java.time.Duration.ofSeconds(60))
+                    .orElseThrow(() -> new AssertionError("the resident program did not get ready"));
+            org.pgledger.hookclient.HookAnswer answer = probe.client().call(address, new org.pgledger.hookclient.HookCall(
+                    List.of("codex"), codex.event(codex.toolName("issue_save"), input)));
+            assertThat(answer.stderr()).isEmpty();
+            Run run = new Run(answer.exit(), answer.stdout(), answer.stderr());
+            Attestations.Stamp stamp = Attestations.verify(workspace.keys(),
+                    new Attestations.Window(java.time.Instant.now().getEpochSecond() - 120,
+                            java.time.Instant.now().getEpochSecond() + 120), codex.server(),
+                    codex.author(HookFixture.HOST_ID), "issue_save", input, codex.stampedPart(run));
+            assertThat(run.document()).isEqualTo(codex.allowed(input, stamp.token()));
+        }
 
         List<String> loaded = Files.readAllLines(classLog, StandardCharsets.UTF_8);
         // the log is the one of this start: the hook and the context of Spring are in it, so an absent class is absent

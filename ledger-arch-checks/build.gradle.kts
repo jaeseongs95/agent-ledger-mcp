@@ -8,6 +8,7 @@ dependencies {
     testImplementation(project(":ledger-admin-web"))
     testImplementation(project(":ledger-cli"))
     testImplementation(project(":ledger-seed"))
+    testImplementation(project(":ledger-hook-client"))
     testImplementation(project(":ledger-client-hook"))
     testImplementation(project(":ledger-migrate-1x"))
 

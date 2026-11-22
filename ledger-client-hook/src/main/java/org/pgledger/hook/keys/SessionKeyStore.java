@@ -52,9 +52,15 @@ public final class SessionKeyStore {
     /**
      * The key pair of the author for the server: the one in the key folder, or a new one that is stored there first.
      *
+     * <p>One call at a time in a process: the resident program answers calls at the same moment, and the first calls of a new
+     * author for a server arrive together. The key file is created and then written, and a call that read it between the two
+     * steps found an empty file ({@code CORRUPT}) and was refused (R9-D0096-U). The calls take turns instead; a load is one
+     * small read, so nothing waits long. Processes of other programs on the same folder are still covered by {@code CREATE_NEW}
+     * ({@link KeyFileWriter}).
+     *
      * @throws SessionKeyException when the folder or the file cannot be used; the message holds no key material
      */
-    public SessionKey load(String server, String author) {
+    public synchronized SessionKey load(String server, String author) {
         SessionKeyFile keyFile = new SessionKeyFile(server, author);
         Path directory = directory();
         try {

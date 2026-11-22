@@ -20,9 +20,9 @@ import org.springframework.core.io.support.ResourcePropertySource;
 import org.springframework.util.ClassUtils;
 
 /**
- * Entry point of {@code java -jar ledger-client-hook.jar <claude|codex|antigravity>} (the host hook) and
- * {@code java -jar ledger-client-hook.jar session-key <server> <author>} (the public key of an author's session key for
- * an MCP server): the one class that starts the Spring Boot application and hands its exit code to the process.
+ * Entry point of {@code java -jar ledger-hook-resident.jar start <state-folder> <build>}, the resident program of the hook that
+ * the light client ({@code ledger-client-hook.jar}) starts: the one class that starts the Spring Boot application and hands its
+ * exit code to the process. The hosts never run this jar; they run the light client, which carries each call to this program.
  *
  * <p>At build time {@code processAot} invokes {@link #main} without the generated initializer on the classpath, so
  * {@link SpringApplication} runs and {@code SpringApplicationAotProcessor} emits
