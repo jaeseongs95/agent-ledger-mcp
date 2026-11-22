@@ -64,7 +64,7 @@ class ToolRegistrationLogTest {
     }
 
     @Test
-    @DisplayName("REH4-MCP-01 starting the server logs no 'Replace existing Tool' and no other WARN of the MCP SDK, the level of its logger is as it was, and the 27 tools are those of the catalog")
+    @DisplayName("REH4-MCP-01 starting the server logs no 'Replace existing Tool' and no other WARN of the MCP SDK, the level of its logger is as it was, and the 33 tools are those of the catalog")
     void theToolsAreRegisteredOnce(McpSession session) {
         List<Tool> tools = session.tools();
 

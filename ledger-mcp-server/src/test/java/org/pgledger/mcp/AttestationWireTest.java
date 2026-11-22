@@ -95,7 +95,7 @@ class AttestationWireTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("org.pgledger.mcp.support.WriteCase#all")
-    @DisplayName("MCW-030: the old attestation, a bare <vendor>:<session-id> as the author's id is known from the history, is ATTESTATION_UNSIGNED for all ten tools and writes nothing")
+    @DisplayName("MCW-030: the old attestation, a bare <vendor>:<session-id> as the author's id is known from the history, is ATTESTATION_UNSIGNED for all 13 write tools and writes nothing")
     void unsignedOldFormat(WriteCase write, McpSession session, Scenario scenario) {
         Seed seed = Seed.create(session, scenario);
         int before = Ledger.history(session, seed.project()).size();
@@ -110,7 +110,7 @@ class AttestationWireTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("org.pgledger.mcp.support.WriteCase#all")
-    @DisplayName("MCW-031: a forged signature, and a signature made with the key of another registered author, is ATTESTATION_SIGNATURE_INVALID for all ten tools and writes nothing")
+    @DisplayName("MCW-031: a forged signature, and a signature made with the key of another registered author, is ATTESTATION_SIGNATURE_INVALID for all 13 write tools and writes nothing")
     void forgedSignature(WriteCase write, McpSession session, Scenario scenario, @Autowired KeyRing keys) {
         Seed seed = Seed.create(session, scenario);
         keys.enroll(write.actor());
@@ -132,7 +132,7 @@ class AttestationWireTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("org.pgledger.mcp.support.WriteCase#all")
-    @DisplayName("MCW-032: a token signed for another tool is ATTESTATION_BINDING_MISMATCH (tool) for all ten tools")
+    @DisplayName("MCW-032: a token signed for another tool is ATTESTATION_BINDING_MISMATCH (tool) for all 13 write tools")
     void anotherTool(WriteCase write, McpSession session, Scenario scenario, @Autowired KeyRing keys) {
         Seed seed = Seed.create(session, scenario);
         keys.enroll(write.actor());
@@ -149,7 +149,7 @@ class AttestationWireTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("org.pgledger.mcp.support.WriteCase#all")
-    @DisplayName("MCW-033: a token signed for another operationKey, or for none, is ATTESTATION_BINDING_MISMATCH (operationKey; was request_id) for all ten tools")
+    @DisplayName("MCW-033: a token signed for another operationKey, or for none, is ATTESTATION_BINDING_MISMATCH (operationKey; was request_id) for all 13 write tools")
     void anotherOperationKey(WriteCase write, McpSession session, Scenario scenario, @Autowired KeyRing keys) {
         Seed seed = Seed.create(session, scenario);
         keys.enroll(write.actor());
