@@ -413,6 +413,8 @@ see Upgrading from 1.x.
 sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<driver-class> --owner-account=<ddl-account> --app-account=<app-account> --jdbc-url=<jdbc-url>
 ```
 
+The installer enables and restarts the two services (`<name>` and `<name>-admin`, `pg-ledger-mcp` and `pg-ledger-mcp-admin` by default); check them with `systemctl status pg-ledger-mcp pg-ledger-mcp-admin`.
+
 ### Reaching the servers from outside
 
 Both servers listen on `127.0.0.1` only, and no setting changes that. To reach them from another machine, the operator runs a

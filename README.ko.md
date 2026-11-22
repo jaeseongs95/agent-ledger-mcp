@@ -323,6 +323,8 @@ root로 실행합니다. 사용자 `pg-ledger-mcp`가 없으면 만들고, `prep
 sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<driver-class> --owner-account=<ddl-account> --app-account=<app-account> --jdbc-url=<jdbc-url>
 ```
 
+설치 프로그램은 서비스 둘(`<name>`과 `<name>-admin`, 기본값은 `pg-ledger-mcp`와 `pg-ledger-mcp-admin`)을 활성화하고 재시작합니다. `systemctl status pg-ledger-mcp pg-ledger-mcp-admin`으로 확인합니다.
+
 ### 밖에서 접근하기
 
 두 서버는 `127.0.0.1`에서만 수신하며, 이를 바꾸는 설정은 없습니다. 다른 컴퓨터에서 접근하게 하려면 운영자가 같은 호스트에 역방향 프록시와 TLS 인증서를
