@@ -6,8 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "java -jar \"${PLUGIN_ROOT}/lib/ledger-client-hook.jar\" codex",
-            "commandWindows": "cmd.exe /d /c java -jar \"%PLUGIN_ROOT%/lib/ledger-client-hook.jar\" codex",
+            "command": "java -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:-UsePerfData -Xlog:disable -jar \"${PLUGIN_ROOT}/lib/ledger-client-hook.jar\" codex",
+            "commandWindows": "cmd.exe /d /c java -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:-UsePerfData -Xlog:disable -jar \"%PLUGIN_ROOT%/lib/ledger-client-hook.jar\" codex",
             "timeout": 10
           }
         ]

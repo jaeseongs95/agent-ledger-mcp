@@ -61,10 +61,17 @@ final class JavaProcess {
      */
     static Result run(Path work, Map<String, String> environment, String stdin, int seconds, Path jar,
             String... arguments) throws IOException {
+        return run(work, List.of(), environment, stdin, seconds, jar, arguments);
+    }
+
+    /** Like {@link #run(Path, Map, String, int, Path, String...)}, with more options of the JVM (for example a home folder). */
+    static Result run(Path work, List<String> jvmOptions, Map<String, String> environment, String stdin, int seconds, Path jar,
+            String... arguments) throws IOException {
         Path out = Files.createTempFile(work, "stdout", ".out");
         Path err = Files.createTempFile(work, "stderr", ".out");
         List<String> command = new ArrayList<>(List.of(java().toString()));
         command.addAll(LIMITS);
+        command.addAll(jvmOptions);
         command.addAll(List.of("-jar", jar.toString()));
         command.addAll(List.of(arguments));
         ProcessBuilder builder = builder(command, environment, work).redirectOutput(out.toFile())

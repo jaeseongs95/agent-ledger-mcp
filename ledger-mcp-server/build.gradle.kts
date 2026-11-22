@@ -3,11 +3,12 @@ plugins {
     id("org.springframework.boot") version libs.versions.springBoot.get()
 }
 
-// The built client hook jar (ledger-client-hook.jar), only for the tests: the round trip test (MCW-040) signs with the
-// real hook, started as a process, and calls this server with what it printed. It is not part of the server. The bootJar task of
-// the hook module is its one executable jar; its path is known without resolving a configuration (the hook module is configured first).
+// The built client hook (ledger-client-hook.jar, the light client, with the resident program ledger-hook-resident.jar next to it),
+// only for the tests: the round trip test (MCW-040) signs with the real hook, started as a process, and calls this server with
+// what it printed. It is not part of the server. The stageHookRuntime task of the hook module puts the two jars into one
+// folder; its path is known without resolving a configuration (the hook module is configured first).
 evaluationDependsOn(":ledger-client-hook")
-val hookJar = project(":ledger-client-hook").tasks.named<Jar>("bootJar")
+val hookRuntime = project(":ledger-client-hook").tasks.named<Copy>("stageHookRuntime")
 
 dependencies {
     // The services of the ledger (write gate, receipts, history, queries) with the database module and the domain.
@@ -40,9 +41,9 @@ dependencies {
 }
 
 tasks.test {
-    dependsOn(hookJar)
-    // the path of the hook jar is passed in, never guessed (it is the executable jar of the hook)
-    systemProperty("ledger.hook.jar", hookJar.flatMap { it.archiveFile }.get().asFile.absolutePath)
+    dependsOn(hookRuntime)
+    // the path of the hook jar is passed in, never guessed (it is the light client of the hook, the resident program is beside it)
+    systemProperty("ledger.hook.jar", hookRuntime.get().destinationDir.resolve("ledger-client-hook.jar").absolutePath)
     // The JDK HttpClient refuses to send a Host header unless the property allows it. The Host allow list test
     // (MCC-016) must send a Host that differs from the address it connects to.
     jvmArgs("-Djdk.httpclient.allowRestrictedHeaders=host")

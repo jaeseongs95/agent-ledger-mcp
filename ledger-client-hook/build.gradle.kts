@@ -1,16 +1,20 @@
 import org.springframework.boot.gradle.tasks.aot.ProcessAot
 
-// One executable jar for the three client hooks: `java -jar ledger-client-hook.jar <claude|codex|antigravity>`, and for
-// the key command `java -jar ledger-client-hook.jar session-key <server> <author>`.
+// The resident program of the client hook (D-0096, user decision 2026-11-22: 「jar는 상주 프로그램」): one executable Spring Boot
+// jar, ledger-hook-resident.jar, started by the light client (module ledger-hook-client, ledger-client-hook.jar) with
+// `java -jar ledger-hook-resident.jar start <state-folder> <build>`. It keeps running between the host calls and answers each call
+// with the beans that answered the one-shot hook before: the one place where Spring and Jackson are loaded, once instead of for
+// every call. The hosts never run this jar.
 // The hook is a Spring Boot application without a web server (user decision 2026-11-15: 「Spring으로 전환」): the Spring
 // Boot plugin builds the executable jar (bootJar), and Spring Boot AOT (processAot) pre-computes bean definitions at
-// build time (principle 5.3) so concurrent cold `java -jar` invocations skip runtime ASM scanning and condition probing.
+// build time (principle 5.3) so the one start of the program skips runtime ASM scanning and condition probing.
 plugins {
     // Spring Boot Gradle plugin: bootJar builds the one executable jar (java -jar ledger-client-hook.jar); the version is the catalog Boot version.
     id("org.springframework.boot") version libs.versions.springBoot.get()
 }
 
-val hookJarName = "ledger-client-hook.jar"
+val residentJarName = "ledger-hook-resident.jar"
+val clientJarName = "ledger-client-hook.jar"
 
 configurations.implementation {
     // YAML, unused logging bridges, and Micrometer are excluded so cold CLI startup does not mount or scan unused jars.
@@ -41,6 +45,8 @@ dependencies {
     implementation(project(":ledger-attestation"))
     // Owner-only POSIX/ACL key-folder and key-file protection (pure JDK), shared with the server and the CLI.
     implementation(project(":ledger-files"))
+    // The wire format, the state folder and the address file that the light client and this program both use (java.base only).
+    implementation(project(":ledger-hook-client"))
 
     // ApplicationContextRunner and the other test support of Spring Boot (the slice tests of the beans, principle 7.2).
     testImplementation("org.springframework.boot:spring-boot-starter-test")
@@ -99,10 +105,10 @@ val springAotJar = tasks.register<Jar>("springAotJar") {
     isReproducibleFileOrder = true
 }
 
-// The executable jar keeps its name: the plugin manifests of the three hosts call lib/ledger-client-hook.jar. The plain jar
-// of the module (classifier "plain", not executable) is not used by anything.
+// The resident program lies next to the light client in the plugin folder (ResidentJar.FILE_NAME); the hosts call the light client.
+// The plain jar of the module (classifier "plain", not executable) is not used by anything.
 tasks.bootJar {
-    archiveFileName = hookJarName
+    archiveFileName = residentJarName
     includeTools = false
     classpath(springAotJar)
     // The licence and notice texts of each dependency stay in the jar under META-INF/third-party/<jar>/, as they did in the
@@ -120,18 +126,37 @@ tasks.bootJar {
     }
 }
 
-// Plugin directories for the three hosts: manifests and README of clients/<client> plus lib/<jar>.
+// The light client jar of the other module, which the plugin directories and the tests need.
+val hookClientJar = configurations.create("hookClientJar") {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+}
+dependencies {
+    add("hookClientJar", project(mapOf("path" to ":ledger-hook-client", "configuration" to "hookClientJar")))
+}
+
+// Plugin directories for the three hosts: manifests and README of clients/<client> plus lib/<both jars>.
 // build/client-plugins/<client> is what the installation copies to the host's plugin location.
 val stagedClients = listOf("claude", "codex", "antigravity")
 val stageTasks = stagedClients.map { client ->
     tasks.register<Copy>("stage${client.replaceFirstChar { it.uppercase() }}Plugin") {
         group = "distribution"
-        description = "Stages the $client plugin directory with lib/$hookJarName."
+        description = "Stages the $client plugin directory with lib/$clientJarName and lib/$residentJarName."
         from(rootProject.layout.projectDirectory.dir("clients/$client"))
         from(tasks.bootJar) { into("lib") }
+        from(hookClientJar) { into("lib") }
         into(layout.buildDirectory.dir("client-plugins/$client"))
         includeEmptyDirs = false
     }
+}
+// The two jars of the hook next to each other (the light client finds the resident program beside itself): what the tests of the
+// server and the system test start as "the hook jar". A plugin directory has them in lib/ (the tasks above).
+val stageHookRuntime = tasks.register<Copy>("stageHookRuntime") {
+    group = "distribution"
+    description = "Copies $clientJarName and $residentJarName next to each other for the tests of the other modules."
+    from(tasks.bootJar)
+    from(hookClientJar)
+    into(layout.buildDirectory.dir("hook-runtime"))
 }
 val stageClientPlugins = tasks.register("stageClientPlugins") {
     group = "distribution"
@@ -144,7 +169,8 @@ tasks.test {
     dependsOn(tasks.bootJar, stageClientPlugins)
     // What the tests read besides their class path, so that a change of it runs them again: the jar, the staged plugin
     // directories, the manifests of the clients, and the JDK older than 25 of the machine (HK-021, optional).
-    inputs.files(tasks.bootJar).withPropertyName("hookJar").withPathSensitivity(PathSensitivity.NONE)
+    inputs.files(tasks.bootJar).withPropertyName("residentJar").withPathSensitivity(PathSensitivity.NONE)
+    inputs.files(hookClientJar).withPropertyName("clientJar").withPathSensitivity(PathSensitivity.NONE)
     inputs.dir(layout.buildDirectory.dir("client-plugins")).withPropertyName("stagedPlugins").withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.dir(rootProject.layout.projectDirectory.dir("clients")).withPropertyName("clients").withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.property("olderJava", providers.environmentVariable("LEDGER_HOOK_OLDER_JAVA").orElse(""))
@@ -154,7 +180,10 @@ tasks.test {
     // the machine is an input that Gradle cannot see. An unchanged run may still be up to date.
     outputs.doNotCacheIf("the tests measure the wall time of real java processes (HK-017)") { true }
     // The tests start the real jar and read the manifests; the paths are passed in, never guessed.
-    systemProperty("ledger.hook.jar", tasks.bootJar.flatMap { it.archiveFile }.get().asFile.absolutePath)
+    // ledger.hook.jar is the light client that a host runs, in a staged plugin folder with the resident program next to it
+    // (the client finds the program beside itself); ledger.hook.resident.jar is the resident program (Spring Boot jar).
+    systemProperty("ledger.hook.jar", layout.buildDirectory.file("client-plugins/codex/lib/$clientJarName").get().asFile.absolutePath)
+    systemProperty("ledger.hook.resident.jar", tasks.bootJar.flatMap { it.archiveFile }.get().asFile.absolutePath)
     systemProperty("ledger.hook.staging", layout.buildDirectory.dir("client-plugins").get().asFile.absolutePath)
     systemProperty("ledger.hook.metrics", layout.buildDirectory.dir("hook-metrics").get().asFile.absolutePath)
     systemProperty("ledger.hook.clients", rootProject.layout.projectDirectory.dir("clients").asFile.absolutePath)

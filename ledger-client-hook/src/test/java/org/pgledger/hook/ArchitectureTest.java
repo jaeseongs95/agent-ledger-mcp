@@ -31,6 +31,7 @@ import java.util.stream.Stream;
 class ArchitectureTest {
 
     private static final String KEYS_PACKAGE = "org.pgledger.hook.keys..";
+    private static final String RESIDENT_PACKAGE = "org.pgledger.hook.resident..";
 
     private static final JavaClasses hook = new ClassFileImporter()
             .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS).importPackages("org.pgledger.hook");
@@ -49,10 +50,14 @@ class ArchitectureTest {
     }
 
     @Test
-    @DisplayName("HK-018 no hook class uses a network, process, reflection, foreign-memory, JDBC, web, data access or Lombok API")
+    @DisplayName("HK-018 no hook class uses a process (ProcessBuilder), reflection, foreign-memory, JDBC, web, data access or Lombok API, and none outside the package of the resident server uses a network API (changed by the user decision of 2026-11-22: the resident program answers on the loopback with the HTTP server of the JDK)")
     void noForbiddenApi() {
+        noClasses().that().resideOutsideOfPackage(RESIDENT_PACKAGE).should().dependOnClassesThat()
+                .resideInAnyPackage("java.net..", "javax.net..", "com.sun.net.httpserver..").check(hook);
+        // the resident package is the one place of a network API, and it is used there: the rule above is not vacuous for it
+        assertThat(hook.stream().anyMatch(type -> "org.pgledger.hook.resident".equals(type.getPackageName()))).isTrue();
         noClasses().should().dependOnClassesThat().resideInAnyPackage(
-                        "java.net..", "javax.net..", "java.sql..", "javax.sql..",
+                        "java.sql..", "javax.sql..",
                         "java.lang.reflect..", "java.lang.foreign..", "lombok..",
                         // Spring Boot and the Spring Framework are the frame of the application; what the hook must not reach
                         // through them is the web, a database and a transaction
@@ -65,9 +70,9 @@ class ArchitectureTest {
     }
 
     @Test
-    @DisplayName("HK-018 file system APIs (java.nio.file, java.nio.channels, java.io.File*) are used only by the classes of the keys package")
+    @DisplayName("HK-018 file system APIs (java.nio.file, java.nio.channels, java.io.File*) are used only by the classes of the keys package (the key store) and of the resident package (the state folder, the instance lock)")
     void fileSystemOnlyInKeysPackage() {
-        noClasses().that().resideOutsideOfPackage(KEYS_PACKAGE)
+        noClasses().that().resideOutsideOfPackages(KEYS_PACKAGE, RESIDENT_PACKAGE)
                 .should().dependOnClassesThat().resideInAnyPackage("java.nio.file..", "java.nio.channels..")
                 .orShould().dependOnClassesThat().haveFullyQualifiedName("java.io.File")
                 .orShould().dependOnClassesThat().haveFullyQualifiedName("java.io.FileInputStream")
@@ -93,10 +98,9 @@ class ArchitectureTest {
     }
 
     @Test
-    @DisplayName("HK-018 only Main and ProcessChannels touch java.lang.System (exit, stdin, stdout, stderr); the environment and the properties are read through the Spring Environment")
-    void systemOnlyInMainAndProcessChannels() {
+    @DisplayName("HK-018 only Main touches java.lang.System (the exit code of the resident program; changed by the user decision of 2026-11-22: the standard streams belong to the light client now); the environment and the properties are read through the Spring Environment")
+    void systemOnlyInMain() {
         noClasses().that().doNotHaveFullyQualifiedName("org.pgledger.hook.Main")
-                .and().doNotHaveFullyQualifiedName("org.pgledger.hook.ProcessChannels")
                 .should().dependOnClassesThat().haveFullyQualifiedName("java.lang.System")
                 .check(hook);
         noClasses().should().callMethod(System.class, "getenv")
@@ -116,13 +120,12 @@ class ArchitectureTest {
     }
 
     @Test
-    @DisplayName("HK-052 the hook logs with SLF4J only: no java.util.logging, no printStackTrace, no System.out or System.err access outside ProcessChannels (the host streams)")
+    @DisplayName("HK-052 the hook logs with SLF4J only: no java.util.logging, no printStackTrace, no System.out or System.err access anywhere (the answer to the host is made by the light client from the bytes of the call)")
     void loggingOnlyWithSlf4j() {
         noClasses().should().dependOnClassesThat().resideInAPackage("java.util.logging..")
                 .orShould().callMethod(Throwable.class, "printStackTrace")
                 .check(hook);
-        noClasses().that().doNotHaveFullyQualifiedName("org.pgledger.hook.ProcessChannels")
-                .should().accessField(System.class, "out")
+        noClasses().should().accessField(System.class, "out")
                 .orShould().accessField(System.class, "err")
                 .check(hook);
     }

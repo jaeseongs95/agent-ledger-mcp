@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 class RemovedFeaturesTest {
 
     private static final List<String> MODULES = List.of("ledger-domain", "ledger-attestation", "ledger-application", "ledger-database",
-            "ledger-seed", "ledger-cli", "ledger-mcp-server", "ledger-admin-web", "ledger-client-hook", "ledger-migrate-1x");
+            "ledger-seed", "ledger-cli", "ledger-mcp-server", "ledger-admin-web", "ledger-hook-client", "ledger-client-hook", "ledger-migrate-1x");
 
     @Test
     @DisplayName("PCS-003 no main source or resource of any module, no catalog entry and no build file names nginx or ACME, acme4j is in no build file, and the package of the TLS commands is gone")

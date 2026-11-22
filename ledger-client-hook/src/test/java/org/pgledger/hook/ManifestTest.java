@@ -29,7 +29,12 @@ class ManifestTest {
 
     private static final Path CLIENTS = Path.of(System.getProperty("ledger.hook.clients"));
     private static final Path STAGING = Path.of(System.getProperty("ledger.hook.staging"));
-    private static final Pattern JAVA_COMMAND = Pattern.compile("^(?:cmd\\.exe /d /c )?java -jar (?:\"([^\"]+)\"|(\\S+)) (\\S+)$");
+    /** java, the JVM options (group 1), -jar, the jar (group 2 quoted, 3 bare), the one word (group 4). */
+    private static final Pattern JAVA_COMMAND =
+            Pattern.compile("^(?:cmd\\.exe /d /c )?java ((?:-\\S+ )*)-jar (?:\"([^\"]+)\"|(\\S+)) (\\S+)$");
+    /** The JVM options of the command of the light client: a cheap, quiet JVM (R9-D0096-V, the choice is measured in the release notes). */
+    private static final List<String> CLIENT_JVM_OPTIONS = List.of(
+            "-XX:+UseSerialGC", "-XX:TieredStopAtLevel=1", "-XX:-UsePerfData", "-Xlog:disable");
     private static final List<String> SERVERS = List.of("ledger", "test", "t0001sink", "t0001sink_isolated-01", "codex_apps");
     private static final List<String> READ_OPS = List.of("get", "history", "list", "search", "issues", "specs", "issue_save_extra");
 
@@ -119,19 +124,29 @@ class ManifestTest {
 
     @ParameterizedTest
     @MethodSource("commandFields")
-    @DisplayName("HK-010 every command is java -jar <path>/ledger-client-hook.jar <client>, and the path exists in the staged plugin directory")
+    @DisplayName("HK-010 every command is java <JVM options> -jar <path>/ledger-client-hook.jar <client> (the light client, changed by the user decision of 2026-11-22), and the path exists in the staged plugin directory with the resident program next to it")
     void commandsCallTheJar(Client client, String field) throws IOException {
         String text = command(client).path(field).stringValue();
         Matcher m = JAVA_COMMAND.matcher(text);
         assertThat(m.matches()).as(text).isTrue();
-        assertThat(m.group(3)).as("argument of " + text).isEqualTo(client.argument());
+        assertThat(m.group(4)).as("argument of " + text).isEqualTo(client.argument());
         Path root = STAGING.resolve(client.argument());
-        String path = m.group(1) != null ? m.group(1) : m.group(2);
+        String path = m.group(2) != null ? m.group(2) : m.group(3);
         String resolved = path.replace("${CLAUDE_PLUGIN_ROOT}", root.toString()).replace("${PLUGIN_ROOT}", root.toString())
                 .replace("%PLUGIN_ROOT%", root.toString());
         Path jar = resolved.startsWith("./") ? root.resolve(resolved.substring(2)) : Path.of(resolved);
         assertThat(jar.getFileName().toString()).isEqualTo("ledger-client-hook.jar");
         assertThat(jar).as(text).isRegularFile();
+        assertThat(jar.resolveSibling("ledger-hook-resident.jar")).as("the resident program next to the client").isRegularFile();
+    }
+
+    @ParameterizedTest
+    @MethodSource("commandFields")
+    @DisplayName("R9-D0096-V every command starts the light client with the same cheap and quiet JVM options: serial GC, C1 only, no perf data file, and no JVM log line (a JVM log line goes to stdout, which is the answer to the host)")
+    void commandsCarryTheClientJvmOptions(Client client, String field) throws IOException {
+        Matcher m = JAVA_COMMAND.matcher(command(client).path(field).stringValue());
+        assertThat(m.matches()).isTrue();
+        assertThat(List.of(m.group(1).strip().split(" "))).containsExactlyInAnyOrderElementsOf(CLIENT_JVM_OPTIONS);
     }
 
     @ParameterizedTest
@@ -162,7 +177,7 @@ class ManifestTest {
     @Test
     @DisplayName("HK-010 Codex on Windows starts java through cmd.exe /d /c")
     void codexWindowsCommandUsesCmd() throws IOException {
-        assertThat(command(Client.CODEX).path("commandWindows").stringValue()).startsWith("cmd.exe /d /c java -jar");
+        assertThat(command(Client.CODEX).path("commandWindows").stringValue()).startsWith("cmd.exe /d /c java ").contains(" -jar ");
     }
 
     static Stream<Arguments> pluginNames() {
@@ -263,10 +278,11 @@ class ManifestTest {
 
     @ParameterizedTest
     @EnumSource(Client.class)
-    @DisplayName("HK-010 the staged plugin directory carries the jar and no .mjs")
+    @DisplayName("HK-010 the staged plugin directory carries the light client jar and the resident program jar and no .mjs")
     void stagedDirectoryHasTheJar(Client client) throws IOException {
         Path root = STAGING.resolve(client.argument());
         assertThat(root.resolve("lib/ledger-client-hook.jar")).isRegularFile();
+        assertThat(root.resolve("lib/ledger-hook-resident.jar")).isRegularFile();
         try (Stream<Path> all = Files.walk(root)) {
             assertThat(all.map(p -> p.getFileName().toString())).noneMatch(n -> n.endsWith(".mjs"));
         }

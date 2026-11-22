@@ -29,15 +29,16 @@ class LoggingTest {
 
     @ParameterizedTest
     @MethodSource("org.pgledger.hook.Hosts#all")
-    @DisplayName("HK-052 real jar at the DEBUG level of the hook's loggers: the log line of malformed input is on stderr, the answer on stdout and the exit code are those of HK-008")
-    void debugLineGoesToStderr(HostScenario host, HookJar jar) throws IOException {
-        Run run = jar.start(HookJar.JAVA, List.of("-Dlogging.level.org.pgledger.hook=DEBUG"), Map.of(), MALFORMED,
+    @DisplayName("HK-052 (changed by the user decision of 2026-11-22) resident program at the DEBUG level of the hook's loggers (LOGGING_LEVEL_ORG_PGLEDGER_HOOK): the log line of malformed input is in the log file of the state folder, and the answer, the stdout, the stderr and the exit code of the call are exactly those of HK-008: a log line reaches neither stdout nor stderr of a call")
+    void debugLineGoesToTheLogFile(HostScenario host, HookJar jar) throws IOException {
+        Run run = jar.start(HookJar.JAVA, List.of(), Map.of("LOGGING_LEVEL_ORG_PGLEDGER_HOOK", "DEBUG"), MALFORMED,
                 host.client().argument()).run();
         HostScenario.Malformed expected = host.malformedInput();
         assertThat(run.exit()).as("exit code").isEqualTo(expected.exit());
         assertThat(run.document()).as("stdout").isEqualTo(expected.stdout());
-        assertThat(run.err()).as("stderr").contains(expected.stderr()).contains("DEBUG")
-                .contains("the hook input is not valid JSON");
+        assertThat(run.err()).as("stderr").isEqualTo(expected.stderr()).doesNotContain("DEBUG");
+        String log = Files.readString(Residents.stateFolders(jar.home()).getFirst().resolve("resident.log"));
+        assertThat(log).contains("DEBUG").contains("the hook input is not valid JSON");
     }
 
     @ParameterizedTest

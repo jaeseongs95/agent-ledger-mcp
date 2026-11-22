@@ -74,11 +74,14 @@ class StartupOutputTest {
 
     @ParameterizedTest
     @MethodSource("org.pgledger.hook.Hosts#all")
-    @DisplayName("HK-050 real main: with the DEBUG level of Boot's own logging asked for, stdout still holds only the answer (the log goes to stderr)")
+    @DisplayName("HK-050 real main (changed by the user decision of 2026-11-22): with the DEBUG level of Boot's own logging asked for (DEBUG=true, LOGGING_LEVEL_ROOT=DEBUG in the environment of the resident program), stdout and stderr of the call still hold only the answer (the log goes to the log file of the state folder)")
     void loggingNeverReachesStdout(HostScenario host, HookJar jar) throws IOException {
-        Run run = jar.start(HookJar.JAVA, List.of("-Ddebug=true", "-Dlogging.level.root=DEBUG"), Map.of(), NOTHING,
+        Run run = jar.start(HookJar.JAVA, List.of(), Map.of("DEBUG", "true", "LOGGING_LEVEL_ROOT", "DEBUG"), NOTHING,
                 host.client().argument()).run();
         assertThat(run.stdout()).as("stdout bytes").isEmpty();
+        assertThat(run.stderr()).as("stderr bytes").isEmpty();
         assertThat(run.exit()).isZero();
+        assertThat(java.nio.file.Files.readString(Residents.stateFolders(jar.home()).getFirst().resolve("resident.log")))
+                .as("the log of the resident program").contains("DEBUG");
     }
 }

@@ -6,7 +6,7 @@ This directory is a Codex plugin. It proves the author of the ledger write calls
 
 ## How it works
 
-`extensions.com.openai.hooks` of `plugin.json` points to `hooks/hooks.json`. Its `PreToolUse` hook runs `java -jar "${PLUGIN_ROOT}/lib/ledger-client-hook.jar" codex` before each call of a ledger write tool (on Windows: `cmd.exe /d /c java -jar "%PLUGIN_ROOT%/lib/ledger-client-hook.jar" codex`). The hook handles only the thirteen write tools (`issue_save`, `spec_save`, `task_save`, `criterion_save`, `transition`, `record_deliverable`, `record_case`, `link`, `correct`, `batch`, `review`, `review_correct` and `whoami`) and the five attachment tools (`artifact_begin`, `artifact_chunk`, `artifact_finish`, `artifact_status` and `artifact_read`, which carry no `operationKey` in the claim, like `whoami`). It signs a call whose tool name is one of these forms, with `<tool>` being `ledger_<op>` or `artifact_<op>`:
+`extensions.com.openai.hooks` of `plugin.json` points to `hooks/hooks.json`. Its `PreToolUse` hook runs `java -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:-UsePerfData -Xlog:disable -jar "${PLUGIN_ROOT}/lib/ledger-client-hook.jar" codex` before each call of a ledger write tool (on Windows: `cmd.exe /d /c java -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:-UsePerfData -Xlog:disable -jar "%PLUGIN_ROOT%/lib/ledger-client-hook.jar" codex`). The hook handles only the thirteen write tools (`issue_save`, `spec_save`, `task_save`, `criterion_save`, `transition`, `record_deliverable`, `record_case`, `link`, `correct`, `batch`, `review`, `review_correct` and `whoami`) and the five attachment tools (`artifact_begin`, `artifact_chunk`, `artifact_finish`, `artifact_status` and `artifact_read`, which carry no `operationKey` in the claim, like `whoami`). It signs a call whose tool name is one of these forms, with `<tool>` being `ledger_<op>` or `artifact_<op>`:
 
 - `mcp__<server>__<tool>`
 - `mcp__<server>__<server>_<tool>`, where the prefix must equal the server name exactly
@@ -26,7 +26,7 @@ The hook command looks up `java` on the `PATH`, so the host that runs Codex need
 
 ## Installation
 
-The jar is not committed to the repository. `./gradlew :ledger-client-hook:assemble` creates `ledger-client-hook/build/client-plugins/codex/`, a plugin directory that holds the jar as `lib/ledger-client-hook.jar`. Copy this directory to the plugin location of Codex. After Codex has loaded the plugin, review and trust the exact definition of the hook in `/hooks`.
+The jar is not committed to the repository. `./gradlew :ledger-client-hook:assemble` creates `ledger-client-hook/build/client-plugins/codex/`, a plugin directory that holds the light client as `lib/ledger-client-hook.jar` and the resident program as `lib/ledger-hook-resident.jar`; both jars must stay next to each other. Copy this directory to the plugin location of Codex. After Codex has loaded the plugin, review and trust the exact definition of the hook in `/hooks`.
 
 To use the hook as a project hook, merge the same entry into `<repo>/.codex/hooks.json` and replace the path of the jar with its absolute path. Do not overwrite an existing hook and do not install the hook twice.
 
@@ -37,6 +37,15 @@ To use the hook as a project hook, merge the same entry into `<repo>/.codex/hook
 3. The owner compares the fingerprint with the one the session showed and registers the public key with `key-register` of `ledger-cli`, or on the grants page of the admin web. Only then do the grants of the author work.
 
 The key belongs to one server and one author. A signature made for a test server, or for a server with a similar name, never verifies on the production server; each server gets its own registration. The server checks the signature, the tool, the `operationKey`, the arguments and the time before it looks at any grant.
+
+## The resident program
+
+The light client does not sign by itself. It sends the input of the host over the loopback to the resident program, `ledger-hook-resident.jar` in the same folder, and prints what that answers; the contract with the host is the one of the hook before: the host JSON on the standard input, only the answer on the standard output (no JVM and no log line), the exit codes, and what a failure means.
+
+- The first call starts the program when none runs (about one second); the later calls take about a tenth of a second. It keeps running after the call and ends by itself after 15 minutes without a call (`LEDGER_HOOK_RESIDENT_IDLE_TIMEOUT`, an ISO-8601 duration such as `PT30M`), or when you run `java -jar lib/ledger-client-hook.jar stop`.
+- It listens on `127.0.0.1` only. Every request must carry a secret that is new for every start and that lies only in the address file of its state folder, `~/.pg-ledger-mcp/resident/<id>/`; the folder and its files are owner-only. Its output is in `resident.log` of that folder.
+- It runs from a copy in `~/.pg-ledger-mcp/resident-runtime/<build>/`, so an update or the removal of the plugin is never blocked by a running program. A client of another build (an updated plugin) replaces the running program.
+- If the program cannot be reached or started, the call fails with exit code 2 and the line `ledger: the hook program is not available`, followed by the reason, on the standard error; the server then refuses the write with `HOST_ATTESTATION_REQUIRED`. Read `resident.log` and check that both jars are in `lib` and that `java` is JDK 25 or later.
 
 ## Limits
 

@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "java -jar \"./lib/ledger-client-hook.jar\" antigravity",
+            "command": "java -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:-UsePerfData -Xlog:disable -jar \"./lib/ledger-client-hook.jar\" antigravity",
             "timeout": 10
           }
         ]

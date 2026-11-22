@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -42,6 +43,17 @@ class HookRoundTripTest {
     private static final TypeReference<LinkedHashMap<String, Object>> OBJECT = new TypeReference<>() {
     };
 
+    /** The work directory and key folder of the test: the resident program that the hook calls started is ended after it. */
+    private Path residentWork;
+    private Path residentKeys;
+
+    @AfterEach
+    void endTheResidentProgram() throws IOException {
+        if (residentWork != null) {
+            HookProcess.stop(residentWork, residentKeys);
+        }
+    }
+
     private static Args hooked(JsonMapper mapper, Path work, Path keys, String tool, String hostId, Object input)
             throws IOException {
         String event = mapper.writeValueAsString(Map.of("tool_name", "mcp__ledger__" + tool, "tool_input", input,
@@ -59,6 +71,8 @@ class HookRoundTripTest {
     void roundTrip(McpSession session, Scenario scenario, @Autowired SessionKeyService owner,
             @Autowired JsonMapper mapper, @TempDir Path work) throws IOException {
         Path keys = work.resolve("keys");
+        residentWork = work;
+        residentKeys = keys;
         String hostId = "rt" + UUID.randomUUID().toString().substring(0, 8);
         String author = "claude:" + hostId;
 

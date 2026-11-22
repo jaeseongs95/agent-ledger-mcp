@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.file.Path;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.pgledger.hook.resident.ResidentRunner;
 import org.pgledger.testing.CodingScan;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -31,11 +32,11 @@ class HookApplicationTest {
             .withUserConfiguration(HookApplication.class);
 
     @Test
-    @DisplayName("HK-049 the application has exactly one ApplicationRunner (HookRunner), no CommandLineRunner, and HookExitCode as its ExitCodeGenerator")
+    @DisplayName("HK-049 the application has exactly one ApplicationRunner (ResidentRunner), no CommandLineRunner, and HookExitCode as its ExitCodeGenerator")
     void oneEntryAndTheExitCodeGenerator() {
         runner.run(context -> {
             assertThat(context).hasNotFailed();
-            assertThat(context.getBeansOfType(ApplicationRunner.class).values()).singleElement().isInstanceOf(HookRunner.class);
+            assertThat(context.getBeansOfType(ApplicationRunner.class).values()).singleElement().isInstanceOf(ResidentRunner.class);
             assertThat(context.getBeansOfType(CommandLineRunner.class)).isEmpty();
             assertThat(context.getBeansOfType(ExitCodeGenerator.class).values()).anyMatch(HookExitCode.class::isInstance);
         });

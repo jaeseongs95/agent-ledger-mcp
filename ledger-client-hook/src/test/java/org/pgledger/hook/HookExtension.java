@@ -30,7 +30,7 @@ final class HookExtension implements ParameterResolver {
             return new HookFixture(workspace.keys());
         }
         if (type == HookJar.class) {
-            return new HookJar(workspace.work(), workspace.keys());
+            return new HookJar(workspace.work(), workspace.home(), workspace.keys());
         }
         return workspace;
     }

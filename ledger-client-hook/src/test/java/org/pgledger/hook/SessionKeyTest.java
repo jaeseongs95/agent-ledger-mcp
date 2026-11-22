@@ -118,8 +118,13 @@ class SessionKeyTest {
         Run second = jar.run(stdin, host.client().argument());
         jar.stamp(host, "issue_save", EMPTY, second);
         assertThat(Files.readAllBytes(file)).isEqualTo(bytes);
-        List<Path> outside = snapshot(workspace.root()).stream().filter(path -> !path.startsWith("work")).toList();
+        // the resident program keeps its state and its program copy in the home folder of the process (D-0096), nowhere else
+        List<Path> outside = snapshot(workspace.root()).stream()
+                .filter(path -> !path.startsWith("work") && !path.startsWith("home")).toList();
         assertThat(outside).containsExactlyInAnyOrder(Path.of("keys"), Path.of("keys", Attestations.keyFileName(host.server(), host.author(HookFixture.HOST_ID))));
+        assertThat(snapshot(workspace.root()).stream().filter(path -> path.startsWith("home")))
+                .allSatisfy(path -> assertThat(path.toString().replace('\\', '/'))
+                        .matches("home(/\\.pg-ledger-mcp(/(resident(/[0-9a-f]{16}(/[a-z.]+)?)?|resident-runtime(/[^/]+(/[^/]+)?)?))?)?"));
         for (Path cwd : jar.workingDirectories()) {
             assertThat(snapshot(cwd)).as("working directory of a process").isEmpty();
         }

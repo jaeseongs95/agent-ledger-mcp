@@ -86,12 +86,12 @@ class SqlRulesTest {
         List<Path> mainDirs = List.of(
                 "ledger-domain", "ledger-attestation", "ledger-files", "ledger-database",
                 "ledger-application", "ledger-mcp-server", "ledger-admin-web", "ledger-cli",
-                "ledger-seed", "ledger-client-hook", "ledger-migrate-1x")
+                "ledger-seed", "ledger-hook-client", "ledger-client-hook", "ledger-migrate-1x")
                 .stream()
                 .map(name -> root.resolve(name).resolve("src/main/java"))
                 .filter(Files::isDirectory)
                 .toList();
-        assertThat(mainDirs).hasSize(11);
+        assertThat(mainDirs).hasSize(12);
         List<String> catchProblems = CodingScan.catchProblems(
                 java.util.Set.of("McpCheckCommand.java", "ToolResults.java"),
                 "driver",

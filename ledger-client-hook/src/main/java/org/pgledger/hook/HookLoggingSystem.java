@@ -21,9 +21,11 @@ import org.springframework.core.env.MutablePropertySources;
 import org.springframework.core.env.PropertySource;
 
 /**
- * Programmatic Logback setup for the short-lived CLI hook process: matches {@code logback-spring.xml} (stderr
+ * Programmatic Logback setup for the resident hook program: matches {@code logback-spring.xml} (stderr
  * {@code ConsoleAppender}, UTF-8 pattern, root {@code WARN}) without loading Joran XML, {@code java.xml} SAX parsers,
- * {@code ApplicationConversionService}, or Logback's pattern compiler unless a log record is actually emitted.
+ * {@code ApplicationConversionService}, or Logback's pattern compiler unless a log record is actually emitted. The levels
+ * come from {@code logging.level.*} and {@code debug}, and, because the program is started by the light client, which cannot
+ * hand it system properties, from the environment variables {@code LOGGING_LEVEL_<LOGGER>} and {@code DEBUG}.
  */
 public final class HookLoggingSystem {
 
@@ -33,6 +35,7 @@ public final class HookLoggingSystem {
     private static final String LEVEL_PREFIX = "logging.level.";
     private static final String ROOT_SUFFIX = "root";
     private static final String DEBUG_PROPERTY = "debug";
+    private static final String LEVEL_VARIABLE_PREFIX = "LOGGING_LEVEL_";
 
     private HookLoggingSystem() {}
 
@@ -91,18 +94,32 @@ public final class HookLoggingSystem {
                 root.setLevel(Level.DEBUG);
             }
             for (String name : enumerable.getPropertyNames()) {
-                if (!name.startsWith(LEVEL_PREFIX)) {
+                String loggerName = loggerOf(name);
+                if (loggerName == null) {
                     continue;
                 }
                 Object raw = enumerable.getProperty(name);
                 if (raw == null) {
                     continue;
                 }
-                String loggerName = name.substring(LEVEL_PREFIX.length());
                 Logger target = ROOT_SUFFIX.equalsIgnoreCase(loggerName) ? root : context.getLogger(loggerName);
                 target.setLevel(Level.toLevel(raw.toString().strip().toUpperCase(Locale.ROOT), Level.WARN));
             }
         }
+    }
+
+    /**
+     * The logger a setting names: {@code logging.level.<logger>}, or the environment variable {@code LOGGING_LEVEL_<LOGGER>}
+     * (relaxed binding: upper case, dots as underscores; package names have no underscore), or {@code null}.
+     */
+    private static String loggerOf(String name) {
+        if (name.startsWith(LEVEL_PREFIX)) {
+            return name.substring(LEVEL_PREFIX.length());
+        }
+        if (name.startsWith(LEVEL_VARIABLE_PREFIX)) {
+            return name.substring(LEVEL_VARIABLE_PREFIX.length()).toLowerCase(Locale.ROOT).replace('_', '.');
+        }
+        return null;
     }
 
     private static final class LazyPatternEncoder extends EncoderBase<ILoggingEvent> {
