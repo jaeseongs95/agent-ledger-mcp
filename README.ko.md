@@ -295,7 +295,7 @@ cp ledger-cli/build/libs/ledger-cli.jar ledger-mcp-server/build/libs/ledger-mcp-
 | `--java=<path>` | Java 25 런타임. 기본값은 root의 `PATH`에 있는 `java`이며, 서비스 사용자도 실행하므로 모든 계정이 실행할 수 있는 경로(`/home` 아래가 아닌 곳)여야 하고, 스크립트가 서비스 사용자를 만든 직후, 다른 것을 만들기 전에 이를 확인합니다 |
 | `--jars=<dir>` | jar 세 개가 있는 디렉터리 |
 | `--driver-jar=<file>` | JDBC 드라이버 jar |
-| `--driver-class=<class>` | 드라이버 클래스. JDBC URL을 받아들여야 합니다 |
+| `--driver-class=<class>` | 드라이버 클래스. JDBC URL을 받아들여야 합니다(PostgreSQL JDBC 드라이버는 `org.postgresql.Driver`) |
 | `--owner-account=<account>` | DDL 계정(비밀번호를 물어봅니다) |
 | `--app-account=<account>` | 앱 계정 |
 | `--jdbc-url=<url>` | 장부 데이터베이스의 JDBC URL(비밀번호를 넣지 않습니다) |
