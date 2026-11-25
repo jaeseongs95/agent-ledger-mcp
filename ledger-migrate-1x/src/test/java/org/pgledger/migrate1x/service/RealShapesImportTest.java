@@ -288,6 +288,45 @@ class RealShapesImportTest {
             }
             assertThat(nullable(ctx, "task", "id_key")).isFalse();
             assertThat(nullable(ctx, "milestone_criterion", "id_key")).isFalse();
+            assertThat(nullable(ctx, "deliverable", "location_key")).isFalse();
+        });
+    }
+
+    @Test
+    @DisplayName("V10-IMP-01 same (defect_id, commit_sha) across distinct repos imports and verifies; identical (defect_id, repo, commit_sha) is refused cleanly during validation")
+    void v10_deliverableLocationKeyImportAndDuplicateValidation() {
+        LegacyLedger distinctRepos = LegacyFixtures.rich();
+        String sha = "f".repeat(40);
+        distinctRepos.insert("defect_fix", "id", 901, "defect_id", "E2E-D-0007", "repo", "org/old-repo",
+                "commit_sha", sha, "branch", "main", "recorded_by", LegacyFixtures.SEED, "recorded_at",
+                LegacyLedger.at("2026-11-06T02:00:00Z"), "imported", true);
+        distinctRepos.insert("defect_fix", "id", 902, "defect_id", "E2E-D-0007", "repo", "org/new-repo",
+                "commit_sha", sha, "branch", "main", "recorded_by", LegacyFixtures.SEED, "recorded_at",
+                LegacyLedger.at("2026-11-07T02:00:00Z"), "imported", false);
+        withRig(distinctRepos, ctx -> {
+            assertThat(importer(ctx).importLegacy(TestOwners.OWNER).tables()).allMatch(TableCheck::matches);
+            importer(ctx).verify();
+            assertThat(count(ctx, "SELECT COUNT(*) FROM deliverable WHERE target_id = 'E2E-D-0007' AND deliverable_ref = ?",
+                    sha)).isEqualTo(2);
+        });
+
+        LegacyLedger exactDup = LegacyFixtures.rich();
+        exactDup.update("ALTER TABLE " + exactDup.schema()
+                + ".defect_fix DROP CONSTRAINT defect_fix_defect_id_repo_commit_sha_key");
+        exactDup.insert("defect_fix", "id", 903, "defect_id", "E2E-D-0007", "repo", "org/same-repo",
+                "commit_sha", sha, "branch", "main", "recorded_by", LegacyFixtures.SEED, "recorded_at",
+                LegacyLedger.at("2026-11-06T02:00:00Z"), "imported", false);
+        exactDup.insert("defect_fix", "id", 904, "defect_id", "E2E-D-0007", "repo", "org/same-repo",
+                "commit_sha", sha, "branch", "main", "recorded_by", LegacyFixtures.SEED, "recorded_at",
+                LegacyLedger.at("2026-11-07T02:00:00Z"), "imported", false);
+        withRig(exactDup, ctx -> {
+            ValidationException refused = refused(ctx);
+            assertThat(refused.issues()).singleElement().satisfies(issue -> {
+                assertThat(issue.path()).isEqualTo("deliverable[904].deliverable_ref");
+                assertThat(issue.reason().name()).isEqualTo("DUPLICATE_DELIVERABLE_KEY");
+                assertThat(issue.reasonArgs()).containsExactly("903");
+            });
+            assertNothingWritten(ctx);
         });
     }
 

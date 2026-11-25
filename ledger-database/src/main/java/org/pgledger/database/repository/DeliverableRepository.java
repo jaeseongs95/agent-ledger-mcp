@@ -17,8 +17,11 @@ public interface DeliverableRepository
 
     Optional<Deliverable> findById(Long id);
 
-    Optional<Deliverable> findByTargetEntityAndTargetIdAndKindAndDeliverableRef(DeliverableTarget targetEntity,
-            String targetId, CodeValue kind, String deliverableRef);
+    Optional<Deliverable> findByTargetEntityAndTargetIdAndKindAndDeliverableRefAndLocationKey(
+            DeliverableTarget targetEntity, String targetId, CodeValue kind, String deliverableRef, String locationKey);
+
+    List<Deliverable> findByTargetEntityAndTargetIdAndKindAndDeliverableRef(
+            DeliverableTarget targetEntity, String targetId, CodeValue kind, String deliverableRef);
 
     List<Deliverable> findByTargetEntityAndTargetIdOrderById(DeliverableTarget targetEntity, String targetId);
 }

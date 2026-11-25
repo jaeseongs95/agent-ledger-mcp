@@ -6,6 +6,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Supplier;
 import org.pgledger.application.attachment.AttachmentLinks;
 import org.pgledger.application.gate.Lookup;
@@ -151,7 +152,7 @@ public class RecordDeliverableOperation extends WriteOperation<RecordDeliverable
         Instant now = clock.instant();
         AuthorId author = ctx.author();
         Evidence evidence = Evidence.of(checkRef, null);
-        Supplier<Known> afterTheTarget = () -> readKnown(target, targetId, kind, deliverableRef, checkRef,
+        Supplier<Known> afterTheTarget = () -> readKnown(target, targetId, kind, deliverableRef, location, checkRef,
                 checkResult, checkedAt);
 
         TargetUpdate targetUpdate = switch (target) {
@@ -212,14 +213,22 @@ public class RecordDeliverableOperation extends WriteOperation<RecordDeliverable
      * amendment that changes nothing.
      */
     private Known readKnown(DeliverableTarget target, String targetId, CodeValue kind, String deliverableRef,
-            String checkRef, CheckResult checkResult, Instant checkedAt) {
-        return deliverables.findByTargetEntityAndTargetIdAndKindAndDeliverableRef(target, targetId, kind,
-                deliverableRef)
+            String location, String checkRef, CheckResult checkResult, Instant checkedAt) {
+        return deliverables.findByTargetEntityAndTargetIdAndKindAndDeliverableRefAndLocationKey(target, targetId, kind,
+                deliverableRef, Deliverable.locationKeyOf(location))
+                .or(() -> location == null ? soleDeliverable(target, targetId, kind, deliverableRef) : Optional.empty())
                 .<Known>map(row -> new Known.Recorded(row, amendedChanges(row, checkRef, checkResult, checkedAt)))
                 .orElseGet(() -> {
                     codeRules.checkDeliverableKind(kind);
                     return new Known.New();
                 });
+    }
+
+    private Optional<Deliverable> soleDeliverable(DeliverableTarget target, String targetId, CodeValue kind,
+            String deliverableRef) {
+        List<Deliverable> byRef = deliverables.findByTargetEntityAndTargetIdAndKindAndDeliverableRef(target, targetId,
+                kind, deliverableRef);
+        return byRef.size() == 1 ? Optional.of(byRef.getFirst()) : Optional.empty();
     }
 
     private record TargetUpdate(HistoryOp op, String fromState, String toState, String oldOwner, String newOwner,

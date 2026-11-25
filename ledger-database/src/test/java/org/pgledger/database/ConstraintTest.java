@@ -122,6 +122,16 @@ class ConstraintTest {
                 LedgerTestContext.START))))
                 .isInstanceOf(DuplicateKeyException.class);
         assertThat(ctx.tx(() -> delivs.insert(Deliverable.record(ids.next(Counter.DELIVERABLE),
+                DeliverableTarget.ISSUE, i1.id().value(), kind, ref, "org/repo-a", "with location", null, null, null,
+                null, BY, LedgerTestContext.START)))).isNotNull();
+        assertThat(ctx.tx(() -> delivs.insert(Deliverable.record(ids.next(Counter.DELIVERABLE),
+                DeliverableTarget.ISSUE, i1.id().value(), kind, ref, "org/repo-b", "other location", null, null, null,
+                null, BY, LedgerTestContext.START)))).isNotNull();
+        assertThatThrownBy(() -> ctx.tx(() -> delivs.insert(Deliverable.record(ids.next(Counter.DELIVERABLE),
+                DeliverableTarget.ISSUE, i1.id().value(), kind, ref, "org/repo-a", "dup location", null, null, null,
+                null, BY, LedgerTestContext.START))))
+                .isInstanceOf(DuplicateKeyException.class);
+        assertThat(ctx.tx(() -> delivs.insert(Deliverable.record(ids.next(Counter.DELIVERABLE),
                 DeliverableTarget.ISSUE, i1.id().value(), CodeValue.of("DOCUMENT"), ref, null, "other kind", "ref",
                 CheckResult.PASSED, null, null, BY, LedgerTestContext.START)))).isNotNull();
     }

@@ -15,6 +15,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.pgledger.domain.error.ValidationReason;
 import org.pgledger.domain.model.CriterionLink;
+import org.pgledger.domain.model.Deliverable;
 import org.pgledger.domain.model.SessionGrant;
 import org.pgledger.domain.rule.ActorAssurance;
 import org.pgledger.domain.rule.CheckResult;
@@ -294,6 +295,7 @@ final class LegacyRowMapper {
         t.put("deliverable_ref", s.text("commit_sha"));
         String repo = s.text("repo");
         t.put("location", repo);
+        t.put("location_key", Deliverable.locationKeyOf(repo));
         if (repo == null) {
             v.add("location", ValidationReason.REQUIRED);
         }
