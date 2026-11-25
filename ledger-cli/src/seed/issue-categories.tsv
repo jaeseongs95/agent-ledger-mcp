@@ -1,0 +1,15 @@
+code	name_ko	name_en	description_ko	description_en
+ARC	구조·의존 방향	Structure and dependency direction	상위·핵심 계층이 하위·세부 구현에 묶여 변경 범위가 번진다	Core layers depend on outer details or a contract is tied to one concrete implementation.
+CON	동시성·원자성	Concurrency and atomicity	경합·순서 어긋남·잠금 때문에 잘못된 상태가 된다	Races, ordering gaps or locks cause an inconsistent state.
+DAT	데이터 손실·복구	Data loss and recovery	원본·산출물·백업이 사라지거나 복구 자료가 남지 않는다	Data, deliverables or backups disappear, or recovery material is missing.
+DENY	거짓 거부·과잉 차단	False refusal and excessive blocking	정당한 입력·작업·상태를 막아 정상 진행이 멈춘다	Valid input, actions or states are blocked or judged failures, stopping normal progress.
+DIAG	진단 오류	Incorrect diagnosis	원인과 다른 안내·고정 문구·잘못된 상태 표시	Guidance, fixed messages or status displays do not match the actual cause.
+DOC	문서·계약 모순	Documentation and contract contradictions	문서·명세·설명이 실제 결과물이나 동작과 다르다	Documentation, specifications or descriptions differ from actual outputs or behavior.
+EXC	원인 소거·치환	Error cause suppression or substitution	실패 원인을 삼키거나 다른 이유로 바꿔 실제 원인을 알 수 없게 된다	Swallowed errors or substituted causes hide the actual failure from reviewers or callers.
+GATE	판정 우회·거짓 완료	Gate bypass and false completion	검증·게이트·기준이 실제 조건 없이 통과한다	Verification, gates or acceptance criteria pass without meeting actual conditions.
+HOST	환경 확장성	Environment extensibility	새 환경·플랫폼에서 동작이 빠지거나 다른 경로로 처리된다	Behavior is missing in a new environment or handled through an inconsistent path.
+PKG	빌드·패키징 산출물	Packaging and final deliverables	최종 배포물·납품 산출물이 명세·소스와 다르거나 빠진다	Packaged artifacts or deliverables differ from specifications or omit required items.
+RES	자원 상한	Resource limits	작업량·크기·시간·예산 상한이 없거나 실제 상한이 아니다	Workload, size, time or budget bounds are absent or ineffective.
+SEC	권한·신뢰 경계	Authorization and trust boundaries	권한 확인·신원·접근 경계가 우회되거나 검증되지 않은 값을 신뢰한다	Authorization, identity or access boundaries are bypassed, or untrusted inputs are trusted.
+TST	검수 공백·헛통과	Verification gaps and false passes	검수 절차가 결함을 놓치거나 잘못된 결과를 정상으로 고정한다	Checks fail to catch defects or encode flawed behavior as expected.
+VND	벤더·도구 종속	Vendor and tool coupling	특정 도구·벤더 이름이나 사설 규격에 핵심 동작이 묶인다	Core behavior depends on preregistered vendor/tool literals or proprietary hooks.

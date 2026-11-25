@@ -1,0 +1,37 @@
+# Versions of everything that is not managed by the Spring Boot BOM. Each entry carries its reason.
+[versions]
+springBoot = "4.1.2"
+springAi = "2.0.2"
+# MCP Java SDK: the client of the CLI command mcp-check; this is the version that Spring AI 2.0.2 brings to the server (same SDK on both sides)
+mcpSdk = "2.1.0"
+archunit = "1.5.1"
+
+# Spring Security WebAuthn (passkeys): the module is separate from spring-security-web and its version is that of the Spring
+# Security which Spring Boot 4.1.2 manages (7.1.2); it brings WebAuthn4J (webauthn4j-core 0.31.10.RELEASE, Apache-2.0) and, through it,
+# Jackson 3 (databind and CBOR 3.2.1) and SLF4J. All Apache-2.0 or MIT: no GPL or AGPL.
+springSecurity = "7.1.2"
+
+# Jackson 3 family (tools.jackson): the webauthn4j-core 0.31.10.RELEASE that Spring Security 7.1.2 declares
+# (spring-security-webauthn-7.1.2.pom) needs Jackson 3.2 and brings the tools.jackson:jackson-bom 3.2.1, while the Boot 4.1.2 BOM
+# manages 3.1.7. Gradle would resolve the family to 3.2.1 by conflict resolution anyway; this makes that explicit in one place
+# (3.1.7 is not forced, WebAuthn4J is not pinned).
+jackson = "3.2.1"
+spotless = "8.10.4"
+licenseReport = "3.1.5"
+
+[plugins]
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+license-report = { id = "com.github.jk1.dependency-license-report", version.ref = "licenseReport" }
+
+[libraries]
+# The Jackson 3 BOM at the version of the comment of jackson above, declared next to the Boot BOM in build.gradle.kts.
+jackson-bom = { module = "tools.jackson:jackson-bom", version.ref = "jackson" }
+# Spring Security 7.1.2 WebAuthn support (sign-in, registration, the approval check): see the comment of springSecurity above.
+spring-security-webauthn = { module = "org.springframework.security:spring-security-webauthn", version.ref = "springSecurity" }
+spring-boot-bom = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "springBoot" }
+# Declared at the root for the later MCP modules; no module of this slice uses it yet.
+spring-ai-bom = { module = "org.springframework.ai:spring-ai-bom", version.ref = "springAi" }
+# ArchUnit 1.5.1: not in the Boot BOM; enforces the architecture rules (time API bans, reflection, history insert-only).
+archunit = { module = "com.tngtech.archunit:archunit", version.ref = "archunit" }
+# MCP Java SDK umbrella (mcp-core + the Jackson 3 JSON mapper): the same SDK the server runs on, used by the CLI as a client.
+mcp-sdk = { module = "io.modelcontextprotocol.sdk:mcp", version.ref = "mcpSdk" }

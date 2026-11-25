@@ -2,11 +2,11 @@
   "pg-ledger-host-attestation": {
     "PreToolUse": [
       {
-        "matcher": "^(call_mcp_tool|mcp:.*)$",
+        "matcher": "^(call_mcp_tool|mcp:[A-Za-z0-9._-]+[:/_](?:[A-Za-z0-9._-]+[:/_])?(?:ledger_(issue_save|spec_save|task_save|criterion_save|transition|record_deliverable|record_case|link|correct|batch|review|review_correct|whoami)|artifact_(begin|chunk|finish|status|read)))$",
         "hooks": [
           {
             "type": "command",
-            "command": "node ./scripts/ledger-host-attestation.mjs",
+            "command": "java -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:-UsePerfData -Xlog:disable -jar \"./lib/ledger-client-hook.jar\" antigravity",
             "timeout": 10
           }
         ]

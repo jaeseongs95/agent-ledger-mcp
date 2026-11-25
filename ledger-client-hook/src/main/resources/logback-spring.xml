@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The logging of the client hook: the log goes to the standard error and only from the level WARN on. The standard output
+  is the answer to the host (a host reads all of it as JSON), and the host contract allows no extra line on the standard
+  error of a call that went well, so a hook that works logs nothing; a level below WARN (for example
+  -Dlogging.level.org.pgledger.hook=DEBUG while looking for a fault) shows more, still on the standard error. Spring Boot's
+  own defaults are kept (the pattern, the character set, the levels of logging.level.*); only the target of the console
+  appender and the root level differ, and Boot has no setting for the target, so the configuration file of Logback it
+  documents is used: https://docs.spring.io/spring-boot/reference/features/logging.html (Custom Log Configuration).
+-->
+<configuration>
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <target>System.err</target>
+    <encoder>
+      <pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level %logger{36} - %msg%n</pattern>
+      <charset>UTF-8</charset>
+    </encoder>
+  </appender>
+  <root level="WARN">
+    <appender-ref ref="CONSOLE"/>
+  </root>
+</configuration>

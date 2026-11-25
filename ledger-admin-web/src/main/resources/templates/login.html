@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}">
+<head th:replace="~{fragments :: head(#{login.title})}"></head>
+<body>
+<th:block th:replace="~{fragments :: header('login')}"></th:block>
+<main id="main" class="narrow">
+  <h1 th:text="#{login.title}">Sign in</h1>
+  <p th:if="${errorKey != null}" class="error" role="alert" th:text="#{${errorKey}}">Sign-in failed.</p>
+  <p th:if="${loggedOut}" class="notice" role="status" th:text="#{login.loggedOut}">You are signed out.</p>
+  <p th:if="${setupMode}" class="notice" role="status" th:text="#{login.setup}">Register a JDBC driver with the command line tool first.</p>
+  <form th:if="${tokenSignIn}" method="post" th:action="@{/login}">
+    <input type="hidden" name="username" value="owner">
+    <label for="token" th:text="#{login.token}">Admin token</label>
+    <input id="token" name="token" type="password" autocomplete="current-password" required autofocus>
+    <button type="submit" th:text="#{login.submit}">Sign in</button>
+  </form>
+  <section th:if="${passkeySignIn}" class="passkey-signin" th:attr="aria-label=#{login.passkey}">
+    <button type="button" id="passkey-signin" th:text="#{login.passkey}">Sign in with a passkey</button>
+  </section>
+  <section th:if="${!#lists.isEmpty(providers)}" class="providers" th:attr="aria-label=#{login.providers}">
+    <h2 th:text="#{login.providers}">Or sign in with</h2>
+    <ul>
+      <li th:each="provider : ${providers}"><a class="button" th:href="@{/oauth2/authorization/{id}(id=${provider.id()})}" th:text="#{login.oidc(${provider.name()})}">Provider</a></li>
+    </ul>
+  </section>
+  <section th:if="${enrollment}" class="enrollment" th:attr="aria-label=#{login.code.title}">
+    <h2 th:text="#{login.code.title}">Register a passkey</h2>
+    <p th:text="#{login.code.help}">Ask for a one-time code on the server and type it here.</p>
+    <form method="post" th:action="@{/login/ott}">
+      <label for="code" th:text="#{login.code}">One-time code</label>
+      <input id="code" name="token" type="text" autocomplete="off" spellcheck="false" required>
+      <button type="submit" th:text="#{login.code.submit}">Continue</button>
+    </form>
+  </section>
+</main>
+<th:block th:replace="~{fragments :: footer}"></th:block>
+</body>
+</html>

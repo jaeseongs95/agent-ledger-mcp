@@ -1,0 +1,50 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package org.pgledger.hook;
+
+import java.util.Optional;
+import tools.jackson.databind.JsonNode;
+
+/** Codex: an explicit allow with updatedInput, an explicit deny, silence for an unhandled call. */
+final class CodexHost extends FlatHost {
+
+    @Override
+    public Client client() {
+        return Client.CODEX;
+    }
+
+    @Override
+    public String author(String hostId) {
+        return "codex:" + hostId;
+    }
+
+    @Override
+    public String toolName(String operation) {
+        return "mcp__test__" + Hosts.canonical(operation);
+    }
+
+    @Override
+    public String server() {
+        return "test";
+    }
+
+    @Override
+    public Optional<JsonNode> allowed(JsonNode sent, String token) {
+        return answer(new Specific(EVENT_NAME, "allow", null, Json.stamped(sent, token)));
+    }
+
+    @Override
+    public Optional<JsonNode> denied(Refusal reason) {
+        return answer(new Specific(EVENT_NAME, "deny", reason.message(), null));
+    }
+
+    @Override
+    public Optional<JsonNode> untouched() {
+        return Optional.empty();
+    }
+
+    @Override
+    public Malformed malformedInput() {
+        return new Malformed(0, denied(Refusal.MALFORMED_INPUT), "");
+    }
+}

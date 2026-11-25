@@ -1,221 +1,108 @@
-#!/usr/bin/env bash
-# install.sh : install (or re-apply) the ledger schema in a PostgreSQL database and serve it as one MCP endpoint (DBHub).
-# Run as root on the database host. Safe to re-run: tables are created once, functions/views/grants are re-applied,
-# passwords and the bearer token are kept, the service is restarted.
-#
-#   sudo deploy/install.sh --db ledger [--pg-port 5432] [--mcp-port 8765] [--admin-port 8865]
-#                          [--allowed-hosts mcp.example.com] [--admin-allowed-hosts admin.example.com] [--name pg-ledger-mcp]
-#                          [--schema-only] [--skip-admin] [--reset-passwords]
-#
-# The roles ledger_owner/author/reviewer/reader are cluster-wide, so one PostgreSQL cluster serves one ledger instance.
-set -euo pipefail
-umask 077
+#!/bin/sh
+# deploy/install.sh: the installer of pg-ledger-mcp 2.x for a Linux host (a Linux server). It is thin on purpose: it starts
+# only what Java cannot do (create the operating system user, switch to it, enable and restart the units) and
+# everything else is `java -jar ledger-cli.jar <command>`: render-deploy --check (every option, validated first), prepare-host
+# (directories with owner and mode, the jars and the driver copied, units, settings),
+# secret-set, token-generate, driver-register and setup (schema, ANSI GRANTs and the seed codes of the new ledger).
+# Documentation it follows: Spring Boot, "Installing Spring Boot Applications" (a systemd unit in /etc/systemd/system,
+# `systemctl enable`): https://docs.spring.io/spring-boot/how-to/deployment/installing.html ; systemd.exec(5) (User=, the
+# sandboxing options of the rendered units).
+# One service user (named after the instance, default pg-ledger-mcp, never root) runs the MCP server and the admin web: the
+# secrets are readable by it alone, so the accounts the agents run as cannot read them. The secrets are in one folder per use below
+# /etc/<name>/secrets (common, admin, mcp, tool) and each service imports only the folders it needs, so the MCP server has none of the
+# secrets of the admin web in its settings (one user runs both, so file permissions do not separate them). --name=<instance> gives an instance of
+# its own (services <name> and <name>-admin, /opt/<name>, /etc/<name>), so two can live on one host with their own ports; the
+# name is validated by Java (render-deploy --check) before anything is created. Two database accounts: the application account
+# (both servers and the owner commands) and the DDL account (setup and the grants; its password is typed and not stored).
+# Run as root: sudo deploy/install.sh --jars=<dir> --driver-jar=<file> --driver-class=<class> --owner-account=<account>
+#   --app-account=<account> --jdbc-url=<url> [--java=<path>] [the other options of render-deploy]
+# --java=<path> is the Java 25 runtime (default: the java on the PATH of root); the service user runs it too, so it is outside any home directory.
+# Both accounts are created beforehand with the DBMS's own tools. It installs no package and no database. A re-run is an
+# upgrade: jars, driver jar and files are replaced, the schema and the grants are applied again, the services are restarted;
+# secrets, tokens and data are never replaced. The Java 25 check is the JVM's: the jars are compiled for it and no other runtime loads them.
+# An installation of an earlier major version is moved with the separate tool ledger-migrate-1x (see the README, Upgrading); this script does not know it.
+# --stdin gives the passwords on standard input instead of the terminal (an installation without one), as docker login
+# --password-stdin does: first the password of the application account (read only while it is not stored), then the DDL one.
+# Both services listen on 127.0.0.1 only. Reaching them from outside (a reverse proxy, a certificate) is the operator's, with a tool
+# the operator chooses; --mcp-host=<name> and --admin-host=<name> name the one host name each service accepts in its Host check
+# besides 127.0.0.1 and localhost, which are always accepted.
+set -eu
+umask 022
+# The options of the JVM, written once (the preset of ledger-cli, JvmPreset, writes the same ones into the units; a test compares them).
+JVM_OPTS=-Duser.timezone=UTC
 
-REPO=$(cd "$(dirname "$0")/.." && pwd)
-DBHUB_VERSION=1.5.1
-NAME=pg-ledger-mcp
-DB=
-PG_PORT=5432
-MCP_PORT=8765
-ADMIN_PORT=
-ALLOWED_HOSTS=
-ADMIN_ALLOWED_HOSTS=
-SCHEMA_ONLY=0
-SKIP_ADMIN=0
-RESET_PASSWORDS=0
-PREFIX=/opt/pg-ledger-mcp
-SVC_USER=pg-ledger-mcp
+NAME=
+JAVA=
+JARS=
+DRIVER_JAR=
+DRIVER_CLASS=
+OWNER=
+APP_ACCOUNT=
+STDIN=
+# The address the hint at the end gives to mcp-check: only with --mcp-port, else mcp-check uses the install default port itself.
+MCP_URL=
 
 die() { echo "install.sh: $*" >&2; exit 1; }
-usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --db) DB=${2:?}; shift 2 ;;
-    --pg-port) PG_PORT=${2:?}; shift 2 ;;
-    --mcp-port) MCP_PORT=${2:?}; shift 2 ;;
-    --admin-port) ADMIN_PORT=${2:?}; shift 2 ;;
-    --allowed-hosts) ALLOWED_HOSTS=${2:?}; shift 2 ;;
-    --admin-allowed-hosts) ADMIN_ALLOWED_HOSTS=${2:?}; shift 2 ;;
-    --name) NAME=${2:?}; shift 2 ;;
-    --schema-only) SCHEMA_ONLY=1; shift ;;
-    --skip-admin) SKIP_ADMIN=1; shift ;;
-    --reset-passwords) RESET_PASSWORDS=1; shift ;;
-    -h|--help) usage ;;
-    *) echo "unknown argument: $1" >&2; usage 2 ;;
+# runuser: a Java process cannot become another user, so the commands that touch the secrets are started as the service user.
+as_svc() { runuser -u "$SVC" -- "$JAVA" $JVM_OPTS -jar "$LIB/ledger-cli.jar" --ledger.secrets.instance="$NAME" "$@"; }
+
+# The options read here are taken out; the rest (a JDBC URL, ports, host names) goes on to Java.
+for arg in "$@"; do
+  shift
+  case $arg in
+    --name=*) NAME=${arg#*=}; set -- "$@" "$arg" ;;
+    --java=*) JAVA=${arg#*=} ;;
+    --jars=*) JARS=${arg#*=} ;;
+    --driver-jar=*) DRIVER_JAR=${arg#*=} ;;
+    --driver-class=*) DRIVER_CLASS=${arg#*=} ;;
+    --owner-account=*) OWNER=${arg#*=} ;;
+    --app-account=*) APP_ACCOUNT=${arg#*=}; set -- "$@" "$arg" ;;
+    --mcp-port=*) MCP_URL=" --url=http://127.0.0.1:${arg#*=}/mcp"; set -- "$@" "$arg" ;;
+    --stdin) STDIN=--stdin ;;
+    *) set -- "$@" "$arg" ;;
   esac
 done
-[ -n "$DB" ] || usage 2
-[[ "$NAME" =~ ^[a-z][a-z0-9-]{0,40}$ ]] || die "--name must match ^[a-z][a-z0-9-]{0,40}$"
-[[ "$PG_PORT" =~ ^[0-9]+$ && "$MCP_PORT" =~ ^[0-9]+$ ]] || die "ports must be numbers"
-if [ -n "$ADMIN_PORT" ]; then
-  [[ "$ADMIN_PORT" =~ ^[0-9]+$ ]] || die "--admin-port must be a number"
+for v in "$JARS" "$DRIVER_JAR" "$DRIVER_CLASS" "$OWNER" "$APP_ACCOUNT"; do [ -n "$v" ] || die "an option is missing: see the header of this file"; done
+# The Java runtime is --java=<path> (kept out of the options that go on: prepare-host and render-deploy get it once, below), else the
+# one on the PATH of root. The service user runs it too (the units and the commands below), so it must not be under a home directory.
+[ -n "$JAVA" ] || JAVA=$(command -v java) || die "java is not installed: give --java=<path> of a Java 25 runtime"
+# The default name is an install default of the seed bundle, the one place the defaults are written: Java tells it.
+# A command that failed, or a value of another form than an instance name (a letter first, letters, digits and hyphens, no hyphen last, at most
+# 23 characters), stops the installation: the output of a failed command is no name.
+if [ -z "$NAME" ]; then
+  NAME=$("$JAVA" $JVM_OPTS -jar "$JARS/ledger-cli.jar" --ledger.secrets.home=/nonexistent install-default instance-name) || die "install-default instance-name failed"
+  case $NAME in
+    ''|[!a-z]*|*[!a-z0-9-]*|*-|????????????????????????*) die "the install default instance-name is not an instance name" ;;
+  esac
 fi
-[ "$(id -u)" = 0 ] || die "run as root"
+SVC=$NAME
+ADMIN=$NAME-admin
+LIB=/opt/$NAME
 ETC=/etc/$NAME
-ENV_FILE=$ETC/env
+# Every option, the name included, is validated by Java before anything is created.
+"$JAVA" $JVM_OPTS -jar "$JARS/ledger-cli.jar" --ledger.secrets.home=/nonexistent render-deploy --check --java="$JAVA" "$@"
 
-for c in psql pg_dump runuser; do command -v "$c" >/dev/null || die "$c not found"; done
-psql_major=$(psql --version | sed -E 's/[^0-9]*([0-9]+).*/\1/')
-[ "$psql_major" -ge 15 ] || die "psql 15 or newer is needed (\\getenv), found $psql_major"
+# useradd: Java has no API to create an operating system user. Status 9 is "name in use": the user of an earlier run stays.
+useradd --system --user-group --no-create-home --shell /usr/sbin/nologin "$SVC" || [ $? = 9 ]
+# runuser: the service user has to run the Java too; a runtime in a home directory (mode 0750) it cannot, so this stops before the directories, the jars and the secrets are made (the user itself is made first, the check runs as that user; a re-run finds it).
+runuser -u "$SVC" -- "$JAVA" -version >/dev/null 2>&1 || die "the service user $SVC cannot run $JAVA: use a Java 25 runtime outside the home directories that every account can read and execute"
+# Directories with owner and mode, the jars, the driver, the units and the settings: Java, as root.
+"$JAVA" $JVM_OPTS -jar "$JARS/ledger-cli.jar" --ledger.secrets.home=/nonexistent prepare-host --jars="$JARS" --driver-jar="$DRIVER_JAR" --java="$JAVA" "$@"
 
-# psql as the postgres superuser; SQL comes on stdin so the files need not be readable by postgres
-pg() { PGOPTIONS="-c client_min_messages=warning" runuser -u postgres -- psql -X -q -v ON_ERROR_STOP=1 -p "$PG_PORT" -d "$DB" "$@"; }
-pg -tAc 'select 1' >/dev/null || die "cannot connect to database $DB on port $PG_PORT as postgres"
+# Secrets: typed with hidden input or generated, as the service user; an existing one is kept. The tokens are shown once.
+as_svc secret-set ledger.jdbc.password --if-absent $STDIN
+as_svc token-generate ledger.admin.token --print
+# The admin web must know the agents' token to refuse it: the same token under a second name.
+as_svc token-generate ledger.mcp.token --print --copy-to=ledger.admin.agent-token
 
-# ---------- schema ----------
-# (ledger._migration is only referenced once it is known to exist: SQL naming a missing table fails at parse time)
-state=$(pg -tAc "select case when to_regclass('ledger._migration') is not null then 'check'
-  when exists (select 1 from pg_namespace where nspname = 'ledger') then 'foreign' else 'none' end")
-if [ "$state" = check ]; then
-  state=$(pg -tAc "select case when exists (select 1 from ledger._migration where step = 'schema_v2') then 'ready' else 'foreign' end")
-fi
-case "$state" in
-  none)
-    echo "creating schema ledger in $DB"
-    ;;
-  ready)
-    backup_dir=/var/backups/$NAME; install -d -m 0700 "$backup_dir"
-    backup=$backup_dir/ledger-$(date -u +%Y%m%dT%H%M%SZ).dump
-    runuser -u postgres -- pg_dump -p "$PG_PORT" -d "$DB" -n ledger -Fc > "$backup"
-    echo "schema ledger exists; backup of schema ledger: $backup" ;;
-  foreign)
-    die "schema ledger exists in $DB but was not created by this project (no ledger._migration step schema_v2); refusing to touch it" ;;
-esac
-# Schema constraints, backfill, API and triggers become visible together. Existing writers wait on table locks.
-args=(--db "$DB" --pg-port "$PG_PORT")
-[ "$state" != none ] || args+=(--fresh)
-"$REPO/deploy/apply-schema.sh" "${args[@]}"
+# The driver is registered after the secrets (a registered driver makes the commands connect).
+as_svc driver-register --jar="$ETC/drivers/${DRIVER_JAR##*/}" --class="$DRIVER_CLASS"
 
-echo "functions, views and grants applied"
+# The first setup through the DDL account (schema, grants, the seed codes); its password is typed and not stored.
+as_svc setup --owner-account="$OWNER" --app-account="$APP_ACCOUNT" $STDIN
 
-# ---------- passwords (hex, kept in $ENV_FILE, mode 0600 root) ----------
-install -d -m 0755 "$ETC"
-envget() { [ -f "$ENV_FILE" ] && sed -n "s/^$1=//p" "$ENV_FILE" | tail -n 1 || true; }
-rand_hex() { od -An -N"$1" -tx1 /dev/urandom | tr -d ' \n'; }
-
-have_pw=$(pg -tAc "select count(*) from pg_authid where rolname in ('ledger_author','ledger_reviewer','ledger_reader') and rolpassword is not null")
-if [ ! -f "$ENV_FILE" ] && [ "$have_pw" != 0 ] && [ "$RESET_PASSWORDS" = 0 ]; then
-  die "the ledger logins already have passwords in this cluster but $ENV_FILE does not exist.
-Another installation may use them. Re-run with --reset-passwords to set new ones (other clients of these logins stop working)."
-fi
-AUTHOR_PW=$(envget PGLEDGER_AUTHOR_PASSWORD); REVIEWER_PW=$(envget PGLEDGER_REVIEWER_PASSWORD); READER_PW=$(envget PGLEDGER_READER_PASSWORD)
-TOKEN=$(envget DBHUB_AUTH_TOKEN)
-ADMIN_TOKEN=$(envget PGLEDGER_ADMIN_TOKEN)
-if [ "$RESET_PASSWORDS" = 1 ]; then AUTHOR_PW=; REVIEWER_PW=; READER_PW=; fi
-[ -n "$AUTHOR_PW" ] || AUTHOR_PW=$(rand_hex 24)
-[ -n "$REVIEWER_PW" ] || REVIEWER_PW=$(rand_hex 24)
-[ -n "$READER_PW" ] || READER_PW=$(rand_hex 24)
-[ -n "$TOKEN" ] || TOKEN=$(rand_hex 32)
-[ -n "$ADMIN_TOKEN" ] || ADMIN_TOKEN=$(rand_hex 32)
-if [ "$ADMIN_TOKEN" = "$TOKEN" ]; then ADMIN_TOKEN=$(rand_hex 32); fi
-[ -n "$ADMIN_PORT" ] || ADMIN_PORT=$(envget PGLEDGER_ADMIN_PORT)
-[ -n "$ADMIN_PORT" ] || ADMIN_PORT=$((MCP_PORT + 100))
-[ -n "$ALLOWED_HOSTS" ] || ALLOWED_HOSTS=$(envget DBHUB_ALLOWED_HOSTS)
-[ -n "$ADMIN_ALLOWED_HOSTS" ] || ADMIN_ALLOWED_HOSTS=$(envget PGLEDGER_ADMIN_ALLOWED_HOSTS)
-ADMIN_BIND_HOST=${PGLEDGER_ADMIN_BIND_HOST:-$(envget PGLEDGER_ADMIN_BIND_HOST)}
-[ -n "$ADMIN_BIND_HOST" ] || ADMIN_BIND_HOST=127.0.0.1
-ADMIN_TLS_CERT=${PGLEDGER_ADMIN_TLS_CERT:-$(envget PGLEDGER_ADMIN_TLS_CERT)}
-ADMIN_TLS_KEY=${PGLEDGER_ADMIN_TLS_KEY:-$(envget PGLEDGER_ADMIN_TLS_KEY)}
-GOOGLE_CLIENT_ID=${PGLEDGER_ADMIN_GOOGLE_CLIENT_ID:-$(envget PGLEDGER_ADMIN_GOOGLE_CLIENT_ID)}
-GOOGLE_CLIENT_SECRET=${PGLEDGER_ADMIN_GOOGLE_CLIENT_SECRET:-$(envget PGLEDGER_ADMIN_GOOGLE_CLIENT_SECRET)}
-ALLOWED_EMAIL=${PGLEDGER_ADMIN_ALLOWED_EMAIL:-$(envget PGLEDGER_ADMIN_ALLOWED_EMAIL)}
-# loopback always stays allowed: the smoke check below and local clients use it
-case ",$ALLOWED_HOSTS," in *,127.0.0.1,*) ;; *) ALLOWED_HOSTS=${ALLOWED_HOSTS:+$ALLOWED_HOSTS,}localhost,127.0.0.1 ;; esac
-case ",$ADMIN_ALLOWED_HOSTS," in *,127.0.0.1,*) ;; *) ADMIN_ALLOWED_HOSTS=${ADMIN_ALLOWED_HOSTS:+$ADMIN_ALLOWED_HOSTS,}localhost,127.0.0.1 ;; esac
-
-# Passwords travel in the environment of psql (readable only by root and postgres), never on a command line,
-# and the statements are not logged.
-printf '%s\n' "SET log_statement = 'none';" \
-  '\getenv pw_a PGLEDGER_A' '\getenv pw_r PGLEDGER_R' '\getenv pw_d PGLEDGER_D' \
-  "ALTER ROLE ledger_author PASSWORD :'pw_a';" "ALTER ROLE ledger_reviewer PASSWORD :'pw_r';" "ALTER ROLE ledger_reader PASSWORD :'pw_d';" \
-  | PGLEDGER_A=$AUTHOR_PW PGLEDGER_R=$REVIEWER_PW PGLEDGER_D=$READER_PW pg
-
-tmp=$(mktemp "$ETC/.env.XXXXXX")
-cat > "$tmp" <<EOF
-# written by pg-ledger-mcp deploy/install.sh; read by systemd ($NAME.service) and bin/ledger-admin
-PGLEDGER_DB=$DB
-PGLEDGER_PGHOST=127.0.0.1
-PGLEDGER_PGPORT=$PG_PORT
-PGLEDGER_SSLMODE=disable
-PGLEDGER_MCP_PORT=$MCP_PORT
-PGLEDGER_ADMIN_PORT=$ADMIN_PORT
-PGLEDGER_ADMIN_BIND_HOST=$ADMIN_BIND_HOST
-PGLEDGER_AUTHOR_PASSWORD=$AUTHOR_PW
-PGLEDGER_REVIEWER_PASSWORD=$REVIEWER_PW
-PGLEDGER_READER_PASSWORD=$READER_PW
-DBHUB_AUTH_TOKEN=$TOKEN
-PGLEDGER_ADMIN_TOKEN=$ADMIN_TOKEN
-DBHUB_ALLOWED_HOSTS=$ALLOWED_HOSTS
-PGLEDGER_ADMIN_ALLOWED_HOSTS=$ADMIN_ALLOWED_HOSTS
-PGLEDGER_ADMIN_TLS_CERT=$ADMIN_TLS_CERT
-PGLEDGER_ADMIN_TLS_KEY=$ADMIN_TLS_KEY
-PGLEDGER_ADMIN_GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
-PGLEDGER_ADMIN_GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
-PGLEDGER_ADMIN_ALLOWED_EMAIL=$ALLOWED_EMAIL
-EOF
-chmod 0600 "$tmp"; mv -f "$tmp" "$ENV_FILE"
-echo "passwords and bearer tokens: $ENV_FILE (root only)"
-
-# each login must be able to log in over TCP with its password (pg_hba must allow 127.0.0.1 with scram-sha-256)
-for pair in "ledger_author:$AUTHOR_PW" "ledger_reviewer:$REVIEWER_PW" "ledger_reader:$READER_PW"; do
-  role=${pair%%:*}
-  PGPASSWORD=${pair#*:} psql -X -q -h 127.0.0.1 -p "$PG_PORT" -U "$role" -d "$DB" -tAc "select session_user" >/dev/null \
-    || die "login $role over 127.0.0.1:$PG_PORT failed; allow it in pg_hba.conf (host $DB $role 127.0.0.1/32 scram-sha-256)"
-done
-echo "logins ledger_author, ledger_reviewer, ledger_reader work over TCP"
-[ "$SCHEMA_ONLY" = 1 ] && { echo "--schema-only: done"; exit 0; }
-
-# ---------- DBHub ----------
-for c in node npm curl systemctl; do command -v "$c" >/dev/null || die "$c not found"; done
-NODE=$(command -v node)
-node -e 'const [a,b]=process.versions.node.split(".").map(Number); process.exit(a>22||(a===22&&b>=5)?0:1)' \
-  || die "DBHub $DBHUB_VERSION needs node >= 22.5 (found $(node -v))"
-DBHUB_JS=$PREFIX/dbhub-$DBHUB_VERSION/node_modules/@bytebase/dbhub/dist/index.js
-if [ ! -f "$DBHUB_JS" ]; then
-  install -d -m 0755 "$PREFIX"
-  ( umask 022; npm install --prefix "$PREFIX/dbhub-$DBHUB_VERSION" --omit=dev --no-audit --no-fund --loglevel=error "@bytebase/dbhub@$DBHUB_VERSION" )
-fi
-[ -f "$DBHUB_JS" ] || die "DBHub install failed: $DBHUB_JS missing"
-
-id -u "$SVC_USER" >/dev/null 2>&1 || useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "$SVC_USER"
-"$REPO/deploy/render-tools.sh" --name "$NAME"
-sed -e "s#@NAME@#$NAME#g" -e "s#@NODE@#$NODE#g" -e "s#@DBHUB_JS@#$DBHUB_JS#g" -e "s#@ETC@#$ETC#g" -e "s#@USER@#$SVC_USER#g" \
-  "$REPO/deploy/pg-ledger-mcp.service" > "/etc/systemd/system/$NAME.service"
-chmod 0644 "/etc/systemd/system/$NAME.service"
+# systemctl: the service manager of the host, Java does not talk to it.
 systemctl daemon-reload
-systemctl enable "$NAME.service" >/dev/null
-systemctl restart "$NAME.service"
-
-# ---------- smoke check: health, then the tool list over MCP with the bearer token ----------
-url=http://127.0.0.1:$MCP_PORT
-deadline=$((SECONDS + 30))
-until curl -fsS "$url/healthz" >/dev/null 2>&1; do
-  [ $SECONDS -lt $deadline ] || { journalctl -u "$NAME" -n 40 --no-pager >&2; die "$NAME did not answer $url/healthz within 30 s"; }
-  sleep 1
-done
-DBHUB_AUTH_TOKEN=$TOKEN "$NODE" "$REPO/bin/mcp-call.mjs" "$url/mcp" check
-echo "$NAME is serving $url/mcp (allowed hosts: $ALLOWED_HOSTS). Clients need: Authorization: Bearer <DBHUB_AUTH_TOKEN from $ENV_FILE>"
-
-if [ "$SKIP_ADMIN" = 0 ]; then
-  chmod -R a+rX "$REPO/bin" "$REPO/deploy" "$REPO/mcp" "$REPO/web" 2>/dev/null || true
-  sed -e "s#@NAME@#$NAME#g" -e "s#@NODE@#$NODE#g" -e "s#@REPO@#$REPO#g" -e "s#@ETC@#$ETC#g" \
-    "$REPO/deploy/pg-ledger-mcp-admin.service" > "/etc/systemd/system/$NAME-admin.service"
-  chmod 0644 "/etc/systemd/system/$NAME-admin.service"
-  systemctl daemon-reload
-  systemctl enable "$NAME-admin.service" >/dev/null
-  systemctl restart "$NAME-admin.service"
-
-  admin_scheme=http
-  admin_curl_flags=(-fsS)
-  if [ -n "$ADMIN_TLS_CERT" ] && [ -n "$ADMIN_TLS_KEY" ] && [ -s "$ADMIN_TLS_CERT" ] && [ -s "$ADMIN_TLS_KEY" ]; then
-    admin_scheme=https
-    admin_curl_flags=(-fsSk)
-  fi
-  admin_url=${admin_scheme}://127.0.0.1:$ADMIN_PORT
-  deadline=$((SECONDS + 30))
-  until systemctl is-active --quiet "$NAME-admin.service" && curl "${admin_curl_flags[@]}" "$admin_url/healthz" 2>/dev/null | grep -q '"service"'; do
-    [ $SECONDS -lt $deadline ] || { journalctl -u "$NAME-admin" -n 40 --no-pager >&2; die "$NAME-admin did not answer $admin_url/healthz within 30 s"; }
-    sleep 1
-  done
-  echo "$NAME-admin is serving $admin_url (Admin Console). Sign in with PGLEDGER_ADMIN_TOKEN from $ENV_FILE"
-fi
+systemctl enable "$SVC" "$ADMIN"
+systemctl restart "$SVC" "$ADMIN"
+echo "install.sh: done. Check the MCP server (it listens on 127.0.0.1) as the service user, which alone reads its token: runuser -u $SVC -- $JAVA $JVM_OPTS -jar $LIB/ledger-cli.jar --ledger.secrets.instance=$NAME mcp-check$MCP_URL"

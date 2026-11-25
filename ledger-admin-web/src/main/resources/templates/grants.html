@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}">
+<head th:replace="~{fragments :: head(#{grants.title})}"></head>
+<body>
+<th:block th:replace="~{fragments :: header('grants')}"></th:block>
+<main id="main">
+  <h1 th:text="#{grants.title}">Session grants</h1>
+
+  <section th:if="${issuedToken != null}" class="notice" role="status" aria-labelledby="issued-token-title">
+    <h2 id="issued-token-title" th:text="#{tokens.issued.title}">New bearer session token</h2>
+    <p th:text="#{tokens.issued.help}">Copy this token now; only its SHA-256 digest is stored.</p>
+    <p><span th:text="#{grants.author}">Author</span>: <code th:text="${issuedToken.author()}">agent:a</code>
+      (<span th:text="#{col.id}">ID</span> <span th:text="${issuedToken.id()}">1</span>):
+      <code id="issued-raw-token" th:text="${issuedToken.rawToken()}">lgt_example</code></p>
+  </section>
+
+  <table th:if="${!#lists.isEmpty(grants)}">
+    <caption class="sr-only" th:text="#{grants.title}">Session grants</caption>
+    <thead><tr>
+      <th scope="col" th:text="#{col.id}">ID</th><th scope="col" th:text="#{grants.author}">Author</th><th scope="col" th:text="#{common.project}">Project</th>
+      <th scope="col" th:text="#{grants.scope}">Scope</th><th scope="col" th:text="#{grants.grantedAt}">Granted</th><th scope="col" th:text="#{grants.expiresAt}">Expires</th>
+      <th scope="col" th:text="#{grants.note}">Note</th>
+    </tr></thead>
+    <tbody>
+      <tr th:each="g : ${grants}">
+        <td th:text="${g.id()}">1</td><td th:text="${g.authorId().value()}">agent:a</td><td th:text="${g.projectId().value()}">p1</td>
+        <td th:text="${g.scope().token()}">issue</td>
+        <td><time th:replace="~{fragments :: time(${g.grantedAt()})}">t</time></td>
+        <td><time th:replace="~{fragments :: time(${g.expiresAt()})}">t</time><span th:if="${g.expiresAt() == null}" th:text="#{grants.never}">never</span></td>
+        <td th:text="${g.note()}">note</td>
+      </tr>
+    </tbody>
+  </table>
+  <p th:if="${#lists.isEmpty(grants)}" th:text="#{grants.none}">No live grant.</p>
+
+  <section>
+    <h2 th:text="#{grants.issue}">Issue grants with session key</h2>
+    <p th:text="#{grants.key.help}">Paste the public key that the session printed ...</p>
+    <form method="post" th:action="@{/grants/preview}">
+      <label for="author" th:text="#{grants.author.label}">Author (vendor:session)</label>
+      <input id="author" name="author" type="text" required autocomplete="off" th:value="${preview != null} ? ${preview.form().author()}">
+      <label for="grant-project" th:text="#{common.project}">Project</label>
+      <select id="grant-project" name="project" required>
+        <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.id()}" th:selected="${preview != null and p.id() == preview.form().project()}">p1</option>
+      </select>
+      <fieldset>
+        <legend th:text="#{grants.scopes}">Scopes</legend>
+        <label th:each="s : ${scopes}" class="check"><input type="checkbox" name="scopes" th:value="${s.token()}" th:checked="${preview != null and preview.form().scopes() != null and preview.form().scopes().contains(s.token())}"> <span th:text="${s.token()}">issue</span></label>
+      </fieldset>
+      <label for="expiresAt" th:text="#{grants.expires.label}">Expires (UTC, for example 2030-12-31T00:00:00Z; empty: never)</label>
+      <input id="expiresAt" name="expiresAt" type="text" autocomplete="off" th:value="${preview != null} ? ${preview.form().expiresAt()}">
+      <label for="note" th:text="#{grants.note}">Note</label>
+      <input id="note" name="note" type="text" maxlength="500" autocomplete="off" th:value="${preview != null} ? ${preview.form().note()}">
+      <label for="publicKey" th:text="#{grants.key.label}">Public key of the session (base64)</label>
+      <textarea id="publicKey" name="publicKey" rows="3" required autocomplete="off" spellcheck="false" th:text="${preview != null} ? ${preview.form().publicKey()}"></textarea>
+      <button type="submit" th:text="#{grants.preview}">Show the fingerprint</button>
+    </form>
+  </section>
+
+  <section th:if="${preview != null}" aria-labelledby="confirm-title">
+    <h2 id="confirm-title" th:text="#{grants.confirm.title}">Compare the fingerprint</h2>
+    <p><span th:text="#{grants.fingerprint}">Fingerprint of the pasted key</span>: <code class="fingerprint" th:text="${preview.fingerprint()}">0000</code></p>
+    <p th:if="${preview.server() != null}"><span th:text="#{grants.key.server}">Server the key was made for</span>: <code class="server" th:text="${preview.server()}">ledger</code></p>
+    <p th:if="${preview.alreadyRegistered()}" th:text="#{grants.key.same}">The author already has this key.</p>
+    <p th:if="${currentKey != null}" class="notice" role="alert">
+      <span th:text="#{grants.key.current(${preview.form().author()})}">The author already has another registered key</span>:
+      <code class="fingerprint" th:text="${currentKey.fingerprint()}">1111</code>,
+      <span th:text="#{grants.key.registeredAt}">registered</span> <time th:replace="~{fragments :: time(${currentKey.registeredAt()})}">t</time>
+    </p>
+    <form method="post" th:action="@{/grants}" data-approve>
+      <input type="hidden" name="author" th:value="${preview.form().author()}">
+      <input type="hidden" name="project" th:value="${preview.form().project()}">
+      <input type="hidden" name="scopes" th:each="scope : ${preview.form().scopes()}" th:value="${scope}">
+      <input type="hidden" name="expiresAt" th:value="${preview.form().expiresAt()}">
+      <input type="hidden" name="note" th:value="${preview.form().note()}">
+      <input type="hidden" name="publicKey" th:value="${preview.form().publicKey()}">
+      <input type="hidden" name="fingerprint" th:value="${preview.fingerprint()}">
+      <label class="check"><input type="checkbox" name="confirmFingerprint" value="yes" required> <span th:text="#{grants.confirm.check}">I compared this fingerprint with the one the session printed</span></label>
+      <th:block th:if="${currentKey != null}">
+        <input type="hidden" name="replaceFingerprint" th:value="${currentKey.fingerprint()}">
+        <label class="check"><input type="checkbox" name="replace" value="yes"> <span th:text="#{grants.replace.check}">Replace the registered key shown above with this one</span></label>
+      </th:block>
+      <button type="submit" th:text="#{grants.submit}">Issue</button>
+    </form>
+  </section>
+
+  <section aria-labelledby="author-grants-title">
+    <h2 id="author-grants-title" th:text="#{grants.authorOnly.title}">Issue grants for an enrolled author</h2>
+    <p th:text="#{grants.authorOnly.help}">Issue project scopes for an author that already holds a live session key or bearer session token.</p>
+    <form method="post" th:action="@{/grants/author}" data-approve>
+      <label for="enrolled-author" th:text="#{grants.author.label}">Author</label>
+      <input id="enrolled-author" name="author" type="text" required autocomplete="off">
+      <label for="enrolled-project" th:text="#{common.project}">Project</label>
+      <select id="enrolled-project" name="project" required>
+        <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.id()}">p1</option>
+      </select>
+      <fieldset>
+        <legend th:text="#{grants.scopes}">Scopes</legend>
+        <label th:each="s : ${scopes}" class="check"><input type="checkbox" name="scopes" th:value="${s.token()}"> <span th:text="${s.token()}">issue</span></label>
+      </fieldset>
+      <label for="enrolled-expires" th:text="#{grants.expires.label}">Expires</label>
+      <input id="enrolled-expires" name="expiresAt" type="text" autocomplete="off">
+      <label for="enrolled-note" th:text="#{grants.note}">Note</label>
+      <input id="enrolled-note" name="note" type="text" maxlength="500" autocomplete="off">
+      <button type="submit" th:text="#{grants.submit}">Issue</button>
+    </form>
+  </section>
+
+  <section>
+    <h2 th:text="#{grants.revoke}">Revoke grants</h2>
+    <form method="post" th:action="@{/grants/revoke}" data-approve>
+      <label for="revoke-author" th:text="#{grants.author.label}">Author</label>
+      <input id="revoke-author" name="author" type="text" required autocomplete="off">
+      <label for="revoke-project" th:text="#{grants.revoke.project}">Project (empty: all projects)</label>
+      <select id="revoke-project" name="project">
+        <option value="" th:text="#{common.allProjects}">All projects</option>
+        <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.id()}">p1</option>
+      </select>
+      <label for="revoke-scope" th:text="#{grants.revoke.scope}">Scope (needs a project; empty: all scopes)</label>
+      <select id="revoke-scope" name="scope">
+        <option value="" th:text="#{common.any}">Any</option>
+        <option th:each="s : ${scopes}" th:value="${s.token()}" th:text="${s.token()}">issue</option>
+      </select>
+      <button type="submit" class="danger" th:text="#{grants.revoke.submit}">Revoke</button>
+    </form>
+  </section>
+
+  <section aria-labelledby="tokens-title">
+    <h2 id="tokens-title" th:text="#{tokens.title}">Bearer session tokens</h2>
+    <table th:if="${!#lists.isEmpty(tokens)}">
+      <caption class="sr-only" th:text="#{tokens.title}">Bearer session tokens</caption>
+      <thead><tr>
+        <th scope="col" th:text="#{col.id}">ID</th><th scope="col" th:text="#{grants.author}">Author</th>
+        <th scope="col" th:text="#{tokens.prefix}">Prefix</th><th scope="col" th:text="#{tokens.issuedAt}">Issued</th>
+        <th scope="col" th:text="#{grants.expiresAt}">Expires</th><th scope="col" th:text="#{grants.note}">Note</th>
+      </tr></thead>
+      <tbody>
+        <tr th:each="t : ${tokens}">
+          <td th:text="${t.id()}">1</td><td th:text="${t.authorId().value()}">agent:a</td>
+          <td><code th:text="${t.tokenPrefix()}">lgt_abc</code></td>
+          <td><time th:replace="~{fragments :: time(${t.issuedAt()})}">t</time></td>
+          <td><time th:replace="~{fragments :: time(${t.expiresAt()})}">t</time><span th:if="${t.expiresAt() == null}" th:text="#{grants.never}">never</span></td>
+          <td th:text="${t.note()}">note</td>
+        </tr>
+      </tbody>
+    </table>
+    <p th:if="${#lists.isEmpty(tokens)}" th:text="#{tokens.none}">No active bearer session token.</p>
+    <h3 th:text="#{tokens.issue}">Issue a bearer session token</h3>
+    <form method="post" th:action="@{/grants/tokens}" data-approve>
+      <label for="token-author" th:text="#{grants.author.label}">Author</label>
+      <input id="token-author" name="author" type="text" required autocomplete="off">
+      <label for="token-expires" th:text="#{grants.expires.label}">Expires</label>
+      <input id="token-expires" name="expiresAt" type="text" autocomplete="off">
+      <label for="token-note" th:text="#{grants.note}">Note</label>
+      <input id="token-note" name="note" type="text" maxlength="500" autocomplete="off">
+      <button type="submit" th:text="#{tokens.issue.submit}">Issue token</button>
+    </form>
+    <h3 th:text="#{tokens.revoke}">Revoke a bearer session token</h3>
+    <form method="post" th:action="@{/grants/tokens/revoke}" data-approve>
+      <label for="token-revoke-id" th:text="#{tokens.revoke.id}">Token id</label>
+      <input id="token-revoke-id" name="id" type="number" min="1" required autocomplete="off">
+      <button type="submit" class="danger" th:text="#{tokens.revoke.submit}">Revoke token</button>
+    </form>
+  </section>
+
+  <section aria-labelledby="keys-title">
+    <h2 id="keys-title" th:text="#{keys.title}">Registered session keys</h2>
+    <table th:if="${!#lists.isEmpty(keys)}">
+      <caption class="sr-only" th:text="#{keys.title}">Registered session keys</caption>
+      <thead><tr>
+        <th scope="col" th:text="#{grants.author}">Author</th><th scope="col" th:text="#{keys.fingerprint}">Fingerprint</th>
+        <th scope="col" th:text="#{grants.key.registeredAt}">registered at</th>
+      </tr></thead>
+      <tbody>
+        <tr th:each="k : ${keys}">
+          <td th:text="${k.authorId().value()}">agent:a</td><td><code class="fingerprint" th:text="${k.fingerprint()}">0000</code></td>
+          <td><time th:replace="~{fragments :: time(${k.registeredAt()})}">t</time></td>
+        </tr>
+      </tbody>
+    </table>
+    <p th:if="${#lists.isEmpty(keys)}" th:text="#{keys.none}">No live key.</p>
+    <p th:text="#{keys.revoke.help}">Closing a key ...</p>
+    <form method="post" th:action="@{/grants/keys/revoke}" data-approve>
+      <label for="key-revoke-author" th:text="#{grants.author.label}">Author</label>
+      <input id="key-revoke-author" name="author" type="text" required autocomplete="off">
+      <label for="key-revoke-fingerprint" th:text="#{keys.revoke.fingerprint}">Fingerprint of the key to close</label>
+      <input id="key-revoke-fingerprint" name="fingerprint" type="text" required autocomplete="off" spellcheck="false">
+      <button type="submit" class="danger" th:text="#{keys.revoke.submit}">Close the key</button>
+    </form>
+  </section>
+</main>
+<th:block th:replace="~{fragments :: footer}"></th:block>
+</body>
+</html>

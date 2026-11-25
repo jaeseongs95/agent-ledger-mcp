@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: ledger-mcp-server
+  messages:
+    # the bundles of the domain (error codes, validation reasons) and of this server (tool and argument texts)
+    basename: messages/ledger-errors,messages/ledger-reasons,messages/mcp
+    fallback-to-system-locale: false
+    encoding: UTF-8
+  ai:
+    mcp:
+      server:
+        name: ledger
+        version: 2.0.0
+        type: SYNC
+        protocol: STREAMABLE
+        streamable-http:
+          mcp-endpoint: /mcp
+        # The catalog (ToolCatalog) is the only one that registers the tools, with the definitions built for this server. With the
+        # scanner on, Spring AI registers the annotated tools first and the catalog replaces each of them, which the SDK logs as a WARN.
+        annotation-scanner:
+          enabled: false
+server:
+  # The server listens on 127.0.0.1 only: LoopbackOnly sets the address in code, so there is no setting for it. Reaching it from
+  # another machine is a reverse proxy of the operator on this host.
+  port: 8765
+management:
+  endpoints:
+    web:
+      base-path: /
+      exposure:
+        include: health
+      path-mapping:
+        health: healthz
+  endpoint:
+    health:
+      show-details: never

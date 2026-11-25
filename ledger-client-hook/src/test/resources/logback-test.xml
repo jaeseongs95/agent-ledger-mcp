@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The logging of the in-process tests: the contexts that the tests start outside of SpringApplication do not configure
+  Logback through Spring Boot, so without this file Logback logs everything from DEBUG on to the standard output of the test
+  JVM. The tests of the real jar use the logback-spring.xml of the application.
+-->
+<configuration>
+  <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <target>System.err</target>
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} %-5level %logger{20} - %msg%n</pattern>
+    </encoder>
+  </appender>
+  <root level="WARN">
+    <appender-ref ref="CONSOLE"/>
+  </root>
+</configuration>

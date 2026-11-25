@@ -1,0 +1,277 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package org.pgledger.database;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.pgledger.database.repository.Counter;
+import org.pgledger.database.repository.HistoryRepository;
+import org.pgledger.database.repository.IdAllocator;
+import org.pgledger.database.repository.ReceiptCompletionRepository;
+import org.pgledger.database.repository.ReceiptRepository;
+import org.pgledger.database.support.DatabaseTest;
+import org.pgledger.database.support.LedgerTestContext;
+import org.pgledger.database.support.Parallel;
+import org.pgledger.database.support.Seed;
+import org.pgledger.testing.database.LockWaits;
+import org.pgledger.domain.model.HistoryEntry;
+import org.pgledger.domain.model.Issue;
+import org.pgledger.domain.model.Receipt;
+import org.pgledger.domain.model.ReceiptOperation;
+import org.pgledger.domain.rule.ActorAssurance;
+import org.pgledger.domain.rule.Channel;
+import org.pgledger.domain.rule.HistoryEntity;
+import org.pgledger.domain.rule.HistoryOp;
+import org.pgledger.domain.value.ActorId;
+import org.pgledger.domain.value.JsonDocument;
+import org.pgledger.domain.value.OperationKey;
+import org.pgledger.domain.value.Sha256;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.json.JsonMapper;
+
+/** REPO-017, REPO-018, REPO-041 (receipts) and REPO-019 (JSON text columns). */
+@DatabaseTest
+class ReceiptAndJsonTest {
+
+    private static final JsonMapper JSON = JsonMapper.builder().build();
+
+    private LedgerTestContext ctx;
+    private ReceiptRepository receipts;
+
+    @BeforeEach
+    void setUp(LedgerTestContext context) {
+        ctx = context;
+        receipts = ctx.bean(ReceiptRepository.class);
+    }
+
+    private Receipt reserve(OperationKey id) {
+        return Receipt.reserve(id, ReceiptOperation.SAVE, Sha256.of("a".repeat(64)), Seed.ALICE, Channel.AUTHOR,
+                LedgerTestContext.START);
+    }
+
+    @Test
+    void repo017_aSecondInsertOfTheSameOperationKeyIsADuplicateKey() {
+        OperationKey id = new OperationKey(UUID.randomUUID().toString());
+        ctx.tx(() -> receipts.insert(reserve(id)));
+        assertThatThrownBy(() -> ctx.tx(() -> receipts.insert(reserve(id)))).isInstanceOf(DuplicateKeyException.class);
+    }
+
+    @Test
+    void repo018_aDuplicateWaitsForTheFirstInserterAndSucceedsAfterItsRollback() throws Exception {
+        TransactionTemplate tx = ctx.bean(TransactionTemplate.class);
+        org.springframework.jdbc.core.simple.JdbcClient jdbc = ctx.bean(org.springframework.jdbc.core.simple.JdbcClient.class);
+        OperationKey id = new OperationKey(UUID.randomUUID().toString());
+        CountDownLatch inserted = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger holderPid = new AtomicInteger();
+        Future<Void> first = Parallel.start(() -> tx.execute(status -> {
+            receipts.insert(reserve(id));
+            holderPid.set(LockWaits.backendPid(jdbc));
+            inserted.countDown();
+            awaitQuietly(release);
+            status.setRollbackOnly();
+            return null;
+        }));
+        assertThat(inserted.await(10, TimeUnit.SECONDS)).isTrue();
+        Future<Receipt> second = Parallel.start(() -> tx.execute(status -> receipts.insert(reserve(id))));
+        LockWaits.awaitWaitingFor(jdbc, holderPid.get());
+        release.countDown();
+        first.get(10, TimeUnit.SECONDS);
+        // the first inserter rolled back, so the second one succeeds
+        assertThat(second.get(10, TimeUnit.SECONDS).operationKey()).isEqualTo(id);
+    }
+
+    @Test
+    void repo018_aDuplicateOfACommittedReceiptFailsAfterTheWait() throws Exception {
+        TransactionTemplate tx = ctx.bean(TransactionTemplate.class);
+        org.springframework.jdbc.core.simple.JdbcClient jdbc = ctx.bean(org.springframework.jdbc.core.simple.JdbcClient.class);
+        OperationKey id = new OperationKey(UUID.randomUUID().toString());
+        CountDownLatch inserted = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger holderPid = new AtomicInteger();
+        Future<Receipt> first = Parallel.start(() -> tx.execute(status -> {
+            Receipt stored = receipts.insert(reserve(id));
+            holderPid.set(LockWaits.backendPid(jdbc));
+            inserted.countDown();
+            awaitQuietly(release);
+            return stored;
+        }));
+        assertThat(inserted.await(10, TimeUnit.SECONDS)).isTrue();
+        Future<Receipt> second = Parallel.start(() -> tx.execute(status -> receipts.insert(reserve(id))));
+        LockWaits.awaitWaitingFor(jdbc, holderPid.get());
+        release.countDown();
+        assertThat(first.get(10, TimeUnit.SECONDS).operationKey()).isEqualTo(id);
+        assertThatThrownBy(() -> second.get(10, TimeUnit.SECONDS)).hasCauseInstanceOf(DuplicateKeyException.class);
+    }
+
+    private static void awaitQuietly(CountDownLatch latch) {
+        try {
+            latch.await(30, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    @Test
+    void repo041_aReceiptRoundTripsAndTheResponseIsFilledInOnce() {
+        OperationKey reservedId = new OperationKey(UUID.randomUUID().toString());
+        OperationKey storedId = new OperationKey(UUID.randomUUID().toString());
+        ctx.tx(() -> receipts.insert(reserve(reservedId)));
+        Receipt stored = new Receipt(storedId, ReceiptOperation.TRANSITION, Sha256.of("b".repeat(64)),
+                ActorId.ofStored("claude:1"), "ledger_author", JsonDocument.of(json(new Response("COMMITTED"))),
+                LedgerTestContext.START);
+        ctx.tx(() -> receipts.insert(stored));
+        // OPK-020 change: a receipt is read and finished by the pair (author, operation key), not by the key alone
+        assertThat(receipts.findByAuthorIdAndOperationKey(Seed.ALICE, reservedId).orElseThrow().response()).isNull();
+        assertThat(receipts.findByAuthorIdAndOperationKey(stored.authorId(), storedId)).hasValue(stored);
+
+        ReceiptCompletionRepository completion = ctx.bean(ReceiptCompletionRepository.class);
+        JsonDocument response = JsonDocument.of(json(new Response("COMMITTED")));
+        assertThat(ctx.tx(() -> completion.finish(Seed.ALICE, reservedId, response))).isTrue();
+        assertThat(ctx.tx(() -> completion.finish(Seed.ALICE, reservedId, response))).as("only once").isFalse();
+        assertThat(receipts.findByAuthorIdAndOperationKey(Seed.ALICE, reservedId).orElseThrow().response())
+                .isEqualTo(response);
+        assertThat(ctx.tx(() -> completion.finish(stored.authorId(), storedId, response)))
+                .as("a stored response is never replaced").isFalse();
+    }
+
+    /**
+     * OPK-013 (changed for the key per author): the primary key of request_receipt is the pair (author_id,
+     * operation_key). Two authors may hold one key, the same pair twice is a duplicate key, the lookup by the pair
+     * finds the receipt of the right author only, and finish touches only the receipt of its author.
+     */
+    @Test
+    void opk013_theReceiptKeyIsAuthorAndOperationKey() {
+        OperationKey key = new OperationKey(UUID.randomUUID().toString());
+        ActorId alice = Seed.ALICE;
+        ActorId other = ActorId.ofStored("claude:other-author");
+        Receipt first = ctx.tx(() -> receipts.insert(reserve(key)));
+        Receipt second = ctx.tx(() -> receipts.insert(Receipt.reserve(key, ReceiptOperation.TRANSITION,
+                Sha256.of("e".repeat(64)), other, Channel.AUTHOR, LedgerTestContext.START)));
+        assertThat(first.authorId()).isEqualTo(alice);
+        assertThat(second.authorId()).isEqualTo(other);
+
+        assertThatThrownBy(() -> ctx.tx(() -> receipts.insert(reserve(key)))).as("the same pair twice")
+                .isInstanceOf(DuplicateKeyException.class);
+        assertThatThrownBy(() -> ctx.tx(() -> receipts.insert(Receipt.reserve(key, ReceiptOperation.LINK,
+                Sha256.of("f".repeat(64)), other, Channel.AUTHOR, LedgerTestContext.START))))
+                .as("the same pair twice, other content").isInstanceOf(DuplicateKeyException.class);
+
+        assertThat(receipts.findByAuthorIdAndOperationKey(alice, key).orElseThrow().operation())
+                .isEqualTo(ReceiptOperation.SAVE);
+        assertThat(receipts.findByAuthorIdAndOperationKey(other, key).orElseThrow().operation())
+                .isEqualTo(ReceiptOperation.TRANSITION);
+        assertThat(receipts.findByAuthorIdAndOperationKey(ActorId.ofStored("claude:nobody"), key)).isEmpty();
+        assertThat(receipts.findByAuthorIdAndOperationKey(alice, key.derive(0))).isEmpty();
+
+        ReceiptCompletionRepository completion = ctx.bean(ReceiptCompletionRepository.class);
+        JsonDocument response = JsonDocument.of(json(new Response("COMMITTED")));
+        assertThat(ctx.tx(() -> completion.finish(other, key, response))).isTrue();
+        assertThat(receipts.findByAuthorIdAndOperationKey(alice, key).orElseThrow().response())
+                .as("the receipt of the other author is untouched").isNull();
+        assertThat(receipts.findByAuthorIdAndOperationKey(other, key).orElseThrow().response()).isEqualTo(response);
+        assertThat(ctx.tx(() -> completion.finish(ActorId.ofStored("claude:nobody"), key, response))).isFalse();
+    }
+
+    /** OPK-013: an operation key of the full 128 characters round-trips through the receipt and the history row. */
+    @Test
+    void opk013_anOperationKeyRoundTripsThroughReceiptAndHistory() {
+        OperationKey key = new OperationKey("k한" + "x".repeat(125) + "-");
+        assertThat(key.value()).hasSize(128);
+        Receipt stored = ctx.tx(() -> receipts.insert(reserve(key)));
+        assertThat(stored.operationKey()).isEqualTo(key);
+        assertThat(receipts.findByAuthorIdAndOperationKey(Seed.ALICE, key).orElseThrow().operationKey()).isEqualTo(key);
+        assertThat(receipts.findByAuthorIdAndOperationKey(Seed.ALICE,
+                new OperationKey("not-" + key.value().substring(4)))).isEmpty();
+
+        Seed seed = new Seed(ctx);
+        Issue issue = seed.issue(seed.project(), 1, "key host", LedgerTestContext.START);
+        long first = ctx.tx(() -> ctx.bean(IdAllocator.class).next(Counter.HISTORY));
+        long second = ctx.tx(() -> ctx.bean(IdAllocator.class).next(Counter.HISTORY));
+        HistoryRepository history = ctx.bean(HistoryRepository.class);
+        ctx.tx(() -> history.insert(withKey(first, issue, key)));
+        ctx.tx(() -> history.insert(withKey(second, issue, key.derive(0))));
+        assertThat(history.findById(first).orElseThrow().operationKey()).isEqualTo(key);
+        assertThat(history.findByOperationKeyOrderById(key)).extracting(HistoryEntry::id).containsExactly(first);
+        assertThat(history.findByOperationKeyOrderById(key.derive(0))).extracting(HistoryEntry::id)
+                .containsExactly(second);
+        assertThat(history.findByOperationKeyOrderById(key.derive(1))).isEmpty();
+    }
+
+    private HistoryEntry withKey(long id, Issue issue, OperationKey key) {
+        return new HistoryEntry(id, LedgerTestContext.START, Seed.ALICE, Channel.AUTHOR.login(),
+                ActorAssurance.DECLARED, HistoryEntity.ISSUE, issue.id().value(), HistoryOp.EDIT, null, null,
+                JsonDocument.EMPTY_OBJECT, null, "a reason of enough length", null, null, null, key, null, null);
+    }
+
+    private record Response(String status) {
+    }
+
+    private static String json(Object value) {
+        return JSON.writeValueAsString(value);
+    }
+
+    /** A document body: text that is hard on the storage layer. */
+    private record Body(String name, String text, List<String> pair) {
+        @Override
+        public String toString() {
+            return name;
+        }
+    }
+
+    static Stream<Body> bodies() {
+        return Stream.of(
+                new Body("korean and emoji", "한국어 텍스트 😀 and \"quotes\"", List.of("a", "b")),
+                new Body("newline and backslash", "line 1\nline 2 c:\\dir\\file", List.of("x", "y")),
+                new Body("null element", "plain", Arrays.asList(null, "x")),
+                new Body("instant with Z", "2026-11-05T10:00:00Z", Arrays.asList("2026-11-05T10:00:00Z", null)),
+                new Body("200 KB", "x".repeat(200_000), List.of("big")));
+    }
+
+    private HistoryEntry entry(long id, Issue issue, JsonDocument changes, JsonDocument before) {
+        return new HistoryEntry(id, LedgerTestContext.START, Seed.ALICE, Channel.AUTHOR.login(),
+                ActorAssurance.DECLARED, HistoryEntity.ISSUE, issue.id().value(), HistoryOp.EDIT, null, null,
+                changes, before, "a reason of enough length", null, null, null,
+                new OperationKey(UUID.randomUUID().toString()), null, null);
+    }
+
+    @ParameterizedTest
+    @MethodSource("bodies")
+    void repo019_jsonTextRoundTripsExactly(Body body) {
+        Seed seed = new Seed(ctx);
+        Issue issue = seed.issue(seed.project(), 1, "json host", LedgerTestContext.START);
+        long id = ctx.tx(() -> ctx.bean(IdAllocator.class).next(Counter.HISTORY));
+        JsonDocument document = JsonDocument.of(json(body));
+        ctx.tx(() -> ctx.bean(HistoryRepository.class).insert(entry(id, issue, document, document)));
+        HistoryEntry read = ctx.bean(HistoryRepository.class).findById(id).orElseThrow();
+        assertThat(read.changes()).isEqualTo(document);
+        assertThat(read.beforeData()).isEqualTo(document);
+        assertThat(JSON.readValue(read.beforeData().text(), Body.class)).isEqualTo(body);
+    }
+
+    @Test
+    void repo019_aMissingBeforeDataStaysSqlNull() {
+        Seed seed = new Seed(ctx);
+        Issue issue = seed.issue(seed.project(), 1, "null host", LedgerTestContext.START);
+        long id = ctx.tx(() -> ctx.bean(IdAllocator.class).next(Counter.HISTORY));
+        ctx.tx(() -> ctx.bean(HistoryRepository.class).insert(entry(id, issue, JsonDocument.EMPTY_OBJECT, null)));
+        assertThat(ctx.bean(HistoryRepository.class).findById(id).orElseThrow().beforeData()).isNull();
+        assertThat(JdbcClient.create(ctx.pool()).sql("SELECT COUNT(*) FROM history WHERE id = :id AND before_data "
+                + "IS NULL").param("id", id).query(Integer.class).single()).isEqualTo(1);
+    }
+}

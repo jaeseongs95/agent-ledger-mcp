@@ -1,0 +1,56 @@
+spring:
+  application:
+    name: ledger-admin-web
+  threads:
+    virtual:
+      enabled: true
+  messages:
+    # the bundles of the domain (error codes, validation reasons) and of this application (the pages)
+    basename: messages/ledger-errors,messages/ledger-reasons,messages/admin
+    fallback-to-system-locale: false
+    encoding: UTF-8
+  # A deployment reads the registration of the JDBC driver and the secrets through spring.config.import, set by the
+  # service unit (for example optional:file:/etc/pg-ledger-mcp/jdbc-driver.yaml, optional:configtree:/etc/pg-ledger-mcp/secrets/common/ and
+  # optional:configtree:/etc/pg-ledger-mcp/secrets/admin/: the admin web imports the secrets of its own use and of both services only).
+server:
+  # The admin web listens on 127.0.0.1 only: LoopbackOnly sets the address in code, so there is no setting for it. Reaching it from
+  # another machine is a reverse proxy of the operator on this host.
+  port: 8865
+  # The reverse proxy on this host tells the original scheme and client address (X-Forwarded-Proto, X-Forwarded-For).
+  # Tomcat believes these headers only from its internal proxies, and Boot's default list of them trusts every private
+  # network (10/8, 192.168/16, 172.16/12, 100.64/10, 169.254/16, 127/8): a client that reaches the admin from one of them
+  # could choose the client address the application sees (and writes to its audit). Only the loopback address of the proxy on this host
+  # (127.0.0.1, ::1) is trusted.
+  forward-headers-strategy: native
+  tomcat:
+    remoteip:
+      internal-proxies: '127\.0\.0\.1|0:0:0:0:0:0:0:1|::1'
+      remote-ip-header: X-Forwarded-For
+      protocol-header: X-Forwarded-Proto
+      # The host and the port a request is for are never taken from a forwarded header: the Host allow list of the
+      # firewall (DNS rebinding guard) must see the Host header the client sent. An empty name switches the reading off
+      # (Spring Boot's default names are X-Forwarded-Host and X-Forwarded-Port); a name that no one sends would still be
+      # believed from the one who does send it: a script of a rebound page from the machine of the proxy.
+      host-header: ''
+      port-header: ''
+  servlet:
+    session:
+      timeout: 12h
+      cookie:
+        name: LEDGER_ADMIN_SESSION
+        http-only: true
+        # Secure by default: the owner reaches the admin over HTTPS through the proxy. A local test over plain HTTP sets
+        # server.servlet.session.cookie.secure=false explicitly.
+        secure: true
+        same-site: strict
+management:
+  endpoints:
+    web:
+      base-path: /
+      exposure:
+        include: health
+      path-mapping:
+        health: healthz
+  endpoint:
+    health:
+      show-details: never

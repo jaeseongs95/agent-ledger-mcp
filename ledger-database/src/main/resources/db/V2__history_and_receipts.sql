@@ -1,0 +1,56 @@
+-- V2: the append-only history and the request receipts. Nothing updates or deletes a history row: the
+-- application only inserts, and the operator's GRANT gives the application account no UPDATE or DELETE on it.
+
+CREATE TABLE history (
+  id BIGINT NOT NULL,
+  occurred_at TIMESTAMP NOT NULL,
+  author_id VARCHAR(200) NOT NULL,
+  login VARCHAR(63) NOT NULL,
+  actor_assurance VARCHAR(20) NOT NULL,
+  entity VARCHAR(20) NOT NULL,
+  entity_id VARCHAR(300) NOT NULL,
+  op VARCHAR(20) NOT NULL,
+  from_state VARCHAR(20),
+  to_state VARCHAR(20),
+  changes ${long_text} NOT NULL,
+  before_data ${long_text},
+  reason ${long_text} NOT NULL,
+  evidence_uri VARCHAR(2000),
+  evidence_sha256 VARCHAR(64),
+  corrects_id BIGINT,
+  operation_key VARCHAR(128) NOT NULL,
+  source_ref VARCHAR(200),
+  CONSTRAINT pk_history PRIMARY KEY (id),
+  CONSTRAINT fk_history_corrects FOREIGN KEY (corrects_id) REFERENCES history (id),
+  CONSTRAINT ck_history_assurance CHECK (actor_assurance IN ('DECLARED', 'IMPORTED_LOGIN', 'IMPORTED_SHARED',
+    'IMPORTED_UNKNOWN')),
+  CONSTRAINT ck_history_entity CHECK (entity IN ('ISSUE', 'SPEC', 'TASK', 'CRITERION', 'DELIVERABLE',
+    'ISSUE_TASK', 'ISSUE_SPEC', 'SPEC_TASK', 'ISSUE_RELATION', 'CRITERION_LINK', 'ISSUE_CASE')),
+  CONSTRAINT ck_history_op CHECK (op IN ('CREATE', 'EDIT', 'TRANSITION', 'LINK', 'UNLINK', 'CORRECT', 'IMPORT',
+    'IMPORTED_NOTE', 'IMPORTED_CHANGE')),
+  CONSTRAINT ck_history_transition CHECK ((op = 'TRANSITION' AND to_state IS NOT NULL)
+    OR (op <> 'TRANSITION' AND to_state IS NULL)),
+  CONSTRAINT ck_history_correct CHECK ((op = 'CORRECT' AND corrects_id IS NOT NULL)
+    OR (op <> 'CORRECT' AND corrects_id IS NULL)),
+  CONSTRAINT ck_history_imported_op CHECK (op NOT IN ('IMPORT', 'IMPORTED_NOTE', 'IMPORTED_CHANGE')
+    OR source_ref IS NOT NULL),
+  CONSTRAINT ck_history_declared CHECK (source_ref IS NOT NULL OR actor_assurance = 'DECLARED'),
+  CONSTRAINT ck_history_verify CHECK (source_ref IS NOT NULL OR op <> 'TRANSITION'
+    OR to_state NOT IN ('VERIFIED', 'MET', 'NOT_MET') OR login = 'ledger_reviewer')
+);
+CREATE INDEX ix_history_entity ON history (entity, entity_id, id);
+CREATE INDEX ix_history_author ON history (author_id, occurred_at);
+CREATE INDEX ix_history_operation_key ON history (operation_key);
+
+CREATE TABLE request_receipt (
+  operation_key VARCHAR(128) NOT NULL,
+  operation VARCHAR(20) NOT NULL,
+  payload_sha256 VARCHAR(64) NOT NULL,
+  author_id VARCHAR(200) NOT NULL,
+  login VARCHAR(63) NOT NULL,
+  response ${long_text},
+  created_at TIMESTAMP NOT NULL,
+  CONSTRAINT pk_request_receipt PRIMARY KEY (author_id, operation_key),
+  CONSTRAINT ck_receipt_operation CHECK (operation IN ('SAVE', 'TRANSITION', 'RECORD_DELIVERABLE', 'RECORD_CASE',
+    'LINK', 'CORRECT', 'BATCH'))
+);

@@ -1,0 +1,227 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package org.pgledger.cli.support;
+
+import java.nio.file.Path;
+import java.nio.file.attribute.UserPrincipal;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+
+import javax.sql.DataSource;
+
+import org.junit.jupiter.api.extension.ExtensionContext;
+import org.junit.jupiter.api.extension.ParameterContext;
+import org.junit.jupiter.api.extension.ParameterResolver;
+import org.pgledger.cli.CliException;
+import org.pgledger.cli.CliOutput;
+import org.pgledger.cli.ErrorKey;
+import org.pgledger.cli.LedgerCliApplication;
+import org.pgledger.cli.deploy.HostAccounts;
+import org.pgledger.cli.key.SessionKeyRegistry;
+import org.pgledger.cli.secret.ProcessUser;
+import org.pgledger.cli.secret.SecretInput;
+import org.pgledger.cli.secret.StandardInput;
+import org.pgledger.database.schema.ApplicationAccountAccess;
+import org.pgledger.database.schema.SchemaProperties;
+import org.pgledger.testing.database.TestDatabaseScanFilter;
+import org.pgledger.testing.database.TestDriverRegistration;
+import org.pgledger.testing.database.TestSchemaServices;
+import org.springframework.boot.ExitCodeEvent;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.builder.SpringApplicationBuilder;
+import org.springframework.context.ApplicationListener;
+import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.support.GenericApplicationContext;
+import org.springframework.jdbc.datasource.DelegatingDataSource;
+
+/**
+ * JUnit extension that hands a test a {@link Cli} to start the real application the way {@code main} does. Only the input and
+ * output boundaries can be swapped. The exit code is the one Boot publishes as an {@link ExitCodeEvent} after
+ * {@code CliExitCodeMapper} mapped the failure, or the code of {@link SpringApplication#exit} when the run succeeded; the failure
+ * report itself is what Boot logs ({@code CliFailureAnalyzer}), which a test reads with {@code OutputCaptureExtension}.
+ */
+public final class CliExtension implements ParameterResolver {
+
+    /** @param failure what {@code SpringApplication.run} threw, or null; @param context closed by the time the run returns */
+    public record Outcome(int exitCode, RuntimeException failure, ConfigurableApplicationContext context) {
+
+        /** The refusal in the failure chain, if the run was refused. */
+        public Optional<CliException> refusal() {
+            for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+                if (cause instanceof CliException refusal) {
+                    return Optional.of(refusal);
+                }
+            }
+            return Optional.empty();
+        }
+
+        /** The error code of the refusal in the failure chain, if the run was refused. */
+        public Optional<ErrorKey> code() {
+            return refusal().map(CliException::code);
+        }
+    }
+
+    /** The name the test application account is shown under in the refusal (the tests read it back from the message arguments). */
+    public static final String APPLICATION_ACCOUNT_NAME = "test_app_account";
+
+    public static final class Cli {
+
+        private final DataSource database;
+        private final String processUser;
+        private final List<String> extraArguments;
+        private final byte[] standardInput;
+        private final HostAccounts hostAccounts;
+        private final DataSource applicationAccount;
+
+        Cli() {
+            this(null, null, List.of(), null, null, null);
+        }
+
+        private Cli(DataSource database, String processUser, List<String> extraArguments, byte[] standardInput,
+                HostAccounts hostAccounts, DataSource applicationAccount) {
+            this.hostAccounts = hostAccounts;
+            this.applicationAccount = applicationAccount;
+            this.database = database;
+            this.processUser = processUser;
+            this.extraArguments = extraArguments;
+            this.standardInput = standardInput;
+        }
+
+        /** A Cli whose standard input holds these bytes (what a pipe would give {@code --stdin}); without it the input is empty. */
+        public Cli withStandardInput(String text) {
+            return new Cli(database, processUser, extraArguments, text.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    hostAccounts, applicationAccount);
+        }
+
+        /** A Cli whose host commands ({@code prepare-host}) find the accounts of the host in these (a test plays them). */
+        public Cli withHostAccounts(HostAccounts accounts) {
+            return new Cli(database, processUser, extraArguments, standardInput, accounts, applicationAccount);
+        }
+
+        /**
+         * A Cli whose application has the PostgreSQL driver registered (so the condition of the product holds by its own path)
+         * and leaves the product's DataSource configuration out of its scan (the way the admin web tests do): the ledger beans
+         * (the real services, repositories and transaction manager) are created over this database, which the test has
+         * built with the real migrator, instead of over the DataSource of the registered driver. The DataSource is handed
+         * in without a close method, so it is still open when the run has closed the context and the test reads the rows.
+         */
+        public Cli withDatabase(DataSource dataSource) {
+            return new Cli(dataSource, processUser, extraArguments, standardInput, hostAccounts, applicationAccount);
+        }
+
+        /**
+         * A Cli whose {@code setup} asks this DataSource, the connections of the application account of the test database
+         * (the login of {@code ledger.test.app-user}, every connection using the schema of the test), whether that account
+         * can use the schema. In a deployment the check opens its own connection with the registered driver (the owner
+         * account of the run is another account); the test brings the application account as it does the database.
+         */
+        public Cli withApplicationAccount(DataSource application) {
+            return new Cli(database, processUser, extraArguments, standardInput, hostAccounts, application);
+        }
+
+        /** A Cli that runs as this process user (the account name that the audit trail records as {@code cli:<name>}). */
+        public Cli asProcessUser(String name) {
+            return new Cli(database, name, extraArguments, standardInput, hostAccounts, applicationAccount);
+        }
+
+        /** A Cli that also gets these command line arguments (for example {@code --spring.config.import=...}). */
+        public Cli withArguments(String... arguments) {
+            List<String> all = new ArrayList<>(extraArguments);
+            all.addAll(List.of(arguments));
+            return new Cli(database, processUser, List.copyOf(all), standardInput, hostAccounts, applicationAccount);
+        }
+
+        /** @param input null keeps the product Console input; @param output null keeps the product stream output */
+        public Outcome run(Path secretsDirectory, SecretInput input, CliOutput output, String... args) {
+            return run(secretsDirectory, input, output, null, args);
+        }
+
+        /** As above, with the door to the ledger that the command {@code key-register} uses (null: the tool has none). */
+        public Outcome run(Path secretsDirectory, SecretInput input, CliOutput output, SessionKeyRegistry registry,
+                String... args) {
+            List<String> all = new ArrayList<>(List.of(args));
+            all.add("--ledger.secrets.directory=" + secretsDirectory);
+            all.addAll(extraArguments);
+            AtomicReference<ConfigurableApplicationContext> started = new AtomicReference<>();
+            ExitCodes exitCodes = new ExitCodes();
+            SpringApplicationBuilder builder = new SpringApplicationBuilder(LedgerCliApplication.class)
+                    .listeners(exitCodes)
+                    .initializers(ctx -> {
+                        started.set(ctx);
+                        GenericApplicationContext generic = (GenericApplicationContext) ctx;
+                        if (database != null) {
+                            generic.getBeanFactory().registerSingleton("testDatabaseScanFilter", new TestDatabaseScanFilter());
+                        }
+                        if (database != null) {
+                            // the ledger data source is the primary one, as in production
+                            generic.registerBean("testDataSource", DataSource.class, () -> new DelegatingDataSource(database),
+                                    bd -> bd.setPrimary(true));
+                        }
+                        if (applicationAccount != null) {
+                            generic.registerBean("testApplicationAccountAccess", ApplicationAccountAccess.class,
+                                    () -> new ApplicationAccountAccess(APPLICATION_ACCOUNT_NAME,
+                                            TestSchemaServices.verifier(applicationAccount,
+                                                    generic.getBean(SchemaProperties.class))));
+                        }
+                        if (processUser != null) {
+                            UserPrincipal principal = () -> processUser;
+                            generic.registerBean("testProcessUser", ProcessUser.class, () -> fileSystem -> principal,
+                                    bd -> bd.setPrimary(true));
+                        }
+                        if (standardInput != null) {
+                            generic.registerBean("testStandardInput", StandardInput.class,
+                                    () -> new StandardInput(new java.io.ByteArrayInputStream(standardInput)), bd -> bd.setPrimary(true));
+                        }
+                        if (hostAccounts != null) {
+                            generic.registerBean("testHostAccounts", HostAccounts.class, () -> hostAccounts,
+                                    bd -> bd.setPrimary(true));
+                        }
+                        if (input != null) {
+                            generic.registerBean("testSecretInput", SecretInput.class, () -> input, bd -> bd.setPrimary(true));
+                        }
+                        if (registry != null) {
+                            generic.registerBean("testSessionKeyRegistry", SessionKeyRegistry.class, () -> registry);
+                        }
+                        if (output != null) {
+                            generic.registerBean("testCliOutput", CliOutput.class, () -> output, bd -> bd.setPrimary(true));
+                        }
+                    });
+            if (database != null) {
+                // the test brings its own database: the product's configuration of the DataSource is left out of the scan, and
+                // the registration of the PostgreSQL driver lets the product's own condition hold (TestDatabaseScanFilter)
+                builder.properties(TestDriverRegistration.settings());
+            }
+            try {
+                ConfigurableApplicationContext context = builder.run(all.toArray(String[]::new));
+                return new Outcome(SpringApplication.exit(context), null, context);
+            } catch (RuntimeException failure) {
+                // The test entry plays the CLI boundary (what main() does): whatever the start throws is handed to the
+                // test in the Outcome, which asserts on it. Nothing is swallowed.
+                return new Outcome(exitCodes.code.get(), failure, started.get());
+            }
+        }
+    }
+
+    private static final class ExitCodes implements ApplicationListener<ExitCodeEvent> {
+
+        private final AtomicInteger code = new AtomicInteger();
+
+        @Override
+        public void onApplicationEvent(ExitCodeEvent event) {
+            code.set(event.getExitCode());
+        }
+    }
+
+    @Override
+    public boolean supportsParameter(ParameterContext parameter, ExtensionContext extension) {
+        return parameter.getParameter().getType() == Cli.class;
+    }
+
+    @Override
+    public Object resolveParameter(ParameterContext parameter, ExtensionContext extension) {
+        return new Cli();
+    }
+}
