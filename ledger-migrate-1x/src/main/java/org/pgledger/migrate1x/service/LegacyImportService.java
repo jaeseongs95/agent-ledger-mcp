@@ -258,12 +258,34 @@ public class LegacyImportService {
             // the ids of a task or a condition that were seen, by their upper-case key: a second id with the same key differs
             // from the first only in case, and the new schema refuses that (its key column is UNIQUE, REH3-IMP-02)
             Map<String, String> idsByKey = new HashMap<>();
+            // the deliverable unique keys (target_entity, target_id, kind, deliverable_ref, location_key) that were seen:
+            // report duplicates cleanly in validation instead of failing raw on INSERT
+            Map<List<String>, String> deliverablesByKey = new HashMap<>();
             source.scan(table, row -> {
                 counters.collect(table, row);
                 LegacyRowMapper.Mapped mapped = mapper.map(table, row, rules.get(table), counters);
                 violations.addAll(mapped.violations());
                 if (table == LegacyTable.DEFECT) {
                     defects.add(mapped.row());
+                }
+                if (table == LegacyTable.DEFECT_FIX) {
+                    LegacyRow targetRow = mapped.row();
+                    String targetEntity = targetRow.text("target_entity");
+                    String targetId = targetRow.text("target_id");
+                    String kind = targetRow.text("kind");
+                    String ref = targetRow.text("deliverable_ref");
+                    String locationKey = targetRow.text("location_key");
+                    Object idValue = targetRow.get("id");
+                    if (targetEntity != null && targetId != null && kind != null && ref != null && locationKey != null
+                            && idValue != null) {
+                        String idText = String.valueOf(idValue);
+                        String first = deliverablesByKey.putIfAbsent(
+                                List.of(targetEntity, targetId, kind, ref, locationKey), idText);
+                        if (first != null) {
+                            violations.add(new LegacyViolation(table.targetName(), idText, "deliverable_ref",
+                                    ValidationReason.DUPLICATE_DELIVERABLE_KEY, List.of(first)));
+                        }
+                    }
                 }
                 if (table == LegacyTable.TASK || table == LegacyTable.RELEASE_CONDITION) {
                     String id = mapped.row().text("id");

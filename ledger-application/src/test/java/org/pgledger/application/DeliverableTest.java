@@ -183,8 +183,8 @@ class DeliverableTest {
                 Scenario.EVIDENCE));
         assertThat(s.issue(i.id()).status()).isEqualTo(IssueStatus.VERIFIED);
         CheckResult stored = s.bean(DeliverableRepository.class)
-                .findByTargetEntityAndTargetIdAndKindAndDeliverableRef(DeliverableTarget.ISSUE, i.id(),
-                        CodeValue.of("code_change"), Scenario.ref('a'))
+                .findByTargetEntityAndTargetIdAndKindAndDeliverableRefAndLocationKey(DeliverableTarget.ISSUE, i.id(),
+                        CodeValue.of("code_change"), Scenario.ref('a'), "repo/e2e")
                 .orElseThrow().checkResult();
         assertThat(stored == null ? null : stored.token()).isEqualTo(res);
     }
@@ -217,5 +217,26 @@ class DeliverableTest {
         RecordDeliverableResult onMerged = record(s, Scenario.AUTHOR,
                 cmd("issue", source.id(), Scenario.ref('m'), null, null, null, null));
         assertThat(onMerged.targetState()).isEqualTo("MERGED");
+    }
+
+    @Test
+    @DisplayName("DLV-09: same deliverable_ref at distinct locations records separate deliverables, while same location amends")
+    void dlv09_distinctLocationsAreDistinctDeliverables(Scenario s) {
+        SaveResult i = s.newIssue("multi-repo");
+        String sha = Scenario.ref('d');
+        RecordDeliverableResult first = record(s, Scenario.AUTHOR, new RecordDeliverableCommand(Scenario.uuid(),
+                "issue", i.id(), "code_change", sha, Scenario.REASON, "org/repo-old", "First repo", null, null, null,
+                true));
+        RecordDeliverableResult second = record(s, Scenario.AUTHOR, new RecordDeliverableCommand(Scenario.uuid(),
+                "issue", i.id(), "code_change", sha, Scenario.REASON, "org/repo-new", "Renamed repo", null, null, null,
+                true));
+        assertThat(second.deliverableId()).isNotEqualTo(first.deliverableId());
+
+        RecordDeliverableResult amended = record(s, Scenario.AUTHOR, new RecordDeliverableCommand(Scenario.uuid(),
+                "issue", i.id(), "code_change", sha, Scenario.REASON, "org/repo-new", "Renamed repo", "ci/1", "passed",
+                null, true));
+        assertThat(amended.deliverableId()).isEqualTo(second.deliverableId());
+        assertThat(s.bean(DeliverableRepository.class).findByTargetEntityAndTargetIdOrderById(DeliverableTarget.ISSUE,
+                i.id())).hasSize(2);
     }
 }

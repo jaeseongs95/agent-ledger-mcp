@@ -63,8 +63,8 @@ class TimeZoneServiceTest {
                                 "2026-11-05T19:00:00+09:00", null));
                 assertThat(s.issue(i.id()).createdAt()).isEqualTo(NOON);
                 assertThat(s.bean(DeliverableRepository.class)
-                        .findByTargetEntityAndTargetIdAndKindAndDeliverableRef(DeliverableTarget.ISSUE, i.id(),
-                                CodeValue.of("code_change"), Scenario.ref('a'))
+                        .findByTargetEntityAndTargetIdAndKindAndDeliverableRefAndLocationKey(DeliverableTarget.ISSUE,
+                                i.id(), CodeValue.of("code_change"), Scenario.ref('a'), "repo/e2e")
                         .orElseThrow().checkedAt()).isEqualTo(NOON);
                 LocalDateTime wall = seoul.jdbc().sql("SELECT created_at FROM issue WHERE id = ?").param(i.id())
                         .query((rs, n) -> rs.getObject(1, LocalDateTime.class)).single();
@@ -131,8 +131,9 @@ class TimeZoneServiceTest {
                                     Scenario.ref('a'), Scenario.REASON, "repo/e2e", "Deliverable summary", "chk",
                                     "passed", text, null));
                     return s.bean(DeliverableRepository.class)
-                            .findByTargetEntityAndTargetIdAndKindAndDeliverableRef(DeliverableTarget.ISSUE, i.id(),
-                                    CodeValue.of("code_change"), Scenario.ref('a'))
+                            .findByTargetEntityAndTargetIdAndKindAndDeliverableRefAndLocationKey(
+                                    DeliverableTarget.ISSUE, i.id(), CodeValue.of("code_change"), Scenario.ref('a'),
+                                    "repo/e2e")
                             .orElseThrow().checkedAt();
                 }),
                 new TimedField("grant expires_at", (s, text) -> {

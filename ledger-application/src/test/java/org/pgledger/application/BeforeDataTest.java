@@ -160,8 +160,8 @@ class BeforeDataTest {
                 Scenario.uuid(), "issue", i.id(), "code_change", Scenario.ref('a'), Scenario.REASON, "repo/e2e",
                 "Deliverable summary", "ci-1", "failed", null, null));
         Snapshot.DeliverableRow old = Snapshot.DeliverableRow.of(s.bean(DeliverableRepository.class)
-                .findByTargetEntityAndTargetIdAndKindAndDeliverableRef(DeliverableTarget.ISSUE, i.id(),
-                        CodeValue.of("code_change"), Scenario.ref('a')).orElseThrow());
+                .findByTargetEntityAndTargetIdAndKindAndDeliverableRefAndLocationKey(DeliverableTarget.ISSUE, i.id(),
+                        CodeValue.of("code_change"), Scenario.ref('a'), "repo/e2e").orElseThrow());
         RecordDeliverableResult update = s.bean(RecordDeliverableService.class).recordDeliverable(Scenario.AUTHOR,
                 new RecordDeliverableCommand(Scenario.uuid(), "issue", i.id(), "code_change", Scenario.ref('a'),
                         Scenario.REASON, "repo/e2e", "Deliverable summary", "ci-1", "passed", null, null));

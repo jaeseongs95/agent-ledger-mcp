@@ -78,8 +78,9 @@ public enum LegacyTable {
                     text("ci_conclusion"), instant("ci_completed_at"), text("recorded_by"), instant("recorded_at"),
                     flag("imported")),
             List.of(number("id"), text("target_entity"), text("target_id"), text("kind"), text("deliverable_ref"),
-                    text("location"), text("summary"), text("check_ref"), text("check_result"), instant("checked_at"),
-                    text("recorded_by"), instant("recorded_at"), text("origin")), false, After.EDITED, List.of()),
+                    text("location"), text("location_key"), text("summary"), text("check_ref"), text("check_result"),
+                    instant("checked_at"), text("recorded_by"), instant("recorded_at"), text("origin")), false,
+            After.EDITED, List.of()),
 
     DEFECT_CASE("defect_case", "issue_case", List.of("id"), List.of("id"),
             List.of(number("id"), text("defect_id"), text("observation"), text("evidence"), text("user_quote"),
