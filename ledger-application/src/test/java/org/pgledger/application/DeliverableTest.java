@@ -184,7 +184,8 @@ class DeliverableTest {
         assertThat(s.issue(i.id()).status()).isEqualTo(IssueStatus.VERIFIED);
         CheckResult stored = s.bean(DeliverableRepository.class)
                 .findByTargetEntityAndTargetIdAndKindAndDeliverableRefAndLocationKey(DeliverableTarget.ISSUE, i.id(),
-                        CodeValue.of("code_change"), Scenario.ref('a'), "repo/e2e")
+                        CodeValue.of("code_change"), Scenario.ref('a'),
+                        org.pgledger.domain.model.Deliverable.locationKeyOf("repo/e2e"))
                 .orElseThrow().checkResult();
         assertThat(stored == null ? null : stored.token()).isEqualTo(res);
     }

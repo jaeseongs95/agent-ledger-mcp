@@ -64,7 +64,8 @@ class TimeZoneServiceTest {
                 assertThat(s.issue(i.id()).createdAt()).isEqualTo(NOON);
                 assertThat(s.bean(DeliverableRepository.class)
                         .findByTargetEntityAndTargetIdAndKindAndDeliverableRefAndLocationKey(DeliverableTarget.ISSUE,
-                                i.id(), CodeValue.of("code_change"), Scenario.ref('a'), "repo/e2e")
+                                i.id(), CodeValue.of("code_change"), Scenario.ref('a'),
+                                org.pgledger.domain.model.Deliverable.locationKeyOf("repo/e2e"))
                         .orElseThrow().checkedAt()).isEqualTo(NOON);
                 LocalDateTime wall = seoul.jdbc().sql("SELECT created_at FROM issue WHERE id = ?").param(i.id())
                         .query((rs, n) -> rs.getObject(1, LocalDateTime.class)).single();
@@ -133,7 +134,7 @@ class TimeZoneServiceTest {
                     return s.bean(DeliverableRepository.class)
                             .findByTargetEntityAndTargetIdAndKindAndDeliverableRefAndLocationKey(
                                     DeliverableTarget.ISSUE, i.id(), CodeValue.of("code_change"), Scenario.ref('a'),
-                                    "repo/e2e")
+                                    org.pgledger.domain.model.Deliverable.locationKeyOf("repo/e2e"))
                             .orElseThrow().checkedAt();
                 }),
                 new TimedField("grant expires_at", (s, text) -> {

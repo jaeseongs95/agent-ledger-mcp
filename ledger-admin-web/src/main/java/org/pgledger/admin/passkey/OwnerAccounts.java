@@ -6,6 +6,7 @@ import java.security.SecureRandom;
 import java.util.HexFormat;
 import java.util.Objects;
 import org.pgledger.admin.security.AdminTokenProvider;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -48,5 +49,23 @@ public final class OwnerAccounts implements UserDetailsService {
             return User.withUsername(ENROLL).password(password).authorities(ENROLL_AUTHORITY).build();
         }
         throw new UsernameNotFoundException("no such account");
+    }
+
+    /** True when the session holds only the one-time enrolment authority and not the owner authority. */
+    public static boolean isEnrolmentOnly(Authentication auth) {
+        if (auth == null) {
+            return false;
+        }
+        boolean enroll = false;
+        for (var granted : auth.getAuthorities()) {
+            String authority = granted.getAuthority();
+            if (Objects.equals(AdminTokenProvider.OWNER_AUTHORITY, authority)) {
+                return false;
+            }
+            if (Objects.equals(ENROLL_AUTHORITY, authority)) {
+                enroll = true;
+            }
+        }
+        return enroll;
     }
 }
