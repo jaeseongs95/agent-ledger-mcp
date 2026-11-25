@@ -12,7 +12,6 @@ import java.nio.file.attribute.GroupPrincipal;
 import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFileAttributes;
 import java.nio.file.attribute.PosixFilePermission;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.nio.file.attribute.UserPrincipal;
 import java.nio.file.attribute.UserPrincipalNotFoundException;
 import java.util.List;
@@ -21,6 +20,7 @@ import java.util.Optional;
 import java.util.Set;
 import org.pgledger.cli.ErrorCode;
 import org.pgledger.cli.FailureException;
+import org.pgledger.files.FileModes;
 import org.springframework.stereotype.Component;
 
 /**
@@ -41,11 +41,14 @@ final class HostFiles {
     void directory(Path path, String mode, UserPrincipal owner, GroupPrincipal group) throws IOException {
         Files.createDirectories(path);
         PosixFileAttributeView view = Files.getFileAttributeView(path, PosixFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
+        if (view.readAttributes().isSymbolicLink()) {
+            throw new FileSystemException(path.toString(), null, "symbolic link");
+        }
         if (owner != null) {
             view.setOwner(owner);
             view.setGroup(group);
         }
-        view.setPermissions(PosixFilePermissions.fromString(mode));
+        FileModes.apply(path, mode);
     }
 
     /** The owner, the group and the mode of a directory as they were before a run changed them (POSIX file systems). */
@@ -69,13 +72,16 @@ final class HostFiles {
         PosixFileAttributeView view = Files.getFileAttributeView(saved.path(), PosixFileAttributeView.class,
                 LinkOption.NOFOLLOW_LINKS);
         PosixFileAttributes now = view.readAttributes();
+        if (now.isSymbolicLink()) {
+            throw new FileSystemException(saved.path().toString(), null, "symbolic link");
+        }
         if (!Objects.equals(now.owner(), saved.owner())) {
             view.setOwner(saved.owner());
         }
         if (!Objects.equals(now.group(), saved.group())) {
             view.setGroup(saved.group());
         }
-        view.setPermissions(saved.mode());
+        FileModes.apply(saved.path(), saved.mode());
     }
 
     /** The three jars of the product to {@code lib} and the JDBC driver jar to {@code drivers}. */

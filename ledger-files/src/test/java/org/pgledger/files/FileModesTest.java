@@ -3,6 +3,7 @@
 package org.pgledger.files;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 import java.nio.file.FileSystem;
@@ -12,7 +13,9 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileAttribute;
+import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.Set;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -75,29 +78,25 @@ class FileModesTest {
     }
 
     @Test
-    @DisplayName("ARC-BND-06 apply, makeReadOnly and makeWritable change a symbolic link itself or fail, and never the file it points to")
+    @DisplayName("ARC-BND-06 apply, makeReadOnly and makeWritable refuse a symbolic link (including a dangling one) and never change the file it points to")
     void aLinkIsNeverFollowed(@TempDir Path temp) throws IOException {
         Assumptions.assumeTrue(FileKind.of(HOST) == FileKind.POSIX, "modes exist on a POSIX file system only");
         Path target = Files.createFile(temp.resolve("target"), FileModes.creation(HOST, FileModes.WORLD_READABLE));
         Files.setPosixFilePermissions(target, PosixFilePermissions.fromString(FileModes.WORLD_READABLE));
         Path link = Files.createSymbolicLink(temp.resolve("link"), target);
+        Path dangling = Files.createSymbolicLink(temp.resolve("dangling"), temp.resolve("missing"));
+        Set<PosixFilePermission> privateMode = PosixFilePermissions.fromString(FileModes.PRIVATE);
 
-        for (IoAction change : new IoAction[] {
-                () -> FileModes.apply(link, FileModes.PRIVATE),
-                () -> FileModes.makeReadOnly(link),
-                () -> FileModes.makeWritable(link)}) {
-            attempt(change);
-            assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(target, LinkOption.NOFOLLOW_LINKS)))
-                    .isEqualTo(FileModes.WORLD_READABLE);
-        }
-    }
-
-    /** A link may be refused with an exception or changed itself: both leave the target alone, which is what is asserted. */
-    private static void attempt(IoAction action) {
-        try {
-            action.run();
-        } catch (IOException refused) {
-            assertThat(refused).isInstanceOf(FileSystemException.class);
+        for (Path candidate : new Path[] { link, dangling }) {
+            for (IoAction change : new IoAction[] {
+                    () -> FileModes.apply(candidate, FileModes.PRIVATE),
+                    () -> FileModes.apply(candidate, privateMode),
+                    () -> FileModes.makeReadOnly(candidate),
+                    () -> FileModes.makeWritable(candidate) }) {
+                assertThatThrownBy(change::run).isInstanceOf(FileSystemException.class);
+                assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(target, LinkOption.NOFOLLOW_LINKS)))
+                        .isEqualTo(FileModes.WORLD_READABLE);
+            }
         }
     }
 

@@ -4,13 +4,16 @@ package org.pgledger.files;
 
 import java.io.IOException;
 import java.nio.file.FileSystem;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.attribute.DosFileAttributeView;
 import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.PosixFileAttributeView;
+import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.util.Set;
 
 /**
  * The modes of the files of the product, one place for what depends on the kind of the file system ({@link FileKind}): where the
@@ -47,6 +50,14 @@ public final class FileModes {
      * what a symbolic link points to ({@link LinkOption#NOFOLLOW_LINKS}: {@code Files.setPosixFilePermissions} follows links).
      */
     public static void apply(Path file, String mode) throws IOException {
+        apply(file, PosixFilePermissions.fromString(mode));
+    }
+
+    /**
+     * Gives an existing file {@code mode}; nothing where the file system has no POSIX permissions. Refuses symbolic links rather
+     * than following them to their target.
+     */
+    public static void apply(Path file, Set<PosixFilePermission> mode) throws IOException {
         if (FileKind.of(file.getFileSystem()) == FileKind.POSIX) {
             setPermissions(file, mode);
         }
@@ -65,7 +76,7 @@ public final class FileModes {
     private static void change(Path file, String mode, boolean readOnly) throws IOException {
         FileSystem fileSystem = file.getFileSystem();
         if (FileKind.of(fileSystem) == FileKind.POSIX) {
-            setPermissions(file, mode);
+            setPermissions(file, PosixFilePermissions.fromString(mode));
         } else if (FileKind.hasDosView(fileSystem)) {
             DosFileAttributeView dos = Files.getFileAttributeView(file, DosFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
             if (dos != null) {
@@ -74,10 +85,16 @@ public final class FileModes {
         }
     }
 
-    private static void setPermissions(Path file, String mode) throws IOException {
+    private static void setPermissions(Path file, Set<PosixFilePermission> permissions) throws IOException {
+        // Keep LinkOption.NOFOLLOW_LINKS so kernel-level O_NOFOLLOW also applies once fixed in the JDK: OpenJDK 25
+        // UnixFileAttributeViews$Posix.setMode passes O_NOFOLLOW as the 3rd arg (mode) of open(file, O_RDONLY, O_NOFOLLOW)
+        // instead of flags, so open(2) still follows symbolic links before fchmod(2).
         PosixFileAttributeView posix = Files.getFileAttributeView(file, PosixFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
         if (posix != null) {
-            posix.setPermissions(PosixFilePermissions.fromString(mode));
+            if (posix.readAttributes().isSymbolicLink()) {
+                throw new FileSystemException(file.toString(), null, "symbolic link");
+            }
+            posix.setPermissions(permissions);
         }
     }
 }
