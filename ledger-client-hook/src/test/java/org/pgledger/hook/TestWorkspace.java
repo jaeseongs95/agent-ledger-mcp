@@ -4,6 +4,7 @@ package org.pgledger.hook;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
@@ -17,6 +18,9 @@ import java.util.stream.Stream;
  * program of the test and then deletes the whole root, so a test never leaves a process or a file behind.
  */
 final class TestWorkspace implements AutoCloseable {
+
+    private static final long DELETE_SETTLE_MILLIS = 2_000;
+    private static final long DELETE_RETRY_MILLIS = 50;
 
     private final Path root;
 
@@ -52,7 +56,32 @@ final class TestWorkspace implements AutoCloseable {
         Residents.stopAll(home());
         try (Stream<Path> files = Files.walk(root)) {
             for (Path file : (Iterable<Path>) files.sorted(Comparator.reverseOrder())::iterator) {
-                Files.delete(file);
+                deleteSettlingTransientLock(file);
+            }
+        }
+    }
+
+    /**
+     * Deletes {@code file}, retrying briefly when an exited resident's jar or directory still carries a transient kernel or
+     * scanner sharing lock after {@link Residents#stopAll} confirmed the process ended. A genuinely leaked live resident holds
+     * its jar far longer than {@link #DELETE_SETTLE_MILLIS} and still fails loudly.
+     */
+    private static void deleteSettlingTransientLock(Path file) throws IOException {
+        long deadline = System.nanoTime() + DELETE_SETTLE_MILLIS * 1_000_000L;
+        while (true) {
+            try {
+                Files.deleteIfExists(file);
+                return;
+            } catch (FileSystemException locked) {
+                if (System.nanoTime() >= deadline) {
+                    throw locked;
+                }
+                try {
+                    Thread.sleep(DELETE_RETRY_MILLIS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw locked;
+                }
             }
         }
     }
