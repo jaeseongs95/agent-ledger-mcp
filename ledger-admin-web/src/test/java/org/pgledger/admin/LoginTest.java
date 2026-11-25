@@ -96,7 +96,14 @@ class LoginTest {
         browser.perform(browser.get("/grants").accept(MediaType.APPLICATION_JSON)).andExpect(status().isForbidden());
         browser.perform(browser.get("/projects").accept(MediaType.APPLICATION_JSON)).andExpect(status().isForbidden());
         browser.perform(browser.get("/api/overview").accept(MediaType.APPLICATION_JSON)).andExpect(status().isForbidden());
-        browser.perform(browser.get("/passkeys")).andExpect(status().isOk());
+        // Browser HTML navigation during enrolment redirects back to /passkeys instead of dumping JSON 403,
+        // and the enrolment page hides owner-only console nav links and revoke forms while offering sign-in after success
+        browser.perform(browser.get("/").accept(MediaType.TEXT_HTML)).andExpect(status().is3xxRedirection())
+                .andExpect(header().string(HttpHeaders.LOCATION, endsWith("/passkeys")));
+        String html = browser.perform(browser.get("/passkeys?success").accept(MediaType.TEXT_HTML))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(html).doesNotContain("href=\"/projects\"").doesNotContain("/passkeys/revoke")
+                .contains("action=\"/logout\"");
     }
 
     @Test

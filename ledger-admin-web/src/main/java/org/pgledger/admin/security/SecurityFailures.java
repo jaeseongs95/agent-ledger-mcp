@@ -8,16 +8,19 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Set;
 import org.pgledger.admin.app.AdminMode;
+import org.pgledger.admin.passkey.OwnerAccounts;
 import org.pgledger.admin.web.AdminProblems;
 import org.pgledger.domain.error.AdminCode;
 import org.pgledger.domain.error.AdminException;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.stereotype.Component;
 import org.springframework.security.web.AuthenticationEntryPoint;
@@ -77,7 +80,14 @@ public final class SecurityFailures implements AuthenticationEntryPoint, Authent
 
     /** A request that is allowed to run only with something it does not have: the CSRF token, or the setup mode. */
     @Override
-    public void handle(HttpServletRequest request, HttpServletResponse response, AccessDeniedException failure) {
+    public void handle(HttpServletRequest request, HttpServletResponse response, AccessDeniedException failure)
+            throws IOException {
+        if (!(failure instanceof CsrfException) && mode == AdminMode.CONSOLE
+                && HttpMethod.GET.matches(request.getMethod()) && browser.matches(request)
+                && OwnerAccounts.isEnrolmentOnly(SecurityContextHolder.getContext().getAuthentication())) {
+            redirects.sendRedirect(request, response, "/passkeys");
+            return;
+        }
         Exception problem;
         if (failure instanceof CsrfException) {
             problem = new AdminException(AdminCode.CSRF_REJECTED, List.of());

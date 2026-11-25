@@ -14,7 +14,7 @@
   <header class="site-header">
     <span class="brand" th:text="#{app.name}">Ledger admin</span>
     <nav th:attr="aria-label=#{nav.label}">
-      <ul th:if="${@ui.console()}">
+      <ul th:if="${@ui.console() and !#bools.isTrue(enrolling)}">
         <li><a th:href="@{/}" th:attr="aria-current=${active == 'overview'} ? 'page'" th:text="#{nav.overview}">Overview</a></li>
         <li><a th:href="@{/projects}" th:attr="aria-current=${active == 'projects'} ? 'page'" th:text="#{nav.projects}">Projects</a></li>
         <li><a th:href="@{/issues}" th:attr="aria-current=${active == 'issues'} ? 'page'" th:text="#{nav.issues}">Issues</a></li>

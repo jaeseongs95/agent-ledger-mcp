@@ -17,15 +17,19 @@ import org.springframework.data.relational.core.mapping.Table;
 
 /**
  * A universal work deliverable attached to an {@code ISSUE}, {@code SPEC}, or {@code TASK}, with optional
- * external inspection/check metadata and attachment bundle link. {@code locationKey} is the non-null unique key
- * derived from {@code location} (empty string when {@code location} is null) so distinct locations with the same
- * {@code deliverableRef} remain distinct while null locations deduplicate consistently across DBMSes.
+ * external inspection/check metadata and attachment bundle link. {@code locationKey} is the non-null, non-empty
+ * ANSI uniqueness key derived from {@code location} ({@code "<none>"} when {@code location} is null, {@code location}
+ * otherwise) so distinct locations with the same {@code deliverableRef} remain distinct while null locations
+ * deduplicate consistently across DBMSes including Oracle.
  */
 @Table("deliverable")
 public record Deliverable(@Id Long id, DeliverableTarget targetEntity, String targetId, CodeValue kind,
         String deliverableRef, String location, @InsertOnlyProperty String locationKey, String summary,
         String checkRef, CheckResult checkResult, Instant checkedAt, String attachmentId, ActorId recordedBy,
         Instant recordedAt, DeliverableOrigin origin) {
+
+    /** Non-empty ANSI sentinel stored in {@code location_key} when {@code location} is {@code null}. */
+    public static final String NO_LOCATION_KEY = "<none>";
 
     public Deliverable {
         location = TextRule.emptyToNull(location);
@@ -37,10 +41,10 @@ public record Deliverable(@Id Long id, DeliverableTarget targetEntity, String ta
         }
     }
 
-    /** Derives the non-null ANSI uniqueness key for a nullable {@code location}. */
+    /** Derives the non-null, non-empty ANSI uniqueness key for a nullable {@code location}. */
     public static String locationKeyOf(String location) {
         String normalized = TextRule.emptyToNull(location);
-        return normalized == null ? "" : normalized;
+        return normalized == null ? NO_LOCATION_KEY : normalized;
     }
 
     /** Records a new native deliverable on an issue, spec, or task. */

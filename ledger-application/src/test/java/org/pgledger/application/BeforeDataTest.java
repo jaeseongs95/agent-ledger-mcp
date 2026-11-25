@@ -161,7 +161,9 @@ class BeforeDataTest {
                 "Deliverable summary", "ci-1", "failed", null, null));
         Snapshot.DeliverableRow old = Snapshot.DeliverableRow.of(s.bean(DeliverableRepository.class)
                 .findByTargetEntityAndTargetIdAndKindAndDeliverableRefAndLocationKey(DeliverableTarget.ISSUE, i.id(),
-                        CodeValue.of("code_change"), Scenario.ref('a'), "repo/e2e").orElseThrow());
+                        CodeValue.of("code_change"), Scenario.ref('a'),
+                        org.pgledger.domain.model.Deliverable.locationKeyOf("repo/e2e"))
+                .orElseThrow());
         RecordDeliverableResult update = s.bean(RecordDeliverableService.class).recordDeliverable(Scenario.AUTHOR,
                 new RecordDeliverableCommand(Scenario.uuid(), "issue", i.id(), "code_change", Scenario.ref('a'),
                         Scenario.REASON, "repo/e2e", "Deliverable summary", "ci-1", "passed", null, null));

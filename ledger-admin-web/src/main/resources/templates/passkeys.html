@@ -6,7 +6,12 @@
 <main id="main">
   <h1 th:text="#{passkeys.title}">Passkeys</h1>
   <p th:text="#{passkeys.intro(${rpId})}">Every change you make here is approved with a passkey.</p>
-  <p th:if="${registered}" class="notice" role="status" th:text="#{passkeys.registered}">The passkey is registered.</p>
+  <div th:if="${registered}" class="notice" role="status">
+    <p th:text="#{passkeys.registered}">The passkey is registered.</p>
+    <form th:if="${enrolling}" method="post" th:action="@{/logout}">
+      <button type="submit" th:text="#{passkeys.signInNow}">Sign in with your passkey</button>
+    </form>
+  </div>
   <section th:attr="aria-label=#{passkeys.list}">
     <h2 th:text="#{passkeys.list}">Registered passkeys</h2>
     <p th:if="${#lists.isEmpty(passkeys)}" th:text="#{passkeys.none}">None yet.</p>
@@ -16,7 +21,7 @@
           <th th:text="#{passkeys.label}">Label</th>
           <th th:text="#{passkeys.fingerprint}">Fingerprint</th>
           <th th:text="#{passkeys.registeredAt}">Registered</th>
-          <th></th>
+          <th th:if="${!enrolling}"></th>
         </tr>
       </thead>
       <tbody>
@@ -24,7 +29,7 @@
           <td th:text="${passkey.label()}">phone</td>
           <td><code th:text="${passkey.fingerprint()}">0000-0000-0000-0000</code></td>
           <td><th:block th:replace="~{fragments :: time(${passkey.registeredAt()})}"></th:block></td>
-          <td>
+          <td th:if="${!enrolling}">
             <form method="post" th:action="@{/passkeys/revoke}" data-approve>
               <input type="hidden" name="credentialId" th:value="${passkey.credentialId()}">
               <button type="submit" class="secondary" th:text="#{passkeys.revoke}">Close</button>
