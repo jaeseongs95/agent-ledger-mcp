@@ -104,13 +104,18 @@ class BoundariesAndExceptionsTest {
     }
 
     @Test
-    @DisplayName("ARC-BND-07 (R9-D0095-B): the foreign function API is used by one boundary class, WindowsAccountNames, and only WellKnownAccounts reaches that class")
+    @DisplayName("ARC-BND-07 (R9-D0095-B): the foreign function API is used only by the package-private boundary classes WindowsAccountNames and WindowsIsolatedProcess, reached only by WellKnownAccounts and ResidentLauncher respectively")
     void theOperatingSystemIsCalledFromOneBoundaryClass() {
-        String boundary = "org\\.pgledger\\.files\\.WindowsAccountNames(\\$.*)?";
-        noClasses().that().haveNameNotMatching(boundary)
+        String accountBoundary = "org\\.pgledger\\.files\\.WindowsAccountNames(\\$.*)?";
+        String processBoundary = "org\\.pgledger\\.hookclient\\.WindowsIsolatedProcess(\\$.*)?";
+        noClasses().that().haveNameNotMatching(accountBoundary).and().haveNameNotMatching(processBoundary)
                 .should().dependOnClassesThat().resideInAnyPackage("java.lang.foreign..", "jdk.internal.foreign..")
                 .check(ALL_MAIN);
-        noClasses().that().haveNameNotMatching(boundary).and().doNotHaveFullyQualifiedName("org.pgledger.files.WellKnownAccounts")
-                .should().dependOnClassesThat().haveNameMatching(boundary).check(ALL_MAIN);
+        noClasses().that().haveNameNotMatching(accountBoundary)
+                .and().doNotHaveFullyQualifiedName("org.pgledger.files.WellKnownAccounts")
+                .should().dependOnClassesThat().haveNameMatching(accountBoundary).check(ALL_MAIN);
+        noClasses().that().haveNameNotMatching(processBoundary)
+                .and().doNotHaveFullyQualifiedName("org.pgledger.hookclient.ResidentLauncher")
+                .should().dependOnClassesThat().haveNameMatching(processBoundary).check(ALL_MAIN);
     }
 }

@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
@@ -16,20 +17,26 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.FileTime;
 import java.nio.file.attribute.PosixFilePermission;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
@@ -38,6 +45,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.pgledger.files.FileKind;
 import org.pgledger.files.FileProtection;
 import org.pgledger.files.ProcessAccount;
 import org.pgledger.hookclient.AddressFile;
@@ -173,6 +181,89 @@ class ResidentProgramTest {
         assertThat(Residents.isLive(resident)).as("the program outlives the call that started it").isTrue();
         answered(jar);
         assertThat(theResident(jar)).as("the same program answered the next call").isEqualTo(resident);
+    }
+
+    @Test
+    @DisplayName("R9-D0096-I when an enclosing caller invokes the light client via pipes, the started resident program does not inherit and hold the enclosing caller's stdout/stderr pipes open")
+    void theResidentProgramDoesNotHoldAnEnclosingCallersPipe(HookJar jar, TestWorkspace workspace) throws Exception {
+        Path cwd = Files.createTempDirectory(workspace.work(), "relay-pipes");
+        ProcessBuilder target = jar.builder(HookJar.JAVA, List.of(), Map.of(), cwd, "codex");
+        List<String> command = enclosingCommand(target.command());
+        ProcessBuilder relayBuilder = new ProcessBuilder(command).directory(cwd.toFile());
+        relayBuilder.environment().clear();
+        relayBuilder.environment().putAll(target.environment());
+
+        ExecutorService readers = Executors.newFixedThreadPool(2);
+        Process relay = null;
+        try {
+            relay = relayBuilder.start();
+            Process startedRelay = relay;
+            Future<byte[]> stdoutFuture = readers.submit(() -> {
+                try (InputStream stdout = startedRelay.getInputStream()) {
+                    return stdout.readAllBytes();
+                }
+            });
+            Future<byte[]> stderrFuture = readers.submit(() -> {
+                try (InputStream stderr = startedRelay.getErrorStream()) {
+                    return stderr.readAllBytes();
+                }
+            });
+            try (OutputStream toRelay = relay.getOutputStream()) {
+                toRelay.write(stdin);
+            }
+
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            long remainingMs = Math.max(1L, TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()));
+            assertThat(relay.waitFor(remainingMs, TimeUnit.MILLISECONDS))
+                    .as("relay hook exited within 10s").isTrue();
+            assertThat(relay.exitValue()).as("relay hook exit code").isZero();
+
+            remainingMs = Math.max(1L, TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()));
+            byte[] out = stdoutFuture.get(remainingMs, TimeUnit.MILLISECONDS);
+            remainingMs = Math.max(1L, TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()));
+            byte[] err = stderrFuture.get(remainingMs, TimeUnit.MILLISECONDS);
+
+            assertThat(err).as("relay stderr").isEmpty();
+            JsonNode updated = Json.MAPPER.readTree(out).path("hookSpecificOutput").path("updatedInput");
+            assertThat(updated.path(Json.RESERVED_KEY).isString()).as("relay stdout attested JSON").isTrue();
+            assertThat(updated.path("note").stringValue()).as("UTF-8 input preserved through relay")
+                    .isEqualTo("한글 😀 é");
+
+            ResidentAddress resident = theResident(jar);
+            Thread.sleep(1_500);
+            assertThat(Residents.isLive(resident)).as("the resident program outlives the enclosing relay").isTrue();
+            answered(jar);
+            assertThat(theResident(jar)).as("the same resident program answered the second warm call")
+                    .isEqualTo(resident);
+        } finally {
+            if (relay != null) {
+                relay.destroyForcibly();
+            }
+            Residents.stopAll(jar.home());
+            readers.shutdownNow();
+            readers.awaitTermination(5, TimeUnit.SECONDS);
+        }
+    }
+
+    private static List<String> enclosingCommand(List<String> targetCommand) {
+        if (FileKind.of(FileSystems.getDefault()) == FileKind.ACL) {
+            // PowerShell wraps the client in a native command invocation with inheritable stdout/stderr pipe handles, matching
+            // real host execution on ACL hosts without Git Bash.
+            String invocation = targetCommand.stream()
+                    .map(arg -> "'" + arg.replace("'", "''") + "'")
+                    .collect(Collectors.joining(" "));
+            String script = "[Console]::InputEncoding = [System.Text.UTF8Encoding]::new($false); "
+                    + "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); "
+                    + "& " + invocation + "; exit $LASTEXITCODE";
+            return List.of("powershell.exe", "-NoProfile", "-Command", script);
+        }
+        List<String> command = new ArrayList<>();
+        command.add(HookJar.JAVA.toString());
+        command.add("-cp");
+        command.add(System.getProperty("java.class.path"));
+        command.add(RelayHook.class.getName());
+        command.addAll(targetCommand);
+        return command;
     }
 
     // ---- R9-D0096-J: stale and foreign address files ----

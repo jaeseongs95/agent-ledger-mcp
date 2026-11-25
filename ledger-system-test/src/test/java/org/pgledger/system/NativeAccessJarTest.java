@@ -13,11 +13,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * R9-D0095-A (docs/testing/TEST_CASES.md): the programs that reach the one class that calls the operating system (the names of the
- * well-known accounts of Windows, found by their SID with the foreign function API) allow native access in the manifest of their
- * executable jar, so that the JVM prints no warning, and the program that does not reach it does not. On a Windows host the packaged
- * command line tool really makes the call (it asks for the service account to protect the secret it stores): nothing is added to its
- * standard output or standard error.
+ * R9-D0095-A (docs/testing/TEST_CASES.md): the programs that reach the boundary classes that call the operating system
+ * ({@code WindowsAccountNames} for well-known Windows account SIDs and {@code WindowsIsolatedProcess} in the light hook client
+ * for isolated resident process startup, using the foreign function API) allow native access in the manifest of their
+ * executable jar, so that the JVM prints no warning, and the resident hook jar that does not reach either boundary does not. On
+ * a Windows host the packaged command line tool really makes the call (it asks for the service account to protect the secret it
+ * stores): nothing is added to its standard output or standard error.
  */
 class NativeAccessJarTest {
 
@@ -39,12 +40,14 @@ class NativeAccessJarTest {
     }
 
     @Test
-    @DisplayName("R9-D0095-A the jars of the command line tool, the MCP server, the admin web and the migration tool carry Enable-Native-Access: ALL-UNNAMED; the jar of the hook, which reaches no account of Windows, does not")
+    @DisplayName("R9-D0095-A the jars of the command line tool, the MCP server, the admin web, the migration tool and the light hook client carry Enable-Native-Access: ALL-UNNAMED; the resident hook jar beside it does not")
     void theManifestsAllowNativeAccessWhereTheCallIs() throws IOException {
-        for (String property : new String[] { "ledger.cli.jar", "ledger.mcp.jar", "ledger.admin.jar", "ledger.migrate.jar" }) {
+        for (String property : new String[] {
+                "ledger.cli.jar", "ledger.mcp.jar", "ledger.admin.jar", "ledger.migrate.jar", "ledger.hook.jar" }) {
             assertThat(attribute(jar(property))).as(property).isEqualTo("ALL-UNNAMED");
         }
-        assertThat(attribute(jar("ledger.hook.jar"))).as("the hook").isNull();
+        Path residentJar = jar("ledger.hook.jar").resolveSibling("ledger-hook-resident.jar");
+        assertThat(attribute(residentJar)).as("the resident program of the hook").isNull();
     }
 
     @Test

@@ -108,19 +108,20 @@ public final class ResidentLauncher {
         Path copy = runtime.install(jar);
         runtime.pruneOtherBuilds(jar.build());
         files.createIfMissing(state.logFile());
-        Process started = spawn(copy);
-        while (System.nanoTime() < end) {
-            if (finder.find(jar.build()) instanceof ResidentFinder.Lookup.Usable usable) {
-                return usable.address();
+        try (StartedResident started = spawn(copy)) {
+            while (System.nanoTime() < end) {
+                if (finder.find(jar.build()) instanceof ResidentFinder.Lookup.Usable usable) {
+                    return usable.address();
+                }
+                if (!started.isAlive()) {
+                    throw new ResidentException("the resident hook program ended while starting (exit code " + started.exitValue()
+                            + "); its log is " + state.logFile());
+                }
+                pause();
             }
-            if (!started.isAlive()) {
-                throw new ResidentException("the resident hook program ended while starting (exit code " + started.exitValue()
-                        + "); its log is " + state.logFile());
-            }
-            pause();
+            throw new ResidentException("the resident hook program did not get ready in time; it goes on starting, "
+                    + "try the call again");
         }
-        throw new ResidentException("the resident hook program did not get ready in time; it goes on starting, "
-                + "try the call again");
     }
 
     /** Replaces a program of another build: it is asked to end, and ended if it does not. */
@@ -139,7 +140,7 @@ public final class ResidentLauncher {
         addressFile.remove();
     }
 
-    private Process spawn(Path copy) throws IOException {
+    private StartedResident spawn(Path copy) throws IOException {
         List<String> command = new ArrayList<>();
         command.add(environment.java().toString());
         command.addAll(JVM_OPTIONS);
@@ -149,12 +150,45 @@ public final class ResidentLauncher {
         command.add("start");
         command.add(state.directory().toString());
         command.add(jar.build());
+        if (WindowsIsolatedProcess.isSupported()) {
+            return WindowsIsolatedProcess.spawn(command, environment.temporary(), state.logFile());
+        }
         ProcessBuilder builder = new ProcessBuilder(command).directory(environment.temporary().toFile())
                 .redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.appendTo(state.logFile().toFile()));
         Process process = builder.start();
         // no input: the program reads nothing from the client, and an open pipe would tie it to this process
         process.getOutputStream().close();
-        return process;
+        return StartedResident.ofProcess(process);
+    }
+
+    /** Minimal handle to a spawned resident process for startup liveness and exit-code checks. */
+    interface StartedResident extends AutoCloseable {
+
+        boolean isAlive();
+
+        int exitValue();
+
+        @Override
+        void close();
+
+        static StartedResident ofProcess(Process process) {
+            return new StartedResident() {
+                @Override
+                public boolean isAlive() {
+                    return process.isAlive();
+                }
+
+                @Override
+                public int exitValue() {
+                    return process.exitValue();
+                }
+
+                @Override
+                public void close() {
+                    // POSIX Process carries no external native handle that close() must release here
+                }
+            };
+        }
     }
 
     private static FileLock tryLock(FileChannel channel) throws IOException {

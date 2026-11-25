@@ -81,10 +81,19 @@ class ArchitectureTest {
     }
 
     @Test
-    @DisplayName("R9-D0096-D the client uses no reflection, foreign memory or Runtime; the one process it starts is the resident program, by ProcessBuilder in ResidentLauncher only")
+    @DisplayName("R9-D0096-D the client uses no reflection or Runtime; the foreign function API is confined to package-private WindowsIsolatedProcess reached only by ResidentLauncher; ProcessBuilder stays in ResidentLauncher only")
     void processOnlyInTheLauncher() {
-        noClasses().should().dependOnClassesThat().resideInAnyPackage("java.lang.reflect..", "java.lang.foreign..")
+        noClasses().should().dependOnClassesThat().resideInAnyPackage("java.lang.reflect..")
                 .orShould().dependOnClassesThat().haveFullyQualifiedName("java.lang.Runtime").check(classes);
+        String boundary = "org\\.pgledger\\.hookclient\\.WindowsIsolatedProcess(\\$.*)?";
+        noClasses().that().haveNameNotMatching(boundary)
+                .should().dependOnClassesThat().resideInAnyPackage("java.lang.foreign..").check(classes);
+        noClasses().that().haveNameNotMatching(boundary)
+                .and().doNotHaveFullyQualifiedName("org.pgledger.hookclient.ResidentLauncher")
+                .should().dependOnClassesThat().haveNameMatching(boundary).check(classes);
+        com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes().that()
+                .haveFullyQualifiedName("org.pgledger.hookclient.WindowsIsolatedProcess")
+                .should().notBePublic().check(classes);
         noClasses().that().doNotHaveFullyQualifiedName("org.pgledger.hookclient.ResidentLauncher")
                 .should().dependOnClassesThat().haveFullyQualifiedName("java.lang.ProcessBuilder").check(classes);
     }
@@ -120,9 +129,9 @@ class ArchitectureTest {
     }
 
     @Test
-    @DisplayName("ARC-036 catch rules: no empty catch, no broad catch")
+    @DisplayName("ARC-036 catch rules: no empty catch, no broad catch outside WindowsIsolatedProcess")
     void catchRules() {
-        assertThat(CodingScan.catchProblems(Set.of(), null, Path.of("src", "main", "java"),
+        assertThat(CodingScan.catchProblems(Set.of("WindowsIsolatedProcess.java"), null, Path.of("src", "main", "java"),
                 Path.of("src", "test", "java"))).isEmpty();
     }
 

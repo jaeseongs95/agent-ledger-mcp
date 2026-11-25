@@ -33,7 +33,11 @@ val clientJar = tasks.register<Jar>("clientJar") {
     archiveFileName = clientJarName
     destinationDirectory = layout.buildDirectory.dir("client-jar")
     manifest {
-        attributes("Main-Class" to "org.pgledger.hookclient.Main")
+        attributes(
+            "Main-Class" to "org.pgledger.hookclient.Main",
+            // Allows java.lang.foreign (WindowsIsolatedProcess on ACL hosts) without JVM stderr warnings (JEP 472).
+            "Enable-Native-Access" to "ALL-UNNAMED",
+        )
     }
     from(sourceSets.main.get().output)
     from(configurations.runtimeClasspath.map { classpath -> classpath.map { if (it.isDirectory) it else zipTree(it) } }) {
@@ -46,6 +50,10 @@ val clientJar = tasks.register<Jar>("clientJar") {
     isReproducibleFileOrder = true
 }
 tasks.assemble { dependsOn(clientJar) }
+
+tasks.test {
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
+}
 
 // The jar for the modules that stage or start it (the hook module, the server and system tests): a configuration, so that no
 // module reaches into this one's tasks.

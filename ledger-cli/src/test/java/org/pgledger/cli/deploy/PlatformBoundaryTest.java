@@ -153,17 +153,18 @@ class PlatformBoundaryTest {
     }
 
     @Test
-    @DisplayName("DPL-08 (changed by R9-D0095-A) the executable jars of the programs that reach the Windows boundary (the command line tool, the MCP server, the admin web, the migration tool) carry the manifest attribute Enable-Native-Access: ALL-UNNAMED, the hook jar does not, and no installer gives --enable-native-access on a command line")
+    @DisplayName("DPL-08 (changed by R9-D0095-A) the executable jars of the programs that reach a Windows native boundary (the command line tool, the MCP server, the admin web, the migration tool, and the light hook client) carry the manifest attribute Enable-Native-Access: ALL-UNNAMED, the resident hook jar does not, and no installer gives --enable-native-access on a command line")
     void dpl08_theJarsThatCallTheOperatingSystemAllowItInTheirManifest() throws IOException {
         Path root = Path.of(Objects.requireNonNull(System.getProperty("ledger.docs.root"),
                 "ledger.docs.root is set by the test task of ledger-cli"));
 
-        for (String module : new String[] { "ledger-cli", "ledger-mcp-server", "ledger-admin-web", "ledger-migrate-1x" }) {
+        for (String module : new String[] { "ledger-cli", "ledger-mcp-server", "ledger-admin-web", "ledger-migrate-1x",
+                "ledger-hook-client" }) {
             assertThat(Files.readString(root.resolve(module + "/build.gradle.kts"), StandardCharsets.UTF_8)).as(module)
                     .contains("\"Enable-Native-Access\" to \"ALL-UNNAMED\"");
         }
         assertThat(Files.readString(root.resolve("ledger-client-hook/build.gradle.kts"), StandardCharsets.UTF_8))
-                .as("the hook reaches no account of Windows").doesNotContain("Enable-Native-Access");
+                .as("the resident hook program reaches no Windows native boundary").doesNotContain("Enable-Native-Access");
         for (String script : new String[] { "deploy/install.cmd", "deploy/install.sh" }) {
             assertThat(Files.readString(root.resolve(script), StandardCharsets.UTF_8).toLowerCase(Locale.ROOT)).as(script)
                     .doesNotContain("--enable-native-access").doesNotContain("%native%");
