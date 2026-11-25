@@ -4,6 +4,7 @@ package org.pgledger.hook;
 
 import java.nio.file.Path;
 import java.util.List;
+import org.pgledger.files.ProcessAccount;
 import org.pgledger.hook.keys.KeyFolder;
 import org.pgledger.hook.keys.SessionKey;
 import org.pgledger.hook.keys.SessionKeyStore;
@@ -11,8 +12,8 @@ import org.pgledger.hook.keys.SessionKeyStore;
 /** How the tests open the key store of a folder and load a key: the one place that knows the shape of the store API. */
 final class TestStores {
 
-    /** The account that owns the key folder: what {@code Main} passes from {@code user.name}. */
-    static final String USER = System.getProperty("user.name");
+    /** The account that owns the key folder: what {@code Main} and {@code KeyStoreProperties} pass from {@link ProcessAccount}. */
+    static final String USER = ProcessAccount.name().orElse("");
 
     private TestStores() {}
 

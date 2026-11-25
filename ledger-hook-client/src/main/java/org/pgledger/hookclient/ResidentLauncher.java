@@ -144,7 +144,6 @@ public final class ResidentLauncher {
         command.add(environment.java().toString());
         command.addAll(JVM_OPTIONS);
         command.add("-Duser.home=" + environment.userHome());
-        command.add("-Duser.name=" + environment.userName());
         command.add("-jar");
         command.add(copy.toString());
         command.add("start");

@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import org.pgledger.files.ProcessAccount;
 
 /**
  * Entry point of {@code java -jar ledger-client-hook.jar <claude|codex|antigravity>}, {@code ... session-key <server> <author>}
@@ -36,8 +37,8 @@ public final class Main {
         }
     }
 
-    private static ClientEnvironment environment() throws URISyntaxException {
-        return new ClientEnvironment(System.getProperty("user.home"), System.getProperty("user.name"),
+    static ClientEnvironment environment() throws URISyntaxException {
+        return new ClientEnvironment(System.getProperty("user.home"), ProcessAccount.name().orElse(""),
                 System.getenv(KEY_DIR_VARIABLE), Path.of(System.getProperty("java.home"), "bin", "java"),
                 Path.of(System.getProperty("java.io.tmpdir")),
                 Path.of(Main.class.getProtectionDomain().getCodeSource().getLocation().toURI()));

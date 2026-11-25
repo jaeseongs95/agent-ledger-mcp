@@ -12,10 +12,21 @@ import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.AclEntry;
+import java.nio.file.attribute.AclEntryFlag;
+import java.nio.file.attribute.AclEntryPermission;
+import java.nio.file.attribute.AclEntryType;
+import java.nio.file.attribute.AclFileAttributeView;
+import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.UserPrincipal;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.pgledger.files.FileProtection;
+import org.pgledger.files.ProcessAccount;
 import org.pgledger.files.ServicePrincipalAcl;
 
 /**
@@ -28,7 +39,7 @@ class OwnerOnlyFilesTest {
     Path root;
 
     private OwnerOnlyFiles files() throws IOException {
-        return OwnerOnlyFiles.forFileSystem(FileSystems.getDefault(), System.getProperty("user.name"));
+        return OwnerOnlyFiles.forFileSystem(FileSystems.getDefault(), ProcessAccount.name().orElse(""));
     }
 
     /** The protection check of the repository ({@code FileProtection}) for this file system: no exposure to another account. */
@@ -39,7 +50,7 @@ class OwnerOnlyFilesTest {
         }
         if (views.contains("acl")) {
             return new FileProtection.Acl(FileSystems.getDefault().getUserPrincipalLookupService()
-                    .lookupPrincipalByName(System.getProperty("user.name")));
+                    .lookupPrincipalByName(ProcessAccount.name().orElse("")));
         }
         return new FileProtection.Unprotected();
     }
@@ -96,5 +107,51 @@ class OwnerOnlyFilesTest {
             assertThat(after).isNotNull();
             after.release();
         }
+    }
+
+    @Test
+    @DisplayName("R9-D0096-G missing parent directories created by createDirectories are each settled owner-only with no open exposure, even under an open parent")
+    void missingParentDirectoriesAreSettledOwnerOnly() throws IOException {
+        Path openParent = Files.createDirectory(root.resolve("open-parent"));
+        Set<String> views = FileSystems.getDefault().supportedFileAttributeViews();
+        if (views.contains("posix")) {
+            Files.setPosixFilePermissions(openParent, Set.of(
+                    PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_EXECUTE,
+                    PosixFilePermission.GROUP_READ, PosixFilePermission.GROUP_EXECUTE,
+                    PosixFilePermission.OTHERS_READ, PosixFilePermission.OTHERS_EXECUTE));
+        } else if (views.contains("acl")) {
+            UserPrincipal everyone = FileSystems.getDefault().getUserPrincipalLookupService()
+                    .lookupPrincipalByName("Everyone");
+            AclFileAttributeView view = Files.getFileAttributeView(openParent, AclFileAttributeView.class);
+            List<AclEntry> widened = new ArrayList<>(view.getAcl());
+            widened.add(AclEntry.newBuilder()
+                    .setType(AclEntryType.ALLOW)
+                    .setPrincipal(everyone)
+                    .setPermissions(Set.of(AclEntryPermission.READ_DATA))
+                    .setFlags(AclEntryFlag.FILE_INHERIT, AclEntryFlag.DIRECTORY_INHERIT)
+                    .build());
+            view.setAcl(widened);
+        }
+
+        Path intermediate = openParent.resolve("a");
+        Path leaf = intermediate.resolve("b");
+        files().createDirectories(leaf);
+
+        assertThat(intermediate).isDirectory();
+        assertThat(leaf).isDirectory();
+        assertThat(protection().openExposure(intermediate)).as(intermediate.toString()).isEmpty();
+        assertThat(protection().openExposure(leaf)).as(leaf.toString()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("R9-D0096-G createDirectories keeps an existing directory untouched and refuses an existing regular file")
+    void existingDirectoryIsKeptAndExistingFileFails() throws IOException {
+        Path existingDir = Files.createDirectory(root.resolve("existing-dir"));
+        files().createDirectories(existingDir);
+        assertThat(existingDir).isDirectory();
+
+        Path existingFile = Files.writeString(root.resolve("existing-file"), "content");
+        assertThatThrownBy(() -> files().createDirectories(existingFile))
+                .isInstanceOf(FileAlreadyExistsException.class);
     }
 }

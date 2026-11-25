@@ -39,6 +39,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.pgledger.files.FileProtection;
+import org.pgledger.files.ProcessAccount;
 import org.pgledger.hookclient.AddressFile;
 import org.pgledger.hookclient.ResidentAddress;
 import org.pgledger.hookclient.StateFolder;
@@ -430,7 +431,7 @@ class ResidentProgramTest {
         }
         if (views.contains("acl")) {
             return new FileProtection.Acl(java.nio.file.FileSystems.getDefault().getUserPrincipalLookupService()
-                    .lookupPrincipalByName(System.getProperty("user.name")));
+                    .lookupPrincipalByName(ProcessAccount.name().orElse("")));
         }
         return new FileProtection.Unprotected();
     }

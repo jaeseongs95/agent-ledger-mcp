@@ -46,7 +46,6 @@ final class ResidentProbe implements AutoCloseable {
         command.add(HookJar.JAVA.toString());
         command.addAll(jvmArgs);
         command.add("-Duser.home=" + workspace.home());
-        command.add("-Duser.name=" + System.getProperty("user.name"));
         command.add("-jar");
         command.add(RESIDENT_JAR.toString());
         command.add("start");

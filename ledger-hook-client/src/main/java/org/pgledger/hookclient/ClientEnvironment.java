@@ -10,7 +10,7 @@ import java.nio.file.Path;
  * is plain code that a test can run with any values.
  *
  * @param userHome      the home folder of the account ({@code user.home})
- * @param userName      the name of the account ({@code user.name}), for the owner-only entry on a file system with ACLs
+ * @param userName      the name of the account ({@link org.pgledger.files.ProcessAccount}), for the owner-only entry on a file system with ACLs
  * @param keyFolderText the value of {@code LEDGER_HOOK_KEY_DIR}, {@code null} if it is not set
  * @param java          the {@code java} executable of the JDK that runs the client: the resident program runs on the same JDK
  * @param temporary     the folder the resident program starts in: a folder of the system that is never removed, so that the

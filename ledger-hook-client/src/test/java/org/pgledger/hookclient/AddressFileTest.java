@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.pgledger.files.ProcessAccount;
 
 /** R9-D0096-F (address file): the file the program writes and every client reads. */
 class AddressFileTest {
@@ -23,7 +24,7 @@ class AddressFileTest {
     Path folder;
 
     private OwnerOnlyFiles files() throws IOException {
-        return OwnerOnlyFiles.forFileSystem(FileSystems.getDefault(), System.getProperty("user.name"));
+        return OwnerOnlyFiles.forFileSystem(FileSystems.getDefault(), ProcessAccount.name().orElse(""));
     }
 
     @Test

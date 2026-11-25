@@ -11,6 +11,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.UserPrincipal;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import org.pgledger.files.FileProtection;
 
@@ -55,11 +57,30 @@ public final class OwnerOnlyFiles {
 
     /** The folder and the parents that are missing, each given the protection at creation. */
     public void createDirectories(Path directory) throws IOException {
-        if (Files.isDirectory(directory)) {
+        Path normalized = directory.toAbsolutePath().normalize();
+        if (Files.isDirectory(normalized)) {
             return;
         }
-        Files.createDirectories(directory, protection.directoryAttributes());
-        require(directory);
+        if (Files.exists(normalized)) {
+            throw new FileAlreadyExistsException(normalized.toString());
+        }
+        List<Path> missing = new ArrayList<>();
+        Path current = normalized;
+        while (current != null && !Files.exists(current)) {
+            missing.add(current);
+            current = current.getParent();
+        }
+        for (int i = missing.size() - 1; i >= 0; i--) {
+            Path next = missing.get(i);
+            try {
+                Files.createDirectory(next, protection.directoryAttributes());
+                require(next);
+            } catch (FileAlreadyExistsException existing) {
+                if (!Files.isDirectory(next)) {
+                    throw existing;
+                }
+            }
+        }
     }
 
     /** A new file with this content; the protection is certain before the first byte is written. */
