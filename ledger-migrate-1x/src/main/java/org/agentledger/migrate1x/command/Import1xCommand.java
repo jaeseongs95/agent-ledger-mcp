@@ -32,8 +32,8 @@ import org.springframework.stereotype.Component;
  * digest that the 1.x table and the new table share. The 1.x connection is the settings {@code ledger.import.source.*} (the
  * password is the secret {@code ledger.import.source.password}, read from the secret store like every other secret and
  * never printed). The command is refused when the new schema holds more than {@code migrate} and {@code setup} made (ledger data,
- * a session key or the audit row of an earlier import); the grants are copied without a session key, so each session has to have
- * its key registered ({@code key-register} of {@code ledger-cli}) before its grant works. The audit row names
+ * a session key or the audit row of an earlier import); the grants are copied and work immediately once the client hook
+ * stamps the session author id. The audit row names
  * {@code cli:<process user>}. The request receipts of 1.x are not copied (a 2.0 write needs an {@code operationKey} and refuses the old {@code request_id}, so a lost 1.x answer cannot cause a second write).
  *
  * <p>Every refusal of the service is a refusal of this command with its own code (exit 1): the data that cannot be imported as it

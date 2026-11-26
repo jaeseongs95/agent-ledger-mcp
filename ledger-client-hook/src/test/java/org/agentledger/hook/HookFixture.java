@@ -8,43 +8,26 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.file.Path;
-import java.time.Clock;
-import java.time.Instant;
-import java.time.ZoneOffset;
-import org.agentledger.hook.keys.SessionKeyStore;
 import tools.jackson.databind.JsonNode;
 
 /**
- * Per-test fixture: runs the hook in process with the test's own key folder and a fixed clock ({@link #NOW}, moved
- * with {@link #at}). The signed attestation of a run is checked with {@link #stamp}: parsed, claims compared, signature
- * verified with the public key of the key folder.
+ * Per-test fixture: runs the hook in process with the shared stateless codec and dialects.
  */
 final class HookFixture {
 
     /** The host session id used by the tests; it exercises the whole allowed character set. */
     static final String HOST_ID = "parent-1234_ab.cd";
 
-    /** The time of the injected clock until a test moves it. */
-    static final Instant NOW = Instant.parse("2026-11-11T09:00:00Z");
-
     private final JsonCodec codec = HookContext.bean(JsonCodec.class);
     private final HostDialects dialects = HookContext.bean(HostDialects.class);
     private final Path keyDirectory;
-    private Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
 
     HookFixture(Path keyDirectory) {
         this.keyDirectory = keyDirectory;
     }
 
-    /** The key folder of this test (not created until the first key). */
     Path keyDirectory() {
         return keyDirectory;
-    }
-
-    /** Moves the injected clock; the next run issues its attestation at this time. */
-    HookFixture at(Instant instant) {
-        this.clock = Clock.fixed(instant, ZoneOffset.UTC);
-        return this;
     }
 
     Run run(String[] args, byte[] stdin) {
@@ -54,10 +37,7 @@ final class HookFixture {
     Run run(String[] args, InputStream stdin) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
-        // a new store and a new command for every run: like a new process, nothing is kept between two runs. The codec and the
-        // dialects are the stateless beans of the shared context; the store and the clock are this test's own.
-        SessionKeyStore store = TestStores.open(keyDirectory);
-        int exit = new HookCli(codec, new LedgerHook(dialects, codec, clock, store), store).run(args, stdin, out, err);
+        int exit = new HookCli(codec, new LedgerHook(dialects, codec)).run(args, stdin, out, err);
         return new Run(exit, out.toByteArray(), err.toByteArray());
     }
 
@@ -73,21 +53,15 @@ final class HookFixture {
         return run;
     }
 
-    /** Checks the attestation of a direct call of the standard host id that was answered by {@code run}. */
     Attestations.Stamp stamp(HostScenario host, String op, JsonNode sent, Run run) {
         return stamp(host, HOST_ID, op, sent, run);
     }
 
     Attestations.Stamp stamp(HostScenario host, String hostId, String op, JsonNode sent, Run run) {
-        return stampCarrier(host.server(), host.author(hostId), op, sent, host.stampedPart(run));
+        return stampCarrier(host.author(hostId), op, sent, host.stampedPart(run));
     }
 
-    /**
-     * Checks the attestation inside {@code carrier}: the stamped arguments of a call to the MCP server {@code server}
-     * whose own arguments were {@code sent}.
-     */
-    Attestations.Stamp stampCarrier(String server, String author, String op, JsonNode sent, JsonNode carrier) {
-        return Attestations.verify(keyDirectory, Attestations.Window.at(clock.instant()), server, author, op, sent,
-                carrier);
+    Attestations.Stamp stampCarrier(String author, String op, JsonNode sent, JsonNode carrier) {
+        return Attestations.verify(author, op, sent, carrier);
     }
 }

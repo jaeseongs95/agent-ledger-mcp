@@ -14,7 +14,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.agentledger.admin.support.AdminTest;
-import org.agentledger.admin.support.AuthorKeys;
 import org.agentledger.admin.support.Browser;
 import org.agentledger.admin.support.Browser.Form;
 import org.agentledger.admin.support.Seeds;
@@ -105,8 +104,8 @@ class FormsTest {
         String author = "gemini:admin-ui-test";
         Browser browser = Browser.signedIn(mvc);
 
-        browser.perform(browser.form("/grants", AuthorKeys.newPair().confirmed(Form.of("author", author, "project", project.project(), "scopes", "issue",
-                "scopes", "task", "expiresAt", "2099-12-31T00:00:00Z", "note", "a note")), browser.csrfOf("/grants")))
+        browser.perform(browser.form("/grants/author", Form.of("author", author, "project", project.project(), "scopes", "issue",
+                "scopes", "task", "expiresAt", "2099-12-31T00:00:00Z", "note", "a note"), browser.csrfOf("/grants")))
                 .andExpect(status().is3xxRedirection());
         assertThat(grants.live(author)).extracting(g -> g.scope().token()).containsExactlyInAnyOrder("issue", "task");
         assertThat(grants.live(author)).allMatch(g -> "user:owner".equals(g.grantedBy().value()));
@@ -140,10 +139,9 @@ class FormsTest {
         MultiValueMap<String, String> fields = Form.of();
         input.fields().forEach((name, values) -> values.forEach(value -> fields.add(name,
                 "p".equals(value) ? project.project() : value)));
-        AuthorKeys.newPair().confirmed(fields);
         Browser browser = Browser.signedIn(mvc);
 
-        post(browser, "/grants", "/grants", fields).andExpect(status().is4xxClientError())
+        post(browser, "/grants", "/grants/author", fields).andExpect(status().is4xxClientError())
                 .andExpect(jsonPath("$.code").exists());
 
         assertThat(grants.liveAll()).noneMatch(g -> "claude:a".equals(g.authorId().value()));
@@ -323,7 +321,7 @@ class FormsTest {
         Browser anonymous = new Browser(mvc);
         String csrf = anonymous.csrfOf("/login");
 
-        anonymous.perform(anonymous.formWithoutApproval(path, Form.of(), csrf).content("token=" + "x".repeat(100_000))
+        anonymous.perform(anonymous.form(path, Form.of(), csrf).content("token=" + "x".repeat(100_000))
                 .accept(MediaType.APPLICATION_JSON)).andExpect(status().isContentTooLarge())
                 .andExpect(jsonPath("$.code").value("PAYLOAD_TOO_LARGE"));
     }

@@ -9,9 +9,9 @@ import java.nio.file.Path;
 import org.agentledger.files.ProcessAccount;
 
 /**
- * Entry point of {@code java -jar ledger-client-hook.jar <claude|codex|antigravity>}, {@code ... session-key <server> <author>}
- * and {@code ... stop}: the one class that reads the process (the properties, the environment, the standard streams) and hands the
- * exit code to it. It loads nothing but java.base and the classes of this module.
+ * Entry point of {@code java -jar ledger-client-hook.jar <claude|codex|antigravity>} and {@code ... stop}: the one
+ * class that reads the process (the properties, the environment, the standard streams) and hands the exit code to it.
+ * It loads nothing but java.base and the classes of this module.
  */
 public final class Main {
 

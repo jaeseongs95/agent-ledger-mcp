@@ -57,11 +57,9 @@ import org.agentledger.application.write.WriteResult.RecordCaseResult;
 import org.agentledger.application.write.WriteResult.RecordDeliverableResult;
 import org.agentledger.application.write.WriteResult.SaveResult;
 import org.agentledger.application.write.WriteResult.TransitionResult;
-import org.agentledger.apptest.TestKeyRing;
 import org.agentledger.database.repository.Counter;
 import org.agentledger.database.repository.IdAllocator;
 import org.agentledger.database.time.UtcTime;
-import org.agentledger.domain.context.ToolScope;
 import org.agentledger.domain.error.ConflictCode;
 import org.agentledger.domain.error.InfrastructureCode;
 import org.agentledger.domain.error.InfrastructureException;
@@ -158,11 +156,6 @@ class LegacyImportTest {
     /** The two texts are the same JSON value (whitespace and the order of the keys do not matter). */
     private static void assertSameJson(String actual, String expected) {
         assertThat((Object) JSON.readTree(actual)).isEqualTo(JSON.readTree(expected));
-    }
-
-    private static <T> T asTool(String tool, Supplier<T> call) {
-        return ScopedValue.where(ToolScope.CURRENT, tool).where(ToolScope.ARGUMENTS_DIGEST, TestKeyRing.DIRECT_DIGEST)
-                .call(call::get);
     }
 
     private static Map<String, String> issueFields(String project, String title) {
@@ -435,26 +428,20 @@ class LegacyImportTest {
     }
 
     @Test
-    @DisplayName("MIG-030 after the import a granted author that has no registered key is refused with ATTESTATION_SIGNATURE_INVALID (nothing written); after its key is registered (what key-register does) the same grant writes")
-    void mig030_grantsNeedTheKey() {
+    @DisplayName("MIG-030 (v4.0.0) after the import a granted author writes directly without registering a session key; an ungranted author is refused SESSION_NOT_GRANTED")
+    void mig030_importedGrantsWorkDirectly() {
         withRich(rig -> {
             rig.importAll();
             SaveService save = rig.ctx().bean(SaveService.class);
             String operationKey = Scenario.uuid();
             SaveCommand command = new SaveCommand(operationKey, "issue", null, 0L, Fields.of(issueFields("old", "after the import")),
                     Scenario.REASON);
-            String token = TestKeyRing.token(TestKeyRing.newPair(), SEED, "ledger_issue_save", operationKey,
-                    rig.ctx().clock().instant());
 
-            LedgerException refused = Expect.failure(() -> asTool("ledger_issue_save", () -> save.save(token, command)),
-                    TrustCode.ATTESTATION_SIGNATURE_INVALID);
-
-            assertThat(refused.args()).isEmpty();
+            Expect.failure(() -> save.save("claude:ungranted", command), TrustCode.SESSION_NOT_GRANTED);
             assertThat(rig.count("SELECT COUNT(*) FROM issue WHERE title = ?", "after the import")).isZero();
             assertThat(rig.count("SELECT COUNT(*) FROM request_receipt WHERE operation_key = ?", operationKey)).isZero();
 
-            rig.ctx().enroll(SEED);
-            SaveResult saved = save.save(SEED, new SaveCommand(Scenario.uuid(), "issue", null, 0L, Fields.of(issueFields("old", "after the key")),
+            SaveResult saved = save.save(SEED, new SaveCommand(Scenario.uuid(), "issue", null, 0L, Fields.of(issueFields("old", "after the import")),
                     Scenario.REASON));
             assertThat(saved.author()).isEqualTo(SEED);
             assertThat(saved.id()).isEqualTo("OLD-I-0004");
@@ -632,7 +619,7 @@ class LegacyImportTest {
 
             LedgerException grant = Expect.failure(rig::importAll, ConflictCode.DUPLICATE_KEY);
 
-            assertThat(grant.args().getFirst()).contains("project").contains("session_key").contains("session_grant")
+            assertThat(grant.args().getFirst()).contains("project").contains("session_grant")
                     .doesNotContain("owner_audit");
             assertThat(rig.ledgerRows()).isEqualTo(withGrant);
         });

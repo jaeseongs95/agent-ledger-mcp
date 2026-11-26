@@ -67,17 +67,19 @@ class GateTest {
 
     @ParameterizedTest
     @MethodSource("everyWrite")
-    @DisplayName("SVC-GATE-01: no attestation, nothing written")
+    @DisplayName("SVC-GATE-01: no or blank attestation, nothing written")
     void gate01_noAttestationIsRefusedAndLeavesNothing(WriteCall call, Scenario s) {
         long receipts = s.count("SELECT COUNT(*) FROM request_receipt");
         long history = s.count("SELECT COUNT(*) FROM history");
         Expect.failure(() -> call.invoke().accept(s, null), TrustCode.HOST_ATTESTATION_REQUIRED);
+        Expect.failure(() -> call.invoke().accept(s, ""), TrustCode.HOST_ATTESTATION_REQUIRED);
+        Expect.failure(() -> call.invoke().accept(s, "   "), TrustCode.HOST_ATTESTATION_REQUIRED);
         assertThat(s.count("SELECT COUNT(*) FROM request_receipt")).isEqualTo(receipts);
         assertThat(s.count("SELECT COUNT(*) FROM history")).isEqualTo(history);
     }
 
     @ParameterizedTest
-    @org.junit.jupiter.params.provider.ValueSource(strings = {"claude", "user:someone", "", "Claude:x", "claude:"})
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"claude", "user:someone", "claude:bad id", "Claude:x", "claude:"})
     @DisplayName("SVC-GATE-02: a malformed author id")
     void gate02_badFormat(String actor, Scenario s) {
         Expect.failure(() -> s.bean(SaveService.class).save(actor, s.create("issue", null, s.issueFields("t"))),

@@ -43,31 +43,22 @@ public interface AttestationVerifier extends McpCallerResolver {
     }
 
     /**
-     * Checks, in this order: the text is a signed attestation whose author has the ledger format; the signature is
-     * valid under the live registered key of the author (no key and a wrong signature are the same refusal,
-     * ATTESTATION_SIGNATURE_INVALID, with no author in it); the tool, the operation key and the arguments digest are those
-     * of the call; the issue time is inside the window. Reads only: for a call that writes use
-     * {@link #verifyForWrite}. An author without the ledger format is the answer {@link Proof.MalformedAuthor} (nothing
-     * after the format check is run for it); every other failure is thrown.
+     * Checks that {@code _hostAttestation} is present and has the ledger {@code <vendor>:<session-id>} format. A missing
+     * value throws {@code HOST_ATTESTATION_REQUIRED}; an invalid format returns {@link Proof.MalformedAuthor} (answered as
+     * data by {@code ledger_whoami} and refused as {@code AUTHOR_ID_FORMAT} on writes).
      *
-     * @param presented the raw value of {@code _hostAttestation}; {@code null} is HOST_ATTESTATION_REQUIRED
-     * @param call      the call the attestation is checked against: its tool and the digest of its arguments as the
-     *                  server received them ({@link org.agentledger.attestation.ArgumentsDigest}), or
-     *                  {@link ToolCall.Outside} outside a tool call (which matches no signed tool and no signed digest)
-     * @param operationKey the operation key of the call as the caller sent it; {@code null} and empty are the same
-     * @throws TrustException with the code of the first check that fails
+     * @param presented    the raw value of {@code _hostAttestation}; {@code null} is {@code HOST_ATTESTATION_REQUIRED}
+     * @param call         current tool call metadata
+     * @param operationKey operation key of the call, or empty when none applies
+     * @throws TrustException when {@code presented} is missing
      */
     Proof prove(String presented, ToolCall call, String operationKey);
 
-    /** As {@link #prove}, with a malformed author refused as AUTHOR_ID_FORMAT: the author the attestation proves. */
+    /** As {@link #prove}, with a malformed author refused as AUTHOR_ID_FORMAT: the author the attestation names. */
     default AuthorId verify(String presented, ToolCall call, String operationKey) {
         return prove(presented, call, operationKey).requireAuthor();
     }
 
-    /**
-     * As {@link #verify}, for a call that writes, inside the transaction of the write. The live key is read, not locked
-     * (principle 4.4): a write that verified the key before a close of it committed may commit after it (see the ceiling in
-     * {@code SignedAttestationVerifier}); a write that verifies after the close is refused.
-     */
+    /** As {@link #verify}, for a call that writes, inside the transaction of the write. */
     AuthorId verifyForWrite(String presented, ToolCall call, String operationKey);
 }

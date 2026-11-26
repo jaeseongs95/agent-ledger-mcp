@@ -13,7 +13,6 @@ import org.agentledger.admin.support.AdminTest;
 import org.agentledger.admin.support.AdminTestSettings;
 import org.agentledger.admin.support.Browser;
 import org.agentledger.admin.support.Browser.Form;
-import org.agentledger.admin.support.TestPasskeys;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -89,17 +88,16 @@ class TokenSignInTest {
     }
 
     @Test
-    @DisplayName("PSK-TOK-04: a token session writes only with the approval of a passkey: 403 PASSKEY_APPROVAL_REQUIRED without it, stored with it")
-    void tok04_aWriteStillNeedsAPasskey() throws Exception {
-        Browser owner = new Browser(mvc).withPasskey(TestPasskeys.OWNER);
+    @DisplayName("PSK-TOK-04: a token session writes directly with valid CSRF without passkey re-approval, and is refused 403 without CSRF")
+    void tok04_aTokenSessionWritesWithCsrf() throws Exception {
+        Browser owner = new Browser(mvc);
         owner.perform(owner.form("/login", Form.of("username", "owner", "token", AdminTestSettings.TOKEN),
                 owner.csrfOf("/login"))).andExpect(status().is3xxRedirection());
         String id = "t" + UUID.randomUUID().toString().replace("-", "").substring(0, 8);
         var project = Form.of("id", id, "code", id.toUpperCase(java.util.Locale.ROOT), "title", "t");
 
-        owner.perform(owner.formWithoutApproval("/projects", project, owner.csrfOf("/projects"))
-                .accept(MediaType.APPLICATION_JSON)).andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("PASSKEY_APPROVAL_REQUIRED"));
+        owner.perform(owner.form("/projects", project, null).accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isForbidden());
         assertThat(count(id)).isZero();
 
         owner.perform(owner.form("/projects", project, owner.csrfOf("/projects"))).andExpect(status().is3xxRedirection());

@@ -52,15 +52,6 @@ class StartupOutputTest {
         assertThat(Json.MAPPER.readTree(stdout).isObject()).isTrue();
     }
 
-    @Test
-    @DisplayName("HK-050 real main: session-key prints exactly its four lines and nothing before or after them")
-    void sessionKeyIsFourLinesAlone(HookJar jar) throws IOException {
-        Run run = jar.run(NOTHING, "session-key", "ledger", "claude:startup-1");
-        assertThat(run.stderr()).as("stderr bytes").isEmpty();
-        assertThat(run.exit()).isZero();
-        assertThat(run.out()).matches("server: ledger\nauthor: claude:startup-1\npublic-key: [A-Za-z0-9+/=]+\nfingerprint: [0-9a-f]{64}\n");
-    }
-
     @ParameterizedTest
     @ValueSource(strings = {"--debug", "--trace", "--spring.main.banner-mode=console", "--spring.main.log-startup-info=true",
             "--logging.level.root=DEBUG", "--spring.profiles.active=other"})

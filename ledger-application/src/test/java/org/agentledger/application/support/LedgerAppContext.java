@@ -4,8 +4,6 @@ package org.agentledger.application.support;
 
 import java.util.function.Supplier;
 import javax.sql.DataSource;
-import org.agentledger.apptest.SigningAttestationVerifier;
-import org.agentledger.apptest.TestKeyRing;
 import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -34,14 +32,9 @@ public final class LedgerAppContext {
         return context.getBean(TestClock.class);
     }
 
-    /** The key pairs of the test authors and the signing of attestations (the hook of the service tests). */
-    public TestKeyRing keys() {
-        return context.getBean(TestKeyRing.class);
-    }
-
-    /** Registers the key of the author as the owner would, so the author can write (once per context). */
+    /** Kept as a no-op for test fixtures: v4.0.0 validates plain {@code <vendor>:<session_id>} authors without session keys. */
     public void enroll(String author) {
-        context.getBean(SigningAttestationVerifier.class).enroll(author);
+        // no per-session key enrollment required
     }
 
     public JdbcClient jdbc() {

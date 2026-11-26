@@ -75,30 +75,6 @@ class ContractVectorsTest {
         assertThat(Author.parse(text)).isEmpty();
     }
 
-    @ParameterizedTest
-    @MethodSource("invalidAuthors")
-    @DisplayName("HK-042 session-key refuses every invalid author vector with exit 2, nothing on stdout and no key created; a null author cannot be given on a command line")
-    void sessionKeyRefusesInvalidVectors(String text, HookFixture fixture) {
-        if (text == null) {
-            return;
-        }
-        Run run = fixture.run(new String[] {HookCli.SESSION_KEY_COMMAND, "ledger", text}, new byte[0]);
-        assertThat(run.exit()).isEqualTo(2);
-        assertThat(run.stdout()).isEmpty();
-        assertThat(run.err()).contains("author");
-        assertThat(fixture.keyDirectory()).as("no key folder, so no key was created").doesNotExist();
-    }
-
-    @ParameterizedTest
-    @MethodSource("validAuthors")
-    @DisplayName("HK-042 session-key accepts every valid author vector and prints it back as the author line")
-    void sessionKeyAcceptsValidVectors(String text, HookFixture fixture) {
-        Run run = fixture.run(new String[] {HookCli.SESSION_KEY_COMMAND, "ledger", text}, new byte[0]);
-        assertThat(run.err()).isEmpty();
-        assertThat(run.exit()).isZero();
-        assertThat(run.out()).contains("author: " + text + "\n");
-    }
-
     @Test
     @DisplayName("HK-042 the value refuses what the format refuses: its compact constructor checks the vendor and the owner rule")
     void theValueChecksItself() {

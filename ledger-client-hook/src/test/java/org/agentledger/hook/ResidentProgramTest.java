@@ -449,8 +449,11 @@ class ResidentProgramTest {
         // the control: with the secret the same request is answered (so the 401 above is the secret and nothing else)
         HttpResponse<byte[]> accepted = post(resident, "/call", "hook", resident.secret(), body);
         assertThat(accepted.statusCode()).isEqualTo(200);
-        assertThat(new org.agentledger.hookclient.Wire().decodeAnswer(new java.io.ByteArrayInputStream(accepted.body())).exit()).isZero();
-        assertThat(jar.keyDirectory()).as("the accepted call made the key").exists();
+        org.agentledger.hookclient.HookAnswer decoded = new org.agentledger.hookclient.Wire()
+                .decodeAnswer(new java.io.ByteArrayInputStream(accepted.body()));
+        assertThat(decoded.exit()).isZero();
+        assertThat(new Run(decoded.exit(), decoded.stdout(), decoded.stderr()).out())
+                .contains(codex.author(HookFixture.HOST_ID));
         assertThat(HTTP.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + resident.port() + "/call"))
                 .header("Authorization", "Basic " + Base64.getEncoder().encodeToString(("hook:" + resident.secret()).getBytes(StandardCharsets.UTF_8)))
                 .GET().build(), HttpResponse.BodyHandlers.ofByteArray()).statusCode()).as("GET").isEqualTo(405);
@@ -673,9 +676,6 @@ class ResidentProgramTest {
         assertThat(Residents.running(jar.home())).hasSize(2);
         assertThat(Residents.stateFolders(jar.home())).hasSize(2);
         assertThat(Residents.startsOf(jar.home())).isEqualTo(2);
-        try (Stream<Path> keys = Files.list(elsewhere)) {
-            assertThat(keys.count()).isEqualTo(1);
-        }
         assertThat(stateOf(jar).directory()).isNotEqualTo(StateFolder.locate(jar.home().toString(), elsewhere.toString()).directory());
     }
 }

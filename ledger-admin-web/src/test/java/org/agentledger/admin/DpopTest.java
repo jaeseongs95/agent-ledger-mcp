@@ -10,7 +10,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.agentledger.admin.support.AdminTest;
 import org.agentledger.admin.support.AdminTestSettings;
-import org.agentledger.admin.support.AuthorKeys;
 import org.agentledger.admin.support.Browser;
 import org.agentledger.admin.support.Browser.Form;
 import org.agentledger.admin.support.Seeds;
@@ -65,13 +64,12 @@ class DpopTest {
     void adm057_noGrantByAnAgentToken() throws Exception {
         Seeds.Seeded project = seeds.project();
         int before = grants.liveAll().size();
-        AuthorKeys.Pair key = AuthorKeys.newPair();
 
         for (String authorization : new String[] {"Bearer " + AdminTestSettings.AGENT_TOKEN,
             "DPoP " + AdminTestSettings.AGENT_TOKEN}) {
             Browser agent = new Browser(mvc);
-            agent.perform(agent.form("/grants", key.confirmed(Form.of("author", "claude:dpop-agent", "project",
-                    project.project(), "scopes", "issue")), null).accept(MediaType.APPLICATION_JSON)
+            agent.perform(agent.form("/grants/author", Form.of("author", "claude:dpop-agent", "project",
+                    project.project(), "scopes", "issue"), null).accept(MediaType.APPLICATION_JSON)
                     .header(HttpHeaders.AUTHORIZATION, authorization).header("DPoP", PROOF))
                     .andExpect(status().is(authorization.startsWith("Bearer") ? 401 : 403));
         }

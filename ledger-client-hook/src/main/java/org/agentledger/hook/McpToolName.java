@@ -25,10 +25,10 @@ record McpToolName(String server, WriteTool tool) {
     static final String SERVER_CHARACTERS = "A-Za-z0-9._-";
     /** The longest server name. */
     static final int MAX_SERVER_LENGTH = 100;
-    /** A server name as the owner may give it to {@code session-key} and as the hook accepts it from a host. */
+    /** A server name as the hook accepts it from a host. */
     private static final Pattern SERVER = Pattern.compile("[" + SERVER_CHARACTERS + "]{1," + MAX_SERVER_LENGTH + "}");
 
-    /** Whether the text is a server name: the same rule for a name from a host and one given to {@code session-key}. */
+    /** Whether the text is a valid MCP server name. */
     static boolean isServerName(String text) {
         return text != null && SERVER.matcher(text).matches();
     }

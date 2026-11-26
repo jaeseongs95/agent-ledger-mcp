@@ -7,14 +7,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.NoSuchAlgorithmException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
-import org.agentledger.attestation.PublicKeys;
 import org.agentledger.cli.support.CliExtension;
 import org.agentledger.cli.support.CliExtension.Cli;
 import org.agentledger.cli.support.CliExtension.Outcome;
@@ -47,7 +43,7 @@ class DriverWiringTest {
     }
 
     @Test
-    @DisplayName("CLI-027 a registration whose jar does not exist (read through spring.config.import) is not a usable driver: key-register is DRIVER_NOT_CONFIGURED (exit 1) naming driver-register, the reason is logged, no database bean is created")
+    @DisplayName("CLI-027 a registration whose jar does not exist (read through spring.config.import) is not a usable driver: grant is DRIVER_NOT_CONFIGURED (exit 1) naming driver-register, the reason is logged, no database bean is created")
     void unusableRegistrationIsRefused(Cli cli, CapturedOutput captured) throws IOException {
         Path registration = tmp.resolve("jdbc-driver.yaml");
         Path missingJar = tmp.resolve("missing-driver.jar");
@@ -60,11 +56,9 @@ class DriverWiringTest {
                       sha256: '%s'
                       registered-at: '2026-11-11T00:00:00Z'
                 """.formatted(slashed(missingJar), PostgresDriverJar.DRIVER_CLASS, "0".repeat(64)));
-        KeyPair pair = pair();
 
         Outcome result = cli.withArguments("--spring.config.import=optional:file:" + slashed(registration))
-                .run(secrets(), null, new RecordingOutput(), "key-register", "claude:session-1",
-                        PublicKeys.encode(pair.getPublic()), PublicKeys.fingerprint(pair.getPublic()));
+                .run(secrets(), null, new RecordingOutput(), "grant", "claude:session-1", "e2e", "issue");
 
         assertThat(result.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
         assertThat(result.code()).contains(ErrorCode.DRIVER_NOT_CONFIGURED);
@@ -91,18 +85,10 @@ class DriverWiringTest {
         assertThat(cli.run(secrets(), new ScriptedSecretInput(PASSWORD.toCharArray()), new RecordingOutput(),
                 "secret-set", PASSWORD_NAME).exitCode()).isZero();
 
-        Outcome result = cli.run(secrets(), null, new RecordingOutput(), "key-register");
+        Outcome result = cli.run(secrets(), null, new RecordingOutput(), "grant");
 
         assertThat(result.exitCode()).isEqualTo(ExitStatus.USAGE.code());
         assertThat(result.context().getEnvironment().getProperty(PASSWORD_NAME)).isEqualTo(PASSWORD);
         assertThat(captured.getAll()).doesNotContain(PASSWORD);
-    }
-
-    private static KeyPair pair() {
-        try {
-            return KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
-        } catch (NoSuchAlgorithmException failure) {
-            throw new IllegalStateException(failure);
-        }
     }
 }

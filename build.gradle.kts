@@ -15,7 +15,7 @@ plugins {
 }
 
 group = "org.agentledger"
-version = "3.0.1"
+version = "4.0.0"
 
 spotless {
     java {
@@ -161,7 +161,7 @@ subprojects {
     apply(plugin = "java-library")
 
     group = "org.agentledger"
-    version = "3.0.1"
+    version = "4.0.0"
 
     val projectName = project.name
     val usesDatabase = projectName in databaseModules

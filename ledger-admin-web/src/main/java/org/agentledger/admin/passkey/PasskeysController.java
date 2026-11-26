@@ -18,8 +18,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
  * ceremonies are the framework's endpoints {@code /webauthn/register/*}, driven by the script of this page; the registration is
  * open only to the enrolment session of the one-time code of the owner's shell, see {@code EnrollmentTokenService}, so the page
  * offers the registration to that session and tells any other how to get one) and the closing of one. Closing a
- * passkey is an owner write like any other: it needs the approval of a passkey ({@link ApprovalInterceptor}), and the last live
- * passkey is never closed here.
+ * passkey requires an authenticated owner session with CSRF protection, and the last live passkey is never closed here.
  */
 @Controller
 public class PasskeysController {

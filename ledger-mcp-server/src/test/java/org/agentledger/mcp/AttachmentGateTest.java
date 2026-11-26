@@ -20,7 +20,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.agentledger.application.admin.SessionKeyService;
 import org.agentledger.mcp.error.ToolError;
 import org.agentledger.mcp.support.AttachmentCalls.Begin;
 import org.agentledger.mcp.support.AttachmentCalls.Chunk;
@@ -31,7 +30,6 @@ import org.agentledger.mcp.support.McpServerTest;
 import org.agentledger.mcp.support.McpSession;
 import org.agentledger.mcp.support.McpTestSettings;
 import org.agentledger.mcp.support.Scenario;
-import org.agentledger.testing.TestOwners;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -123,18 +121,7 @@ class AttachmentGateTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("org.agentledger.mcp.support.ToolNames#attachment")
-    @DisplayName("ATA-018: signed with the key that the owner closed, the tool is ATTESTATION_SIGNATURE_INVALID; no row, no file")
-    void closedKey(String tool, McpSession session, Scenario scenario, @Autowired SessionKeyService owner,
-            @Autowired DataSource dataSource, @Autowired Environment environment) {
-        String author = scenario.actorWith("ata18c", "issue");
-        assertThat(owner.revoke(author, TestOwners.OWNER)).isTrue();
-
-        refused(session, dataSource, environment, tool, author, true, "ATTESTATION_SIGNATURE_INVALID");
-    }
-
-    @ParameterizedTest(name = "{0}")
-    @MethodSource("org.agentledger.mcp.support.ToolNames#attachment")
-    @DisplayName("ATA-018: an author with a live key and no live grant gets SESSION_NOT_GRANTED; no row, no file")
+    @DisplayName("ATA-018: an author with no live grant gets SESSION_NOT_GRANTED; no row, no file")
     void noLiveGrant(String tool, McpSession session, Scenario scenario, @Autowired DataSource dataSource,
             @Autowired Environment environment) {
         String author = "claude:nogrant" + UUID.randomUUID().toString().substring(0, 8);

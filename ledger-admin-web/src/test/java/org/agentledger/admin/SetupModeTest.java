@@ -67,7 +67,7 @@ class SetupModeTest {
         Browser anonymous = new Browser(mvc);
 
         for (String path : List.of("/webauthn/authenticate/options", "/login/webauthn", "/login/ott", "/webauthn/register/options")) {
-            int status = anonymous.perform(anonymous.formWithoutApproval(path, Browser.Form.of(), null)
+            int status = anonymous.perform(anonymous.form(path, Browser.Form.of(), null)
                     .accept(MediaType.APPLICATION_JSON)).andReturn().getResponse().getStatus();
             assertThat(status).as(path).isBetween(400, 403);
         }

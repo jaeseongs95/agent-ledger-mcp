@@ -151,12 +151,9 @@ class ArchitectureTest {
     @DisplayName("ARC-038: every owner operation of the services names its actor; no main code has an actor-less path or "
             + "the system actor")
     void arc038_ownerOperationsNameTheirActor() throws java.io.IOException {
-        Set<String> operations = Set.of("grant", "revoke", "set", "register", "registerReplacing", "grantWithKey",
-                "grantReplacingKey", "seed", "issue");
+        Set<String> operations = Set.of("grant", "revoke", "syncProjectGrants", "set", "seed");
         for (Class<?> service : List.of(org.agentledger.application.admin.GrantService.class,
-                org.agentledger.application.admin.CommonCodeService.class,
-                org.agentledger.application.admin.SessionKeyService.class,
-                org.agentledger.application.admin.SessionTokenService.class)) {
+                org.agentledger.application.admin.CommonCodeService.class)) {
             for (java.lang.reflect.Method method : service.getDeclaredMethods()) {
                 if (java.lang.reflect.Modifier.isPublic(method.getModifiers()) && operations.contains(method.getName())) {
                     assertThat(method.getParameterTypes()).as(method.toString())

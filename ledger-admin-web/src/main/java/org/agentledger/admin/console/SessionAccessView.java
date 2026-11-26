@@ -12,13 +12,10 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 import org.agentledger.domain.model.SessionGrant;
-import org.agentledger.domain.model.SessionPublicKey;
-import org.agentledger.domain.model.SessionToken;
 
 /**
- * Session-centric view model for the admin {@code /grants} console. Groups live session keys, unrevoked bearer tokens,
- * and active project grants by author so operators manage permissions per session instead of across three separate
- * tables.
+ * Session-centric view model for the admin {@code /grants} console. Groups active project grants by session author so
+ * operators manage permissions per session in one place.
  */
 public final class SessionAccessView {
 
@@ -44,25 +41,8 @@ public final class SessionAccessView {
     }
 
     /** Everything an operator needs to inspect and manage for one session author. */
-    public record SessionCard(String author, SessionPublicKey liveKey, List<SessionToken> liveTokens,
-            List<ProjectGrantRow> projects, List<String> availableProjects, int totalGrantCount) {
-
-        public boolean hasCredential() {
-            return liveKey != null || !liveTokens.isEmpty();
-        }
-
-        public String credentialKind() {
-            if (liveKey != null && !liveTokens.isEmpty()) {
-                return "both";
-            }
-            if (liveKey != null) {
-                return "key";
-            }
-            if (!liveTokens.isEmpty()) {
-                return "token";
-            }
-            return "none";
-        }
+    public record SessionCard(String author, List<ProjectGrantRow> projects, List<String> availableProjects,
+            int totalGrantCount) {
 
         public String projectListText() {
             return projects.stream().map(ProjectGrantRow::project).collect(Collectors.joining(" "));
@@ -80,15 +60,6 @@ public final class SessionAccessView {
                     sb.append(' ').append(row.note());
                 }
             }
-            if (liveKey != null) {
-                sb.append(' ').append(liveKey.fingerprint());
-            }
-            for (SessionToken token : liveTokens) {
-                sb.append(' ').append(token.tokenPrefix());
-                if (token.note() != null && !token.note().isBlank()) {
-                    sb.append(' ').append(token.note());
-                }
-            }
             return sb.toString();
         }
     }
@@ -96,21 +67,8 @@ public final class SessionAccessView {
     private SessionAccessView() {
     }
 
-    /** Aggregates keys, tokens, and grants by author id into sorted session cards. */
-    public static List<SessionCard> build(List<SessionGrant> grants, List<SessionPublicKey> keys,
-            List<SessionToken> tokens, List<String> allProjectIds) {
-        Map<String, SessionPublicKey> keyByAuthor = new TreeMap<>(String.CASE_INSENSITIVE_ORDER.thenComparing(
-                Comparator.naturalOrder()));
-        for (SessionPublicKey key : keys) {
-            keyByAuthor.put(key.authorId().value(), key);
-        }
-
-        Map<String, List<SessionToken>> tokensByAuthor = new TreeMap<>(String.CASE_INSENSITIVE_ORDER.thenComparing(
-                Comparator.naturalOrder()));
-        for (SessionToken token : tokens) {
-            tokensByAuthor.computeIfAbsent(token.authorId().value(), ignored -> new ArrayList<>()).add(token);
-        }
-
+    /** Aggregates active grants by author id into sorted session cards. */
+    public static List<SessionCard> build(List<SessionGrant> grants, List<String> allProjectIds) {
         Map<String, Map<String, List<SessionGrant>>> grantsByAuthor = new TreeMap<>(
                 String.CASE_INSENSITIVE_ORDER.thenComparing(Comparator.naturalOrder()));
         for (SessionGrant grant : grants) {
@@ -119,19 +77,10 @@ public final class SessionAccessView {
                     .add(grant);
         }
 
-        Set<String> allAuthors = new LinkedHashSet<>();
-        Map<String, String> sortedAuthors = new TreeMap<>(String.CASE_INSENSITIVE_ORDER.thenComparing(
-                Comparator.naturalOrder()));
-        keyByAuthor.keySet().forEach(a -> sortedAuthors.put(a, a));
-        tokensByAuthor.keySet().forEach(a -> sortedAuthors.put(a, a));
-        grantsByAuthor.keySet().forEach(a -> sortedAuthors.put(a, a));
-        allAuthors.addAll(sortedAuthors.values());
-
-        List<SessionCard> cards = new ArrayList<>(allAuthors.size());
-        for (String author : allAuthors) {
-            SessionPublicKey key = keyByAuthor.get(author);
-            List<SessionToken> authorTokens = List.copyOf(tokensByAuthor.getOrDefault(author, List.of()));
-            Map<String, List<SessionGrant>> byProject = grantsByAuthor.getOrDefault(author, Map.of());
+        List<SessionCard> cards = new ArrayList<>(grantsByAuthor.size());
+        for (Map.Entry<String, Map<String, List<SessionGrant>>> authorEntry : grantsByAuthor.entrySet()) {
+            String author = authorEntry.getKey();
+            Map<String, List<SessionGrant>> byProject = authorEntry.getValue();
 
             List<ProjectGrantRow> projectRows = new ArrayList<>(byProject.size());
             int totalGrants = 0;
@@ -147,15 +96,14 @@ public final class SessionAccessView {
                     available.add(projectId);
                 }
             }
-            cards.add(new SessionCard(author, key, authorTokens, List.copyOf(projectRows), List.copyOf(available),
-                    totalGrants));
+            cards.add(new SessionCard(author, List.copyOf(projectRows), List.copyOf(available), totalGrants));
         }
         return List.copyOf(cards);
     }
 
-    /** Returns authors that currently hold a live key or an unrevoked bearer token. */
-    public static List<String> enrolledAuthors(List<SessionCard> cards) {
-        return cards.stream().filter(SessionCard::hasCredential).map(SessionCard::author).toList();
+    /** Returns every session author that currently holds at least one active grant. */
+    public static List<String> knownAuthors(List<SessionCard> cards) {
+        return cards.stream().map(SessionCard::author).toList();
     }
 
     private static ProjectGrantRow toProjectRow(String project, List<SessionGrant> projectGrants) {

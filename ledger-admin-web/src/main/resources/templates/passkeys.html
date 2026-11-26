@@ -7,7 +7,7 @@
   <div class="page-header">
     <div class="page-header-text">
       <h1 th:text="#{passkeys.title}">Passkeys</h1>
-      <p class="hint" th:text="#{passkeys.intro(${rpId})}">Every change you make here is approved with a passkey.</p>
+      <p class="hint" th:text="#{passkeys.intro(${rpId})}">Passkeys registered here can sign in to this console.</p>
     </div>
   </div>
 
@@ -46,7 +46,6 @@
   <section class="card" th:attr="aria-label=#{passkeys.list}">
     <div class="card-header">
       <h2 th:text="#{passkeys.list}">Registered passkeys</h2>
-      <th:block th:if="${!enrolling}" th:replace="~{fragments :: approveHint}"></th:block>
     </div>
     <p th:if="${#lists.isEmpty(passkeys)}" class="hint" th:text="#{passkeys.none}">None yet.</p>
     <div th:if="${!#lists.isEmpty(passkeys)}" class="table-wrap">
@@ -70,7 +69,7 @@
             </td>
             <td class="num"><th:block th:replace="~{fragments :: time(${passkey.registeredAt()})}"></th:block></td>
             <td th:if="${!enrolling}" class="cell-actions">
-              <form method="post" th:action="@{/passkeys/revoke}" data-approve class="form-inline">
+              <form method="post" th:action="@{/passkeys/revoke}" class="form-inline">
                 <input type="hidden" name="credentialId" th:value="${passkey.credentialId()}">
                 <button type="submit" class="secondary btn-sm" th:text="#{passkeys.revoke}">Close</button>
               </form>

@@ -19,7 +19,7 @@ import org.springframework.security.web.webauthn.management.WebAuthnRelyingParty
 
 /**
  * The passkeys of the admin web: the WebAuthn support of Spring Security on the ledger database (the two storage
- * repositories), the sign-in with the one-time code, the approval of every owner write and the passkey page. Brought in by
+ * repositories), the sign-in with the one-time code, and the passkey management page. Brought in by
  * {@code ConsoleConfiguration}, so it exists in console mode only (setup mode has no database to keep a passkey in). The scan
  * has the same {@link TypeExcludeFilter} as the scan of the console.
  */
@@ -29,9 +29,9 @@ import org.springframework.security.web.webauthn.management.WebAuthnRelyingParty
 public class PasskeyConfiguration {
 
     /**
-     * The one engine of every ceremony (sign-in, registration and approval): WebAuthn4J behind Spring Security's
+     * The one engine of every WebAuthn ceremony (sign-in and registration): WebAuthn4J behind Spring Security's
      * {@link Webauthn4JRelyingPartyOperations}, for the host name and the origins of the admin web, with user verification
-     * required at registration and at every assertion. A {@code @Bean} method because the class is the framework's and is
+     * required at registration and at sign-in. A {@code @Bean} method because the class is the framework's and is
      * configured, not written.
      */
     @Bean

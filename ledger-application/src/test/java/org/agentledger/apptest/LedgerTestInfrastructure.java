@@ -5,10 +5,6 @@ package org.agentledger.apptest;
 import java.time.Clock;
 import java.util.List;
 import javax.sql.DataSource;
-import org.agentledger.database.repository.IdAllocator;
-import org.agentledger.database.repository.SessionKeyRepository;
-import org.agentledger.application.admin.SessionKeyService;
-import org.agentledger.application.gate.SignedAttestationVerifier;
 import org.agentledger.application.support.LedgerTestFixtures;
 import org.agentledger.application.support.RecordingDataSource;
 import org.agentledger.application.support.TestClock;
@@ -20,10 +16,7 @@ import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.core.env.Environment;
-import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
-import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * What the service tests add to the application under test: the injected UTC clock, the recording of the SQL
@@ -57,25 +50,6 @@ public class LedgerTestInfrastructure {
     @Bean
     LedgerTestFixtures ledgerTestFixtures() {
         return new LedgerTestFixtures();
-    }
-
-    /** The key pairs of the test authors; the hook of the service tests (see {@link SigningAttestationVerifier}). */
-    @Bean
-    TestKeyRing testKeyRing() {
-        return new TestKeyRing();
-    }
-
-    /**
-     * Signs the plain authors of the service tests and hands the signed attestation to the real verifier. It is the
-     * primary {@link AttestationVerifier} of the context; the real one stays a bean of its own type for the tests of
-     * the verification.
-     */
-    @Bean
-    @Primary
-    SigningAttestationVerifier signingAttestationVerifier(SignedAttestationVerifier real, TestKeyRing keys, Clock clock,
-            SessionKeyRepository keyRows, IdAllocator ids,
-            SessionKeyService sessionKeys, PlatformTransactionManager transactions) {
-        return new SigningAttestationVerifier(real, keys, clock, sessionKeys, keyRows, ids, transactions);
     }
 
     @Bean

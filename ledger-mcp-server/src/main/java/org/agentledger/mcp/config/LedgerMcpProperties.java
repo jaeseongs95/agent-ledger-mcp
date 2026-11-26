@@ -24,26 +24,18 @@ import org.springframework.validation.annotation.Validated;
  * @param allowedOrigins   origins a browser request may carry; a request without an Origin header is not a browser request
  * @param maxRequestSize   the largest request body
  * @param codePollInterval how often the common-code revision is read to notice changes made by another process
- * @param authMode         caller authentication mode ({@link AuthMode#STANDARD} by default, or {@link AuthMode#ATTESTED})
  */
 @Validated
 @ConfigurationProperties(prefix = "ledger.mcp")
 public record LedgerMcpProperties(String token,
         @DefaultValue({"127.0.0.1", "localhost"}) @NotEmpty List<String> allowedHosts,
         @DefaultValue List<String> allowedOrigins, @DefaultValue("1MB") @NotNull DataSize maxRequestSize,
-        @DefaultValue("5s") @NotNull Duration codePollInterval,
-        @DefaultValue("STANDARD") @NotNull AuthMode authMode) {
+        @DefaultValue("5s") @NotNull Duration codePollInterval) {
 
     @ConstructorBinding
     public LedgerMcpProperties {
         allowedHosts = List.copyOf(allowedHosts);
         allowedOrigins = List.copyOf(allowedOrigins);
-        authMode = authMode == null ? AuthMode.STANDARD : authMode;
-    }
-
-    public LedgerMcpProperties(String token, List<String> allowedHosts, List<String> allowedOrigins,
-            DataSize maxRequestSize, Duration codePollInterval) {
-        this(token, allowedHosts, allowedOrigins, maxRequestSize, codePollInterval, AuthMode.STANDARD);
     }
 
     /** The maximum request size must be at least 1 byte and fit in an in-memory buffer check ({@code maxBytes + 1}). */
@@ -63,7 +55,6 @@ public record LedgerMcpProperties(String token,
     @Override
     public String toString() {
         return "LedgerMcpProperties[token=<hidden>, allowedHosts=" + allowedHosts + ", allowedOrigins="
-                + allowedOrigins + ", maxRequestSize=" + maxRequestSize + ", codePollInterval=" + codePollInterval
-                + ", authMode=" + authMode + "]";
+                + allowedOrigins + ", maxRequestSize=" + maxRequestSize + ", codePollInterval=" + codePollInterval + "]";
     }
 }

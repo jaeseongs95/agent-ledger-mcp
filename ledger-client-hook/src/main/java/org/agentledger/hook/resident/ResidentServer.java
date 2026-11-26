@@ -13,7 +13,6 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import org.agentledger.hook.keys.KeyStoreProperties;
 import org.agentledger.hookclient.AddressFile;
 import org.agentledger.hookclient.OwnerOnlyFiles;
 import org.agentledger.hookclient.ResidentAddress;
@@ -42,13 +41,13 @@ public final class ResidentServer {
 
     private final HookService service;
     private final ResidentSettings settings;
-    private final KeyStoreProperties keyStore;
+    private final ResidentAccountProperties account;
     private final Clock clock;
 
-    ResidentServer(HookService service, ResidentSettings settings, KeyStoreProperties keyStore, Clock clock) {
+    ResidentServer(HookService service, ResidentSettings settings, ResidentAccountProperties account, Clock clock) {
         this.service = service;
         this.settings = settings;
-        this.keyStore = keyStore;
+        this.account = account;
         this.clock = clock;
     }
 
@@ -56,12 +55,12 @@ public final class ResidentServer {
      * Runs the program for this state folder until it is stopped or idle. Returns at once, with nothing started, if another
      * program already holds the state folder.
      *
-     * @param state the state folder the client chose for the key folder
+     * @param state the state folder the client chose
      * @param build the build of the program file, written to the address file for the clients to compare
      */
     public void run(StateFolder state, String build) throws IOException, InterruptedException {
         LOG.info("the resident hook program starts: pid {}, build {}", ProcessHandle.current().pid(), build);
-        OwnerOnlyFiles files = OwnerOnlyFiles.forFileSystem(FileSystems.getDefault(), keyStore.userName());
+        OwnerOnlyFiles files = OwnerOnlyFiles.forFileSystem(FileSystems.getDefault(), account.userName());
         files.createDirectories(state.directory());
         try (InstanceLock instance = InstanceLock.take(state.instanceLock(), files)) {
             if (!instance.held()) {

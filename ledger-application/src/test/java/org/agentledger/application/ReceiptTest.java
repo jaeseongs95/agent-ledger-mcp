@@ -414,12 +414,8 @@ class ReceiptTest {
     void rcp13_restart(Scenario s) {
         String id = Scenario.uuid();
         SaveResult first = s.bean(SaveService.class).save(Scenario.AUTHOR, create(s, id, "i"));
-        String token = s.ctx().keys().token(Scenario.AUTHOR, "ledger_save_issue", id, s.ctx().clock().instant());
-        LedgerTestRunners.restartOf(s.ctx(), restarted -> assertThat(ScopedValue
-                .where(org.agentledger.domain.context.ToolScope.CURRENT, "ledger_save_issue")
-                .where(org.agentledger.domain.context.ToolScope.ARGUMENTS_DIGEST,
-                        org.agentledger.apptest.TestKeyRing.DIRECT_DIGEST)
-                .call(() -> restarted.getBean(SaveService.class).save(token, create(s, id, "i")))).isEqualTo(first));
+        LedgerTestRunners.restartOf(s.ctx(), restarted -> assertThat(
+                restarted.getBean(SaveService.class).save(Scenario.AUTHOR, create(s, id, "i"))).isEqualTo(first));
         assertThat(issues(s)).isEqualTo(1);
     }
 

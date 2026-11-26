@@ -147,12 +147,7 @@ final class HookJar {
         }
     }
 
-    /**
-     * Checks the attestation of the last start of a direct call with the standard host id: the token is issued between
-     * the start and the end of that process, and verified with the public key in the key folder.
-     */
     Attestations.Stamp stamp(HostScenario host, String op, JsonNode sent, Run run) {
-        return Attestations.verify(keyDirectory, new Attestations.Window(startedAt, finishedAt + 1), host.server(),
-                host.author(HookFixture.HOST_ID), op, sent, host.stampedPart(run));
+        return Attestations.verify(host.author(HookFixture.HOST_ID), op, sent, host.stampedPart(run));
     }
 }

@@ -12,17 +12,12 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
-import org.agentledger.application.admin.SessionKeyService.RegisterCommand;
-import org.agentledger.application.admin.SessionTokenService.IssueCommand;
-import org.agentledger.application.admin.SessionTokenService.IssuedToken;
 import org.agentledger.application.gate.ProjectPinner;
 import org.agentledger.database.repository.Counter;
 import org.agentledger.database.repository.GrantStateRepository;
 import org.agentledger.database.repository.IdAllocator;
 import org.agentledger.database.repository.ProjectRepository;
 import org.agentledger.database.repository.SessionGrantRepository;
-import org.agentledger.database.repository.SessionKeyStateRepository;
-import org.agentledger.database.repository.SessionTokenStateRepository;
 import org.agentledger.domain.error.ConflictCode;
 import org.agentledger.domain.error.ConflictException;
 import org.agentledger.domain.error.LookupCode;
@@ -45,12 +40,11 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Session grants, used by the admin web and the CLI (never by the MCP tools). A grant is a row per scope; granting
  * closes the live grant of the same key first and rows are never deleted. Two grants of one key at the same time
- * end with exactly one live row. An author without a live session key is refused (SESSION_KEY_REQUIRED): the rule is
- * here, once, for every caller.
+ * end with exactly one live row. Grants apply directly to any valid {@code <vendor>:<session-id>} author without
+ * requiring any separate session key or per-session token registration.
  *
  * <p>The order of the locks of every method is the one of the writes: the project row, then the {@code session_grant} rows (in
- * {@link LockOrder}), then the numbers (see {@code Counter}). The key of the grant screen is therefore
- * bound after the grants are issued: its numbers (the key, the audit row) come after the number of the grant.
+ * {@link LockOrder}), then the numbers (see {@code Counter}).
  */
 @Service
 @Transactional
@@ -72,31 +66,17 @@ public class GrantService {
     public record SyncResult(int added, int revoked) {
     }
 
-    /** Result of issuing a bearer session token together with optional initial project scopes in one transaction. */
-    public record IssuedTokenWithGrants(IssuedToken token, String project, List<String> scopes) {
-    }
-
     private final GrantStateRepository state;
     private final SessionGrantRepository grants;
-    private final SessionKeyStateRepository keys;
-    private final SessionTokenStateRepository tokens;
-    private final SessionKeyService sessionKeys;
-    private final SessionTokenService sessionTokens;
     private final ProjectRepository projects;
     private final ProjectPinner projectPinner;
     private final IdAllocator ids;
     private final OwnerAuditWriter audit;
     private final Clock clock;
 
-    public GrantService(GrantStateRepository state, SessionGrantRepository grants, SessionKeyStateRepository keys,
-            SessionTokenStateRepository tokens, SessionKeyService sessionKeys, SessionTokenService sessionTokens,
-            ProjectRepository projects, ProjectPinner projectPinner, IdAllocator ids, OwnerAuditWriter audit,
-            Clock clock) {
+    public GrantService(GrantStateRepository state, SessionGrantRepository grants, ProjectRepository projects,
+            ProjectPinner projectPinner, IdAllocator ids, OwnerAuditWriter audit, Clock clock) {
         this.state = state;
-        this.keys = keys;
-        this.tokens = tokens;
-        this.sessionKeys = sessionKeys;
-        this.sessionTokens = sessionTokens;
         this.grants = grants;
         this.projects = projects;
         this.projectPinner = projectPinner;
@@ -107,45 +87,12 @@ public class GrantService {
 
     /**
      * Issues the grants and returns the id of each, one per scope in the order given; who issued them is recorded in the
-     * owner's audit trail in the same transaction. The live key of the author is read first ({@code requireLiveKey}), then
-     * the grants of the same key that are live are closed and the new ones inserted. Two grants of one key at the same
-     * moment are decided by the unique key of the live grant: the call that loses it ends with the translated
-     * DUPLICATE_KEY, and no call is run again.
+     * owner's audit trail in the same transaction. Two grants of one key at the same moment are decided by the unique key
+     * of the live grant: the call that loses it ends with the translated DUPLICATE_KEY, and no call is run again.
      */
     public List<Long> grant(GrantCommand command, OwnerIdentity actor) {
         Plan plan = plan(command);
-        requireLiveKey(plan.author(), plan.now());
         return issueAll(plan, actor);
-    }
-
-    /**
-     * The use case of the grant screen: issues the grants and binds the public key to the author (the key is registered as
-     * {@link SessionKeyService#register} does, the repeated registration of the key the author has is accepted), in one
-     * transaction. A refused grant takes the registration of the key back with it, and a refused key issues no grant; the
-     * owner's audit trail gets the rows of both operations or none. The key is bound after the grants, so that the numbers of
-     * the key and of the audit rows are taken after the project row, the grant rows and the number of the grant: the order of
-     * every grant. (The live key that {@link #grant} requires is the one this call binds.)
-     */
-    public List<Long> grantWithKey(GrantCommand command, String publicKey, OwnerIdentity actor) {
-        Plan plan = plan(command);
-        List<Long> issued = insertGrants(plan);
-        sessionKeys.register(new RegisterCommand(command.author(), publicKey, null), actor);
-        recordIssued(plan, issued, actor);
-        return issued;
-    }
-
-    /**
-     * Like {@link #grantWithKey}, and when the author already has another live key, replaces it: the caller names the
-     * fingerprint of the key that is replaced ({@link SessionKeyService#registerReplacing}). The replacement and the grants
-     * are one transaction.
-     */
-    public List<Long> grantReplacingKey(GrantCommand command, String publicKey, String replacedFingerprint,
-            OwnerIdentity actor) {
-        Plan plan = plan(command);
-        List<Long> issued = insertGrants(plan);
-        sessionKeys.registerReplacing(new RegisterCommand(command.author(), publicKey, null), actor, replacedFingerprint);
-        recordIssued(plan, issued, actor);
-        return issued;
     }
 
     /** What a grant call asks for, checked: the author, the project, the scopes in the order given, the expiry and the time. */
@@ -201,23 +148,6 @@ public class GrantService {
                         + issued.stream().map(String::valueOf).collect(Collectors.joining(",")));
     }
 
-    /**
-     * A write is accepted only when it is signed with the registered key of its author, so a grant for an author without
-     * a live key could never be used: it is refused (SESSION_KEY_REQUIRED) before any row is written.
-     *
-     * <p>ceiling: the live key is read, not locked (principle 4.4: no lock device, READ_COMMITTED). No write of this use case
-     * touches the row of the key (the close of a key does not touch the grants either: they stay), so no statement of the use
-     * case can decide the race with a close of the key. The window is the time of this transaction: a key that the owner closes
-     * after the read and before the commit leaves a grant for an author without a live key. That grant can never be used (every
-     * write of the author is refused until a key is registered, and then it is the grant the owner issued), so nothing is
-     * accepted that should not be.
-     */
-    private void requireLiveKey(AuthorId author, Instant now) {
-        if (keys.findLive(author).isEmpty() && tokens.findLiveByAuthor(author, now).isEmpty()) {
-            throw new ConflictException(ConflictCode.SESSION_KEY_REQUIRED, List.of(author.value()));
-        }
-    }
-
     private long insertGrant(AuthorId author, ProjectId project, Scope scope, Instant now, Instant expiresAt,
             String note) {
         long id = ids.next(Counter.SESSION_GRANT);
@@ -243,9 +173,9 @@ public class GrantService {
 
     /**
      * Synchronizes an author's live scopes on a single project to match {@code command.scopes()} in one transaction.
-     * Unchanged live scopes keep their existing rows; removed scopes are revoked and newly requested scopes are issued
-     * (requiring a live key or bearer token only when adding scopes). Lock order matches {@link #insertGrants}: project
-     * row first, then {@code session_grant} rows in {@link LockOrder#SCOPE}, then counter allocation and audit rows.
+     * Unchanged live scopes keep their existing rows; removed scopes are revoked and newly requested scopes are issued.
+     * Lock order matches {@link #insertGrants}: project row first, then {@code session_grant} rows in
+     * {@link LockOrder#SCOPE}, then counter allocation and audit rows.
      */
     public SyncResult syncProjectScopes(SyncCommand command, OwnerIdentity actor) {
         AuthorId author = Authors.of(command.author());
@@ -278,10 +208,6 @@ public class GrantService {
                 .filter(scope -> !current.containsKey(scope))
                 .toList();
 
-        if (!toAdd.isEmpty()) {
-            requireLiveKey(author, now);
-        }
-
         int revokedCount = 0;
         for (SessionGrant existing : toRevoke) {
             state.revoke(existing.id(), now);
@@ -308,31 +234,6 @@ public class GrantService {
             recordIssued(addedPlan, issuedIds, actor);
         }
         return new SyncResult(issuedIds.size(), revokedCount);
-    }
-
-    /**
-     * Issues a bearer session token and, when {@code scopes} is non-empty, also grants those initial scopes on
-     * {@code project} in the same transaction. Any validation or lookup failure rolls back the token as well so no
-     * half-configured bearer token is created.
-     */
-    public IssuedTokenWithGrants issueTokenWithOptionalGrants(IssueCommand tokenCommand, String project,
-            List<String> scopes, OwnerIdentity actor) {
-        boolean hasProject = project != null && !project.isBlank();
-        boolean hasScopes = scopes != null && !scopes.isEmpty();
-        if (hasScopes && !hasProject) {
-            throw ValidationException.invalid("project", ValidationReason.REQUIRED);
-        }
-        Plan initialPlan = hasScopes
-                ? plan(new GrantCommand(tokenCommand.author(), project, scopes, tokenCommand.expiresAt(),
-                        tokenCommand.note()))
-                : null;
-        IssuedToken issued = sessionTokens.issue(tokenCommand, actor);
-        if (initialPlan != null) {
-            issueAll(initialPlan, actor);
-            List<String> grantedTokens = initialPlan.scopes().stream().map(Scope::token).toList();
-            return new IssuedTokenWithGrants(issued, initialPlan.project().value(), grantedTokens);
-        }
-        return new IssuedTokenWithGrants(issued, null, List.of());
     }
 
     private int revokeAll(RevokeCommand command, OwnerIdentity actor) {

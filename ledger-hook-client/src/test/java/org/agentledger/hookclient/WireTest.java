@@ -26,7 +26,7 @@ class WireTest {
         for (int i = 0; i < everyByte.length; i++) {
             everyByte[i] = (byte) i;
         }
-        HookCall call = new HookCall(List.of("session-key", "한글 서버", "codex:é"), everyByte);
+        HookCall call = new HookCall(List.of("codex", "한글 서버", "codex:é"), everyByte);
 
         HookCall decoded = wire.decodeCall(new ByteArrayInputStream(wire.encode(call)));
         assertThat(decoded.arguments()).containsExactlyElementsOf(call.arguments());

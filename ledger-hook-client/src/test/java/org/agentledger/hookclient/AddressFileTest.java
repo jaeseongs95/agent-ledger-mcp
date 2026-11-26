@@ -9,6 +9,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -82,5 +87,40 @@ class AddressFileTest {
         Path path = folder.resolve("address");
         Files.writeString(path, "port=81\nfuture=1\npid=2\nprocessStart=3\nbuild=b\nsecret=" + secret + "\n");
         assertThat(new AddressFile(path).read()).contains(new ResidentAddress(81, 2, 3, "b", secret));
+    }
+
+    @Test
+    @DisplayName("3.0.1 concurrent polling reads do not break atomic AddressFile replacement")
+    void concurrentReadsDoNotBreakAtomicReplacement() throws Exception {
+        AddressFile file = new AddressFile(folder.resolve("address"));
+        OwnerOnlyFiles ownerFiles = files();
+        file.write(new ResidentAddress(5000, 1000, 1L, "1-1-1", ResidentAddress.newSecret()), ownerFiles);
+        AtomicBoolean done = new AtomicBoolean(false);
+
+        try (ExecutorService pool = Executors.newSingleThreadExecutor()) {
+            Future<Integer> reader = pool.submit(() -> {
+                int reads = 0;
+                while (!done.get()) {
+                    Optional<ResidentAddress> seen = file.read();
+                    if (seen.isPresent()) {
+                        assertThat(seen.orElseThrow().port()).isBetween(5000, 5050);
+                        reads++;
+                    }
+                }
+                return reads;
+            });
+            try {
+                for (int i = 1; i <= 50; i++) {
+                    file.write(new ResidentAddress(5000 + i, 1000 + i, i, "1-1-1", ResidentAddress.newSecret()), ownerFiles);
+                }
+            } finally {
+                done.set(true);
+            }
+            assertThat(reader.get()).isGreaterThanOrEqualTo(0);
+        }
+        assertThat(file.read().orElseThrow().port()).isEqualTo(5050);
+        try (Stream<Path> names = Files.list(folder)) {
+            assertThat(names).containsExactly(folder.resolve("address"));
+        }
     }
 }

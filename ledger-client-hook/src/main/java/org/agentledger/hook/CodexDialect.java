@@ -21,11 +21,8 @@ import tools.jackson.core.JacksonException;
  *     must be exactly the server segment, so a look-alike server is not signed for.
  * <li>The Codex Apps namespace {@code mcp__codex_apps__app_<app>_<tool>} (a real path: the tool of the app
  *     {@code <app>} reaches Codex as {@code app_<app>_<tool>} in the pseudo server {@code codex_apps}, for example
- *     {@code mcp__codex_apps__app_ledger_ledger_issue_save} for the app {@code ledger}). The audience here is the app, not the
- *     pseudo server that every app shares, so the server identity is {@code codex_apps.<app>} and the key is kept per
- *     (that identity, author): the owner registers the key printed by {@code session-key codex_apps.<app> <author>}. An
- *     app with another name gets another identity and another key, so a look-alike app never gets a signature that
- *     verifies for the real one.
+ *     {@code mcp__codex_apps__app_ledger_ledger_issue_save} for the app {@code ledger}). The server identity is
+ *     {@code codex_apps.<app>}.
  * </ul>
  * The tool is one of the eighteen known ones, exactly.
  */

@@ -5,7 +5,6 @@ package org.agentledger.mcp.support;
 import java.time.Clock;
 import java.util.List;
 import javax.sql.DataSource;
-import org.agentledger.application.admin.SessionKeyService;
 import org.agentledger.testing.database.TestSchemaServices;
 import org.agentledger.database.schema.SchemaProperties;
 import org.agentledger.testing.database.TestDataSourceConfiguration;
@@ -35,12 +34,6 @@ public class McpTestSchema {
     @Bean
     ProjectNumbers projectNumbers() {
         return new ProjectNumbers();
-    }
-
-    /** The key pairs of the test authors (the hook and the owner of the tests, see {@link KeyRing}). */
-    @Bean
-    KeyRing keyRing(SessionKeyService owner, Clock clock) {
-        return new KeyRing(owner, clock);
     }
 
     @Bean

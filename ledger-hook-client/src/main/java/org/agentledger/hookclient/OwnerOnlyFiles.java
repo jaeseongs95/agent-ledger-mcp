@@ -8,8 +8,10 @@ import java.nio.channels.FileChannel;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.UserPrincipal;
 import java.util.ArrayList;
 import java.util.List;
@@ -58,11 +60,8 @@ public final class OwnerOnlyFiles {
     /** The folder and the parents that are missing, each given the protection at creation. */
     public void createDirectories(Path directory) throws IOException {
         Path normalized = directory.toAbsolutePath().normalize();
-        if (Files.isDirectory(normalized)) {
+        if (existingDirectory(normalized)) {
             return;
-        }
-        if (Files.exists(normalized)) {
-            throw new FileAlreadyExistsException(normalized.toString());
         }
         List<Path> missing = new ArrayList<>();
         Path current = normalized;
@@ -80,6 +79,17 @@ public final class OwnerOnlyFiles {
                     throw existing;
                 }
             }
+        }
+    }
+
+    private static boolean existingDirectory(Path path) throws IOException {
+        try {
+            if (Files.readAttributes(path, BasicFileAttributes.class).isDirectory()) {
+                return true;
+            }
+            throw new FileAlreadyExistsException(path.toString());
+        } catch (NoSuchFileException missing) {
+            return false;
         }
     }
 

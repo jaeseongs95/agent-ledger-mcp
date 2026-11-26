@@ -2,9 +2,8 @@
 
 package org.agentledger.hook;
 
-import org.agentledger.hook.keys.KeyStoreProperties;
-import org.agentledger.hook.keys.SessionKeyStore;
 import org.agentledger.hook.resident.HookService;
+import org.agentledger.hook.resident.ResidentAccountProperties;
 import org.agentledger.hook.resident.ResidentRunner;
 import org.agentledger.hook.resident.ResidentServer;
 import org.agentledger.hook.resident.ResidentSettings;
@@ -17,12 +16,11 @@ import org.springframework.context.annotation.FilterType;
 import org.springframework.context.annotation.Import;
 
 /**
- * The client hook as a Spring Boot application without a web server (user decision 2026-11-15): the resident program of the
- * hook (user decision 2026-11-22). The host starts the light client ({@code java -jar ledger-client-hook.jar <client>}, a
- * program of java.base only), and the client asks this application, which keeps running between the calls and answers each
- * one with the same beans that answered the one-shot hook before. It imports only the auto-configurations and beans the hook
- * actually uses, scanning only {@code *Dialect.class} adapters so that the start of the program (once, not per call) avoids
- * full package and configuration-properties bytecode walks.
+ * The client hook as a Spring Boot application without a web server: the resident program of the hook. The host starts
+ * the light client ({@code java -jar ledger-client-hook.jar <client>}, a program of java.base only), and the client
+ * asks this application, which keeps running between calls. It imports only the auto-configurations and beans the hook
+ * actually uses, scanning only {@code *Dialect.class} adapters so that startup avoids full package and
+ * configuration-properties bytecode walks.
  */
 @SpringBootConfiguration(proxyBeanMethods = false)
 @ComponentScan(
@@ -40,9 +38,8 @@ import org.springframework.context.annotation.Import;
     HookMessagesConfiguration.class,
     HostDialects.class,
     JsonCodec.class,
-    LedgerHook.class,
-    SessionKeyStore.class
+    LedgerHook.class
 })
 @ImportAutoConfiguration(JacksonAutoConfiguration.class)
-@EnableConfigurationProperties({KeyStoreProperties.class, ResidentSettings.class})
+@EnableConfigurationProperties({ResidentAccountProperties.class, ResidentSettings.class})
 public class HookApplication {}

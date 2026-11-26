@@ -35,14 +35,11 @@ class StampingTest {
 
     @ParameterizedTest
     @MethodSource("org.agentledger.hook.Hosts#withWriteOps")
-    @DisplayName("HK-001 each write tool: _hostAttestation is a token signed by the author's key (author <vendor>:<host id>, tool ledger_<op>, operation key = the operationKey argument (empty for whoami), fixed issue time), every other field unchanged, exactly the host's answer shape")
+    @DisplayName("HK-001 each write tool: _hostAttestation is stamped with <vendor>:<host id>, every other field unchanged, exactly the host's answer shape")
     void stampsWriteTool(HostScenario host, String op, HookFixture fixture) {
         Run run = fixture.runClean(host, host.event(host.toolName(op), NESTED_INPUT));
         Attestations.Stamp stamp = fixture.stamp(host, op, NESTED_INPUT, run);
-        assertThat(stamp.claims().author()).isEqualTo(host.author(HookFixture.HOST_ID));
-        assertThat(stamp.claims().tool()).isEqualTo("ledger_" + op);
-        assertThat(stamp.claims().operationKey()).isEqualTo("whoami".equals(op) ? "" : KEY);
-        assertThat(stamp.claims().issuedAt()).isEqualTo(HookFixture.NOW.getEpochSecond());
+        assertThat(stamp.author()).isEqualTo(host.author(HookFixture.HOST_ID));
         assertThat(run.document()).isEqualTo(host.allowed(NESTED_INPUT, stamp.token()));
     }
 
@@ -58,13 +55,12 @@ class StampingTest {
 
     @ParameterizedTest
     @MethodSource("org.agentledger.hook.Hosts#withWriteOps")
-    @DisplayName("HK-003 an existing author_id (cached connector schema) is kept and never copied into _hostAttestation (no operationKey in it: the claim's key is empty and none is added, OPK-009)")
+    @DisplayName("HK-003 an existing author_id (cached connector schema) is kept and never copied into _hostAttestation (no operationKey added, OPK-009)")
     void keepsExistingAuthorId(HostScenario host, String op, HookFixture fixture) {
         JsonNode input = Json.tree(Map.of("author_id", "other:declared", "marker", "cached-schema"));
         Run run = fixture.runClean(host, host.event(host.toolName(op), input));
         Attestations.Stamp stamp = fixture.stamp(host, op, input, run);
-        assertThat(stamp.claims().author()).isEqualTo(host.author(HookFixture.HOST_ID));
-        assertThat(stamp.claims().operationKey()).isEmpty();
+        assertThat(stamp.author()).isEqualTo(host.author(HookFixture.HOST_ID));
         assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token()));
     }
 
@@ -132,7 +128,7 @@ class StampingTest {
         JsonNode input = Json.of("{}");
         Run run = fixture.runClean(host, host.event(host.toolName("whoami"), input, Json.text(id)));
         Attestations.Stamp stamp = fixture.stamp(host, id, "whoami", input, run);
-        assertThat(stamp.claims().author()).isEqualTo(host.author(id));
+        assertThat(stamp.author()).isEqualTo(host.author(id));
         assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token()));
     }
 
@@ -152,7 +148,7 @@ class StampingTest {
         fixture.runClean(host, host.event(host.toolName("issue_save"), input, Json.text(first)));
         Run run = fixture.runClean(host, host.event(host.toolName("issue_save"), input, Json.text(second)));
         Attestations.Stamp stamp = fixture.stamp(host, second, "issue_save", input, run);
-        assertThat(stamp.claims().author()).isEqualTo(host.author(second));
+        assertThat(stamp.author()).isEqualTo(host.author(second));
         assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token()));
     }
 
@@ -165,12 +161,12 @@ class StampingTest {
 
     @ParameterizedTest
     @MethodSource("vendorPrefixes")
-    @DisplayName("HK-020 the vendor prefix of the signed author follows the client enum (claude:, codex:, gemini:)")
+    @DisplayName("HK-020 the vendor prefix of the stamped author follows the client enum (claude:, codex:, gemini:)")
     void vendorPrefixFollowsClient(HostScenario host, String prefix, HookFixture fixture) {
         JsonNode input = Json.of("{}");
         Run run = fixture.runClean(host, host.event(host.toolName("whoami"), input));
         Attestations.Stamp stamp = fixture.stamp(host, "whoami", input, run);
-        assertThat(stamp.claims().author()).isEqualTo(prefix + ":" + HookFixture.HOST_ID);
+        assertThat(stamp.author()).isEqualTo(prefix + ":" + HookFixture.HOST_ID);
         assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token()));
     }
 

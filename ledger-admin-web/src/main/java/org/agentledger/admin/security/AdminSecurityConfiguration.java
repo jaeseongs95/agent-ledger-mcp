@@ -58,8 +58,8 @@ import org.springframework.web.servlet.HandlerExceptionResolver;
  * {@code oauth2Login} for the one e-mail address of the owner, or a passkey with {@code webAuthn}), the one-time code of the owner's shell ({@code oneTimeTokenLogin}) that reaches the registration of a
  * passkey, the admin token as the bearer of the read-only JSON endpoints, the CSRF token with the session cookie of Spring
  * Boot ({@code SameSite=Strict}), a new session id after the sign-in (fixation protection), the delay after many failed attempts and
- * the headers (CSP and the rest). The approval of every owner write by a passkey is checked by the interceptor
- * {@code ApprovalInterceptor}, whichever sign-in was used.
+ * the headers (CSP and the rest). Once signed in as the owner, console mutations are authorized by the authenticated session
+ * and CSRF token without redundant per-write passkey re-approval.
  *
  * <p>In setup mode (no JDBC driver, so no database to keep a passkey in) nothing but the login page and the health check is
  * open: the page says to register the driver with the command line tool.

@@ -95,7 +95,7 @@ class Import1xCommandTest {
         }
         assertThat(LegacyTable.values()).hasSize(12);
         assertThat(output.info()).contains("Imported " + rows + " rows of 12 tables from the 1.x schema " + legacy.schema())
-                .contains("key-register");
+                .doesNotContain("key-register").doesNotContain("token-issue");
         // the request receipts of 1.x are not copied: no line of the report, no row (M1X-003)
         assertThat(output.info()).doesNotContain("request_receipt");
         assertThat(legacy.count("request_receipt")).isEqualTo(3);

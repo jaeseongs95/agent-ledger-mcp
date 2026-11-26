@@ -32,8 +32,8 @@ public final class AdminTokenProvider implements AuthenticationProvider {
     public static final String OWNER_AUTHORITY = "ROLE_OWNER";
 
     /**
-     * The authority of the admin token as a bearer header: it reads the JSON endpoints under {@code /api} and nothing else, and
-     * approves no change (the approval is a passkey), so it is not the owner.
+     * The authority of the admin token as a bearer header: it reads the JSON endpoints under {@code /api} and nothing else,
+     * so it is not the browser owner session.
      */
     public static final String API_READ_AUTHORITY = "ROLE_API_READ";
 

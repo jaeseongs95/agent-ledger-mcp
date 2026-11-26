@@ -30,7 +30,6 @@ import java.util.stream.Stream;
  */
 class ArchitectureTest {
 
-    private static final String KEYS_PACKAGE = "org.agentledger.hook.keys..";
     private static final String RESIDENT_PACKAGE = "org.agentledger.hook.resident..";
 
     private static final JavaClasses hook = new ClassFileImporter()
@@ -70,9 +69,9 @@ class ArchitectureTest {
     }
 
     @Test
-    @DisplayName("HK-018 file system APIs (java.nio.file, java.nio.channels, java.io.File*) are used only by the classes of the keys package (the key store) and of the resident package (the state folder, the instance lock)")
-    void fileSystemOnlyInKeysPackage() {
-        noClasses().that().resideOutsideOfPackages(KEYS_PACKAGE, RESIDENT_PACKAGE)
+    @DisplayName("HK-018 file system APIs (java.nio.file, java.nio.channels, java.io.File*) are used only by the resident package (the state folder, the instance lock)")
+    void fileSystemOnlyInResidentPackage() {
+        noClasses().that().resideOutsideOfPackage(RESIDENT_PACKAGE)
                 .should().dependOnClassesThat().resideInAnyPackage("java.nio.file..", "java.nio.channels..")
                 .orShould().dependOnClassesThat().haveFullyQualifiedName("java.io.File")
                 .orShould().dependOnClassesThat().haveFullyQualifiedName("java.io.FileInputStream")
@@ -81,8 +80,7 @@ class ArchitectureTest {
                 .orShould().dependOnClassesThat().haveFullyQualifiedName("java.io.FileWriter")
                 .orShould().dependOnClassesThat().haveFullyQualifiedName("java.io.RandomAccessFile")
                 .check(hook);
-        // the package exists in the imported classes: the rule above is not vacuous for it
-        assertThat(hook.stream().anyMatch(type -> "org.agentledger.hook.keys".equals(type.getPackageName()))).isTrue();
+        assertThat(hook.stream().anyMatch(type -> "org.agentledger.hook.resident".equals(type.getPackageName()))).isTrue();
     }
 
     @Test

@@ -6,22 +6,15 @@ import org.agentledger.domain.error.TrustException;
 import org.agentledger.domain.value.AuthorId;
 
 /**
- * Vendor-neutral port that resolves the authenticated {@link AuthorId} of an MCP tool invocation.
- *
- * <p>Two runtime implementations back this contract:
- * <ul>
- *   <li>{@code STANDARD} mode: resolves the caller from an HTTP {@code Authorization: Bearer <session_token>}
- *       verified against {@code session_token}.</li>
- *   <li>{@code ATTESTED} mode: delegates to {@link AttestationVerifier} to check an Ed25519 signed host
- *       attestation bound to the tool name, operation key, and arguments digest.</li>
- * </ul>
+ * Vendor-neutral port that resolves the {@link AuthorId} of an MCP tool invocation from the host-stamped
+ * {@code _hostAttestation} value after transport perimeter authentication.
  */
 public interface McpCallerResolver {
 
     /**
      * Resolves the caller for a read or diagnostic check such as {@code ledger_whoami}.
      *
-     * @param presented    presented caller proof (raw attestation in {@code ATTESTED} mode; optional in {@code STANDARD})
+     * @param presented    host-stamped {@code <vendor>:<session-id>} author identifier
      * @param call         current tool call metadata
      * @param operationKey operation key bound to the call, or empty when none applies
      */
@@ -40,9 +33,8 @@ public interface McpCallerResolver {
     AuthorId verifyForWrite(String presented, ToolCall call, String operationKey);
 
     /**
-     * True when an authenticated per-author identity is bound to the current transport call (such as an HTTP
-     * {@code Bearer} session token in {@code STANDARD} mode), even if no explicit {@code _hostAttestation} argument
-     * was supplied.
+     * True when an authenticated per-author identity is bound to the current transport call even if no explicit
+     * {@code _hostAttestation} argument was supplied.
      */
     default boolean hasAmbientCaller() {
         return false;

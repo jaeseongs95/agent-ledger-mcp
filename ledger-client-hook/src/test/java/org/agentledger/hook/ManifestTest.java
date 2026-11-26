@@ -239,12 +239,12 @@ class ManifestTest {
 
     @ParameterizedTest
     @MethodSource("readmes")
-    @DisplayName("FUP-CLI-02 every README describes the 2.0 behaviour (Ed25519 session key, session-key, key-register, LEDGER_HOOK_KEY_DIR) and not a form that put the host session id into _hostAttestation unsigned")
-    void readmesDescribeTheSignedAttestation(Client client, String name) throws IOException {
+    @DisplayName("FUP-CLI-02 every README describes the 4.0 behaviour (direct <vendor>:<session_id> stamping, ledger.mcp.token, grant) and does not mention retired Ed25519 session-key or key-register steps")
+    void readmesDescribeDirectHostStamping(Client client, String name) throws IOException {
         String readme = Files.readString(CLIENTS.resolve(client.argument() + "/" + name));
-        assertThat(readme).contains("Ed25519").contains("session-key").contains("key-register").contains("LEDGER_HOOK_KEY_DIR")
-                .contains("_hostAttestation");
-        assertThat(readme).doesNotContain("claude:<id>").doesNotContain("codex:<id>").doesNotContain("gemini:<id>");
+        assertThat(readme).contains("_hostAttestation").contains("ledger.mcp.token").contains("grant");
+        assertThat(readme).doesNotContain("Ed25519").doesNotContain("session-key").doesNotContain("key-register")
+                .doesNotContain("LEDGER_HOOK_KEY_DIR");
     }
 
     @ParameterizedTest
@@ -271,9 +271,9 @@ class ManifestTest {
 
     @ParameterizedTest
     @ValueSource(strings = { "claude/.claude-plugin/plugin.json", "codex/plugin.json", "antigravity/plugin.json" })
-    @DisplayName("FUP-CLI-03 the version of every plugin is the version of the release, 3.0.1")
+    @DisplayName("FUP-CLI-03 the version of every plugin is the version of the release, 4.0.0")
     void pluginVersionIsTheRelease(String file) throws IOException {
-        assertThat(read(file).path("version").stringValue()).isEqualTo("3.0.1");
+        assertThat(read(file).path("version").stringValue()).isEqualTo("4.0.0");
     }
 
     @ParameterizedTest

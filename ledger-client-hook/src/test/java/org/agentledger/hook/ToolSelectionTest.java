@@ -60,7 +60,7 @@ class ToolSelectionTest {
     @DisplayName("HK-011 Antigravity MCP names mcp:<server><:|/|_>[<server>_]ledger_issue_save are stamped, for the server in the name")
     void antigravityNameCandidatesAreStamped(String name, String server, HookFixture fixture) {
         Run run = fixture.runClean(AGY, AGY.event(name, EMPTY));
-        Attestations.Stamp stamp = fixture.stampCarrier(server, AGY.author(HookFixture.HOST_ID), "issue_save", EMPTY,
+        Attestations.Stamp stamp = fixture.stampCarrier(AGY.author(HookFixture.HOST_ID), "issue_save", EMPTY,
                 AGY.stampedPart(run));
         assertThat(run.document()).isEqualTo(AGY.allowed(EMPTY, stamp.token()));
     }
@@ -136,8 +136,7 @@ class ToolSelectionTest {
     void wrapperArtifactToolsAreStamped(String op, HookFixture fixture) {
         for (String toolName : List.of(op, "t0001sink_" + op)) {
             Run run = fixture.runClean(AGY, AGY.wrapperEvent(envelope(toolName, INPUT)));
-            Attestations.Stamp stamp = fixture.stampCarrier("t0001sink", AGY.author(ID), op, INPUT, AGY.echoed(run));
-            assertThat(stamp.claims().tool()).as(toolName).isEqualTo(op);
+            Attestations.Stamp stamp = fixture.stampCarrier(AGY.author(ID), op, INPUT, AGY.echoed(run));
             assertThat(run.document()).as(toolName).isEqualTo(AGY.allowedWrapped(Json.stamped(INPUT, stamp.token())));
         }
     }
@@ -183,9 +182,7 @@ class ToolSelectionTest {
     void codexAppsNamespaceIsStamped(String op, HookFixture fixture) {
         JsonNode input = Json.tree(Map.of("marker", "codex apps"));
         Run run = fixture.runClean(CODEX, CODEX.event(codexAppsNamespace(op), input));
-        Attestations.Stamp stamp = fixture.stampCarrier(CODEX_APP_SERVER, CODEX.author(ID), op, input,
-                CODEX.stampedPart(run));
-        assertThat(stamp.claims().tool()).isEqualTo("ledger_" + op);
+        Attestations.Stamp stamp = fixture.stampCarrier(CODEX.author(ID), op, input, CODEX.stampedPart(run));
         assertThat(run.document()).isEqualTo(CODEX.allowed(input, stamp.token()));
     }
 
@@ -237,7 +234,7 @@ class ToolSelectionTest {
     @DisplayName("HK-012 call_mcp_tool with Arguments as an object: only Arguments is overwritten, still an object, envelope untouched")
     void wrapperObjectArguments(String op, HookFixture fixture) {
         Run run = fixture.runClean(AGY, AGY.wrapperEvent(envelope("t0001sink_ledger_" + op, INPUT)));
-        Attestations.Stamp stamp = fixture.stampCarrier("t0001sink", AGY.author(ID), op, INPUT, AGY.echoed(run));
+        Attestations.Stamp stamp = fixture.stampCarrier(AGY.author(ID), op, INPUT, AGY.echoed(run));
         assertThat(run.document()).isEqualTo(AGY.allowedWrapped(Json.stamped(INPUT, stamp.token())));
     }
 
@@ -248,7 +245,7 @@ class ToolSelectionTest {
         Run run = fixture.runClean(AGY, AGY.wrapperEvent(envelope("t0001sink_ledger_" + op, Json.MAPPER.writeValueAsString(INPUT))));
         JsonNode text = AGY.echoed(run);
         assertThat(text.isString()).as("Arguments stays JSON text").isTrue();
-        Attestations.Stamp stamp = fixture.stampCarrier("t0001sink", AGY.author(ID), op, INPUT, Json.of(text.stringValue()));
+        Attestations.Stamp stamp = fixture.stampCarrier(AGY.author(ID), op, INPUT, Json.of(text.stringValue()));
         assertThat(run.document()).isEqualTo(AGY.allowedWrapped(
                 Json.MAPPER.writeValueAsString(Json.stamped(INPUT, stamp.token()))));
     }
@@ -346,7 +343,7 @@ class ToolSelectionTest {
     void wrapperUnknownFieldsSurvive(HookFixture fixture) {
         JsonNode input = Json.tree(new UnknownFields(new Unknown(List.of(1, 2, Map.of("b", Json.of("null")))), "한글"));
         Run run = fixture.runClean(AGY, AGY.wrapperEvent(envelope("ledger_batch", input)));
-        Attestations.Stamp stamp = fixture.stampCarrier("t0001sink", AGY.author(ID), "batch", input, AGY.echoed(run));
+        Attestations.Stamp stamp = fixture.stampCarrier(AGY.author(ID), "batch", input, AGY.echoed(run));
         assertThat(run.document()).isEqualTo(AGY.allowedWrapped(Json.stamped(input, stamp.token())));
     }
 }

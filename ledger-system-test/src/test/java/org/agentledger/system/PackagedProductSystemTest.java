@@ -84,11 +84,10 @@ class PackagedProductSystemTest {
     private int port;
     private List<String> serverArguments;
     private String token;
-    private String standardAuthor;
-    private String standardToken;
+    private String secondHostId;
+    private String secondAuthor;
     private Process server;
     private McpSyncClient client;
-    private McpSyncClient standardClient;
 
     // the facts of the steps that later steps need
     private String projectId;
@@ -233,7 +232,7 @@ class PackagedProductSystemTest {
 
     @Test
     @Order(5)
-    @DisplayName("SYS-005: the owner sets up the project, the key made by the hook jar, a standard Bearer session token, and their grants with the commands of the product")
+    @DisplayName("SYS-005: the owner sets up the project and grants directly for two sessions with the commands of the product")
     void ownerSetup() throws IOException {
         // The real install in its order (ATA-036, ATA-037): prepare-host makes the folders (it is not run here: it needs an
         // elevated prompt for the ACLs, section 21), then setup makes the first attachment key (its folder, owner-only, if it is not
@@ -256,19 +255,7 @@ class PackagedProductSystemTest {
 
         hostId = "sys" + UUID.randomUUID().toString().substring(0, 8);
         author = "claude:" + hostId;
-        // not created here: the hook makes its key folder owner-only and refuses one that others can use
         keys = work.resolve("keys");
-        JavaProcess.Result printed = hook(keys, "", "session-key", "ledger", author);
-        assertThat(printed.exit()).as(printed.streams()).isZero();
-        List<String> lines = printed.out().lines().toList();
-        assertThat(lines).hasSize(4);
-        String publicKey = lines.get(2).substring("public-key: ".length());
-        String fingerprint = lines.get(3).substring("fingerprint: ".length());
-
-        JavaProcess.Result registered = cli(true, null, "key-register", author, publicKey, fingerprint);
-        assertThat(registered.exit()).as(registered.streams()).isZero();
-        assertThat(owner.value("SELECT fingerprint FROM " + schema + ".session_key WHERE author_id = '" + author
-                + "' AND revoked_at IS NULL")).isEqualTo(fingerprint);
 
         JavaProcess.Result granted = cli(true, null, "grant", author, projectId, "issue", "spec", "task",
                 "deliverable", "verify");
@@ -277,18 +264,10 @@ class PackagedProductSystemTest {
         assertThat(listed.exit()).as(listed.streams()).isZero();
         assertThat(listed.out()).contains(author, projectId, "issue", "spec", "task", "deliverable", "verify");
 
-        standardAuthor = "standard:agent-" + hostId;
-        JavaProcess.Result issued = cli(true, null, "token-issue", standardAuthor, "--note=system-test");
-        assertThat(issued.exit()).as(issued.streams()).isZero();
-        String issuedText = issued.out().strip();
-        standardToken = issuedText.substring(issuedText.lastIndexOf(": ") + 2).strip();
-        assertThat(standardToken).startsWith("lgt_");
-        JavaProcess.Result tokenList = cli(true, null, "token-list", standardAuthor);
-        assertThat(tokenList.exit()).as(tokenList.streams()).isZero();
-        assertThat(tokenList.out()).contains(standardAuthor).doesNotContain(standardToken);
-
-        JavaProcess.Result standardGranted = cli(true, null, "grant", standardAuthor, projectId, "spec", "deliverable");
-        assertThat(standardGranted.exit()).as(standardGranted.streams()).isZero();
+        secondHostId = "rev" + UUID.randomUUID().toString().substring(0, 8);
+        secondAuthor = "codex:" + secondHostId;
+        JavaProcess.Result secondGranted = cli(true, null, "grant", secondAuthor, projectId, "spec", "deliverable");
+        assertThat(secondGranted.exit()).as(secondGranted.streams()).isZero();
     }
 
     // ---- the server ----------------------------------------------------------------------------------------------
@@ -316,11 +295,10 @@ class PackagedProductSystemTest {
 
     @Test
     @Order(7)
-    @DisplayName("SYS-007: signed writes via the hook jar, vendor-independent Bearer session token writes, independent spec verification, whoami and read tools work against the packaged server")
+    @DisplayName("SYS-007: direct hook-stamped writes, independent spec verification across two sessions, whoami and read tools work against the packaged server")
     void signedWritesAndReads() throws IOException {
         require(server, "SYS-006");
         client = openClientWithBearer(token);
-        standardClient = openClientWithBearer(standardToken);
 
         JsonNode created = write("ledger_issue_save", Map.of("project_id", projectId, "title", "first title",
                 "category", "ARC", "severity", "P2", "symptom", "symptom of the issue",
@@ -346,19 +324,19 @@ class PackagedProductSystemTest {
         assertThat(transitioned.path("to").asString()).isEqualTo("ACTIVE");
         assertThat(transitioned.path("version").asLong()).isEqualTo(2);
 
-        JsonNode standardWho = call(standardClient, "ledger_whoami", Map.of());
-        assertThat(standardWho.path("author").asString()).isEqualTo(standardAuthor);
-        assertThat(standardWho.path("grants").toString()).contains("spec", "deliverable", projectId);
+        JsonNode secondWho = call(client, "ledger_whoami", hookedAs("codex", secondHostId, secondAuthor, "ledger_whoami", Map.of()));
+        assertThat(secondWho.path("author").asString()).isEqualTo(secondAuthor);
+        assertThat(secondWho.path("grants").toString()).contains("spec", "deliverable", projectId);
 
-        JsonNode spec = standardWrite("ledger_spec_save", Map.of("project_id", projectId,
+        JsonNode spec = writeAs("codex", secondHostId, secondAuthor, "ledger_spec_save", Map.of("project_id", projectId,
                 "title", "scene lighting spec", "summary", "universal spec summary",
                 "acceptance_criteria", "approved lighting cue sheet", "reason", REASON));
         specId = spec.path("id").asString();
         assertThat(spec.path("version").asLong()).isEqualTo(1);
-        assertThat(spec.path("author").asString()).isEqualTo(standardAuthor);
+        assertThat(spec.path("author").asString()).isEqualTo(secondAuthor);
         specBeforeComplete = row("SELECT title, status, version FROM " + schema + ".spec WHERE id = '" + specId + "'");
 
-        JsonNode deliverable = standardWrite("ledger_record_deliverable", Map.of("target_entity", "spec",
+        JsonNode deliverable = writeAs("codex", secondHostId, secondAuthor, "ledger_record_deliverable", Map.of("target_entity", "spec",
                 "target_id", specId, "kind", "document", "deliverable_ref", "doc:lighting-sheet-v1",
                 "summary", "final lighting cue sheet", "mark_done", true, "reason", REASON));
         assertThat(deliverable.path("target_state").asString()).isEqualTo("COMPLETED");
@@ -370,7 +348,6 @@ class PackagedProductSystemTest {
         assertThat(verifiedSpec.path("to").asString()).isEqualTo("VERIFIED");
         assertThat(verifiedSpec.path("version").asLong()).isEqualTo(3);
 
-        // whoami is signed too (an empty operation key); it is not a write
         JsonNode who = call(client, "ledger_whoami", hooked("ledger_whoami", Map.of()));
         assertThat(who.path("author").asString()).isEqualTo(author);
         assertThat(who.path("grants").toString()).contains("issue", "spec", "task", "deliverable", "verify", projectId);
@@ -546,38 +523,36 @@ class PackagedProductSystemTest {
 
     /** The call as the model makes it, run through the hook jar as Claude Code does: what comes back is what is sent. */
     private Map<String, Object> hooked(String tool, Map<String, Object> input) throws IOException {
+        return hookedAs("claude", hostId, author, tool, input);
+    }
+
+    private Map<String, Object> hookedAs(String hookClient, String sessionId, String expectedAuthor, String tool,
+            Map<String, Object> input) throws IOException {
         String event = mapper.writeValueAsString(Map.of("tool_name", "mcp__ledger__" + tool, "tool_input", input,
-                "session_id", hostId));
-        JavaProcess.Result run = hook(keys, event, "claude");
+                "session_id", sessionId));
+        JavaProcess.Result run = hook(keys, event, hookClient);
         assertThat(run.exit()).as(run.streams()).isZero();
         JsonNode updated = mapper.readTree(run.out()).path("hookSpecificOutput").path("updatedInput");
         assertThat(updated.isObject()).as("the hook answered %s", run.out()).isTrue();
         Map<String, Object> sent = new LinkedHashMap<>();
         updated.properties().forEach(entry -> sent.put(entry.getKey(), mapper.convertValue(entry.getValue(), Object.class)));
-        assertThat(String.valueOf(sent.get("_hostAttestation"))).startsWith("ala3.");
+        assertThat(String.valueOf(sent.get("_hostAttestation"))).isEqualTo(expectedAuthor);
         return sent;
     }
 
-    /**
-     * A write: the test gives a fresh operationKey (the hook makes none and the server never makes one up), the call is signed
-     * by the hook, sent, and it must succeed; the operation key sent is kept.
-     */
     private JsonNode write(String tool, Map<String, Object> input) throws IOException {
+        return writeAs("claude", hostId, author, tool, input);
+    }
+
+    private JsonNode writeAs(String hookClient, String sessionId, String expectedAuthor, String tool,
+            Map<String, Object> input) throws IOException {
         String operationKey = UUID.randomUUID().toString();
         Map<String, Object> keyed = new LinkedHashMap<>(input);
         keyed.put("operationKey", operationKey);
-        Map<String, Object> sent = hooked(tool, keyed);
+        Map<String, Object> sent = hookedAs(hookClient, sessionId, expectedAuthor, tool, keyed);
         assertThat(sent.get("operationKey")).as("the hook leaves the operationKey as given").isEqualTo(operationKey);
         sentOperationKeys.add(operationKey);
         return call(client, tool, sent);
-    }
-
-    private JsonNode standardWrite(String tool, Map<String, Object> input) {
-        String operationKey = UUID.randomUUID().toString();
-        Map<String, Object> keyed = new LinkedHashMap<>(input);
-        keyed.put("operationKey", operationKey);
-        sentOperationKeys.add(operationKey);
-        return call(standardClient, tool, keyed);
     }
 
     private JsonNode call(McpSyncClient mcp, String tool, Map<String, Object> sent) {
@@ -609,7 +584,7 @@ class PackagedProductSystemTest {
 
     /** Closes the clients and ends the server process; safe to call again. */
     private void close() {
-        for (McpSyncClient mcp : Stream.of(client, standardClient).filter(java.util.Objects::nonNull).toList()) {
+        for (McpSyncClient mcp : Stream.of(client).filter(java.util.Objects::nonNull).toList()) {
             try {
                 mcp.closeGracefully();
             } catch (RuntimeException ignored) {
@@ -617,7 +592,6 @@ class PackagedProductSystemTest {
             }
         }
         client = null;
-        standardClient = null;
         JavaProcess.stop(server);
     }
 

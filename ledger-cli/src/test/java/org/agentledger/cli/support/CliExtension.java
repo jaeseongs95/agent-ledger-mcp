@@ -20,7 +20,6 @@ import org.agentledger.cli.CliOutput;
 import org.agentledger.cli.ErrorKey;
 import org.agentledger.cli.LedgerCliApplication;
 import org.agentledger.cli.deploy.HostAccounts;
-import org.agentledger.cli.key.SessionKeyRegistry;
 import org.agentledger.cli.secret.ProcessUser;
 import org.agentledger.cli.secret.SecretInput;
 import org.agentledger.cli.secret.StandardInput;
@@ -136,12 +135,6 @@ public final class CliExtension implements ParameterResolver {
 
         /** @param input null keeps the product Console input; @param output null keeps the product stream output */
         public Outcome run(Path secretsDirectory, SecretInput input, CliOutput output, String... args) {
-            return run(secretsDirectory, input, output, null, args);
-        }
-
-        /** As above, with the door to the ledger that the command {@code key-register} uses (null: the tool has none). */
-        public Outcome run(Path secretsDirectory, SecretInput input, CliOutput output, SessionKeyRegistry registry,
-                String... args) {
             List<String> all = new ArrayList<>(List.of(args));
             all.add("--ledger.secrets.directory=" + secretsDirectory);
             all.addAll(extraArguments);
@@ -181,9 +174,6 @@ public final class CliExtension implements ParameterResolver {
                         }
                         if (input != null) {
                             generic.registerBean("testSecretInput", SecretInput.class, () -> input, bd -> bd.setPrimary(true));
-                        }
-                        if (registry != null) {
-                            generic.registerBean("testSessionKeyRegistry", SessionKeyRegistry.class, () -> registry);
                         }
                         if (output != null) {
                             generic.registerBean("testCliOutput", CliOutput.class, () -> output, bd -> bd.setPrimary(true));

@@ -7,8 +7,6 @@ import org.agentledger.application.admin.CommonCodeService;
 import org.agentledger.application.admin.GrantService;
 import org.agentledger.application.admin.PasskeyService;
 import org.agentledger.application.admin.ProjectService;
-import org.agentledger.application.admin.SessionKeyService;
-import org.agentledger.application.admin.SessionTokenService;
 import org.agentledger.cli.ErrorCode;
 import org.agentledger.cli.FailureException;
 import org.agentledger.domain.error.LedgerException;
@@ -26,21 +24,16 @@ public final class CliLedger {
     private final ProjectService projects;
     private final CommonCodeService codes;
     private final GrantService grants;
-    private final SessionKeyService keys;
-    private final SessionTokenService tokens;
     private final PasskeyService passkeys;
     private final CliActor actor;
     private final SchemaReadiness readiness;
     private final LedgerRefusals refusals;
 
-    public CliLedger(ProjectService projects, CommonCodeService codes, GrantService grants, SessionKeyService keys,
-            SessionTokenService tokens, PasskeyService passkeys, CliActor actor, SchemaReadiness readiness,
-            LedgerRefusals refusals) {
+    public CliLedger(ProjectService projects, CommonCodeService codes, GrantService grants, PasskeyService passkeys,
+            CliActor actor, SchemaReadiness readiness, LedgerRefusals refusals) {
         this.projects = projects;
         this.codes = codes;
         this.grants = grants;
-        this.keys = keys;
-        this.tokens = tokens;
         this.passkeys = passkeys;
         this.actor = actor;
         this.readiness = readiness;
@@ -57,14 +50,6 @@ public final class CliLedger {
 
     public GrantService grants() {
         return grants;
-    }
-
-    public SessionKeyService keys() {
-        return keys;
-    }
-
-    public SessionTokenService tokens() {
-        return tokens;
     }
 
     /** The passkeys of the owner ({@code passkey-code}). */

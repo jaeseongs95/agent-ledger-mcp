@@ -194,7 +194,7 @@ class JarProcessTest {
     }
 
     static final String USAGE =
-            "usage: java -jar ledger-client-hook.jar <claude|codex|antigravity> | session-key <server> <author>";
+            "usage: java -jar ledger-client-hook.jar <claude|codex|antigravity>";
 
     @ParameterizedTest
     @MethodSource("invalidArguments")

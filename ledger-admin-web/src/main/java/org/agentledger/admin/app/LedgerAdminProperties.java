@@ -41,7 +41,7 @@ import org.springframework.web.util.UriComponentsBuilder;
  * @param signIn          how the owner signs in, {@code token}, {@code oidc} or {@code passkey}; absent means {@code passkey} for a new
  *                        installation, and an installation that has OpenID Connect settings but no choice is refused at start
  *                        (nothing is guessed)
- * @param passkey         the relying party of the passkeys (sign-in, registration and the approval of every owner write)
+ * @param passkey         the relying party of the passkeys (owner sign-in and one-time enrollment registration)
  */
 @Validated
 @ConfigurationProperties(prefix = "ledger.admin")

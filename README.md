@@ -13,7 +13,7 @@ choice: the installers write no proxy configuration and order no certificate.
 
 Version 2.0.0 is a rewrite in Java 25 and Spring Boot with its own tool contract (every write tool takes a required `operationKey`,
 every response uses the `ApiResult.v1` envelope, and no argument of an earlier version is accepted next to the new ones); what changed
-for a client is stated in the release notes ([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md), [3.0.1](docs/release-notes/3.0.1.md)); the format of release notes is in
+for a client is stated in the release notes ([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md), [4.0.0](docs/release-notes/4.0.0.md)); the format of release notes is in
 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md).
 
 ## Contents
@@ -33,12 +33,10 @@ for a client is stated in the release notes ([2.0.0](docs/release-notes/2.0.0.md
 
 ## Concepts
 
-- **Author identity is proved, not claimed.** In `STANDARD` mode (`ledger.mcp.auth-mode`, the default), any standard MCP client can
-  authenticate as `<vendor>:<session-id>` with a per-author HTTP `Bearer` token (`lgt_...`) issued by `ledger-cli token-issue`, with no
-  client hook needed. When the shared gate token `ledger.mcp.token` is used (or in `ATTESTED` mode), every write and every
-  `ledger_whoami` carries the reserved key `_hostAttestation`, which the host hook of the client fills in and models must omit. For
-  example, the author is `claude:1f2e3d4c` or `codex:9a8b7c6d`; the owner of the ledger is `user:owner`. A tool has no `author_id`
-  argument.
+- **Author identity is stamped by the host hook, not claimed by the model.** Every MCP request authenticates over HTTP with the
+  configured `Bearer` token `ledger.mcp.token`, and every write call and `ledger_whoami` carries the reserved key `_hostAttestation`
+  set to `<vendor>:<session-id>`, which the client host hook stamps and models must omit. For example, the author is `claude:1f2e3d4c`
+  or `codex:9a8b7c6d`; the owner of the ledger is `user:owner`. A tool has no `author_id` argument.
 - **Writes need a live grant.** The owner grants an author a scope on a project with `ledger-cli grant` (or on the grants page of
   the admin web). The scopes are `issue`, `spec`, `task`, `deliverable` and `verify`. A write without a matching grant is refused. A
   write that touches rows of two projects (a spec, task or criterion moved to another project, a link, a merge into an issue of another
@@ -108,13 +106,11 @@ for a client is stated in the release notes ([2.0.0](docs/release-notes/2.0.0.md
   and MySQL do), all three must be utf8mb4: the default character set of the database of the JDBC URL (the schema that is checked), the variable
   character_set_server and the character set of the connection. `migrate` refuses to go on, before it changes anything, when the first two are not.
 
-A direct MCP caller is authenticated either by its per-author `Bearer` session token (`STANDARD` mode) or by the shared gate token
-`ledger.mcp.token` paired with `_hostAttestation`.
+A direct MCP caller is authenticated on HTTP by the configured `Bearer` token `ledger.mcp.token`, paired with the host-stamped `_hostAttestation`.
 
 ## MCP tools
 
-The server speaks MCP over Streamable HTTP at `/mcp` (default `127.0.0.1:8765`) and answers `/healthz`. Callers present either a
-per-author session token (`lgt_...`) or `ledger.mcp.token`. Every tool returns the `ApiResult.v1` envelope (`schemaVersion` `"1.0.0"`,
+The server speaks MCP over Streamable HTTP at `/mcp` (default `127.0.0.1:8765`) and answers `/healthz`. Callers present `ledger.mcp.token`. Every tool returns the `ApiResult.v1` envelope (`schemaVersion` `"1.0.0"`,
 `ok`, `data`, `error`). Every tool input is closed and flat (no raw SQL query argument, no untyped map): an unknown argument is
 refused, an object or an array argument must be sent as that JSON value (not as text), and the text `null` is a text, not a missing
 argument. A JSON `null` on an optional field counts as not given; an optional text field is cleared with an empty string.
@@ -276,14 +272,12 @@ configuration tree (Spring Boot makes every file below a tree a property of the 
 | `ledger.jdbc.driver` | all | the registered driver, written by `driver-register` (jar, class, SHA-256), read at start |
 | `ledger.schema.name` | all | schema that holds the tables; created by `migrate` when missing; absent means the default schema of the account |
 | `ledger.schema.require-utc` | servers, CLI | refuse to start when the JVM or the database session is not UTC, default true |
-| `ledger.attestation.window` | servers | how far the time of an attestation may be from the server time, default `PT5M` |
 | `ledger.mcp.token` | MCP server, `mcp-check` | the bearer token of the agents, at least 16 characters (secret) |
-| `ledger.mcp.auth-mode` | MCP server | caller authentication mode: `STANDARD` (default, accepts per-author `Bearer` session tokens as well as `_hostAttestation`) or `ATTESTED` (requires `_hostAttestation` for author identity) |
 | `ledger.mcp.allowed-hosts` | MCP server | accepted `Host` values, default `127.0.0.1` and `localhost` |
 | `ledger.mcp.allowed-origins` | MCP server | accepted browser origins, default none |
 | `ledger.mcp.max-request-size` | MCP server | largest request body, default 1MB |
 | `ledger.mcp.code-poll-interval` | MCP server | how often a code change of another process is looked up, default 5s |
-| `ledger.admin.token` | admin web | the admin token, at least 16 characters (secret): the bearer of the read-only JSON endpoints under `/api`; with `ledger.admin.sign-in=token` it is also the password of the login page; it never approves a change |
+| `ledger.admin.token` | admin web | the admin token, at least 16 characters (secret): the bearer of the read-only JSON endpoints under `/api`; with `ledger.admin.sign-in=token` it is also the password of the login page |
 | `ledger.admin.agent-token` | admin web | required: the agents' bearer token, equal to `ledger.mcp.token`, and distinct from `ledger.admin.token`; the admin web refuses it with `AGENT_TOKEN_FORBIDDEN` (secret) |
 | `ledger.admin.allowed-hosts` | admin web | accepted `Host` values (DNS rebinding guard), default `127.0.0.1` and `localhost` |
 | `ledger.admin.driver-file` | admin web | the driver registration file the driver page writes, default `/etc/agent-ledger-mcp/jdbc-driver.yaml` |
@@ -507,7 +501,7 @@ and the ports from it when an option is not given, and the installers ask for th
    (without a database there is no passkey to sign in with, so the driver page of the admin web is a console page).
 2. Set up the owner side: `project-add` and `code-set`; when you come from 1.x, see Upgrading from 1.x instead of creating projects by hand. On Linux run
    `ledger-cli` as the service user, for example `sudo -u <name> java -jar /opt/<name>/ledger-cli.jar --ledger.secrets.instance=<name> project-add ...`.
-3. Install the client hooks (see Client hooks), register the key of each session with `key-register` and issue the grants with `grant`.
+3. Install the client hooks (see Client hooks) and issue session grants directly with `grant` or on the grants page of the admin web.
 
 `migrate` applies the files `V{n}__*.sql` in order and records every attempt, with the SHA-256 of the file, in the table
 `schema_history`: one row for each attempt of a version, with the columns `version`, `attempt`, `script`, `digest`, `applied_at` and
@@ -539,16 +533,11 @@ service user), and every owner operation is recorded with that user.
 | `token-generate` | `token-generate <name> [--print] [--copy-to=<name>]` | store a random token (32 bytes from `SecureRandom`) as a secret; an existing secret is kept; `--print` shows a token that was just created, once; `--copy-to` stores the same token under a second name, once |
 | `migrate` | `migrate [--owner-account=<account>] [--app-account=<account>] [--stdin]` | apply the pending schema files, as the DDL account when `--owner-account` is given (its password is typed, or with `--stdin` read from standard input, and not stored), and then the grants of `dml-grants.sql` to the application account |
 | `setup` | `setup [--owner-account=<account>] [--app-account=<account>] [--stdin]` | the first setup: migrate as `migrate` does, check that the application account can use the schema (exit code `3` and the missing step when it cannot), add the seed codes that are missing (a code that exists is never changed) and compare the seed with the database by counts and digest; running it again changes nothing |
-| `key-register` | `key-register <author> <public-key-or-block> <fingerprint> [--replace=<current-fingerprint>]` | bind the public key a session printed to its author; a live key is replaced only with `--replace` |
-| `key-revoke` | `key-revoke <author> --fingerprint=<fingerprint>` | close the live key of an author |
-| `token-issue` | `token-issue <author> [--note=<text>] [--expires=<ISO-8601 with Z or an offset>]` | issue a standard HTTP `Bearer` session token (`lgt_...`) for an author, storing only its SHA-256 hash and prefix, and print the token once |
-| `token-revoke` | `token-revoke <id>` | revoke a session token by numeric id |
-| `token-list` | `token-list [<author>]` | list unrevoked session tokens of an author or of every author (never the secret) |
 | `passkey-code` | `passkey-code [--remove-existing]` | issue the one-time code that enrols a passkey of the owner in the admin web (shown once, valid 15 minutes, stored only as its hash; a new code ends the earlier unused one); `--remove-existing` closes every live passkey first, for an owner who lost them all |
 | `project-add` | `project-add <id> <code> <title>` | add a project |
 | `code-set` | `code-set <group> <code> <name-ko> [<description-ko>] [--name-en=<text>] [--description-en=<text>] [--sort=<n>] [--inactive] [--direction=<direction>]` | add or update a common code; `--direction` (`GIVEN` or `CANONICAL`) is for the group `RELATION_KIND` (see the `ledger_link` tool) |
 | `codes` | `codes [<group>]` | list the common codes |
-| `grant` | `grant <author> <project> <scope>... [--note=<text>] [--expires=<ISO-8601 with Z or an offset>]` | grant scopes on a project; the author needs a live session key or session token first |
+| `grant` | `grant <author> <project> <scope>... [--note=<text>] [--expires=<ISO-8601 with Z or an offset>]` | grant scopes on a project directly to an author (`<vendor>:<session-id>`) |
 | `revoke` | `revoke <author> [<project> [<scope>]]` | revoke live grants |
 | `grants` | `grants [<author>]` | list live grants |
 | `attachments-check` | `attachments-check [--purge-orphans]` | check the attachments against their files and keys: a file that no row names, and a file that `attachments-rekey` replaced, is moved to `orphans/` and never deleted; a file in `orphans/` whose row exists again is moved back; the report gives the counts and the ids (never a storage key or a path) of the attachments that are missing, damaged or pointed to by no history row, and the exit code is `1` when one is missing or damaged; a key file that is missing or a disk that cannot be read stops the check with that error and is never reported as a damaged file; `--purge-orphans` first deletes the files in `orphans/` that no row names (a file whose row exists again is not deleted, the check moves it back) and records the number in the audit trail |
@@ -571,20 +560,14 @@ the service account of the installation and never as root.
   `ledger.admin.token` into the login page of the application. With `oidc` the owner signs in with OpenID Connect, and the owner is **one e-mail address**
   (`ledger.admin.oidc.owner-email`, verified by the provider at `ledger.admin.oidc.issuer`); another address, or one the provider did not
   verify, is refused. Only one of the three is offered: with `oidc` or `passkey` the token form is absent and a posted token
-  finds no sign-in. The admin token `ledger.admin.token` also stays the bearer of the read-only JSON endpoints. Whichever sign-in
-  is chosen, a change is approved by a passkey, so a session opened with the token registers its first passkey with the one-time
-  code of `passkey-code`. The agents' token is refused, so an agent that holds the MCP token cannot grant itself
+  finds no sign-in. The admin token `ledger.admin.token` also stays the bearer of the read-only JSON endpoints. Once signed in, owner
+  changes apply directly under session and CSRF protection without per-action passkey re-approval. The agents' token is refused, so an agent that holds the MCP token cannot grant itself
   anything. Credential checks (passkey, one-time code, token) are slowed down once more than a budget of them arrive within a window
   (`ledger.admin.lockout.*`); nothing is ever locked, because a lock that anybody can trigger with wrong credentials locks the owner out as
   well. There is no limit per client either: the public reaches the services through the operator's reverse proxy on the same host, and
   the address that proxy forwards is a record of the request and not an identity (depending on the proxy, every user arrives as one
   address), so a lock by address would lock the owner with the attacker, and the personal edition, one person, has nobody to tell apart. A token
   made by `token-generate` (256 bits from `SecureRandom`) and the one-time code (100 bits) cannot be guessed, so a delay is all that is needed.
-- **Approval of every change by a passkey, whichever way you signed in.** Every change you make in the console (grants, session
-  keys, common codes, projects, the driver, closing a passkey) is approved with a passkey, with user verification: the page asks the
-  server for a challenge made from that very change and your session, the authenticator signs it, and the write goes with the
-  signature. A signature is good for that one change, once, for two minutes; one for another change or another session is refused.
-  Reading needs no approval. The commands of `ledger-cli` on the server are the owner's shell and need none.
 - **First passkey, another one, or a reset.** Run `ledger-cli passkey-code` on the server as the service account: it prints a
   one-time code (shown once, valid 15 minutes, stored only as its hash). On the login page type it under "Register a passkey"; that
   signs in an enrolment session (a quarter of an hour, it may register a passkey and nothing else), where "Register" creates the
@@ -598,9 +581,9 @@ the service account of the installation and never as root.
 - **Browser hardening.** Spring Security provides CSRF tokens, a `SameSite=Strict` session cookie that is `Secure` by default, the
   `Host` allow list and a Content Security Policy.
 - **Pages.** Overview (clickable KPI, attention and distribution drilldowns, and the state of the MCP server), projects, issues, specifications, tasks, criteria and history
-  (read only, with entity deep-links and JSON change diffs), attachments, common codes (searchable, with group and state filters and modal add, edit and deactivate/reactivate), grants (searchable session-centric cards with modal session connection, atomic per-project scope sync, bearer tokens with optional initial scopes and UTC expiry presets, and session keys), and the JDBC driver comparison page. Projects, grants and common codes keep their main views read-first and manage add, edit and revoke/deactivate actions in native modal dialogs with inline search bars. The console uses a 3-domain fixed sidebar with a keyboard-accessible mobile drawer, automatic and manual Light/Dark themes, and inline HTML form validation recovery (while `/driver` never echoes refused paths or class names). Times are sent as UTC and shown in the local
+  (read only, with entity deep-links and JSON change diffs), attachments, common codes (searchable, with group and state filters and modal add, edit and deactivate/reactivate), grants (searchable session-centric cards with 1-click modal session granting, atomic per-project scope sync, and UTC expiry presets), and the JDBC driver comparison page. Projects, grants and common codes keep their main views read-first and manage add, edit and revoke/deactivate actions in native modal dialogs with inline search bars. The console uses a 3-domain fixed sidebar with a keyboard-accessible mobile drawer, automatic and manual Light/Dark themes, and inline HTML form validation recovery (while `/driver` never echoes refused paths or class names). Times are sent as UTC and shown in the local
   time of the browser.
-- **Grants.** Sessions are grouped into per-author cards showing registered keys, bearer tokens and project scopes together. The owner connects a session in a modal (issuing a bearer token with optional initial project grants in one step, or pasting the public key a session printed and comparing its fingerprint before registration), adjusts all scopes of a project in one atomic sync, or revokes individual grants, tokens and keys through confirmation modals. A live key is replaced only on an explicit confirmation of that exact key.
+- **Grants.** Sessions are grouped into per-author cards showing project scopes directly. The owner grants project scopes to any session ID (`<vendor>:<session-id>`) in one modal with no key registration or per-session token issuance, adjusts all scopes of a project in one atomic sync, or revokes grants through confirmation modals.
 
 ## Client hooks
 
@@ -614,24 +597,17 @@ means. The plugin directories are in `clients/claude`, `clients/codex` and `clie
 needs a Java 25 runtime on the `PATH` of the client host; with no hook, or a failing hook, a write is refused with
 `HOST_ATTESTATION_REQUIRED`.
 
-The hook signs only the thirteen write tools and five attachment tools, named `mcp__<server>__ledger_<op>` or `mcp__<server>__<server>_ledger_<op>`
-(Codex Apps: `mcp__codex_apps__app_<app>_ledger_<op>`). The value of `_hostAttestation` is
-`ala3.<author>.<tool>.<operation key>.<arguments digest>.<issued at>.<signature>`: an Ed25519 signature over the author, the tool, the
-`operationKey` of the call (empty for `ledger_whoami` and the attachment tools), the SHA-256 of the RFC 8785 canonical form of the arguments (without
-`_hostAttestation`; a batch: every operation, its content, its order and the key of the batch) and the time. The hook reads the
-`operationKey` from the arguments the model sent and never makes one up; a call without one is refused by the server. A captured token
-cannot carry other content.
+The hook stamps only the thirteen write tools and five attachment tools, named `mcp__<server>__ledger_<op>` or `mcp__<server>__<server>_ledger_<op>`
+(Codex Apps: `mcp__codex_apps__app_<app>_ledger_<op>`). The value of `_hostAttestation` is `<vendor>:<session-id>` (for example
+`claude:1f2e3d4c` or `codex:9a8b7c6d`). If the model supplies `_hostAttestation` itself, the hook refuses the call (`RESERVED_FIELD`).
 
-- The hook keeps one Ed25519 key per MCP server name and author in an owner-only folder: `~/.agent-ledger-mcp/session-keys`, or the
-  absolute path in `LEDGER_HOOK_KEY_DIR`. A signature made for one server never verifies on another. For Codex Apps the server name
-  is `codex_apps.<app>`.
 - The resident program is started by the first call and needs no installation step: when the address file is missing, names a process
   that is gone (the process id and the start time must both match, so a reused id is not taken for it) or does not answer, the client
   starts `java -jar` of a copy of the program, and only one starts even when several calls arrive together (a lock on the state
   folder; the program holds a second lock of its own). The first call takes about a second, the later ones about a tenth of a second
   (measurements in the release notes). The program keeps running after the call and ends by itself after 15 minutes without a call
   (`LEDGER_HOOK_RESIDENT_IDLE_TIMEOUT`, an ISO-8601 duration such as `PT30M`), or with `java -jar ledger-client-hook.jar stop`.
-- There is one resident program per key folder. Its state folder, `~/.agent-ledger-mcp/resident/<id>/`, holds the address file (the port,
+- Its state folder, `~/.agent-ledger-mcp/resident/<id>/`, holds the address file (the port,
   the process id and start time, the build, and a secret that is new for every start), the two lock files and `resident.log`, which
   has the output of the program and never a secret. The program listens on `127.0.0.1` only, at a port that the system chooses. Every
   request must carry the secret of the address file; it is compared in constant time and a request without it is refused with 401, so
@@ -645,15 +621,11 @@ cannot carry other content.
   `HOST_ATTESTATION_REQUIRED`. Read `resident.log` in the state folder; check that `ledger-client-hook.jar` and
   `ledger-hook-resident.jar` are in the same folder and that `java` is JDK 25 or later. `java -jar ledger-client-hook.jar stop` ends a
   program that behaves oddly; the next call starts a new one. The folders `resident` and `resident-runtime` can be deleted while no
-  program runs; the keys are in `session-keys` and are not touched.
-- `java -jar ledger-client-hook.jar session-key <server> <author>` prints the server, the author, the public key and its fingerprint.
-  The owner compares the fingerprint and registers the key on that server with `ledger-cli key-register` or on the grants page.
-- The server verifies the signature, the tool, the operation key, the arguments and the time (`ledger.attestation.window`) before it
-  looks at any grant. A missing key and a wrong signature are the same refusal, `ATTESTATION_SIGNATURE_INVALID`; a different
-  content is `ATTESTATION_BINDING_MISMATCH`.
-- Limits: another process of the same operating system user can read the key file, so isolation inside one user needs separate
-  accounts. The hook creates the folder and the key file owner-only and reads an existing one whoever may reach it or owns it (a
-  link is followed): the personal edition trusts the whole PC. A directory where the key file belongs, and an empty key file, are refused.
+  program runs.
+- The server validates the `_hostAttestation` author format (`HOST_ATTESTATION_REQUIRED`, `AUTHOR_ID_FORMAT`) before checking the
+  session's live grants (`session_grant`).
+- Limits: network-level authentication relies on `ledger.mcp.token` (plus `Host` and `Origin` allow lists), while the client hook
+  prevents the model from spoofing `_hostAttestation` locally. Keep `ledger.mcp.token` restricted to trusted owner hosts.
 
 ## Upgrading from 1.x
 
@@ -772,8 +744,7 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
    The import writes the whole ledger; `--owner-account=<account>` runs it as the DDL account, whose
    password is typed with hidden input and is not stored (`--stdin` takes it from the first line of standard input instead and needs `--owner-account`).
    It reads the 1.x schema read only and writes the new schema in one transaction; see What the import does below.
-7. **Register the session keys.** The grants of 1.x are copied without a session key. Every author registers a session key with
-   `ledger-cli key-register`; then its grants work.
+7. **Review imported grants.** The grants of 1.x are copied directly and work as soon as the client hook stamps the session author id.
 8. **Check.** Run `ledger-cli mcp-check --url=<its public URL>` and `import-1x --verify-only` (it needs the settings of the 1.x source and
    changes nothing), and run `ledger-cli passkey-code` and register your first passkey in the admin web (the admin token of the installer signs a
    browser in only with `ledger.admin.sign-in=token`; the default is `passkey`). Clients: the tools `execute_sql_reader` and `search_objects_reader` were removed; the read tools replace them. The results of the write

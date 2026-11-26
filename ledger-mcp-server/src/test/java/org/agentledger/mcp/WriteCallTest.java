@@ -191,12 +191,15 @@ class WriteCallTest {
     }
 
     @Test
-    @DisplayName("MCW-006: an empty _hostAttestation is AUTHOR_ID_FORMAT")
-    void anEmptyAttestationIsAMalformedAuthorId(McpSession session, Scenario scenario) {
-        ToolError error = session.failed("ledger_issue_save",
+    @DisplayName("MCW-006: an empty _hostAttestation is HOST_ATTESTATION_REQUIRED and a malformed author is AUTHOR_ID_FORMAT")
+    void anEmptyAttestationIsRequiredAndMalformedIsAuthorIdFormat(McpSession session, Scenario scenario) {
+        ToolError empty = session.failed("ledger_issue_save",
                 Calls.IssueSave.create(scenario.projectId(), "t", ""));
+        assertThat(empty.code()).isEqualTo("HOST_ATTESTATION_REQUIRED");
 
-        assertThat(error.code()).isEqualTo("AUTHOR_ID_FORMAT");
+        ToolError malformed = session.failed("ledger_issue_save",
+                Calls.IssueSave.create(scenario.projectId(), "t", "claude"));
+        assertThat(malformed.code()).isEqualTo("AUTHOR_ID_FORMAT");
     }
 
     // ------------------------------------------------------------------------------------- MCW-007 .. MCW-009

@@ -24,7 +24,6 @@ import org.agentledger.application.admin.CommonCodeService.CodeCommand;
 import org.agentledger.application.admin.GrantService;
 import org.agentledger.application.admin.GrantService.GrantCommand;
 import org.agentledger.application.admin.GrantService.RevokeCommand;
-import org.agentledger.application.admin.SessionKeyService;
 import org.agentledger.application.support.Expect;
 import org.agentledger.application.support.Fields;
 import org.agentledger.application.support.LedgerServiceTest;
@@ -305,39 +304,6 @@ class RaceTest {
                 .isIn("written:1", "SESSION_NOT_GRANTED:0");
         assertThat(Expect.outcome(() -> s.bean(SaveService.class).save(actor, s.create("issue", null,
                 s.issueFields("after"))))).contains(TrustCode.SESSION_NOT_GRANTED);
-    }
-
-    @Test
-    @DisplayName("SVC-RACE-10 (principle 4.4): the key of the author is read, not locked: closing it does not wait for a write that has verified it; afterwards nothing is accepted")
-    void race10_keyCloseDoesNotWaitForTheWrite(Scenario s) throws Exception {
-        String actor = s.actorWith("issue");
-        CountDownLatch written = new CountDownLatch(1);
-        CountDownLatch release = new CountDownLatch(1);
-        Future<SaveResult> writing = holdingTransaction(s, () -> s.bean(SaveService.class).save(actor,
-                s.create("issue", null, s.issueFields("held"))), written, release);
-        assertThat(written.await(60, TimeUnit.SECONDS)).isTrue();
-        Future<Boolean> closing = Parallel.start(() -> s.bean(SessionKeyService.class).revoke(actor,
-                TestOwners.OWNER));
-        assertThat(closing.get(30, TimeUnit.SECONDS)).as("the close did not wait for the open write").isTrue();
-        release.countDown();
-        assertThat(writing.get(60, TimeUnit.SECONDS).version()).isEqualTo(1);
-        Expect.failure(() -> s.bean(SaveService.class).save(actor, s.create("issue", null, s.issueFields("late"))),
-                TrustCode.ATTESTATION_SIGNATURE_INVALID);
-    }
-
-    @RepeatedTest(100)
-    @DisplayName("SVC-RACE-10: a write against the close of its key: a refused write left nothing, none after the close")
-    void race10_writeAgainstKeyClose(Scenario s) {
-        String actor = s.actorWith("issue");
-        List<Callable<Object>> calls = List.of(
-                () -> s.bean(SaveService.class).save(actor, s.create("issue", null, s.issueFields("round"))),
-                () -> s.bean(SessionKeyService.class).revoke(actor, TestOwners.OWNER));
-        List<Outcome<Object>> outcomes = Parallel.all(calls);
-        assertThat(outcomes.get(1).failure()).isNull();
-        Optional<ErrorCode> write = code(outcomes.get(0));
-        long written = s.count("SELECT COUNT(*) FROM history WHERE author_id = ? AND op = 'CREATE'", actor);
-        assertThat(write.map(ErrorCode::token).orElse("written") + ":" + written)
-                .isIn("written:1", "ATTESTATION_SIGNATURE_INVALID:0");
     }
 
     @Test

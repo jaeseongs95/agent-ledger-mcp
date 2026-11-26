@@ -18,15 +18,11 @@ import org.agentledger.application.admin.GrantService.GrantCommand;
 import org.agentledger.application.admin.GrantService.RevokeCommand;
 import org.agentledger.application.admin.ProjectService;
 import org.agentledger.application.admin.ProjectService.ProjectCommand;
-import org.agentledger.application.admin.SessionKeyService;
-import org.agentledger.application.admin.SessionKeyService.RegisterCommand;
 import org.agentledger.application.support.Expect;
 import org.agentledger.application.support.LedgerServiceTest;
 import org.agentledger.application.support.Scenario;
 import org.agentledger.application.write.WhoamiService;
 import org.agentledger.application.write.WhoamiService.GrantView;
-import org.agentledger.apptest.TestKeyRing;
-import org.agentledger.attestation.PublicKeys;
 import org.agentledger.domain.error.ConflictCode;
 import org.agentledger.domain.error.ErrorCode;
 import org.agentledger.domain.error.LedgerException;
@@ -67,39 +63,18 @@ class GrantProjectTest {
             + "AND subject LIKE ? || '|%'";
 
     @Test
-    @DisplayName("SVC-GRT-11: a grant for an author without a live session key is refused SESSION_KEY_REQUIRED; no grant row and no audit row")
-    void grt11_noKeyNoGrant(Scenario s) {
-        String author = "claude:grt11";
-        LedgerException refused = Expect.failure(() -> s.bean(GrantService.class).grant(
-                new GrantCommand(author, s.projectId(), List.of("issue", "task"), null, null), TestOwners.OWNER),
-                ConflictCode.SESSION_KEY_REQUIRED);
-        assertThat(refused.args()).containsExactly(author);
-        assertThat(rows(s, GRANT_ROWS, author)).isZero();
-        assertThat(rows(s, AUDIT_ROWS, author)).isZero();
-    }
-
-    @Test
-    @DisplayName("SVC-GRT-12: a closed key is no live key; after a key is registered again the grant is issued")
-    void grt12_closedKey(Scenario s) {
-        String author = "claude:grt12";
-        SessionKeyService keys = s.bean(SessionKeyService.class);
-        keys.register(new RegisterCommand(author, PublicKeys.encode(TestKeyRing.newPair().getPublic()), null),
-                TestOwners.OWNER);
-        keys.revoke(author, TestOwners.OWNER);
-        GrantCommand command = new GrantCommand(author, s.projectId(), List.of("issue"), null, null);
-        Expect.failure(() -> s.bean(GrantService.class).grant(command, TestOwners.OWNER),
-                ConflictCode.SESSION_KEY_REQUIRED);
-        assertThat(rows(s, GRANT_ROWS, author)).isZero();
-
-        keys.register(new RegisterCommand(author, PublicKeys.encode(TestKeyRing.newPair().getPublic()), null),
-                TestOwners.OWNER);
-        assertThat(s.bean(GrantService.class).grant(command, TestOwners.OWNER)).hasSize(1);
-        assertThat(rows(s, GRANT_ROWS, author)).isEqualTo(1);
+    @DisplayName("direct grant works for any valid <vendor>:<session_id> without session key or session token prerequisites")
+    void directGrantWorksWithoutKeyOrToken(Scenario s) {
+        String author = "codex:direct-session-1";
+        List<Long> ids = s.bean(GrantService.class).grant(
+                new GrantCommand(author, s.projectId(), List.of("issue", "task"), null, null), TestOwners.OWNER);
+        assertThat(ids).hasSize(2);
+        assertThat(rows(s, GRANT_ROWS, author)).isEqualTo(2);
         assertThat(rows(s, AUDIT_ROWS, author)).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("SVC-GRT-13: an unknown project and an empty scope list keep their codes for an author without a key")
+    @DisplayName("SVC-GRT-13: an unknown project and an empty scope list keep their codes")
     void grt13_earlierRefusalsKeepTheirCodes(Scenario s) {
         String author = "claude:grt13";
         GrantService grants = s.bean(GrantService.class);
@@ -107,64 +82,6 @@ class GrantProjectTest {
                 TestOwners.OWNER), LookupCode.NOT_FOUND);
         Expect.failure(() -> grants.grant(new GrantCommand(author, s.projectId(), List.of(), null, null),
                 TestOwners.OWNER), ValidationCode.VALIDATION_FAILED);
-    }
-
-    private static final String SUBJECT_AUDIT_ROWS = "SELECT COUNT(*) FROM owner_audit WHERE subject = ?";
-
-    @Test
-    @DisplayName("SVC-GRT-14 (TXA-02): the key and the grants of the grant screen are one use case and one transaction: a refused grant leaves no key and no audit row, an accepted one commits the key, the grants and both audit rows together, the same key again is a second grant of the one key")
-    void grt14_keyAndGrantsAreOneTransaction(Scenario s) {
-        String author = "claude:grt14";
-        GrantService grants = s.bean(GrantService.class);
-        SessionKeyService keys = s.bean(SessionKeyService.class);
-        String key = PublicKeys.encode(TestKeyRing.newPair().getPublic());
-
-        Expect.failure(() -> grants.grantWithKey(new GrantCommand(author, "nowhere", List.of("issue"), null, null), key,
-                TestOwners.OWNER), LookupCode.NOT_FOUND);
-        assertThat(keys.history(author)).as("the key was rolled back with the refused grant").isEmpty();
-        assertThat(rows(s, SUBJECT_AUDIT_ROWS, author)).isZero();
-        assertThat(rows(s, GRANT_ROWS, author)).isZero();
-
-        GrantCommand command = new GrantCommand(author, s.projectId(), List.of("issue", "task"), null, null);
-        assertThat(grants.grantWithKey(command, key, TestOwners.OWNER)).hasSize(2);
-        assertThat(keys.live(author)).isPresent();
-        assertThat(rows(s, GRANT_ROWS, author)).isEqualTo(2);
-        assertThat(rows(s, SUBJECT_AUDIT_ROWS, author)).as("KEY_REGISTERED").isEqualTo(1);
-        assertThat(rows(s, AUDIT_ROWS, author)).as("GRANT_ISSUED").isEqualTo(1);
-
-        assertThat(grants.grantWithKey(command, key, TestOwners.OWNER)).hasSize(2);
-        assertThat(keys.history(author)).hasSize(1);
-        assertThat(rows(s, GRANT_ROWS, author)).isEqualTo(4);
-    }
-
-    @Test
-    @DisplayName("SVC-GRT-15 (TXA-02): the confirmed replacement of a key and the grants are one transaction: a refused grant leaves the old key live and no closed row, a replacement that is not confirmed issues no grant, a confirmed one replaces the key and grants")
-    void grt15_replacementAndGrantsAreOneTransaction(Scenario s) {
-        GrantService grants = s.bean(GrantService.class);
-        SessionKeyService keys = s.bean(SessionKeyService.class);
-        String author = s.actorWith("issue");
-        String oldFingerprint = keys.live(author).orElseThrow().fingerprint();
-        String replacement = PublicKeys.encode(TestKeyRing.newPair().getPublic());
-        long grantRows = rows(s, GRANT_ROWS, author);
-
-        Expect.failure(() -> grants.grantReplacingKey(new GrantCommand(author, "nowhere", List.of("deliverable"),
-                null, null), replacement, oldFingerprint, TestOwners.OWNER), LookupCode.NOT_FOUND);
-        assertThat(keys.live(author).orElseThrow().fingerprint()).isEqualTo(oldFingerprint);
-        assertThat(keys.history(author)).as("the close of the old key was rolled back").hasSize(1);
-        assertThat(rows(s, GRANT_ROWS, author)).isEqualTo(grantRows);
-
-        GrantCommand command = new GrantCommand(author, s.projectId(), List.of("deliverable"), null, null);
-        Expect.failure(() -> grants.grantReplacingKey(command, replacement, "0".repeat(64), TestOwners.OWNER),
-                ConflictCode.KEY_REPLACEMENT_NOT_CONFIRMED);
-        assertThat(keys.live(author).orElseThrow().fingerprint()).isEqualTo(oldFingerprint);
-        assertThat(rows(s, GRANT_ROWS, author)).isEqualTo(grantRows);
-
-        assertThat(grants.grantReplacingKey(command, replacement, oldFingerprint, TestOwners.OWNER)).hasSize(1);
-        assertThat(keys.live(author).orElseThrow().publicKey()).isEqualTo(replacement);
-        assertThat(keys.history(author)).hasSize(2);
-        assertThat(rows(s, GRANT_ROWS, author)).isEqualTo(grantRows + 1);
-        assertThat(s.count("SELECT COUNT(*) FROM owner_audit WHERE subject = ? AND operation = 'KEY_REPLACED'", author))
-                .isEqualTo(1);
     }
 
     /** A grant request that must be refused, and why. */

@@ -9,14 +9,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.agentledger.admin.support.AdminTest;
-import org.agentledger.admin.support.AuthorKeys;
 import org.agentledger.admin.support.Browser;
 import org.agentledger.admin.support.Browser.Form;
 import org.agentledger.admin.support.Seeds;
 import org.agentledger.admin.support.Seeds.Seeded;
 import org.agentledger.application.admin.CommonCodeService;
-import org.agentledger.application.admin.SessionTokenService;
-import org.agentledger.application.admin.SessionTokenService.IssueCommand;
 import org.agentledger.testing.TestOwners;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
@@ -41,9 +38,6 @@ class ModalCrudUxTest {
 
     @Autowired
     private CommonCodeService codes;
-
-    @Autowired
-    private SessionTokenService tokens;
 
     private static String stripDialogs(String html) {
         return html.replaceAll("(?s)<dialog\\b[^>]*>.*?</dialog>", "");
@@ -112,62 +106,43 @@ class ModalCrudUxTest {
     }
 
     @Test
-    @DisplayName("MUX-03: /grants renders search UI and moves all add/edit/revoke forms into native <dialog> modals with auto-reopen on preview and 4xx")
+    @DisplayName("MUX-03: /grants renders search UI and moves all grant/edit/revoke forms into native <dialog> modals with auto-reopen on HTML 4xx")
     void mux03_grantsSearchAndModals() throws Exception {
         Seeded project = seeds.project();
         String session = "agent:mux-" + SEQUENCE.incrementAndGet();
         Browser browser = Browser.signedIn(mvc);
 
-        AuthorKeys.Pair keyPair = AuthorKeys.newPair();
-        browser.perform(browser.form("/grants", keyPair.confirmed(Form.of("author", session, "project",
-                project.project(), "scopes", "issue", "scopes", "task")), browser.csrfOf("/grants")))
+        browser.perform(browser.form("/grants/author", Form.of("author", session, "project",
+                project.project(), "scopes", "issue", "scopes", "task"), browser.csrfOf("/grants")))
                 .andExpect(status().is3xxRedirection());
-        tokens.issue(new IssueCommand(session, null, "mux-token"), TestOwners.OWNER);
 
         String enHtml = browser.perform(browser.get("/grants").header(HttpHeaders.ACCEPT_LANGUAGE, "en"))
                 .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
         assertThat(enHtml)
                 .contains("id=\"session-search\"", "data-session-toolbar")
-                .contains("data-modal-open=\"modal-connect-session\"")
                 .contains("data-modal-open=\"modal-edit-scopes\"")
                 .contains("data-modal-open=\"modal-add-project\"")
                 .contains("data-modal-open=\"modal-revoke-grant\"")
-                .contains("data-modal-open=\"modal-revoke-key\"")
-                .contains("data-modal-open=\"modal-revoke-token\"")
-                .contains("<dialog id=\"modal-connect-session\"", "<dialog id=\"modal-edit-scopes\"",
-                        "<dialog id=\"modal-add-project\"", "<dialog id=\"modal-revoke-grant\"",
-                        "<dialog id=\"modal-revoke-key\"", "<dialog id=\"modal-revoke-token\"");
+                .contains("<dialog id=\"modal-edit-scopes\"",
+                        "<dialog id=\"modal-add-project\"",
+                        "<dialog id=\"modal-revoke-grant\"")
+                .doesNotContain("modal-connect-session", "modal-key-confirm", "modal-revoke-key", "modal-revoke-token");
 
         String outsideDialogs = stripDialogs(enHtml);
         assertThat(outsideDialogs)
-                .as("no grant/key/token mutation form should remain outside <dialog>")
-                .doesNotContain("action=\"/grants\"")
+                .as("no grant mutation form should remain outside <dialog>")
                 .doesNotContain("action=\"/grants/sync\"")
                 .doesNotContain("action=\"/grants/author\"")
-                .doesNotContain("action=\"/grants/revoke\"")
-                .doesNotContain("action=\"/grants/keys/revoke\"")
-                .doesNotContain("action=\"/grants/tokens\"")
-                .doesNotContain("action=\"/grants/tokens/revoke\"");
+                .doesNotContain("action=\"/grants/revoke\"");
 
-        // Preview opens the fingerprint confirmation modal automatically
-        AuthorKeys.Pair nextKey = AuthorKeys.newPair();
-        String previewHtml = browser.perform(browser.form("/grants/preview",
-                nextKey.pasted(Form.of("author", "agent:mux-prev-" + SEQUENCE.incrementAndGet(),
-                        "project", project.project(), "scopes", "issue")), browser.csrfOf("/grants")))
-                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
-        assertThat(previewHtml)
-                .contains("<dialog id=\"modal-key-confirm\"")
-                .contains("data-open-on-load=\"true\"")
-                .contains(nextKey.fingerprint());
-
-        // HTML 4xx on token issuance auto-reopens modal-connect-session with preserved author
+        // HTML 4xx on grant submission auto-reopens modal-add-project with preserved author
         String badSession = "agent:mux-err-" + SEQUENCE.incrementAndGet();
-        String errHtml = browser.perform(browser.form("/grants/tokens",
+        String errHtml = browser.perform(browser.form("/grants/author",
                 Form.of("author", badSession, "project", "no-such-proj-mux", "scopes", "issue"),
                 browser.csrfOf("/grants")))
                 .andExpect(status().isNotFound()).andReturn().getResponse().getContentAsString();
         assertThat(errHtml)
-                .contains("id=\"modal-connect-session\"")
+                .contains("id=\"modal-add-project\"")
                 .contains("data-open-on-load=\"true\"")
                 .contains("value=\"" + badSession + "\"");
     }

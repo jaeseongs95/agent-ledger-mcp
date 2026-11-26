@@ -22,7 +22,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.agentledger.hook.keys.SessionKeyException;
 import org.agentledger.testing.SourceRules;
 
 /**
@@ -37,7 +36,6 @@ class DesignRulesTest {
 
     private static final Path MAIN_JAVA = Path.of("src", "main", "java");
     private static final String HOOK = "org.agentledger.hook";
-    private static final String KEYS = "org.agentledger.hook.keys";
 
     private static final JavaClasses hook = new ClassFileImporter()
             .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS).importPackages(HOOK);
@@ -121,72 +119,12 @@ class DesignRulesTest {
                 .doesNotContain("attest");
     }
 
-    // ---------------------------------------------------------------- HK-044 key store split
+    // ---------------------------------------------------------------- HK-044 no per-session key store
 
     @Test
-    @DisplayName("HK-044 SessionKeyStore opens the folder and orders the steps only: no key encoding, no key algorithm, no file attribute view, no channel")
-    void keyStoreOnlyOrchestrates() {
-        noClasses().that().haveFullyQualifiedName(KEYS + ".SessionKeyStore").should().dependOnClassesThat()
-                .haveFullyQualifiedName("java.util.Base64")
-                .orShould().dependOnClassesThat().haveFullyQualifiedName("java.security.KeyFactory")
-                .orShould().dependOnClassesThat().haveFullyQualifiedName("java.security.KeyPairGenerator")
-                .orShould().dependOnClassesThat().haveFullyQualifiedName("java.security.Signature")
-                .orShould().dependOnClassesThat().haveFullyQualifiedName("java.security.MessageDigest")
-                .orShould().dependOnClassesThat().haveFullyQualifiedName("java.nio.charset.CharsetDecoder")
-                .orShould().dependOnClassesThat().haveFullyQualifiedName("java.nio.file.attribute.AclFileAttributeView")
-                .orShould().dependOnClassesThat().haveFullyQualifiedName("java.nio.file.attribute.AclEntry")
-                .orShould().dependOnClassesThat().haveFullyQualifiedName("java.nio.file.attribute.PosixFilePermissions")
-                .orShould().dependOnClassesThat().haveFullyQualifiedName("java.nio.channels.SeekableByteChannel")
-                .orShould().dependOnClassesThat().haveFullyQualifiedName("java.nio.file.StandardOpenOption")
-                .check(hook);
-    }
-
-    @Test
-    @DisplayName("HK-044 the file format (Base64, the key algorithm) is used by SessionKeyFile alone")
-    void formatOnlyInSessionKeyFile() {
-        noClasses().that().resideInAPackage(KEYS).and().doNotHaveFullyQualifiedName(KEYS + ".SessionKeyFile")
-                .should().dependOnClassesThat().haveFullyQualifiedName("java.util.Base64")
-                .orShould().dependOnClassesThat().haveFullyQualifiedName("java.security.KeyFactory")
-                .orShould().dependOnClassesThat().haveFullyQualifiedName("java.security.KeyPairGenerator")
-                .orShould().dependOnClassesThat().haveFullyQualifiedName("java.security.Signature")
-                .orShould().dependOnClassesThat().haveFullyQualifiedName("java.nio.charset.CharsetDecoder")
-                .check(hook);
-    }
-
-    @Test
-    @DisplayName("HK-044 the protection (POSIX modes, ACL entries, owner) is Protection alone; the channels are KeyFileReader and KeyFileWriter alone")
-    void protectionAndChannelsAreSeparate() {
-        noClasses().that().resideInAPackage(KEYS).and().haveNameNotMatching(".*\\.Protection(\\$.*)?")
-                .should().dependOnClassesThat().haveFullyQualifiedName("java.nio.file.attribute.AclFileAttributeView")
-                .orShould().dependOnClassesThat().haveFullyQualifiedName("java.nio.file.attribute.AclEntry")
-                .orShould().dependOnClassesThat().haveFullyQualifiedName("java.nio.file.attribute.PosixFilePermission")
-                .orShould().dependOnClassesThat().haveFullyQualifiedName("java.nio.file.attribute.PosixFilePermissions")
-                .orShould().dependOnClassesThat().haveFullyQualifiedName("java.nio.file.attribute.UserPrincipal")
-                .check(hook);
-        noClasses().that().resideInAPackage(KEYS).and().doNotHaveFullyQualifiedName(KEYS + ".KeyFileWriter")
-                .should().dependOnClassesThat().haveFullyQualifiedName("java.nio.file.FileAlreadyExistsException")
-                .check(hook);
-        noClasses().that().resideInAPackage(KEYS).and().doNotHaveFullyQualifiedName(KEYS + ".KeyFileReader")
-                .should().dependOnClassesThat().haveFullyQualifiedName("java.nio.file.attribute.BasicFileAttributes")
-                .check(hook);
-    }
-
-    @Test
-    @DisplayName("HK-044 (changed by SFR-020) the refusal reasons of the key store are exactly the ten of the contract, in this order: WRONG_OWNER is gone, the owner of an existing folder or key file is not looked at")
-    void reasonsAreKept() {
-        assertThat(Stream.of(SessionKeyException.Reason.values()).map(Enum::name).toList()).containsExactly(
-                "AUTHOR_INVALID", "FOLDER_UNAVAILABLE", "TOO_OPEN", "NOT_A_REGULAR_FILE", "CORRUPT", "AUTHOR_MISMATCH",
-                "SERVER_MISMATCH", "OWNER_UNKNOWN", "KEY_MISMATCH", "IO_FAILED");
-    }
-
-    @Test
-    @DisplayName("HK-044 (changed by SFR-020) the key file is opened for reading once and a link is followed (no NOFOLLOW_LINKS in the reader, no owner or permission check in the reader or the store), and it is created with CREATE_NEW, each in its own class")
-    void openAndCreateKeepTheirFlags() {
-        assertThat(source("org/agentledger/hook/keys/KeyFileReader.java")).doesNotContain("NOFOLLOW_LINKS").doesNotContain("CREATE_NEW")
-                .doesNotContain("requireOwnerOnly").doesNotContain("getOwner");
-        assertThat(source("org/agentledger/hook/keys/SessionKeyStore.java")).doesNotContain("NOFOLLOW_LINKS")
-                .doesNotContain("requireOwnerOnly");
-        assertThat(source("org/agentledger/hook/keys/KeyFileWriter.java")).contains("CREATE_NEW").doesNotContain("NOFOLLOW_LINKS");
+    @DisplayName("HK-044 (v4.0.0) the retired per-session key store package is gone from the hook module")
+    void keyStorePackageIsGone() {
+        assertThat(hook.stream().anyMatch(type -> type.getPackageName().startsWith("org.agentledger.hook.keys"))).isFalse();
     }
 
     // ---------------------------------------------------------------- HK-045 Optional

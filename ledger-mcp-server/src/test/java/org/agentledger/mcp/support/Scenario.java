@@ -7,7 +7,6 @@ import org.agentledger.application.admin.GrantService;
 import org.agentledger.application.admin.GrantService.GrantCommand;
 import org.agentledger.application.admin.ProjectService;
 import org.agentledger.application.admin.ProjectService.ProjectCommand;
-import org.agentledger.application.admin.SessionKeyService;
 import org.agentledger.testing.TestOwners;
 import org.springframework.context.ApplicationContext;
 
@@ -41,9 +40,6 @@ public final class Scenario {
     }
 
     public void grant(String author, String... scopes) {
-        if (context.getBean(SessionKeyService.class).live(author).isEmpty()) {
-            context.getBean(KeyRing.class).enroll(author);
-        }
         context.getBean(GrantService.class).grant(new GrantCommand(author, projectId, List.of(scopes), null, null),
                 TestOwners.OWNER);
     }

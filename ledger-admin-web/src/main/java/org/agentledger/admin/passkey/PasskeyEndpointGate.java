@@ -29,12 +29,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * admin web are therefore kept here:
  *
  * <ul>
- * <li>one sign-in at a time: unless the owner chose the passkey ({@code ledger.admin.sign-in}), the passkey is for approvals and
- * never for signing in, so the options of a passkey sign-in and the sign-in itself ({@code /webauthn/authenticate/**},
- * {@code /login/webauthn}) are refused with 403;
+ * <li>one sign-in at a time: unless the owner chose passkey sign-in ({@code ledger.admin.sign-in}), the passkey sign-in
+ * endpoints ({@code /webauthn/authenticate/**}, {@code /login/webauthn}) are refused with 403;
  * <li>a passkey is registered only in the enrolment session of the one-time code of the owner's shell: the registration
- * endpoints ({@code /webauthn/register/**}) are refused with 403 to a session of the owner and with 401 to nobody signed in. The
- * approval of a write ({@link ApprovalInterceptor}) is an MVC interceptor and does not stand in front of these endpoints either.
+ * endpoints ({@code /webauthn/register/**}) are refused with 403 to a session of the owner and with 401 to nobody signed in.
  * </ul>
  *
  * The filter is in the security chain only, in front of {@link PasskeyLoginGuard}, so a refused sign-in does not count against the

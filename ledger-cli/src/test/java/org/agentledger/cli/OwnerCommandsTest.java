@@ -5,9 +5,6 @@ package org.agentledger.cli;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Path;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
@@ -16,7 +13,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.TempDir;
-import org.agentledger.attestation.PublicKeys;
 import org.agentledger.cli.support.CliExtension;
 import org.agentledger.cli.support.CliExtension.Cli;
 import org.agentledger.cli.support.CliExtension.Outcome;
@@ -68,22 +64,6 @@ class OwnerCommandsTest {
 
     private Outcome run(Cli cli, String... args) {
         return run(cli, new RecordingOutput(), args);
-    }
-
-    private static KeyPair pair() {
-        try {
-            return KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
-        } catch (NoSuchAlgorithmException failure) {
-            throw new IllegalStateException(failure);
-        }
-    }
-
-    /** The owner registers the key of the author, as the grant needs it (the command key-register, real wiring). */
-    private void registerKey(Cli cli, String author) {
-        KeyPair pair = pair();
-        Outcome result = run(cli, "key-register", author, PublicKeys.encode(pair.getPublic()),
-                PublicKeys.fingerprint(pair.getPublic()));
-        assertThat(result.exitCode()).isZero();
     }
 
     private void addProject(Cli cli) {
@@ -296,7 +276,6 @@ class OwnerCommandsTest {
     @DisplayName("CLI-008 grant <author> <project> <scope>... --note --expires issues one live grant per scope (granted_by user:owner); an expiry with an offset is stored as UTC; the owner's audit trail records GRANT_ISSUED as cli:<user>")
     void issuesGrants(Cli cli) {
         addProject(cli);
-        registerKey(cli, AUTHOR);
         RecordingOutput output = new RecordingOutput();
 
         Outcome result = run(cli, output, "grant", AUTHOR, "e2e", "issue", "spec", "task", "deliverable", "verify", "--note=x",
@@ -328,7 +307,6 @@ class OwnerCommandsTest {
     @DisplayName("CLI-008/CLI-016 an expiry without a zone, or a date only, is refused (VALIDATION_FAILED, exit 1) and nothing is granted; the Z form is accepted")
     void refusesAnExpiryWithoutAZone(Cli cli) {
         addProject(cli);
-        registerKey(cli, AUTHOR);
 
         for (String expires : List.of("2099-01-01T10:00:00", "2099-01-01")) {
             Outcome result = run(cli, "grant", AUTHOR, "e2e", "issue", "--expires=" + expires);
@@ -348,7 +326,6 @@ class OwnerCommandsTest {
     @DisplayName("CLI-008 granting again closes the earlier live grant of the same key (the row stays) and leaves exactly one live grant; an unknown project is NOT_FOUND and an unknown scope VALIDATION_FAILED")
     void grantsAgainAndRefuses(Cli cli) {
         addProject(cli);
-        registerKey(cli, AUTHOR);
         assertThat(run(cli, "grant", AUTHOR, "e2e", "issue").exitCode()).isZero();
 
         Outcome again = run(cli, "grant", AUTHOR, "e2e", "issue", "--note=second");
@@ -369,41 +346,9 @@ class OwnerCommandsTest {
     }
 
     @Test
-    @DisplayName("CLI-037 grant for an author that has no live session key is NO_SESSION_KEY (exit 1) naming key-register; no grant row and no audit row are written")
-    void refusesAGrantWithoutAKey(Cli cli, CapturedOutput captured) {
-        addProject(cli);
-        int auditBefore = database.rows(AUDIT).size();
-
-        Outcome result = run(cli, "grant", AUTHOR, "e2e", "issue", "task");
-
-        assertThat(result.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
-        assertThat(result.code()).contains(ErrorCode.NO_SESSION_KEY);
-        assertThat(captured.getAll()).contains("key-register").contains("token-issue").contains(AUTHOR);
-        assertThat(database.rows(GRANTS)).isEmpty();
-        assertThat(database.rows(AUDIT)).hasSize(auditBefore);
-    }
-
-    @Test
-    @DisplayName("CLI-037 a key that the owner closed is not a live key: grant is NO_SESSION_KEY again")
-    void refusesAGrantAfterTheKeyWasClosed(Cli cli) {
-        addProject(cli);
-        KeyPair pair = pair();
-        assertThat(run(cli, "key-register", AUTHOR, PublicKeys.encode(pair.getPublic()), PublicKeys.fingerprint(pair.getPublic()))
-                .exitCode()).isZero();
-        assertThat(run(cli, "key-revoke", AUTHOR, "--fingerprint=" + PublicKeys.fingerprint(pair.getPublic())).exitCode())
-                .isZero();
-
-        Outcome result = run(cli, "grant", AUTHOR, "e2e", "issue");
-
-        assertThat(result.code()).contains(ErrorCode.NO_SESSION_KEY);
-        assertThat(database.rows(GRANTS)).isEmpty();
-    }
-
-    @Test
     @DisplayName("CLI-008 grants [author] lists the live grants (author, project, scope, expiry in UTC with Z or never, note); another author has none")
     void listsGrants(Cli cli) {
         addProject(cli);
-        registerKey(cli, AUTHOR);
         assertThat(run(cli, "grant", AUTHOR, "e2e", "issue", "task", "--note=first", "--expires=2099-01-01T10:00:00+09:00")
                 .exitCode()).isZero();
         assertThat(run(cli, "grant", AUTHOR, "e2e", "deliverable").exitCode()).isZero();
@@ -430,7 +375,6 @@ class OwnerCommandsTest {
     @DisplayName("CLI-008 revoke <author> [project [scope]] revokes exactly the matching live grants and prints how many (rows stay, revoked_at is set); GRANT_REVOKED is recorded as cli:<user> each time")
     void revokesGrants(Cli cli) {
         addProject(cli);
-        registerKey(cli, AUTHOR);
         assertThat(run(cli, "grant", AUTHOR, "e2e", "issue", "spec", "task", "deliverable", "verify").exitCode()).isZero();
         RecordingOutput scope = new RecordingOutput();
         RecordingOutput project = new RecordingOutput();
@@ -454,52 +398,12 @@ class OwnerCommandsTest {
         assertThat(revocations).allSatisfy(row -> assertThat(row.get("actor")).isEqualTo("cli:" + USER));
     }
 
-    @Test
-    @DisplayName("CLI-TOK-01 token-issue, token-list and token-revoke manage standard HTTP Bearer session tokens without persisting the raw secret, and allow granting without an Ed25519 key")
-    void issuesListsAndRevokesSessionTokens(Cli cli) {
-        addProject(cli);
-        String tokenAuthor = "agent:writer-1";
-        RecordingOutput issuedOut = new RecordingOutput();
-
-        Outcome issued = run(cli, issuedOut, "token-issue", tokenAuthor, "--note=film-edit",
-                "--expires=2099-01-01T00:00:00Z");
-
-        assertThat(issued.exitCode()).isZero();
-        assertThat(issuedOut.info()).contains(tokenAuthor).contains("lgt_");
-        List<Map<String, Object>> stored = database.rows("SELECT id, author_id, token_hash, token_prefix, revoked_at, note FROM session_token");
-        assertThat(stored).hasSize(1);
-        long tokenId = ((Number) stored.getFirst().get("id")).longValue();
-        String prefix = String.valueOf(stored.getFirst().get("token_prefix"));
-        assertThat(prefix).startsWith("lgt_");
-        assertThat(String.valueOf(stored.getFirst().get("token_hash"))).hasSize(64).doesNotStartWith("lgt_");
-
-        assertThat(run(cli, "grant", tokenAuthor, "e2e", "spec", "deliverable").exitCode()).isZero();
-
-        RecordingOutput listedOut = new RecordingOutput();
-        assertThat(run(cli, listedOut, "token-list", tokenAuthor).exitCode()).isZero();
-        assertThat(listedOut.info()).contains(tokenAuthor).contains(prefix).contains("film-edit");
-        // token-list prints only the short prefix (12 chars), never the full raw token printed at issuance
-        String rawSecret = issuedOut.info().substring(issuedOut.info().lastIndexOf(": ") + 2).strip();
-        assertThat(rawSecret).hasSizeGreaterThan(prefix.length());
-        assertThat(listedOut.info()).doesNotContain(rawSecret);
-
-        RecordingOutput revokedOut = new RecordingOutput();
-        assertThat(run(cli, revokedOut, "token-revoke", String.valueOf(tokenId)).exitCode()).isZero();
-        assertThat(revokedOut.info()).contains("Revoked session token " + tokenId);
-
-        RecordingOutput emptyOut = new RecordingOutput();
-        assertThat(run(cli, emptyOut, "token-list", tokenAuthor).exitCode()).isZero();
-        assertThat(emptyOut.info()).isEqualTo("There are no active session tokens.");
-        assertThat(run(cli, "grant", tokenAuthor, "e2e", "issue").code()).contains(ErrorCode.NO_SESSION_KEY);
-    }
-
     // CLI-009 ---------------------------------------------------------------------------------------------------
 
     @Test
     @DisplayName("CLI-009 changed by cli2 (the CLI also writes owner_audit): every row the commands create is stamped user:owner (project.created_by, common_code.created_by, session_grant.granted_by) and every owner operation has an owner_audit row whose actor is cli:<process user>")
     void rowsAreOwnedByTheOwnerAndAuditedAsTheCli(Cli cli) {
         addProject(cli);
-        registerKey(cli, AUTHOR);
         assertThat(run(cli, "code-set", "ISSUE_CATEGORY", "BUG", "ko-name").exitCode()).isZero();
         assertThat(run(cli, "grant", AUTHOR, "e2e", "issue").exitCode()).isZero();
         assertThat(run(cli, "revoke", AUTHOR, "e2e", "issue").exitCode()).isZero();
@@ -508,7 +412,7 @@ class OwnerCommandsTest {
         assertThat(database.rows(CODES)).allSatisfy(row -> assertThat(row.get("created_by")).isEqualTo(OWNER));
         assertThat(database.rows(GRANTS)).allSatisfy(row -> assertThat(row.get("granted_by")).isEqualTo(OWNER));
         List<Map<String, Object>> audit = database.rows(AUDIT);
-        assertThat(audit).extracting(row -> row.get("operation")).containsExactly("PROJECT_ADDED", "KEY_REGISTERED",
+        assertThat(audit).extracting(row -> row.get("operation")).containsExactly("PROJECT_ADDED",
                 "CODE_SET", "GRANT_ISSUED", "GRANT_REVOKED");
         assertThat(audit).allSatisfy(row -> assertThat(row.get("actor")).isEqualTo("cli:" + USER));
     }

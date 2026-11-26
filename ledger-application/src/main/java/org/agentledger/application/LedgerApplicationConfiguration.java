@@ -2,9 +2,7 @@
 
 package org.agentledger.application;
 
-import org.agentledger.application.gate.AttestationProperties;
 import org.agentledger.database.jdbc.LedgerJdbcConfiguration;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
@@ -15,7 +13,6 @@ import org.springframework.context.annotation.Import;
  * application (see {@code LedgerDatabaseConfiguration} and the data source configuration of the database module).
  */
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties(AttestationProperties.class)
 @Import(LedgerJdbcConfiguration.class)
 @ComponentScan(basePackageClasses = LedgerApplicationConfiguration.class)
 public class LedgerApplicationConfiguration {

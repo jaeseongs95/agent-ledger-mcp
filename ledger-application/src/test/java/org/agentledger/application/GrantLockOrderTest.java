@@ -4,7 +4,6 @@ package org.agentledger.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import java.security.KeyPair;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -15,23 +14,17 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 import org.agentledger.application.admin.GrantService;
 import org.agentledger.application.admin.GrantService.GrantCommand;
 import org.agentledger.application.admin.GrantService.RevokeCommand;
 import org.agentledger.application.admin.ProjectService;
 import org.agentledger.application.admin.ProjectService.ProjectCommand;
-import org.agentledger.application.admin.SessionKeyService;
-import org.agentledger.application.admin.SessionKeyService.RegisterCommand;
 import org.agentledger.application.gate.Target;
 import org.agentledger.application.gate.WriteGate;
 import org.agentledger.application.support.HeldTransaction;
 import org.agentledger.application.support.LedgerServiceTest;
 import org.agentledger.application.support.Parallel;
 import org.agentledger.application.support.Scenario;
-import org.agentledger.apptest.TestKeyRing;
-import org.agentledger.attestation.PublicKeys;
 import org.agentledger.database.repository.Counter;
 import org.agentledger.database.repository.IdAllocator;
 import org.agentledger.domain.rule.Scope;
@@ -152,22 +145,13 @@ class GrantLockOrderTest {
         }
     }
 
-    private static final List<String> COUNTERS = List.of(Counter.OWNER_AUDIT.name(), Counter.SESSION_KEY.name(),
-            Counter.SESSION_GRANT.name());
+    private static final List<String> COUNTERS = List.of(Counter.OWNER_AUDIT.name(), Counter.SESSION_GRANT.name());
 
-    /** The use case under test: the grant screen with a new key (false) or with the confirmed replacement of the key (true). */
-    private static Runnable grantWithKey(Scenario s, boolean replacing) {
+    private static Runnable directGrant(Scenario s) {
         String author = "claude:wk" + suffix();
         GrantService grants = s.bean(GrantService.class);
         GrantCommand command = new GrantCommand(author, s.projectId(), List.of("issue", "task"), null, null);
-        String key = PublicKeys.encode(TestKeyRing.newPair().getPublic());
-        if (!replacing) {
-            return () -> grants.grantWithKey(command, key, TestOwners.OWNER);
-        }
-        KeyPair old = TestKeyRing.newPair();
-        s.bean(SessionKeyService.class).register(new RegisterCommand(author, PublicKeys.encode(old.getPublic()), null),
-                TestOwners.OWNER);
-        return () -> grants.grantReplacingKey(command, key, PublicKeys.fingerprint(old.getPublic()), TestOwners.OWNER);
+        return () -> grants.grant(command, TestOwners.OWNER);
     }
 
     /**
@@ -193,18 +177,17 @@ class GrantLockOrderTest {
         }));
     }
 
-    @ParameterizedTest
-    @ValueSource(booleans = {false, true})
-    @DisplayName("SVC-LOCK-02: a grant with a key (new, or replacing) holds no counter row of the owner while it waits for the project row: project, then grant rows, then numbers")
-    void lock02_keyGrantHoldsNoNumberWhileItWaitsForTheProject(boolean replacing, Scenario s) throws Exception {
-        Runnable keyGrant = grantWithKey(s, replacing);
+    @Test
+    @DisplayName("SVC-LOCK-02: a grant holds no counter row of the owner while it waits for the project row: project, then grant rows, then numbers")
+    void lock02_grantHoldsNoNumberWhileItWaitsForTheProject(Scenario s) throws Exception {
+        Runnable grantCall = directGrant(s);
         CountDownLatch pinned = new CountDownLatch(1);
         CountDownLatch go = new CountDownLatch(1);
         AtomicInteger holderPid = new AtomicInteger();
         Future<?> holder = projectHolder(s, pinned, holderPid, go, false);
         assertThat(pinned.await(60, TimeUnit.SECONDS)).isTrue();
         Future<?> running = Parallel.start(() -> {
-            keyGrant.run();
+            grantCall.run();
             return null;
         });
         LockWaits.awaitWaitingFor(s.ctx().jdbc(), holderPid.get());
@@ -219,23 +202,21 @@ class GrantLockOrderTest {
         running.get(60, TimeUnit.SECONDS);
     }
 
-    @ParameterizedTest
-    @ValueSource(booleans = {false, true})
-    @DisplayName("SVC-LOCK-03: a grant with a key (new, or replacing) and a grant that pins the project and then takes the number of the owner's audit row both end: neither is a deadlock victim")
-    void lock03_keyGrantAndPlainGrantNeverDeadlock(boolean replacing, Scenario s) throws Exception {
-        Runnable keyGrant = grantWithKey(s, replacing);
+    @Test
+    @DisplayName("SVC-LOCK-03: two grants contending on project and owner audit counters never deadlock")
+    void lock03_concurrentGrantsNeverDeadlock(Scenario s) throws Exception {
+        Runnable grantCall = directGrant(s);
         CountDownLatch pinned = new CountDownLatch(1);
         CountDownLatch go = new CountDownLatch(1);
         AtomicInteger holderPid = new AtomicInteger();
         Future<?> holder = projectHolder(s, pinned, holderPid, go, true);
         assertThat(pinned.await(60, TimeUnit.SECONDS)).isTrue();
         Future<?> running = Parallel.start(() -> {
-            keyGrant.run();
+            grantCall.run();
             return null;
         });
         LockWaits.awaitWaitingFor(s.ctx().jdbc(), holderPid.get());
         go.countDown();
-        // a deadlock (SQLState 40P01) makes the database end one of the two, and the get of its future throws
         holder.get(60, TimeUnit.SECONDS);
         running.get(60, TimeUnit.SECONDS);
         assertThat(running.isDone() && holder.isDone()).isTrue();

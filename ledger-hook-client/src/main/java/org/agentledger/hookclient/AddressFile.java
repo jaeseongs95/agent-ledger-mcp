@@ -5,6 +5,7 @@ package org.agentledger.hookclient;
 import java.io.IOException;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -29,6 +30,8 @@ public final class AddressFile {
     private static final String BUILD = "build";
     private static final String SECRET = "secret";
     private static final int SECRET_BYTES = 32;
+    private static final int MOVE_ATTEMPTS = 10;
+    private static final long MOVE_RETRY_MILLIS = 10;
 
     private final Path file;
 
@@ -57,10 +60,34 @@ public final class AddressFile {
                 + System.nanoTime());
         files.writeNew(temporary, text.getBytes(StandardCharsets.UTF_8));
         try {
-            Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE);
+            moveAtomic(temporary, file);
         } catch (IOException failure) {
             Files.deleteIfExists(temporary);
             throw failure;
+        }
+    }
+
+    private static void moveAtomic(Path temporary, Path target) throws IOException {
+        for (int attempt = 1;; attempt++) {
+            try {
+                Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                return;
+            } catch (AccessDeniedException transientBusy) {
+                if (attempt >= MOVE_ATTEMPTS || !Files.exists(target)) {
+                    throw transientBusy;
+                }
+                pauseBeforeRetry(transientBusy);
+            }
+        }
+    }
+
+    private static void pauseBeforeRetry(AccessDeniedException cause) throws IOException {
+        try {
+            Thread.sleep(MOVE_RETRY_MILLIS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            cause.addSuppressed(interrupted);
+            throw cause;
         }
     }
 

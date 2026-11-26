@@ -56,9 +56,8 @@
   <section class="card">
     <div class="card-header">
       <h2 th:text="#{driver.register}">Register a driver</h2>
-      <th:block th:replace="~{fragments :: approveHint}"></th:block>
     </div>
-    <form method="post" th:action="@{/driver}" data-approve class="form-wide">
+    <form method="post" th:action="@{/driver}" class="form-wide">
       <div class="form-grid">
         <div class="form-field">
           <label for="jar" th:text="#{driver.jar.label}">Absolute path of the driver jar</label>

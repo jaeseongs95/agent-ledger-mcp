@@ -13,7 +13,6 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.api.DisplayName;
 import org.agentledger.cli.database.CliLedger;
-import org.agentledger.cli.key.SessionKeyRegistry;
 import org.agentledger.cli.support.CliExtension;
 import org.agentledger.cli.support.CliExtension.Cli;
 import org.agentledger.cli.support.CliExtension.Outcome;
@@ -43,10 +42,6 @@ class NoDriverTest {
                 Arguments.of((Object) new String[] { "codes" }),
                 Arguments.of((Object) new String[] { "grant", "claude:e2e-author", "e2e", "issue" }),
                 Arguments.of((Object) new String[] { "revoke", "claude:e2e-author" }),
-                Arguments.of((Object) new String[] { "key-revoke", "claude:e2e-author", "--fingerprint=abc" }),
-                Arguments.of((Object) new String[] { "token-issue", "claude:e2e-author" }),
-                Arguments.of((Object) new String[] { "token-revoke", "1" }),
-                Arguments.of((Object) new String[] { "token-list" }),
                 Arguments.of((Object) new String[] { "grants" }),
                 // ATA-008, ATA-022, ATA-031: the commands of the attachments need the ledger database as well
                 Arguments.of((Object) new String[] { "attachments-check" }),
@@ -66,7 +61,6 @@ class NoDriverTest {
         assertThat(captured.getAll()).contains("driver-register").doesNotContain("Hikari");
         // the components of the database configuration are imported (their names are class names), so ask by type
         assertThat(result.context().getBeanFactory().getBeanNamesForType(CliLedger.class)).isEmpty();
-        assertThat(result.context().getBeanFactory().getBeanNamesForType(SessionKeyRegistry.class)).isEmpty();
         assertThat(result.context().containsBean("dataSource")).isFalse();
     }
 }

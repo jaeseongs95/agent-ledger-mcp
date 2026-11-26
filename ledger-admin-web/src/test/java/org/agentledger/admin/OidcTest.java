@@ -178,7 +178,7 @@ class OidcTest {
     @Test
     @DisplayName("ADM-067: an owner operation of an OIDC session is recorded with the issuer and the subject of the sign-in")
     void adm067_auditActorOfAnOidcSession() throws Exception {
-        Browser browser = new Browser(mvc).withPasskey(org.agentledger.admin.support.TestPasskeys.OWNER);
+        Browser browser = new Browser(mvc);
         Authorization authorization = start(browser);
         callback(browser, authorization.state(), claims -> { }, authorization).andExpect(status().is3xxRedirection());
 
@@ -194,7 +194,7 @@ class OidcTest {
     @Test
     @DisplayName("ADM-032: an OIDC session needs the CSRF token and ends with the logout, like a token session")
     void adm032_sameRulesAsTokenSessions() throws Exception {
-        Browser browser = new Browser(mvc).withPasskey(org.agentledger.admin.support.TestPasskeys.OWNER);
+        Browser browser = new Browser(mvc);
         Authorization authorization = start(browser);
         callback(browser, authorization.state(), claims -> { }, authorization).andExpect(status().is3xxRedirection());
 

@@ -805,24 +805,25 @@ class DocsTest {
     }
 
     @Test
-    @DisplayName("3.0.1 release note follows RELEASE_NOTES_FORMAT.md in both languages with identical code spans and code blocks")
-    void v301NoteFollowsFormatAndMatchesBothLanguages() {
-        Markdown v301 = Markdown.of(Repository.read("docs/release-notes/3.0.1.md"));
-        assertThat(v301.lines().stream().filter(line -> !line.isBlank()).findFirst().orElse(""))
-                .isEqualTo("# agent-ledger-mcp 3.0.1");
+    @DisplayName("4.0.0 release note follows RELEASE_NOTES_FORMAT.md in both languages with identical code spans and code blocks")
+    void v400NoteFollowsFormatAndMatchesBothLanguages() {
+        Markdown v400 = Markdown.of(Repository.read("docs/release-notes/4.0.0.md"));
+        assertThat(v400.lines().stream().filter(line -> !line.isBlank()).findFirst().orElse(""))
+                .isEqualTo("# agent-ledger-mcp 4.0.0");
         for (Language language : Language.values()) {
-            Markdown part = v301.part(language.partHeading());
+            Markdown part = v400.part(language.partHeading());
             List<String> expected = format().part(language.partHeading()).tables().getFirst().firstCellNames();
             List<Markdown.Subsection> sections = part.subsections();
             assertThat(sections.stream().map(Markdown.Subsection::heading)).containsExactlyElementsOf(expected);
             assertThat(sections).allSatisfy(section -> assertThat(section.body()).as(section.heading()).isNotEmpty());
             assertThat(part.hasHangul()).isEqualTo(language.writtenInHangul());
-            assertThat(part.text()).contains("DeployFiles.replace", "FileModes.apply", "umask", "0644", "DeployFilesUmaskTest");
+            assertThat(part.text()).contains("AuthorAttestationVerifier", "ledger.mcp.token", "DeployFiles.replace",
+                    "FileModes.apply", "umask", "0644", "DeployFilesUmaskTest");
         }
-        assertThat(v301.part(Language.KO.partHeading()).codeSpans())
-                .isEqualTo(v301.part(Language.EN.partHeading()).codeSpans());
-        assertThat(v301.part(Language.KO.partHeading()).fences())
-                .isEqualTo(v301.part(Language.EN.partHeading()).fences());
+        assertThat(v400.part(Language.KO.partHeading()).codeSpans())
+                .isEqualTo(v400.part(Language.EN.partHeading()).codeSpans());
+        assertThat(v400.part(Language.KO.partHeading()).fences())
+                .isEqualTo(v400.part(Language.EN.partHeading()).fences());
     }
 
     @ParameterizedTest
@@ -898,24 +899,17 @@ class DocsTest {
 
     @ParameterizedTest
     @MethodSource("clientCases")
-    @DisplayName("R5-F4 every client plugin README (EN and KO) matches the personal-edition session-key policy: creates owner-only, reads existing folder/file whoever owns or reaches it, and never claims ACL or elevated-hook refusal")
-    void r5F4_clientReadmesMatchPersonalEditionKeyPolicy(Language language, String directory) {
+    @DisplayName("v4 client plugin READMEs (EN and KO) describe direct host stamping without per-session key registration or token issuance")
+    void clientReadmesDescribeDirectHostStamping(Language language, String directory) {
         String file = directory + "/" + (language == Language.EN ? "README.md" : "README.ko.md");
         String text = Repository.read(file);
 
-        if (language == Language.EN) {
-            assertThat(text).as(file)
-                    .contains("reads an existing folder and key file whoever may reach or own them")
-                    .contains("personal edition trusts the whole PC")
-                    .doesNotContain("grants access to another principal is refused")
-                    .doesNotContain("runs elevated is refused");
-        } else {
-            assertThat(text).as(file)
-                    .contains("이미 있는 폴더와 키 파일은 누가 접근할 수 있든 누가 소유하든 그대로 읽습니다")
-                    .contains("개인판은 PC 전체를 신뢰합니다")
-                    .doesNotContain("다른 주체에 접근을 허용한 키 폴더는 거부")
-                    .doesNotContain("상승된 권한으로 실행한 훅도 거부");
-        }
+        assertThat(text).as(file)
+                .contains("ledger.mcp.token")
+                .contains("HOST_ATTESTATION_REQUIRED")
+                .doesNotContain("key-register")
+                .doesNotContain("session-key")
+                .doesNotContain("LEDGER_HOOK_KEY_DIR");
     }
 
     @ParameterizedTest

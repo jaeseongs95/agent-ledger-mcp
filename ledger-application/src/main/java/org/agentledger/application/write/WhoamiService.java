@@ -43,10 +43,10 @@ public class WhoamiService {
     }
 
     /**
-     * @param actor the host attestation or bearer proof; null is HOST_ATTESTATION_REQUIRED in ATTESTED mode.
+     * @param actor the host-stamped {@code <vendor>:<session-id>} author identifier; null or blank is
+     *              HOST_ATTESTATION_REQUIRED.
      */
     public Whoami whoami(String actor, Channel channel) {
-        // outside a tool call there is no tool and no digest: that is the call ToolCall.Outside, which matches nothing signed
         return switch (callerResolver.prove(actor, ToolCall.current(), "")) {
             case AttestationVerifier.Proof.MalformedAuthor malformed ->
                 new Whoami(malformed.text(), false, channel.mayVerify(), channel.login(), List.of());

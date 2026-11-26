@@ -57,10 +57,8 @@ class ColdStartCostTest {
                     List.of("codex"), codex.event(codex.toolName("issue_save"), input)));
             assertThat(answer.stderr()).isEmpty();
             Run run = new Run(answer.exit(), answer.stdout(), answer.stderr());
-            Attestations.Stamp stamp = Attestations.verify(workspace.keys(),
-                    new Attestations.Window(java.time.Instant.now().getEpochSecond() - 120,
-                            java.time.Instant.now().getEpochSecond() + 120), codex.server(),
-                    codex.author(HookFixture.HOST_ID), "issue_save", input, codex.stampedPart(run));
+            Attestations.Stamp stamp = Attestations.verify(codex.author(HookFixture.HOST_ID), "issue_save", input,
+                    codex.stampedPart(run));
             assertThat(run.document()).isEqualTo(codex.allowed(input, stamp.token()));
         }
 

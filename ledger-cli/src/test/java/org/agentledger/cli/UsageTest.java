@@ -193,8 +193,7 @@ class UsageTest {
     @DisplayName("CLI-001 the usage text names the commands of the owner tool (changed by install, INS-029: token-generate follows secret-set and render-deploy ends the list; INS-044: prepare-host ends the list; PCS: seal-host is gone; SETUP: setup follows migrate and install-default ends the list; PCS: tls-issue and tls-renew are gone; PSK: passkey-code follows token-list; ATA: the three attachment commands follow grants)")
     void theCommandSetIsTheOneOfThePlan() {
         assertThat(Stream.of(CliCommand.values()).map(CliCommand::cliName)).containsExactly("secret-set",
-                "token-generate", "driver-register", "migrate", "setup", "key-register", "key-revoke", "token-issue",
-                "token-revoke", "token-list", "passkey-code", "project-add", "code-set",
+                "token-generate", "driver-register", "migrate", "setup", "passkey-code", "project-add", "code-set",
                 "codes", "grant", "revoke", "grants", "attachments-check", "attachments-rekey", "attachments-key-create",
                 "attachments-prepare", "attachments-send", "mcp-check", "render-deploy", "prepare-host", "install-default");
     }
@@ -226,14 +225,6 @@ class UsageTest {
                 Arguments.of(new String[] { "grant", "claude:a", "p", "issue", "--note" }, ErrorCode.MISSING_OPTION_VALUE),
                 Arguments.of(new String[] { "grant", "claude:a", "p", "issue", "--expires=a", "--expires=b" },
                         ErrorCode.TOO_MANY_ARGUMENTS),
-                Arguments.of(new String[] { "token-issue" }, ErrorCode.MISSING_ARGUMENT),
-                Arguments.of(new String[] { "token-issue", "a", "b" }, ErrorCode.TOO_MANY_ARGUMENTS),
-                Arguments.of(new String[] { "token-issue", "a", "--note" }, ErrorCode.MISSING_OPTION_VALUE),
-                Arguments.of(new String[] { "token-issue", "a", "--bogus=1" }, ErrorCode.UNKNOWN_OPTION),
-                Arguments.of(new String[] { "token-revoke" }, ErrorCode.MISSING_ARGUMENT),
-                Arguments.of(new String[] { "token-revoke", "1", "2" }, ErrorCode.TOO_MANY_ARGUMENTS),
-                Arguments.of(new String[] { "token-revoke", "abc" }, ErrorCode.INVALID_OPTION_VALUE),
-                Arguments.of(new String[] { "token-list", "a", "b" }, ErrorCode.TOO_MANY_ARGUMENTS),
                 Arguments.of(new String[] { "revoke" }, ErrorCode.MISSING_ARGUMENT),
                 Arguments.of(new String[] { "revoke", "a", "b", "c", "d" }, ErrorCode.TOO_MANY_ARGUMENTS),
                 Arguments.of(new String[] { "grants", "a", "b" }, ErrorCode.TOO_MANY_ARGUMENTS),

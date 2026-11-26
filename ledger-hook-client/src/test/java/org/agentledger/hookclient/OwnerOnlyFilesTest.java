@@ -22,6 +22,10 @@ import java.nio.file.attribute.UserPrincipal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -153,5 +157,31 @@ class OwnerOnlyFilesTest {
         Path existingFile = Files.writeString(root.resolve("existing-file"), "content");
         assertThatThrownBy(() -> files().createDirectories(existingFile))
                 .isInstanceOf(FileAlreadyExistsException.class);
+    }
+
+    @Test
+    @DisplayName("3.0.1 concurrent createDirectories calls on the same new path never fail with a spurious FileAlreadyExistsException")
+    void concurrentCreateDirectoriesNeverFails() throws Exception {
+        OwnerOnlyFiles ownerFiles = files();
+        int threads = 8;
+        try (ExecutorService pool = Executors.newFixedThreadPool(threads)) {
+            for (int round = 0; round < 10; round++) {
+                Path target = root.resolve("race-" + round).resolve("nested").resolve("state");
+                CyclicBarrier start = new CyclicBarrier(threads);
+                List<Future<Void>> futures = new ArrayList<>();
+                for (int i = 0; i < threads; i++) {
+                    futures.add(pool.submit(() -> {
+                        start.await();
+                        ownerFiles.createDirectories(target);
+                        return null;
+                    }));
+                }
+                for (Future<Void> future : futures) {
+                    future.get();
+                }
+                assertThat(target).isDirectory();
+                assertThat(protection().openExposure(target)).isEmpty();
+            }
+        }
     }
 }
