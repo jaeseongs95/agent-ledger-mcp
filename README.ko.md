@@ -749,7 +749,7 @@ JVM이 인식하는 프로세서 수를 제한할 수 있습니다. 속성은 �
 - `docs/`: 시험 사례 목록, 릴리스 노트 형식, 릴리스 노트.
 - `gradle/`, `build.gradle.kts`, `settings.gradle.kts`: 빌드.
 - `deploy/`: 설치기 두 개, `install.sh`(Linux)와 `install.cmd`(Windows)입니다.
-- 1.x 구현(DBHub, Node, PostgreSQL 함수)은 2.x의 일부가 아니며 더 이상 저장소에 없습니다. 소스는 태그 `v1.1.0`에서 볼 수 있습니다.
+- 1.x 구현(DBHub, Node, PostgreSQL 함수)은 2.x 이상의 일부가 아니며 더 이상 저장소에 없습니다. 소스는 태그 `v1.1.0`에서 볼 수 있습니다.
 
 ## 라이선스
 

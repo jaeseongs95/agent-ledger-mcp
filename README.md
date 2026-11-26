@@ -926,7 +926,7 @@ together with the properties above.
 - `docs/`: the test case catalogue, the release note format and the release notes.
 - `gradle/`, `build.gradle.kts`, `settings.gradle.kts`: the build.
 - `deploy/`: the two installers, `install.sh` (Linux) and `install.cmd` (Windows).
-- The 1.x implementation (DBHub, Node and PostgreSQL functions) is not part of 2.x and is no longer in the tree. Its source is available at the tag `v1.1.0`.
+- The 1.x implementation (DBHub, Node and PostgreSQL functions) is not part of 2.x or later and is no longer in the tree. Its source is available at the tag `v1.1.0`.
 
 ## License
 
