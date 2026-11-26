@@ -1,4 +1,4 @@
-rootProject.name = "pg-ledger-mcp"
+rootProject.name = "agent-ledger-mcp"
 
 dependencyResolutionManagement {
     repositories {

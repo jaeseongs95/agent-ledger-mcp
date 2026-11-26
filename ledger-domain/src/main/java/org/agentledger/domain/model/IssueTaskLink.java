@@ -1,0 +1,43 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package org.agentledger.domain.model;
+
+import java.util.Objects;
+import org.agentledger.domain.rule.HistoryEntity;
+import org.agentledger.domain.rule.LinkKind;
+import org.agentledger.domain.value.ActorId;
+import org.agentledger.domain.value.IssueId;
+import org.agentledger.domain.value.TaskId;
+import org.springframework.data.annotation.CreatedBy;
+import org.springframework.data.relational.core.mapping.InsertOnlyProperty;
+import org.springframework.data.relational.core.mapping.Table;
+
+/** Link between an issue and a task ({@code issue_task}). */
+@Table("issue_task")
+public record IssueTaskLink(IssueId issueId, TaskId taskId, @CreatedBy @InsertOnlyProperty ActorId createdBy)
+        implements Link {
+
+    public IssueTaskLink {
+        Objects.requireNonNull(issueId);
+        Objects.requireNonNull(taskId);
+    }
+
+    public IssueTaskLink(IssueId issueId, TaskId taskId) {
+        this(issueId, taskId, null);
+    }
+
+    @Override
+    public LinkKind kind() {
+        return LinkKind.ISSUE_TASK;
+    }
+
+    @Override
+    public HistoryEntity historyEntity() {
+        return HistoryEntity.ISSUE_TASK;
+    }
+
+    @Override
+    public String historyId() {
+        return issueId.value() + "|" + taskId.value();
+    }
+}

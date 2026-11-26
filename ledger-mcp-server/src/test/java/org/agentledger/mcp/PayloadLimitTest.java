@@ -1,0 +1,93 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package org.agentledger.mcp;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.agentledger.mcp.support.Calls;
+import org.agentledger.mcp.support.Ledger;
+import org.agentledger.mcp.support.McpServerTest;
+import org.agentledger.mcp.support.McpSession;
+import org.agentledger.mcp.support.McpTestSettings;
+import org.agentledger.mcp.support.ProblemBody;
+import org.agentledger.mcp.support.RawHttp;
+import org.agentledger.mcp.support.RawHttp.Header;
+import org.agentledger.mcp.support.RawHttp.Reply;
+import org.agentledger.mcp.support.Scenario;
+import org.agentledger.mcp.tool.WriteOutputs.Whoami;
+import org.springframework.test.context.TestPropertySource;
+
+/**
+ * The request size limit (4 KB in this context).
+ */
+@McpServerTest
+@TestPropertySource(properties = "ledger.mcp.max-request-size=4KB")
+class PayloadLimitTest {
+
+    private static final int OVERSIZE = 10_000;
+
+    private static Calls.IssueSave oversizeSave(Scenario scenario) {
+        return Calls.IssueSave.create(scenario.projectId(), "x".repeat(OVERSIZE), Scenario.AUTHOR);
+    }
+
+    @Test
+    @DisplayName("MCW-022: a body above the configured limit is HTTP 413 PAYLOAD_TOO_LARGE, nothing is written, the server keeps serving")
+    void anOversizeBodyIsRefused(RawHttp http, McpSession session, Scenario scenario) {
+        Reply reply = http.callToolWithoutSession("ledger_issue_save", oversizeSave(scenario),
+                Header.bearer(McpTestSettings.TOKEN));
+
+        assertThat(reply.status()).isEqualTo(413);
+        assertThat(session.mapper().readValue(reply.body(), ProblemBody.class))
+                .isEqualTo(new ProblemBody(413, "The request body is too large.", "PAYLOAD_TOO_LARGE"));
+        assertThat(Ledger.history(session, scenario.projectId())).isEmpty();
+        assertThat(session.ok("ledger_whoami", Calls.Whoami.as(Scenario.AUTHOR), Whoami.class).author())
+                .isEqualTo(Scenario.AUTHOR);
+    }
+
+    @Test
+    @DisplayName("MCW-026: a chunked body above the limit (no Content-Length) is HTTP 413 PAYLOAD_TOO_LARGE, nothing is written, the server keeps serving")
+    void anOversizeChunkedBodyIsRefused(RawHttp http, McpSession session, Scenario scenario) {
+        String body = http.toolCallText("ledger_issue_save", oversizeSave(scenario));
+
+        Reply reply = http.postChunkedText("/mcp", body, Header.bearer(McpTestSettings.TOKEN));
+
+        assertThat(reply.status()).isEqualTo(413);
+        assertThat(session.mapper().readValue(reply.body(), ProblemBody.class))
+                .isEqualTo(new ProblemBody(413, "The request body is too large.", "PAYLOAD_TOO_LARGE"));
+        assertThat(Ledger.history(session, scenario.projectId())).isEmpty();
+        assertThat(session.ok("ledger_whoami", Calls.Whoami.as(Scenario.AUTHOR), Whoami.class).author())
+                .isEqualTo(Scenario.AUTHOR);
+    }
+
+    @Test
+    @DisplayName("MCW-026: a chunked body of exactly the limit is accepted and one byte more is refused")
+    void theChunkedLimitIsInclusive(RawHttp http) {
+        int limit = 4 * 1024;
+        String empty = http.toolCallText("ledger_whoami", Calls.Whoami.as(""));
+        String atLimit = http.toolCallText("ledger_whoami", Calls.Whoami.as("x".repeat(limit - empty.length())));
+        String overLimit = http.toolCallText("ledger_whoami", Calls.Whoami.as("x".repeat(limit - empty.length() + 1)));
+        Header bearer = Header.bearer(McpTestSettings.TOKEN);
+
+        assertThat(atLimit.length()).isEqualTo(limit);
+        assertThat(http.postChunkedText("/mcp", atLimit, bearer).status()).isNotEqualTo(413);
+        assertThat(http.postChunkedText("/mcp", overLimit, bearer).status()).isEqualTo(413);
+    }
+
+    @Test
+    @DisplayName("MCC-019: an oversize frame inside a session is a client error, writes nothing and the session keeps serving")
+    void anOversizeFrameInASessionIsAnError(RawHttp http, McpSession session, Scenario scenario) {
+        Header bearer = Header.bearer(McpTestSettings.TOKEN);
+        String sessionId = http.openSession(bearer);
+
+        Reply oversize = http.callTool(sessionId, "ledger_issue_save", oversizeSave(scenario), bearer);
+        Reply after = http.callTool(sessionId, "ledger_whoami", Calls.Whoami.as(Scenario.AUTHOR), bearer);
+
+        assertThat(oversize.status()).isEqualTo(413);
+        assertThat(Ledger.history(session, scenario.projectId())).isEmpty();
+        assertThat(after.status()).isEqualTo(200);
+        assertThat(session.read(http.toolResult(after), Whoami.class).author()).isEqualTo(Scenario.AUTHOR);
+        assertThat(http.response(after).error()).isNull();
+    }
+}

@@ -8,7 +8,7 @@ plugins {
 
 dependencies {
     // Spring Boot core, logging, MessageSource. The database beans exist only when a JDBC driver is registered (see
-    // org.pgledger.cli.database), because secret-set and driver-register must run before any JDBC driver exists on this
+    // org.agentledger.cli.database), because secret-set and driver-register must run before any JDBC driver exists on this
     // machine; the application excludes DataSourceAutoConfiguration, the DataSource comes from the registered driver.
     implementation("org.springframework.boot:spring-boot-starter")
     // The ledger services (key registration ...) with the database module (Spring Data JDBC, Hikari; no JDBC driver) and the
@@ -84,7 +84,7 @@ val generateSeed = tasks.register<JavaExec>("generateSeed") {
     group = "build"
     description = "Writes the seed bundle ledger-seed.mv.db (H2) from the text files of src/seed."
     classpath = seedBuilder
-    mainClass = "org.pgledger.seed.SeedBuilder"
+    mainClass = "org.agentledger.seed.SeedBuilder"
     args(seedSources.asFile.absolutePath, seedOutput.get().asFile.absolutePath)
     inputs.dir(seedSources).withPropertyName("seedSources")
     outputs.dir(seedOutput).withPropertyName("seedOutput")

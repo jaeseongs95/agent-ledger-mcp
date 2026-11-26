@@ -1,4 +1,4 @@
-# Antigravity용 pg-ledger-mcp 플러그인
+# Antigravity용 agent-ledger-mcp 플러그인
 
 [English](README.md)
 
@@ -29,7 +29,7 @@ jar는 저장소에 커밋하지 않습니다. `./gradlew :ledger-client-hook:as
 
 ## 세션 키 등록
 
-1. 어떤 작성자가 어떤 서버에 처음 쓰기를 호출하면 그 작성자와 서버의 키 쌍이 만들어집니다. 키는 `~/.pg-ledger-mcp/session-keys`에 보관하며, `LEDGER_HOOK_KEY_DIR`에 절대 경로를 주어 바꿀 수 있습니다. 훅은 새 키 폴더와 새 키 파일을 소유자 전용으로 만들고(Windows에서는 소유자만 허용하는 ACL), 이미 있는 폴더와 키 파일은 누가 접근할 수 있든 누가 소유하든 그대로 읽습니다(링크는 따라갑니다). 개인판은 PC 전체를 신뢰합니다. 키 파일 자리의 디렉터리와 빈 키 파일은 거절합니다.
+1. 어떤 작성자가 어떤 서버에 처음 쓰기를 호출하면 그 작성자와 서버의 키 쌍이 만들어집니다. 키는 `~/.agent-ledger-mcp/session-keys`에 보관하며, `LEDGER_HOOK_KEY_DIR`에 절대 경로를 주어 바꿀 수 있습니다. 훅은 새 키 폴더와 새 키 파일을 소유자 전용으로 만들고(Windows에서는 소유자만 허용하는 ACL), 이미 있는 폴더와 키 파일은 누가 접근할 수 있든 누가 소유하든 그대로 읽습니다(링크는 따라갑니다). 개인판은 PC 전체를 신뢰합니다. 키 파일 자리의 디렉터리와 빈 키 파일은 거절합니다.
 2. `java -jar lib/ledger-client-hook.jar session-key <server> <author>`는 서버, 작성자, 공개 키, 지문을 출력합니다. `<server>`는 Antigravity가 도구 이름이나 `ServerName`에 보여 주는 MCP 서버의 이름입니다.
 3. 소유자는 지문을 세션이 보여 준 지문과 대조한 뒤, `ledger-cli`의 `key-register`로 또는 관리 웹의 권한 부여 화면에서 공개 키를 등록합니다. 그 뒤에야 작성자의 권한 부여가 동작합니다.
 
@@ -40,8 +40,8 @@ jar는 저장소에 커밋하지 않습니다. `./gradlew :ledger-client-hook:as
 가벼운 클라이언트는 직접 서명하지 않습니다. 호스트의 입력을 루프백으로 같은 폴더의 상주 프로그램 `ledger-hook-resident.jar`에 보내고, 그 답을 그대로 출력합니다. 호스트와의 계약은 이전 훅과 같습니다. 표준 입력은 호스트 JSON, 표준 출력에는 답만(JVM 줄도 로그 줄도 없음), 종료 코드, 실패의 의미가 같습니다.
 
 - 실행 중인 프로그램이 없으면 첫 호출이 프로그램을 띄웁니다(약 1초). 이후 호출은 약 0.1초 걸립니다. 프로그램은 호출이 끝난 뒤에도 남아 있다가, 15분 동안 호출이 없으면 스스로 끝납니다(`LEDGER_HOOK_RESIDENT_IDLE_TIMEOUT`, `PT30M` 같은 ISO-8601 기간). `java -jar lib/ledger-client-hook.jar stop`으로 끝낼 수도 있습니다.
-- `127.0.0.1`에서만 연결을 받습니다. 모든 요청은 시작할 때마다 새로 만드는 비밀 값을 가져야 하며, 이 값은 상태 폴더 `~/.pg-ledger-mcp/resident/<id>/`의 주소 파일에만 있습니다. 폴더와 그 안의 파일은 소유자 전용입니다. 프로그램의 출력은 그 폴더의 `resident.log`에 남습니다.
-- 프로그램은 `~/.pg-ledger-mcp/resident-runtime/<build>/`의 복사본에서 실행되므로, 실행 중인 프로그램 때문에 플러그인의 갱신이나 삭제가 막히지 않습니다. 판이 다른 클라이언트(갱신된 플러그인)는 실행 중인 프로그램을 교체합니다.
+- `127.0.0.1`에서만 연결을 받습니다. 모든 요청은 시작할 때마다 새로 만드는 비밀 값을 가져야 하며, 이 값은 상태 폴더 `~/.agent-ledger-mcp/resident/<id>/`의 주소 파일에만 있습니다. 폴더와 그 안의 파일은 소유자 전용입니다. 프로그램의 출력은 그 폴더의 `resident.log`에 남습니다.
+- 프로그램은 `~/.agent-ledger-mcp/resident-runtime/<build>/`의 복사본에서 실행되므로, 실행 중인 프로그램 때문에 플러그인의 갱신이나 삭제가 막히지 않습니다. 판이 다른 클라이언트(갱신된 플러그인)는 실행 중인 프로그램을 교체합니다.
 - 프로그램에 닿지 못하거나 띄우지 못하면 호출은 종료 코드 2와 표준 오류의 `ledger: the hook program is not available` 줄(뒤에 이유)로 실패하고, 서버는 쓰기를 `HOST_ATTESTATION_REQUIRED`로 거절합니다. `resident.log`를 읽고, 두 jar가 `lib`에 있는지, `java`가 JDK 25 이상인지 확인합니다.
 
 ## 한계

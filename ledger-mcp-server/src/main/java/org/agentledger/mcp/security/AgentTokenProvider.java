@@ -1,0 +1,63 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package org.agentledger.mcp.security;
+
+import java.security.MessageDigest;
+import java.util.HexFormat;
+import java.util.List;
+import org.agentledger.domain.value.Sha256;
+import org.agentledger.mcp.config.LedgerMcpProperties;
+import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.server.resource.authentication.BearerTokenAuthenticationToken;
+import org.springframework.stereotype.Component;
+
+/**
+ * Accepts the one bearer token of the agents. Both tokens are hashed first (the shared SHA-256 of the domain) and
+ * the digests are compared with {@link MessageDigest#isEqual}, which takes the same time whatever the input is, so
+ * neither the content nor the length of the token can be guessed from the response time. The token is never
+ * written to a message or a log.
+ */
+@Component
+public final class AgentTokenProvider implements AuthenticationProvider {
+
+    /** The shortest token that is accepted as the secret of the agents. */
+    static final int MIN_TOKEN_LENGTH = 16;
+
+    private final byte[] expected;
+
+    /**
+     * @throws IllegalArgumentException when the token is missing, blank or too short; the message names the key and
+     *         never the value
+     */
+    public AgentTokenProvider(LedgerMcpProperties properties) {
+        String token = properties.token();
+        if (token == null || token.isBlank() || token.length() < MIN_TOKEN_LENGTH) {
+            throw new IllegalArgumentException("ledger.mcp.token must be set to at least " + MIN_TOKEN_LENGTH
+                    + " characters");
+        }
+        this.expected = digest(token);
+    }
+
+    @Override
+    public Authentication authenticate(Authentication authentication) {
+        BearerTokenAuthenticationToken presented = (BearerTokenAuthenticationToken) authentication;
+        if (!MessageDigest.isEqual(expected, digest(presented.getToken()))) {
+            throw new BadCredentialsException("The bearer token is not valid.");
+        }
+        return UsernamePasswordAuthenticationToken.authenticated("agent", null,
+                List.of(new SimpleGrantedAuthority("ROLE_AGENT")));
+    }
+
+    @Override
+    public boolean supports(Class<?> authentication) {
+        return BearerTokenAuthenticationToken.class.isAssignableFrom(authentication);
+    }
+
+    private static byte[] digest(String token) {
+        return HexFormat.of().parseHex(Sha256.ofText(token).hex());
+    }
+}

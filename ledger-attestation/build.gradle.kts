@@ -5,7 +5,7 @@ plugins {
     // The contract vectors (src/testFixtures/resources/contract) that the hook and the server both test against:
     // the author format and the tool names are defined in each of the two programs, so one set of vectors keeps them equal.
     // The shared architecture and source rules (ArchitectureRules, PrincipleRules, SourceRules, CodingScan, package
-    // org.pgledger.testing) live in these test fixtures as well. They know no domain class, so this module needs no
+    // org.agentledger.testing) live in these test fixtures as well. They know no domain class, so this module needs no
     // other project, not even in its tests: ledger-domain depends on this module (Sha256Hex), never the other way round.
     `java-test-fixtures`
 }

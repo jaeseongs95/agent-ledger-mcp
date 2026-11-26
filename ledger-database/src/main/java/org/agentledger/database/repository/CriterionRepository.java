@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package org.agentledger.database.repository;
+
+import java.util.Objects;
+import java.util.Optional;
+import org.agentledger.domain.model.Criterion;
+import org.agentledger.domain.value.CriterionId;
+import org.agentledger.domain.value.ProjectId;
+import org.springframework.data.repository.Repository;
+
+/**
+ * Milestone criteria ({@code milestone_criterion}): save and exact-id read.
+ */
+public interface CriterionRepository extends Repository<Criterion, CriterionId>, CriterionPin {
+
+    <S extends Criterion> S save(S criterion);
+
+    /** Raw fetch that may return a sibling differing only in case on case-insensitive collations. */
+    Optional<Criterion> findOneById(CriterionId id);
+
+    default Optional<Criterion> findById(CriterionId id) {
+        return findOneById(id).filter(row -> Objects.equals(row.id(), id));
+    }
+
+    default boolean existsById(CriterionId id) {
+        return findById(id).isPresent();
+    }
+
+    Optional<Criterion> findByIdKey(String key);
+
+    Optional<Criterion> findByProjectIdAndMilestoneAndCode(ProjectId projectId, String milestone, String code);
+}

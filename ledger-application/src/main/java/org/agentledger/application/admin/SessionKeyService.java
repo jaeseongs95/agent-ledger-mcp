@@ -1,0 +1,331 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package org.agentledger.application.admin;
+
+import java.security.PublicKey;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Supplier;
+import org.agentledger.attestation.AttestationException;
+import org.agentledger.attestation.KeyBlock;
+import org.agentledger.attestation.PublicKeys;
+import org.agentledger.database.repository.Counter;
+import org.agentledger.database.repository.IdAllocator;
+import org.agentledger.database.repository.SessionKeyRepository;
+import org.agentledger.database.repository.SessionKeyStateRepository;
+import org.agentledger.domain.error.ConflictCode;
+import org.agentledger.domain.error.ConflictException;
+import org.agentledger.domain.error.LookupCode;
+import org.agentledger.domain.error.LookupException;
+import org.agentledger.domain.error.ValidationException;
+import org.agentledger.domain.error.ValidationReason;
+import org.agentledger.domain.model.SessionPublicKey;
+import org.agentledger.domain.rule.OwnerAction;
+import org.agentledger.domain.value.AuthorId;
+import org.agentledger.domain.value.OwnerIdentity;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * The public keys that authors sign their writes with. Used by the admin web and the CLI, never by the MCP tools: only
+ * the owner decides which key belongs to which author (the owner compares the fingerprint with the one the requesting
+ * session printed). A key is bound to an author that has none; an author that has one gets another only by an explicit,
+ * confirmed replacement, which closes the live key first; the owner can close a key without replacing it
+ * ({@link #revokeConfirmed}); rows are never deleted, so the keys an
+ * author had stay on record. Two registrations of one author at the same time end with exactly one live key, and a
+ * key is live for one author only.
+ */
+@Service
+@Transactional
+public class SessionKeyService {
+
+    /** The author and its public key (X.509 DER in base64, as the hook prints it) with an optional note. */
+    public record RegisterCommand(String author, String publicKey, String note) {
+    }
+
+    /** What was registered: the row, the author and the fingerprint the owner compares. */
+    public record Registered(long id, String author, String fingerprint) {
+    }
+
+    /** The key to bind: the author, the public key as stored (base64 of the X.509 DER), its fingerprint and the owner's note. */
+    private record NewKey(AuthorId author, String text, String fingerprint, String note) {
+    }
+
+    private final SessionKeyStateRepository state;
+    private final SessionKeyRepository keys;
+    private final IdAllocator ids;
+    private final OwnerAuditWriter audit;
+    private final Clock clock;
+
+    public SessionKeyService(SessionKeyStateRepository state, SessionKeyRepository keys, IdAllocator ids,
+            OwnerAuditWriter audit, Clock clock) {
+        this.state = state;
+        this.keys = keys;
+        this.ids = ids;
+        this.audit = audit;
+        this.clock = clock;
+    }
+
+    /**
+     * Binds the key to an author that has no live key yet and records who did it in the owner's audit trail. Registering
+     * the key that is already live for the author changes nothing and answers with the existing row. A key that is live
+     * for another author is refused (DUPLICATE_KEY). An author that already has another live key is refused
+     * (KEY_REPLACEMENT_NOT_CONFIRMED, naming the fingerprint and the registration time of the live key): a key is never
+     * replaced silently, because whoever gets the owner to register a key under a known author name would otherwise
+     * inherit that author's grants. Another registration of the same author or key that commits first makes the conditional
+     * close of the replaced key affect no row: this call is the loser, it does not run again, it reads what the winner left and
+     * answers with that (the repeated registration of the same key answers with its row). A registration that breaks the
+     * unique key at the insert (the same moment as another one) ends with the translated DUPLICATE_KEY and everything it wrote
+     * is rolled back with its transaction (principle 4.4).
+     */
+    public Registered register(RegisterCommand command, OwnerIdentity actor) {
+        return bind(command, actor, null);
+    }
+
+    /**
+     * Like {@link #register(RegisterCommand, OwnerIdentity)}, and when the author already has another live key, replaces
+     * it. The caller must name the fingerprint of the key being replaced ({@code replacedFingerprint}, any letter case),
+     * which the owner read from the refusal or from the screen together with the registration time; a different
+     * fingerprint (the live key changed meanwhile) is refused like no confirmation at all. The replaced key stays on
+     * record as a closed row; the audit trail says that it was a replacement.
+     */
+    public Registered registerReplacing(RegisterCommand command, OwnerIdentity actor, String replacedFingerprint) {
+        if (replacedFingerprint == null || replacedFingerprint.isBlank()) {
+            throw ValidationException.invalid("replace", ValidationReason.REQUIRED);
+        }
+        return bind(command, actor, replacedFingerprint.strip().toLowerCase(Locale.ROOT));
+    }
+
+    private Registered bind(RegisterCommand command, OwnerIdentity actor, String replacedFingerprint) {
+        AuthorId author = Authors.of(command.author());
+        if (AuthorId.OWNER.equals(author)) {
+            // the owner role is not a session: nothing signs as user:owner, and a key under that name would be a key
+            // that the grants and the audit of the owner could be mistaken for
+            throw ValidationException.invalid("author", ValidationReason.MUST_BE_A_SESSION_AUTHOR);
+        }
+        PublicKey key = key(command.publicKey());
+        String fingerprint = PublicKeys.fingerprint(key);
+        return state.findLiveByFingerprint(fingerprint)
+                .map(holder -> sameAuthor(holder, author, fingerprint))
+                .orElseGet(() -> bindNew(command, actor, author, PublicKeys.encode(key), fingerprint,
+                        replacedFingerprint));
+    }
+
+    /** The key is live already: for this author it is the answer of a repeated registration, for another one it is refused. */
+    private static Registered sameAuthor(SessionPublicKey holder, AuthorId author, String fingerprint) {
+        if (Objects.equals(holder.authorId(), author)) {
+            return registered(holder);
+        }
+        throw new ConflictException(ConflictCode.DUPLICATE_KEY, List.of("public key " + fingerprint));
+    }
+
+    /** The key is live for nobody: it becomes the key of the author, closing the one the author has when that is confirmed. */
+    private Registered bindNew(RegisterCommand command, OwnerIdentity actor, AuthorId author, String text,
+            String fingerprint, String replacedFingerprint) {
+        Instant now = clock.instant();
+        NewKey key = new NewKey(author, text, fingerprint, command.note());
+        Optional<SessionPublicKey> current = state.findLive(author);
+        // another registration of this very key for this author became live after the lookup by fingerprint found
+        // nothing: the same answer as for any repeated registration (no row, no audit, nothing closed)
+        return current.filter(open -> Objects.equals(open.fingerprint(), fingerprint))
+                .map(SessionKeyService::registered)
+                .orElseGet(() -> current
+                        .map(open -> {
+                            requireConfirmed(open, author, replacedFingerprint);
+                            return write(() -> closeAndInsert(open.id(), key, now), actor, author, fingerprint,
+                                    OwnerAction.KEY_REPLACED, " replaced=" + open.fingerprint());
+                        })
+                        .orElseGet(() -> write(() -> Optional.of(insert(key, now)), actor, author, fingerprint,
+                                OwnerAction.KEY_REGISTERED, "")));
+    }
+
+    /** Inserts the key as the live key of its author. */
+    private SessionPublicKey insert(NewKey key, Instant now) {
+        return keys.insert(SessionPublicKey.register(ids.next(Counter.SESSION_KEY), key.author(), key.text(),
+                key.fingerprint(), AuthorId.OWNER, now, key.note()));
+    }
+
+    /** Closes the live key {@code replacedId} and inserts the new key in its place; empty when the close affected no row. */
+    private Optional<SessionPublicKey> closeAndInsert(long replacedId, NewKey key, Instant now) {
+        if (!state.close(replacedId, now)) {
+            return Optional.empty();
+        }
+        return Optional.of(insert(key, now));
+    }
+
+    /**
+     * Runs the racing write ({@code racingWrite}: the close of the old key and the insert of the new one, or the insert alone)
+     * and records the audit entry of what it wrote.
+     */
+    private Registered write(Supplier<Optional<SessionPublicKey>> racingWrite, OwnerIdentity actor, AuthorId author,
+            String fingerprint, OwnerAction action, String replacedDetail) {
+        // The close and the insert are the writes that other registrations race for, in the one transaction of this
+        // method (principle 4.4: no nested write, no retry). Whoever loses is decided by the database: the conditional
+        // close affects no row (nothing was written: the answer is empty and the winner's state is read), or the insert
+        // breaks a unique key and the call ends with the translated DUPLICATE_KEY; the transaction is rolled back with
+        // everything the loser wrote (the closed key, the number of the counter).
+        Optional<SessionPublicKey> written;
+        try {
+            written = racingWrite.get();
+        } catch (DuplicateKeyException duplicate) {
+            throw new ConflictException(ConflictCode.DUPLICATE_KEY, List.of("public key " + fingerprint), duplicate);
+        }
+        return written.map(row -> {
+            audit.record(actor, action, author.value(), "key=" + fingerprint + replacedDetail);
+            return registered(row);
+        }).orElseGet(() -> lostRace(author, fingerprint));
+    }
+
+    /** The owner confirmed the very key the author has now; otherwise the replacement is refused. */
+    private static void requireConfirmed(SessionPublicKey open, AuthorId author, String replacedFingerprint) {
+        if (!Objects.equals(open.fingerprint(), replacedFingerprint)) {
+            throw new ConflictException(ConflictCode.KEY_REPLACEMENT_NOT_CONFIRMED,
+                    List.of(author.value(), open.fingerprint(), open.registeredAt().toString()));
+        }
+    }
+
+    /**
+     * The answer of a registration that lost the race, from what the winner committed (nothing is decided again): the
+     * key is live now for this author (the same registration: its row), for another author (DUPLICATE_KEY), or the
+     * author has another live key (KEY_REPLACEMENT_NOT_CONFIRMED, as for any key that is not the confirmed one); an author
+     * whose key was closed meanwhile with nothing registered in its place has no live key (NOT_FOUND).
+     */
+    private Registered lostRace(AuthorId author, String fingerprint) {
+        return state.findLiveByFingerprint(fingerprint)
+                .map(holder -> sameAuthor(holder, author, fingerprint))
+                .orElseGet(() -> {
+                    SessionPublicKey live = state.findLive(author)
+                            .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND,
+                                    List.of("session key", author.value())));
+                    throw new ConflictException(ConflictCode.KEY_REPLACEMENT_NOT_CONFIRMED,
+                            List.of(author.value(), live.fingerprint(), live.registeredAt().toString()));
+                });
+    }
+
+    /** Closes the live key of the author and records who did it; true when there was one. */
+    public boolean revoke(String author, OwnerIdentity actor) {
+        AuthorId id = Authors.of(author);
+        return state.findLive(id).map(row -> {
+            boolean closed = state.close(row.id(), clock.instant());
+            if (closed) {
+                audit.record(actor, OwnerAction.KEY_REVOKED, id.value(), "key=" + row.fingerprint());
+            }
+            return closed;
+        }).orElse(false);
+    }
+
+    /**
+     * The owner's action that closes the live key of an author: the same as {@link #revoke(String, OwnerIdentity)}, but
+     * only when the key that is live now is the one the owner compared (the fingerprint shown on the screen or by the
+     * command, any letter case), so that a key that was replaced meanwhile is not closed by a confirmation that was
+     * meant for the old one. The check and the close are one transaction. Closing leaves the author without a key, so
+     * its signed writes are refused until another key is registered; the grants stay.
+     *
+     * @throws LookupException NOT_FOUND when the author has no live key
+     * @throws ValidationException VALIDATION_FAILED path {@code fingerprint} (MUST_MATCH, naming the live fingerprint)
+     *         when the fingerprint is not that of the live key
+     */
+    public void revokeConfirmed(String author, String fingerprint, OwnerIdentity actor) {
+        if (fingerprint == null || fingerprint.isBlank()) {
+            throw ValidationException.invalid("fingerprint", ValidationReason.REQUIRED);
+        }
+        AuthorId id = Authors.of(author);
+        SessionPublicKey open = state.findLive(id)
+                .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND, List.of("session key", id.value())));
+        if (!Objects.equals(open.fingerprint(), fingerprint.strip().toLowerCase(Locale.ROOT))) {
+            throw ValidationException.invalid("fingerprint", ValidationReason.MUST_MATCH, open.fingerprint());
+        }
+        if (!state.close(open.id(), clock.instant())) {
+            // closed between the read and the update by another owner action: the same answer as no live key
+            throw new LookupException(LookupCode.NOT_FOUND, List.of("session key", id.value()));
+        }
+        audit.record(actor, OwnerAction.KEY_REVOKED, id.value(), "key=" + open.fingerprint());
+    }
+
+    /**
+     * A key as the owner pasted it, ready to compare and to register: the public key alone, or the whole block that the
+     * hook command {@code session-key <server> <author>} prints ({@link KeyBlock}). {@code server} is the server the
+     * key was made for when the owner pasted the block (to show it next to the fingerprint), {@code null} for the bare
+     * key.
+     */
+    public record PresentedKey(String publicKey, String fingerprint, String server) {
+    }
+
+    /**
+     * Reads what the owner pasted for the author: a bare public key, or the block of the hook command. A block must be
+     * for this very author (its author line equals {@code author}) and its fingerprint line must belong to its key.
+     * Nothing is stored.
+     *
+     * @throws ValidationException VALIDATION_FAILED path {@code public_key} (REQUIRED, MUST_BE_ED25519_PUBLIC_KEY,
+     *         MUST_BE_SESSION_KEY_BLOCK, KEY_BLOCK_FINGERPRINT_DIFFERS) or path {@code author} (KEY_BLOCK_AUTHOR_DIFFERS)
+     */
+    @Transactional(readOnly = true)
+    public PresentedKey present(String author, String text) {
+        AuthorId id = Authors.of(author);
+        if (text == null) {
+            throw ValidationException.invalid("public_key", ValidationReason.REQUIRED);
+        }
+        if (!KeyBlock.isBlock(text)) {
+            PublicKey key = key(text);
+            return new PresentedKey(PublicKeys.encode(key), PublicKeys.fingerprint(key), null);
+        }
+        KeyBlock block;
+        try {
+            block = KeyBlock.parse(text);
+        } catch (AttestationException failure) {
+            ValidationReason reason = switch (failure.reason()) {
+                case KEY_BLOCK_FINGERPRINT -> ValidationReason.KEY_BLOCK_FINGERPRINT_DIFFERS;
+                case KEY_INVALID -> ValidationReason.MUST_BE_ED25519_PUBLIC_KEY;
+                // a block that is not one: every other reason of the parser (no token or signature is read here)
+                case MALFORMED, SIGNATURE_INVALID, KEY_BLOCK_INVALID ->
+                    ValidationReason.MUST_BE_SESSION_KEY_BLOCK;
+            };
+            throw ValidationException.invalid("public_key", reason, failure);
+        }
+        if (!Objects.equals(block.author(), id.value())) {
+            throw ValidationException.invalid("author", ValidationReason.KEY_BLOCK_AUTHOR_DIFFERS, block.author());
+        }
+        return new PresentedKey(block.publicKey(), block.fingerprint(), block.server());
+    }
+
+    /** The fingerprint of a public key as the owner compares it (the validation of {@code register}, nothing stored). */
+    @Transactional(readOnly = true)
+    public String fingerprintOf(String publicKey) {
+        return PublicKeys.fingerprint(key(publicKey));
+    }
+
+    /** The live key of the author now. */
+    @Transactional(readOnly = true)
+    public Optional<SessionPublicKey> live(String author) {
+        return state.findLive(Authors.of(author));
+    }
+
+    /** Every live key of every author, by author (the keys screen). */
+    @Transactional(readOnly = true)
+    public List<SessionPublicKey> liveKeys() {
+        return state.findAllLive();
+    }
+
+    /** Every key row of the author, the live one and the closed ones, oldest first. */
+    @Transactional(readOnly = true)
+    public List<SessionPublicKey> history(String author) {
+        return state.findHistory(Authors.of(author));
+    }
+
+    private static Registered registered(SessionPublicKey row) {
+        return new Registered(row.id(), row.authorId().value(), row.fingerprint());
+    }
+
+    private static PublicKey key(String text) {
+        try {
+            return PublicKeys.decode(text);
+        } catch (AttestationException failure) {
+            throw ValidationException.invalid("public_key", ValidationReason.MUST_BE_ED25519_PUBLIC_KEY, failure);
+        }
+    }
+}

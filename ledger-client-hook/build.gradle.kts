@@ -66,7 +66,7 @@ val processAot = tasks.register<ProcessAot>("processAot") {
     group = "build"
     description = "Generates Spring Boot AOT bean definitions for HookApplication."
     dependsOn(tasks.classes)
-    applicationMainClass = "org.pgledger.hook.Main"
+    applicationMainClass = "org.agentledger.hook.Main"
     classpath(sourceSets.main.get().runtimeClasspath)
     sourcesOutput = layout.buildDirectory.dir("generated/aotSources")
     resourcesOutput = layout.buildDirectory.dir("generated/aotResources")
@@ -97,7 +97,7 @@ val springAotJar = tasks.register<Jar>("springAotJar") {
         exclude("previous-compilation-data.bin")
     }
     from(processAot.flatMap { it.classesOutput })
-    from(resources.text.fromString("org.pgledger.hook.HookLoggingSystem\$LogbackConfigurator\n")) {
+    from(resources.text.fromString("org.agentledger.hook.HookLoggingSystem\$LogbackConfigurator\n")) {
         into("META-INF/services")
         rename { "ch.qos.logback.classic.spi.Configurator" }
     }

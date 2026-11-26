@@ -34,7 +34,7 @@ val clientJar = tasks.register<Jar>("clientJar") {
     destinationDirectory = layout.buildDirectory.dir("client-jar")
     manifest {
         attributes(
-            "Main-Class" to "org.pgledger.hookclient.Main",
+            "Main-Class" to "org.agentledger.hookclient.Main",
             // Allows java.lang.foreign (WindowsIsolatedProcess on ACL hosts) without JVM stderr warnings (JEP 472).
             "Enable-Native-Access" to "ALL-UNNAMED",
         )
