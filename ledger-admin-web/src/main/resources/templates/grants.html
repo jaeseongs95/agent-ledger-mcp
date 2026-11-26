@@ -6,218 +6,638 @@
 <main id="main">
   <div class="page-header">
     <div class="page-header-text">
-      <h1 th:text="#{grants.title}">Session grants</h1>
+      <h1 th:text="#{grants.title}">Session access &amp; grants</h1>
+      <p class="hint" th:text="#{grants.subtitle}">Manage each session's credentials and project permissions in one place. Every change is approved with your passkey.</p>
+    </div>
+    <div class="page-header-actions action-btn-group">
+      <button type="button" data-modal-open="modal-connect-session" data-connect-tab="connect-tab-token"
+              th:text="#{grants.action.connectNew}">+ Connect new session</button>
+      <button type="button" class="secondary" data-modal-open="modal-add-project" data-grant-mode="manual"
+              th:text="#{grants.action.manualGrant}">Manual grant</button>
+      <button type="button" class="secondary danger-outline" data-modal-open="modal-revoke-grant" data-revoke-mode="manual"
+              th:text="#{grants.action.manualRevoke}">Manual revoke</button>
     </div>
   </div>
 
+  <!-- Summary KPIs -->
   <div class="kpi-grid">
     <div class="kpi-card">
-      <span class="kpi-label" th:text="#{grants.tab.grants}">Session grants</span>
+      <span class="kpi-label" th:text="#{grants.kpi.sessions}">Sessions</span>
+      <span class="kpi-value" th:text="${#lists.size(sessions)}">0</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-label" th:text="#{grants.kpi.grants}">Active scopes</span>
       <span class="kpi-value" th:text="${#lists.size(grants)}">0</span>
     </div>
     <div class="kpi-card">
-      <span class="kpi-label" th:text="#{grants.tab.tokens}">Bearer tokens</span>
+      <span class="kpi-label" th:text="#{grants.kpi.tokens}">Bearer tokens</span>
       <span class="kpi-value" th:text="${#lists.size(tokens)}">0</span>
     </div>
     <div class="kpi-card">
-      <span class="kpi-label" th:text="#{grants.tab.keys}">Session keys</span>
+      <span class="kpi-label" th:text="#{grants.kpi.keys}">Session keys</span>
       <span class="kpi-value" th:text="${#lists.size(keys)}">0</span>
     </div>
   </div>
 
-  <!-- One-time issued Bearer session token banner (always promoted to top) -->
+  <!-- One-time issued Bearer session token banner (kept visible on page so secret is never accidentally dismissed) -->
   <section th:if="${issuedToken != null}" class="alert alert-success notice" role="status" aria-labelledby="issued-token-title">
     <h2 id="issued-token-title" th:text="#{tokens.issued.title}">New bearer session token</h2>
     <p th:text="#{tokens.issued.help}">Copy this token now; only its SHA-256 digest is stored.</p>
     <div class="token-box">
-      <span><span th:text="#{grants.author}">Author</span>: <code th:text="${issuedToken.author()}">agent:a</code>
+      <span><span th:text="#{grants.author}">Session</span>: <code th:text="${issuedToken.author()}">agent:a</code>
         (<span th:text="#{col.id}">ID</span> <span class="num" th:text="${issuedToken.id()}">1</span>)</span>
       <code id="issued-raw-token" th:text="${issuedToken.rawToken()}">lgt_example</code>
       <button type="button" class="secondary btn-sm" data-copy-target="issued-raw-token" th:text="#{common.copy}">Copy</button>
+      <button type="button" class="ghost btn-sm"
+              th:attr="data-copy=${'Authorization: Bearer ' + issuedToken.rawToken()}"
+              th:text="#{tokens.copyHeader}">Copy Bearer header</button>
     </div>
-  </section>
-
-  <!-- Fingerprint confirmation step (always promoted to top when preview != null) -->
-  <section th:if="${preview != null}" id="grant-preview-card" class="card card-highlight" aria-labelledby="confirm-title">
-    <div class="card-header">
-      <h2 id="confirm-title" th:text="#{grants.confirm.title}">Compare the fingerprint</h2>
-      <th:block th:replace="~{fragments :: approveHint}"></th:block>
-    </div>
-    <dl class="facts">
-      <dt th:text="#{grants.author}">Author</dt>
-      <dd class="code" th:text="${preview.form().author()}">agent:a</dd>
-      <dt th:text="#{common.project}">Project</dt>
-      <dd class="code" th:text="${preview.form().project()}">p1</dd>
-      <dt th:text="#{grants.fingerprint}">Fingerprint of the pasted key</dt>
-      <dd>
-        <span class="cell-code">
-          <code class="fingerprint" th:text="${preview.fingerprint()}">0000</code>
-          <button type="button" class="ghost btn-sm" th:attr="data-copy=${preview.fingerprint()}" th:text="#{common.copy}">Copy</button>
-        </span>
-      </dd>
-      <dt th:if="${preview.server() != null}" th:text="#{grants.key.server}">Server the key was made for</dt>
-      <dd th:if="${preview.server() != null}"><code class="server" th:text="${preview.server()}">ledger</code></dd>
-    </dl>
-    <p th:if="${preview.alreadyRegistered()}" class="alert alert-info" th:text="#{grants.key.same}">The author already has this key.</p>
-    <p th:if="${currentKey != null}" class="alert alert-warning notice" role="alert">
-      <span th:text="#{grants.key.current(${preview.form().author()})}">The author already has another registered key</span>:
-      <code class="fingerprint" th:text="${currentKey.fingerprint()}">1111</code>,
-      <span th:text="#{grants.key.registeredAt}">registered</span> <time th:replace="~{fragments :: time(${currentKey.registeredAt()})}">t</time>
+    <p th:if="${issuedTokenProject != null}" class="issued-grant-summary">
+      <strong th:text="#{tokens.issued.granted}">Initial permissions granted:</strong>
+      <code th:text="${issuedTokenProject}">p1</code>
+      <span th:each="sc : ${issuedTokenScopes}" class="badge badge-ACTIVE" th:text="${sc}">issue</span>
     </p>
-    <form method="post" th:action="@{/grants}" data-approve class="form-wide">
-      <input type="hidden" name="author" th:value="${preview.form().author()}">
-      <input type="hidden" name="project" th:value="${preview.form().project()}">
-      <input type="hidden" name="scopes" th:each="scope : ${preview.form().scopes()}" th:value="${scope}">
-      <input type="hidden" name="expiresAt" th:value="${preview.form().expiresAt()}">
-      <input type="hidden" name="note" th:value="${preview.form().note()}">
-      <input type="hidden" name="publicKey" th:value="${preview.form().publicKey()}">
-      <input type="hidden" name="fingerprint" th:value="${preview.fingerprint()}">
-      <label class="check"><input type="checkbox" name="confirmFingerprint" value="yes" required> <span th:text="#{grants.confirm.check}">I compared this fingerprint with the one the session printed</span></label>
-      <th:block th:if="${currentKey != null}">
-        <input type="hidden" name="replaceFingerprint" th:value="${currentKey.fingerprint()}">
-        <label class="check"><input type="checkbox" name="replace" value="yes"> <span th:text="#{grants.replace.check}">Replace the registered key shown above with this one</span></label>
-      </th:block>
-      <div class="form-actions">
-        <button type="submit" th:text="#{grants.submit}">Issue</button>
-      </div>
-    </form>
+    <p th:if="${issuedTokenProject == null}" class="issued-grant-summary">
+      <span th:text="#{tokens.issued.noGrantsYet}">This token has no project permissions yet. Add them in its session card below.</span>
+    </p>
   </section>
 
-  <!-- Progressive Enhancement 3-Tab Hub -->
-  <div class="tab-list" role="tablist" data-tabs th:attr="data-default-tab=${activeTab},aria-label=#{grants.title}">
-    <button type="button" role="tab" id="tab-btn-grants" class="tab-btn" aria-controls="panel-grants" aria-selected="true" data-hash="tab-grants">
-      <span th:text="#{grants.tab.grants}">Session grants</span>
-      <span class="tab-count" th:text="${#lists.size(grants)}">0</span>
-    </button>
-    <button type="button" role="tab" id="tab-btn-tokens" class="tab-btn" aria-controls="panel-tokens" aria-selected="false" data-hash="tab-tokens">
-      <span th:text="#{grants.tab.tokens}">Bearer tokens</span>
-      <span class="tab-count" th:text="${#lists.size(tokens)}">0</span>
-    </button>
-    <button type="button" role="tab" id="tab-btn-keys" class="tab-btn" aria-controls="panel-keys" aria-selected="false" data-hash="tab-keys">
-      <span th:text="#{grants.tab.keys}">Session keys</span>
-      <span class="tab-count" th:text="${#lists.size(keys)}">0</span>
-    </button>
-  </div>
-
-  <!-- TAB 1: Session Grants -->
-  <div id="panel-grants" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-grants">
-    <div th:if="${!#lists.isEmpty(grants)}" class="table-wrap">
-      <table>
-        <caption class="sr-only" th:text="#{grants.title}">Session grants</caption>
-        <thead>
-          <tr>
-            <th scope="col" th:text="#{col.id}">ID</th>
-            <th scope="col" th:text="#{grants.author}">Author</th>
-            <th scope="col" th:text="#{common.project}">Project</th>
-            <th scope="col" th:text="#{grants.scope}">Scope</th>
-            <th scope="col" th:text="#{grants.grantedAt}">Granted</th>
-            <th scope="col" th:text="#{grants.expiresAt}">Expires</th>
-            <th scope="col" th:text="#{grants.note}">Note</th>
-            <th scope="col" th:text="#{common.actions}">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr th:each="g : ${grants}">
-            <td class="num" th:text="${g.id()}">1</td>
-            <td class="code" th:text="${g.authorId().value()}">agent:a</td>
-            <td class="code" th:text="${g.projectId().value()}">p1</td>
-            <td><span class="badge badge-ACTIVE" th:text="${g.scope().token()}">issue</span></td>
-            <td class="num"><time th:replace="~{fragments :: time(${g.grantedAt()})}">t</time></td>
-            <td class="num"><time th:replace="~{fragments :: time(${g.expiresAt()})}">t</time><span th:if="${g.expiresAt() == null}" class="muted" th:text="#{grants.never}">never</span></td>
-            <td th:text="${g.note() != null} ? ${g.note()} : #{common.noneValue}">note</td>
-            <td class="cell-actions">
-              <button type="button" class="secondary btn-sm"
-                      data-prefill-form="grant-author"
-                      th:attr="data-author=${g.authorId().value()},data-toast=#{grants.filled}"
-                      th:text="#{grants.prefill.grant}">Add scope</button>
-              <button type="button" class="secondary btn-sm"
-                      data-prefill-form="revoke-grant"
-                      th:attr="data-author=${g.authorId().value()},data-project=${g.projectId().value()},data-scope=${g.scope().token()},data-toast=#{grants.filled}"
-                      th:text="#{grants.prefill.revoke}">Fill revoke</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-    <div th:if="${#lists.isEmpty(grants)}" class="empty-state">
-      <p class="empty-state-title" th:text="#{grants.none}">No live grant.</p>
+  <!-- SESSION-CENTRIC ACCESS DIRECTORY (Read-first view; all create/edit/revoke actions open modals) -->
+  <section aria-labelledby="sessions-directory-title" class="sessions-section">
+    <div class="section-bar">
+      <h2 id="sessions-directory-title" th:text="#{grants.sessions.title}">Connected sessions</h2>
+      <span class="hint" th:text="#{grants.sessions.help}">Toggle scopes per project and click Save changes once — additions and removals apply together with a single passkey approval.</span>
     </div>
 
-    <div class="grid-2" th:with="gf=${preview != null ? preview.form() : grantForm}">
-      <section class="card">
-        <div class="card-header">
-          <h2 th:text="#{grants.issue}">Issue grants with session key</h2>
+    <!-- Search & Filter Toolbar -->
+    <div th:if="${!#lists.isEmpty(sessions)}" class="list-toolbar" data-session-toolbar>
+      <div class="list-toolbar-main">
+        <div class="search-box">
+          <svg class="icon search-box-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path>
+          </svg>
+          <label for="session-search" class="sr-only" th:text="#{grants.filter.searchLabel}">Search sessions or projects</label>
+          <input id="session-search" type="search" autocomplete="off"
+                 th:placeholder="#{grants.filter.searchPlaceholder}"
+                 placeholder="Search by session ID or project...">
         </div>
-        <p class="hint" th:text="#{grants.key.help}">Paste the public key that the session printed ...</p>
-        <form method="post" th:action="@{/grants/preview}" class="form-wide">
-          <div class="form-field">
-            <label for="author" th:text="#{grants.author.label}">Author (vendor:session)</label>
-            <input id="author" name="author" type="text" required autocomplete="off" th:value="${gf != null} ? ${gf.author()}">
+        <div class="filter-pills" role="group" th:attr="aria-label=#{grants.filter.groupLabel}">
+          <button type="button" class="filter-pill" data-session-filter="all" aria-pressed="true" th:text="#{grants.filter.all}">All</button>
+          <button type="button" class="filter-pill" data-session-filter="key" aria-pressed="false" th:text="#{grants.filter.key}">Session key</button>
+          <button type="button" class="filter-pill" data-session-filter="token" aria-pressed="false" th:text="#{grants.filter.token}">Bearer token</button>
+          <button type="button" class="filter-pill" data-session-filter="nogrant" aria-pressed="false" th:text="#{grants.filter.noGrant}">No grants</button>
+          <button type="button" class="filter-pill" data-session-filter="nocred" aria-pressed="false" th:text="#{grants.filter.noCred}">No credential</button>
+        </div>
+      </div>
+      <div class="toolbar-meta">
+        <span id="session-filter-count"
+              th:attr="data-count-pattern=#{common.showingCount}"
+              th:text="#{common.showingCount(${#lists.size(sessions)}, ${#lists.size(sessions)})}">Showing 0 of 0</span>
+      </div>
+    </div>
+
+    <div th:if="${#lists.isEmpty(sessions)}" class="empty-state">
+      <p class="empty-state-title" th:text="#{grants.sessions.emptyTitle}">No connected sessions yet.</p>
+      <p class="hint" th:text="#{grants.sessions.emptyHelp}">Issue a Bearer token or register a session key below to grant project access.</p>
+      <button type="button" data-modal-open="modal-connect-session" data-connect-tab="connect-tab-token"
+              th:text="#{grants.action.connectNew}">+ Connect new session</button>
+    </div>
+
+    <div id="session-filter-empty" class="empty-state" hidden>
+      <p class="empty-state-title" th:text="#{common.noMatch}">No items match the current filters.</p>
+      <button type="button" class="secondary btn-sm" id="session-filter-reset" th:text="#{common.resetFilters}">Reset filters</button>
+    </div>
+
+    <!-- Session Cards -->
+    <div th:if="${!#lists.isEmpty(sessions)}" class="session-list">
+      <article th:each="s : ${sessions}"
+               class="session-card"
+               data-session-card
+               th:attr="data-author=${s.author()},data-projects=${s.projectListText()},data-search-text=${s.searchableText()},data-cred=${s.credentialKind()},data-grant-count=${s.totalGrantCount()}">
+
+        <!-- Session Card Header -->
+        <div class="session-card-header">
+          <div class="session-identity">
+            <div class="session-name-row">
+              <code class="session-author-name" th:text="${s.author()}">agent:work</code>
+              <button type="button" class="ghost btn-sm" th:attr="data-copy=${s.author()}" th:text="#{common.copy}">Copy</button>
+            </div>
+            <div class="session-badges">
+              <span th:if="${s.liveKey() != null}" class="badge badge-ACTIVE">
+                <span th:text="#{grants.badge.key}">Session key</span>
+                · <span class="mono" th:text="${#strings.substring(s.liveKey().fingerprint(), 0, 10)}">0000000000</span>…
+              </span>
+              <span th:if="${!#lists.isEmpty(s.liveTokens())}" class="badge badge-IN_PROGRESS"
+                    th:text="#{grants.badge.tokens(${#lists.size(s.liveTokens())})}">1 token</span>
+              <span th:if="${!s.hasCredential()}" class="badge badge-HIGH"
+                    th:text="#{grants.badge.noCredential}">No active credential</span>
+              <span class="badge badge-neutral"
+                    th:text="#{grants.badge.scopeTotal(${s.totalGrantCount()})}">0 scopes</span>
+            </div>
           </div>
-          <div class="form-field">
-            <label for="grant-project" th:text="#{common.project}">Project</label>
-            <select id="grant-project" name="project" required>
-              <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.id()}" th:selected="${gf != null and p.id() == gf.project()}">p1</option>
-            </select>
+
+          <div class="session-header-actions action-btn-group">
+            <button th:if="${s.hasCredential() and !#lists.isEmpty(s.availableProjects())}"
+                    type="button" class="secondary btn-sm"
+                    data-modal-open="modal-add-project"
+                    data-grant-mode="session"
+                    th:attr="data-author=${s.author()},data-available-projects=${s.availableProjectsCsv()}"
+                    th:text="#{grants.session.addProject}">+ Add project permissions</button>
+            <button th:if="${s.totalGrantCount() > 0}"
+                    type="button" class="secondary danger-outline btn-sm"
+                    data-modal-open="modal-revoke-grant"
+                    data-revoke-mode="session"
+                    th:attr="data-author=${s.author()},data-grant-count=${s.totalGrantCount()}"
+                    th:text="#{grants.session.revokeAll}">Revoke all permissions</button>
           </div>
-          <fieldset>
+        </div>
+
+        <!-- Warning when grants exist without any active credential -->
+        <p th:if="${!s.hasCredential()}" class="alert alert-warning session-alert" role="note"
+           th:text="#{grants.session.noCredentialHint}">This session has no active key or token, so it cannot write until a credential is registered. You can still revoke remaining grants.</p>
+
+        <!-- Active Project Permissions (read-first rows + modal trigger buttons) -->
+        <div class="session-projects">
+          <div th:if="${#lists.isEmpty(s.projects())}" class="session-empty-projects">
+            <span class="muted" th:text="#{grants.session.noProjects}">No project permissions assigned yet.</span>
+          </div>
+
+          <div th:each="p : ${s.projects()}" class="project-grant-row">
+            <div class="project-grant-row-info">
+              <div class="project-grant-meta">
+                <code class="project-pill" th:text="${p.project()}">p1</code>
+                <span class="project-meta-item">
+                  <span class="muted" th:text="#{grants.expiresAt}">Expires</span>:
+                  <time th:if="${p.expiresAt() != null}" th:replace="~{fragments :: time(${p.expiresAt()})}"></time>
+                  <span th:if="${p.expiresAt() == null}" class="muted" th:text="#{grants.never}">never</span>
+                  <span th:if="${p.mixedExpiry()}" class="badge badge-neutral" th:text="#{grants.mixedExpiry}">mixed</span>
+                </span>
+                <span th:if="${p.note() != null}" class="project-meta-item muted" th:text="${p.note()}">note</span>
+              </div>
+              <div class="scope-pill-list">
+                <span th:each="sc : ${scopes}" th:if="${p.hasScope(sc.token())}"
+                      class="scope-pill"
+                      th:classappend="${sc.token() == 'verify'} ? ' scope-pill-sensitive' : ''">
+                  <span th:text="#{${'grants.scope.' + sc.token()}}">Issue</span>
+                  <span class="scope-pill-code" th:text="${sc.token()}">issue</span>
+                </span>
+              </div>
+            </div>
+
+            <div class="action-btn-group">
+              <button type="button" class="secondary btn-sm"
+                      data-modal-open="modal-edit-scopes"
+                      th:attr="data-author=${s.author()},data-project=${p.project()},data-scopes=${p.initialScopesCsv()},data-expires=${p.expiresAtIso()},data-note=${p.note() != null ? p.note() : ''}"
+                      th:text="#{grants.project.editScopes}">Edit scopes</button>
+              <button type="button" class="ghost danger-text btn-sm"
+                      data-modal-open="modal-revoke-grant"
+                      data-revoke-mode="project"
+                      th:attr="data-author=${s.author()},data-project=${p.project()},data-grant-count=${p.scopeCount()}"
+                      th:text="#{grants.project.revokeAll}">Remove project</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Credentials Management (read-first rows + modal trigger buttons) -->
+        <details th:if="${s.hasCredential()}" class="session-credentials">
+          <summary th:text="#{grants.session.credentialsSummary}">Credentials (keys &amp; tokens)</summary>
+          <div class="session-credentials-body">
+            <!-- Registered Session Key -->
+            <div th:if="${s.liveKey() != null}" class="credential-row">
+              <div class="credential-info">
+                <span class="credential-kind" th:text="#{grants.badge.key}">Session key</span>
+                <span class="cell-code">
+                  <code class="fingerprint" th:text="${s.liveKey().fingerprint()}">0000</code>
+                  <button type="button" class="ghost btn-sm" th:attr="data-copy=${s.liveKey().fingerprint()}" th:text="#{common.copy}">Copy</button>
+                </span>
+                <span class="muted">
+                  <span th:text="#{grants.key.registeredAt}">registered</span>
+                  <time th:replace="~{fragments :: time(${s.liveKey().registeredAt()})}">t</time>
+                </span>
+              </div>
+              <div class="credential-actions">
+                <button type="button" class="secondary danger-outline btn-sm"
+                        data-modal-open="modal-revoke-key"
+                        th:attr="data-author=${s.author()},data-fingerprint=${s.liveKey().fingerprint()}"
+                        th:text="#{keys.revoke.submit}">Close the key</button>
+              </div>
+            </div>
+
+            <!-- Active Bearer Session Tokens -->
+            <div th:each="t : ${s.liveTokens()}" class="credential-row">
+              <div class="credential-info">
+                <span class="credential-kind">
+                  <span th:text="#{tokens.itemLabel}">Bearer token</span> #<span class="num" th:text="${t.id()}">1</span>
+                </span>
+                <code th:text="${t.tokenPrefix()}">lgt_abc</code>
+                <span class="muted">
+                  <span th:text="#{tokens.issuedAt}">Issued</span>
+                  <time th:replace="~{fragments :: time(${t.issuedAt()})}">t</time>
+                  ·
+                  <span th:text="#{grants.expiresAt}">Expires</span>
+                  <time th:if="${t.expiresAt() != null}" th:replace="~{fragments :: time(${t.expiresAt()})}">t</time>
+                  <span th:if="${t.expiresAt() == null}" th:text="#{grants.never}">never</span>
+                </span>
+                <span th:if="${t.note() != null}" class="muted" th:text="${t.note()}">note</span>
+              </div>
+              <div class="credential-actions">
+                <button type="button" class="secondary danger-outline btn-sm"
+                        data-modal-open="modal-revoke-token"
+                        th:attr="data-author=${s.author()},data-token-id=${t.id()},data-token-prefix=${t.tokenPrefix()}"
+                        th:text="#{tokens.revoke.submit}">Revoke token</button>
+              </div>
+            </div>
+          </div>
+        </details>
+      </article>
+    </div>
+  </section>
+
+  <datalist id="enrolled-authors-list">
+    <option th:each="a : ${enrolledAuthors}" th:value="${a}"></option>
+  </datalist>
+
+  <!-- MODAL 1: Connect New Session (Bearer Token / Signed Session Key) -->
+  <dialog id="modal-connect-session" class="modal-dialog modal-dialog-wide"
+          th:attr="data-open-on-load=${tokenIssueForm != null or grantForm != null}"
+          aria-labelledby="modal-connect-session-title">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <h2 id="modal-connect-session-title" th:text="#{grants.connect.title}">Connect a new session</h2>
+        <p class="hint" th:text="#{grants.connect.help}">Choose how the session authenticates: a standard Bearer token for HTTP MCP clients, or an Ed25519 public key for hook-attested sessions.</p>
+      </div>
+      <button type="button" class="ghost btn-sm modal-close" data-modal-close th:attr="aria-label=#{common.close}">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M18 6 6 18M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div th:if="${(tokenIssueForm != null or grantForm != null) and formErrorDetail != null}" class="alert alert-danger" role="alert">
+        <div class="alert-title" th:text="#{form.errorTitle}">Could not save the form</div>
+        <p th:text="${formErrorDetail}">Validation failed.</p>
+      </div>
+      <p class="alert alert-danger modal-status" data-modal-status role="alert" tabindex="-1" hidden></p>
+
+      <div class="tab-list" role="tablist" data-tabs
+           th:attr="data-default-tab=${activeConnectTab},aria-label=#{grants.connect.title}">
+        <button type="button" role="tab" id="connect-tab-token" class="tab-btn"
+                aria-controls="panel-connect-token" aria-selected="true" data-hash="connect-token">
+          <span th:text="#{grants.connect.tab.token}">Bearer token (HTTP MCP)</span>
+        </button>
+        <button type="button" role="tab" id="connect-tab-key" class="tab-btn"
+                aria-controls="panel-connect-key" aria-selected="false" data-hash="connect-key">
+          <span th:text="#{grants.connect.tab.key}">Signed session key (Hook)</span>
+        </button>
+      </div>
+
+      <!-- Path 1: Bearer Token (+ optional initial project scopes in 1 transaction) -->
+      <div id="panel-connect-token" class="tab-panel" role="tabpanel" aria-labelledby="connect-tab-token">
+        <form method="post" th:action="@{/grants/tokens}" data-approve class="form-wide" data-scope-picker data-token-issue-form>
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="token-author" th:text="#{grants.author.label}">Session ID (vendor:session)</label>
+              <input id="token-author" name="author" type="text" required autocomplete="off"
+                     th:placeholder="#{grants.author.placeholder}"
+                     th:value="${tokenIssueForm != null} ? ${tokenIssueForm.author()}">
+            </div>
+            <div class="form-field">
+              <label for="token-expires" th:text="#{grants.expires.short}">Expires (UTC, empty: never)</label>
+              <input id="token-expires" name="expiresAt" type="text" autocomplete="off"
+                     th:value="${tokenIssueForm != null} ? ${tokenIssueForm.expiresAt()}">
+              <div class="preset-row">
+                <button type="button" class="secondary btn-sm" data-expiry-target="token-expires" data-expiry-days="7" th:text="#{grants.expiry.7d}">+7d</button>
+                <button type="button" class="secondary btn-sm" data-expiry-target="token-expires" data-expiry-days="30" th:text="#{grants.expiry.30d}">+30d</button>
+                <button type="button" class="secondary btn-sm" data-expiry-target="token-expires" data-expiry-days="90" th:text="#{grants.expiry.90d}">+90d</button>
+                <button type="button" class="ghost btn-sm" data-expiry-target="token-expires" data-expiry-days="" th:text="#{grants.expiry.never}">Never</button>
+              </div>
+            </div>
+            <div class="form-field form-field-full">
+              <label for="token-note" th:text="#{grants.note}">Note</label>
+              <input id="token-note" name="note" type="text" maxlength="500" autocomplete="off"
+                     th:value="${tokenIssueForm != null} ? ${tokenIssueForm.note()}">
+            </div>
+          </div>
+
+          <div class="optional-grant-box">
+            <div class="optional-grant-header">
+              <h3 th:text="#{tokens.initialGrant.title}">Initial project permissions (optional)</h3>
+              <p class="hint" th:text="#{tokens.initialGrant.help}">Select a project and scopes to grant permissions together with this token in one approval. Leave unset to issue the token only.</p>
+            </div>
+            <div class="form-field">
+              <label for="token-project" th:text="#{common.project}">Project</label>
+              <select id="token-project" name="project" data-token-project>
+                <option value="" th:text="#{tokens.initialGrant.none}">Token only (grant permissions later)</option>
+                <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.id()}"
+                        th:selected="${tokenIssueForm != null and p.id() == tokenIssueForm.project()}">p1</option>
+              </select>
+            </div>
+            <fieldset class="scope-fieldset" data-token-scopes>
+              <legend th:text="#{grants.scopes}">Scopes</legend>
+              <div class="preset-row">
+                <button type="button" class="ghost btn-sm" data-scope-preset="all" th:text="#{grants.preset.all}">All</button>
+                <button type="button" class="ghost btn-sm" data-scope-preset="standard" th:text="#{grants.preset.standard}">Standard (no verify)</button>
+                <button type="button" class="ghost btn-sm" data-scope-preset="none" th:text="#{grants.preset.none}">Clear all</button>
+              </div>
+              <div class="scope-chip-grid">
+                <label th:each="sc : ${scopes}" class="scope-chip"
+                       th:classappend="${sc.token() == 'verify'} ? ' scope-chip-sensitive' : ''">
+                  <input type="checkbox" name="scopes" th:value="${sc.token()}"
+                         th:checked="${tokenIssueForm != null and tokenIssueForm.scopes() != null and tokenIssueForm.scopes().contains(sc.token())}">
+                  <span class="scope-chip-head">
+                    <span class="scope-chip-title" th:text="#{${'grants.scope.' + sc.token()}}">Issue</span>
+                    <span class="scope-chip-code" th:text="${sc.token()}">issue</span>
+                  </span>
+                  <span class="scope-chip-desc" th:text="#{${'grants.scope.desc.' + sc.token()}}">Create &amp; update issues</span>
+                </label>
+              </div>
+            </fieldset>
+          </div>
+
+          <div class="modal-footer">
+            <th:block th:replace="~{fragments :: approveHint}"></th:block>
+            <div class="modal-footer-actions">
+              <button type="button" class="secondary" data-modal-close th:text="#{common.cancel}">Cancel</button>
+              <button type="submit" th:text="#{tokens.issue.submit}">Issue token</button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <!-- Path 2: Signed Session Key (Hook) -->
+      <div id="panel-connect-key" class="tab-panel" role="tabpanel" aria-labelledby="connect-tab-key"
+           th:with="gf=${preview != null ? preview.form() : grantForm}">
+        <p class="hint" th:text="#{grants.key.help}">Paste the public key or the four lines that session-key printed. When you paste the four lines, the session ID is filled automatically.</p>
+        <form method="post" th:action="@{/grants/preview}" class="form-wide" data-scope-picker>
+          <div class="form-field">
+            <label for="publicKey" th:text="#{grants.key.label}">Public key of the session (base64), or the four lines that the hook printed</label>
+            <textarea id="publicKey" name="publicKey" rows="4" required autocomplete="off" spellcheck="false"
+                      data-key-block-author-target="author"
+                      th:attr="data-autofill-toast=#{grants.key.authorAutofilled}"
+                      th:text="${gf != null} ? ${gf.publicKey()}"></textarea>
+          </div>
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="author" th:text="#{grants.author.label}">Session ID (vendor:session)</label>
+              <input id="author" name="author" type="text" required autocomplete="off"
+                     th:placeholder="#{grants.author.placeholder}"
+                     th:value="${gf != null} ? ${gf.author()}">
+            </div>
+            <div class="form-field">
+              <label for="grant-project" th:text="#{common.project}">Project</label>
+              <select id="grant-project" name="project" required>
+                <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.id()}"
+                        th:selected="${gf != null and p.id() == gf.project()}">p1</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="expiresAt" th:text="#{grants.expires.short}">Expires (UTC, empty: never)</label>
+              <input id="expiresAt" name="expiresAt" type="text" autocomplete="off"
+                     th:value="${gf != null} ? ${gf.expiresAt()}">
+              <div class="preset-row">
+                <button type="button" class="secondary btn-sm" data-expiry-target="expiresAt" data-expiry-days="7" th:text="#{grants.expiry.7d}">+7d</button>
+                <button type="button" class="secondary btn-sm" data-expiry-target="expiresAt" data-expiry-days="30" th:text="#{grants.expiry.30d}">+30d</button>
+                <button type="button" class="secondary btn-sm" data-expiry-target="expiresAt" data-expiry-days="90" th:text="#{grants.expiry.90d}">+90d</button>
+                <button type="button" class="ghost btn-sm" data-expiry-target="expiresAt" data-expiry-days="" th:text="#{grants.expiry.never}">Never</button>
+              </div>
+            </div>
+            <div class="form-field">
+              <label for="note" th:text="#{grants.note}">Note</label>
+              <input id="note" name="note" type="text" maxlength="500" autocomplete="off"
+                     th:value="${gf != null} ? ${gf.note()}">
+            </div>
+          </div>
+          <fieldset class="scope-fieldset">
             <legend th:text="#{grants.scopes}">Scopes</legend>
-            <label th:each="s : ${scopes}" class="check">
-              <input type="checkbox" name="scopes" th:value="${s.token()}" th:checked="${gf != null and gf.scopes() != null and gf.scopes().contains(s.token())}">
-              <span th:text="${s.token()}">issue</span>
-            </label>
-          </fieldset>
-          <div class="form-field">
-            <label for="expiresAt" th:text="#{grants.expires.label}">Expires (UTC, for example 2030-12-31T00:00:00Z; empty: never)</label>
-            <input id="expiresAt" name="expiresAt" type="text" autocomplete="off" th:value="${gf != null} ? ${gf.expiresAt()}">
             <div class="preset-row">
-              <button type="button" class="secondary btn-sm" data-expiry-target="expiresAt" data-expiry-days="7" th:text="#{grants.expiry.7d}">+7d</button>
-              <button type="button" class="secondary btn-sm" data-expiry-target="expiresAt" data-expiry-days="30" th:text="#{grants.expiry.30d}">+30d</button>
-              <button type="button" class="secondary btn-sm" data-expiry-target="expiresAt" data-expiry-days="90" th:text="#{grants.expiry.90d}">+90d</button>
-              <button type="button" class="ghost btn-sm" data-expiry-target="expiresAt" data-expiry-days="" th:text="#{grants.expiry.never}">Never</button>
+              <button type="button" class="ghost btn-sm" data-scope-preset="all" th:text="#{grants.preset.all}">All</button>
+              <button type="button" class="ghost btn-sm" data-scope-preset="standard" th:text="#{grants.preset.standard}">Standard (no verify)</button>
+              <button type="button" class="ghost btn-sm" data-scope-preset="none" th:text="#{grants.preset.none}">Clear all</button>
+            </div>
+            <div class="scope-chip-grid">
+              <label th:each="sc : ${scopes}" class="scope-chip"
+                     th:classappend="${sc.token() == 'verify'} ? ' scope-chip-sensitive' : ''">
+                <input type="checkbox" name="scopes" th:value="${sc.token()}"
+                       th:checked="${gf != null ? (gf.scopes() != null and gf.scopes().contains(sc.token())) : (sc.token() != 'verify')}">
+                <span class="scope-chip-head">
+                  <span class="scope-chip-title" th:text="#{${'grants.scope.' + sc.token()}}">Issue</span>
+                  <span class="scope-chip-code" th:text="${sc.token()}">issue</span>
+                </span>
+                <span class="scope-chip-desc" th:text="#{${'grants.scope.desc.' + sc.token()}}">Create &amp; update issues</span>
+              </label>
+            </div>
+          </fieldset>
+          <div class="modal-footer">
+            <span class="muted"></span>
+            <div class="modal-footer-actions">
+              <button type="button" class="secondary" data-modal-close th:text="#{common.cancel}">Cancel</button>
+              <button type="submit" th:text="#{grants.preview}">Show the fingerprint</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- MODAL 2: Fingerprint Confirmation (auto-opens after POST /grants/preview) -->
+  <dialog th:if="${preview != null}" id="modal-key-confirm" class="modal-dialog modal-dialog-wide"
+          data-open-on-load="true" aria-labelledby="confirm-title">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <h2 id="confirm-title" th:text="#{grants.confirm.title}">Compare the fingerprint</h2>
+      </div>
+      <button type="button" class="ghost btn-sm modal-close" data-modal-close th:attr="aria-label=#{common.close}">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M18 6 6 18M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p class="alert alert-danger modal-status" data-modal-status role="alert" tabindex="-1" hidden></p>
+      <div class="modal-summary-box">
+        <dl class="facts">
+          <dt th:text="#{grants.author}">Session</dt>
+          <dd class="code" th:text="${preview.form().author()}">agent:a</dd>
+          <dt th:text="#{common.project}">Project</dt>
+          <dd class="code" th:text="${preview.form().project()}">p1</dd>
+          <dt th:text="#{grants.scopes}">Scopes</dt>
+          <dd class="chip-inline-list">
+            <span th:each="sc : ${preview.form().scopes()}" class="badge badge-ACTIVE" th:text="${sc}">issue</span>
+          </dd>
+          <dt th:text="#{grants.fingerprint}">Fingerprint of the pasted key</dt>
+          <dd>
+            <span class="cell-code">
+              <code class="fingerprint" th:text="${preview.fingerprint()}">0000</code>
+              <button type="button" class="ghost btn-sm" th:attr="data-copy=${preview.fingerprint()}" th:text="#{common.copy}">Copy</button>
+            </span>
+          </dd>
+          <dt th:if="${preview.server() != null}" th:text="#{grants.key.server}">Server the key was made for</dt>
+          <dd th:if="${preview.server() != null}"><code class="server" th:text="${preview.server()}">ledger</code></dd>
+        </dl>
+      </div>
+      <p th:if="${preview.alreadyRegistered()}" class="alert alert-info" th:text="#{grants.key.same}">The session already has this key.</p>
+      <p th:if="${currentKey != null}" class="alert alert-warning notice" role="alert">
+        <span th:text="#{grants.key.current(${preview.form().author()})}">The session already has another registered key</span>:
+        <code class="fingerprint" th:text="${currentKey.fingerprint()}">1111</code>,
+        <span th:text="#{grants.key.registeredAt}">registered</span> <time th:replace="~{fragments :: time(${currentKey.registeredAt()})}">t</time>
+      </p>
+      <form method="post" th:action="@{/grants}" data-approve class="form-wide">
+        <input type="hidden" name="author" th:value="${preview.form().author()}">
+        <input type="hidden" name="project" th:value="${preview.form().project()}">
+        <input type="hidden" name="scopes" th:each="scope : ${preview.form().scopes()}" th:value="${scope}">
+        <input type="hidden" name="expiresAt" th:value="${preview.form().expiresAt()}">
+        <input type="hidden" name="note" th:value="${preview.form().note()}">
+        <input type="hidden" name="publicKey" th:value="${preview.form().publicKey()}">
+        <input type="hidden" name="fingerprint" th:value="${preview.fingerprint()}">
+        <label class="check"><input type="checkbox" name="confirmFingerprint" value="yes" required> <span th:text="#{grants.confirm.check}">I compared this fingerprint with the one the session printed</span></label>
+        <th:block th:if="${currentKey != null}">
+          <input type="hidden" name="replaceFingerprint" th:value="${currentKey.fingerprint()}">
+          <label class="check"><input type="checkbox" name="replace" value="yes"> <span th:text="#{grants.replace.check}">Replace the registered key shown above with this one</span></label>
+        </th:block>
+        <div class="modal-footer">
+          <th:block th:replace="~{fragments :: approveHint}"></th:block>
+          <div class="modal-footer-actions">
+            <button type="button" class="secondary" data-modal-close th:text="#{common.cancel}">Cancel</button>
+            <button type="submit" th:text="#{grants.submit}">Issue</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- MODAL 3: Edit Project Scopes (shared interactive scope chip matrix -> POST /grants/sync) -->
+  <dialog id="modal-edit-scopes" class="modal-dialog modal-dialog-wide"
+          th:attr="data-open-on-load=${syncForm != null}"
+          aria-labelledby="modal-edit-scopes-title">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <h2 id="modal-edit-scopes-title" th:text="#{grants.modal.editScopesTitle}">Edit project permissions</h2>
+        <p class="hint" th:text="#{grants.modal.editScopesHelp}">Toggle scopes on or off and click Save changes once — additions and removals apply together with a single passkey approval.</p>
+      </div>
+      <button type="button" class="ghost btn-sm modal-close" data-modal-close th:attr="aria-label=#{common.close}">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M18 6 6 18M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div th:if="${syncForm != null and formErrorDetail != null}" class="alert alert-danger" role="alert">
+        <div class="alert-title" th:text="#{form.errorTitle}">Could not save the form</div>
+        <p th:text="${formErrorDetail}">Validation failed.</p>
+      </div>
+      <p class="alert alert-danger modal-status" data-modal-status role="alert" tabindex="-1" hidden></p>
+
+      <div class="modal-summary-box">
+        <dl class="facts">
+          <dt th:text="#{grants.author}">Session</dt>
+          <dd class="code" id="edit-scopes-author-label" th:text="${syncForm != null ? syncForm.author() : '—'}">—</dd>
+          <dt th:text="#{common.project}">Project</dt>
+          <dd class="code" id="edit-scopes-project-label" th:text="${syncForm != null ? syncForm.project() : '—'}">—</dd>
+        </dl>
+      </div>
+
+      <form id="edit-scopes-form" method="post" th:action="@{/grants/sync}" data-approve class="form-wide scope-matrix-form"
+            data-scope-matrix
+            th:attr="data-initial-scopes=${syncForm != null and syncForm.scopes() != null ? #strings.listJoin(syncForm.scopes(), ',') : ''},data-msg-unchanged=#{grants.matrix.unchanged},data-msg-changed=#{grants.matrix.changed},data-msg-added=#{grants.matrix.added},data-msg-removed=#{grants.matrix.removed}">
+        <input type="hidden" name="author" id="edit-scopes-author" th:value="${syncForm != null} ? ${syncForm.author()}">
+        <input type="hidden" name="project" id="edit-scopes-project" th:value="${syncForm != null} ? ${syncForm.project()}">
+
+        <div class="scope-chip-grid" role="group" th:attr="aria-label=#{grants.scopes}">
+          <label th:each="sc : ${scopes}"
+                 class="scope-chip"
+                 th:classappend="${sc.token() == 'verify'} ? ' scope-chip-sensitive' : ''"
+                 th:attr="data-scope-chip=${sc.token()}">
+            <input type="checkbox" name="scopes" th:value="${sc.token()}"
+                   th:checked="${syncForm != null and syncForm.scopes() != null and syncForm.scopes().contains(sc.token())}">
+            <span class="scope-chip-head">
+              <span class="scope-chip-title" th:text="#{${'grants.scope.' + sc.token()}}">Issue</span>
+              <span class="scope-chip-code" th:text="${sc.token()}">issue</span>
+            </span>
+            <span class="scope-chip-desc" th:text="#{${'grants.scope.desc.' + sc.token()}}">Create &amp; update issues</span>
+          </label>
+        </div>
+
+        <div class="preset-row">
+          <button type="button" class="ghost btn-sm" data-scope-preset="all" th:text="#{grants.preset.all}">Select all</button>
+          <button type="button" class="ghost btn-sm" data-scope-preset="standard" th:text="#{grants.preset.standard}">Standard (no verify)</button>
+          <button type="button" class="ghost btn-sm" data-scope-preset="none" th:text="#{grants.preset.none}">Clear all</button>
+          <button type="button" class="ghost btn-sm" data-scope-reset hidden th:text="#{grants.matrix.reset}">Undo</button>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-field">
+            <label for="edit-scopes-expires" th:text="#{grants.expires.short}">Expires (UTC, empty: never)</label>
+            <input id="edit-scopes-expires" name="expiresAt" type="text" autocomplete="off"
+                   th:value="${syncForm != null} ? ${syncForm.expiresAt()}">
+            <div class="preset-row">
+              <button type="button" class="secondary btn-sm" data-expiry-target="edit-scopes-expires" data-expiry-days="7" th:text="#{grants.expiry.7d}">+7d</button>
+              <button type="button" class="secondary btn-sm" data-expiry-target="edit-scopes-expires" data-expiry-days="30" th:text="#{grants.expiry.30d}">+30d</button>
+              <button type="button" class="secondary btn-sm" data-expiry-target="edit-scopes-expires" data-expiry-days="90" th:text="#{grants.expiry.90d}">+90d</button>
+              <button type="button" class="ghost btn-sm" data-expiry-target="edit-scopes-expires" data-expiry-days="" th:text="#{grants.expiry.never}">Never</button>
             </div>
           </div>
           <div class="form-field">
-            <label for="note" th:text="#{grants.note}">Note</label>
-            <input id="note" name="note" type="text" maxlength="500" autocomplete="off" th:value="${gf != null} ? ${gf.note()}">
+            <label for="edit-scopes-note" th:text="#{grants.note}">Note</label>
+            <input id="edit-scopes-note" name="note" type="text" maxlength="500" autocomplete="off"
+                   th:value="${syncForm != null} ? ${syncForm.note()}">
           </div>
-          <div class="form-field">
-            <label for="publicKey" th:text="#{grants.key.label}">Public key of the session (base64)</label>
-            <textarea id="publicKey" name="publicKey" rows="3" required autocomplete="off" spellcheck="false" th:text="${gf != null} ? ${gf.publicKey()}"></textarea>
-          </div>
-          <div class="form-actions">
-            <button type="submit" th:text="#{grants.preview}">Show the fingerprint</button>
-          </div>
-        </form>
-      </section>
-
-      <section class="card" aria-labelledby="author-grants-title">
-        <div class="card-header">
-          <h2 id="author-grants-title" th:text="#{grants.authorOnly.title}">Issue grants for an enrolled author</h2>
-          <th:block th:replace="~{fragments :: approveHint}"></th:block>
         </div>
-        <p class="hint" th:text="#{grants.authorOnly.help}">Issue project scopes for an author that already holds a live session key or bearer session token.</p>
-        <form method="post" th:action="@{/grants/author}" data-approve class="form-wide">
+
+        <div class="modal-footer">
+          <span class="matrix-diff-status muted" data-matrix-status th:text="#{grants.matrix.unchanged}">No changes</span>
+          <div class="modal-footer-actions">
+            <th:block th:replace="~{fragments :: approveHint}"></th:block>
+            <button type="button" class="secondary" data-modal-close th:text="#{common.cancel}">Cancel</button>
+            <button type="submit" class="secondary" data-matrix-submit th:text="#{grants.matrix.save}">Save changes</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- MODAL 4: Add Project Permissions / Manual Grant (POST /grants/author) -->
+  <dialog id="modal-add-project" class="modal-dialog modal-dialog-wide"
+          th:attr="data-open-on-load=${authorGrantForm != null}"
+          aria-labelledby="modal-add-project-title">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <h2 id="modal-add-project-title"
+            th:attr="data-title-session=#{grants.modal.addProjectTitle},data-title-manual=#{grants.authorOnly.title}"
+            th:text="#{grants.modal.addProjectTitle}">Add project permissions</h2>
+        <p class="hint" th:text="#{grants.authorOnly.help}">Issue project scopes for a session that already holds a live session key or bearer token.</p>
+      </div>
+      <button type="button" class="ghost btn-sm modal-close" data-modal-close th:attr="aria-label=#{common.close}">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M18 6 6 18M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div th:if="${authorGrantForm != null and formErrorDetail != null}" class="alert alert-danger" role="alert">
+        <div class="alert-title" th:text="#{form.errorTitle}">Could not save the form</div>
+        <p th:text="${formErrorDetail}">Validation failed.</p>
+      </div>
+      <p class="alert alert-danger modal-status" data-modal-status role="alert" tabindex="-1" hidden></p>
+
+      <form id="add-project-form" method="post" th:action="@{/grants/author}" data-approve class="form-wide" data-scope-picker>
+        <div class="form-grid">
           <div class="form-field">
-            <label for="enrolled-author" th:text="#{grants.author.label}">Author</label>
-            <input id="enrolled-author" name="author" type="text" required autocomplete="off" th:value="${authorGrantForm != null} ? ${authorGrantForm.author()}">
+            <label for="enrolled-author" th:text="#{grants.author.label}">Session ID (vendor:session)</label>
+            <input id="enrolled-author" name="author" type="text" list="enrolled-authors-list" required autocomplete="off"
+                   th:placeholder="#{grants.author.placeholder}"
+                   th:value="${authorGrantForm != null} ? ${authorGrantForm.author()}">
           </div>
           <div class="form-field">
             <label for="enrolled-project" th:text="#{common.project}">Project</label>
             <select id="enrolled-project" name="project" required>
-              <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.id()}" th:selected="${authorGrantForm != null and p.id() == authorGrantForm.project()}">p1</option>
+              <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.id()}"
+                      th:selected="${authorGrantForm != null and p.id() == authorGrantForm.project()}">p1</option>
             </select>
           </div>
-          <fieldset>
-            <legend th:text="#{grants.scopes}">Scopes</legend>
-            <label th:each="s : ${scopes}" class="check">
-              <input type="checkbox" name="scopes" th:value="${s.token()}" th:checked="${authorGrantForm != null and authorGrantForm.scopes() != null and authorGrantForm.scopes().contains(s.token())}">
-              <span th:text="${s.token()}">issue</span>
-            </label>
-          </fieldset>
           <div class="form-field">
-            <label for="enrolled-expires" th:text="#{grants.expires.label}">Expires</label>
-            <input id="enrolled-expires" name="expiresAt" type="text" autocomplete="off" th:value="${authorGrantForm != null} ? ${authorGrantForm.expiresAt()}">
+            <label for="enrolled-expires" th:text="#{grants.expires.short}">Expires (UTC, empty: never)</label>
+            <input id="enrolled-expires" name="expiresAt" type="text" autocomplete="off"
+                   th:value="${authorGrantForm != null} ? ${authorGrantForm.expiresAt()}">
             <div class="preset-row">
               <button type="button" class="secondary btn-sm" data-expiry-target="enrolled-expires" data-expiry-days="7" th:text="#{grants.expiry.7d}">+7d</button>
               <button type="button" class="secondary btn-sm" data-expiry-target="enrolled-expires" data-expiry-days="30" th:text="#{grants.expiry.30d}">+30d</button>
@@ -227,199 +647,201 @@
           </div>
           <div class="form-field">
             <label for="enrolled-note" th:text="#{grants.note}">Note</label>
-            <input id="enrolled-note" name="note" type="text" maxlength="500" autocomplete="off" th:value="${authorGrantForm != null} ? ${authorGrantForm.note()}">
+            <input id="enrolled-note" name="note" type="text" maxlength="500" autocomplete="off"
+                   th:value="${authorGrantForm != null} ? ${authorGrantForm.note()}">
           </div>
-          <div class="form-actions">
-            <button type="submit" th:text="#{grants.submit}">Issue</button>
-          </div>
-        </form>
-      </section>
-    </div>
+        </div>
 
-    <section class="card card-danger">
-      <div class="card-header">
-        <h2 th:text="#{grants.revoke}">Revoke grants</h2>
-        <th:block th:replace="~{fragments :: approveHint}"></th:block>
+        <fieldset class="scope-fieldset">
+          <legend th:text="#{grants.scopes}">Scopes</legend>
+          <div class="preset-row">
+            <button type="button" class="ghost btn-sm" data-scope-preset="all" th:text="#{grants.preset.all}">Select all</button>
+            <button type="button" class="ghost btn-sm" data-scope-preset="standard" th:text="#{grants.preset.standard}">Standard (no verify)</button>
+            <button type="button" class="ghost btn-sm" data-scope-preset="none" th:text="#{grants.preset.none}">Clear all</button>
+          </div>
+          <div class="scope-chip-grid">
+            <label th:each="sc : ${scopes}" class="scope-chip"
+                   th:classappend="${sc.token() == 'verify'} ? ' scope-chip-sensitive' : ''">
+              <input type="checkbox" name="scopes" th:value="${sc.token()}"
+                     th:checked="${authorGrantForm != null ? (authorGrantForm.scopes() != null and authorGrantForm.scopes().contains(sc.token())) : (sc.token() != 'verify')}">
+              <span class="scope-chip-head">
+                <span class="scope-chip-title" th:text="#{${'grants.scope.' + sc.token()}}">Issue</span>
+                <span class="scope-chip-code" th:text="${sc.token()}">issue</span>
+              </span>
+              <span class="scope-chip-desc" th:text="#{${'grants.scope.desc.' + sc.token()}}">Create &amp; update issues</span>
+            </label>
+          </div>
+        </fieldset>
+
+        <div class="modal-footer">
+          <th:block th:replace="~{fragments :: approveHint}"></th:block>
+          <div class="modal-footer-actions">
+            <button type="button" class="secondary" data-modal-close th:text="#{common.cancel}">Cancel</button>
+            <button type="submit" th:text="#{grants.session.addProjectSubmit}">Grant permissions</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- MODAL 5: Revoke Permissions (Session / Project / Manual -> POST /grants/revoke) -->
+  <dialog id="modal-revoke-grant" class="modal-dialog modal-dialog-sm modal-dialog-danger"
+          th:attr="data-open-on-load=${revokeGrantForm != null}"
+          aria-labelledby="modal-revoke-grant-title">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <h2 id="modal-revoke-grant-title" th:text="#{grants.modal.revokeTitle}">Revoke permissions</h2>
+        <p id="modal-revoke-grant-help" class="hint"
+           th:attr="data-help-session=#{grants.modal.revokeSessionHelp},data-help-project=#{grants.modal.revokeProjectHelp},data-help-manual=#{grants.modal.revokeManualHelp}"
+           th:text="#{grants.modal.revokeManualHelp}">Choose a session and optionally narrow down to one project or scope to revoke.</p>
       </div>
-      <form method="post" th:action="@{/grants/revoke}" data-approve class="form-wide">
-        <div class="form-grid">
+      <button type="button" class="ghost btn-sm modal-close" data-modal-close th:attr="aria-label=#{common.close}">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M18 6 6 18M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div th:if="${revokeGrantForm != null and formErrorDetail != null}" class="alert alert-danger" role="alert">
+        <div class="alert-title" th:text="#{form.errorTitle}">Could not save the form</div>
+        <p th:text="${formErrorDetail}">Validation failed.</p>
+      </div>
+      <p class="alert alert-danger modal-status" data-modal-status role="alert" tabindex="-1" hidden></p>
+
+      <div id="revoke-grant-summary" class="modal-summary-box is-danger" hidden>
+        <dl class="facts">
+          <dt th:text="#{grants.author}">Session</dt>
+          <dd class="code" id="revoke-summary-author">—</dd>
+          <dt th:text="#{common.project}">Project</dt>
+          <dd class="code" id="revoke-summary-project" th:attr="data-all-label=#{common.allProjects}">—</dd>
+        </dl>
+      </div>
+
+      <form id="revoke-grant-form" method="post" th:action="@{/grants/revoke}" data-approve class="form-wide">
+        <div id="revoke-grant-fields">
           <div class="form-field">
-            <label for="revoke-author" th:text="#{grants.author.label}">Author</label>
-            <input id="revoke-author" name="author" type="text" required autocomplete="off" th:value="${revokeGrantForm != null} ? ${revokeGrantForm.author()}">
+            <label for="revoke-author" th:text="#{grants.author.label}">Session ID (vendor:session)</label>
+            <input id="revoke-author" name="author" type="text" list="enrolled-authors-list" required autocomplete="off"
+                   th:value="${revokeGrantForm != null} ? ${revokeGrantForm.author()}">
           </div>
           <div class="form-field">
             <label for="revoke-project" th:text="#{grants.revoke.project}">Project (empty: all projects)</label>
             <select id="revoke-project" name="project">
               <option value="" th:text="#{common.allProjects}">All projects</option>
-              <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.id()}" th:selected="${revokeGrantForm != null and p.id() == revokeGrantForm.project()}">p1</option>
+              <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.id()}"
+                      th:selected="${revokeGrantForm != null and p.id() == revokeGrantForm.project()}">p1</option>
             </select>
           </div>
           <div class="form-field">
             <label for="revoke-scope" th:text="#{grants.revoke.scope}">Scope (needs a project; empty: all scopes)</label>
             <select id="revoke-scope" name="scope">
               <option value="" th:text="#{common.any}">Any</option>
-              <option th:each="s : ${scopes}" th:value="${s.token()}" th:text="${s.token()}" th:selected="${revokeGrantForm != null and s.token() == revokeGrantForm.scope()}">issue</option>
+              <option th:each="sc : ${scopes}" th:value="${sc.token()}" th:text="${sc.token()}"
+                      th:selected="${revokeGrantForm != null and sc.token() == revokeGrantForm.scope()}">issue</option>
             </select>
           </div>
         </div>
-        <div class="form-actions">
-          <button type="submit" class="danger" th:text="#{grants.revoke.submit}">Revoke</button>
+        <div class="modal-footer">
+          <th:block th:replace="~{fragments :: approveHint}"></th:block>
+          <div class="modal-footer-actions">
+            <button type="button" class="secondary" data-modal-close th:text="#{common.cancel}">Cancel</button>
+            <button type="submit" class="danger" th:text="#{grants.confirm.revokeSubmit}">Confirm revoke</button>
+          </div>
         </div>
       </form>
-    </section>
-  </div>
+    </div>
+  </dialog>
 
-  <!-- TAB 2: Bearer Session Tokens -->
-  <div id="panel-tokens" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-tokens">
-    <section aria-labelledby="tokens-title">
-      <div th:if="${!#lists.isEmpty(tokens)}" class="table-wrap">
-        <table>
-          <caption class="sr-only" th:text="#{tokens.title}">Bearer session tokens</caption>
-          <thead>
-            <tr>
-              <th scope="col" th:text="#{col.id}">ID</th>
-              <th scope="col" th:text="#{grants.author}">Author</th>
-              <th scope="col" th:text="#{tokens.prefix}">Prefix</th>
-              <th scope="col" th:text="#{tokens.issuedAt}">Issued</th>
-              <th scope="col" th:text="#{grants.expiresAt}">Expires</th>
-              <th scope="col" th:text="#{grants.note}">Note</th>
-              <th scope="col" th:text="#{common.actions}">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr th:each="t : ${tokens}">
-              <td class="num" th:text="${t.id()}">1</td>
-              <td class="code" th:text="${t.authorId().value()}">agent:a</td>
-              <td><code th:text="${t.tokenPrefix()}">lgt_abc</code></td>
-              <td class="num"><time th:replace="~{fragments :: time(${t.issuedAt()})}">t</time></td>
-              <td class="num"><time th:replace="~{fragments :: time(${t.expiresAt()})}">t</time><span th:if="${t.expiresAt() == null}" class="muted" th:text="#{grants.never}">never</span></td>
-              <td th:text="${t.note() != null} ? ${t.note()} : #{common.noneValue}">note</td>
-              <td class="cell-actions">
-                <button type="button" class="secondary btn-sm"
-                        data-prefill-form="revoke-token"
-                        th:attr="data-token-id=${t.id()},data-toast=#{grants.filled}"
-                        th:text="#{grants.prefill.revokeToken}">Fill revoke</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+  <!-- MODAL 6: Close Registered Session Key (POST /grants/keys/revoke) -->
+  <dialog id="modal-revoke-key" class="modal-dialog modal-dialog-sm modal-dialog-danger"
+          th:attr="data-open-on-load=${keyRevokeForm != null}"
+          aria-labelledby="modal-revoke-key-title">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <h2 id="modal-revoke-key-title" th:text="#{grants.modal.revokeKeyTitle}">Close session key</h2>
+        <p class="hint" th:text="#{keys.revoke.inlineConfirm}">Close this key? Signed writes will stop; grants remain.</p>
       </div>
-      <div th:if="${#lists.isEmpty(tokens)}" class="empty-state">
-        <p class="empty-state-title" th:text="#{tokens.none}">No active bearer session token.</p>
+      <button type="button" class="ghost btn-sm modal-close" data-modal-close th:attr="aria-label=#{common.close}">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M18 6 6 18M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div th:if="${keyRevokeForm != null and formErrorDetail != null}" class="alert alert-danger" role="alert">
+        <div class="alert-title" th:text="#{form.errorTitle}">Could not save the form</div>
+        <p th:text="${formErrorDetail}">Validation failed.</p>
+      </div>
+      <p class="alert alert-danger modal-status" data-modal-status role="alert" tabindex="-1" hidden></p>
+
+      <div class="modal-summary-box is-danger">
+        <dl class="facts">
+          <dt th:text="#{grants.author}">Session</dt>
+          <dd class="code" id="revoke-key-author-label" th:text="${keyRevokeForm != null ? keyRevokeForm.author() : '—'}">—</dd>
+          <dt th:text="#{keys.fingerprint}">Fingerprint</dt>
+          <dd class="code fingerprint" id="revoke-key-fp-label" th:text="${keyRevokeForm != null ? keyRevokeForm.fingerprint() : '—'}">—</dd>
+        </dl>
       </div>
 
-      <div class="grid-2">
-        <section class="card">
-          <div class="card-header">
-            <h2 id="tokens-title" th:text="#{tokens.issue}">Issue a bearer session token</h2>
-            <th:block th:replace="~{fragments :: approveHint}"></th:block>
-          </div>
-          <form method="post" th:action="@{/grants/tokens}" data-approve class="form-wide">
-            <div class="form-field">
-              <label for="token-author" th:text="#{grants.author.label}">Author</label>
-              <input id="token-author" name="author" type="text" required autocomplete="off" th:value="${tokenIssueForm != null} ? ${tokenIssueForm.author()}">
-            </div>
-            <div class="form-field">
-              <label for="token-expires" th:text="#{grants.expires.label}">Expires</label>
-              <input id="token-expires" name="expiresAt" type="text" autocomplete="off" th:value="${tokenIssueForm != null} ? ${tokenIssueForm.expiresAt()}">
-              <div class="preset-row">
-                <button type="button" class="secondary btn-sm" data-expiry-target="token-expires" data-expiry-days="7" th:text="#{grants.expiry.7d}">+7d</button>
-                <button type="button" class="secondary btn-sm" data-expiry-target="token-expires" data-expiry-days="30" th:text="#{grants.expiry.30d}">+30d</button>
-                <button type="button" class="secondary btn-sm" data-expiry-target="token-expires" data-expiry-days="90" th:text="#{grants.expiry.90d}">+90d</button>
-                <button type="button" class="ghost btn-sm" data-expiry-target="token-expires" data-expiry-days="" th:text="#{grants.expiry.never}">Never</button>
-              </div>
-            </div>
-            <div class="form-field">
-              <label for="token-note" th:text="#{grants.note}">Note</label>
-              <input id="token-note" name="note" type="text" maxlength="500" autocomplete="off" th:value="${tokenIssueForm != null} ? ${tokenIssueForm.note()}">
-            </div>
-            <div class="form-actions">
-              <button type="submit" th:text="#{tokens.issue.submit}">Issue token</button>
-            </div>
-          </form>
-        </section>
-
-        <section class="card card-danger">
-          <div class="card-header">
-            <h2 th:text="#{tokens.revoke}">Revoke a bearer session token</h2>
-            <th:block th:replace="~{fragments :: approveHint}"></th:block>
-          </div>
-          <form method="post" th:action="@{/grants/tokens/revoke}" data-approve class="form-wide">
-            <div class="form-field">
-              <label for="token-revoke-id" th:text="#{tokens.revoke.id}">Token id</label>
-              <input id="token-revoke-id" name="id" type="number" min="1" required autocomplete="off" th:value="${tokenRevokeForm != null} ? ${tokenRevokeForm.id()}">
-            </div>
-            <div class="form-actions">
-              <button type="submit" class="danger" th:text="#{tokens.revoke.submit}">Revoke token</button>
-            </div>
-          </form>
-        </section>
-      </div>
-    </section>
-  </div>
-
-  <!-- TAB 3: Registered Session Keys -->
-  <div id="panel-keys" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-keys">
-    <section aria-labelledby="keys-title">
-      <div th:if="${!#lists.isEmpty(keys)}" class="table-wrap">
-        <table>
-          <caption class="sr-only" th:text="#{keys.title}">Registered session keys</caption>
-          <thead>
-            <tr>
-              <th scope="col" th:text="#{grants.author}">Author</th>
-              <th scope="col" th:text="#{keys.fingerprint}">Fingerprint</th>
-              <th scope="col" th:text="#{grants.key.registeredAt}">registered at</th>
-              <th scope="col" th:text="#{common.actions}">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr th:each="k : ${keys}">
-              <td class="code" th:text="${k.authorId().value()}">agent:a</td>
-              <td>
-                <span class="cell-code">
-                  <code class="fingerprint" th:text="${k.fingerprint()}">0000</code>
-                  <button type="button" class="ghost btn-sm" th:attr="data-copy=${k.fingerprint()}" th:text="#{common.copy}">Copy</button>
-                </span>
-              </td>
-              <td class="num"><time th:replace="~{fragments :: time(${k.registeredAt()})}">t</time></td>
-              <td class="cell-actions">
-                <button type="button" class="secondary btn-sm"
-                        data-prefill-form="revoke-key"
-                        th:attr="data-author=${k.authorId().value()},data-fingerprint=${k.fingerprint()},data-toast=#{grants.filled}"
-                        th:text="#{grants.prefill.revokeKey}">Fill close</button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div th:if="${#lists.isEmpty(keys)}" class="empty-state">
-        <p class="empty-state-title" th:text="#{keys.none}">No live key.</p>
-      </div>
-
-      <section class="card card-danger">
-        <div class="card-header">
-          <h2 id="keys-title" th:text="#{keys.revoke.submit}">Close the key</h2>
+      <form method="post" th:action="@{/grants/keys/revoke}" data-approve class="form-wide">
+        <input type="hidden" name="author" id="key-revoke-author" th:value="${keyRevokeForm != null} ? ${keyRevokeForm.author()}">
+        <input type="hidden" name="fingerprint" id="key-revoke-fingerprint" th:value="${keyRevokeForm != null} ? ${keyRevokeForm.fingerprint()}">
+        <div class="modal-footer">
           <th:block th:replace="~{fragments :: approveHint}"></th:block>
-        </div>
-        <p class="hint" th:text="#{keys.revoke.help}">Closing a key ...</p>
-        <form method="post" th:action="@{/grants/keys/revoke}" data-approve class="form-wide">
-          <div class="form-grid">
-            <div class="form-field">
-              <label for="key-revoke-author" th:text="#{grants.author.label}">Author</label>
-              <input id="key-revoke-author" name="author" type="text" required autocomplete="off" th:value="${keyRevokeForm != null} ? ${keyRevokeForm.author()}">
-            </div>
-            <div class="form-field">
-              <label for="key-revoke-fingerprint" th:text="#{keys.revoke.fingerprint}">Fingerprint of the key to close</label>
-              <input id="key-revoke-fingerprint" name="fingerprint" type="text" required autocomplete="off" spellcheck="false" th:value="${keyRevokeForm != null} ? ${keyRevokeForm.fingerprint()}">
-            </div>
-          </div>
-          <div class="form-actions">
+          <div class="modal-footer-actions">
+            <button type="button" class="secondary" data-modal-close th:text="#{common.cancel}">Cancel</button>
             <button type="submit" class="danger" th:text="#{keys.revoke.submit}">Close the key</button>
           </div>
-        </form>
-      </section>
-    </section>
-  </div>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- MODAL 7: Revoke Bearer Session Token (POST /grants/tokens/revoke) -->
+  <dialog id="modal-revoke-token" class="modal-dialog modal-dialog-sm modal-dialog-danger"
+          th:attr="data-open-on-load=${tokenRevokeForm != null}"
+          aria-labelledby="modal-revoke-token-title">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <h2 id="modal-revoke-token-title" th:text="#{grants.modal.revokeTokenTitle}">Revoke bearer token</h2>
+        <p class="hint" th:text="#{grants.modal.revokeTokenHelp}">Revoking this token immediately blocks HTTP Bearer requests using it.</p>
+      </div>
+      <button type="button" class="ghost btn-sm modal-close" data-modal-close th:attr="aria-label=#{common.close}">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M18 6 6 18M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div th:if="${tokenRevokeForm != null and formErrorDetail != null}" class="alert alert-danger" role="alert">
+        <div class="alert-title" th:text="#{form.errorTitle}">Could not save the form</div>
+        <p th:text="${formErrorDetail}">Validation failed.</p>
+      </div>
+      <p class="alert alert-danger modal-status" data-modal-status role="alert" tabindex="-1" hidden></p>
+
+      <div class="modal-summary-box is-danger">
+        <dl class="facts">
+          <dt th:text="#{grants.author}">Session</dt>
+          <dd class="code" id="revoke-token-author-label">—</dd>
+          <dt th:text="#{tokens.revoke.id}">Token id</dt>
+          <dd class="num" id="revoke-token-id-label" th:text="${tokenRevokeForm != null ? tokenRevokeForm.id() : '—'}">—</dd>
+          <dt th:text="#{tokens.prefix}">Prefix</dt>
+          <dd class="code" id="revoke-token-prefix-label">—</dd>
+        </dl>
+      </div>
+
+      <form method="post" th:action="@{/grants/tokens/revoke}" data-approve class="form-wide">
+        <input type="hidden" name="id" id="token-revoke-id" th:value="${tokenRevokeForm != null} ? ${tokenRevokeForm.id()}">
+        <div class="modal-footer">
+          <th:block th:replace="~{fragments :: approveHint}"></th:block>
+          <div class="modal-footer-actions">
+            <button type="button" class="secondary" data-modal-close th:text="#{common.cancel}">Cancel</button>
+            <button type="submit" class="danger" th:text="#{tokens.revoke.submit}">Revoke token</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </dialog>
 </main>
 <th:block th:replace="~{fragments :: footer}"></th:block>
 </body>

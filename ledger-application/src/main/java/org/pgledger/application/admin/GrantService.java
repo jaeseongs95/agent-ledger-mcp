@@ -5,11 +5,16 @@ package org.pgledger.application.admin;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.pgledger.application.admin.SessionKeyService.RegisterCommand;
+import org.pgledger.application.admin.SessionTokenService.IssueCommand;
+import org.pgledger.application.admin.SessionTokenService.IssuedToken;
 import org.pgledger.application.gate.ProjectPinner;
 import org.pgledger.database.repository.Counter;
 import org.pgledger.database.repository.GrantStateRepository;
@@ -59,11 +64,24 @@ public class GrantService {
     public record RevokeCommand(String author, String project, String scope) {
     }
 
+    /** Desired scopes for one author on one project; scopes not listed are revoked and newly listed ones are issued. */
+    public record SyncCommand(String author, String project, List<String> scopes, String expiresAt, String note) {
+    }
+
+    /** How many scopes were added and revoked during one {@link #syncProjectScopes} call. */
+    public record SyncResult(int added, int revoked) {
+    }
+
+    /** Result of issuing a bearer session token together with optional initial project scopes in one transaction. */
+    public record IssuedTokenWithGrants(IssuedToken token, String project, List<String> scopes) {
+    }
+
     private final GrantStateRepository state;
     private final SessionGrantRepository grants;
     private final SessionKeyStateRepository keys;
     private final SessionTokenStateRepository tokens;
     private final SessionKeyService sessionKeys;
+    private final SessionTokenService sessionTokens;
     private final ProjectRepository projects;
     private final ProjectPinner projectPinner;
     private final IdAllocator ids;
@@ -71,12 +89,14 @@ public class GrantService {
     private final Clock clock;
 
     public GrantService(GrantStateRepository state, SessionGrantRepository grants, SessionKeyStateRepository keys,
-            SessionTokenStateRepository tokens, SessionKeyService sessionKeys, ProjectRepository projects,
-            ProjectPinner projectPinner, IdAllocator ids, OwnerAuditWriter audit, Clock clock) {
+            SessionTokenStateRepository tokens, SessionKeyService sessionKeys, SessionTokenService sessionTokens,
+            ProjectRepository projects, ProjectPinner projectPinner, IdAllocator ids, OwnerAuditWriter audit,
+            Clock clock) {
         this.state = state;
         this.keys = keys;
         this.tokens = tokens;
         this.sessionKeys = sessionKeys;
+        this.sessionTokens = sessionTokens;
         this.grants = grants;
         this.projects = projects;
         this.projectPinner = projectPinner;
@@ -219,6 +239,100 @@ public class GrantService {
     /** Revokes the matching live grants, records who did it in the owner's audit trail, and returns how many. */
     public int revoke(RevokeCommand command, OwnerIdentity actor) {
         return revokeAll(command, actor);
+    }
+
+    /**
+     * Synchronizes an author's live scopes on a single project to match {@code command.scopes()} in one transaction.
+     * Unchanged live scopes keep their existing rows; removed scopes are revoked and newly requested scopes are issued
+     * (requiring a live key or bearer token only when adding scopes). Lock order matches {@link #insertGrants}: project
+     * row first, then {@code session_grant} rows in {@link LockOrder#SCOPE}, then counter allocation and audit rows.
+     */
+    public SyncResult syncProjectScopes(SyncCommand command, OwnerIdentity actor) {
+        AuthorId author = Authors.of(command.author());
+        ProjectId project = ProjectId.of(command.project());
+        if (!projects.existsById(project)) {
+            throw new LookupException(LookupCode.NOT_FOUND, List.of("project", project.value()));
+        }
+        Set<Scope> desired = new LinkedHashSet<>();
+        if (command.scopes() != null) {
+            command.scopes().forEach(token -> desired.add(Tokens.parse("scopes", token, Scope.values())));
+        }
+        Instant expiresAt = command.expiresAt() == null || command.expiresAt().isBlank() ? null
+                : UtcInstant.parse("expires_at", command.expiresAt()).value();
+        Instant now = clock.instant();
+
+        projectPinner.pin(project);
+        Map<Scope, SessionGrant> current = new LinkedHashMap<>();
+        for (SessionGrant liveGrant : state.findLive(author, now)) {
+            if (Objects.equals(project, liveGrant.projectId())) {
+                current.put(liveGrant.scope(), liveGrant);
+            }
+        }
+
+        List<SessionGrant> toRevoke = current.entrySet().stream()
+                .filter(entry -> !desired.contains(entry.getKey()))
+                .sorted(Map.Entry.comparingByKey(LockOrder.SCOPE))
+                .map(Map.Entry::getValue)
+                .toList();
+        List<Scope> toAdd = desired.stream()
+                .filter(scope -> !current.containsKey(scope))
+                .toList();
+
+        if (!toAdd.isEmpty()) {
+            requireLiveKey(author, now);
+        }
+
+        int revokedCount = 0;
+        for (SessionGrant existing : toRevoke) {
+            state.revoke(existing.id(), now);
+            revokedCount++;
+        }
+
+        List<Long> issuedIds = new ArrayList<>(toAdd.size());
+        if (!toAdd.isEmpty()) {
+            for (Scope scope : toAdd.stream().sorted(LockOrder.SCOPE).toList()) {
+                closeLive(author, project, scope, now);
+            }
+            for (Scope scope : toAdd) {
+                issuedIds.add(insertGrant(author, project, scope, now, expiresAt, command.note()));
+            }
+        }
+
+        if (revokedCount > 0) {
+            String revokedTokens = toRevoke.stream().map(g -> g.scope().token()).collect(Collectors.joining(","));
+            audit.record(actor, OwnerAction.GRANT_REVOKED, author.value() + "|" + project.value(),
+                    "scope=" + revokedTokens + " revoked=" + revokedCount);
+        }
+        if (!issuedIds.isEmpty()) {
+            Plan addedPlan = new Plan(author, project, toAdd, expiresAt, command.note(), now);
+            recordIssued(addedPlan, issuedIds, actor);
+        }
+        return new SyncResult(issuedIds.size(), revokedCount);
+    }
+
+    /**
+     * Issues a bearer session token and, when {@code scopes} is non-empty, also grants those initial scopes on
+     * {@code project} in the same transaction. Any validation or lookup failure rolls back the token as well so no
+     * half-configured bearer token is created.
+     */
+    public IssuedTokenWithGrants issueTokenWithOptionalGrants(IssueCommand tokenCommand, String project,
+            List<String> scopes, OwnerIdentity actor) {
+        boolean hasProject = project != null && !project.isBlank();
+        boolean hasScopes = scopes != null && !scopes.isEmpty();
+        if (hasScopes && !hasProject) {
+            throw ValidationException.invalid("project", ValidationReason.REQUIRED);
+        }
+        Plan initialPlan = hasScopes
+                ? plan(new GrantCommand(tokenCommand.author(), project, scopes, tokenCommand.expiresAt(),
+                        tokenCommand.note()))
+                : null;
+        IssuedToken issued = sessionTokens.issue(tokenCommand, actor);
+        if (initialPlan != null) {
+            issueAll(initialPlan, actor);
+            List<String> grantedTokens = initialPlan.scopes().stream().map(Scope::token).toList();
+            return new IssuedTokenWithGrants(issued, initialPlan.project().value(), grantedTokens);
+        }
+        return new IssuedTokenWithGrants(issued, null, List.of());
     }
 
     private int revokeAll(RevokeCommand command, OwnerIdentity actor) {
