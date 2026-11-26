@@ -23,14 +23,23 @@ class SigningTest {
 
     private static final Map<Client, List<Naming>> NAMINGS = Map.of(
             Client.CLAUDE, List.of(new Naming("mcp__ledger__ledger_%s", "ledger"), new Naming("mcp__srv__ledger_%s", "srv"),
-                    new Naming("mcp__ledger__ledger_ledger_%s", "ledger"), new Naming("mcp__srv-1__srv-1_ledger_%s", "srv-1")),
+                    new Naming("mcp__ledger__ledger_ledger_%s", "ledger"), new Naming("mcp__srv-1__srv-1_ledger_%s", "srv-1"),
+                    new Naming("mcp__veridger__ledger_ledger_%s", "veridger"),
+                    new Naming("mcp__ledger__veridger_ledger_%s", "ledger")),
             Client.CODEX, List.of(new Naming("mcp__test__ledger_%s", "test"), new Naming("mcp__srv__ledger_%s", "srv"),
                     new Naming("mcp__test__test_ledger_%s", "test"),
+                    new Naming("mcp__veridger__ledger_ledger_%s", "veridger"),
+                    new Naming("mcp__portal__veridger_ledger_%s", "portal"),
                     new Naming("mcp__codex_apps__app_ledger_ledger_%s", "codex_apps.ledger"),
                     new Naming("mcp__codex_apps__app_my-app_ledger_%s", "codex_apps.my-app")),
             Client.ANTIGRAVITY, List.of(new Naming("mcp:test:ledger_%s", "test"), new Naming("mcp:test/ledger_%s", "test"),
                     new Naming("mcp:test_ledger_%s", "test"), new Naming("mcp:ledger_ledger_%s", "ledger"),
-                    new Naming("mcp:test:test_ledger_%s", "test")));
+                    new Naming("mcp:test:test_ledger_%s", "test"),
+                    new Naming("mcp:veridger:ledger_ledger_%s", "veridger"),
+                    new Naming("mcp:veridger/ledger_ledger_%s", "veridger"),
+                    new Naming("mcp:veridger_ledger_ledger_%s", "veridger"),
+                    new Naming("mcp:my_server_ledger_%s", "my_server"),
+                    new Naming("mcp:ledger:veridger_ledger_%s", "ledger")));
 
     static Stream<Arguments> namings() {
         return Hosts.ALL.stream().flatMap(host -> NAMINGS.get(host.client()).stream().flatMap(naming ->
@@ -51,13 +60,19 @@ class SigningTest {
 
     private static final Map<Client, List<Naming>> ARTIFACT_NAMINGS = Map.of(
             Client.CLAUDE, List.of(new Naming("mcp__ledger__%s", "ledger"), new Naming("mcp__srv__%s", "srv"),
-                    new Naming("mcp__ledger__ledger_%s", "ledger"), new Naming("mcp__ssh-test__ssh-test_%s", "ssh-test")),
+                    new Naming("mcp__ledger__ledger_%s", "ledger"), new Naming("mcp__ssh-test__ssh-test_%s", "ssh-test"),
+                    new Naming("mcp__veridger__ledger_%s", "veridger"),
+                    new Naming("mcp__ledger__veridger_%s", "ledger")),
             Client.CODEX, List.of(new Naming("mcp__test__%s", "test"), new Naming("mcp__test__test_%s", "test"),
+                    new Naming("mcp__veridger__ledger_%s", "veridger"),
+                    new Naming("mcp__portal__veridger_%s", "portal"),
                     new Naming("mcp__codex_apps__app_ledger_%s", "codex_apps.ledger"),
                     new Naming("mcp__codex_apps__app_my-app_%s", "codex_apps.my-app")),
             Client.ANTIGRAVITY, List.of(new Naming("mcp:test:%s", "test"), new Naming("mcp:test/%s", "test"),
                     new Naming("mcp:test_%s", "test"), new Naming("mcp:test:test_%s", "test"),
-                    new Naming("mcp:ssh-test:ssh-test_%s", "ssh-test")));
+                    new Naming("mcp:ssh-test:ssh-test_%s", "ssh-test"),
+                    new Naming("mcp:veridger:ledger_%s", "veridger"),
+                    new Naming("mcp:ledger:veridger_%s", "ledger")));
 
     static Stream<Arguments> artifactNamings() {
         return Hosts.ALL.stream().flatMap(host -> ARTIFACT_NAMINGS.get(host.client()).stream().flatMap(naming ->
@@ -104,7 +119,8 @@ class SigningTest {
         assertThat(run.document()).isEqualTo(host.allowed(input, stamp.token()));
     }
 
-    private static final List<String> WRAPPER_TOOL_NAMES = List.of("ledger_%s", "srv_ledger_%s");
+    private static final List<String> WRAPPER_TOOL_NAMES = List.of(
+            "ledger_%s", "srv_ledger_%s", "ledger_ledger_%s", "veridger_ledger_%s");
 
     static Stream<Arguments> wrapperNamings() {
         return WRAPPER_TOOL_NAMES.stream().flatMap(template -> Hosts.WRITE_OPS.stream()

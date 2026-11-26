@@ -6,7 +6,7 @@
 
 ## 동작
 
-`hooks/hooks.json`의 `PreToolUse` 훅은 장부 쓰기 도구를 호출하기 전에 `java -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:-UsePerfData -Xlog:disable -jar "${CLAUDE_PLUGIN_ROOT}/lib/ledger-client-hook.jar" claude`를 실행합니다. 훅은 쓰기 도구 13종(`issue_save`, `spec_save`, `task_save`, `criterion_save`, `transition`, `record_deliverable`, `record_case`, `link`, `correct`, `batch`, `review`, `review_correct`, `whoami`)과 첨부 도구 5종(`artifact_begin`, `artifact_chunk`, `artifact_finish`, `artifact_status`, `artifact_read`)만 처리하며, 도구 이름은 `mcp__<server>__<tool>` 또는 `mcp__<server>__<server>_<tool>`이고 `<tool>`은 `ledger_<op>` 또는 `artifact_<op>`입니다. 두 번째 형식은 게이트웨이가 상위 서버의 이름을 도구 앞에 붙이는 경우이며, 접두어는 서버 이름과 정확히 같아야 합니다. 읽기 도구와 그 밖의 모든 도구는 변경 없이 통과합니다.
+`hooks/hooks.json`의 `PreToolUse` 훅은 장부 쓰기 도구를 호출하기 전에 `java -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:-UsePerfData -Xlog:disable -jar "${CLAUDE_PLUGIN_ROOT}/lib/ledger-client-hook.jar" claude`를 실행합니다. 훅은 쓰기 도구 13종(`issue_save`, `spec_save`, `task_save`, `criterion_save`, `transition`, `record_deliverable`, `record_case`, `link`, `correct`, `batch`, `review`, `review_correct`, `whoami`)과 첨부 도구 5종(`artifact_begin`, `artifact_chunk`, `artifact_finish`, `artifact_status`, `artifact_read`)만 처리하며, 도구 이름은 `mcp__<server>__<tool>` 또는 `mcp__<server>__<prefix>_<tool>`이고 `<tool>`은 `ledger_<op>` 또는 `artifact_<op>`입니다. 두 번째 형식은 게이트웨이가 상위 서버의 이름을 도구 앞에 붙이는 경우이며, `<prefix>`는 `<server>`, `ledger`, `veridger` 중 하나여야 합니다. 읽기 도구와 그 밖의 모든 도구는 변경 없이 통과합니다.
 
 쓰기 및 첨부 호출에는 예약 인자 `_hostAttestation`을 `claude:<session_id>` 값으로 추가하고, 바뀐 입력을 `updatedInput`으로 돌려줍니다. 훅은 권한 결정을 내리지 않으므로 Claude Code의 권한 정책이 그대로 적용됩니다. 모델이 `_hostAttestation`을 직접 넣거나 호스트의 `session_id`가 올바르지 않으면 호출을 거부하며, JSON이 잘못되었으면 종료 코드 2로 호출을 막습니다.
 

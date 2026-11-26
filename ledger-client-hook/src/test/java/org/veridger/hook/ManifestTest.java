@@ -69,13 +69,22 @@ class ManifestTest {
      */
     private static Stream<String> names(Client client, String op) {
         return switch (client) {
-            case CLAUDE -> SERVERS.stream().flatMap(server -> Stream.of(
-                    "mcp__" + server + "__" + Hosts.canonical(op), "mcp__" + server + "__" + server + "_" + Hosts.canonical(op)));
-            case CODEX -> Stream.concat(SERVERS.stream().flatMap(server -> Stream.of(
-                    "mcp__" + server + "__" + Hosts.canonical(op), "mcp__" + server + "__" + server + "_" + Hosts.canonical(op))),
-                    Stream.of("mcp__codex_apps__app_ledger_" + Hosts.canonical(op)));
+            case CLAUDE -> Stream.concat(
+                    SERVERS.stream().flatMap(server -> Stream.of(
+                            "mcp__" + server + "__" + Hosts.canonical(op),
+                            "mcp__" + server + "__" + server + "_" + Hosts.canonical(op))),
+                    Stream.of("mcp__veridger__ledger_" + Hosts.canonical(op),
+                            "mcp__ledger__veridger_" + Hosts.canonical(op)));
+            case CODEX -> Stream.concat(
+                    SERVERS.stream().flatMap(server -> Stream.of(
+                            "mcp__" + server + "__" + Hosts.canonical(op),
+                            "mcp__" + server + "__" + server + "_" + Hosts.canonical(op))),
+                    Stream.of("mcp__veridger__ledger_" + Hosts.canonical(op),
+                            "mcp__ledger__veridger_" + Hosts.canonical(op),
+                            "mcp__codex_apps__app_ledger_" + Hosts.canonical(op)));
             case ANTIGRAVITY -> Stream.of("mcp:test:" + Hosts.canonical(op), "mcp:test/" + Hosts.canonical(op),
                     "mcp:test_" + Hosts.canonical(op), "mcp:ledger_" + Hosts.canonical(op),
+                    "mcp:veridger:ledger_" + Hosts.canonical(op), "mcp:ledger:veridger_" + Hosts.canonical(op),
                     "mcp:t0001sink_isolated-01:t0001sink_isolated-01_" + Hosts.canonical(op));
         };
     }
@@ -271,9 +280,9 @@ class ManifestTest {
 
     @ParameterizedTest
     @ValueSource(strings = { "claude/.claude-plugin/plugin.json", "codex/plugin.json", "antigravity/plugin.json" })
-    @DisplayName("FUP-CLI-03 the version of every plugin is the version of the release, 4.0.0")
+    @DisplayName("FUP-CLI-03 the version of every plugin is the version of the release, 4.0.1")
     void pluginVersionIsTheRelease(String file) throws IOException {
-        assertThat(read(file).path("version").stringValue()).isEqualTo("4.0.0");
+        assertThat(read(file).path("version").stringValue()).isEqualTo("4.0.1");
     }
 
     @ParameterizedTest

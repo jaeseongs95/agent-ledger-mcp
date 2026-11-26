@@ -52,12 +52,16 @@ class ToolSelectionTest {
         return Stream.of(
                 Arguments.of("mcp:test:ledger_issue_save", "test"), Arguments.of("mcp:test/ledger_issue_save", "test"),
                 Arguments.of("mcp:test_ledger_issue_save", "test"), Arguments.of("mcp:ledger_ledger_issue_save", "ledger"),
-                Arguments.of("mcp:test:test_ledger_issue_save", "test"), Arguments.of("mcp:my.server/ledger_issue_save", "my.server"));
+                Arguments.of("mcp:test:test_ledger_issue_save", "test"), Arguments.of("mcp:my.server/ledger_issue_save", "my.server"),
+                Arguments.of("mcp:veridger:ledger_ledger_issue_save", "veridger"),
+                Arguments.of("mcp:veridger_ledger_ledger_issue_save", "veridger"),
+                Arguments.of("mcp:my_server_ledger_issue_save", "my_server"),
+                Arguments.of("mcp:ledger:veridger_ledger_issue_save", "ledger"));
     }
 
     @ParameterizedTest
     @MethodSource("antigravityNames")
-    @DisplayName("HK-011 Antigravity MCP names mcp:<server><:|/|_>[<server>_]ledger_issue_save are stamped, for the server in the name")
+    @DisplayName("HK-011 Antigravity MCP names mcp:<server><:|/|_>[<prefix>_]ledger_issue_save (prefix = server, ledger, or veridger) are stamped")
     void antigravityNameCandidatesAreStamped(String name, String server, HookFixture fixture) {
         Run run = fixture.runClean(AGY, AGY.event(name, EMPTY));
         Attestations.Stamp stamp = fixture.stampCarrier(AGY.author(HookFixture.HOST_ID), "issue_save", EMPTY,
@@ -67,8 +71,9 @@ class ToolSelectionTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"mcp:xledger_issue_save", "mcp:test:ledger_get", "ledger_issue_save", "mcp:ledger_issue_save",
-            "mcp:test:other_ledger_issue_save", "mcp:a b:ledger_issue_save", "mcp::ledger_issue_save", "mcp:test:ledger_save"})
-    @DisplayName("HK-011 Antigravity names that are no ledger write tool, name no server, or have a prefix other than the server are not touched")
+            "mcp:test:other_ledger_issue_save", "mcp:veridger:other_ledger_issue_save", "mcp:a b:ledger_issue_save",
+            "mcp::ledger_issue_save", "mcp:test:ledger_save"})
+    @DisplayName("HK-011 Antigravity names that are no ledger write tool, name no server, or have an unrecognised prefix are not touched")
     void antigravityOtherNamesAreNotTouched(String name, HookFixture fixture) {
         Run run = fixture.runClean(AGY, AGY.event(name, EMPTY));
         assertThat(run.document()).isEqualTo(AGY.untouched());
@@ -89,6 +94,7 @@ class ToolSelectionTest {
                 Arguments.argumentSet("claude hyphenated", new ClaudeHost(), "mcp__ledger__artifact-begin"),
                 Arguments.argumentSet("claude codex apps namespace", new ClaudeHost(), "mcp__codex_apps__app_ledger_artifact_begin"),
                 Arguments.argumentSet("codex look-alike prefix", CODEX, "mcp__test__other_artifact_begin"),
+                Arguments.argumentSet("codex unrelated upstream on portal", CODEX, "mcp__veridger__sennard_artifact_begin"),
                 Arguments.argumentSet("codex no server", CODEX, "mcp__artifact_chunk"),
                 Arguments.argumentSet("codex another tool", CODEX, "mcp__test__artifact_delete"),
                 Arguments.argumentSet("codex a suffix", CODEX, "mcp__test__artifact_read_extra"),
@@ -96,6 +102,7 @@ class ToolSelectionTest {
                 Arguments.argumentSet("codex apps: another tool", CODEX, "mcp__codex_apps__app_ledger_artifact_delete"),
                 Arguments.argumentSet("codex apps: another pseudo server", CODEX, "mcp__other__app_ledger_artifact_begin"),
                 Arguments.argumentSet("antigravity look-alike prefix", AGY, "mcp:test:other_artifact_begin"),
+                Arguments.argumentSet("antigravity unrelated upstream on portal", AGY, "mcp:veridger:sennard_artifact_begin"),
                 Arguments.argumentSet("antigravity no server", AGY, "mcp:artifact_begin"),
                 Arguments.argumentSet("antigravity another tool", AGY, "mcp:test:artifact_delete"),
                 Arguments.argumentSet("antigravity a suffix", AGY, "mcp:test:artifact_finish_extra"));
@@ -110,8 +117,8 @@ class ToolSelectionTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"other_artifact_begin", "artifact_delete", "artifact_begin_extra", "artifact-begin", "ledger_artifact_begin"})
-    @DisplayName("HK-012 ATA-021 call_mcp_tool: a ToolName that is no attachment tool, or has a prefix other than the ServerName, passes, even with a reserved key")
+    @ValueSource(strings = {"other_artifact_begin", "sennard_artifact_begin", "artifact_delete", "artifact_begin_extra", "artifact-begin"})
+    @DisplayName("HK-012 ATA-021 call_mcp_tool: a ToolName that is no attachment tool, or has an unrecognised prefix, passes, even with a reserved key")
     void wrapperOtherArtifactToolPasses(String toolName, HookFixture fixture) {
         Run run = fixture.runClean(AGY, AGY.wrapperEvent(envelope(toolName, Map.of(Json.RESERVED_KEY, Json.of("null")))));
         assertThat(run.document()).isEqualTo(AGY.untouched());
@@ -132,9 +139,9 @@ class ToolSelectionTest {
 
     @ParameterizedTest
     @MethodSource("artifactOps")
-    @DisplayName("HK-012 ATA-021 call_mcp_tool with Arguments as an object: the five attachment tools are stamped for their own name, plain and with the ServerName as prefix, and only Arguments is overwritten")
+    @DisplayName("HK-012 ATA-021 call_mcp_tool with Arguments as an object: the five attachment tools are stamped plain, with ServerName prefix, or with canonical gateway prefix (ledger/veridger)")
     void wrapperArtifactToolsAreStamped(String op, HookFixture fixture) {
-        for (String toolName : List.of(op, "t0001sink_" + op)) {
+        for (String toolName : List.of(op, "t0001sink_" + op, "ledger_" + op, "veridger_" + op)) {
             Run run = fixture.runClean(AGY, AGY.wrapperEvent(envelope(toolName, INPUT)));
             Attestations.Stamp stamp = fixture.stampCarrier(AGY.author(ID), op, INPUT, AGY.echoed(run));
             assertThat(run.document()).as(toolName).isEqualTo(AGY.allowedWrapped(Json.stamped(INPUT, stamp.token())));
@@ -202,6 +209,31 @@ class ToolSelectionTest {
             "mcp__other__app_ledger_ledger_issue_save", "mcp__codex_apps__ledger_ledger_get", "mcp__codex_apps__apps_ledger_ledger_issue_save"})
     @DisplayName("HK-013 Codex Apps namespace: a non-ledger or read operation, a malformed app segment, or another pseudo server is not touched")
     void codexAppsNamespaceOtherNamesAreUntouched(String name, HookFixture fixture) {
+        Run run = fixture.runClean(CODEX, CODEX.event(name, EMPTY));
+        assertThat(run.document()).isEqualTo(CODEX.untouched());
+    }
+
+    @ParameterizedTest
+    @MethodSource("writeOps")
+    @DisplayName("HK-013 Codex gateway name with mismatched server alias (mcp__veridger__ledger_ledger_<op> and mcp__portal__veridger_ledger_<op>): all write tools are stamped and deny reserved key")
+    void codexGatewayCanonicalPrefixIsStamped(String op, HookFixture fixture) {
+        JsonNode input = Json.tree(Map.of("marker", "portal"));
+        for (String toolName : List.of("mcp__veridger__ledger_ledger_" + op, "mcp__portal__veridger_ledger_" + op)) {
+            Run run = fixture.runClean(CODEX, CODEX.event(toolName, input));
+            Attestations.Stamp stamp = fixture.stamp(CODEX, op, input, run);
+            assertThat(run.document()).as(toolName).isEqualTo(CODEX.allowed(input, stamp.token()));
+
+            JsonNode forged = Json.tree(Map.of(Json.RESERVED_KEY, Json.of("null")));
+            Run denied = fixture.runClean(CODEX, CODEX.event(toolName, forged));
+            assertThat(denied.document()).as(toolName + " reserved key").isEqualTo(CODEX.denied(Refusal.RESERVED_FIELD));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"mcp__veridger__other_ledger_whoami", "mcp__veridger__other_ledger_issue_save",
+            "mcp__veridger__ledger_ledger_get", "mcp__veridger__ledger_ledger_issues"})
+    @DisplayName("HK-013 Codex gateway name: unrecognised upstream prefixes and gateway-prefixed read tools are untouched")
+    void codexGatewayUnrecognisedPrefixAndReadToolsUntouched(String name, HookFixture fixture) {
         Run run = fixture.runClean(CODEX, CODEX.event(name, EMPTY));
         assertThat(run.document()).isEqualTo(CODEX.untouched());
     }

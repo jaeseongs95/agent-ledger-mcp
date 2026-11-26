@@ -9,7 +9,7 @@ This directory is a Codex plugin. It stamps the host session author on the ledge
 `extensions.com.openai.hooks` of `plugin.json` points to `hooks/hooks.json`. Its `PreToolUse` hook runs `java -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:-UsePerfData -Xlog:disable -jar "${PLUGIN_ROOT}/lib/ledger-client-hook.jar" codex` before each call of a ledger write tool (on Windows: `cmd.exe /d /c java -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:-UsePerfData -Xlog:disable -jar "%PLUGIN_ROOT%/lib/ledger-client-hook.jar" codex`). The hook handles only the thirteen write tools (`issue_save`, `spec_save`, `task_save`, `criterion_save`, `transition`, `record_deliverable`, `record_case`, `link`, `correct`, `batch`, `review`, `review_correct` and `whoami`) and the five attachment tools (`artifact_begin`, `artifact_chunk`, `artifact_finish`, `artifact_status` and `artifact_read`). It stamps a call whose tool name is one of these forms, with `<tool>` being `ledger_<op>` or `artifact_<op>`:
 
 - `mcp__<server>__<tool>`
-- `mcp__<server>__<server>_<tool>`, where the prefix must equal the server name exactly
+- `mcp__<server>__<prefix>_<tool>`, where `<prefix>` is `<server>`, `ledger`, or `veridger` (used by a gateway that prefixes tools with its upstream name)
 - `mcp__codex_apps__app_<app>_<tool>`, the namespace of Codex Apps
 
 Read tools, unknown operations and names of any other shape pass unchanged.

@@ -3,7 +3,6 @@
 package org.veridger.hook;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -25,13 +24,14 @@ import tools.jackson.databind.JsonNode;
  * auto-approval, the host's permission policy stays in force. The host ignores a failing hook process, so
  * malformed input is denied explicitly with exit 0.
  *
- * <p>The tool names that are signed for:
+ * <p>The tool names that are stamped:
  * <ul>
- * <li>Direct: {@code mcp:<server><sep><tool>} or {@code mcp:<server><sep><server>_<tool>} with a separator of
- *     {@code :}, {@code /} or {@code _}; a name without a server ({@code mcp:ledger_issue_save}) names no audience and is not
- *     signed. The prefix before the tool must be exactly the server.
+ * <li>Direct: {@code mcp:<server><sep><tool>} or {@code mcp:<server><sep><prefix>_<tool>} with a separator of
+ *     {@code :}, {@code /} or {@code _}; a name without a server ({@code mcp:ledger_issue_save}) names no server and is
+ *     not stamped. The prefix before the tool must be the server itself or one of Veridger's canonical gateway prefixes
+ *     ({@code ledger} or {@code veridger}).
  * <li>{@code call_mcp_tool}: the {@code ServerName} of the envelope, and a {@code ToolName} of {@code <tool>} or
- *     {@code <ServerName>_<tool>}.
+ *     {@code <prefix>_<tool>} where {@code <prefix>} is {@code ServerName}, {@code ledger}, or {@code veridger}.
  * </ul>
  * The {@code <tool>} is {@code ledger_<op>} or one of the attachment tools {@code artifact_begin} ... {@code artifact_read};
  * it is one of the eighteen known ones, exactly.
@@ -45,10 +45,12 @@ record AntigravityDialect(JsonCodec codec) implements HostDialect {
     private static final String DIRECT_PREFIX = "mcp:";
     /** Group 1 is the server, group 2 the canonical tool name; compiled once. */
     private static final Pattern DIRECT_TOOL_NAME = Pattern.compile("^mcp:([" + McpToolName.SERVER_CHARACTERS + "]{1,"
-            + McpToolName.MAX_SERVER_LENGTH + "}?)[:/_](?:\\1_)?" + WriteTool.alternation() + "$");
+            + McpToolName.MAX_SERVER_LENGTH + "}?)[:/_](?:(?:\\1|" + McpToolName.gatewayPrefixAlternation() + ")_)?"
+            + WriteTool.alternation() + "$");
     /**
-     * Group 1 is the prefix, if the tool name has one, group 2 the canonical tool name; the prefix must be the {@code ServerName} of
-     * the envelope, which {@link #envelopeName} compares. Compiled once, not per call.
+     * Group 1 is the prefix, if the tool name has one, group 2 the canonical tool name; the prefix must be allowed for
+     * the {@code ServerName} of the envelope by {@link McpToolName#isAllowedGatewayPrefix}, which {@link #envelopeName}
+     * checks. Compiled once, not per call.
      */
     private static final Pattern ENVELOPE_TOOL_NAME = Pattern.compile("^(?:([" + McpToolName.SERVER_CHARACTERS + "]{1,"
             + McpToolName.MAX_SERVER_LENGTH + "})_)?" + WriteTool.alternation() + "$");
@@ -91,8 +93,8 @@ record AntigravityDialect(JsonCodec codec) implements HostDialect {
             return Optional.empty();
         }
         Matcher matcher = ENVELOPE_TOOL_NAME.matcher(toolName);
-        // no prefix, or exactly the ServerName: any other prefix is the name of another server's tool
-        if (!matcher.matches() || (matcher.group(1) != null && !Objects.equals(serverName, matcher.group(1)))) {
+        // no prefix, the ServerName itself, or a canonical Veridger gateway prefix (ledger/veridger)
+        if (!matcher.matches() || !McpToolName.isAllowedGatewayPrefix(serverName, matcher.group(1))) {
             return Optional.empty();
         }
         return McpToolName.ofName(serverName, matcher.group(2));
