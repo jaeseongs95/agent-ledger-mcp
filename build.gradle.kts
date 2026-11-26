@@ -14,7 +14,7 @@ plugins {
     alias(libs.plugins.license.report)
 }
 
-group = "org.agentledger"
+group = "org.veridger"
 version = "4.0.0"
 
 spotless {
@@ -50,7 +50,7 @@ abstract class VerifyThirdPartyNotices : DefaultTask() {
         val content = noticesFile.get().asFile.readText(Charsets.UTF_8)
         require(content.contains("AGPL-3.0-or-later")) { "THIRD_PARTY_NOTICES.md must state the project license AGPL-3.0-or-later" }
         val missing = runtimeGroups.get().sorted().filter { group ->
-            group != "org.agentledger" && !content.contains(group)
+            group != "org.veridger" && !content.contains(group)
         }
         if (missing.isNotEmpty()) {
             throw GradleException("THIRD_PARTY_NOTICES.md is missing runtime dependency groups: $missing")
@@ -160,7 +160,7 @@ abstract class JarPathProperty : CommandLineArgumentProvider {
 subprojects {
     apply(plugin = "java-library")
 
-    group = "org.agentledger"
+    group = "org.veridger"
     version = "4.0.0"
 
     val projectName = project.name

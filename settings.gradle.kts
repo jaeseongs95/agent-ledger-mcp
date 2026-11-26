@@ -1,4 +1,4 @@
-rootProject.name = "agent-ledger-mcp"
+rootProject.name = "veridger"
 
 dependencyResolutionManagement {
     repositories {

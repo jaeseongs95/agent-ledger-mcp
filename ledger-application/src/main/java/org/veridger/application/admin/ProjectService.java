@@ -1,0 +1,66 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package org.veridger.application.admin;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import java.util.List;
+import org.veridger.database.repository.ProjectRepository;
+import org.veridger.domain.error.ConflictCode;
+import org.veridger.domain.error.ConflictException;
+import org.veridger.domain.model.Project;
+import org.veridger.domain.rule.OwnerAction;
+import org.veridger.domain.value.AuthorId;
+import org.veridger.domain.value.OwnerIdentity;
+import org.veridger.domain.value.ProjectCode;
+import org.veridger.domain.value.ProjectId;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.validation.annotation.Validated;
+
+/**
+ * Projects, used by the admin web and the CLI. A new project is stamped {@code user:owner} and starts at 0; who added it
+ * is recorded in the audit trail of the owner (an audit row is written in the transaction of the insert).
+ */
+@Service
+@Transactional
+@Validated
+public class ProjectService {
+
+    /** A project to add: id, code (the prefix of its issue, spec, and task ids) and title. */
+    public record ProjectCommand(@NotNull(message = "{reason.REQUIRED}") String id,
+            @NotNull(message = "{reason.REQUIRED}") String code, String title) {
+    }
+
+    private final ProjectRepository projects;
+    private final OwnerAuditWriter audit;
+
+    public ProjectService(ProjectRepository projects, OwnerAuditWriter audit) {
+        this.projects = projects;
+        this.audit = audit;
+    }
+
+    public Project add(@Valid ProjectCommand command, OwnerIdentity actor) {
+        ProjectId id = ProjectId.of(command.id());
+        ProjectCode code = ProjectCode.of(command.code());
+        Project project = Project.open(id, code, command.title());
+        if (projects.existsById(id) || projects.findByCode(code).isPresent()) {
+            throw new ConflictException(ConflictCode.DUPLICATE_KEY, List.of("project " + id.value()));
+        }
+        Project added;
+        try {
+            added = ScopedValue.where(org.veridger.domain.context.ActorScope.CURRENT, AuthorId.OWNER)
+                    .call(() -> projects.insert(project));
+        } catch (DuplicateKeyException e) {
+            throw new ConflictException(ConflictCode.DUPLICATE_KEY, List.of("project " + id.value()), e);
+        }
+        audit.record(actor, OwnerAction.PROJECT_ADDED, id.value(), "code=" + code.value());
+        return added;
+    }
+
+    @Transactional(readOnly = true)
+    public List<Project> list() {
+        return projects.findAllByOrderByCode();
+    }
+}

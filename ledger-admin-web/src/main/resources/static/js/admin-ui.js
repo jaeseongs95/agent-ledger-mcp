@@ -5,7 +5,7 @@
 // grants tabs/scope matrix/expiry presets/key-block auto-fill, codes editor/state modals,
 // and progressive JSON diff rendering in history.
 (() => {
-  const THEME_KEY = "agentledger.theme";
+  const THEME_KEY = "veridger.theme";
   const toastRegion = document.getElementById("ui-toast");
 
   function showToast(message) {

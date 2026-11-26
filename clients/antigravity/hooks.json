@@ -1,5 +1,5 @@
 {
-  "agent-ledger-host-attestation": {
+  "veridger-host-attestation": {
     "PreToolUse": [
       {
         "matcher": "^(call_mcp_tool|mcp:[A-Za-z0-9._-]+[:/_](?:[A-Za-z0-9._-]+[:/_])?(?:ledger_(issue_save|spec_save|task_save|criterion_save|transition|record_deliverable|record_case|link|correct|batch|review|review_correct|whoami)|artifact_(begin|chunk|finish|status|read)))$",

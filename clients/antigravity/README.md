@@ -1,4 +1,4 @@
-# agent-ledger-mcp plugin for Antigravity
+# veridger plugin for Antigravity
 
 [한국어](README.ko.md)
 
@@ -38,8 +38,8 @@ To use the hook as a project hook, merge it into the named hook group of `<works
 The light client forwards the input of the host over the loopback to the resident program, `ledger-hook-resident.jar` in the same folder, and prints what that answers; the contract with the host is the one of the hook before: the host JSON on the standard input, only the answer on the standard output (no JVM and no log line), the exit codes, and what a failure means.
 
 - The first call starts the program when none runs (about one second); the later calls take about a tenth of a second. It keeps running after the call and ends by itself after 15 minutes without a call (`LEDGER_HOOK_RESIDENT_IDLE_TIMEOUT`, an ISO-8601 duration such as `PT30M`), or when you run `java -jar lib/ledger-client-hook.jar stop`.
-- It listens on `127.0.0.1` only. Every request must carry a secret that is new for every start and that lies only in the address file of its state folder, `~/.agent-ledger-mcp/resident/<id>/`; the folder and its files are owner-only. Its output is in `resident.log` of that folder.
-- It runs from a copy in `~/.agent-ledger-mcp/resident-runtime/<build>/`, so an update or the removal of the plugin is never blocked by a running program. A client of another build (an updated plugin) replaces the running program.
+- It listens on `127.0.0.1` only. Every request must carry a secret that is new for every start and that lies only in the address file of its state folder, `~/.veridger/resident/<id>/`; the folder and its files are owner-only. Its output is in `resident.log` of that folder.
+- It runs from a copy in `~/.veridger/resident-runtime/<build>/`, so an update or the removal of the plugin is never blocked by a running program. A client of another build (an updated plugin) replaces the running program.
 - If the program cannot be reached or started, the call fails with exit code 2 and the line `ledger: the hook program is not available`, followed by the reason, on the standard error; the server then refuses the write with `HOST_ATTESTATION_REQUIRED`. Read `resident.log` and check that both jars are in `lib` and that `java` is JDK 25 or later.
 
 ## Limits

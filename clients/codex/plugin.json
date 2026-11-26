@@ -1,6 +1,6 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "agent-ledger-host-attestation",
+  "name": "veridger-host-attestation",
   "version": "4.0.0",
   "description": "Fill ledger host attestation from Codex session metadata.",
   "extensions": {

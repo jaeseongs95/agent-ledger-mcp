@@ -1,5 +1,5 @@
 @echo off
-rem deploy\install.cmd: the installer of agent-ledger-mcp 2.x for Windows (a personal PC or a Windows server). Thin on purpose,
+rem deploy\install.cmd: the installer of veridger 2.x for Windows (a personal PC or a Windows server). Thin on purpose,
 rem like deploy/install.sh: it starts only what Java cannot do (the service manager: the WinSW executables and sc.exe) and
 rem everything else is `java -jar ledger-cli.jar <command>`: render-deploy --check (every option, validated first),
 rem prepare-host (folders, ACLs, the jars, WinSW and the driver copied, the WinSW configurations and the settings), secret-set,
@@ -18,7 +18,7 @@ rem Run in an elevated prompt (Java refuses to change the folders of the install
 rem   deploy\install.cmd [--stdin] <jars-dir> <winsw.exe> <driver-jar> <driver-class> <owner-account> <app-account> "<jdbc-url>" ["<name>" ["<more render-deploy options>"]]
 rem --stdin (first argument, as the --stdin of install.sh) gives the passwords on standard input and not at the terminal: the application
 rem account's (read only while it is not stored), then the DDL account's. It is marked and shifted off, so the other positions stay.
-rem The name of the instance (default agent-ledger-mcp) gives the services <name> and <name>-admin and the home C:\ProgramData\<name>,
+rem The name of the instance (default veridger) gives the services <name> and <name>-admin and the home C:\ProgramData\<name>,
 rem so two instances can live on one host with their own ports; the Java validation of the name comes before any change.
 rem A re-run is an upgrade: jars, driver jar and files are replaced and the services are recreated; secrets, tokens and
 rem data are never replaced. A step that fails after the services were stopped starts again the ones that ran (:fail). The Java 25 check is the JVM's: the jars are compiled for it and no other runtime loads them.
