@@ -2,10 +2,13 @@
 
 package org.veridger.database.repository;
 
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.veridger.database.time.UtcTime;
 import org.veridger.domain.rule.HistoryEntity;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -65,6 +68,55 @@ public class EntityLookupRepository {
 
     /** Exact case-sensitive lookup of tasks with owner actor id, used by detail views without N+1 queries. */
     public record TaskSummaryRow(String id, String state, String ownerActorId) {
+    }
+
+    /** Batched display metadata for hydrating attention rows on the admin overview without N+1 queries. */
+    public record AttentionDetailRow(HistoryEntity entity, String id, String title, String ownerActorId,
+            Instant updatedAt) {
+    }
+
+    private static final String ISSUE_EFFECTIVE_OWNER = "COALESCE(owner_actor_id, "
+            + "(SELECT d.recorded_by FROM deliverable d WHERE d.id = "
+            + "(SELECT MAX(d2.id) FROM deliverable d2 WHERE d2.target_entity = 'ISSUE' AND d2.target_id = issue.id)))";
+
+    public List<AttentionDetailRow> attentionDetails(Collection<String> issueIds, Collection<String> specIds,
+            Collection<String> taskIds) {
+        List<AttentionDetailRow> out = new ArrayList<>();
+        if (issueIds != null && !issueIds.isEmpty()) {
+            Set<String> asked = new HashSet<>(issueIds);
+            jdbc.sql("SELECT id, title, " + ISSUE_EFFECTIVE_OWNER + " AS effective_owner, updated_at "
+                    + "FROM issue WHERE id IN (:ids)")
+                    .param("ids", issueIds)
+                    .query((rs, n) -> new AttentionDetailRow(HistoryEntity.ISSUE, rs.getString("id"),
+                            rs.getString("title"), rs.getString("effective_owner"), UtcTime.read(rs, "updated_at")))
+                    .list()
+                    .stream()
+                    .filter(row -> asked.contains(row.id()))
+                    .forEach(out::add);
+        }
+        if (specIds != null && !specIds.isEmpty()) {
+            Set<String> asked = new HashSet<>(specIds);
+            jdbc.sql("SELECT id, title, owner_actor_id, updated_at FROM spec WHERE id IN (:ids)")
+                    .param("ids", specIds)
+                    .query((rs, n) -> new AttentionDetailRow(HistoryEntity.SPEC, rs.getString("id"),
+                            rs.getString("title"), rs.getString("owner_actor_id"), UtcTime.read(rs, "updated_at")))
+                    .list()
+                    .stream()
+                    .filter(row -> asked.contains(row.id()))
+                    .forEach(out::add);
+        }
+        if (taskIds != null && !taskIds.isEmpty()) {
+            Set<String> asked = new HashSet<>(taskIds);
+            jdbc.sql("SELECT id, title, owner_actor_id, updated_at FROM task WHERE id IN (:ids)")
+                    .param("ids", taskIds)
+                    .query((rs, n) -> new AttentionDetailRow(HistoryEntity.TASK, rs.getString("id"),
+                            rs.getString("title"), rs.getString("owner_actor_id"), UtcTime.read(rs, "updated_at")))
+                    .list()
+                    .stream()
+                    .filter(row -> asked.contains(row.id()))
+                    .forEach(out::add);
+        }
+        return out;
     }
 
     public List<TaskSummaryRow> taskSummaries(Collection<String> ids) {

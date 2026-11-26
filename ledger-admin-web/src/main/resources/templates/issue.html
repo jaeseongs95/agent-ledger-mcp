@@ -14,9 +14,9 @@
     <div class="page-header-text">
       <h1 th:text="${issue.id()} + ' - ' + ${issue.title()}">Issue</h1>
       <div class="form-actions">
-        <span th:class="'badge badge-' + ${issue.status()}" th:text="${issue.status()}">OPEN</span>
-        <span th:class="'badge badge-' + ${issue.severity()}" th:text="${issue.severity()}">P1</span>
-        <span class="badge" th:text="${issue.category()}">ARC</span>
+        <span th:class="'badge badge-' + ${issue.status()}" th:text="${@labels.issueStatus(issue.status())}">Open</span>
+        <span th:class="'badge badge-' + ${issue.severity()}" th:attr="title=${issue.severity()}" th:text="${@labels.codeName('ISSUE_SEVERITY', issue.severity())}">P1</span>
+        <span class="badge" th:attr="title=${issue.category()}" th:text="${@labels.codeName('ISSUE_CATEGORY', issue.category())}">ARC</span>
       </div>
     </div>
     <div class="page-header-actions">
@@ -40,41 +40,7 @@
 
       <section class="card" th:if="${!#lists.isEmpty(issue.deliverables())}">
         <h2 th:text="#{deliverables.title}">Deliverables</h2>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col" th:text="#{col.kind}">Kind</th>
-                <th scope="col" th:text="#{deliverables.ref}">Reference</th>
-                <th scope="col" th:text="#{deliverables.location}">Location</th>
-                <th scope="col" th:text="#{deliverables.summary}">Summary</th>
-                <th scope="col" th:text="#{deliverables.check}">Check</th>
-                <th scope="col" th:text="#{deliverables.by}">By</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr th:each="d : ${issue.deliverables()}">
-                <td><span class="badge" th:text="${d.kind()}">change</span></td>
-                <td>
-                  <span class="cell-code">
-                    <code th:text="${d.deliverableRef()}">ref</code>
-                    <button type="button" class="ghost btn-sm" th:attr="data-copy=${d.deliverableRef()}" th:text="#{common.copy}">Copy</button>
-                  </span>
-                </td>
-                <td class="code" th:text="${d.location() != null} ? ${d.location()} : #{common.noneValue}">loc</td>
-                <td th:text="${d.summary()}">summary</td>
-                <td>
-                  <span th:if="${d.checkRef() != null}" class="cell-code">
-                    <span class="code" th:text="${d.checkRef()}">check</span>
-                    <span th:if="${d.checkResult() != null}" th:class="'badge badge-' + ${d.checkResult()}" th:text="${d.checkResult()}">PASS</span>
-                  </span>
-                  <span th:unless="${d.checkRef() != null}" class="muted" th:text="#{common.noneValue}">—</span>
-                </td>
-                <td th:text="${d.by()}">by</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <th:block th:replace="~{fragments :: deliverables(${issue.deliverables()})}"></th:block>
       </section>
 
       <section class="card" th:if="${!#lists.isEmpty(issue.cases())}">
@@ -109,11 +75,11 @@
             </thead>
             <tbody>
               <tr th:each="h : ${issue.recentChanges()}">
-                <td class="num" th:text="${h.id()}">1</td>
-                <td class="num"><time th:replace="~{fragments :: time(${h.at()})}">t</time></td>
-                <td class="code" th:text="${h.op()}">CREATE</td>
-                <td th:text="${h.author()}">author</td>
-                <td th:text="${h.reason()}">reason</td>
+                <td class="num cell-nowrap" th:text="${h.id()}">1</td>
+                <td class="cell-time"><time th:replace="~{fragments :: time(${h.at()})}">t</time></td>
+                <td class="cell-nowrap" th:text="${@labels.historyOp(h.op())}">Create</td>
+                <td class="cell-owner" th:text="${h.author()}">author</td>
+                <td class="cell-reason" th:text="${h.reason()}">reason</td>
               </tr>
             </tbody>
           </table>
@@ -127,9 +93,9 @@
         <h2 th:text="#{item.metadata}">Details</h2>
         <dl class="facts">
           <dt th:text="#{common.project}">Project</dt><dd class="code"><a th:href="@{/(project=${issue.projectId()})}" th:text="${issue.projectId()}">p1</a></dd>
-          <dt th:text="#{common.status}">Status</dt><dd><span th:class="'badge badge-' + ${issue.status()}" th:text="${issue.status()}">OPEN</span></dd>
-          <dt th:text="#{common.severity}">Severity</dt><dd><span th:class="'badge badge-' + ${issue.severity()}" th:text="${issue.severity()}">P1</span></dd>
-          <dt th:text="#{common.category}">Category</dt><dd class="code" th:text="${issue.category()}">ARC</dd>
+          <dt th:text="#{common.status}">Status</dt><dd><span th:class="'badge badge-' + ${issue.status()}" th:text="${@labels.issueStatus(issue.status())}">Open</span></dd>
+          <dt th:text="#{common.severity}">Severity</dt><dd><span th:class="'badge badge-' + ${issue.severity()}" th:attr="title=${issue.severity()}" th:text="${@labels.codeName('ISSUE_SEVERITY', issue.severity())}">P1</span></dd>
+          <dt th:text="#{common.category}">Category</dt><dd th:attr="title=${issue.category()}" th:text="${@labels.codeName('ISSUE_CATEGORY', issue.category())}">ARC</dd>
           <dt th:text="#{common.owner}">Owner</dt><dd th:text="${issue.ownerActorId() != null} ? ${issue.ownerActorId()} : #{common.noneValue}">owner</dd>
           <dt th:text="#{item.createdBy}">Created by</dt><dd th:text="${issue.createdBy()}">author</dd>
           <dt th:if="${issue.mergedInto() != null}" th:text="#{issue.mergedInto}">Merged into</dt>
@@ -144,16 +110,16 @@
         <ul class="link-list">
           <li th:each="t : ${issue.tasks()}">
             <a class="code" th:href="@{/tasks/detail(id=${t.task()})}" th:text="${t.task()}">task</a>
-            <span th:class="'badge badge-' + ${t.state()}" th:text="${t.state()}">state</span>
+            <span th:class="'badge badge-' + ${t.state()}" th:text="${@labels.taskState(t.state())}">Active</span>
           </li>
           <li th:each="s : ${issue.specs()}">
             <a class="code" th:href="@{/specs/detail(id=${s})}" th:text="${s}">spec</a>
           </li>
           <li th:each="c : ${issue.criteria()}">
-            <span class="code" th:text="${c}">criterion</span>
+            <a class="code" th:href="@{/criteria/detail(id=${c})}" th:text="${c}">criterion</a>
           </li>
           <li th:each="r : ${issue.relations()}">
-            <span class="badge" th:text="${r.kind()}">kind</span>
+            <span class="badge" th:attr="title=${r.kind()}" th:text="${@labels.codeName('RELATION_KIND', r.kind())}">kind</span>
             <a class="code" th:href="@{/issues/{id}(id=${r.other()})}" th:text="${r.other()}">ID</a>
             <small class="hint" th:text="#{'issue.relationEnd.' + ${r.end().token()}}">this issue is a</small>
           </li>

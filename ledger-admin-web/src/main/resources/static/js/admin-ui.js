@@ -613,9 +613,9 @@
       setField("code-state-direction", trigger.dataset.direction || "");
       setField("code-state-target", isDeactivate ? "INACTIVE" : "ACTIVE");
 
-      setText("code-state-summary-group", trigger.dataset.group || "—");
+      setText("code-state-summary-group", trigger.dataset.groupLabel || trigger.dataset.group || "—");
       setText("code-state-summary-code", trigger.dataset.code || "—");
-      setText("code-state-summary-name", trigger.dataset.nameKo || "—");
+      setText("code-state-summary-name", trigger.dataset.displayName || trigger.dataset.nameKo || "—");
 
       if (reactivateWrap) { reactivateWrap.hidden = isDeactivate; }
       if (reactivateCheck) {
@@ -771,49 +771,120 @@
     }
   }
 
-  // 13. History JSON diff progressive enhancement
+  // 13. History JSON diff progressive enhancement + modal JSON viewer
+  const historyJsonDialog = document.getElementById("modal-history-json");
+  const historyJsonPre = document.getElementById("history-json-pre");
+  const historyJsonMeta = document.getElementById("history-json-meta");
+  const historyJsonCopy = document.getElementById("history-json-copy");
+
+  function formatDiffScalar(value) {
+    if (value === null || value === undefined) { return "—"; }
+    if (typeof value === "string") {
+      return value.length > 44 ? value.slice(0, 44) + "…" : value;
+    }
+    const serialized = JSON.stringify(value);
+    return serialized.length > 44 ? serialized.slice(0, 44) + "…" : serialized;
+  }
+
+  function openHistoryJsonModal(trigger, formattedJson, rowMeta) {
+    if (!historyJsonDialog || !historyJsonPre) { return; }
+    historyJsonPre.textContent = formattedJson;
+    if (historyJsonMeta) {
+      historyJsonMeta.textContent = rowMeta || "";
+      historyJsonMeta.hidden = !rowMeta;
+    }
+    if (historyJsonCopy) {
+      historyJsonCopy.dataset.copy = formattedJson;
+    }
+    openModal(historyJsonDialog, trigger);
+    const closeBtn = historyJsonDialog.querySelector("[data-modal-close]");
+    if (closeBtn) { closeBtn.focus(); }
+  }
+
   document.querySelectorAll("[data-changes-json]").forEach((cell) => {
     const raw = cell.textContent.trim();
-    if (!raw || raw === "{}") { return; }
+    if (!raw || raw === "{}") {
+      const noneLabel = cell.dataset.noneLabel || "—";
+      cell.textContent = "";
+      const muted = document.createElement("span");
+      muted.className = "muted";
+      muted.textContent = noneLabel;
+      cell.appendChild(muted);
+      return;
+    }
     let parsed = null;
     try { parsed = JSON.parse(raw); } catch (ignored) { return; }
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) { return; }
     const keys = Object.keys(parsed);
-    if (keys.length === 0) { return; }
+    if (keys.length === 0) {
+      const noneLabel = cell.dataset.noneLabel || "—";
+      cell.textContent = "";
+      const muted = document.createElement("span");
+      muted.className = "muted";
+      muted.textContent = noneLabel;
+      cell.appendChild(muted);
+      return;
+    }
 
+    const formatted = JSON.stringify(parsed, null, 2);
     const container = document.createElement("div");
-    container.className = "changes-diff";
+    container.className = "changes-summary";
 
-    keys.slice(0, 4).forEach((key) => {
+    const list = document.createElement("div");
+    list.className = "changes-list";
+
+    const maxPreview = 3;
+    keys.slice(0, maxPreview).forEach((key) => {
       const val = parsed[key];
-      const chip = document.createElement("span");
-      chip.className = "diff-chip";
-      const keyEl = document.createElement("strong");
-      keyEl.textContent = key + ":";
-      chip.appendChild(keyEl);
-      const valEl = document.createElement("span");
-      if (val && typeof val === "object" && ("from" in val || "to" in val)) {
-        valEl.textContent = String(val.from ?? "—") + " → " + String(val.to ?? "—");
-      } else if (typeof val === "string") {
-        valEl.textContent = val.length > 48 ? val.slice(0, 48) + "…" : val;
-      } else {
-        const s = JSON.stringify(val);
-        valEl.textContent = s.length > 48 ? s.slice(0, 48) + "…" : s;
-      }
-      chip.appendChild(valEl);
-      container.appendChild(chip);
-    });
+      const line = document.createElement("div");
+      line.className = "diff-line";
+      const keyEl = document.createElement("span");
+      keyEl.className = "diff-key";
+      keyEl.textContent = key;
+      line.appendChild(keyEl);
 
-    const details = document.createElement("details");
-    details.className = "diff-details";
-    const summary = document.createElement("summary");
-    summary.textContent = cell.dataset.rawLabel || "Raw JSON";
-    const pre = document.createElement("pre");
-    pre.className = "diff-pre";
-    pre.textContent = JSON.stringify(parsed, null, 2);
-    details.appendChild(summary);
-    details.appendChild(pre);
-    container.appendChild(details);
+      const valEl = document.createElement("span");
+      valEl.className = "diff-val";
+      if (Array.isArray(val) && val.length === 2) {
+        const before = val[0];
+        const after = val[1];
+        if (before === null || before === undefined) {
+          valEl.textContent = formatDiffScalar(after);
+        } else {
+          valEl.textContent = formatDiffScalar(before) + " → " + formatDiffScalar(after);
+        }
+      } else if (val && typeof val === "object" && ("from" in val || "to" in val)) {
+        valEl.textContent = formatDiffScalar(val.from) + " → " + formatDiffScalar(val.to);
+      } else {
+        valEl.textContent = formatDiffScalar(val);
+      }
+      line.appendChild(valEl);
+      list.appendChild(line);
+    });
+    container.appendChild(list);
+
+    const actions = document.createElement("div");
+    actions.className = "changes-actions";
+    if (keys.length > maxPreview) {
+      const more = document.createElement("span");
+      more.className = "diff-more";
+      const morePattern = cell.dataset.morePattern || "+{0} more";
+      more.textContent = morePattern.replace("{0}", String(keys.length - maxPreview));
+      actions.appendChild(more);
+    }
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "secondary btn-sm";
+    btn.setAttribute("data-open-history-json", "");
+    btn.textContent = cell.dataset.rawLabel || "Raw JSON";
+    const rowMeta = [cell.dataset.rowId, cell.dataset.rowTarget, cell.dataset.rowOp, cell.dataset.rowAuthor]
+      .filter(Boolean).join(" · ");
+    btn.addEventListener("click", () => {
+      openHistoryJsonModal(btn, formatted, rowMeta);
+    });
+    actions.appendChild(btn);
+    container.appendChild(actions);
 
     cell.textContent = "";
     cell.appendChild(container);

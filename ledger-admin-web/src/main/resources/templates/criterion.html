@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}">
+<head th:replace="~{fragments :: head(${criterion.id()})}"></head>
+<body>
+<th:block th:replace="~{fragments :: header('criteria')}"></th:block>
+<main id="main">
+  <nav class="breadcrumb" th:attr="aria-label=#{criteria.title}">
+    <a th:href="@{/criteria(project=${criterion.projectId()})}" th:text="#{criteria.back}">Back to release gates</a>
+    <span class="breadcrumb-sep" aria-hidden="true">/</span>
+    <span class="code" th:text="${criterion.id()}">ID</span>
+  </nav>
+
+  <div class="page-header">
+    <div class="page-header-text">
+      <h1 th:text="${criterion.milestoneName()} + ' · ' + ${criterion.code()}">Milestone · C1</h1>
+      <div class="form-actions">
+        <span th:class="'badge badge-' + ${criterion.state()}" th:text="${@labels.criterionState(criterion.state())}">Active</span>
+        <span class="badge" th:text="${criterion.milestoneName()}">v1.0</span>
+        <span th:if="${criterion.goalLabel() != null and !#strings.isEmpty(criterion.goalLabel())}" class="badge" th:text="${criterion.goalLabel()}">Goal</span>
+      </div>
+    </div>
+    <div class="page-header-actions">
+      <a class="button secondary btn-sm" th:href="@{/history(project=${criterion.projectId()}, entity='criterion', entityId=${criterion.id()})}" th:text="#{item.fullHistory}">Full history</a>
+    </div>
+  </div>
+
+  <div class="detail-layout">
+    <div class="detail-main">
+      <section class="card">
+        <h2 th:text="#{criteria.detail.statement}">Acceptance gate</h2>
+        <p th:if="${criterion.criterionText() != null and !#strings.isEmpty(criterion.criterionText())}" class="prewrap" th:text="${criterion.criterionText()}">text</p>
+        <p th:unless="${criterion.criterionText() != null and !#strings.isEmpty(criterion.criterionText())}" class="hint" th:text="#{item.noContent}">Not recorded.</p>
+      </section>
+
+      <section class="card">
+        <div class="card-header">
+          <h2 th:text="#{item.recent}">Recent changes</h2>
+          <a class="button secondary btn-sm" th:href="@{/history(project=${criterion.projectId()}, entity='criterion', entityId=${criterion.id()})}" th:text="#{item.fullHistory}">Full history</a>
+        </div>
+        <div th:if="${!#lists.isEmpty(criterion.recentChanges())}" class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col" th:text="#{col.id}">ID</th>
+                <th scope="col" th:text="#{col.at}">At</th>
+                <th scope="col" th:text="#{history.op}">Operation</th>
+                <th scope="col" th:text="#{history.author}">Author</th>
+                <th scope="col" th:text="#{history.reason}">Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr th:each="h : ${criterion.recentChanges()}">
+                <td class="num cell-nowrap" th:text="${h.id()}">1</td>
+                <td class="cell-time"><time th:replace="~{fragments :: time(${h.at()})}">t</time></td>
+                <td class="cell-nowrap" th:text="${@labels.historyOp(h.op())}">Create</td>
+                <td class="cell-owner" th:text="${h.author()}">author</td>
+                <td class="cell-reason" th:text="${h.reason()}">reason</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p th:if="${#lists.isEmpty(criterion.recentChanges())}" class="hint" th:text="#{item.noChanges}">No recent changes.</p>
+      </section>
+    </div>
+
+    <aside class="detail-aside">
+      <section class="card">
+        <h2 th:text="#{item.metadata}">Details</h2>
+        <dl class="facts">
+          <dt th:text="#{col.id}">ID</dt><dd class="code" th:text="${criterion.id()}">ID</dd>
+          <dt th:text="#{common.project}">Project</dt><dd class="code"><a th:href="@{/(project=${criterion.projectId()})}" th:text="${criterion.projectId()}">p1</a></dd>
+          <dt th:text="#{criteria.milestone}">Milestone</dt>
+          <dd><a th:href="@{/criteria(project=${criterion.projectId()}, milestone=${criterion.milestoneName()})}" th:text="${criterion.milestoneName()}">v1.0</a></dd>
+          <dt th:text="#{criteria.goal}">Goal</dt><dd th:text="${criterion.goalLabel() != null and !#strings.isEmpty(criterion.goalLabel())} ? ${criterion.goalLabel()} : #{common.noneValue}">—</dd>
+          <dt th:text="#{criteria.code}">Code</dt><dd class="code" th:text="${criterion.code()}">C1</dd>
+          <dt th:text="#{common.state}">State</dt><dd><span th:class="'badge badge-' + ${criterion.state()}" th:text="${@labels.criterionState(criterion.state())}">Active</span></dd>
+          <dt th:text="#{item.createdBy}">Created by</dt><dd th:text="${criterion.createdBy()}">author</dd>
+          <dt th:text="#{col.version}">Version</dt><dd class="num" th:text="${criterion.version()}">1</dd>
+        </dl>
+      </section>
+
+      <section class="card">
+        <h2 th:text="#{item.links}">Links</h2>
+        <th:block th:if="${!#lists.isEmpty(criterion.issues()) or !#lists.isEmpty(criterion.specs()) or !#lists.isEmpty(criterion.tasks())}">
+          <div th:if="${!#lists.isEmpty(criterion.issues())}" class="breakdown-sub">
+            <span class="breakdown-sub-label" th:text="#{criteria.detail.linkedIssues}">Linked issues</span>
+            <ul class="link-list">
+              <li th:each="i : ${criterion.issues()}"><a class="code" th:href="@{/issues/{id}(id=${i})}" th:text="${i}">ID</a></li>
+            </ul>
+          </div>
+          <div th:if="${!#lists.isEmpty(criterion.specs())}" class="breakdown-sub">
+            <span class="breakdown-sub-label" th:text="#{criteria.detail.linkedSpecs}">Linked specifications</span>
+            <ul class="link-list">
+              <li th:each="s : ${criterion.specs()}"><a class="code" th:href="@{/specs/detail(id=${s})}" th:text="${s}">spec</a></li>
+            </ul>
+          </div>
+          <div th:if="${!#lists.isEmpty(criterion.tasks())}" class="breakdown-sub">
+            <span class="breakdown-sub-label" th:text="#{criteria.detail.linkedTasks}">Linked tasks</span>
+            <ul class="link-list">
+              <li th:each="t : ${criterion.tasks()}"><a class="code" th:href="@{/tasks/detail(id=${t})}" th:text="${t}">task</a></li>
+            </ul>
+          </div>
+        </th:block>
+        <p th:if="${#lists.isEmpty(criterion.issues()) and #lists.isEmpty(criterion.specs()) and #lists.isEmpty(criterion.tasks())}"
+           class="hint" th:text="#{criteria.detail.noLinks}">No linked items yet.</p>
+      </section>
+    </aside>
+  </div>
+</main>
+<th:block th:replace="~{fragments :: footer}"></th:block>
+</body>
+</html>

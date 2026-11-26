@@ -22,7 +22,7 @@
       <label for="entity" th:text="#{history.entity}">Entity</label>
       <select id="entity" name="entity">
         <option value="" th:text="#{common.any}">Any</option>
-        <option th:each="e : ${entities}" th:value="${e.token()}" th:text="${e.token()}" th:selected="${e.token() == filter.entity()}">issue</option>
+        <option th:each="e : ${entities}" th:value="${e.token()}" th:text="${@labels.entity(e.token())}" th:selected="${e.token() == filter.entity()}">Issue</option>
       </select>
     </div>
     <div class="filter-field">
@@ -33,7 +33,7 @@
       <label for="op" th:text="#{history.op}">Operation</label>
       <select id="op" name="op">
         <option value="" th:text="#{common.any}">Any</option>
-        <option th:each="o : ${ops}" th:value="${o.token()}" th:text="${o.token()}" th:selected="${o.token() == filter.op()}">CREATE</option>
+        <option th:each="o : ${ops}" th:value="${o.token()}" th:text="${@labels.historyOp(o.token())}" th:selected="${o.token() == filter.op()}">Create</option>
       </select>
     </div>
     <div class="filter-field">
@@ -70,29 +70,41 @@
       <tbody>
         <th:block th:each="h : ${page.items()}">
           <tr>
-            <td class="num" th:text="${h.id()}">1</td>
-            <td class="num"><time th:replace="~{fragments :: time(${h.at()})}">t</time></td>
+            <td class="num cell-nowrap" th:text="${h.id()}">1</td>
+            <td class="cell-time"><time th:replace="~{fragments :: time(${h.at()})}">t</time></td>
             <td>
-              <span class="badge" th:text="${h.entity()}">issue</span>
-              <a th:if="${@links.hasItemPage(h.entity())}" th:with="targetPage=${@links.itemPage(h.entity())}"
-                 th:href="@{${targetPage}(id=${h.entityId()})}" class="code" th:text="${h.entityId()}">ID</a>
-              <span th:unless="${@links.hasItemPage(h.entity())}" class="code" th:text="${h.entityId()}">ID</span>
+              <span class="cell-target">
+                <span class="badge" th:attr="title=${h.entity()}" th:text="${@labels.entity(h.entity())}">Issue</span>
+                <a th:if="${@links.hasItemPage(h.entity())}" th:with="targetPage=${@links.itemPage(h.entity())}"
+                   th:href="@{${targetPage}(id=${h.entityId()})}" class="code" th:text="${h.entityId()}">ID</a>
+                <span th:unless="${@links.hasItemPage(h.entity())}" class="code" th:text="${h.entityId()}">ID</span>
+              </span>
             </td>
-            <td class="code" th:text="${h.op()}">CREATE</td>
-            <td>
+            <td class="cell-nowrap" th:attr="title=${h.op()}" th:text="${@labels.historyOp(h.op())}">Create</td>
+            <td class="cell-nowrap">
               <span class="state-transition" th:if="${h.fromState() != null or h.toState() != null}">
-                <span th:if="${h.fromState() != null}" th:class="'badge badge-' + ${h.fromState()}" th:text="${h.fromState()}">OPEN</span>
+                <span th:if="${h.fromState() != null}" th:class="'badge badge-' + ${h.fromState()}"
+                      th:text="${@labels.historyState(h.entity(), h.fromState())}">Open</span>
                 <span aria-hidden="true">&#8594;</span>
-                <span th:if="${h.toState() != null}" th:class="'badge badge-' + ${h.toState()}" th:text="${h.toState()}">RESOLVED</span>
+                <span th:if="${h.toState() != null}" th:class="'badge badge-' + ${h.toState()}"
+                      th:text="${@labels.historyState(h.entity(), h.toState())}">Resolved</span>
               </span>
               <span th:unless="${h.fromState() != null or h.toState() != null}" class="muted" th:text="#{common.noneValue}">—</span>
             </td>
-            <td th:text="${h.authorId()}">author</td>
-            <td>
+            <td class="cell-owner" th:text="${h.authorId()}">author</td>
+            <td class="cell-reason">
               <span th:text="${h.reason()}">reason</span>
               <th:block th:replace="~{fragments :: evidence(${h.evidenceUri()})}"></th:block>
             </td>
-            <td class="code" data-changes-json th:attr="data-raw-label=#{history.changes.raw}"
+            <td class="cell-changes" data-changes-json
+                th:with="rowTarget=${@labels.entity(h.entity()) + ' ' + h.entityId()}, rowOp=${@labels.historyOp(h.op())}"
+                th:attr="data-raw-label=#{history.changes.raw},
+                         data-none-label=#{history.changes.none},
+                         data-more-pattern=#{history.changes.more},
+                         data-row-id='#' + ${h.id()},
+                         data-row-target=${rowTarget},
+                         data-row-op=${rowOp},
+                         data-row-author=${h.authorId()}"
                 th:text="${h.changes() == null} ? '' : ${h.changes().text()}">{}</td>
           </tr>
           <tr class="attachment-row" th:if="${attachments.containsKey(h.id())}" th:with="a=${attachments.get(h.id())}">
@@ -143,8 +155,34 @@
       </tbody>
     </table>
   </div>
-  <th:block th:if="${#lists.isEmpty(page.items())}" th:replace="~{fragments :: emptyState(${hasFilters}, ${resetHref})}"></th:block>
+  <th:block th:if="${#lists.isEmpty(page.items())}"><th:block th:replace="~{fragments :: emptyState(${hasFilters}, ${resetHref})}"></th:block></th:block>
   <nav th:replace="~{fragments :: pager(${paging}, ${null})}"></nav>
+
+  <!-- Native Raw JSON Diff Modal -->
+  <dialog id="modal-history-json" class="modal-dialog modal-dialog-wide" aria-labelledby="history-json-title">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <h2 id="history-json-title" th:text="#{history.changes.modalTitle}">Change payload (JSON)</h2>
+        <p id="history-json-meta" class="hint" hidden></p>
+      </div>
+      <button type="button" class="ghost btn-sm modal-close" data-modal-close th:attr="aria-label=#{common.close}">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M18 6 6 18M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div id="history-json-pre" class="json-viewer-pre" role="region" tabindex="0"
+           th:attr="aria-label=#{history.changes.modalTitle}"></div>
+      <div class="modal-footer">
+        <span class="muted"></span>
+        <div class="modal-footer-actions">
+          <button type="button" id="history-json-copy" class="secondary" data-copy="" th:text="#{history.changes.copyJson}">Copy JSON</button>
+          <button type="button" data-modal-close th:text="#{common.close}">Close</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
 </main>
 <th:block th:replace="~{fragments :: footer}"></th:block>
 </body>

@@ -6,7 +6,8 @@
 <main id="main">
   <div class="page-header">
     <div class="page-header-text">
-      <h1 th:text="#{criteria.title}">Milestone criteria</h1>
+      <h1 th:text="#{criteria.title}">Release gates</h1>
+      <p class="hint" th:text="#{criteria.subtitle}">Cross-cutting acceptance criteria for a release or milestone.</p>
     </div>
   </div>
 
@@ -16,6 +17,34 @@
   </div>
 
   <th:block th:if="${choice.selected() != null}">
+    <section th:if="${rollups != null and !#lists.isEmpty(rollups)}" class="rollup-section"
+             th:attr="aria-label=#{criteria.rollup.heading}">
+      <div class="rollup-grid">
+        <a th:each="r : ${rollups}"
+           th:with="selected=${r.milestone() == filter.milestone()},
+                    href=${selected ? @links.projectHref('/criteria', choice.selected()) : @links.statHref(choice.selected(), '/criteria', 'milestone', r.milestone())}"
+           th:href="${href}"
+           th:class="${selected} ? 'rollup-card rollup-card-active' : 'rollup-card'">
+          <div class="rollup-card-head">
+            <span class="rollup-name" th:text="${r.milestone()}">v1.0</span>
+            <span class="rollup-pct" th:text="#{criteria.rollup.progress(${r.met()}, ${r.total()}, ${r.metPercent()})}">0 / 0 met (0%)</span>
+          </div>
+          <progress class="gate-progress" th:value="${r.met()}" th:max="${r.total() > 0 ? r.total() : 1}"
+                    th:attr="aria-label=${r.milestone()}"></progress>
+          <div class="rollup-meta">
+            <span th:if="${r.completed() > 0}" class="badge badge-COMPLETED"
+                  th:text="#{criteria.rollup.awaiting(${r.completed()})}">1 awaiting</span>
+            <span th:if="${r.notMet() > 0}" class="badge badge-NOT_MET"
+                  th:text="#{criteria.rollup.notMet(${r.notMet()})}">1 not met</span>
+            <span th:if="${r.active() > 0}" class="badge badge-ACTIVE"
+                  th:text="#{criteria.rollup.active(${r.active()})}">1 active</span>
+            <span th:if="${r.planned() > 0}" class="badge badge-PLANNED"
+                  th:text="#{criteria.rollup.planned(${r.planned()})}">1 planned</span>
+          </div>
+        </a>
+      </div>
+    </section>
+
     <form method="get" th:action="@{/criteria}" class="filters">
       <div class="filter-field">
         <label for="project" th:text="#{common.project}">Project</label>
@@ -27,12 +56,18 @@
         <label for="state" th:text="#{common.state}">State</label>
         <select id="state" name="state">
           <option value="" th:text="#{common.any}">Any</option>
-          <option th:each="s : ${states}" th:value="${s.token()}" th:text="${s.token()}" th:selected="${s.token() == filter.state()}">MET</option>
+          <option th:each="s : ${states}" th:value="${s.token()}" th:text="${@labels.criterionState(s.token())}" th:selected="${s.token() == filter.state()}">Met</option>
         </select>
       </div>
       <div class="filter-field">
         <label for="milestone" th:text="#{criteria.milestone}">Milestone</label>
-        <input id="milestone" name="milestone" type="text" th:value="${filter.milestone()}" maxlength="100">
+        <select id="milestone" name="milestone">
+          <option value="" th:text="#{criteria.allMilestones}">All milestones</option>
+          <option th:each="r : ${rollups}" th:value="${r.milestone()}" th:text="${r.milestone()}"
+                  th:selected="${r.milestone() == filter.milestone()}">v1.0</option>
+          <option th:if="${customMilestone}"
+                  th:value="${filter.milestone()}" th:text="${filter.milestone()}" selected>custom</option>
+        </select>
       </div>
       <div class="filter-field filter-field-sm">
         <label for="limit" th:text="#{paging.size}">Rows per page</label>
@@ -48,7 +83,7 @@
 
     <div th:if="${!#lists.isEmpty(page.items())}" class="table-wrap">
       <table>
-        <caption class="sr-only" th:text="#{criteria.title}">Milestone criteria</caption>
+        <caption class="sr-only" th:text="#{criteria.title}">Release gates</caption>
         <thead>
           <tr>
             <th scope="col" th:text="#{col.id}">ID</th>
@@ -56,23 +91,42 @@
             <th scope="col" th:text="#{criteria.goal}">Goal</th>
             <th scope="col" th:text="#{criteria.code}">Code</th>
             <th scope="col" th:text="#{common.state}">State</th>
+            <th scope="col" th:text="#{criteria.linkedWork}">Linked work</th>
             <th scope="col" th:text="#{criteria.text}">Criterion</th>
           </tr>
         </thead>
         <tbody>
-          <tr th:each="c : ${page.items()}">
-            <td class="code" th:text="${c.id()}">ID</td>
-            <td th:text="${c.milestoneName()}">1.0</td>
-            <td th:text="${c.goalLabel()}">goal</td>
-            <td class="code" th:text="${c.code()}">C1</td>
-            <td><span th:class="'badge badge-' + ${c.state()}" th:text="${c.state()}">UNKNOWN</span></td>
-            <td th:text="${c.criterionText()}">text</td>
+          <tr th:each="c : ${page.items()}" th:with="lc=${linkCounts[c.id()]}">
+            <td class="cell-id"><a th:href="@{/criteria/detail(id=${c.id()})}" th:text="${c.id()}">ID</a></td>
+            <td class="cell-nowrap" th:text="${c.milestoneName()}">1.0</td>
+            <td class="cell-nowrap" th:text="${c.goalLabel() != null and !#strings.isEmpty(c.goalLabel())} ? ${c.goalLabel()} : #{common.noneValue}">goal</td>
+            <td class="cell-id" th:text="${c.code()}">C1</td>
+            <td class="cell-nowrap"><span th:class="'badge badge-' + ${c.state()}" th:text="${@labels.criterionState(c.state())}">Unknown</span></td>
+            <td class="cell-nowrap">
+              <span th:if="${lc.total() > 0}" class="link-counts">
+                <span th:if="${lc.issues() > 0}" class="link-count-pill" th:text="#{entity.issue} + ' ' + ${lc.issues()}">Issue 1</span>
+                <span th:if="${lc.specs() > 0}" class="link-count-pill" th:text="#{entity.spec} + ' ' + ${lc.specs()}">Spec 1</span>
+                <span th:if="${lc.tasks() > 0}" class="link-count-pill" th:text="#{entity.task} + ' ' + ${lc.tasks()}">Task 1</span>
+              </span>
+              <span th:if="${lc.total() == 0}" class="muted" th:text="#{common.noneValue}">—</span>
+            </td>
+            <td class="cell-criterion" th:text="${c.criterionText()}">text</td>
           </tr>
         </tbody>
       </table>
     </div>
-    <th:block th:if="${#lists.isEmpty(page.items())}" th:replace="~{fragments :: emptyState(${hasFilters}, ${resetHref})}"></th:block>
-    <nav th:replace="~{fragments :: pager(${paging}, ${total})}"></nav>
+
+    <div th:if="${#lists.isEmpty(page.items()) and !hasFilters}" class="empty-state">
+      <p class="empty-state-title" th:text="#{criteria.empty.title}">No release gates defined yet</p>
+      <p class="hint" th:text="#{criteria.empty.help}">Use release gates when you want verifiable Go/No-Go acceptance checks.</p>
+      <ol class="onboarding-steps">
+        <li th:text="#{criteria.empty.step1}">Step 1</li>
+        <li th:text="#{criteria.empty.step2}">Step 2</li>
+        <li th:text="#{criteria.empty.step3}">Step 3</li>
+      </ol>
+    </div>
+    <th:block th:if="${#lists.isEmpty(page.items()) and hasFilters}"><th:block th:replace="~{fragments :: emptyState(${hasFilters}, ${resetHref})}"></th:block></th:block>
+    <th:block th:if="${!#lists.isEmpty(page.items()) or hasFilters}"><nav th:replace="~{fragments :: pager(${paging}, ${total})}"></nav></th:block>
   </th:block>
 </main>
 <th:block th:replace="~{fragments :: footer}"></th:block>

@@ -19,7 +19,9 @@ public class OverviewController {
 
     @GetMapping("/")
     String page(@RequestParam(name = "project", required = false) String project, Model model) {
-        model.addAttribute("overview", overview.overview(project));
+        OverviewService.ConsoleOverview console = overview.consoleOverview(project);
+        model.addAttribute("console", console);
+        model.addAttribute("overview", console.base());
         return "overview";
     }
 }

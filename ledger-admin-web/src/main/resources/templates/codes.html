@@ -29,11 +29,11 @@
       </div>
       <div class="filter-pills" role="group" data-code-group-filters th:attr="aria-label=#{codes.filter.groupLabel}">
         <button type="button" class="filter-pill" data-filter-group="ALL" aria-pressed="true" th:text="#{codes.filter.all}">All groups</button>
-        <button type="button" class="filter-pill" th:each="g : ${groups}" th:attr="data-filter-group=${g.token()}" aria-pressed="false" th:text="${g.token()}">ISSUE_CATEGORY</button>
+        <button type="button" class="filter-pill" th:each="g : ${groups}" th:attr="data-filter-group=${g.token()}" aria-pressed="false" th:text="${@labels.codeGroup(g.token())}">Issue category</button>
       </div>
       <div class="filter-pills" role="group" data-code-state-filters th:attr="aria-label=#{codes.filter.stateLabel}">
         <button type="button" class="filter-pill" data-filter-state="ALL" aria-pressed="true" th:text="#{codes.filter.stateAll}">All states</button>
-        <button type="button" class="filter-pill" th:each="s : ${states}" th:attr="data-filter-state=${s.token()}" aria-pressed="false" th:text="${s.token()}">ACTIVE</button>
+        <button type="button" class="filter-pill" th:each="s : ${states}" th:attr="data-filter-state=${s.token()}" aria-pressed="false" th:text="${@labels.codeState(s.token())}">Active</button>
       </div>
     </div>
     <div class="toolbar-meta">
@@ -61,13 +61,14 @@
       <tbody>
         <tr th:each="c : ${codes}"
             data-code-row
-            th:attr="data-code-group=${c.group()},data-code-state=${c.state()},data-search-text=${c.group() + ' ' + c.code() + ' ' + c.nameKo() + ' ' + (c.nameEn() != null ? c.nameEn() : '')}">
-          <td class="code" th:text="${c.group()}">ISSUE_CATEGORY</td>
-          <td class="code" th:text="${c.code()}">ARC</td>
+            th:with="groupLabel=${@labels.codeGroup(c.group())},displayName=${@labels.code(c)}"
+            th:attr="data-code-group=${c.group()},data-code-state=${c.state()},data-search-text=${c.group() + ' ' + groupLabel + ' ' + c.code() + ' ' + c.nameKo() + ' ' + (c.nameEn() != null ? c.nameEn() : '')}">
+          <td class="cell-nowrap" th:attr="title=${c.group()}" th:text="${groupLabel}">Issue category</td>
+          <td class="cell-id" th:text="${c.code()}">ARC</td>
           <td th:text="${c.nameKo()}">name</td>
           <td th:text="${c.nameEn() != null} ? ${c.nameEn()} : #{common.noneValue}">name</td>
           <td class="num" th:text="${c.sortOrder()}">1</td>
-          <td><span th:class="'badge badge-' + ${c.state()}" th:text="${c.state()}">ACTIVE</span></td>
+          <td class="cell-nowrap"><span th:class="'badge badge-' + ${c.state()}" th:text="${@labels.codeState(c.state())}">Active</span></td>
           <td th:if="${c.group() == 'RELATION_KIND'}" th:text="#{'codes.direction.' + ${c.direction().token()}}">no direction</td>
           <td th:unless="${c.group() == 'RELATION_KIND'}" class="muted" th:text="#{common.noneValue}">—</td>
           <td class="cell-actions">
@@ -80,12 +81,12 @@
               <button th:if="${#strings.toString(c.state()) == 'ACTIVE'}" type="button" class="ghost danger-text btn-sm"
                       data-modal-open="modal-code-state"
                       data-code-state-action="deactivate"
-                      th:attr="data-group=${c.group()},data-code=${c.code()},data-name-ko=${c.nameKo()},data-name-en=${c.nameEn() != null ? c.nameEn() : ''},data-description-ko=${c.descriptionKo() != null ? c.descriptionKo() : ''},data-description-en=${c.descriptionEn() != null ? c.descriptionEn() : ''},data-sort-order=${c.sortOrder()},data-direction=${c.group() == 'RELATION_KIND' ? c.direction().token() : ''}"
+                      th:attr="data-group=${c.group()},data-group-label=${groupLabel},data-display-name=${displayName},data-code=${c.code()},data-name-ko=${c.nameKo()},data-name-en=${c.nameEn() != null ? c.nameEn() : ''},data-description-ko=${c.descriptionKo() != null ? c.descriptionKo() : ''},data-description-en=${c.descriptionEn() != null ? c.descriptionEn() : ''},data-sort-order=${c.sortOrder()},data-direction=${c.group() == 'RELATION_KIND' ? c.direction().token() : ''}"
                       th:text="#{codes.deactivate}">Deactivate</button>
               <button th:if="${#strings.toString(c.state()) == 'INACTIVE'}" type="button" class="secondary btn-sm"
                       data-modal-open="modal-code-state"
                       data-code-state-action="reactivate"
-                      th:attr="data-group=${c.group()},data-code=${c.code()},data-name-ko=${c.nameKo()},data-name-en=${c.nameEn() != null ? c.nameEn() : ''},data-description-ko=${c.descriptionKo() != null ? c.descriptionKo() : ''},data-description-en=${c.descriptionEn() != null ? c.descriptionEn() : ''},data-sort-order=${c.sortOrder()},data-direction=${c.group() == 'RELATION_KIND' ? c.direction().token() : ''}"
+                      th:attr="data-group=${c.group()},data-group-label=${groupLabel},data-display-name=${displayName},data-code=${c.code()},data-name-ko=${c.nameKo()},data-name-en=${c.nameEn() != null ? c.nameEn() : ''},data-description-ko=${c.descriptionKo() != null ? c.descriptionKo() : ''},data-description-en=${c.descriptionEn() != null ? c.descriptionEn() : ''},data-sort-order=${c.sortOrder()},data-direction=${c.group() == 'RELATION_KIND' ? c.direction().token() : ''}"
                       th:text="#{codes.reactivate}">Reactivate</button>
             </div>
           </td>
@@ -128,8 +129,8 @@
           <div class="form-field">
             <label for="group" th:text="#{codes.group}">Group</label>
             <select id="group" name="group" required>
-              <option th:each="g : ${groups}" th:value="${g.token()}" th:text="${g.token()}"
-                      th:selected="${codeForm != null and codeForm.group() == g}">ISSUE_CATEGORY</option>
+              <option th:each="g : ${groups}" th:value="${g.token()}" th:text="${@labels.codeGroup(g.token())}"
+                      th:selected="${codeForm != null and codeForm.group() == g}">Issue category</option>
             </select>
           </div>
           <div class="form-field">
@@ -159,8 +160,8 @@
           <div class="form-field">
             <label for="state" th:text="#{common.state}">State</label>
             <select id="state" name="state">
-              <option th:each="s : ${states}" th:value="${s.token()}" th:text="${s.token()}"
-                      th:selected="${codeForm != null and codeForm.state() == s}">ACTIVE</option>
+              <option th:each="s : ${states}" th:value="${s.token()}" th:text="${@labels.codeState(s.token())}"
+                      th:selected="${codeForm != null and codeForm.state() == s}">Active</option>
             </select>
           </div>
           <div id="direction-field" class="form-field form-field-full">

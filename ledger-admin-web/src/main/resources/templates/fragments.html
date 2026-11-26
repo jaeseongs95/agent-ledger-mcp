@@ -178,6 +178,40 @@
 <!-- reusable badge for status / severity / state -->
 <span th:fragment="badge(value)" th:if="${value != null}" th:class="'badge badge-' + ${value}" th:text="${value}">OPEN</span>
 
+<!-- reusable responsive deliverables list (avoids narrow column wrapping on long refs/notes) -->
+<div th:fragment="deliverables(items)" class="deliverable-list">
+  <article th:each="d : ${items}" class="deliverable-card">
+    <div class="deliverable-card-head">
+      <div class="deliverable-card-badges">
+        <span class="badge" th:attr="title=${d.kind()}" th:text="${@labels.codeName('DELIVERABLE_KIND', d.kind())}">Code change</span>
+        <span th:if="${d.checkResult() != null}" th:class="'badge badge-' + ${d.checkResult()}" th:text="${@labels.checkResult(d.checkResult())}">Passed</span>
+      </div>
+      <div class="deliverable-card-meta">
+        <span th:text="${d.by()}">by</span>
+        <th:block th:if="${d.at() != null}"><th:block th:replace="~{fragments :: time(${d.at()})}"></th:block></th:block>
+      </div>
+    </div>
+    <p th:if="${d.summary() != null and !#strings.isEmpty(d.summary())}" class="deliverable-card-summary prewrap" th:text="${d.summary()}">summary</p>
+    <dl class="deliverable-facts">
+      <dt th:text="#{deliverables.ref}">Reference</dt>
+      <dd>
+        <span class="deliverable-ref-row">
+          <code th:text="${d.deliverableRef()}">ref</code>
+          <button type="button" class="ghost btn-sm" th:attr="data-copy=${d.deliverableRef()}" th:text="#{common.copy}">Copy</button>
+        </span>
+      </dd>
+      <dt th:if="${d.location() != null and !#strings.isEmpty(d.location())}" th:text="#{deliverables.location}">Location</dt>
+      <dd th:if="${d.location() != null and !#strings.isEmpty(d.location())}">
+        <th:block th:replace="~{fragments :: evidence(${d.location()})}"></th:block>
+      </dd>
+      <dt th:if="${d.checkRef() != null and !#strings.isEmpty(d.checkRef())}" th:text="#{deliverables.check}">Check</dt>
+      <dd th:if="${d.checkRef() != null and !#strings.isEmpty(d.checkRef())}">
+        <th:block th:replace="~{fragments :: evidence(${d.checkRef()})}"></th:block>
+      </dd>
+    </dl>
+  </article>
+</div>
+
 <!-- reusable empty state distinguishing no rows vs no filter matches (keeps common.noRows text intact) -->
 <div th:fragment="emptyState(hasFilters, resetHref)" class="empty-state">
   <p class="empty-state-title" th:text="#{common.noRows}">No rows.</p>

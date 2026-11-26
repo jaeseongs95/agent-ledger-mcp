@@ -12,7 +12,7 @@ rem Non-interactive usage (fully backward-compatible):
 rem   deploy\install.cmd [--stdin] <jars-dir> <winsw.exe> <driver-jar> <driver-class> <owner-account> <app-account> "<jdbc-url>" ["<name>" ["<more render-deploy options>"]]
 rem
 rem One-stop interactive/release usage (downloads & SHA-256 verifies release JARs from GitHub Releases):
-rem   deploy\install.cmd --download [latest|v4.2.0]
+rem   deploy\install.cmd --download [latest|v4.3.0]
 rem
 rem The secret folder (common, admin, mcp, tool) and secrets belong to the installing user with read for LocalService
 rem (nothing is handed over). Run it again as the same user. Passwords are never given on a command line.

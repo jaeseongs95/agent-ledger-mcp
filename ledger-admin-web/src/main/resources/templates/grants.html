@@ -121,7 +121,7 @@
                 <code class="project-pill" th:text="${p.project()}">p1</code>
                 <span class="project-meta-item">
                   <span class="muted" th:text="#{grants.expiresAt}">Expires</span>:
-                  <time th:if="${p.expiresAt() != null}" th:replace="~{fragments :: time(${p.expiresAt()})}"></time>
+                  <th:block th:if="${p.expiresAt() != null}"><time th:replace="~{fragments :: time(${p.expiresAt()})}"></time></th:block>
                   <span th:if="${p.expiresAt() == null}" class="muted" th:text="#{grants.never}">never</span>
                   <span th:if="${p.mixedExpiry()}" class="badge badge-neutral" th:text="#{grants.mixedExpiry}">mixed</span>
                 </span>
@@ -427,8 +427,8 @@
             <label for="revoke-scope" th:text="#{grants.revoke.scope}">Scope (needs a project; empty: all scopes)</label>
             <select id="revoke-scope" name="scope">
               <option value="" th:text="#{common.any}">Any</option>
-              <option th:each="sc : ${scopes}" th:value="${sc.token()}" th:text="${sc.token()}"
-                      th:selected="${revokeGrantForm != null and sc.token() == revokeGrantForm.scope()}">issue</option>
+              <option th:each="sc : ${scopes}" th:value="${sc.token()}" th:text="${@labels.scope(sc.token())}"
+                      th:selected="${revokeGrantForm != null and sc.token() == revokeGrantForm.scope()}">Issue</option>
             </select>
           </div>
         </div>

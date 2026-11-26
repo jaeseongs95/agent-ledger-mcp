@@ -13,6 +13,7 @@ import org.veridger.domain.value.CodeValue;
 import org.veridger.domain.value.IssueId;
 import org.veridger.domain.value.MaxRows;
 import org.veridger.domain.value.ProjectId;
+import org.veridger.domain.value.TaskId;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -24,8 +25,13 @@ public class IssueQueryRepository {
 
     /** Optional filters; {@code owner} matches explicit owner or the latest deliverable recorder. */
     public record Filter(IssueStatus status, CodeValue severity, CodeValue category, Instant createdFrom,
-            Instant createdTo, String owner, AttentionKind attention) {
-        public static final Filter NONE = new Filter(null, null, null, null, null, null, null);
+            Instant createdTo, String owner, AttentionKind attention, TaskId taskId) {
+        public static final Filter NONE = new Filter(null, null, null, null, null, null, null, null);
+
+        public Filter(IssueStatus status, CodeValue severity, CodeValue category, Instant createdFrom,
+                Instant createdTo, String owner, AttentionKind attention) {
+            this(status, severity, category, createdFrom, createdTo, owner, attention, null);
+        }
     }
 
     /** Sort order for issue lists. */
@@ -79,6 +85,9 @@ public class IssueQueryRepository {
         if (filter.attention() != null) {
             sql.append(" AND ").append(AttentionSql.condition(filter.attention(), HistoryEntity.ISSUE));
         }
+        if (filter.taskId() != null) {
+            sql.append(" AND EXISTS (SELECT 1 FROM issue_task it WHERE it.task_id = :taskId AND it.issue_id = issue.id)");
+        }
         boolean newest = order == Order.NEWEST_FIRST;
         if (after != null) {
             String cmp = newest ? "<" : ">";
@@ -105,6 +114,9 @@ public class IssueQueryRepository {
         }
         if (filter.owner() != null) {
             spec = spec.param("owner", filter.owner());
+        }
+        if (filter.taskId() != null) {
+            spec = spec.param("taskId", filter.taskId().value());
         }
         if (after != null) {
             spec = spec.param("after", UtcTime.toDb(after.createdAt())).param("afterId", after.id().value());

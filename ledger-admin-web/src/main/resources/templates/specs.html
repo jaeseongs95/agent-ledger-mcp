@@ -27,7 +27,7 @@
         <label for="status" th:text="#{common.status}">Status</label>
         <select id="status" name="status">
           <option value="" th:text="#{common.any}">Any</option>
-          <option th:each="s : ${statuses}" th:value="${s.token()}" th:text="${s.token()}" th:selected="${s.token() == filter.status()}">DRAFT</option>
+          <option th:each="s : ${statuses}" th:value="${s.token()}" th:text="${@labels.specStatus(s.token())}" th:selected="${s.token() == filter.status()}">Draft</option>
         </select>
       </div>
       <div class="filter-field">
@@ -72,20 +72,20 @@
         </thead>
         <tbody>
           <tr th:each="s : ${page.items()}">
-            <td class="code"><a th:href="@{/specs/detail(id=${s.id()})}" th:text="${s.id()}">ID</a></td>
-            <td><span th:class="'badge badge-' + ${s.status()}" th:text="${s.status()}">DRAFT</span></td>
-            <td>
+            <td class="cell-id"><a th:href="@{/specs/detail(id=${s.id()})}" th:text="${s.id()}">ID</a></td>
+            <td class="cell-nowrap"><span th:class="'badge badge-' + ${s.status()}" th:text="${@labels.specStatus(s.status())}">Draft</span></td>
+            <td class="cell-nowrap">
               <span th:if="${s.priority() != null}" th:class="'badge badge-' + ${s.priority()}" th:text="${s.priority()}">P1</span>
               <span th:if="${s.priority() == null}" class="muted" th:text="#{common.noneValue}">—</span>
             </td>
-            <td th:text="${s.title()}">Title</td>
-            <td th:text="${s.ownerActorId() != null} ? ${s.ownerActorId()} : #{common.noneValue}">owner</td>
-            <td class="num"><time th:replace="~{fragments :: time(${s.updatedAt()})}">t</time></td>
+            <td class="cell-title" th:text="${s.title()}">Title</td>
+            <td class="cell-owner" th:text="${s.ownerActorId() != null} ? ${s.ownerActorId()} : #{common.noneValue}">owner</td>
+            <td class="cell-time"><time th:replace="~{fragments :: time(${s.updatedAt()})}">t</time></td>
           </tr>
         </tbody>
       </table>
     </div>
-    <th:block th:if="${#lists.isEmpty(page.items())}" th:replace="~{fragments :: emptyState(${hasFilters}, ${resetHref})}"></th:block>
+    <th:block th:if="${#lists.isEmpty(page.items())}"><th:block th:replace="~{fragments :: emptyState(${hasFilters}, ${resetHref})}"></th:block></th:block>
     <nav th:replace="~{fragments :: pager(${paging}, ${total})}"></nav>
   </th:block>
 </main>

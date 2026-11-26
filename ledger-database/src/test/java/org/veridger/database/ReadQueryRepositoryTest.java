@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.veridger.database.repository.AttentionQueryRepository;
 import org.veridger.database.repository.Counter;
 import org.veridger.database.repository.CriterionQueryRepository;
+import org.veridger.database.repository.CriterionRepository;
 import org.veridger.database.repository.DeliverableRepository;
 import org.veridger.database.repository.EntityLookupRepository;
 import org.veridger.database.repository.HistoryQueryRepository;
@@ -384,5 +385,61 @@ class ReadQueryRepositoryTest {
         assertThat(links.criteriaOfIssue(issue.id())).containsExactly(criterion.id().value());
         assertThat(links.criteriaOfSpec(spec.id())).containsExactly(criterion.id().value());
         assertThat(links.criteriaOfTask(task.id())).containsExactly(criterion.id().value());
+    }
+
+    @Test
+    void v430_issueTaskIdFilterCriterionRollupsLinkCountsAndAttentionDetails() {
+        Project project = seed.project();
+        Issue i1 = seed.issue(project, 1, "linked issue one", T0);
+        Issue i2 = seed.issue(project, 2, "linked issue two", T0.plusSeconds(1));
+        Issue i3 = seed.issue(project, 3, "other task issue", T0.plusSeconds(2));
+        Spec spec = seed.spec(project, 1, "hydrated spec", T0.plusSeconds(3));
+        Task t1 = seed.task(project, 1, "task one");
+        Task t2 = seed.task(project, 2, "task two");
+        var c1 = seed.criterion(project, project.code().value() + "-C-1", "v4.3.0", "G1");
+        var c2 = seed.criterion(project, project.code().value() + "-C-2", "v4.3.0", "G2");
+        var c3 = seed.criterion(project, project.code().value() + "-C-3", "v4.4.0", "G1");
+        CriterionRepository criterionRepo = ctx.bean(CriterionRepository.class);
+        LedgerTestContext.as(Seed.ALICE, () -> ctx.tx(() -> criterionRepo.save(c1.transitioned(CriterionState.MET))));
+        LedgerTestContext.as(Seed.ALICE, () -> ctx.tx(() -> criterionRepo.save(c2.transitioned(CriterionState.PLANNED))));
+        LedgerTestContext.as(Seed.ALICE, () -> ctx.tx(() -> criterionRepo.save(c3.transitioned(CriterionState.PLANNED))));
+        LinkRepository links = ctx.bean(LinkRepository.class);
+        ctx.tx(() -> links.add(new IssueTaskLink(i1.id(), t1.id(), Seed.ALICE)));
+        ctx.tx(() -> links.add(new IssueTaskLink(i2.id(), t1.id(), Seed.ALICE)));
+        ctx.tx(() -> links.add(new IssueTaskLink(i3.id(), t2.id(), Seed.ALICE)));
+        ctx.tx(() -> links.add(CriterionLink.toIssue(c1.id(), i1.id(), Seed.ALICE)));
+        ctx.tx(() -> links.add(CriterionLink.toSpec(c1.id(), spec.id(), Seed.ALICE)));
+        ctx.tx(() -> links.add(CriterionLink.toTask(c1.id(), t1.id(), Seed.ALICE)));
+
+        IssueQueryRepository issueQueries = ctx.bean(IssueQueryRepository.class);
+        var byTask1 = issueQueries.page(project.id(),
+                new IssueQueryRepository.Filter(null, null, null, null, null, null, null, t1.id()),
+                MaxRows.DEFAULT, IssueQueryRepository.Order.NEWEST_FIRST, null);
+        assertThat(byTask1.rows()).extracting(r -> r.id().value())
+                .containsExactly(i2.id().value(), i1.id().value());
+        var byTask2 = issueQueries.page(project.id(),
+                new IssueQueryRepository.Filter(null, null, null, null, null, null, null, t2.id()),
+                MaxRows.DEFAULT, IssueQueryRepository.Order.NEWEST_FIRST, null);
+        assertThat(byTask2.rows()).extracting(r -> r.id().value()).containsExactly(i3.id().value());
+
+        CriterionQueryRepository criterionQueries = ctx.bean(CriterionQueryRepository.class);
+        var rollups = criterionQueries.milestoneRollups(project.id());
+        assertThat(rollups).extracting(CriterionQueryRepository.MilestoneRollup::milestone)
+                .containsExactly("v4.3.0", "v4.4.0");
+        assertThat(rollups.getFirst()).isEqualTo(
+                new CriterionQueryRepository.MilestoneRollup("v4.3.0", 2L, 1L, 0L, 0L, 1L, 0L, 0L));
+        assertThat(rollups.get(1)).isEqualTo(
+                new CriterionQueryRepository.MilestoneRollup("v4.4.0", 1L, 0L, 0L, 0L, 1L, 0L, 0L));
+
+        var counts = criterionQueries.linkCounts(List.of(c1.id().value(), c2.id().value()));
+        assertThat(counts.get(c1.id().value())).isEqualTo(new CriterionQueryRepository.LinkCounts(1L, 1L, 1L));
+        assertThat(counts).doesNotContainKey(c2.id().value());
+
+        EntityLookupRepository lookup = ctx.bean(EntityLookupRepository.class);
+        var details = lookup.attentionDetails(List.of(i1.id().value()), List.of(spec.id().value()),
+                List.of(t1.id().value()));
+        assertThat(details).hasSize(3);
+        assertThat(details).extracting(EntityLookupRepository.AttentionDetailRow::title)
+                .containsExactlyInAnyOrder("linked issue one", "hydrated spec", "task one");
     }
 }
