@@ -9,6 +9,12 @@ spring:
     basename: messages/ledger-errors,messages/ledger-reasons,messages/admin
     fallback-to-system-locale: false
     encoding: UTF-8
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          max-age: 1h
+          cache-private: true
   # A deployment reads the registration of the JDBC driver and the secrets through spring.config.import, set by the
   # service unit (for example optional:file:/etc/veridger/jdbc-driver.yaml, optional:configtree:/etc/veridger/secrets/common/ and
   # optional:configtree:/etc/veridger/secrets/admin/: the admin web imports the secrets of its own use and of both services only).
@@ -16,6 +22,10 @@ server:
   # The admin web listens on 127.0.0.1 only: LoopbackOnly sets the address in code, so there is no setting for it. Reaching it from
   # another machine is a reverse proxy of the operator on this host.
   port: 8865
+  compression:
+    enabled: true
+    mime-types: text/html,text/css,application/javascript,application/json,image/svg+xml
+    min-response-size: 1KB
   # The reverse proxy on this host tells the original scheme and client address (X-Forwarded-Proto, X-Forwarded-For).
   # Tomcat believes these headers only from its internal proxies, and Boot's default list of them trusts every private
   # network (10/8, 192.168/16, 172.16/12, 100.64/10, 169.254/16, 127/8): a client that reaches the admin from one of them

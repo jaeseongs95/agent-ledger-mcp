@@ -2,8 +2,13 @@
 
 package org.veridger.database.repository;
 
+import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import org.veridger.domain.model.CodeCatalog;
 import org.veridger.domain.model.CommonCode;
 import org.veridger.domain.rule.CodeDirection;
@@ -13,10 +18,16 @@ import org.veridger.domain.value.ActorId;
 import org.veridger.domain.value.CodeValue;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * Common codes. Entries are inserted and updated (names, descriptions, order, state); there is no delete and the
  * key never changes. The caller bumps {@link CodeRevisionRepository} in the same transaction.
+ *
+ * <p>Read-only / non-transactional catalog reads are cached per repository instance (no {@code ThreadLocal} or mutable
+ * static, obeying ARC-018) and validated against {@code code_revision (id = 1)} so changes made by another process
+ * (such as the admin web) are observed immediately. Active read-write transactions bypass the cache so uncommitted
+ * writes are visible to the transaction and a rollback can never poison the shared snapshot.
  */
 @Repository
 public class CommonCodeRepository {
@@ -24,21 +35,77 @@ public class CommonCodeRepository {
     private static final String COLUMNS = "code_group, code, name_ko, name_en, description_ko, description_en, "
             + "sort_order, state, direction, created_by";
 
+    private record Snapshot(long revision, Map<CodeGroup, CodeCatalog> catalogs) {
+    }
+
     private final JdbcClient jdbc;
+    private final AtomicReference<Snapshot> cache = new AtomicReference<>();
 
     public CommonCodeRepository(JdbcClient jdbc) {
         this.jdbc = jdbc;
     }
 
     public CodeCatalog catalog(CodeGroup group) {
+        if (inReadWriteTransaction()) {
+            return queryCatalog(group);
+        }
+        Optional<Long> currentRev = jdbc.sql("SELECT revision FROM code_revision WHERE id = 1")
+                .query(Long.class).optional();
+        if (currentRev.isEmpty()) {
+            return queryCatalog(group);
+        }
+        long rev = currentRev.orElseThrow();
+        Snapshot snapshot = cache.get();
+        if (snapshot != null && snapshot.revision() == rev) {
+            return snapshot.catalogs().get(group);
+        }
+        Snapshot refreshed = loadAll(rev);
+        Optional<Long> revAfter = jdbc.sql("SELECT revision FROM code_revision WHERE id = 1")
+                .query(Long.class).optional();
+        if (revAfter.isPresent() && revAfter.orElseThrow() == rev) {
+            cache.accumulateAndGet(refreshed,
+                    (prev, next) -> prev != null && prev.revision() > next.revision() ? prev : next);
+        }
+        return refreshed.catalogs().get(group);
+    }
+
+    public Optional<CommonCode> find(CodeGroup group, CodeValue code) {
+        if (inReadWriteTransaction()) {
+            return jdbc.sql("SELECT " + COLUMNS + " FROM common_code WHERE code_group = :g AND code = :c")
+                    .param("g", group.name()).param("c", code.value())
+                    .query((rs, n) -> read(rs))
+                    .optional();
+        }
+        return catalog(group).entries().stream().filter(c -> Objects.equals(c.code(), code)).findFirst();
+    }
+
+    private CodeCatalog queryCatalog(CodeGroup group) {
         return new CodeCatalog(group, jdbc.sql("SELECT " + COLUMNS + " FROM common_code WHERE code_group = :g "
                 + "ORDER BY sort_order, code").param("g", group.name())
                 .query((rs, n) -> read(rs))
                 .list());
     }
 
-    public Optional<CommonCode> find(CodeGroup group, CodeValue code) {
-        return catalog(group).entries().stream().filter(c -> Objects.equals(c.code(), code)).findFirst();
+    private Snapshot loadAll(long revision) {
+        Map<CodeGroup, List<CommonCode>> grouped = new EnumMap<>(CodeGroup.class);
+        for (CodeGroup g : CodeGroup.values()) {
+            grouped.put(g, new ArrayList<>());
+        }
+        List<CommonCode> all = jdbc.sql("SELECT " + COLUMNS + " FROM common_code "
+                + "ORDER BY code_group, sort_order, code").query((rs, n) -> read(rs)).list();
+        for (CommonCode code : all) {
+            grouped.get(code.group()).add(code);
+        }
+        Map<CodeGroup, CodeCatalog> catalogs = new EnumMap<>(CodeGroup.class);
+        for (Map.Entry<CodeGroup, List<CommonCode>> entry : grouped.entrySet()) {
+            catalogs.put(entry.getKey(), new CodeCatalog(entry.getKey(), entry.getValue()));
+        }
+        return new Snapshot(revision, Map.copyOf(catalogs));
+    }
+
+    private static boolean inReadWriteTransaction() {
+        return TransactionSynchronizationManager.isActualTransactionActive()
+                && !TransactionSynchronizationManager.isCurrentTransactionReadOnly();
     }
 
     /** The code with the version of its row, for a change that must not overwrite another one ({@link #update}). */
@@ -58,6 +125,7 @@ public class CommonCodeRepository {
     }
 
     public void insert(CommonCode code) {
+        cache.set(null);
         jdbc.sql("INSERT INTO common_code (" + COLUMNS + ") VALUES (:group, :code, :nameKo, :nameEn, :descKo, "
                 + ":descEn, :sortOrder, :state, :direction, :createdBy)")
                 .param("group", code.group().name())
@@ -96,6 +164,7 @@ public class CommonCodeRepository {
      * change is the service's rule (see {@code CommonCodeService}).
      */
     public boolean update(CommonCode code, long expectedVersion) {
+        cache.set(null);
         return jdbc.sql("UPDATE common_code SET name_ko = :nameKo, name_en = :nameEn, description_ko = :descKo, "
                 + "description_en = :descEn, sort_order = :sortOrder, state = :state, direction = :direction, "
                 + "version = version + 1 WHERE code_group = :group AND code = :code AND version = :expected")

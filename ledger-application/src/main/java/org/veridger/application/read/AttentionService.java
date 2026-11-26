@@ -2,7 +2,9 @@
 
 package org.veridger.application.read;
 
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import org.veridger.database.repository.AttentionQueryRepository;
 import org.veridger.domain.rule.AttentionKind;
 import org.veridger.domain.value.MaxRows;
@@ -29,6 +31,10 @@ public class AttentionService {
     public record Item(String kind, String entity, String id, String projectId) {
     }
 
+    /** Bounded per-kind attention count exposed to web/application callers without leaking repository types. */
+    public record BoundedCount(int count, boolean atLeast) {
+    }
+
     private final AttentionQueryRepository attention;
     private final Cursors cursors;
 
@@ -50,5 +56,18 @@ public class AttentionService {
         return cursors.page(page, PageCursor.Kind.ATTENTION, criteria,
                 i -> new Item(i.kind().name(), i.kind().entity().token(), i.id(), i.projectId()),
                 i -> i.kind().name(), AttentionQueryRepository.Item::id);
+    }
+
+    /** Bounded per-kind counts without hydrating rows (used by the admin overview). */
+    public Map<AttentionKind, BoundedCount> counts(String project, int cap) {
+        String scope = Texts.nullIfBlank(project);
+        ProjectId projectId = scope == null ? null : ProjectId.of(scope);
+        Map<AttentionKind, AttentionQueryRepository.BoundedCount> raw = attention.counts(projectId, cap);
+        Map<AttentionKind, BoundedCount> result = new EnumMap<>(AttentionKind.class);
+        for (Map.Entry<AttentionKind, AttentionQueryRepository.BoundedCount> entry : raw.entrySet()) {
+            AttentionQueryRepository.BoundedCount value = entry.getValue();
+            result.put(entry.getKey(), new BoundedCount(value.count(), value.atLeast()));
+        }
+        return result;
     }
 }

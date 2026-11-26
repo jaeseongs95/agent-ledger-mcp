@@ -48,6 +48,34 @@ class LedgerJdbcPropertiesTest {
                     LedgerJdbcProperties bound = context.getBean(LedgerJdbcProperties.class);
                     assertThat(bound.password()).as("the value is bound").isEqualTo(SECRET);
                     assertThat(bound.toString()).doesNotContain(SECRET).contains("poolSize=10");
+                    assertThat(bound.connectionTimeoutMs()).isEqualTo(30_000L);
+                    assertThat(bound.idleTimeoutMs()).isEqualTo(600_000L);
+                    assertThat(bound.keepaliveTimeMs()).isEqualTo(0L);
+                    assertThat(bound.isKeepaliveTimeMsUsable()).isTrue();
                 });
+    }
+
+    @Test
+    @DisplayName("PERF-DB-12: keepaliveTimeMs accepts 0 or >= 30000ms and rejects sub-30000ms non-zero values")
+    void keepaliveTimeValidationRejectsSubThirtySecondNonZeroValues() {
+        new ApplicationContextRunner().withUserConfiguration(Settings.class)
+                .withPropertyValues("ledger.jdbc.url=jdbc:postgresql://host/ledger",
+                        "ledger.jdbc.username=app", "ledger.jdbc.password=" + SECRET,
+                        "ledger.jdbc.connection-timeout-ms=5000",
+                        "ledger.jdbc.idle-timeout-ms=120000",
+                        "ledger.jdbc.keepalive-time-ms=30000")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    LedgerJdbcProperties bound = context.getBean(LedgerJdbcProperties.class);
+                    assertThat(bound.connectionTimeoutMs()).isEqualTo(5_000L);
+                    assertThat(bound.idleTimeoutMs()).isEqualTo(120_000L);
+                    assertThat(bound.keepaliveTimeMs()).isEqualTo(30_000L);
+                });
+
+        new ApplicationContextRunner().withUserConfiguration(Settings.class)
+                .withPropertyValues("ledger.jdbc.url=jdbc:postgresql://host/ledger",
+                        "ledger.jdbc.username=app", "ledger.jdbc.password=" + SECRET,
+                        "ledger.jdbc.keepalive-time-ms=15000")
+                .run(context -> assertThat(context).hasFailed());
     }
 }

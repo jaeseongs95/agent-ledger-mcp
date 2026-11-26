@@ -309,14 +309,15 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
 
     /**
      * Collects every session that ever owned the entity across its current row and historical before-snapshots so
-     * deliverable ownership changes cannot erase an earlier owner from self-verification checks.
+     * deliverable ownership changes cannot erase an earlier owner from self-verification checks. Reuses the already
+     * loaded {@code entries} to avoid a second full-CLOB {@code history} query.
      */
-    private List<SessionKey> ownerContributors(HistoryEntity entity, String entityId, ActorId currentOwner) {
+    private List<SessionKey> ownerContributors(HistoryEntity entity, ActorId currentOwner, List<HistoryEntry> entries) {
         List<SessionKey> owners = new ArrayList<>();
         if (currentOwner != null) {
             owners.add(currentOwner.sessionKey());
         }
-        for (HistoryEntry entry : historyRows.findByEntityAndEntityIdOrderById(entity, entityId)) {
+        for (HistoryEntry entry : entries) {
             if (entry.beforeData() != null) {
                 String beforeOwner = switch (entity) {
                     case ISSUE -> json.read(entry.beforeData(), Snapshot.IssueRow.class).ownerActorId();
@@ -338,9 +339,11 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
         }
         List<Issue> sources = new ArrayList<>(List.of(row));
         mergeChain.mergedInto(row.id()).forEach(merged -> sources.add(rows.issue(merged)));
+        List<HistoryEntry> entries = historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.ISSUE,
+                row.id().value());
         List<SessionKey> reporters = new ArrayList<>(
-                ownerContributors(HistoryEntity.ISSUE, row.id().value(), row.ownerActorId()));
-        for (HistoryEntry entry : historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.ISSUE, row.id().value())) {
+                ownerContributors(HistoryEntity.ISSUE, row.ownerActorId(), entries));
+        for (HistoryEntry entry : entries) {
             if (entry.authorId() == null) {
                 continue;
             }
@@ -364,13 +367,13 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
             String attachment) {
         Instant now = clock.instant();
         ProjectId pinnedProject = ctx.pinSpec(rows, id);
-        Spec current = rows.spec(id);
-        recheck(ctx, HistoryEntity.SPEC, pinnedProject, current.status(), to);
-        Spec row = rows.specForWrite(id, expected);
+        Spec row = rows.spec(id);
+        recheck(ctx, HistoryEntity.SPEC, pinnedProject, row.status(), to);
+        Rows.requireVersion(HistoryEntity.SPEC.token(), id.value(), expected, row.version());
         List<HistoryEntry> entries = historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.SPEC, id.value());
         SpecReports reports = new SpecHistory(entries).reports();
         List<SessionKey> contributors = new ArrayList<>(deliverableContributors(DeliverableTarget.SPEC, id.value()));
-        contributors.addAll(ownerContributors(HistoryEntity.SPEC, id.value(), row.ownerActorId()));
+        contributors.addAll(ownerContributors(HistoryEntity.SPEC, row.ownerActorId(), entries));
         if (row.createdBy() != null) {
             contributors.add(row.createdBy().sessionKey());
         }
@@ -391,13 +394,13 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
             String attachment) {
         Instant now = clock.instant();
         ProjectId pinnedProject = ctx.pinTask(rows, id);
-        Task current = rows.task(id);
-        recheck(ctx, HistoryEntity.TASK, pinnedProject, current.state(), to);
-        Task row = rows.taskForWrite(id, expected);
+        Task row = rows.task(id);
+        recheck(ctx, HistoryEntity.TASK, pinnedProject, row.state(), to);
+        Rows.requireVersion(HistoryEntity.TASK.token(), id.value(), expected, row.version());
         List<HistoryEntry> entries = historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.TASK, id.value());
         TaskReports reports = new TaskHistory(entries).reports();
         List<SessionKey> registrants = new ArrayList<>(deliverableContributors(DeliverableTarget.TASK, id.value()));
-        registrants.addAll(ownerContributors(HistoryEntity.TASK, id.value(), row.ownerActorId()));
+        registrants.addAll(ownerContributors(HistoryEntity.TASK, row.ownerActorId(), entries));
         if (row.createdBy() != null) {
             registrants.add(row.createdBy().sessionKey());
         }
@@ -418,9 +421,9 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
     private TransitionResult criterion(WriteContext ctx, CriterionId id, long expected, CriterionState to,
             Evidence evidence, String attachment) {
         ProjectId pinnedProject = ctx.pinCriterion(rows, id);
-        Criterion current = rows.criterion(id);
-        recheck(ctx, HistoryEntity.CRITERION, pinnedProject, current.state(), to);
-        Criterion row = rows.criterionForWrite(id, expected);
+        Criterion row = rows.criterion(id);
+        recheck(ctx, HistoryEntity.CRITERION, pinnedProject, row.state(), to);
+        Rows.requireVersion(HistoryEntity.CRITERION.token(), id.value(), expected, row.version());
         List<HistoryEntry> entries = historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.CRITERION, id.value());
         CriterionReports reports = new CriterionHistory(entries).reports();
         List<SessionKey> contributors = new ArrayList<>();

@@ -111,25 +111,33 @@ public final class AddressFile {
         String start = null;
         String build = null;
         String secret = null;
-        for (String line : text.split("\n")) {
-            int at = line.indexOf('=');
-            if (at < 0) {
-                continue;
+        // Scan lines without String.split so warm hook JVM invocations avoid regex Pattern class loading.
+        int len = text.length();
+        int lineStart = 0;
+        while (lineStart <= len) {
+            int nl = text.indexOf('\n', lineStart);
+            int lineEnd = nl < 0 ? len : nl;
+            int at = text.indexOf('=', lineStart);
+            if (at >= lineStart && at < lineEnd) {
+                String name = text.substring(lineStart, at);
+                String value = text.substring(at + 1, lineEnd).strip();
+                // a line of a later version that is not named here is ignored
+                if (PORT.equals(name)) {
+                    port = value;
+                } else if (PID.equals(name)) {
+                    pid = value;
+                } else if (PROCESS_START.equals(name)) {
+                    start = value;
+                } else if (BUILD.equals(name)) {
+                    build = value;
+                } else if (SECRET.equals(name)) {
+                    secret = value;
+                }
             }
-            String value = line.substring(at + 1).strip();
-            String name = line.substring(0, at);
-            // a line of a later version that is not named here is ignored
-            if (PORT.equals(name)) {
-                port = value;
-            } else if (PID.equals(name)) {
-                pid = value;
-            } else if (PROCESS_START.equals(name)) {
-                start = value;
-            } else if (BUILD.equals(name)) {
-                build = value;
-            } else if (SECRET.equals(name)) {
-                secret = value;
+            if (nl < 0) {
+                break;
             }
+            lineStart = nl + 1;
         }
         try {
             if (port == null || pid == null || start == null || build == null || secret == null || build.isEmpty()) {

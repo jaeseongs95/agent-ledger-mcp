@@ -5,14 +5,14 @@ package org.veridger.application.read;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
-import org.veridger.application.history.SpecHistory;
-import org.veridger.application.history.TaskHistory;
 import org.veridger.database.repository.CriterionRepository;
 import org.veridger.database.repository.DeliverableRepository;
+import org.veridger.database.repository.EntityLookupRepository;
 import org.veridger.database.repository.HistoryQueryRepository;
-import org.veridger.database.repository.HistoryRepository;
 import org.veridger.database.repository.IssueCaseRepository;
 import org.veridger.database.repository.IssueRepository;
 import org.veridger.database.repository.LinkRepository;
@@ -24,18 +24,26 @@ import org.veridger.domain.error.LookupException;
 import org.veridger.domain.model.Criterion;
 import org.veridger.domain.model.CriterionLink;
 import org.veridger.domain.model.Deliverable;
-import org.veridger.domain.model.HistoryEntry;
 import org.veridger.domain.model.Issue;
 import org.veridger.domain.model.IssueCase;
+import org.veridger.domain.model.IssueTaskLink;
 import org.veridger.domain.model.Spec;
 import org.veridger.domain.model.Task;
 import org.veridger.domain.rule.DeliverableTarget;
 import org.veridger.domain.rule.HistoryEntity;
+import org.veridger.domain.rule.HistoryOp;
 import org.veridger.domain.rule.RelationEnd;
+import org.veridger.domain.rule.SpecReports;
+import org.veridger.domain.rule.SpecStatus;
+import org.veridger.domain.rule.SpecTransition;
+import org.veridger.domain.rule.TaskReports;
+import org.veridger.domain.rule.TaskState;
+import org.veridger.domain.rule.TaskTransition;
 import org.veridger.domain.value.CriterionId;
 import org.veridger.domain.value.IssueId;
 import org.veridger.domain.value.SpecId;
 import org.veridger.domain.value.TaskId;
+import org.veridger.domain.value.Tokens;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -102,13 +110,13 @@ public class DetailService {
     private final IssueCaseRepository cases;
     private final LinkRepository links;
     private final MergeChainRepository mergeChain;
-    private final HistoryRepository historyRows;
     private final HistoryQueryRepository historyQueries;
+    private final EntityLookupRepository entityLookup;
 
     public DetailService(IssueRepository issues, SpecRepository specs, TaskRepository tasks,
             CriterionRepository criteria, DeliverableRepository deliverables, IssueCaseRepository cases,
-            LinkRepository links, MergeChainRepository mergeChain, HistoryRepository historyRows,
-            HistoryQueryRepository historyQueries) {
+            LinkRepository links, MergeChainRepository mergeChain, HistoryQueryRepository historyQueries,
+            EntityLookupRepository entityLookup) {
         this.issues = issues;
         this.specs = specs;
         this.tasks = tasks;
@@ -117,8 +125,11 @@ public class DetailService {
         this.cases = cases;
         this.links = links;
         this.mergeChain = mergeChain;
-        this.historyRows = historyRows;
         this.historyQueries = historyQueries;
+        this.entityLookup = entityLookup;
+    }
+
+    private record HistoryDigest(LastChange lastChange, List<ChangeSummary> recentChanges) {
     }
 
     public IssueDetail issue(String rawId) {
@@ -128,23 +139,20 @@ public class DetailService {
         List<Deliverable> delivRows = deliverables.findByTargetEntityAndTargetIdOrderById(
                 DeliverableTarget.ISSUE, rawId);
         Deliverable lastDeliv = delivRows.isEmpty() ? null : delivRows.getLast();
-        List<TaskRef> taskRefs = links.tasksOf(id).stream().map(link -> tasks.findById(link.taskId()))
-                .flatMap(java.util.Optional::stream).map(t -> new TaskRef(t.id().value(), t.state().name(),
-                        t.ownerActorId() == null ? null : t.ownerActorId().value())).toList();
+        List<TaskRef> taskRefs = taskRefsOf(links.tasksOf(id));
         List<RelationView> relations = links.relationsOf(id).stream().map(r -> new RelationView(r.relation().value(),
                 (Objects.equals(r.a(), id) ? r.b() : r.a()).value(),
                 Objects.equals(r.a(), id) ? RelationEnd.A : RelationEnd.B)).toList();
-        LastChange last = newestChange(HistoryEntity.ISSUE, rawId);
-        List<ChangeSummary> recent = recentChanges(HistoryEntity.ISSUE, rawId);
+        HistoryDigest digest = recentDigest(HistoryEntity.ISSUE, rawId);
         return new IssueDetail(rawId, i.projectId().value(), i.title(), i.category().value(), i.severity().value(),
                 i.status().name(), i.mergedInto() == null ? null : i.mergedInto().value(), Texts.orEmpty(i.symptom()),
                 Texts.orEmpty(i.rootCause()), i.ownerActorId() != null ? i.ownerActorId().value()
                         : lastDeliv == null ? null : lastDeliv.recordedBy().value(),
                 i.version(), i.updatedAt(), i.createdBy().value(),
                 lastDeliv == null ? null : lastDeliv.recordedBy().value(),
-                lastDeliv == null ? null : lastDeliv.recordedAt(), last,
+                lastDeliv == null ? null : lastDeliv.recordedAt(), digest.lastChange(),
                 toDeliverableViews(delivRows), taskRefs, links.specsOfIssue(id), links.criteriaOfIssue(id),
-                cases(i), relations, recent);
+                cases(i), relations, digest.recentChanges());
     }
 
     public SpecDetail spec(String rawId) {
@@ -153,18 +161,25 @@ public class DetailService {
                 List.of(HistoryEntity.SPEC.token(), rawId)));
         List<Deliverable> delivRows = deliverables.findByTargetEntityAndTargetIdOrderById(
                 DeliverableTarget.SPEC, rawId);
-        String completedBy = new SpecHistory(historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.SPEC, rawId))
-                .reports().latestCompletion()
+        List<SpecTransition> transitions = historyQueries.transitionsOfEntity(HistoryEntity.SPEC, rawId).stream()
+                .flatMap(row -> Tokens.find(row.fromState(), SpecStatus.values())
+                        .flatMap(from -> Tokens.find(row.toState(), SpecStatus.values())
+                                .map(to -> new SpecTransition(from, to, row.authorId())))
+                        .stream())
+                .toList();
+        String completedBy = new SpecReports(transitions)
+                .latestCompletion()
                 .map(t -> t.author().value())
                 .orElse(delivRows.isEmpty() ? null : delivRows.getLast().recordedBy().value());
+        HistoryDigest digest = recentDigest(HistoryEntity.SPEC, rawId);
         List<String> children = specs.findByParentId(id).stream().map(child -> child.id().value()).sorted().toList();
         return new SpecDetail(rawId, s.projectId().value(), s.parentId() == null ? null : s.parentId().value(),
                 s.title(), Texts.orEmpty(s.summary()), Texts.orEmpty(s.acceptanceCriteria()), s.priority(),
                 s.status().name(), s.ownerActorId() == null ? null : s.ownerActorId().value(), s.originRef(),
                 s.originQuote(), s.version(), s.createdAt(), s.updatedAt(), s.createdBy().value(), completedBy,
-                newestChange(HistoryEntity.SPEC, rawId), toDeliverableViews(delivRows), children,
+                digest.lastChange(), toDeliverableViews(delivRows), children,
                 links.tasksOfSpec(id), links.issuesOfSpec(id), links.criteriaOfSpec(id),
-                recentChanges(HistoryEntity.SPEC, rawId));
+                digest.recentChanges());
     }
 
     public TaskDetail task(String rawId) {
@@ -173,8 +188,14 @@ public class DetailService {
                 List.of(HistoryEntity.TASK.token(), rawId)));
         List<Deliverable> delivRows = deliverables.findByTargetEntityAndTargetIdOrderById(
                 DeliverableTarget.TASK, rawId);
-        String completedBy = new TaskHistory(historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.TASK, rawId))
-                .reports().latestReport()
+        List<TaskTransition> transitions = historyQueries.transitionsOfEntity(HistoryEntity.TASK, rawId).stream()
+                .flatMap(row -> Tokens.find(row.fromState(), TaskState.values())
+                        .flatMap(from -> Tokens.find(row.toState(), TaskState.values())
+                                .map(to -> new TaskTransition(from, to, row.authorId())))
+                        .stream())
+                .toList();
+        String completedBy = new TaskReports(transitions)
+                .latestReport()
                 .map(report -> report.author().value())
                 .orElse(delivRows.isEmpty() ? null : delivRows.getLast().recordedBy().value());
         return new TaskDetail(rawId, t.projectId().value(), t.title(), Texts.orEmpty(t.purpose()),
@@ -195,10 +216,34 @@ public class DetailService {
                 .map(l -> l.specId().value()).sorted().toList();
         List<String> linkedTasks = linked.stream().filter(l -> l.taskId() != null)
                 .map(l -> l.taskId().value()).sorted().toList();
+        HistoryDigest digest = recentDigest(HistoryEntity.CRITERION, rawId);
         return new CriterionDetail(rawId, c.projectId().value(), c.milestone(), c.goalLabel(), c.code(),
                 Texts.orEmpty(c.criterionText()), c.state().name(), c.version(), c.createdBy().value(),
-                newestChange(HistoryEntity.CRITERION, rawId), linkedIssues, linkedSpecs, linkedTasks,
-                recentChanges(HistoryEntity.CRITERION, rawId));
+                digest.lastChange(), linkedIssues, linkedSpecs, linkedTasks, digest.recentChanges());
+    }
+
+    private List<TaskRef> taskRefsOf(List<IssueTaskLink> taskLinks) {
+        if (taskLinks.isEmpty()) {
+            return List.of();
+        }
+        if (entityLookup != null) {
+            List<String> ids = taskLinks.stream().map(link -> link.taskId().value()).toList();
+            Map<String, EntityLookupRepository.TaskSummaryRow> byId = new HashMap<>();
+            for (EntityLookupRepository.TaskSummaryRow row : entityLookup.taskSummaries(ids)) {
+                byId.put(row.id(), row);
+            }
+            List<TaskRef> refs = new ArrayList<>(taskLinks.size());
+            for (IssueTaskLink link : taskLinks) {
+                EntityLookupRepository.TaskSummaryRow row = byId.get(link.taskId().value());
+                if (row != null) {
+                    refs.add(new TaskRef(row.id(), row.state(), row.ownerActorId()));
+                }
+            }
+            return refs;
+        }
+        return taskLinks.stream().map(link -> tasks.findById(link.taskId()))
+                .flatMap(java.util.Optional::stream).map(t -> new TaskRef(t.id().value(), t.state().name(),
+                        t.ownerActorId() == null ? null : t.ownerActorId().value())).toList();
     }
 
     private static List<DeliverableView> toDeliverableViews(List<Deliverable> rows) {
@@ -207,16 +252,28 @@ public class DetailService {
                 d.attachmentId(), d.recordedBy().value(), d.recordedAt())).toList();
     }
 
-    private LastChange newestChange(HistoryEntity entity, String rawId) {
-        List<Long> newest = historyQueries.newestOfEntity(entity, rawId, true, 1);
-        return newest.isEmpty() ? null : lastChange(historyRows.findById(newest.getFirst()).orElseThrow());
-    }
-
-    private List<ChangeSummary> recentChanges(HistoryEntity entity, String rawId) {
-        return historyQueries.newestOfEntity(entity, rawId, false, RECENT_CHANGES).stream()
-                .map(h -> historyRows.findById(h).orElseThrow())
-                .map(DetailService::summary)
-                .toList();
+    private HistoryDigest recentDigest(HistoryEntity entity, String rawId) {
+        List<HistoryQueryRepository.SummaryRow> rows = historyQueries.newestSummariesOfEntity(entity, rawId, false,
+                RECENT_CHANGES);
+        if (rows.isEmpty()) {
+            return new HistoryDigest(null, List.of());
+        }
+        List<ChangeSummary> recent = new ArrayList<>(rows.size());
+        LastChange last = null;
+        for (HistoryQueryRepository.SummaryRow row : rows) {
+            recent.add(summary(row));
+            if (last == null && row.op() != HistoryOp.IMPORT) {
+                last = lastChange(row);
+            }
+        }
+        if (last == null && rows.size() == RECENT_CHANGES) {
+            List<HistoryQueryRepository.SummaryRow> newestNonImport = historyQueries.newestSummariesOfEntity(entity,
+                    rawId, true, 1);
+            if (!newestNonImport.isEmpty()) {
+                last = lastChange(newestNonImport.getFirst());
+            }
+        }
+        return new HistoryDigest(last, recent);
     }
 
     private List<CaseView> cases(Issue root) {
@@ -240,12 +297,12 @@ public class DetailService {
         return out;
     }
 
-    private static LastChange lastChange(HistoryEntry h) {
+    private static LastChange lastChange(HistoryQueryRepository.SummaryRow h) {
         return new LastChange(h.at(), h.authorId().value(), h.login(), h.actorAssurance().name(), h.op().name(),
                 h.reason());
     }
 
-    private static ChangeSummary summary(HistoryEntry h) {
+    private static ChangeSummary summary(HistoryQueryRepository.SummaryRow h) {
         return new ChangeSummary(h.id(), h.at(), h.authorId().value(), h.op().name(), h.reason());
     }
 }

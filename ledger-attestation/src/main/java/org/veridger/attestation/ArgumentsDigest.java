@@ -3,9 +3,6 @@
 package org.veridger.attestation;
 
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -30,8 +27,6 @@ public final class ArgumentsDigest {
     public static final String ATTESTATION_MEMBER = "_hostAttestation";
 
     private static final Pattern FORMAT = Pattern.compile("[0-9a-f]{64}");
-    /** As deep as {@link JsonCanonicalizer} writes (it refuses deeper values). */
-    private static final int MAX_DEPTH = 256;
 
     private ArgumentsDigest() {
     }
@@ -47,35 +42,9 @@ public final class ArgumentsDigest {
         if (arguments == null) {
             throw new IllegalArgumentException("the arguments of a call must be an object");
         }
-        Map<Object, Object> signed = new LinkedHashMap<>(arguments);
-        signed.remove(ATTESTATION_MEMBER);
-        byte[] canonical = JsonCanonicalizer.canonicalize(withoutNullMembers(signed, 0)).getBytes(StandardCharsets.UTF_8);
+        byte[] canonical = JsonCanonicalizer.canonicalizeArguments(arguments, ATTESTATION_MEMBER)
+                .getBytes(StandardCharsets.UTF_8);
         return Sha256Hex.of(canonical);
-    }
-
-    /** The value with every object member that holds {@code null} removed (an element of an array stays, null or not). */
-    private static Object withoutNullMembers(Object value, int depth) {
-        if (depth > MAX_DEPTH) {
-            // the canonical form refuses such a value too; the copy must not run out of stack before it does
-            throw new IllegalArgumentException("JSON value nested deeper than " + MAX_DEPTH);
-        }
-        if (value instanceof Map<?, ?> map) {
-            Map<Object, Object> kept = new LinkedHashMap<>();
-            for (Map.Entry<?, ?> member : map.entrySet()) {
-                if (member.getValue() != null) {
-                    kept.put(member.getKey(), withoutNullMembers(member.getValue(), depth + 1));
-                }
-            }
-            return kept;
-        }
-        if (value instanceof List<?> list) {
-            List<Object> kept = new ArrayList<>();
-            for (Object element : list) {
-                kept.add(withoutNullMembers(element, depth + 1));
-            }
-            return kept;
-        }
-        return value;
     }
 
     /** Whether the text is a digest in the form {@link #of} writes: 64 lower-case hex characters. */

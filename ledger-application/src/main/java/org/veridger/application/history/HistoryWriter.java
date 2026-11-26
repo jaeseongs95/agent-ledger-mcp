@@ -3,6 +3,8 @@
 package org.veridger.application.history;
 
 import java.time.Clock;
+import java.time.Instant;
+import java.util.List;
 import org.veridger.application.json.LedgerJson;
 import org.veridger.application.write.WriteContext;
 import org.veridger.database.repository.Counter;
@@ -67,10 +69,35 @@ public class HistoryWriter {
         this.clock = clock;
     }
 
+    /** One context/entry pair to persist in a batch flush. */
+    public record BatchItem(WriteContext context, Entry entry) {
+    }
+
     /** Appends the row and returns its history id. */
     public long append(WriteContext context, Entry entry) {
         long id = ids.next(Counter.HISTORY);
-        HistoryEntry row = new HistoryEntry(id, clock.instant(), context.author(), context.login(),
+        return insertRow(id, clock.instant(), context, entry);
+    }
+
+    /**
+     * Appends multiple history rows in order, reserving their contiguous ID block in a single {@code id_counter}
+     * update+select pair instead of two round-trips per row.
+     */
+    public long[] appendAll(List<BatchItem> items) {
+        if (items.isEmpty()) {
+            return new long[0];
+        }
+        long firstId = ids.reserveRange(Counter.HISTORY, items.size());
+        long[] assigned = new long[items.size()];
+        for (int i = 0; i < items.size(); i++) {
+            BatchItem item = items.get(i);
+            assigned[i] = insertRow(firstId + i, clock.instant(), item.context(), item.entry());
+        }
+        return assigned;
+    }
+
+    private long insertRow(long id, Instant at, WriteContext context, Entry entry) {
+        HistoryEntry row = new HistoryEntry(id, at, context.author(), context.login(),
                 ActorAssurance.DECLARED, entry.entity(), entry.entityId(), entry.op(), entry.fromState(),
                 entry.toState(), json.write(entry.changes()),
                 entry.before() == null ? null : json.write(entry.before()), context.reason().text(),

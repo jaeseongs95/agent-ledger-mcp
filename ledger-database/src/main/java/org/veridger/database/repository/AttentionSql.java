@@ -45,6 +45,29 @@ final class AttentionSql {
         return condition(kind);
     }
 
+    /** Single-kind SELECT of {@code kind, id, project_id} with optional pushed {@code project} and {@code afterId} filters. */
+    static String branch(AttentionKind kind, boolean withProject, boolean withAfterId) {
+        StringBuilder sql = new StringBuilder(String.format("SELECT '%s' AS kind, id, project_id FROM %s WHERE %s",
+                kind.name(), kind.entity().token(), condition(kind)));
+        if (withProject) {
+            sql.append(" AND project_id = :project");
+        }
+        if (withAfterId) {
+            sql.append(" AND id > :afterId");
+        }
+        return sql.toString();
+    }
+
+    /** Single-kind SELECT of {@code id} only, for bounded count queries without row hydration. */
+    static String idsBranch(AttentionKind kind, boolean withProject) {
+        StringBuilder sql = new StringBuilder(String.format("SELECT id FROM %s WHERE %s",
+                kind.entity().token(), condition(kind)));
+        if (withProject) {
+            sql.append(" AND project_id = :project");
+        }
+        return sql.toString();
+    }
+
     /**
      * All kinds as one select list of {@code kind, id, project_id}, in the order the kinds are declared. The table of a
      * kind is the token of the entity it is about ({@code defect}, {@code task}), which is also the name of the table.
@@ -53,8 +76,7 @@ final class AttentionSql {
         // the kind and the table are names of constants of ours (an enum and a table name), never a value of a request;
         // they are put into the text with a format, which is also what keeps them out of the ANSI-009 text scan
         return Arrays.stream(AttentionKind.values())
-                .map(kind -> String.format("SELECT '%s' AS kind, id, project_id FROM %s WHERE %s", kind.name(),
-                        kind.entity().token(), condition(kind)))
+                .map(kind -> branch(kind, false, false))
                 .collect(Collectors.joining(" UNION ALL "));
     }
 }

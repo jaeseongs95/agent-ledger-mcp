@@ -101,9 +101,18 @@ record AntigravityDialect(JsonCodec codec) implements HostDialect {
     }
 
     private Intake readWrapped(JsonNode args, HostIdentity host) {
-        return codec.bindObject(args, WrapperCall.class)
-                .flatMap(wrapper -> envelopeName(wrapper.serverName(), wrapper.toolName())
-                        .map(called -> attestEnvelope(wrapper, called, host)))
+        if (args == null || !args.isObject()) {
+            return new Intake.Skip();
+        }
+        // Fast-path skip for non-Veridger call_mcp_tool calls before full Jackson record binding.
+        JsonNode serverNode = args.get("ServerName");
+        JsonNode toolNode = args.get("ToolName");
+        if (serverNode == null || !serverNode.isString() || toolNode == null || !toolNode.isString()) {
+            return new Intake.Skip();
+        }
+        return envelopeName(serverNode.stringValue(), toolNode.stringValue())
+                .flatMap(called -> codec.bindObject(args, WrapperCall.class)
+                        .map(wrapper -> attestEnvelope(wrapper, called, host)))
                 .orElseGet(Intake.Skip::new);
     }
 

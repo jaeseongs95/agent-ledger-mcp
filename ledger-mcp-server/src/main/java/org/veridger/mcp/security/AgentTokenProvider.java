@@ -2,10 +2,10 @@
 
 package org.veridger.mcp.security;
 
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.HexFormat;
+import java.security.NoSuchAlgorithmException;
 import java.util.List;
-import org.veridger.domain.value.Sha256;
 import org.veridger.mcp.config.LedgerMcpProperties;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -58,6 +58,10 @@ public final class AgentTokenProvider implements AuthenticationProvider {
     }
 
     private static byte[] digest(String token) {
-        return HexFormat.of().parseHex(Sha256.ofText(token).hex());
+        try {
+            return MessageDigest.getInstance("SHA-256").digest(token.getBytes(StandardCharsets.UTF_8));
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is mandatory on every JVM", impossible);
+        }
     }
 }

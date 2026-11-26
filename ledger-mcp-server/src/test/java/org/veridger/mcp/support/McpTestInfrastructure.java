@@ -12,6 +12,8 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.event.ContextClosedEvent;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.scheduling.TaskScheduler;
+import org.springframework.scheduling.concurrent.SimpleAsyncTaskScheduler;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -55,20 +57,24 @@ public class McpTestInfrastructure {
     @Order(Ordered.HIGHEST_PRECEDENCE)
     public static class SchedulerStoppedFirst implements ApplicationListener<ContextClosedEvent> {
 
-        private final ThreadPoolTaskScheduler scheduler;
+        private final TaskScheduler scheduler;
 
-        SchedulerStoppedFirst(ThreadPoolTaskScheduler scheduler) {
+        SchedulerStoppedFirst(TaskScheduler scheduler) {
             this.scheduler = scheduler;
         }
 
         @Override
         public void onApplicationEvent(ContextClosedEvent event) {
-            scheduler.shutdown();
+            if (scheduler instanceof ThreadPoolTaskScheduler pool) {
+                pool.shutdown();
+            } else if (scheduler instanceof SimpleAsyncTaskScheduler simple) {
+                simple.close();
+            }
         }
     }
 
     @Bean
-    SchedulerStoppedFirst schedulerStoppedFirst(ThreadPoolTaskScheduler scheduler) {
+    SchedulerStoppedFirst schedulerStoppedFirst(TaskScheduler scheduler) {
         return new SchedulerStoppedFirst(scheduler);
     }
 

@@ -8,7 +8,6 @@ import org.veridger.application.read.DetailService;
 import org.veridger.application.read.ListService;
 import org.veridger.application.read.ListService.SpecsQuery;
 import org.veridger.application.read.StatsService;
-import org.veridger.application.read.StatsService.StatsQuery;
 import org.veridger.domain.rule.AttentionKind;
 import org.veridger.domain.rule.SpecStatus;
 import org.springframework.stereotype.Controller;
@@ -64,7 +63,7 @@ public class SpecsController {
             model.addAttribute("page", page);
             model.addAttribute("paging", Paging.of("/specs", filters, filter.limit(), filter.cursor(),
                     filter.back(), page.nextCursor()));
-            model.addAttribute("total", stats.stats(new StatsQuery(project.selected(), null)).specs());
+            model.addAttribute("total", stats.countSpecs(project.selected()));
         }
         return "specs";
     }

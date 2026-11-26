@@ -253,7 +253,7 @@ public class Rows {
         return new LookupException(LookupCode.NOT_FOUND, List.of(what, id));
     }
 
-    private static void requireVersion(String entity, String id, Long expected, long current) {
+    static void requireVersion(String entity, String id, Long expected, long current) {
         if (expected != null && expected != current) {
             throw new ConflictException(ConflictCode.VERSION_CONFLICT,
                     List.of(entity, id, Long.toString(expected), Long.toString(current)));

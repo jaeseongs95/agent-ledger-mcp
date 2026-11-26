@@ -8,9 +8,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,6 +34,10 @@ public final class UpdateService {
     private static final String SHA256SUMS = "SHA256SUMS";
     private static final long MAX_SUMS_BYTES = 1_048_576L;
     private static final long MAX_JAR_BYTES = 134_217_728L;
+    private static final Duration INSPECT_CACHE_TTL = Duration.ofMinutes(5);
+
+    private record CachedRelease(ReleaseInfo release, Instant expiresAt) {
+    }
 
     private static final Logger LOG = LoggerFactory.getLogger(UpdateService.class);
 
@@ -59,6 +66,7 @@ public final class UpdateService {
     private final UpdateQueue queue;
     private final Clock clock;
     private final ReentrantLock applyLock = new ReentrantLock();
+    private final AtomicReference<CachedRelease> latestCache = new AtomicReference<>();
 
     public UpdateService(LedgerAdminProperties properties, ReleaseClient releases, ChecksumVerifier verifier,
             UpdateQueue queue, Clock clock) {
@@ -69,7 +77,12 @@ public final class UpdateService {
         this.clock = clock;
     }
 
-    /** Evaluates current version, host updater status, and latest release availability without mutating anything. */
+    /**
+     * Evaluates current version, host updater status, and latest release availability without mutating anything.
+     * Caches successful GitHub release metadata per service instance for {@link #INSPECT_CACHE_TTL} (using the
+     * injected {@link Clock}, no {@code ThreadLocal} or mutable static) to avoid rate-limiting and repeated HTTPS
+     * round-trips on page reloads; failed checks are never cached.
+     */
     public UpdateView inspect() {
         UpdateStatus status = queue.readStatus();
         if (!config.enabled()) {
@@ -79,7 +92,7 @@ public final class UpdateService {
         SemVer current = SemVer.parse(config.currentVersion()).orElse(new SemVer(0, 0, 0));
         ReleaseInfo latest;
         try {
-            latest = releases.fetchLatest();
+            latest = latestCached();
         } catch (IOException e) {
             LOG.warn("could not check latest Veridger release for {}", config.repository(), e);
             return new UpdateView(config.currentVersion(), config.currentSchemaVersion(), config.repository(),
@@ -91,6 +104,17 @@ public final class UpdateService {
         return new UpdateView(config.currentVersion(), config.currentSchemaVersion(), config.repository(),
                 availability, latest.version().text(), latest.htmlUrl(), latest.requiredSchemaVersion(),
                 canApply, status);
+    }
+
+    private ReleaseInfo latestCached() throws IOException {
+        Instant now = clock.instant();
+        CachedRelease cached = latestCache.get();
+        if (cached != null && now.isBefore(cached.expiresAt())) {
+            return cached.release();
+        }
+        ReleaseInfo fresh = releases.fetchLatest();
+        latestCache.set(new CachedRelease(fresh, now.plus(INSPECT_CACHE_TTL)));
+        return fresh;
     }
 
     /**
@@ -118,6 +142,7 @@ public final class UpdateService {
         ReleaseInfo latest;
         try {
             latest = releases.fetchLatest();
+            latestCache.set(new CachedRelease(latest, clock.instant().plus(INSPECT_CACHE_TTL)));
         } catch (IOException e) {
             LOG.warn("update aborted: could not fetch latest release", e);
             return new ApplyResult(false, "updates.error.checkFailed", "");

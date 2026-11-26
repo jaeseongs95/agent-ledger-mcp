@@ -72,7 +72,8 @@ final class LedgerHook {
                 return new Verdict.Denied(Refusal.OPERATION_KEY_INVALID);
             }
         }
-        ObjectNode stamped = arguments.deepCopy();
+        ObjectNode stamped = arguments.objectNode();
+        arguments.properties().forEach(entry -> stamped.set(entry.getKey(), entry.getValue()));
         String author = Author.of(vendor, id).value();
         stamped.put(RESERVED_KEY, author);
         return new Verdict.Stamped(stamped, author);

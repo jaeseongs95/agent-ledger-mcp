@@ -82,6 +82,30 @@ public class StatsService {
                 perDay);
     }
 
+    /** Lightweight single-table issue count for a project (or the whole ledger when blank/null). */
+    public long countIssues(String project) {
+        String scope = Texts.nullIfBlank(project);
+        return queries.countIssues(scope == null ? null : ProjectId.of(scope));
+    }
+
+    /** Lightweight single-table spec count for a project (or the whole ledger when blank/null). */
+    public long countSpecs(String project) {
+        String scope = Texts.nullIfBlank(project);
+        return queries.countSpecs(scope == null ? null : ProjectId.of(scope));
+    }
+
+    /** Lightweight single-table task count for a project (or the whole ledger when blank/null). */
+    public long countTasks(String project) {
+        String scope = Texts.nullIfBlank(project);
+        return queries.countTasks(scope == null ? null : ProjectId.of(scope));
+    }
+
+    /** Lightweight single-table milestone criterion count for a project (or the whole ledger when blank/null). */
+    public long countCriteria(String project) {
+        String scope = Texts.nullIfBlank(project);
+        return queries.countCriteria(scope == null ? null : ProjectId.of(scope));
+    }
+
     private List<DayCount> buildDayCounts(ProjectId project) {
         Map<LocalDate, Long> issues = queries.issuesCreatedPerDay(project);
         Map<LocalDate, Long> specs = queries.specsCreatedPerDay(project);

@@ -6,8 +6,10 @@ import java.time.Instant;
 import java.util.List;
 import java.util.function.UnaryOperator;
 import org.veridger.database.time.UtcTime;
+import org.veridger.domain.rule.ActorAssurance;
 import org.veridger.domain.rule.HistoryEntity;
 import org.veridger.domain.rule.HistoryOp;
+import org.veridger.domain.value.ActorId;
 import org.veridger.domain.value.MaxRows;
 import org.veridger.domain.value.ProjectId;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -40,19 +42,6 @@ public class HistoryQueryRepository {
     }
 
     /**
-     * As {@link #childOf}, or a deliverable of the entity: {@code <prefix><id>@...}, the prefix being the SQL literal
-     * {@code 'issue:'} and so on (a literal of this class, never a value of a caller).
-     */
-    private static String childOrDeliverableOf(String alias, String prefixLiteral) {
-        int length = prefixLiteral.length() - 2;
-        int from = length + 1;
-        return "(" + childOf(alias) + " OR ("
-                + "SUBSTRING(h.entity_id FROM 1 FOR " + length + ") = " + prefixLiteral + " "
-                + "AND SUBSTRING(h.entity_id FROM " + from + " FOR CHAR_LENGTH(" + alias + ".id)) = " + alias + ".id "
-                + "AND SUBSTRING(h.entity_id FROM " + from + " + CHAR_LENGTH(" + alias + ".id) FOR 1) = '@'))";
-    }
-
-    /**
      * The history row belongs to an entity of {@code table} in the project, and to no other entity of the table that has the
      * longer id. The id of a spec, task or criterion is free text (it may hold {@code |} and {@code @}), so the id of one entity
      * can continue the id of another and the row of a link or deliverable of the longer one also starts with the shorter one:
@@ -66,21 +55,73 @@ public class HistoryQueryRepository {
                 + owns.apply("q") + "))";
     }
 
-    private static final String IN_PROJECT = "("
-            + "(h.entity = 'ISSUE' AND h.entity_id IN (SELECT i.id FROM issue i WHERE i.project_id = :project)) "
-            + "OR (h.entity = 'SPEC' AND h.entity_id IN (SELECT s.id FROM spec s WHERE s.project_id = :project)) "
-            + "OR (h.entity = 'TASK' AND h.entity_id IN (SELECT t.id FROM task t WHERE t.project_id = :project)) "
-            + "OR (h.entity = 'CRITERION' AND h.entity_id IN (SELECT c.id FROM milestone_criterion c "
-            + "WHERE c.project_id = :project)) "
-            + "OR (h.entity IN ('ISSUE_CASE', 'ISSUE_TASK', 'ISSUE_RELATION', 'ISSUE_SPEC') AND "
-            + ownedInProject("issue", HistoryQueryRepository::childOf) + ") "
-            + "OR (h.entity = 'SPEC_TASK' AND " + ownedInProject("spec", HistoryQueryRepository::childOf) + ") "
-            + "OR (h.entity = 'DELIVERABLE' AND ("
-            + ownedInProject("issue", alias -> childOrDeliverableOf(alias, "'issue:'")) + " "
+    /**
+     * Issue IDs have fixed {@code <CODE>-<TYPE>-<NUM>} syntax and never contain {@code @} or {@code |}, so an issue ID
+     * cannot be a proper prefix of another issue ID followed by a separator; no nested longest-prefix anti-join is needed.
+     */
+    private static String ownedIssueInProject(UnaryOperator<String> owns) {
+        return "EXISTS (SELECT 1 FROM issue p WHERE p.project_id = :project AND " + owns.apply("p") + ")";
+    }
+
+    /** Prefixed deliverable condition gated on the literal prefix before evaluating the table EXISTS subquery. */
+    private static String deliverableOf(String prefixLiteral, String existsPredicate) {
+        int length = prefixLiteral.length() - 2;
+        return "(SUBSTRING(h.entity_id FROM 1 FOR " + length + ") = " + prefixLiteral + " AND " + existsPredicate + ")";
+    }
+
+    private static String deliverableMatch(String alias, String prefixLiteral) {
+        int length = prefixLiteral.length() - 2;
+        int from = length + 1;
+        return "(SUBSTRING(h.entity_id FROM " + from + " FOR CHAR_LENGTH(" + alias + ".id)) = " + alias + ".id "
+                + "AND SUBSTRING(h.entity_id FROM " + from + " + CHAR_LENGTH(" + alias + ".id) FOR 1) = '@')";
+    }
+
+    private static String childOrDeliverableOf(String alias, String prefixLiteral) {
+        int length = prefixLiteral.length() - 2;
+        return "(" + childOf(alias) + " OR (SUBSTRING(h.entity_id FROM 1 FOR " + length + ") = " + prefixLiteral
+                + " AND " + deliverableMatch(alias, prefixLiteral) + "))";
+    }
+
+    private static final String ISSUE_DIRECT = "h.entity_id IN (SELECT i.id FROM issue i WHERE i.project_id = :project)";
+    private static final String SPEC_DIRECT = "h.entity_id IN (SELECT s.id FROM spec s WHERE s.project_id = :project)";
+    private static final String TASK_DIRECT = "h.entity_id IN (SELECT t.id FROM task t WHERE t.project_id = :project)";
+    private static final String CRITERION_DIRECT = "h.entity_id IN (SELECT c.id FROM milestone_criterion c "
+            + "WHERE c.project_id = :project)";
+    private static final String ISSUE_CHILD = ownedIssueInProject(HistoryQueryRepository::childOf);
+    private static final String SPEC_CHILD = ownedInProject("spec", HistoryQueryRepository::childOf);
+    private static final String CRITERION_CHILD = ownedInProject("milestone_criterion", HistoryQueryRepository::childOf);
+    private static final String DELIVERABLE_IN_PROJECT = "("
+            + deliverableOf("'issue:'", ownedIssueInProject(alias -> deliverableMatch(alias, "'issue:'"))) + " "
+            + "OR " + ownedIssueInProject(HistoryQueryRepository::childOf) + " "
             + "OR " + ownedInProject("spec", alias -> childOrDeliverableOf(alias, "'spec:'")) + " "
-            + "OR " + ownedInProject("task", alias -> childOrDeliverableOf(alias, "'task:'")) + ")) "
-            + "OR (h.entity = 'CRITERION_LINK' AND "
-            + ownedInProject("milestone_criterion", HistoryQueryRepository::childOf) + "))";
+            + "OR " + ownedInProject("task", alias -> childOrDeliverableOf(alias, "'task:'")) + ")";
+
+    private static final String IN_PROJECT = "("
+            + "(h.entity = 'ISSUE' AND " + ISSUE_DIRECT + ") "
+            + "OR (h.entity = 'SPEC' AND " + SPEC_DIRECT + ") "
+            + "OR (h.entity = 'TASK' AND " + TASK_DIRECT + ") "
+            + "OR (h.entity = 'CRITERION' AND " + CRITERION_DIRECT + ") "
+            + "OR (h.entity IN ('ISSUE_CASE', 'ISSUE_TASK', 'ISSUE_RELATION', 'ISSUE_SPEC') AND " + ISSUE_CHILD + ") "
+            + "OR (h.entity = 'SPEC_TASK' AND " + SPEC_CHILD + ") "
+            + "OR (h.entity = 'DELIVERABLE' AND " + DELIVERABLE_IN_PROJECT + ") "
+            + "OR (h.entity = 'CRITERION_LINK' AND " + CRITERION_CHILD + "))";
+
+    /** Narrows the project ownership predicate to the single requested entity branch when {@code entity} is fixed. */
+    private static String inProjectFor(HistoryEntity entity) {
+        if (entity == null) {
+            return IN_PROJECT;
+        }
+        return switch (entity) {
+            case ISSUE -> ISSUE_DIRECT;
+            case SPEC -> SPEC_DIRECT;
+            case TASK -> TASK_DIRECT;
+            case CRITERION -> CRITERION_DIRECT;
+            case ISSUE_CASE, ISSUE_TASK, ISSUE_RELATION, ISSUE_SPEC -> ISSUE_CHILD;
+            case SPEC_TASK -> SPEC_CHILD;
+            case DELIVERABLE -> DELIVERABLE_IN_PROJECT;
+            case CRITERION_LINK -> CRITERION_CHILD;
+        };
+    }
 
     private final JdbcClient jdbc;
     private final SqlBuilder sqlBuilder;
@@ -120,7 +161,7 @@ public class HistoryQueryRepository {
             sql.append(" AND h.entity_id = :entityId");
         }
         if (filter.project() != null) {
-            sql.append(" AND ").append(IN_PROJECT);
+            sql.append(" AND ").append(inProjectFor(filter.entity()));
         }
         if (filter.op() != null) {
             sql.append(" AND h.op = :op");
@@ -170,6 +211,15 @@ public class HistoryQueryRepository {
         return KeysetPage.of(spec.query(Long.class).list(), maxRows.value());
     }
 
+    /** Lightweight transition projection (omitting {@code before_data} and {@code changes} blobs), oldest first. */
+    public record TransitionRow(String fromState, String toState, ActorId authorId) {
+    }
+
+    /** Lightweight history metadata projection (omitting {@code before_data} and {@code changes} blobs). */
+    public record SummaryRow(long id, Instant at, ActorId authorId, String login, ActorAssurance actorAssurance,
+            HistoryOp op, String reason) {
+    }
+
     /**
      * The newest history ids of one entity, newest first, without the rows imported from another ledger when
      * {@code withoutImport} is set; at most {@code count} ids.
@@ -181,5 +231,38 @@ public class HistoryQueryRepository {
                 .param("entityId", entityId)
                 .param("row_count", count)
                 .query(Long.class).list();
+    }
+
+    /**
+     * Transition metadata of one entity in chronological id order without reading {@code before_data} or
+     * {@code changes} JSON payloads into heap.
+     */
+    public List<TransitionRow> transitionsOfEntity(HistoryEntity entity, String entityId) {
+        return jdbc.sql("SELECT from_state, to_state, author_id FROM history "
+                + "WHERE entity = :entity AND entity_id = :entityId AND op = 'TRANSITION' ORDER BY id")
+                .param("entity", entity.name())
+                .param("entityId", entityId)
+                .query((rs, n) -> new TransitionRow(rs.getString("from_state"), rs.getString("to_state"),
+                        ActorId.ofStored(rs.getString("author_id"))))
+                .list();
+    }
+
+    /**
+     * The newest history metadata summaries of one entity, newest first, without reading {@code before_data} or
+     * {@code changes} JSON payloads into heap.
+     */
+    public List<SummaryRow> newestSummariesOfEntity(HistoryEntity entity, String entityId, boolean withoutImport,
+            int count) {
+        return jdbc.sql(sqlBuilder.applyLimit("SELECT id, occurred_at, author_id, login, actor_assurance, op, reason "
+                + "FROM history WHERE entity = :entity AND entity_id = :entityId"
+                + (withoutImport ? " AND op <> 'IMPORT'" : "") + " ORDER BY occurred_at DESC, id DESC", ":row_count"))
+                .param("entity", entity.name())
+                .param("entityId", entityId)
+                .param("row_count", count)
+                .query((rs, n) -> new SummaryRow(rs.getLong("id"), UtcTime.read(rs, "occurred_at"),
+                        ActorId.ofStored(rs.getString("author_id")), rs.getString("login"),
+                        ActorAssurance.valueOf(rs.getString("actor_assurance")),
+                        HistoryOp.valueOf(rs.getString("op")), rs.getString("reason")))
+                .list();
     }
 }

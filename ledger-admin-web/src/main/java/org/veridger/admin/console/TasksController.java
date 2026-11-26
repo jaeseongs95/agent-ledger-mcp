@@ -9,7 +9,6 @@ import org.veridger.application.read.ListService;
 import org.veridger.application.read.ListService.CriteriaQuery;
 import org.veridger.application.read.ListService.TasksQuery;
 import org.veridger.application.read.StatsService;
-import org.veridger.application.read.StatsService.StatsQuery;
 import org.veridger.domain.rule.AttentionKind;
 import org.veridger.domain.rule.CriterionState;
 import org.veridger.domain.rule.TaskState;
@@ -71,7 +70,7 @@ public class TasksController {
             model.addAttribute("page", page);
             model.addAttribute("paging", Paging.of("/tasks", filters, filter.limit(), filter.cursor(),
                     filter.back(), page.nextCursor()));
-            model.addAttribute("total", stats.stats(new StatsQuery(project.selected(), null)).tasks());
+            model.addAttribute("total", stats.countTasks(project.selected()));
         }
         return "tasks";
     }
@@ -106,7 +105,7 @@ public class TasksController {
             model.addAttribute("page", page);
             model.addAttribute("paging", Paging.of("/criteria", filters, filter.limit(), filter.cursor(),
                     filter.back(), page.nextCursor()));
-            model.addAttribute("total", stats.stats(new StatsQuery(project.selected(), null)).criteria());
+            model.addAttribute("total", stats.countCriteria(project.selected()));
         }
         return "criteria";
     }

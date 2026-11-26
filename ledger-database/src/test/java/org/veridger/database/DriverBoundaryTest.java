@@ -636,4 +636,41 @@ class DriverBoundaryTest {
         assertThat(cause).isInstanceOf(BindException.class);
         assertThat(((BindException) cause).getProperty().getName().toString()).isEqualTo("ledger.jdbc.driver.jar");
     }
+
+    @Test
+    void perfDb13_poolTimingPropertiesApplyToHikariIncludingZeroKeepalive() throws IOException {
+        TestDatabaseSettings settings = TestDatabaseSettings.fromSystemProperties();
+        String jar = driverJar().toString();
+        String sha = sha(driverJar());
+        Path yaml = Files.writeString(temp.resolve("jdbc-driver-pool-timing.yaml"),
+                "ledger:\n  jdbc:\n    url: " + settings.url() + "\n    driver:\n      jar: '" + jar
+                        + "'\n      class-name: org.postgresql.Driver\n      sha256: " + sha
+                        + "\n      registered-at: 2026-11-05T10:00:00Z\n");
+        List<String> baseProps = new ArrayList<>(List.of("spring.config.import=file:" + yaml.toUri().getPath(),
+                "spring.main.banner-mode=off", "logging.level.root=WARN", "ledger.jdbc.username=" + settings.user(),
+                "ledger.jdbc.pool-size=1"));
+        settings.ownerPassword().ifPresent(password -> baseProps.add("ledger.jdbc.password=" + password));
+
+        // Default keepalive-time-ms=0 must override HikariCP 7's 120,000 ms default.
+        try (ConfigurableApplicationContext context = new SpringApplicationBuilder(LedgerDataSourceConfiguration.class)
+                .web(WebApplicationType.NONE).properties(baseProps.toArray(String[]::new)).run()) {
+            HikariDataSource pool = (HikariDataSource) context.getBean(DataSource.class);
+            assertThat(pool.getConnectionTimeout()).isEqualTo(30_000L);
+            assertThat(pool.getIdleTimeout()).isEqualTo(600_000L);
+            assertThat(pool.getKeepaliveTime()).isEqualTo(0L);
+        }
+
+        // Explicit pool timing overrides propagate directly to HikariDataSource.
+        List<String> customProps = new ArrayList<>(baseProps);
+        customProps.add("ledger.jdbc.connection-timeout-ms=5000");
+        customProps.add("ledger.jdbc.idle-timeout-ms=120000");
+        customProps.add("ledger.jdbc.keepalive-time-ms=45000");
+        try (ConfigurableApplicationContext context = new SpringApplicationBuilder(LedgerDataSourceConfiguration.class)
+                .web(WebApplicationType.NONE).properties(customProps.toArray(String[]::new)).run()) {
+            HikariDataSource pool = (HikariDataSource) context.getBean(DataSource.class);
+            assertThat(pool.getConnectionTimeout()).isEqualTo(5_000L);
+            assertThat(pool.getIdleTimeout()).isEqualTo(120_000L);
+            assertThat(pool.getKeepaliveTime()).isEqualTo(45_000L);
+        }
+    }
 }

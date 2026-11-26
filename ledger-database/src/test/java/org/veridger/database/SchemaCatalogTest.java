@@ -474,20 +474,24 @@ class SchemaCatalogTest {
                 + ":sha, 0, 0, 0, :sk, 'k1', :state, TIMESTAMP '2026-11-05 10:00:00', TIMESTAMP '2026-11-05 10:00:00', "
                 + "TIMESTAMP '2026-11-05 10:00:00')";
         String sha = "a".repeat(64);
-        jdbc.sql(insert).param("id", "11111111-1111-1111-1111-111111111111")
-                .param("att", "aaaaaaaa-1111-1111-1111-111111111111").param("sha", sha)
-                .param("sk", uniqueKey()).param("state", "STAGING").update();
-        Throwable sameOperation = catchThrowable(() -> jdbc.sql(insert)
-                .param("id", "22222222-2222-2222-2222-222222222222")
-                .param("att", "bbbbbbbb-2222-2222-2222-222222222222")
-                .param("sha", sha).param("sk", uniqueKey()).param("state", "STAGING").update());
-        assertThat(sameOperation).isInstanceOf(org.springframework.dao.DuplicateKeyException.class);
-        Throwable badState = catchThrowable(() -> jdbc.sql(insert.replace("'op-1'", "'op-2'"))
-                .param("id", "33333333-3333-3333-3333-333333333333")
-                .param("att", "cccccccc-3333-3333-3333-333333333333").param("sha", sha).param("sk", uniqueKey())
-                .param("state", "DELETING").update());
-        assertThat(badState).isInstanceOf(DataIntegrityViolationException.class);
-        assertThat(sqlState(badState)).startsWith("23");
+        try {
+            jdbc.sql(insert).param("id", "11111111-1111-1111-1111-111111111111")
+                    .param("att", "aaaaaaaa-1111-1111-1111-111111111111").param("sha", sha)
+                    .param("sk", uniqueKey()).param("state", "STAGING").update();
+            Throwable sameOperation = catchThrowable(() -> jdbc.sql(insert)
+                    .param("id", "22222222-2222-2222-2222-222222222222")
+                    .param("att", "bbbbbbbb-2222-2222-2222-222222222222")
+                    .param("sha", sha).param("sk", uniqueKey()).param("state", "STAGING").update());
+            assertThat(sameOperation).isInstanceOf(org.springframework.dao.DuplicateKeyException.class);
+            Throwable badState = catchThrowable(() -> jdbc.sql(insert.replace("'op-1'", "'op-2'"))
+                    .param("id", "33333333-3333-3333-3333-333333333333")
+                    .param("att", "cccccccc-3333-3333-3333-333333333333").param("sha", sha).param("sk", uniqueKey())
+                    .param("state", "DELETING").update());
+            assertThat(badState).isInstanceOf(DataIntegrityViolationException.class);
+            assertThat(sqlState(badState)).startsWith("23");
+        } finally {
+            jdbc.sql("DELETE FROM upload_staging WHERE id = '11111111-1111-1111-1111-111111111111'").update();
+        }
     }
 
     private List<String> primaryKeyColumns(String table) {

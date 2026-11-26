@@ -304,7 +304,7 @@ class UpdateFeatureTest {
                 new ChecksumVerifier(), new FileUpdateQueue(localProps), Clock.systemUTC());
         assertThat(service.inspect().availability()).isEqualTo(UpdateService.Availability.SCHEMA_MIGRATION_REQUIRED);
 
-        // Malformed asset URL degrades gracefully to CHECK_FAILED instead of uncaught exception
+        // Malformed asset URL degrades gracefully to CHECK_FAILED instead of uncaught exception (fresh instance bypasses 5-min cache)
         overflowJson.set("""
                 {
                   "tag_name": "v4.1.9",
@@ -315,7 +315,75 @@ class UpdateFeatureTest {
                   "assets": [{"name":"ledger-cli.jar","browser_download_url":"http://[::1","size":10}]
                 }
                 """);
-        assertThat(service.inspect().availability()).isEqualTo(UpdateService.Availability.CHECK_FAILED);
+        UpdateService freshService = new UpdateService(localProps, new GitHubReleaseClient(localProps, testRestClient()),
+                new ChecksumVerifier(), new FileUpdateQueue(localProps), Clock.systemUTC());
+        assertThat(freshService.inspect().availability()).isEqualTo(UpdateService.Availability.CHECK_FAILED);
+    }
+
+    @Test
+    @DisplayName("UPD-06: inspect() caches release metadata for 5 minutes via injected Clock while applyLatest() always fetches live")
+    void upd06_inspectCacheTtlAndApplyBypass(@TempDir Path tempDir) throws Exception {
+        java.util.concurrent.atomic.AtomicInteger hits = new java.util.concurrent.atomic.AtomicInteger();
+        AtomicReference<String> json = new AtomicReference<>("""
+                {
+                  "tag_name": "v4.2.1",
+                  "html_url": "https://github.com/jaeseongs95/veridger/releases/tag/v4.2.1",
+                  "body": "Schema-Version: V12",
+                  "draft": false,
+                  "prerelease": false,
+                  "assets": []
+                }
+                """);
+        HttpServer http = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        http.createContext("/repos/jaeseongs95/veridger/releases/latest", ex -> {
+            hits.incrementAndGet();
+            byte[] body = json.get().getBytes(StandardCharsets.UTF_8);
+            ex.getResponseHeaders().add("Content-Type", "application/json");
+            ex.sendResponseHeaders(200, body.length);
+            ex.getResponseBody().write(body);
+            ex.close();
+        });
+        http.start();
+        try {
+            String base = "http://127.0.0.1:" + http.getAddress().getPort();
+            LedgerAdminProperties p = props(base, tempDir.resolve("cache"), "4.2.0", 12);
+
+            AtomicReference<java.time.Instant> now = new AtomicReference<>(java.time.Instant.parse("2026-11-26T00:00:00Z"));
+            Clock mutableClock = new Clock() {
+                @Override
+                public java.time.ZoneId getZone() {
+                    return java.time.ZoneOffset.UTC;
+                }
+
+                @Override
+                public Clock withZone(java.time.ZoneId zone) {
+                    return this;
+                }
+
+                @Override
+                public java.time.Instant instant() {
+                    return now.get();
+                }
+            };
+            UpdateService service = new UpdateService(p, new GitHubReleaseClient(p, testRestClient()),
+                    new ChecksumVerifier(), new FileUpdateQueue(p), mutableClock);
+
+            // First inspect fetches once; second inspect within 5 minutes hits cache
+            assertThat(service.inspect().latestVersion()).isEqualTo("4.2.1");
+            assertThat(service.inspect().latestVersion()).isEqualTo("4.2.1");
+            assertThat(hits.get()).isEqualTo(1);
+
+            // Advancing clock past 5 minutes expires cache and re-fetches
+            now.set(now.get().plus(java.time.Duration.ofMinutes(5).plusSeconds(1)));
+            assertThat(service.inspect().latestVersion()).isEqualTo("4.2.1");
+            assertThat(hits.get()).isEqualTo(2);
+
+            // applyLatest always bypasses cache and performs a live fetch
+            service.applyLatest(TestOwners.OWNER);
+            assertThat(hits.get()).isEqualTo(3);
+        } finally {
+            http.stop(0);
+        }
     }
 
     @Test

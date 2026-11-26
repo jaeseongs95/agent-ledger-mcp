@@ -10,7 +10,7 @@
 설치기는 프록시 설정을 쓰지 않고 인증서를 발급하지 않습니다.
 
 2.0.0 버전은 Java 25와 Spring Boot로 다시 작성한 것이며 자체 도구 계약을 가집니다(모든 쓰기 도구는 필수 `operationKey`를 받고, 모든 응답은 `ApiResult.v1` 봉투를 쓰며, 이전 버전의 인자는 새 인자와 함께 받아들이지 않습니다).
-클라이언트에 바뀐 내용은 릴리스 노트([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md), [4.0.0](docs/release-notes/4.0.0.md), [4.0.1](docs/release-notes/4.0.1.md), [4.1.0](docs/release-notes/4.1.0.md))에 적습니다. 릴리스 노트의 형식은 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md)에 있습니다.
+클라이언트에 바뀐 내용은 릴리스 노트([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md), [4.0.0](docs/release-notes/4.0.0.md), [4.0.1](docs/release-notes/4.0.1.md), [4.1.0](docs/release-notes/4.1.0.md), [4.2.0](docs/release-notes/4.2.0.md))에 적습니다. 릴리스 노트의 형식은 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md)에 있습니다.
 
 ## 목차
 
@@ -202,6 +202,9 @@ MCP를 직접 호출하는 쪽은 HTTP에서 설정된 `Bearer` 토큰 `ledger.m
 | `ledger.jdbc.username` | 전체 | 데이터베이스 계정 |
 | `ledger.jdbc.password` | 전체 | 데이터베이스 비밀번호(비밀) |
 | `ledger.jdbc.pool-size` | 전체 | 연결 풀 크기, 기본 10 |
+| `ledger.jdbc.connection-timeout-ms` | 전체 | 연결 풀에서 연결을 기다리는 최대 시간(밀리초), 기본 30000 |
+| `ledger.jdbc.idle-timeout-ms` | 전체 | 유휴 연결이 풀에 유지되는 최대 시간(밀리초), 기본 600000 |
+| `ledger.jdbc.keepalive-time-ms` | 전체 | 유휴 풀 연결을 점검하는 주기(밀리초, `0`이면 비활성, 그 외 30000 이상), 기본 0 |
 | `ledger.jdbc.driver` | 전체 | `driver-register`가 기록한 등록된 드라이버(jar, 클래스, SHA-256)이며 시작할 때 읽습니다 |
 | `ledger.schema.name` | 전체 | 표를 담는 스키마. 없으면 `migrate`가 만들고, 지정하지 않으면 계정의 기본 스키마입니다 |
 | `ledger.schema.require-utc` | 서버, CLI | JVM이나 데이터베이스 세션이 UTC가 아니면 시작을 거부합니다. 기본 true |
@@ -210,6 +213,9 @@ MCP를 직접 호출하는 쪽은 HTTP에서 설정된 `Bearer` 토큰 `ledger.m
 | `ledger.mcp.allowed-origins` | MCP 서버 | 허용하는 브라우저 출처, 기본 없음 |
 | `ledger.mcp.max-request-size` | MCP 서버 | 요청 본문의 최대 크기, 기본 1MB |
 | `ledger.mcp.code-poll-interval` | MCP 서버 | 다른 프로세스의 코드 변경을 확인하는 주기, 기본 5s |
+| `ledger.mcp.session-idle-timeout` | MCP 서버 | 비활성 Streamable HTTP MCP 세션을 메모리에서 자동 제거하기까지의 유휴 시간, 기본 30m |
+| `ledger.mcp.max-sessions` | MCP 서버 | 메모리에 유지할 수 있는 동시 Streamable HTTP MCP 세션 상한, 기본 1000 |
+| `ledger.mcp.keep-alive-interval` | MCP 서버 | Streamable HTTP SSE keep-alive 핑 주기(`0s`로 설정하면 POST 전용 클라이언트용 비활성화), 기본 30s |
 | `ledger.admin.token` | 관리 웹 | 관리 토큰, 16자 이상(비밀): `/api` 아래 읽기 전용 JSON 엔드포인트의 bearer입니다. `ledger.admin.sign-in=token`이면 로그인 페이지의 비밀번호이기도 합니다 |
 | `ledger.admin.agent-token` | 관리 웹 | 필수: 에이전트의 bearer 토큰으로 `ledger.mcp.token`과 같은 값이어야 하고 `ledger.admin.token`과는 달라야 합니다. 관리 웹은 이 토큰을 `AGENT_TOKEN_FORBIDDEN`으로 거절합니다(비밀) |
 | `ledger.admin.allowed-hosts` | 관리 웹 | 허용하는 `Host` 값(DNS 리바인딩 방어), 기본 `127.0.0.1`과 `localhost` |

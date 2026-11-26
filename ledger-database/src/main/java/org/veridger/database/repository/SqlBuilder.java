@@ -47,6 +47,37 @@ public class SqlBuilder {
         this.dataSource = dataSource;
     }
 
+    /**
+     * Dialect-compatible typed {@code NULL} character projection for {@code UNION ALL} queries (matching
+     * {@link #generateEncodingProbe(Database)}: MySQL/MariaDB {@code CAST()} accepts {@code CHAR(N)} rather than
+     * {@code VARCHAR(N)}, Oracle uses {@code VARCHAR2(N)}, others use {@code VARCHAR(N)}).
+     */
+    public static String generateNullText(Database database, int length) {
+        if (length < 1) {
+            throw new IllegalArgumentException("length must be positive: " + length);
+        }
+        return switch (database) {
+            case POSTGRESQL, H2, DB2, SQLSERVER -> "CAST(NULL AS VARCHAR(" + length + "))";
+            case MARIADB, MYSQL -> "CAST(NULL AS CHAR(" + length + "))";
+            case ORACLE -> "CAST(NULL AS VARCHAR2(" + length + "))";
+        };
+    }
+
+    String nullText(int length) {
+        return generateNullText(database(), length);
+    }
+
+    /**
+     * Whether JDBC {@code PreparedStatement.executeBatch()} on this database reliably reports exact per-row update
+     * counts ({@code >= 0}) instead of {@code Statement.SUCCESS_NO_INFO}.
+     */
+    boolean supportsExactBatchUpdateCounts() {
+        return switch (database()) {
+            case POSTGRESQL, H2, SQLSERVER -> true;
+            case ORACLE, DB2, MARIADB, MYSQL -> false;
+        };
+    }
+
     private Database database() {
         Database result = resolved;
         if (result != null) {

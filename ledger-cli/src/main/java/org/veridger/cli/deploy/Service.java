@@ -30,9 +30,9 @@ record Service(String name, String description, String jar, String settingsFile,
                 List.of(SecretFolder.COMMON, SecretFolder.ADMIN));
     }
 
-    /** {@code <the JVM preset> -jar <jar> --spring.config.import=<the sources of this service>} ({@link JvmPreset}). */
+    /** {@code <the service JVM preset> -jar <jar> --spring.config.import=<the sources of this service>} ({@link JvmPreset}). */
     String arguments(DeployLayout layout) {
-        return JvmPreset.jar(layout.lib() + "/" + jar) + " --spring.config.import="
+        return JvmPreset.serviceJar(layout.lib() + "/" + jar) + " --spring.config.import="
                 + DeployRenderer.configImport(layout, this);
     }
 }

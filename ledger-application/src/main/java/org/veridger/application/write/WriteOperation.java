@@ -3,6 +3,7 @@
 package org.veridger.application.write;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.veridger.application.gate.GateSession;
 import org.veridger.application.gate.Lookup;
@@ -81,9 +82,15 @@ public abstract class WriteOperation<C extends WriteCommand, R extends WriteResu
      * deferred counter/history flushes obey the global canonical lock order across all operations in the batch.
      */
     final R run(String actor, String boundOperationKey, Channel channel, C command, BatchBuffer batch) {
+        AtomicReference<ReceiptService.LoadedReceipt> preloadedReceipt = new AtomicReference<>();
         GateSession session = gate.open(actor, boundOperationKey, channel, resolve(command),
-                (author, now) -> receipts.answered(author, command.operationKey(), operation, resultType)
-                        .map(stored -> targetsAnswered(command, stored, now)));
+                (author, now) -> {
+                    ReceiptService.LoadedReceipt found = receipts.find(author, command.operationKey());
+                    preloadedReceipt.set(found);
+                    return receipts.answered(found, operation, resultType)
+                            .map(stored -> targetsAnswered(command, stored, now));
+                },
+                batch == null ? null : batch::isAuthorized);
         return session.bind(() -> {
             Reason reason = Reason.of(command.reason());
             OperationKey operationKey = OperationKey.parse(command.operationKey());
@@ -91,8 +98,13 @@ public abstract class WriteOperation<C extends WriteCommand, R extends WriteResu
             Sha256 digest = CanonicalPayload.digest(operation.name(),
                     prepared.payload().text("reason", reason.text()));
             // a replay returns the stored response; the first call writes and stores its response in the receipt
-            return switch (receipts.reserve(operationKey, operation, digest, session.author(), session.channel(),
-                    resultType)) {
+            ReceiptService.LoadedReceipt loaded = preloadedReceipt.get();
+            ReceiptService.Reservation<R> reservation = loaded != null
+                    ? receipts.reserveWithLoaded(operationKey, operation, digest, session.author(), session.channel(),
+                            resultType, loaded)
+                    : receipts.reserve(operationKey, operation, digest, session.author(), session.channel(),
+                            resultType);
+            return switch (reservation) {
                 case ReceiptService.Reservation.Replayed<R> replayed -> {
                     if (batch != null) {
                         batch.recordReplayed(replayed.response());

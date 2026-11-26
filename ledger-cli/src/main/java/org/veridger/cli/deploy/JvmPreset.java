@@ -17,14 +17,26 @@ package org.veridger.cli.deploy;
  */
 final class JvmPreset {
 
-    /** The options, in the order they are written before {@code -jar}. */
+    /** The options for short-lived CLI commands and installers, in the order written before {@code -jar}. */
     static final String OPTIONS = "-Duser.timezone=UTC";
+
+    /**
+     * The options for long-running server services (systemd and WinSW): pins UTC and forces immediate JVM exit on
+     * {@code OutOfMemoryError} so the service supervisor restarts the server cleanly instead of leaving a dead
+     * Tomcat poller thread accepting connections without responding.
+     */
+    static final String SERVICE_OPTIONS = OPTIONS + " -XX:+ExitOnOutOfMemoryError";
 
     private JvmPreset() {
     }
 
-    /** The arguments of a Java command line that runs an executable jar: the preset and {@code -jar <jar>}. */
+    /** The arguments of a Java command line that runs a CLI jar: the preset and {@code -jar <jar>}. */
     static String jar(String jar) {
         return OPTIONS + " -jar " + jar;
+    }
+
+    /** The arguments of a Java command line that runs a managed server service jar. */
+    static String serviceJar(String jar) {
+        return SERVICE_OPTIONS + " -jar " + jar;
     }
 }

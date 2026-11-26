@@ -58,6 +58,35 @@ public class StatsQueryRepository {
         return perDay("task", project);
     }
 
+    /** Single-table issue count for a project (or the whole ledger when {@code project} is null). */
+    public long countIssues(ProjectId project) {
+        return countTable("issue", project);
+    }
+
+    /** Single-table spec count for a project (or the whole ledger when {@code project} is null). */
+    public long countSpecs(ProjectId project) {
+        return countTable("spec", project);
+    }
+
+    /** Single-table task count for a project (or the whole ledger when {@code project} is null). */
+    public long countTasks(ProjectId project) {
+        return countTable("task", project);
+    }
+
+    /** Single-table milestone criterion count for a project (or the whole ledger when {@code project} is null). */
+    public long countCriteria(ProjectId project) {
+        return countTable("milestone_criterion", project);
+    }
+
+    private long countTable(String table, ProjectId project) {
+        String sql = "SELECT COUNT(*) FROM " + table + (project == null ? "" : " WHERE project_id = :project");
+        JdbcClient.StatementSpec spec = jdbc.sql(sql);
+        if (project != null) {
+            spec = spec.param("project", project.value());
+        }
+        return spec.query(Long.class).single();
+    }
+
     private Map<String, Long> counts(String table, String column, ProjectId project) {
         String sql = "SELECT " + column + " AS bucket, COUNT(*) AS n FROM " + table
                 + (project == null ? "" : " WHERE project_id = :project") + " GROUP BY " + column + " ORDER BY "

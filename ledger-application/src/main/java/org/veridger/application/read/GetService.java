@@ -51,10 +51,20 @@ public class GetService {
             distinct.add(raw);
         }
         List<String> keys = List.copyOf(distinct);
-        Map<String, Found> issues = byId(lookup.issues(keys));
-        Map<String, Found> specs = byId(lookup.specs(keys));
-        Map<String, Found> tasks = byId(lookup.tasks(keys));
-        Map<String, Found> criteria = byId(lookup.criteria(keys));
+        Map<String, Found> issues = new LinkedHashMap<>();
+        Map<String, Found> specs = new LinkedHashMap<>();
+        Map<String, Found> tasks = new LinkedHashMap<>();
+        Map<String, Found> criteria = new LinkedHashMap<>();
+        for (EntityLookupRepository.TypedFound tf : lookup.findAny(keys)) {
+            switch (tf.entity()) {
+                case ISSUE -> issues.put(tf.row().id(), tf.row());
+                case SPEC -> specs.put(tf.row().id(), tf.row());
+                case TASK -> tasks.put(tf.row().id(), tf.row());
+                case CRITERION -> criteria.put(tf.row().id(), tf.row());
+                case DELIVERABLE, ISSUE_TASK, ISSUE_SPEC, SPEC_TASK, ISSUE_RELATION, CRITERION_LINK, ISSUE_CASE -> {
+                }
+            }
+        }
 
         List<Item> items = new ArrayList<>();
         List<String> missing = new ArrayList<>();
@@ -89,13 +99,5 @@ public class GetService {
 
     private static Item toItem(HistoryEntity entity, Found row) {
         return new Item(entity.token(), row.id(), row.projectId(), row.state(), row.version(), row.mergedInto());
-    }
-
-    private static Map<String, Found> byId(List<Found> rows) {
-        Map<String, Found> map = new LinkedHashMap<>();
-        for (Found row : rows) {
-            map.put(row.id(), row);
-        }
-        return map;
     }
 }

@@ -53,6 +53,10 @@ public final class DriverDataSources {
         config.setPoolName("ledger");
         config.setDataSource(simple);
         config.setMaximumPoolSize(properties.poolSize());
+        config.setConnectionTimeout(properties.connectionTimeoutMs());
+        config.setIdleTimeout(properties.idleTimeoutMs());
+        // Always apply keepaliveTime (including 0) because HikariCP 7 defaults keepaliveTime to 120,000 ms.
+        config.setKeepaliveTime(properties.keepaliveTimeMs());
         // The row-lock and conditional-update logic of the services is written for READ_COMMITTED, so it is asked for by the
         // JDBC standard name instead of left to the default of the DBMS, which a server or a driver setting can change.
         // A service that needs another isolation level declares it on its @Transactional method.

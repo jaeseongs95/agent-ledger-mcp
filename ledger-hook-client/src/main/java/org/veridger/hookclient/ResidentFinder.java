@@ -36,12 +36,23 @@ public final class ResidentFinder {
 
     /** The live program of the state folder, whatever its build. */
     public Optional<ResidentAddress> live() throws IOException {
-        return addressFile.read().filter(processes::isLive);
+        Optional<ResidentAddress> read = addressFile.read();
+        if (read.isEmpty()) {
+            return Optional.empty();
+        }
+        ResidentAddress address = read.orElseThrow();
+        return processes.isLive(address) ? read : Optional.empty();
     }
 
     /** The live program of the state folder, told apart by its build. */
     public Lookup find(String wantedBuild) throws IOException {
-        return live().<Lookup>map(address -> Objects.equals(wantedBuild, address.build()) ? new Lookup.Usable(address)
-                : new Lookup.OtherBuild(address)).orElseGet(Lookup.Nothing::new);
+        // Plain branches instead of Optional.map/orElseGet avoid LambdaMetafactory bootstrap on cold hook JVMs.
+        Optional<ResidentAddress> found = live();
+        if (found.isEmpty()) {
+            return new Lookup.Nothing();
+        }
+        ResidentAddress address = found.orElseThrow();
+        return Objects.equals(wantedBuild, address.build()) ? new Lookup.Usable(address)
+                : new Lookup.OtherBuild(address);
     }
 }

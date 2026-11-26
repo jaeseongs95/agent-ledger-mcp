@@ -63,6 +63,22 @@ public class ReceiptService {
         }
     }
 
+    /** Result of a single {@code request_receipt} lookup shared between gate checks and reservation. */
+    public sealed interface LoadedReceipt {
+
+        /** A stored receipt row exists for the author and operation key. */
+        record Found(Receipt receipt) implements LoadedReceipt {
+        }
+
+        /** No receipt row exists yet for the author and operation key. */
+        record Absent() implements LoadedReceipt {
+        }
+    }
+
+    /** One pending receipt to complete as part of a batch flush. */
+    public record Finished(OperationKey operationKey, AuthorId author, Object response) {
+    }
+
     /**
      * Reserves the operation key: {@link Reservation.Reserved} when the caller is the first and writes,
      * {@link Reservation.Replayed} with the stored response when the same request was answered before.
@@ -72,10 +88,42 @@ public class ReceiptService {
      */
     public <R> Reservation<R> reserve(OperationKey id, ReceiptOperation operation, Sha256 digest, AuthorId author,
             Channel channel, Class<R> responseType) {
-        return receipts.findByAuthorIdAndOperationKey(author, id)
-                .<Reservation<R>>map(stored -> new Reservation.Replayed<>(storedResponse(stored, id, operation, digest,
-                        channel, responseType)))
-                .orElseGet(() -> insertReservation(id, operation, digest, author, channel));
+        LoadedReceipt loaded = receipts.findByAuthorIdAndOperationKey(author, id)
+                .<LoadedReceipt>map(LoadedReceipt.Found::new)
+                .orElseGet(LoadedReceipt.Absent::new);
+        return reserveWithLoaded(id, operation, digest, author, channel, responseType, loaded);
+    }
+
+    /**
+     * Same as {@link #reserve(OperationKey, ReceiptOperation, Sha256, AuthorId, Channel, Class)}, reusing a receipt
+     * lookup already executed in the same transaction (for example by {@code WriteOperation}'s answered-call check) to
+     * avoid a duplicate {@code request_receipt} SELECT.
+     */
+    public <R> Reservation<R> reserveWithLoaded(OperationKey id, ReceiptOperation operation, Sha256 digest,
+            AuthorId author, Channel channel, Class<R> responseType, LoadedReceipt loaded) {
+        return switch (loaded) {
+            case LoadedReceipt.Found found -> new Reservation.Replayed<>(
+                    storedResponse(found.receipt(), id, operation, digest, channel, responseType));
+            case LoadedReceipt.Absent absent -> insertReservation(id, operation, digest, author, channel);
+        };
+    }
+
+    /** Looks up a stored receipt once for reuse across answered-target resolution and reservation. */
+    public LoadedReceipt find(AuthorId author, String operationKey) {
+        return OperationKey.find(operationKey)
+                .flatMap(id -> receipts.findByAuthorIdAndOperationKey(author, id))
+                .<LoadedReceipt>map(LoadedReceipt.Found::new)
+                .orElseGet(LoadedReceipt.Absent::new);
+    }
+
+    /** Extracts a completed stored response for {@code operation} from an already-loaded receipt. */
+    public <R> Optional<R> answered(LoadedReceipt loaded, ReceiptOperation operation, Class<R> responseType) {
+        if (loaded instanceof LoadedReceipt.Found found
+                && found.receipt().operation() == operation
+                && found.receipt().response() != null) {
+            return Optional.of(json.read(found.receipt().response(), responseType));
+        }
+        return Optional.empty();
     }
 
     /**
@@ -86,9 +134,7 @@ public class ReceiptService {
      */
     public <R> Optional<R> answered(AuthorId author, String operationKey, ReceiptOperation operation,
             Class<R> responseType) {
-        return OperationKey.find(operationKey).flatMap(id -> receipts.findByAuthorIdAndOperationKey(author, id))
-                .filter(stored -> stored.operation() == operation && stored.response() != null)
-                .map(stored -> json.read(stored.response(), responseType));
+        return answered(find(author, operationKey), operation, responseType);
     }
 
     private <R> Reservation<R> insertReservation(OperationKey id, ReceiptOperation operation, Sha256 digest,
@@ -121,6 +167,22 @@ public class ReceiptService {
         if (!completion.finish(author, id, json.write(response))) {
             throw new InfrastructureException(InfrastructureCode.INTEGRITY_VIOLATION,
                     List.of("receipt missing or already finished: " + id));
+        }
+    }
+
+    /** Stores responses for multiple reserved receipts in a single JDBC batch update. */
+    public void finishAll(List<Finished> items) {
+        if (items.isEmpty()) {
+            return;
+        }
+        List<ReceiptCompletionRepository.FinishedReceipt> encoded = items.stream()
+                .map(item -> new ReceiptCompletionRepository.FinishedReceipt(item.author(), item.operationKey(),
+                        json.write(item.response())))
+                .toList();
+        OperationKey failed = completion.finishAll(encoded);
+        if (failed != null) {
+            throw new InfrastructureException(InfrastructureCode.INTEGRITY_VIOLATION,
+                    List.of("receipt missing or already finished: " + failed));
         }
     }
 }
