@@ -15,7 +15,7 @@ plugins {
 }
 
 group = "org.veridger"
-version = "4.0.0"
+version = "4.0.1"
 
 spotless {
     java {
@@ -161,7 +161,7 @@ subprojects {
     apply(plugin = "java-library")
 
     group = "org.veridger"
-    version = "4.0.0"
+    version = "4.0.1"
 
     val projectName = project.name
     val usesDatabase = projectName in databaseModules
