@@ -8,8 +8,8 @@ This directory is an Antigravity plugin. It stamps the host session author on th
 
 `plugin.json` and `hooks.json` are at the root of the plugin. The command of a plugin hook runs in the plugin root, so `hooks.json` runs `java -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:-UsePerfData -Xlog:disable -jar "./lib/ledger-client-hook.jar" antigravity` before a tool call. The matcher selects `call_mcp_tool` and the direct MCP names of the write tools (`mcp:...ledger_<op>`); the hook checks the tool name again. The hook handles only the thirteen write tools (`issue_save`, `spec_save`, `task_save`, `criterion_save`, `transition`, `record_deliverable`, `record_case`, `link`, `correct`, `batch`, `review`, `review_correct` and `whoami`) and the five attachment tools (`artifact_begin`, `artifact_chunk`, `artifact_finish`, `artifact_status` and `artifact_read`) and stamps only names that show the server:
 
-- a direct call, `mcp:<server><:|/|_>[<server>_]ledger_<op>` or `mcp:<server><:|/|_>[<server>_]artifact_<op>`
-- a `call_mcp_tool` call whose `ServerName` is a server name (1 to 100 characters of `A-Za-z0-9._-`) and whose `ToolName` is `ledger_<op>`, `artifact_<op>`, `<ServerName>_ledger_<op>` or `<ServerName>_artifact_<op>`
+- a direct call, `mcp:<server><:|/|_>[<prefix>_]ledger_<op>` or `mcp:<server><:|/|_>[<prefix>_]artifact_<op>`, where `<prefix>` (when present) is `<server>`, `ledger`, or `veridger`
+- a `call_mcp_tool` call whose `ServerName` is a server name (1 to 100 characters of `A-Za-z0-9._-`) and whose `ToolName` is `ledger_<op>`, `artifact_<op>`, `<prefix>_ledger_<op>`, or `<prefix>_artifact_<op>` where `<prefix>` is `ServerName`, `ledger`, or `veridger`
 
 A name without a server, such as `mcp:ledger_issue_save`, is not stamped. Other tools and the read tools pass unchanged.
 

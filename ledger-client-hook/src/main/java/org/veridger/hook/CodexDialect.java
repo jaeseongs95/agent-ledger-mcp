@@ -13,12 +13,13 @@ import tools.jackson.core.JacksonException;
  * call answers {@code allow} with {@code updatedInput}; a refusal answers {@code deny}. Malformed input is denied
  * explicitly with exit 0 (a failing hook process would not be a reliable block).
  *
- * <p>The tool names that are signed for:
+ * <p>The tool names that are stamped:
  * <ul>
- * <li>{@code mcp__<server>__<tool>}, or {@code mcp__<server>__<server>_<tool>} when the tool reaches the host
+ * <li>{@code mcp__<server>__<tool>}, or {@code mcp__<server>__<prefix>_<tool>} when the tool reaches the host
  *     through a gateway that prefixes the tool names with the name of its upstream. The tool is {@code ledger_<op>} or
  *     one of the attachment tools {@code artifact_begin} ... {@code artifact_read}. The prefix before the tool
- *     must be exactly the server segment, so a look-alike server is not signed for.
+ *     must be either the server segment itself or one of Veridger's canonical gateway prefixes ({@code ledger} or
+ *     {@code veridger}), so a look-alike or unrelated upstream is not stamped.
  * <li>The Codex Apps namespace {@code mcp__codex_apps__app_<app>_<tool>} (a real path: the tool of the app
  *     {@code <app>} reaches Codex as {@code app_<app>_<tool>} in the pseudo server {@code codex_apps}, for example
  *     {@code mcp__codex_apps__app_ledger_ledger_issue_save} for the app {@code ledger}). The server identity is
@@ -34,7 +35,7 @@ record CodexDialect(JsonCodec codec) implements HostDialect {
     private static final int MAX_APP_LENGTH = McpToolName.MAX_SERVER_LENGTH - CODEX_APPS.length() - 1;
     /** Group 1 is the server, group 2 the canonical tool name; compiled once. */
     private static final Pattern TOOL_NAME = Pattern.compile("^mcp__([A-Za-z0-9_-]{1," + McpToolName.MAX_SERVER_LENGTH
-            + "}?)__(?:\\1_)?" + WriteTool.alternation() + "$");
+            + "}?)__(?:(?:\\1|" + McpToolName.gatewayPrefixAlternation() + ")_)?" + WriteTool.alternation() + "$");
     /** Group 1 is the app, group 2 the canonical tool name; compiled once. */
     private static final Pattern APP_TOOL_NAME = Pattern.compile("^mcp__" + CODEX_APPS + "__app_([A-Za-z0-9][A-Za-z0-9_-]{0,"
             + (MAX_APP_LENGTH - 1) + "}?)_" + WriteTool.alternation() + "$");

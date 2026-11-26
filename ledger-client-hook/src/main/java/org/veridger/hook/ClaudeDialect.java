@@ -14,14 +14,16 @@ import tools.jackson.core.JacksonException;
  * used. A stamped call answers with {@code updatedInput} and no permission decision, so the host's own permission policy
  * still decides; exit 2 blocks the call.
  *
- * <p>The tool names that are signed for are {@code mcp__<server>__<tool>}, or {@code mcp__<server>__<server>_<tool>}
- * when the tool reaches the host through a gateway that prefixes the tool names with the name of its upstream (the portal
- * of the deployment names the upstream like the server, {@code mcp__ledger__ledger_ledger_issue_save}). The tool is one of the
- * thirteen {@code ledger_<op>} tools or one of the five attachment tools {@code artifact_begin}, {@code artifact_chunk},
- * {@code artifact_finish}, {@code artifact_status}, {@code artifact_read}, exactly. The prefix before the tool must be
- * exactly the server segment: a look-alike server that names its tool {@code other_ledger_issue_save} or
- * {@code other_artifact_begin} is not signed for. The server segment is made of {@code A-Za-z0-9_-} (the host's own
- * rule: no dot). The Codex Apps namespace belongs to Codex alone and is not signed for here.
+ * <p>The tool names that are stamped are {@code mcp__<server>__<tool>}, or {@code mcp__<server>__<prefix>_<tool>}
+ * when the tool reaches the host through a gateway that prefixes the tool names with the name of its upstream (for
+ * example {@code mcp__ledger__ledger_ledger_issue_save} or {@code mcp__veridger__ledger_ledger_issue_save}). The tool
+ * is one of the thirteen {@code ledger_<op>} tools or one of the five attachment tools {@code artifact_begin},
+ * {@code artifact_chunk}, {@code artifact_finish}, {@code artifact_status}, {@code artifact_read}, exactly. The prefix
+ * before the tool must be either the server segment itself or one of Veridger's canonical gateway prefixes
+ * ({@code ledger} or {@code veridger}): a look-alike or unrelated upstream that names its tool
+ * {@code other_ledger_issue_save} or {@code other_artifact_begin} is not stamped. The server segment is made of
+ * {@code A-Za-z0-9_-} (the host's own rule: no dot). The Codex Apps namespace belongs to Codex alone and is not stamped
+ * here.
  */
 @Component
 record ClaudeDialect(JsonCodec codec) implements HostDialect {
@@ -29,7 +31,7 @@ record ClaudeDialect(JsonCodec codec) implements HostDialect {
     private static final String EVENT_NAME = "PreToolUse";
     /** Group 1 is the server, group 2 the canonical tool name; compiled once. */
     private static final Pattern TOOL_NAME = Pattern.compile("^mcp__([A-Za-z0-9_-]{1," + McpToolName.MAX_SERVER_LENGTH
-            + "}?)__(?:\\1_)?" + WriteTool.alternation() + "$");
+            + "}?)__(?:(?:\\1|" + McpToolName.gatewayPrefixAlternation() + ")_)?" + WriteTool.alternation() + "$");
 
     @Override
     public Client client() {
