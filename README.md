@@ -228,10 +228,10 @@ The build is a Gradle multi-module project.
 | Module | What |
 |---|---|
 | `ledger-domain` | aggregates, value types, state rules, error codes and `ToolContract`, the list of tool names |
-| `ledger-attestation` | the `_hostAttestation` token, RFC 8785 canonical JSON and the Ed25519 key forms, shared by the hook and the server (JDK only) |
+| `ledger-attestation` | `_hostAttestation` wire helpers and RFC 8785 canonical JSON utilities shared by the hook and the server (JDK only) |
 | `ledger-files` | owner-only POSIX/ACL file and directory protection and `NOFOLLOW_LINKS` inspection, shared by the server, the CLI and the hook (JDK only) |
 | `ledger-database` | Spring Data JDBC repositories, the schema files `V{n}__*.sql` and their runner, the loader of the registered JDBC driver |
-| `ledger-application` | the application services: write gate, receipts, history, the write and read operations, grants, session keys |
+| `ledger-application` | the application services: write gate, receipts, history, the write and read operations, and session grants |
 | `ledger-mcp-server` | the Spring Boot MCP server (`ledger-mcp-server.jar`) |
 | `ledger-admin-web` | the Spring Boot admin web for the owner (`ledger-admin-web.jar`) |
 | `ledger-cli` | the owner command line tool (`ledger-cli.jar`) |
@@ -820,7 +820,8 @@ directory or give them on the command line as `--name=value`; the password is a 
 **Upgrade note: the admin web sign-in.** If you signed in to the admin web with OpenID Connect, say so: set `ledger.admin.sign-in=oidc`
 (an installation with `ledger.admin.oidc.*` settings and no `ledger.admin.sign-in` is refused at start with a message that names it),
 and give the one e-mail address of the owner, `ledger.admin.oidc.owner-email`, with the issuer it counts for,
-`ledger.admin.oidc.issuer`. Whichever way you sign in, register a passkey with `passkey-code`: it approves every change.
+`ledger.admin.oidc.issuer`. If you sign in with a passkey (`ledger.admin.sign-in=passkey`, the default), enroll it once with
+`passkey-code`; once signed in, owner mutations are protected by the session and CSRF token without per-action passkey re-approval.
 
 ## Build and test
 

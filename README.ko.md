@@ -164,10 +164,10 @@ MCP를 직접 호출하는 쪽은 HTTP에서 설정된 `Bearer` 토큰 `ledger.m
 | 모듈 | 내용 |
 |---|---|
 | `ledger-domain` | 집합체, 값 타입, 상태 규칙, 오류 코드와 도구 이름 목록인 `ToolContract` |
-| `ledger-attestation` | `_hostAttestation` 토큰, RFC 8785 정규형 JSON, Ed25519 키 형식입니다. 훅과 서버가 함께 씁니다(JDK만 사용) |
+| `ledger-attestation` | `_hostAttestation` 와이어 도우미와 RFC 8785 정규형 JSON 유틸리티입니다. 훅과 서버가 함께 씁니다(JDK만 사용) |
 | `ledger-files` | 소유자 전용 POSIX/ACL 파일·폴더 보호와 `NOFOLLOW_LINKS` 검사입니다. 서버, CLI, 훅이 함께 씁니다(JDK만 사용) |
 | `ledger-database` | Spring Data JDBC 저장소, 스키마 파일 `V{n}__*.sql`과 그 적용기, 등록된 JDBC 드라이버의 적재기 |
-| `ledger-application` | 응용 서비스: 쓰기 관문, 영수증, 이력, 쓰기와 읽기 연산, 부여, 세션 키 |
+| `ledger-application` | 응용 서비스: 쓰기 관문, 영수증, 이력, 쓰기와 읽기 연산, 세션 권한 부여 |
 | `ledger-mcp-server` | Spring Boot MCP 서버(`ledger-mcp-server.jar`) |
 | `ledger-admin-web` | 소유자용 Spring Boot 관리 웹(`ledger-admin-web.jar`) |
 | `ledger-cli` | 소유자용 명령줄 도구(`ledger-cli.jar`) |
@@ -664,8 +664,8 @@ JDBC 드라이버의 타입 정보는 드라이버가 판단할 수 없는 형�
 
 **업그레이드 안내: 관리 웹 로그인.** 관리 웹에 OpenID Connect로 로그인했다면 그렇게 하겠다고 밝히십시오. `ledger.admin.sign-in=oidc`를 설정하고(`ledger.admin.oidc.*` 설정이 있는데
 `ledger.admin.sign-in`이 없는 설치는 그 키를 알리는 메시지와 함께 시작할 때 거절됩니다), 소유자의 이메일 주소 하나인 `ledger.admin.oidc.owner-email`과 그 주소가 유효한
-발급자 `ledger.admin.oidc.issuer`를 주십시오. 어떤 방식으로 로그인하든
-`passkey-code`로 패스키를 등록하십시오. 모든 변경을 그 패스키가 승인합니다.
+발급자 `ledger.admin.oidc.issuer`를 주십시오. 패스키 로그인(`ledger.admin.sign-in=passkey`, 기본값)을 사용하는 경우
+`passkey-code`로 한 번 등록해 두면 되며, 로그인 후에는 작업마다 패스키를 다시 승인하지 않고 세션과 CSRF 토큰으로 변경을 보호합니다.
 
 ## 빌드와 시험
 

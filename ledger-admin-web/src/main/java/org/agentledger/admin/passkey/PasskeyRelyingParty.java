@@ -20,8 +20,8 @@ import org.springframework.util.StringUtils;
  * ({@code ledger.admin.passkey.*}); without them they are the one public host of the admin web (the one host of
  * {@code ledger.admin.allowed-hosts} that is not a loopback name, with {@code https}), or {@code localhost} with
  * {@code http://localhost:<server.port>}. Several public hosts are ambiguous and are refused with the name of the setting. A
- * passkey needs HTTPS: only a loopback origin may be plain HTTP. A wrong host name or origin at the time of a ceremony is the
- * business failure {@code PASSKEY_HOST_MISMATCH} (see {@link AssertionFailures}).
+ * passkey needs HTTPS: only a loopback origin may be plain HTTP. A wrong host name or origin at the time of a ceremony is
+ * refused as {@code PASSKEY_HOST_MISMATCH}.
  */
 @Component
 public final class PasskeyRelyingParty {

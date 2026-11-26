@@ -5,7 +5,6 @@ package org.agentledger.application.write;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
-import org.agentledger.application.gate.AttestationVerifier;
 import org.agentledger.application.gate.McpCallerResolver;
 import org.agentledger.application.gate.ToolCall;
 import org.agentledger.database.repository.GrantStateRepository;
@@ -48,9 +47,9 @@ public class WhoamiService {
      */
     public Whoami whoami(String actor, Channel channel) {
         return switch (callerResolver.prove(actor, ToolCall.current(), "")) {
-            case AttestationVerifier.Proof.MalformedAuthor malformed ->
+            case McpCallerResolver.Proof.MalformedAuthor malformed ->
                 new Whoami(malformed.text(), false, channel.mayVerify(), channel.login(), List.of());
-            case AttestationVerifier.Proof.Proven proven -> {
+            case McpCallerResolver.Proof.Proven proven -> {
                 List<GrantView> live = grants.findLive(proven.author(), clock.instant()).stream()
                         .map(WhoamiService::view).toList();
                 yield new Whoami(proven.author().value(), true, channel.mayVerify(), channel.login(), live);

@@ -7,6 +7,7 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AccessDeniedException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -73,7 +74,7 @@ public final class AddressFile {
                 Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
                 return;
             } catch (AccessDeniedException transientBusy) {
-                if (attempt >= MOVE_ATTEMPTS || !Files.exists(target)) {
+                if (attempt >= MOVE_ATTEMPTS || !Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
                     throw transientBusy;
                 }
                 pauseBeforeRetry(transientBusy);

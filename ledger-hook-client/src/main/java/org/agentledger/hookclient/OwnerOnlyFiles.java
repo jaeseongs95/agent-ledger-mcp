@@ -8,6 +8,7 @@ import java.nio.channels.FileChannel;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.FileSystem;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -65,7 +66,7 @@ public final class OwnerOnlyFiles {
         }
         List<Path> missing = new ArrayList<>();
         Path current = normalized;
-        while (current != null && !Files.exists(current)) {
+        while (current != null && !Files.exists(current, LinkOption.NOFOLLOW_LINKS)) {
             missing.add(current);
             current = current.getParent();
         }
@@ -75,7 +76,7 @@ public final class OwnerOnlyFiles {
                 Files.createDirectory(next, protection.directoryAttributes());
                 require(next);
             } catch (FileAlreadyExistsException existing) {
-                if (!Files.isDirectory(next)) {
+                if (!Files.isDirectory(next, LinkOption.NOFOLLOW_LINKS)) {
                     throw existing;
                 }
             }
@@ -84,7 +85,7 @@ public final class OwnerOnlyFiles {
 
     private static boolean existingDirectory(Path path) throws IOException {
         try {
-            if (Files.readAttributes(path, BasicFileAttributes.class).isDirectory()) {
+            if (Files.readAttributes(path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS).isDirectory()) {
                 return true;
             }
             throw new FileAlreadyExistsException(path.toString());
@@ -95,10 +96,16 @@ public final class OwnerOnlyFiles {
 
     /** A new file with this content; the protection is certain before the first byte is written. */
     public void writeNew(Path file, byte[] content) throws IOException {
-        try (FileChannel channel = FileChannel.open(file, Set.of(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE),
-                protection.fileAttributes())) {
-            require(file);
-            channel.write(ByteBuffer.wrap(content));
+        FileChannel channel = FileChannel.open(file, Set.of(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE),
+                protection.fileAttributes());
+        try {
+            try (FileChannel open = channel) {
+                require(file);
+                open.write(ByteBuffer.wrap(content));
+            }
+        } catch (IOException failure) {
+            deleteQuietly(file, failure);
+            throw failure;
         }
     }
 
@@ -107,16 +114,22 @@ public final class OwnerOnlyFiles {
         try {
             FileChannel created = FileChannel.open(file, Set.of(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE),
                     protection.fileAttributes());
-            require(file);
+            try {
+                require(file);
+            } catch (IOException failure) {
+                closeQuietly(created, failure);
+                deleteQuietly(file, failure);
+                throw failure;
+            }
             return created;
         } catch (FileAlreadyExistsException existing) {
-            return FileChannel.open(file, StandardOpenOption.WRITE);
+            return FileChannel.open(file, StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS);
         }
     }
 
     /** An empty file at this path if there is none, created owner-only. */
     public void createIfMissing(Path file) throws IOException {
-        if (!Files.exists(file)) {
+        if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
             try {
                 writeNew(file, new byte[0]);
             } catch (FileAlreadyExistsException existing) {
@@ -129,6 +142,22 @@ public final class OwnerOnlyFiles {
     private void require(Path path) throws IOException {
         if (protection.settle(path, true).isPresent()) {
             throw new IOException("the state of the resident hook program could not be made private to its owner");
+        }
+    }
+
+    private static void closeQuietly(FileChannel channel, IOException primary) {
+        try {
+            channel.close();
+        } catch (IOException closeFailure) {
+            primary.addSuppressed(closeFailure);
+        }
+    }
+
+    private static void deleteQuietly(Path file, IOException primary) {
+        try {
+            Files.deleteIfExists(file);
+        } catch (IOException deleteFailure) {
+            primary.addSuppressed(deleteFailure);
         }
     }
 }

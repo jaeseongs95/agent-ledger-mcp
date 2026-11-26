@@ -136,9 +136,7 @@ public class UploadService {
     }
 
     private AuthorId optionalOwner(String actor) {
-        return actor == null && !gate.hasAmbientCaller()
-                ? null
-                : gate.openWithAnyGrant(actor, Channel.AUTHOR).author();
+        return actor == null ? null : gate.openWithAnyGrant(actor, Channel.AUTHOR).author();
     }
 
     /**

@@ -135,11 +135,6 @@ public class WriteGate {
         }
     }
 
-    /** True when the active transport request already carries a resolved per-author session identity. */
-    public boolean hasAmbientCaller() {
-        return callerResolver.hasAmbientCaller();
-    }
-
     /** Read-only liveness check for one grant without locking {@code session_grant}. */
     public void requireLive(AuthorId author, Target target) {
         if (!grants.hasLive(author, target.project(), target.scope(), clock.instant())) {
