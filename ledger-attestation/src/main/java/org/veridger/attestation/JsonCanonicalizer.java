@@ -9,6 +9,7 @@ import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * The canonical text of a JSON value, the JSON Canonicalization Scheme (JCS) of RFC 8785
@@ -74,11 +75,22 @@ public final class JsonCanonicalizer {
      */
     public static String canonicalize(Object value) {
         StringBuilder out = new StringBuilder();
-        write(out, value, 0);
+        write(out, value, 0, false, null);
         return out.toString();
     }
 
-    private static void write(StringBuilder out, Object value, int depth) {
+    /**
+     * Single-pass canonicalization for {@link ArgumentsDigest}: omits {@code excludedTopLevelKey} at depth 0 and skips
+     * any object member whose value is {@code null} at every depth, avoiding intermediate Map/List tree clones.
+     */
+    static String canonicalizeArguments(Map<?, ?> arguments, String excludedTopLevelKey) {
+        StringBuilder out = new StringBuilder(128);
+        object(out, arguments, 0, true, excludedTopLevelKey);
+        return out.toString();
+    }
+
+    private static void write(StringBuilder out, Object value, int depth, boolean omitNullMembers,
+            String excludedTopLevelKey) {
         if (depth > MAX_DEPTH) {
             throw new IllegalArgumentException("JSON value nested deeper than " + MAX_DEPTH);
         }
@@ -87,15 +99,23 @@ public final class JsonCanonicalizer {
             case Boolean bool -> out.append(bool ? "true" : "false");
             case String text -> string(out, text);
             case Number number -> out.append(number(number));
-            case Map<?, ?> map -> object(out, map, depth);
-            case List<?> list -> array(out, list, depth);
+            case Map<?, ?> map -> object(out, map, depth, omitNullMembers, excludedTopLevelKey);
+            case List<?> list -> array(out, list, depth, omitNullMembers);
             default -> throw new IllegalArgumentException("not a JSON value: " + value.getClass().getName());
         }
     }
 
-    private static void object(StringBuilder out, Map<?, ?> map, int depth) {
+    private static void object(StringBuilder out, Map<?, ?> map, int depth, boolean omitNullMembers,
+            String excludedTopLevelKey) {
         List<String> names = new ArrayList<>(map.size());
-        for (Object key : map.keySet()) {
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            Object key = entry.getKey();
+            if (depth == 0 && excludedTopLevelKey != null && Objects.equals(excludedTopLevelKey, key)) {
+                continue;
+            }
+            if (omitNullMembers && entry.getValue() == null) {
+                continue;
+            }
             if (!(key instanceof String name)) {
                 throw new IllegalArgumentException("a JSON object member name must be a String");
             }
@@ -112,18 +132,18 @@ public final class JsonCanonicalizer {
             first = false;
             string(out, name);
             out.append(':');
-            write(out, map.get(name), depth + 1);
+            write(out, map.get(name), depth + 1, omitNullMembers, null);
         }
         out.append('}');
     }
 
-    private static void array(StringBuilder out, List<?> list, int depth) {
+    private static void array(StringBuilder out, List<?> list, int depth, boolean omitNullMembers) {
         out.append('[');
         for (int i = 0; i < list.size(); i++) {
             if (i > 0) {
                 out.append(',');
             }
-            write(out, list.get(i), depth + 1);
+            write(out, list.get(i), depth + 1, omitNullMembers, null);
         }
         out.append(']');
     }
@@ -162,6 +182,24 @@ public final class JsonCanonicalizer {
 
     /** RFC 8785 section 3.2.2.3 and ECMA-262 Number::toString: k digits, the decimal exponent n, five layouts. */
     static String number(Number number) {
+        // Fast path for exact safe integers (all values in [-(2^53)+1, (2^53)-1] have <= 16 decimal digits, well below
+        // ES_MAX_INTEGER_DIGITS = 21, so ECMA-262 Number::toString is identical to base-10 integer formatting).
+        if (number instanceof Byte || number instanceof Short || number instanceof Integer) {
+            return Integer.toString(number.intValue());
+        }
+        if (number instanceof Long l) {
+            long v = l.longValue();
+            if (v < -MAX_SAFE_INTEGER || v > MAX_SAFE_INTEGER) {
+                throw outOfRange();
+            }
+            return Long.toString(v);
+        }
+        if (number instanceof BigInteger bi) {
+            if (bi.abs().compareTo(BigInteger.valueOf(MAX_SAFE_INTEGER)) > 0) {
+                throw outOfRange();
+            }
+            return Long.toString(bi.longValueExact());
+        }
         double value = doubleOf(number);
         if (Double.isNaN(value) || Double.isInfinite(value)) {
             throw new IllegalArgumentException("a JSON number must be finite");

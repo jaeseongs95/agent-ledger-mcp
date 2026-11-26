@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 import org.veridger.database.repository.GrantStateRepository;
 import org.veridger.domain.error.TrustCode;
 import org.veridger.domain.error.TrustException;
@@ -66,6 +67,16 @@ public class WriteGate {
      */
     public GateSession open(String actor, String operationKey, Channel channel, Lookup lookup,
             AnsweredCall answered) {
+        return open(actor, operationKey, channel, lookup, answered, null);
+    }
+
+    /**
+     * Variant of {@link #open(String, String, Channel, Lookup, AnsweredCall)} for batched operations: any target
+     * accepted by {@code preAuthorized} was already locked and verified live by {@code BatchLockPlanner} in Phase 1.5,
+     * avoiding redundant {@code session_grant} pre-check queries per operation.
+     */
+    public GateSession open(String actor, String operationKey, Channel channel, Lookup lookup,
+            AnsweredCall answered, Predicate<Target> preAuthorized) {
         // a verification through the author channel is refused first, so it is looked up first (once); it is refused
         // here, before the attestation, for a caller that cannot prove its author, and for the author that has no
         // answer to the key (below), so a replay of a call that was answered before the entity was verified goes on
@@ -81,7 +92,11 @@ public class WriteGate {
                 List<Target> needed = answered.targets(author, resolved.targets()).orElse(resolved.targets());
                 requireReviewerForVerification(channel, needed);
                 Set<Target> distinct = new LinkedHashSet<>(needed);
-                distinct.stream().sorted(TARGET_LOCK_ORDER).forEach(target -> requireLive(author, target));
+                distinct.stream().sorted(TARGET_LOCK_ORDER).forEach(target -> {
+                    if (preAuthorized == null || !preAuthorized.test(target)) {
+                        requireLive(author, target);
+                    }
+                });
                 yield new GateSession(author, channel);
             }
         };

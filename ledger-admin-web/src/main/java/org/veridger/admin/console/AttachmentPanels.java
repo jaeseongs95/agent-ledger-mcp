@@ -46,9 +46,6 @@ public class AttachmentPanels {
     /** The text shown on a page is at most this many bytes of the file (the size of one chunk of the upload tools). */
     static final int TEXT_BYTES = AttachmentProperties.CHUNK_BYTES;
 
-    /** A download reads the file in pages bounded by the attachment chunk limit (256 KiB). */
-    private static final int DOWNLOAD_PAGE = AttachmentProperties.CHUNK_BYTES;
-
     /** How the page presents an attachment. */
     public enum State {
         /** A text attachment, its text shown escaped and read only. */
@@ -116,8 +113,10 @@ public class AttachmentPanels {
     /** The panels of the history rows that point to an attachment: the attachment id of each history id in, the panel out. */
     public Map<Long, Panel> panelsOf(Map<Long, String> attachmentIdsByHistoryId) {
         Map<Long, Panel> panels = new LinkedHashMap<>();
+        Map<String, Panel> byAttachmentId = new LinkedHashMap<>();
         for (Map.Entry<Long, String> row : attachmentIdsByHistoryId.entrySet()) {
-            panels.put(row.getKey(), panel(row.getValue()));
+            Panel resolved = byAttachmentId.computeIfAbsent(row.getValue(), this::panel);
+            panels.put(row.getKey(), resolved);
         }
         return panels;
     }
@@ -223,26 +222,20 @@ public class AttachmentPanels {
     }
 
     /**
-     * Writes the decrypted body to the stream, one page at a time (every page is opened and its tags are checked, so a damaged
-     * file ends the stream with an exception, never with wrong bytes).
+     * Streams the decrypted body to {@code out} in a single linear pass over one open file channel (every segment tag
+     * and the trailing end mark are verified, so a damaged file fails immediately rather than writing wrong bytes).
      *
-     * @throws IOException when the stream cannot be written
+     * @throws IOException when the stream cannot be written or the decrypted size does not match the recorded size
      */
     public void copy(Download download, OutputStream out) throws IOException {
         AttachmentStore store = stores.getIfAvailable();
         if (store == null) {
             throw notFound(download.file.attachmentId());
         }
-        long offset = 0;
         long size = download.file.sizeBytes();
-        while (offset < size) {
-            AttachmentStore.Page page = store.read(download.storage.storageKey(), download.storage.keyId(), offset,
-                    (int) Math.min(DOWNLOAD_PAGE, size - offset));
-            if (page.data().length == 0) {
-                throw new IOException("the attachment " + download.file.attachmentId() + " ended early");
-            }
-            out.write(page.data());
-            offset += page.data().length;
+        long written = store.stream(download.storage.storageKey(), download.storage.keyId(), out);
+        if (written != size) {
+            throw new IOException("the attachment " + download.file.attachmentId() + " ended early");
         }
     }
 

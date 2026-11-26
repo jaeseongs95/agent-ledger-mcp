@@ -6,7 +6,6 @@ import java.io.IOException;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import org.veridger.files.ProcessAccount;
 
 /**
  * Entry point of {@code java -jar ledger-client-hook.jar <claude|codex|antigravity>} and {@code ... stop}: the one
@@ -38,7 +37,9 @@ public final class Main {
     }
 
     static ClientEnvironment environment() throws URISyntaxException {
-        return new ClientEnvironment(System.getProperty("user.home"), ProcessAccount.name().orElse(""),
+        // Resolve the OS process account name lazily in ResidentLauncher only when spawning a resident,
+        // avoiding a native ProcessHandle.info().user() lookup on every warm hook invocation.
+        return new ClientEnvironment(System.getProperty("user.home"), null,
                 System.getenv(KEY_DIR_VARIABLE), Path.of(System.getProperty("java.home"), "bin", "java"),
                 Path.of(System.getProperty("java.io.tmpdir")),
                 Path.of(Main.class.getProtectionDomain().getCodeSource().getLocation().toURI()));

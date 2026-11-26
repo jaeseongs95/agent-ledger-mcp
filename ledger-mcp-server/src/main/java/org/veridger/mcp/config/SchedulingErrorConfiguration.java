@@ -4,6 +4,7 @@ package org.veridger.mcp.config;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.task.SimpleAsyncTaskSchedulerCustomizer;
 import org.springframework.boot.task.ThreadPoolTaskSchedulerCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -20,6 +21,15 @@ public class SchedulingErrorConfiguration {
      */
     @Bean
     ThreadPoolTaskSchedulerCustomizer scheduledTaskErrorLogging() {
+        return scheduler -> scheduler.setErrorHandler(failure -> LOG.error("a scheduled task failed", failure));
+    }
+
+    /**
+     * Same error logging hook for the virtual-thread {@code SimpleAsyncTaskScheduler} auto-configured when
+     * {@code spring.threads.virtual.enabled=true}.
+     */
+    @Bean
+    SimpleAsyncTaskSchedulerCustomizer virtualScheduledTaskErrorLogging() {
         return scheduler -> scheduler.setErrorHandler(failure -> LOG.error("a scheduled task failed", failure));
     }
 }

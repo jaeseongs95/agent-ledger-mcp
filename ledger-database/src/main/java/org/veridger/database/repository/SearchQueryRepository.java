@@ -66,32 +66,29 @@ public class SearchQueryRepository {
 
     public KeysetPage<Hit> page(Filter filter, MaxRows maxRows, Position after) {
         List<String> selects = new ArrayList<>();
+        boolean hasAfter = after != null;
         if (filter.kinds().contains(Kind.ISSUE)) {
             selects.add(select("'ISSUE'", "id", "project_id", "title", "status", "created_at", "issue", "status",
-                    List.of("title", "symptom", "root_cause"), filter));
+                    List.of("title", "symptom", "root_cause"), filter, hasAfter));
         }
         if (filter.kinds().contains(Kind.SPEC)) {
             selects.add(select("'SPEC'", "id", "project_id", "title", "status", "created_at", "spec", "status",
-                    List.of("title", "summary", "acceptance_criteria"), filter));
+                    List.of("title", "summary", "acceptance_criteria"), filter, hasAfter));
         }
         if (filter.kinds().contains(Kind.TASK)) {
             selects.add(select("'TASK'", "id", "project_id", "title", "state", "created_at", "task", "state",
-                    List.of("title", "purpose", "success_condition"), filter));
+                    List.of("title", "purpose", "success_condition"), filter, hasAfter));
         }
         boolean timed = filter.createdFrom() != null || filter.createdTo() != null;
         if (filter.kinds().contains(Kind.CRITERION) && !timed) {
             selects.add(select("'CRITERION'", "id", "project_id", "criterion_text", "state", EPOCH,
-                    "milestone_criterion", "state", List.of("criterion_text"), filter));
+                    "milestone_criterion", "state", List.of("criterion_text"), filter, hasAfter));
         }
         if (selects.isEmpty()) {
             return new KeysetPage<>(List.of(), false);
         }
         StringBuilder sql = new StringBuilder("SELECT kind, id, project_id, title, state, created_at FROM (")
                 .append(String.join(" UNION ALL ", selects)).append(") hits");
-        if (after != null) {
-            sql.append(" WHERE created_at < :after OR (created_at = :after AND (id < :afterId OR "
-                    + "(id = :afterId AND kind < :afterKind)))");
-        }
         sql.append(" ORDER BY created_at DESC, id DESC, kind DESC");
         JdbcClient.StatementSpec spec = jdbc.sql(sqlBuilder.applyLimit(sql.toString(), ":row_count"))
                 .param("row_count", maxRows.value() + 1);
@@ -126,7 +123,7 @@ public class SearchQueryRepository {
     }
 
     private static String select(String kind, String id, String project, String title, String state, String created,
-            String table, String stateColumn, List<String> textColumns, Filter filter) {
+            String table, String stateColumn, List<String> textColumns, Filter filter, boolean withAfter) {
         StringBuilder sql = new StringBuilder("SELECT ").append(kind).append(" AS kind, ").append(id)
                 .append(" AS id, ").append(project).append(" AS project_id, ").append(title).append(" AS title, ")
                 .append(state).append(" AS state, ").append(created).append(" AS created_at FROM ").append(table)
@@ -156,6 +153,11 @@ public class SearchQueryRepository {
         }
         if (filter.createdTo() != null) {
             sql.append(" AND created_at <= :to");
+        }
+        if (withAfter) {
+            sql.append(" AND (").append(created).append(" < :after OR (").append(created).append(" = :after AND (")
+                    .append(id).append(" < :afterId OR (").append(id).append(" = :afterId AND ").append(kind)
+                    .append(" < :afterKind))))");
         }
         return sql.toString();
     }

@@ -13,7 +13,7 @@ choice: the installers write no proxy configuration and order no certificate.
 
 Version 2.0.0 is a rewrite in Java 25 and Spring Boot with its own tool contract (every write tool takes a required `operationKey`,
 every response uses the `ApiResult.v1` envelope, and no argument of an earlier version is accepted next to the new ones); what changed
-for a client is stated in the release notes ([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md), [4.0.0](docs/release-notes/4.0.0.md), [4.0.1](docs/release-notes/4.0.1.md), [4.1.0](docs/release-notes/4.1.0.md)); the format of release notes is in
+for a client is stated in the release notes ([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md), [4.0.0](docs/release-notes/4.0.0.md), [4.0.1](docs/release-notes/4.0.1.md), [4.1.0](docs/release-notes/4.1.0.md), [4.2.0](docs/release-notes/4.2.0.md)); the format of release notes is in
 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md).
 
 ## Contents
@@ -269,6 +269,9 @@ configuration tree (Spring Boot makes every file below a tree a property of the 
 | `ledger.jdbc.username` | all | database account |
 | `ledger.jdbc.password` | all | database password (secret) |
 | `ledger.jdbc.pool-size` | all | connection pool size, default 10 |
+| `ledger.jdbc.connection-timeout-ms` | all | maximum wait for a connection from the pool in milliseconds, default 30000 |
+| `ledger.jdbc.idle-timeout-ms` | all | how long an idle connection stays in the pool in milliseconds, default 600000 |
+| `ledger.jdbc.keepalive-time-ms` | all | how often idle pooled connections are validated in milliseconds (`0` disables, otherwise at least 30000), default 0 |
 | `ledger.jdbc.driver` | all | the registered driver, written by `driver-register` (jar, class, SHA-256), read at start |
 | `ledger.schema.name` | all | schema that holds the tables; created by `migrate` when missing; absent means the default schema of the account |
 | `ledger.schema.require-utc` | servers, CLI | refuse to start when the JVM or the database session is not UTC, default true |
@@ -277,6 +280,9 @@ configuration tree (Spring Boot makes every file below a tree a property of the 
 | `ledger.mcp.allowed-origins` | MCP server | accepted browser origins, default none |
 | `ledger.mcp.max-request-size` | MCP server | largest request body, default 1MB |
 | `ledger.mcp.code-poll-interval` | MCP server | how often a code change of another process is looked up, default 5s |
+| `ledger.mcp.session-idle-timeout` | MCP server | how long an inactive Streamable HTTP MCP session stays in memory before eviction, default 30m |
+| `ledger.mcp.max-sessions` | MCP server | maximum concurrent Streamable HTTP MCP sessions held in memory, default 1000 |
+| `ledger.mcp.keep-alive-interval` | MCP server | Streamable HTTP SSE keep-alive ping interval (`0s` disables pings for POST-only clients), default 30s |
 | `ledger.admin.token` | admin web | the admin token, at least 16 characters (secret): the bearer of the read-only JSON endpoints under `/api`; with `ledger.admin.sign-in=token` it is also the password of the login page |
 | `ledger.admin.agent-token` | admin web | required: the agents' bearer token, equal to `ledger.mcp.token`, and distinct from `ledger.admin.token`; the admin web refuses it with `AGENT_TOKEN_FORBIDDEN` (secret) |
 | `ledger.admin.allowed-hosts` | admin web | accepted `Host` values (DNS rebinding guard), default `127.0.0.1` and `localhost` |

@@ -871,6 +871,29 @@ class DocsTest {
                 .isEqualTo(v410.part(Language.EN.partHeading()).fences());
     }
 
+    @Test
+    @DisplayName("4.2.0 release note follows RELEASE_NOTES_FORMAT.md in both languages with identical code spans and code blocks")
+    void v420NoteFollowsFormatAndMatchesBothLanguages() {
+        Markdown v420 = Markdown.of(Repository.read("docs/release-notes/4.2.0.md"));
+        assertThat(v420.lines().stream().filter(line -> !line.isBlank()).findFirst().orElse(""))
+                .isEqualTo("# veridger 4.2.0");
+        for (Language language : Language.values()) {
+            Markdown part = v420.part(language.partHeading());
+            List<String> expected = format().part(language.partHeading()).tables().getFirst().firstCellNames();
+            List<Markdown.Subsection> sections = part.subsections();
+            assertThat(sections.stream().map(Markdown.Subsection::heading)).containsExactlyElementsOf(expected);
+            assertThat(sections).allSatisfy(section -> assertThat(section.body()).as(section.heading()).isNotEmpty());
+            assertThat(part.hasHangul()).isEqualTo(language.writtenInHangul());
+            assertThat(part.text()).contains("4.2.0", "Schema-Version: V12", "V12__performance_indexes.sql",
+                    "AttachmentStore.stream", "IdAllocator.reserveRange", "CommonCodeRepository",
+                    "spring.threads.virtual.enabled", "ledger-cli migrate");
+        }
+        assertThat(v420.part(Language.KO.partHeading()).codeSpans())
+                .isEqualTo(v420.part(Language.EN.partHeading()).codeSpans());
+        assertThat(v420.part(Language.KO.partHeading()).fences())
+                .isEqualTo(v420.part(Language.EN.partHeading()).fences());
+    }
+
     @ParameterizedTest
     @EnumSource(Language.class)
     @DisplayName("FUP-INS-02 the Windows argument table of each README starts with the optional --stdin, and the header of install.cmd shows it first in its usage line")

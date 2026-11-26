@@ -14,7 +14,7 @@
 #
 # One-stop convenience usage (auto-downloads & SHA-256 verifies release JARs when --jars is omitted, and prompts for
 # missing required values when running in an interactive terminal without --stdin):
-#   sudo sh install.sh [--version=latest|v4.1.0] [--repo=jaeseongs95/veridger]
+#   sudo sh install.sh [--version=latest|v4.2.0] [--repo=jaeseongs95/veridger]
 #
 # Passwords are never accepted on a command line: Java reads them hidden from the terminal or via --stdin.
 # A re-run is an upgrade: jars, driver jar, and unit files are replaced while secrets, tokens, and data are preserved.

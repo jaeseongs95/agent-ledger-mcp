@@ -8,7 +8,6 @@ import org.veridger.application.read.DetailService;
 import org.veridger.application.read.ListService;
 import org.veridger.application.read.ListService.IssuesQuery;
 import org.veridger.application.read.StatsService;
-import org.veridger.application.read.StatsService.StatsQuery;
 import org.veridger.domain.rule.AttentionKind;
 import org.veridger.domain.rule.CodeGroup;
 import org.veridger.domain.rule.IssueStatus;
@@ -72,7 +71,7 @@ public class IssuesController {
             model.addAttribute("page", page);
             model.addAttribute("paging", Paging.of("/issues", filters, filter.limit(), filter.cursor(),
                     filter.back(), page.nextCursor()));
-            model.addAttribute("total", stats.stats(new StatsQuery(project.selected(), null)).issues());
+            model.addAttribute("total", stats.countIssues(project.selected()));
         }
         return "issues";
     }

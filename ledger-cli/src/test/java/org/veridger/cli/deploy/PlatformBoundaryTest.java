@@ -135,8 +135,12 @@ class PlatformBoundaryTest {
             }
         }
         assertThat(JvmPreset.OPTIONS).isEqualTo("-Duser.timezone=UTC");
+        assertThat(JvmPreset.SERVICE_OPTIONS).isEqualTo("-Duser.timezone=UTC -XX:+ExitOnOutOfMemoryError");
         assertThat(JvmPreset.jar("/opt/x/y.jar")).isEqualTo("-Duser.timezone=UTC -jar /opt/x/y.jar");
-        assertThat(Service.mcp(linux).arguments(linux)).startsWith(JvmPreset.jar(linux.lib() + "/" + DeployLayout.MCP_JAR) + " ");
+        assertThat(JvmPreset.serviceJar("/opt/x/y.jar"))
+                .isEqualTo("-Duser.timezone=UTC -XX:+ExitOnOutOfMemoryError -jar /opt/x/y.jar");
+        assertThat(Service.mcp(linux).arguments(linux))
+                .startsWith(JvmPreset.serviceJar(linux.lib() + "/" + DeployLayout.MCP_JAR) + " ");
 
         Path root = Path.of(Objects.requireNonNull(System.getProperty("ledger.docs.root"),
                 "ledger.docs.root is set by the test task of ledger-cli"));

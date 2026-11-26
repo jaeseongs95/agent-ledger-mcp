@@ -4,6 +4,7 @@ package org.veridger.admin.console;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.veridger.application.read.AttentionService;
 import org.veridger.application.read.AttentionService.AttentionQuery;
 import org.veridger.application.read.CatalogService.ProjectView;
@@ -45,10 +46,12 @@ public class OverviewService {
     /** The overview of a project, or of the whole ledger when {@code project} is blank. */
     public Overview overview(String project) {
         String scope = StringUtils.hasText(project) ? project : null;
-        List<AttentionCount> counts = new ArrayList<>();
+        Map<AttentionKind, AttentionService.BoundedCount> bounded = attention.counts(scope, COUNTED);
+        List<AttentionCount> counts = new ArrayList<>(AttentionKind.values().length);
         for (AttentionKind kind : AttentionKind.values()) {
-            Page<AttentionService.Item> page = attention.attention(new AttentionQuery(scope, kind.name(), COUNTED, null));
-            counts.add(new AttentionCount(kind, page.items().size(), page.truncated()));
+            AttentionService.BoundedCount bc = bounded.get(kind);
+            counts.add(bc == null ? new AttentionCount(kind, 0, false)
+                    : new AttentionCount(kind, bc.count(), bc.atLeast()));
         }
         Page<AttentionService.Item> first = attention.attention(new AttentionQuery(scope, null, SHOWN, null));
         return new Overview(mcp.status(), choices.project(null).projects(), scope,

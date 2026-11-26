@@ -37,9 +37,13 @@ public class IssueQueryRepository {
     public record Position(Instant createdAt, IssueId id) {
     }
 
-    private static final String EFFECTIVE_OWNER = "COALESCE(owner_actor_id, "
-            + "(SELECT d.recorded_by FROM deliverable d WHERE d.id = "
-            + "(SELECT MAX(d2.id) FROM deliverable d2 WHERE d2.target_entity = 'ISSUE' AND d2.target_id = issue.id)))";
+    private static final String LATEST_DELIVERABLE_OWNER = "(SELECT d.recorded_by FROM deliverable d WHERE d.id = "
+            + "(SELECT MAX(d2.id) FROM deliverable d2 WHERE d2.target_entity = 'ISSUE' AND d2.target_id = issue.id))";
+
+    private static final String EFFECTIVE_OWNER = "COALESCE(owner_actor_id, " + LATEST_DELIVERABLE_OWNER + ")";
+
+    private static final String OWNER_EQUALS = "(owner_actor_id = :owner OR (owner_actor_id IS NULL AND "
+            + LATEST_DELIVERABLE_OWNER + " = :owner))";
 
     private final JdbcClient jdbc;
     private final SqlBuilder sqlBuilder;
@@ -70,7 +74,7 @@ public class IssueQueryRepository {
             sql.append(" AND created_at <= :to");
         }
         if (filter.owner() != null) {
-            sql.append(" AND ").append(EFFECTIVE_OWNER).append(" = :owner");
+            sql.append(" AND ").append(OWNER_EQUALS);
         }
         if (filter.attention() != null) {
             sql.append(" AND ").append(AttentionSql.condition(filter.attention(), HistoryEntity.ISSUE));

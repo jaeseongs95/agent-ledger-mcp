@@ -190,8 +190,8 @@ public record LedgerAdminProperties(String token, String agentToken,
                     "release-assets.githubusercontent.com"}) @NotEmpty List<String> allowedDownloadHosts,
             @DefaultValue("/etc/veridger/update") Path directory,
             @DefaultValue("10s") Duration timeout,
-            @DefaultValue("4.1.0") String currentVersion,
-            @DefaultValue("11") @Min(1) int currentSchemaVersion) {
+            @DefaultValue("4.2.0") String currentVersion,
+            @DefaultValue("12") @Min(1) int currentSchemaVersion) {
 
         private static final Pattern REPOSITORY_PATTERN = Pattern.compile("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$");
 

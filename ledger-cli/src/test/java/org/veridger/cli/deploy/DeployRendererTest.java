@@ -107,7 +107,7 @@ class DeployRendererTest {
         assertThat(unit.lines().filter(line -> line.startsWith("ReadWritePaths=")).toList())
                 .isEqualTo(readWritePaths.isEmpty() ? List.of() : List.of("ReadWritePaths=" + readWritePaths));
         String start = unit.lines().filter(line -> line.startsWith("ExecStart=")).findFirst().orElseThrow();
-        assertThat(start).isEqualTo("ExecStart=/usr/lib/jvm/java-25/bin/java -Duser.timezone=UTC -jar /opt/veridger/" + jar
+        assertThat(start).isEqualTo("ExecStart=/usr/lib/jvm/java-25/bin/java -Duser.timezone=UTC -XX:+ExitOnOutOfMemoryError -jar /opt/veridger/" + jar
                 + " --spring.config.import=file:/etc/veridger/application.yaml,file:/etc/veridger/" + settingsFile
                 + ",optional:file:/etc/veridger/local.yaml,optional:file:/etc/veridger/jdbc-driver.yaml,"
                 + "optional:configtree:/etc/veridger/secrets/common/,optional:configtree:/etc/veridger/secrets/"
@@ -361,7 +361,7 @@ class DeployRendererTest {
         assertThat(element(configuration, "id")).isEqualTo(id);
         assertThat(element(configuration, "name")).isEqualTo(id);
         assertThat(element(configuration, "executable")).isEqualTo("C:\\Program Files\\Java\\jdk-25\\bin\\java.exe");
-        assertThat(element(configuration, "arguments")).isEqualTo("-Duser.timezone=UTC -jar " + HOME + "/lib/" + jar
+        assertThat(element(configuration, "arguments")).isEqualTo("-Duser.timezone=UTC -XX:+ExitOnOutOfMemoryError -jar " + HOME + "/lib/" + jar
                 + " --spring.config.import=file:" + HOME + "/etc/application.yaml,file:" + HOME + "/etc/" + settingsFile
                 + ",optional:file:" + HOME + "/etc/local.yaml,optional:file:" + HOME + "/etc/jdbc-driver.yaml,"
                 + "optional:configtree:" + HOME + "/etc/secrets/common/,optional:configtree:" + HOME + "/etc/secrets/"
@@ -426,7 +426,7 @@ class DeployRendererTest {
         String mcp = file(files, "/etc/systemd/system/acme-test.service");
         String admin = file(files, "/etc/systemd/system/acme-test-admin.service");
         assertThat(mcp.lines().toList()).contains("User=acme-test", "Group=acme-test", "Description=acme-test: the ledger MCP server",
-                "ExecStart=/usr/lib/jvm/java-25/bin/java -Duser.timezone=UTC -jar /opt/acme-test/ledger-mcp-server.jar "
+                "ExecStart=/usr/lib/jvm/java-25/bin/java -Duser.timezone=UTC -XX:+ExitOnOutOfMemoryError -jar /opt/acme-test/ledger-mcp-server.jar "
                         + "--spring.config.import=file:/etc/acme-test/application.yaml,file:/etc/acme-test/mcp.yaml,"
                         + "optional:file:/etc/acme-test/local.yaml,optional:file:/etc/acme-test/jdbc-driver.yaml,"
                         + "optional:configtree:/etc/acme-test/secrets/common/,optional:configtree:/etc/acme-test/secrets/mcp/");

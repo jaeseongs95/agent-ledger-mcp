@@ -107,8 +107,12 @@ public class LinkRepository {
     }
 
     public List<IssueRelation> relationsOf(IssueId issue) {
-        return jdbc.sql("SELECT a, b, kind, created_by FROM issue_relation WHERE a = :i OR b = :i "
-                + "ORDER BY a, b, kind").param("i", issue.value())
+        // ck_issue_relation_distinct (V4) enforces a <> b, so the two branches are strictly disjoint and each can use its own index
+        return jdbc.sql("SELECT a, b, kind, created_by FROM ("
+                + "SELECT a, b, kind, created_by FROM issue_relation WHERE a = :i "
+                + "UNION ALL "
+                + "SELECT a, b, kind, created_by FROM issue_relation WHERE b = :i"
+                + ") r ORDER BY a, b, kind").param("i", issue.value())
                 .query((rs, n) -> new IssueRelation(IssueId.of(rs.getString("a")), IssueId.of(rs.getString("b")),
                         CodeValue.of(rs.getString("kind")), ActorId.ofStored(rs.getString("created_by"))))
                 .list();

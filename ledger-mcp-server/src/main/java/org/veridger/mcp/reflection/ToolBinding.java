@@ -77,6 +77,8 @@ public final class ToolBinding {
     private final Object bean;
     private final Method method;
     private final List<ToolParameter> parameters;
+    private final Set<String> declaredParameters;
+    private final JavaType[] parameterTypes;
     private final List<CodeSlot> codeSlots;
     private final List<ChoiceSlot> choiceSlots;
     private final JsonMapper mapper;
@@ -87,6 +89,11 @@ public final class ToolBinding {
         this.bean = bean;
         this.method = method;
         this.parameters = List.copyOf(parameters);
+        this.declaredParameters = Set.copyOf(this.parameters.stream().map(ToolParameter::name).toList());
+        this.parameterTypes = new JavaType[this.parameters.size()];
+        for (int i = 0; i < this.parameters.size(); i++) {
+            this.parameterTypes[i] = mapper.constructType(this.parameters.get(i).type());
+        }
         this.codeSlots = List.copyOf(codeSlots);
         this.choiceSlots = List.copyOf(choiceSlots);
         this.mapper = mapper;
@@ -117,8 +124,7 @@ public final class ToolBinding {
         Map<String, Object> given = arguments == null ? Map.of() : arguments;
         List<ValidationIssue> issues = new ArrayList<>();
         List<JacksonException> causes = new ArrayList<>();
-        Set<String> declared = Set.copyOf(parameters.stream().map(ToolParameter::name).toList());
-        given.keySet().stream().filter(key -> !declared.contains(key)).sorted().forEach(key -> issues.add(
+        given.keySet().stream().filter(key -> !declaredParameters.contains(key)).sorted().forEach(key -> issues.add(
                 new ValidationIssue(key, ValidationReason.UNKNOWN_ARGUMENT, List.of(), List.of())));
         Object[] values = new Object[parameters.size()];
         for (int i = 0; i < values.length; i++) {
@@ -130,7 +136,7 @@ public final class ToolBinding {
                             List.of()));
                 }
             } else {
-                values[i] = bind(parameter, raw, issues, causes);
+                values[i] = bind(parameter, parameterTypes[i], raw, issues, causes);
             }
         }
         for (ChoiceSlot slot : choiceSlots) {
@@ -166,10 +172,9 @@ public final class ToolBinding {
         }
     }
 
-    private Object bind(ToolParameter parameter, Object raw, List<ValidationIssue> issues,
+    private Object bind(ToolParameter parameter, JavaType type, Object raw, List<ValidationIssue> issues,
             List<JacksonException> causes) {
         try {
-            JavaType type = mapper.constructType(parameter.type());
             if (raw instanceof String && parameter.structured()) {
                 // a JSON document in a string is not an object or an array
                 issues.add(new ValidationIssue(parameter.name(), ValidationReason.WRONG_TYPE,

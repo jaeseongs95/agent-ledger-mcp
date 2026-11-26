@@ -6,6 +6,7 @@ import static org.veridger.files.FileModes.makeReadOnly;
 import static org.veridger.files.FileModes.makeWritable;
 
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
@@ -361,11 +362,12 @@ public class AttachmentStore {
      */
     private long walk(FileChannel channel, long limit, long count, AttachmentKeys.Key aes, StorageKey key,
             Sha256Hex.Running digest) throws IOException {
+        byte[] prefix = SegmentCipher.aadPrefix(key);
         long position = 0;
         long plainBytes = 0;
         for (long index = 0; index < count; index++) {
             byte[] body = readBody(channel, position, limit);
-            byte[] plain = cipher.open(aes, key, index, false, body);
+            byte[] plain = cipher.openWithPrefix(aes, prefix, index, false, body);
             digest.update(plain, 0, plain.length);
             plainBytes += plain.length;
             position += SegmentCipher.LENGTH_BYTES + body.length;
@@ -377,6 +379,66 @@ public class AttachmentStore {
     }
 
     // ------------------------------------------------------------------------------------------------ read and check
+
+    /**
+     * Streams the entire decrypted plain body directly into {@code out} in a single linear pass over one open
+     * {@link FileChannel} (O(S) instead of O(S^2) repeated paged reads). Every segment tag and the trailing empty
+     * end mark are verified before returning; any tampering or truncation throws {@link InfrastructureException}.
+     *
+     * @return total plain bytes written to {@code out}
+     * @throws IOException when writing to {@code out} fails
+     * @throws InfrastructureException ARTIFACT_CORRUPTED when the file is missing, truncated, or fails GCM verification
+     */
+    public long stream(StorageKey key, String keyId, OutputStream out) throws IOException {
+        AttachmentKeys.Key aes = keys.byId(keyId);
+        Path file = pathOf(key);
+        if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
+            throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
+        }
+        byte[] prefix = SegmentCipher.aadPrefix(key);
+        long plainBytes = 0;
+        FileChannel channel;
+        try {
+            channel = files.openRead(file);
+        } catch (IOException io) {
+            throw failed(io);
+        }
+        try (FileChannel open = channel) {
+            long size;
+            try {
+                size = open.size();
+            } catch (IOException io) {
+                throw failed(io);
+            }
+            if (size == 0) {
+                throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
+            }
+            long position = 0;
+            long index = 0;
+            while (position < size) {
+                byte[] body;
+                try {
+                    body = readBody(open, position, size);
+                } catch (IOException io) {
+                    throw failed(io);
+                }
+                long next = position + SegmentCipher.LENGTH_BYTES + body.length;
+                boolean last = next == size;
+                byte[] plain = cipher.openWithPrefix(aes, prefix, index, last, body);
+                if (last) {
+                    if (plain.length != 0) {
+                        throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
+                    }
+                } else {
+                    out.write(plain);
+                    plainBytes += plain.length;
+                }
+                position = next;
+                index++;
+            }
+            return plainBytes;
+        }
+    }
 
     /**
      * A page of the plain body: the segments that cover {@code [offset, offset + maxBytes)} are opened and their tags checked; the
@@ -398,6 +460,7 @@ public class AttachmentStore {
         if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
             throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
         }
+        byte[] prefix = SegmentCipher.aadPrefix(key);
         try (FileChannel channel = files.openRead(file)) {
             long size = channel.size();
             long position = 0;
@@ -414,7 +477,7 @@ public class AttachmentStore {
                 boolean overlaps = !last && plainStart + plainLength > offset && plainStart < wantedEnd;
                 if (last || overlaps) {
                     byte[] body = readFully(channel, position + SegmentCipher.LENGTH_BYTES, length);
-                    byte[] plain = cipher.open(aes, key, index, last, body);
+                    byte[] plain = cipher.openWithPrefix(aes, prefix, index, last, body);
                     if (last) {
                         if (plain.length != 0) {
                             throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
@@ -448,6 +511,7 @@ public class AttachmentStore {
         if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
             throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
         }
+        byte[] prefix = SegmentCipher.aadPrefix(key);
         try (FileChannel channel = files.openRead(file)) {
             long size = channel.size();
             long position = 0;
@@ -458,7 +522,7 @@ public class AttachmentStore {
                 byte[] body = readBody(channel, position, size);
                 long next = position + SegmentCipher.LENGTH_BYTES + body.length;
                 boolean last = next == size;
-                byte[] plain = cipher.open(aes, key, index, last, body);
+                byte[] plain = cipher.openWithPrefix(aes, prefix, index, last, body);
                 if (last) {
                     if (plain.length != 0) {
                         throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());

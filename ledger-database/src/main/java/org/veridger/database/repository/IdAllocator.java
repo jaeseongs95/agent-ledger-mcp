@@ -108,14 +108,28 @@ public class IdAllocator {
 
     /** The next number of a surrogate key sequence (history, fix, case, grant). */
     public long next(Counter counter) {
-        int rows = jdbc.sql("UPDATE id_counter SET issued_no = issued_no + 1 WHERE name = :name")
-                .param("name", counter.name()).update();
+        return reserveRange(counter, 1);
+    }
+
+    /**
+     * Reserves a contiguous block of {@code count} surrogate IDs in two SQL statements (one UPDATE + one SELECT),
+     * returning the first ID of {@code [first .. first + count - 1]}. Holds the {@code id_counter} row lock until
+     * transaction commit, identical to {@link #next(Counter)} while eliminating {@code 2 * (count - 1)} round-trips
+     * inside multi-row batch flushes.
+     */
+    public long reserveRange(Counter counter, int count) {
+        if (count < 1) {
+            throw new IllegalArgumentException("count must be at least 1: " + count);
+        }
+        int rows = jdbc.sql("UPDATE id_counter SET issued_no = issued_no + :delta WHERE name = :name")
+                .param("delta", count).param("name", counter.name()).update();
         if (rows != 1) {
             throw new InfrastructureException(InfrastructureCode.INTEGRITY_VIOLATION,
                     List.of("counter row missing: " + counter));
         }
-        return jdbc.sql("SELECT issued_no FROM id_counter WHERE name = :name").param("name", counter.name())
+        long last = jdbc.sql("SELECT issued_no FROM id_counter WHERE name = :name").param("name", counter.name())
                 .query(Long.class).single();
+        return last - count + 1L;
     }
 
     /**

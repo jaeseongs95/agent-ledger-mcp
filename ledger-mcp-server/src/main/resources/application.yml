@@ -1,6 +1,9 @@
 spring:
   application:
     name: ledger-mcp-server
+  threads:
+    virtual:
+      enabled: true
   messages:
     # the bundles of the domain (error codes, validation reasons) and of this server (tool and argument texts)
     basename: messages/ledger-errors,messages/ledger-reasons,messages/mcp
@@ -10,7 +13,7 @@ spring:
     mcp:
       server:
         name: ledger
-        version: 4.1.0
+        version: 4.2.0
         type: SYNC
         protocol: STREAMABLE
         streamable-http:
@@ -23,6 +26,11 @@ server:
   # The server listens on 127.0.0.1 only: LoopbackOnly sets the address in code, so there is no setting for it. Reaching it from
   # another machine is a reverse proxy of the operator on this host.
   port: 8765
+  compression:
+    enabled: true
+    # Compress JSON/plain payloads while explicitly excluding text/event-stream so SSE frames flush immediately.
+    mime-types: application/json,text/plain
+    min-response-size: 1KB
 management:
   endpoints:
     web:

@@ -33,33 +33,31 @@ public class GrantStateRepository {
 
     /**
      * Read-only pre-check that the author holds a live grant (not revoked, not expired) for the scope without taking a
-     * row lock on {@code session_grant}. Write operations use this in {@code WriteGate.open} and acquire the
-     * {@code session_grant} row lock via {@link #markUsed} in {@link LockOrder} after entity pins.
+     * row lock on {@code session_grant}. Uses the unique {@code active_key} ({@code uq_session_grant_active}) directly
+     * so historical revoked rows for the same author/project/scope are never scanned. Write operations use this in
+     * {@code WriteGate.open} and acquire the {@code session_grant} row lock via {@link #markUsed} in {@link LockOrder}
+     * after entity pins.
      */
     public boolean hasLive(AuthorId author, ProjectId project, Scope scope, Instant now) {
-        return jdbc.sql("SELECT COUNT(*) FROM session_grant "
-                + "WHERE author_id = :author AND project_id = :project AND grant_scope = :scope "
-                + "AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > :now)")
+        return jdbc.sql("SELECT 1 FROM session_grant "
+                + "WHERE active_key = :activeKey AND (expires_at IS NULL OR expires_at > :now)")
+                .param("activeKey", SessionGrant.liveKey(author, project, scope))
                 .param("now", UtcTime.toDb(now))
-                .param("author", author.value())
-                .param("project", project.value())
-                .param("scope", scope.name())
-                .query(Long.class)
-                .single() > 0;
+                .query(Integer.class)
+                .optional()
+                .isPresent();
     }
 
     /**
      * True when the author holds a live grant (not revoked, not expired) for the scope and its last use is stamped (the
-     * affected row count of the conditional UPDATE is the answer); false when no live grant exists.
+     * affected row count of the conditional UPDATE is the answer); false when no live grant exists. Targets
+     * {@code active_key} ({@code uq_session_grant_active}) directly.
      */
     public boolean markUsed(AuthorId author, ProjectId project, Scope scope, Instant now) {
         return jdbc.sql("UPDATE session_grant SET last_used_at = :now "
-                + "WHERE author_id = :author AND project_id = :project AND grant_scope = :scope "
-                + "AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > :now)")
+                + "WHERE active_key = :activeKey AND (expires_at IS NULL OR expires_at > :now)")
                 .param("now", UtcTime.toDb(now))
-                .param("author", author.value())
-                .param("project", project.value())
-                .param("scope", scope.name())
+                .param("activeKey", SessionGrant.liveKey(author, project, scope))
                 .update() == 1;
     }
 

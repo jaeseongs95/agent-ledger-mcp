@@ -50,14 +50,24 @@ public class SegmentCipher {
         this.random = random;
     }
 
+    /** Precomputes the ASCII storage key prefix once for multi-segment operations on the same file. */
+    public static byte[] aadPrefix(StorageKey storage) {
+        return storage.hex().getBytes(StandardCharsets.US_ASCII);
+    }
+
     /** The bytes of the whole segment (length, IV, ciphertext, tag) for {@code plain}. */
     public byte[] seal(AttachmentKeys.Key key, StorageKey storage, long segment, boolean last, byte[] plain) {
+        return sealWithPrefix(key, aadPrefix(storage), segment, last, plain);
+    }
+
+    /** Variant of {@link #seal} reusing a precomputed {@link #aadPrefix(StorageKey)} across segments. */
+    public byte[] sealWithPrefix(AttachmentKeys.Key key, byte[] prefix, long segment, boolean last, byte[] plain) {
         byte[] iv = new byte[IV_BYTES];
         random.nextBytes(iv);
         try {
             Cipher cipher = Cipher.getInstance(ALGORITHM);
             cipher.init(Cipher.ENCRYPT_MODE, key.secret(), new GCMParameterSpec(TAG_BITS, iv));
-            cipher.updateAAD(aad(storage, segment, last));
+            cipher.updateAAD(aad(prefix, segment, last));
             byte[] sealed = cipher.doFinal(plain);
             ByteBuffer out = ByteBuffer.allocate(LENGTH_BYTES + IV_BYTES + sealed.length);
             out.putInt(IV_BYTES + sealed.length).put(iv).put(sealed);
@@ -75,22 +85,27 @@ public class SegmentCipher {
      *         position, a cut-off tail) or the body is too short to be a segment
      */
     public byte[] open(AttachmentKeys.Key key, StorageKey storage, long segment, boolean last, byte[] body) {
+        return openWithPrefix(key, aadPrefix(storage), segment, last, body);
+    }
+
+    /** Variant of {@link #open} reusing a precomputed {@link #aadPrefix(StorageKey)} across segments. */
+    public byte[] openWithPrefix(AttachmentKeys.Key key, byte[] prefix, long segment, boolean last, byte[] body) {
         if (body.length < IV_BYTES + TAG_BYTES) {
             throw corrupted();
         }
         try {
             Cipher cipher = Cipher.getInstance(ALGORITHM);
             cipher.init(Cipher.DECRYPT_MODE, key.secret(), new GCMParameterSpec(TAG_BITS, body, 0, IV_BYTES));
-            cipher.updateAAD(aad(storage, segment, last));
+            cipher.updateAAD(aad(prefix, segment, last));
             return cipher.doFinal(body, IV_BYTES, body.length - IV_BYTES);
         } catch (GeneralSecurityException failure) {
             throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of(), failure);
         }
     }
 
-    private static byte[] aad(StorageKey storage, long segment, boolean last) {
-        byte[] name = storage.hex().getBytes(StandardCharsets.US_ASCII);
-        return ByteBuffer.allocate(name.length + Long.BYTES + 1).put(name).putLong(segment).put((byte) (last ? 1 : 0)).array();
+    private static byte[] aad(byte[] name, long segment, boolean last) {
+        return ByteBuffer.allocate(name.length + Long.BYTES + 1).put(name).putLong(segment).put((byte) (last ? 1 : 0))
+                .array();
     }
 
     private static InfrastructureException corrupted() {

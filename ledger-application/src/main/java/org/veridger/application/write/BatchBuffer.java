@@ -174,32 +174,37 @@ final class BatchBuffer {
     List<WriteResult> flush(IdAllocator ids, IssueCaseRepository cases, HistoryWriter history,
             ReceiptService receipts) {
         long[] caseIds = new long[pendingCases.size()];
-        for (int i = 0; i < pendingCases.size(); i++) {
-            PendingCase pc = pendingCases.get(i);
-            long caseId = ids.next(Counter.ISSUE_CASE);
-            cases.insert(IssueCase.observe(caseId, pc.issueId(), pc.observation(), pc.evidence(), pc.quote(),
-                    pc.observedAt(), pc.ctx().author(), pc.now()));
-            caseIds[i] = caseId;
-            String entityId = pc.issueId().value() + "|" + caseId;
-            pendingHistories.get(pc.historyIndex()).entry = HistoryWriter.Entry
-                    .of(HistoryEntity.ISSUE_CASE, entityId, HistoryOp.CREATE, pc.changes())
-                    .withAttachment(pc.attachment());
+        if (!pendingCases.isEmpty()) {
+            long firstCaseId = ids.reserveRange(Counter.ISSUE_CASE, pendingCases.size());
+            for (int i = 0; i < pendingCases.size(); i++) {
+                PendingCase pc = pendingCases.get(i);
+                long caseId = firstCaseId + i;
+                cases.insert(IssueCase.observe(caseId, pc.issueId(), pc.observation(), pc.evidence(), pc.quote(),
+                        pc.observedAt(), pc.ctx().author(), pc.now()));
+                caseIds[i] = caseId;
+                String entityId = pc.issueId().value() + "|" + caseId;
+                pendingHistories.get(pc.historyIndex()).entry = HistoryWriter.Entry
+                        .of(HistoryEntity.ISSUE_CASE, entityId, HistoryOp.CREATE, pc.changes())
+                        .withAttachment(pc.attachment());
+            }
         }
-        long[] historyIds = new long[pendingHistories.size()];
-        for (int i = 0; i < pendingHistories.size(); i++) {
-            PendingHistory ph = pendingHistories.get(i);
-            historyIds[i] = history.append(ph.ctx, ph.entry);
+        List<HistoryWriter.BatchItem> historyItems = new ArrayList<>(pendingHistories.size());
+        for (PendingHistory ph : pendingHistories) {
+            historyItems.add(new HistoryWriter.BatchItem(ph.ctx, ph.entry));
         }
+        long[] historyIds = history.appendAll(historyItems);
         List<WriteResult> results = new ArrayList<>(pendingReceipts.size());
+        List<ReceiptService.Finished> toFinish = new ArrayList<>(pendingReceipts.size());
         for (PendingReceipt pr : pendingReceipts) {
             if (pr.replayed()) {
                 results.add(pr.result());
             } else {
                 WriteResult resolved = patch(pr.result(), caseIds, historyIds);
-                receipts.finish(pr.operationKey(), pr.author(), resolved);
+                toFinish.add(new ReceiptService.Finished(pr.operationKey(), pr.author(), resolved));
                 results.add(resolved);
             }
         }
+        receipts.finishAll(toFinish);
         return results;
     }
 
