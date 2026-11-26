@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title th:text="${title} + ' - ' + #{app.name}">Ledger admin</title>
+  <link rel="stylesheet" th:href="@{/css/tokens.css}">
   <link rel="stylesheet" th:href="@{/css/admin.css}">
   <meta th:if="${_csrf != null}" name="_csrf" th:content="${_csrf.token}">
   <meta th:if="${_csrf != null}" name="_csrf_header" th:content="${_csrf.headerName}">
@@ -11,38 +12,154 @@
 <body>
 <th:block th:fragment="header(active)">
   <a class="skip-link" href="#main" th:text="#{nav.skip}">Skip to the content</a>
-  <header class="site-header">
-    <span class="brand" th:text="#{app.name}">Ledger admin</span>
-    <nav th:attr="aria-label=#{nav.label}">
-      <ul th:if="${@ui.console() and !#bools.isTrue(enrolling)}">
-        <li><a th:href="@{/}" th:attr="aria-current=${active == 'overview'} ? 'page'" th:text="#{nav.overview}">Overview</a></li>
-        <li><a th:href="@{/projects}" th:attr="aria-current=${active == 'projects'} ? 'page'" th:text="#{nav.projects}">Projects</a></li>
-        <li><a th:href="@{/issues}" th:attr="aria-current=${active == 'issues'} ? 'page'" th:text="#{nav.issues}">Issues</a></li>
-        <li><a th:href="@{/specs}" th:attr="aria-current=${active == 'specs'} ? 'page'" th:text="#{nav.specs}">Specs</a></li>
-        <li><a th:href="@{/tasks}" th:attr="aria-current=${active == 'tasks'} ? 'page'" th:text="#{nav.tasks}">Tasks</a></li>
-        <li><a th:href="@{/criteria}" th:attr="aria-current=${active == 'criteria'} ? 'page'" th:text="#{nav.criteria}">Criteria</a></li>
-        <li><a th:href="@{/history}" th:attr="aria-current=${active == 'history'} ? 'page'" th:text="#{nav.history}">History</a></li>
-        <li><a th:href="@{/attachments}" th:attr="aria-current=${active == 'attachments'} ? 'page'" th:text="#{nav.attachments}">Attachments</a></li>
-        <li><a th:href="@{/grants}" th:attr="aria-current=${active == 'grants'} ? 'page'" th:text="#{nav.grants}">Grants</a></li>
-        <li><a th:href="@{/codes}" th:attr="aria-current=${active == 'codes'} ? 'page'" th:text="#{nav.codes}">Codes</a></li>
-        <li><a th:href="@{/driver}" th:attr="aria-current=${active == 'driver'} ? 'page'" th:text="#{nav.driver}">JDBC driver</a></li>
-        <li><a th:href="@{/passkeys}" th:attr="aria-current=${active == 'passkeys'} ? 'page'" th:text="#{nav.passkeys}">Passkeys</a></li>
-      </ul>
+
+  <!-- Desktop left sidebar / mobile off-canvas drawer (hidden on login, setup, and enrollment sessions) -->
+  <aside id="sidebar" class="sidebar" data-open="false"
+         th:if="${@ui.console() and !#bools.isTrue(enrolling) and active != 'login'}">
+    <div class="sidebar-brand">
+      <a class="brand-link" th:href="@{/}">
+        <span class="brand-mark" aria-hidden="true">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
+          </svg>
+        </span>
+        <span th:text="#{app.name}">Ledger admin</span>
+      </a>
+      <button type="button" id="sidebar-close" class="ghost btn-sm sidebar-close" th:attr="aria-label=#{nav.menu.close}">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M18 6 6 18M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+
+    <nav class="sidebar-nav" th:attr="aria-label=#{nav.label}">
+      <div>
+        <div class="nav-group-label" th:text="#{nav.group.work}">Work &amp; Monitoring</div>
+        <ul class="nav-list">
+          <li><a th:href="@{/}" th:attr="aria-current=${active == 'overview'} ? 'page'">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></svg>
+            <span th:text="#{nav.overview}">Overview</span>
+          </a></li>
+          <li><a th:href="@{/issues}" th:attr="aria-current=${active == 'issues'} ? 'page'">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v4"></path><path d="M12 16h.01"></path></svg>
+            <span th:text="#{nav.issues}">Issues</span>
+          </a></li>
+          <li><a th:href="@{/specs}" th:attr="aria-current=${active == 'specs'} ? 'page'">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><path d="M14 2v6h6"></path><path d="M8 13h8"></path><path d="M8 17h6"></path></svg>
+            <span th:text="#{nav.specs}">Specs</span>
+          </a></li>
+          <li><a th:href="@{/tasks}" th:attr="aria-current=${active == 'tasks'} ? 'page'">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m9 11 3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+            <span th:text="#{nav.tasks}">Tasks</span>
+          </a></li>
+          <li><a th:href="@{/criteria}" th:attr="aria-current=${active == 'criteria'} ? 'page'">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><line x1="4" y1="22" x2="4" y2="15"></line></svg>
+            <span th:text="#{nav.criteria}">Criteria</span>
+          </a></li>
+          <li><a th:href="@{/history}" th:attr="aria-current=${active == 'history'} ? 'page'">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
+            <span th:text="#{nav.history}">History</span>
+          </a></li>
+        </ul>
+      </div>
+
+      <div>
+        <div class="nav-group-label" th:text="#{nav.group.governance}">Governance &amp; Access</div>
+        <ul class="nav-list">
+          <li><a th:href="@{/projects}" th:attr="aria-current=${active == 'projects'} ? 'page'">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg>
+            <span th:text="#{nav.projects}">Projects</span>
+          </a></li>
+          <li><a th:href="@{/grants}" th:attr="aria-current=${active == 'grants'} ? 'page'">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+            <span th:text="#{nav.grants}">Grants</span>
+          </a></li>
+          <li><a th:href="@{/codes}" th:attr="aria-current=${active == 'codes'} ? 'page'">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><circle cx="7" cy="7" r="1.5"></circle></svg>
+            <span th:text="#{nav.codes}">Codes</span>
+          </a></li>
+        </ul>
+      </div>
+
+      <div>
+        <div class="nav-group-label" th:text="#{nav.group.system}">System &amp; Security</div>
+        <ul class="nav-list">
+          <li><a th:href="@{/attachments}" th:attr="aria-current=${active == 'attachments'} ? 'page'">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+            <span th:text="#{nav.attachments}">Attachments</span>
+          </a></li>
+          <li><a th:href="@{/driver}" th:attr="aria-current=${active == 'driver'} ? 'page'">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"></path><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"></path></svg>
+            <span th:text="#{nav.driver}">JDBC driver</span>
+          </a></li>
+          <li><a th:href="@{/passkeys}" th:attr="aria-current=${active == 'passkeys'} ? 'page'">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="7.5" cy="15.5" r="5.5"></circle><path d="m21 2-9.6 9.6"></path><path d="m15.5 7.5 3 3L22 7l-3-3"></path></svg>
+            <span th:text="#{nav.passkeys}">Passkeys</span>
+          </a></li>
+        </ul>
+      </div>
     </nav>
-    <form th:if="${active != 'login'}" method="post" th:action="@{/logout}" class="logout">
-      <button type="submit" class="secondary" th:text="#{nav.logout}">Sign out</button>
-    </form>
+  </aside>
+  <div id="sidebar-backdrop" class="sidebar-backdrop" hidden
+       th:if="${@ui.console() and !#bools.isTrue(enrolling) and active != 'login'}"></div>
+
+  <header class="topbar">
+    <div class="topbar-left">
+      <button type="button" id="sidebar-open" class="secondary btn-sm menu-toggle"
+              aria-controls="sidebar" aria-expanded="false"
+              th:if="${@ui.console() and !#bools.isTrue(enrolling) and active != 'login'}"
+              th:attr="aria-label=#{nav.menu.open}">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+      <span class="topbar-brand-inline">
+        <span class="brand-mark" aria-hidden="true">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
+          </svg>
+        </span>
+        <span th:text="#{app.name}">Ledger admin</span>
+      </span>
+      <span class="session-pill" th:if="${#bools.isTrue(enrolling)}" th:text="#{nav.enrollingBadge}">Enrollment session</span>
+    </div>
+
+    <div class="topbar-right">
+      <button type="button" id="theme-toggle" class="secondary btn-sm"
+              th:attr="data-prefix=#{theme.label},data-system=#{theme.system},data-light=#{theme.light},data-dark=#{theme.dark},aria-label=#{theme.label}">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path>
+        </svg>
+        <span data-theme-text th:text="#{theme.system}">System</span>
+      </button>
+      <form th:if="${active != 'login'}" method="post" th:action="@{/logout}" class="logout">
+        <button type="submit" class="secondary btn-sm" th:text="#{nav.logout}">Sign out</button>
+      </form>
+    </div>
   </header>
-  <p th:if="${@ui.setup() and active != 'login'}" class="notice" role="status" th:text="#{setup.notice}">Setup mode.</p>
+
+  <div class="global-alerts">
+    <p th:if="${@ui.setup() and active != 'login'}" class="alert alert-warning notice" role="status" th:text="#{setup.notice}">Setup mode.</p>
+    <p th:if="${flashKey != null}" class="alert alert-success" role="status" th:text="#{${flashKey}}">Saved.</p>
+    <div th:if="${formErrorDetail != null}" class="alert alert-danger" role="alert">
+      <div class="alert-title" th:text="#{form.errorTitle}">Could not save the form</div>
+      <p th:text="${formErrorDetail}">Validation failed.</p>
+    </div>
+    <p id="passkey-status" class="alert alert-danger error" role="alert" tabindex="-1" hidden
+       th:attr="data-failed=#{passkey.failed},data-cancelled=#{passkey.cancelled},data-unsupported=#{passkey.unsupported},data-busy=#{passkey.busy},data-submitting=#{passkey.submitting}"></p>
+  </div>
+  <div id="ui-toast" class="toast-region" aria-live="polite" aria-atomic="true"
+       th:attr="data-copied=#{common.copied},data-copy-failed=#{common.copyFailed}"></div>
 </th:block>
 
 <th:block th:fragment="footer">
   <footer class="site-footer" th:with="source=${@ui.sourceUrl()}">
+    <span th:text="#{app.name}">Ledger admin</span>
     <a th:href="${source}" rel="noopener noreferrer" th:text="#{footer.source}">Source code</a>
   </footer>
-  <p id="passkey-status" class="error" role="alert" hidden th:attr="data-failed=#{passkey.failed}"></p>
   <script th:src="@{/js/local-time.js}" defer></script>
   <script th:src="@{/js/passkey.js}" defer></script>
+  <script th:src="@{/js/admin-ui.js}" defer></script>
 </th:block>
 
 <!-- an instant: UTC in the markup (ISO-8601 with Z), shown in the zone of the browser by the script -->
@@ -54,14 +171,36 @@
   <span th:if="${address != null and !@links.isHttp(address)}" th:text="${address}">text</span>
 </th:block>
 
+<!-- reusable badge for status / severity / state -->
+<span th:fragment="badge(value)" th:if="${value != null}" th:class="'badge badge-' + ${value}" th:text="${value}">OPEN</span>
+
+<!-- reusable passkey-approval indicator badge for owner write forms -->
+<span th:fragment="approveHint" class="approve-pill">
+  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+    <circle cx="7.5" cy="15.5" r="5.5"></circle><path d="m21 2-9.6 9.6"></path><path d="m15.5 7.5 3 3L22 7l-3-3"></path>
+  </svg>
+  <span th:text="#{common.approveRequired}">Passkey approval required</span>
+</span>
+
+<!-- reusable empty state distinguishing no rows vs no filter matches (keeps common.noRows text intact) -->
+<div th:fragment="emptyState(hasFilters, resetHref)" class="empty-state">
+  <p class="empty-state-title" th:text="#{common.noRows}">No rows.</p>
+  <p th:if="${#bools.isTrue(hasFilters)}" th:text="#{common.noMatch}">No items match the current filters.</p>
+  <a th:if="${#bools.isTrue(hasFilters) and resetHref != null}" th:href="${resetHref}" class="button secondary btn-sm" th:text="#{common.resetFilters}">Reset filters</a>
+</div>
+
 <!-- previous and next of a paged list; page-size is part of the filter form of the page -->
 <nav th:fragment="pager(paging, total)" class="pager" th:attr="aria-label=#{paging.label}">
-  <p class="page-info" th:text="#{paging.info(${paging.number()}, ${paging.limit()})}">Page 1, 50 rows per page</p>
-  <p class="page-info" th:if="${total != null}" th:text="#{paging.total(${total})}">Total: 0</p>
-  <a th:if="${paging.hasPrevious()}" th:href="${paging.previousHref()}" rel="prev" th:text="#{paging.previous}">Previous</a>
-  <span th:unless="${paging.hasPrevious()}" class="disabled" aria-disabled="true" th:text="#{paging.previous}">Previous</span>
-  <a th:if="${paging.hasNext()}" th:href="${paging.nextHref()}" rel="next" th:text="#{paging.next}">Next</a>
-  <span th:unless="${paging.hasNext()}" class="disabled" aria-disabled="true" th:text="#{paging.next}">Next</span>
+  <div class="pager-meta">
+    <p class="page-info" th:text="#{paging.info(${paging.number()}, ${paging.limit()})}">Page 1, 50 rows per page</p>
+    <p class="page-info" th:if="${total != null}" th:text="#{paging.total(${total})}">Total: 0</p>
+  </div>
+  <div class="pager-nav">
+    <a th:if="${paging.hasPrevious()}" th:href="${paging.previousHref()}" rel="prev" th:text="#{paging.previous}">Previous</a>
+    <span th:unless="${paging.hasPrevious()}" class="disabled" aria-disabled="true" th:text="#{paging.previous}">Previous</span>
+    <a th:if="${paging.hasNext()}" th:href="${paging.nextHref()}" rel="next" th:text="#{paging.next}">Next</a>
+    <span th:unless="${paging.hasNext()}" class="disabled" aria-disabled="true" th:text="#{paging.next}">Next</span>
+  </div>
 </nav>
 </body>
 </html>

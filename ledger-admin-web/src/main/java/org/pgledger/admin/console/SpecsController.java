@@ -13,6 +13,7 @@ import org.pgledger.domain.rule.AttentionKind;
 import org.pgledger.domain.rule.SpecStatus;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -30,12 +31,14 @@ public class SpecsController {
     private final ListService lists;
     private final DetailService details;
     private final StatsService stats;
+    private final Links links;
 
-    public SpecsController(Choices choices, ListService lists, DetailService details, StatsService stats) {
+    public SpecsController(Choices choices, ListService lists, DetailService details, StatsService stats, Links links) {
         this.choices = choices;
         this.lists = lists;
         this.details = details;
         this.stats = stats;
+        this.links = links;
     }
 
     @GetMapping("/specs")
@@ -45,6 +48,10 @@ public class SpecsController {
         model.addAttribute("statuses", SpecStatus.values());
         model.addAttribute("attentions", new AttentionKind[] {AttentionKind.SPEC_COMPLETED_NOT_VERIFIED});
         model.addAttribute("sizes", Paging.SIZES);
+        boolean hasFilters = StringUtils.hasText(filter.status()) || StringUtils.hasText(filter.priority())
+                || StringUtils.hasText(filter.owner()) || StringUtils.hasText(filter.attention());
+        model.addAttribute("hasFilters", hasFilters);
+        model.addAttribute("resetHref", links.projectHref("/specs", project.selected()));
         if (project.selected() != null) {
             var page = lists.specs(new SpecsQuery(project.selected(), filter.status(), null, filter.priority(),
                     filter.owner(), filter.attention(), Paging.limitOf(filter.limit()), filter.cursor()));

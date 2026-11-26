@@ -15,6 +15,7 @@ import org.pgledger.domain.rule.CriterionState;
 import org.pgledger.domain.rule.TaskState;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -37,12 +38,14 @@ public class TasksController {
     private final ListService lists;
     private final DetailService details;
     private final StatsService stats;
+    private final Links links;
 
-    public TasksController(Choices choices, ListService lists, DetailService details, StatsService stats) {
+    public TasksController(Choices choices, ListService lists, DetailService details, StatsService stats, Links links) {
         this.choices = choices;
         this.lists = lists;
         this.details = details;
         this.stats = stats;
+        this.links = links;
     }
 
     @GetMapping("/tasks")
@@ -53,6 +56,10 @@ public class TasksController {
         model.addAttribute("attentions", new AttentionKind[] {AttentionKind.TASK_UNKNOWN,
             AttentionKind.DONE_NOT_VERIFIED});
         model.addAttribute("sizes", Paging.SIZES);
+        boolean hasFilters = StringUtils.hasText(filter.state()) || StringUtils.hasText(filter.owner())
+                || StringUtils.hasText(filter.attention());
+        model.addAttribute("hasFilters", hasFilters);
+        model.addAttribute("resetHref", links.projectHref("/tasks", project.selected()));
         if (project.selected() != null) {
             var page = lists.tasks(new TasksQuery(project.selected(), filter.state(), filter.owner(),
                     filter.attention(), Paging.limitOf(filter.limit()), filter.cursor()));
@@ -86,6 +93,9 @@ public class TasksController {
         model.addAttribute("choice", project);
         model.addAttribute("states", CriterionState.values());
         model.addAttribute("sizes", Paging.SIZES);
+        boolean hasFilters = StringUtils.hasText(filter.state()) || StringUtils.hasText(filter.milestone());
+        model.addAttribute("hasFilters", hasFilters);
+        model.addAttribute("resetHref", links.projectHref("/criteria", project.selected()));
         if (project.selected() != null) {
             var page = lists.criteria(new CriteriaQuery(project.selected(), filter.state(), filter.milestone(),
                     Paging.limitOf(filter.limit()), filter.cursor()));

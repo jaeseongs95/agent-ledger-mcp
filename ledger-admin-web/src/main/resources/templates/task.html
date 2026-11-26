@@ -4,39 +4,109 @@
 <body>
 <th:block th:replace="~{fragments :: header('tasks')}"></th:block>
 <main id="main">
-  <p><a th:href="@{/tasks(project=${task.projectId()})}" th:text="#{task.back}">Back to the tasks</a></p>
-  <h1 th:text="${task.id()} + ' - ' + ${task.title()}">Task</h1>
-  <dl class="facts">
-    <dt th:text="#{common.project}">Project</dt><dd th:text="${task.projectId()}">p1</dd>
-    <dt th:text="#{common.state}">State</dt><dd><span th:class="'badge badge-' + ${task.state()}" th:text="${task.state()}">ACTIVE</span></dd>
-    <dt th:text="#{common.owner}">Owner</dt><dd th:text="${task.ownerActorId()}">owner</dd>
-    <dt th:text="#{item.createdBy}">Created by</dt><dd th:text="${task.createdBy()}">author</dd>
-    <dt th:text="#{task.completedBy}">Completed by</dt><dd th:text="${task.completedBy()}">reporter</dd>
-    <dt th:text="#{col.version}">Version</dt><dd th:text="${task.version()}">1</dd>
-    <dt th:text="#{col.created}">Created</dt><dd><time th:replace="~{fragments :: time(${task.createdAt()})}">t</time></dd>
-    <dt th:text="#{col.updated}">Updated</dt><dd><time th:replace="~{fragments :: time(${task.updatedAt()})}">t</time></dd>
-  </dl>
-  <section><h2 th:text="#{task.purpose}">Purpose</h2><p class="prewrap" th:text="${task.purpose()}">purpose</p></section>
-  <section><h2 th:text="#{task.successCondition}">Success criterion</h2><p class="prewrap" th:text="${task.successCondition()}">criterion</p></section>
-  <section th:if="${task.originRef() != null or task.originQuote() != null}">
-    <h2 th:text="#{task.origin}">Origin</h2>
-    <p><th:block th:replace="~{fragments :: evidence(${task.originRef()})}"></th:block></p>
-    <blockquote class="prewrap" th:if="${task.originQuote() != null}" th:text="${task.originQuote()}">quote</blockquote>
-  </section>
-  <section th:if="${!#lists.isEmpty(task.deliverables())}">
-    <h2 th:text="#{deliverables.title}">Deliverables</h2>
-    <table><thead><tr><th scope="col" th:text="#{col.kind}">Kind</th><th scope="col" th:text="#{deliverables.ref}">Reference</th><th scope="col" th:text="#{deliverables.location}">Location</th><th scope="col" th:text="#{deliverables.summary}">Summary</th><th scope="col" th:text="#{deliverables.check}">Check</th><th scope="col" th:text="#{deliverables.by}">By</th></tr></thead>
-    <tbody><tr th:each="d : ${task.deliverables()}"><td th:text="${d.kind()}">change</td><td class="code" th:text="${d.deliverableRef()}">ref</td><td th:text="${d.location()}">loc</td><td th:text="${d.summary()}">summary</td><td th:text="${d.checkRef() != null} ? (${d.checkRef()} + ' ' + ${d.checkResult()}) : ''">check</td><td th:text="${d.by()}">by</td></tr></tbody></table>
-  </section>
-  <section th:if="${!#lists.isEmpty(task.issues()) or !#lists.isEmpty(task.specs()) or !#lists.isEmpty(task.criteria())}">
-    <h2 th:text="#{item.links}">Links</h2>
-    <ul>
-      <li th:each="i : ${task.issues()}"><a th:href="@{/issues/{id}(id=${i})}" th:text="${i}">ID</a></li>
-      <li th:each="s : ${task.specs()}"><a th:href="@{/specs/detail(id=${s})}" th:text="${s}">spec</a></li>
-      <li th:each="c : ${task.criteria()}" th:text="${c}">criterion</li>
-    </ul>
-  </section>
-  <p><a th:href="@{/history(project=${task.projectId()}, entity='task', entityId=${task.id()})}" th:text="#{item.fullHistory}">Full history</a></p>
+  <nav class="breadcrumb" th:attr="aria-label=#{tasks.title}">
+    <a th:href="@{/tasks(project=${task.projectId()})}" th:text="#{task.back}">Back to the tasks</a>
+    <span class="breadcrumb-sep" aria-hidden="true">/</span>
+    <span class="code" th:text="${task.id()}">ID</span>
+  </nav>
+
+  <div class="page-header">
+    <div class="page-header-text">
+      <h1 th:text="${task.id()} + ' - ' + ${task.title()}">Task</h1>
+      <div class="form-actions">
+        <span th:class="'badge badge-' + ${task.state()}" th:text="${task.state()}">ACTIVE</span>
+      </div>
+    </div>
+    <div class="page-header-actions">
+      <a class="button secondary btn-sm" th:href="@{/history(project=${task.projectId()}, entity='task', entityId=${task.id()})}" th:text="#{item.fullHistory}">Full history</a>
+    </div>
+  </div>
+
+  <div class="detail-layout">
+    <div class="detail-main">
+      <section class="card">
+        <h2 th:text="#{task.purpose}">Purpose</h2>
+        <p th:if="${task.purpose() != null and !#strings.isEmpty(task.purpose())}" class="prewrap" th:text="${task.purpose()}">purpose</p>
+        <p th:unless="${task.purpose() != null and !#strings.isEmpty(task.purpose())}" class="hint" th:text="#{item.noContent}">Not recorded.</p>
+      </section>
+
+      <section class="card">
+        <h2 th:text="#{task.successCondition}">Success criterion</h2>
+        <p th:if="${task.successCondition() != null and !#strings.isEmpty(task.successCondition())}" class="prewrap" th:text="${task.successCondition()}">criterion</p>
+        <p th:unless="${task.successCondition() != null and !#strings.isEmpty(task.successCondition())}" class="hint" th:text="#{item.noContent}">Not recorded.</p>
+      </section>
+
+      <section class="card" th:if="${task.originRef() != null or task.originQuote() != null}">
+        <h2 th:text="#{task.origin}">Origin</h2>
+        <p th:if="${task.originRef() != null}"><th:block th:replace="~{fragments :: evidence(${task.originRef()})}"></th:block></p>
+        <blockquote class="origin-quote prewrap" th:if="${task.originQuote() != null}" th:text="${task.originQuote()}">quote</blockquote>
+      </section>
+
+      <section class="card" th:if="${!#lists.isEmpty(task.deliverables())}">
+        <h2 th:text="#{deliverables.title}">Deliverables</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col" th:text="#{col.kind}">Kind</th>
+                <th scope="col" th:text="#{deliverables.ref}">Reference</th>
+                <th scope="col" th:text="#{deliverables.location}">Location</th>
+                <th scope="col" th:text="#{deliverables.summary}">Summary</th>
+                <th scope="col" th:text="#{deliverables.check}">Check</th>
+                <th scope="col" th:text="#{deliverables.by}">By</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr th:each="d : ${task.deliverables()}">
+                <td><span class="badge" th:text="${d.kind()}">change</span></td>
+                <td>
+                  <span class="cell-code">
+                    <code th:text="${d.deliverableRef()}">ref</code>
+                    <button type="button" class="ghost btn-sm" th:attr="data-copy=${d.deliverableRef()}" th:text="#{common.copy}">Copy</button>
+                  </span>
+                </td>
+                <td class="code" th:text="${d.location() != null} ? ${d.location()} : #{common.noneValue}">loc</td>
+                <td th:text="${d.summary()}">summary</td>
+                <td>
+                  <span th:if="${d.checkRef() != null}" class="cell-code">
+                    <span class="code" th:text="${d.checkRef()}">check</span>
+                    <span th:if="${d.checkResult() != null}" th:class="'badge badge-' + ${d.checkResult()}" th:text="${d.checkResult()}">PASS</span>
+                  </span>
+                  <span th:unless="${d.checkRef() != null}" class="muted" th:text="#{common.noneValue}">—</span>
+                </td>
+                <td th:text="${d.by()}">by</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <aside class="detail-aside">
+      <section class="card">
+        <h2 th:text="#{item.metadata}">Details</h2>
+        <dl class="facts">
+          <dt th:text="#{common.project}">Project</dt><dd class="code"><a th:href="@{/(project=${task.projectId()})}" th:text="${task.projectId()}">p1</a></dd>
+          <dt th:text="#{common.state}">State</dt><dd><span th:class="'badge badge-' + ${task.state()}" th:text="${task.state()}">ACTIVE</span></dd>
+          <dt th:text="#{common.owner}">Owner</dt><dd th:text="${task.ownerActorId() != null} ? ${task.ownerActorId()} : #{common.noneValue}">owner</dd>
+          <dt th:text="#{item.createdBy}">Created by</dt><dd th:text="${task.createdBy()}">author</dd>
+          <dt th:text="#{task.completedBy}">Completed by</dt><dd th:text="${task.completedBy() != null} ? ${task.completedBy()} : #{common.noneValue}">reporter</dd>
+          <dt th:text="#{col.version}">Version</dt><dd class="num" th:text="${task.version()}">1</dd>
+          <dt th:text="#{col.created}">Created</dt><dd class="num"><time th:replace="~{fragments :: time(${task.createdAt()})}">t</time></dd>
+          <dt th:text="#{col.updated}">Updated</dt><dd class="num"><time th:replace="~{fragments :: time(${task.updatedAt()})}">t</time></dd>
+        </dl>
+      </section>
+
+      <section class="card" th:if="${!#lists.isEmpty(task.issues()) or !#lists.isEmpty(task.specs()) or !#lists.isEmpty(task.criteria())}">
+        <h2 th:text="#{item.links}">Links</h2>
+        <ul class="link-list">
+          <li th:each="i : ${task.issues()}"><a class="code" th:href="@{/issues/{id}(id=${i})}" th:text="${i}">ID</a></li>
+          <li th:each="s : ${task.specs()}"><a class="code" th:href="@{/specs/detail(id=${s})}" th:text="${s}">spec</a></li>
+          <li th:each="c : ${task.criteria()}"><span class="code" th:text="${c}">criterion</span></li>
+        </ul>
+      </section>
+    </aside>
+  </div>
 </main>
 <th:block th:replace="~{fragments :: footer}"></th:block>
 </body>

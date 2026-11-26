@@ -4,94 +4,146 @@
 <body>
 <th:block th:replace="~{fragments :: header('history')}"></th:block>
 <main id="main">
-  <h1 th:text="#{history.title}">History</h1>
+  <div class="page-header">
+    <div class="page-header-text">
+      <h1 th:text="#{history.title}">History</h1>
+    </div>
+  </div>
+
   <form method="get" th:action="@{/history}" class="filters">
-    <label for="project" th:text="#{common.project}">Project</label>
-    <select id="project" name="project">
-      <option value="" th:text="#{common.allProjects}">All projects</option>
-      <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.id()}" th:selected="${p.id() == filter.project()}">p1</option>
-    </select>
-    <label for="entity" th:text="#{history.entity}">Entity</label>
-    <select id="entity" name="entity">
-      <option value="" th:text="#{common.any}">Any</option>
-      <option th:each="e : ${entities}" th:value="${e.token()}" th:text="${e.token()}" th:selected="${e.token() == filter.entity()}">issue</option>
-    </select>
-    <label for="entityId" th:text="#{history.entityId}">Entity id</label>
-    <input id="entityId" name="entityId" type="text" th:value="${filter.entityId()}" maxlength="300">
-    <label for="op" th:text="#{history.op}">Operation</label>
-    <select id="op" name="op">
-      <option value="" th:text="#{common.any}">Any</option>
-      <option th:each="o : ${ops}" th:value="${o.token()}" th:text="${o.token()}" th:selected="${o.token() == filter.op()}">CREATE</option>
-    </select>
-    <label for="authorId" th:text="#{history.author}">Author</label>
-    <input id="authorId" name="authorId" type="text" th:value="${filter.authorId()}" maxlength="200">
-    <label for="limit" th:text="#{paging.size}">Rows per page</label>
-    <select id="limit" name="limit">
-      <option th:each="n : ${sizes}" th:value="${n}" th:text="${n}" th:selected="${n == paging.limit()}">50</option>
-    </select>
-    <button type="submit" th:text="#{common.apply}">Apply</button>
+    <div class="filter-field">
+      <label for="project" th:text="#{common.project}">Project</label>
+      <select id="project" name="project">
+        <option value="" th:text="#{common.allProjects}">All projects</option>
+        <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.id()}" th:selected="${p.id() == filter.project()}">p1</option>
+      </select>
+    </div>
+    <div class="filter-field">
+      <label for="entity" th:text="#{history.entity}">Entity</label>
+      <select id="entity" name="entity">
+        <option value="" th:text="#{common.any}">Any</option>
+        <option th:each="e : ${entities}" th:value="${e.token()}" th:text="${e.token()}" th:selected="${e.token() == filter.entity()}">issue</option>
+      </select>
+    </div>
+    <div class="filter-field">
+      <label for="entityId" th:text="#{history.entityId}">Entity id</label>
+      <input id="entityId" name="entityId" type="text" th:value="${filter.entityId()}" maxlength="300">
+    </div>
+    <div class="filter-field">
+      <label for="op" th:text="#{history.op}">Operation</label>
+      <select id="op" name="op">
+        <option value="" th:text="#{common.any}">Any</option>
+        <option th:each="o : ${ops}" th:value="${o.token()}" th:text="${o.token()}" th:selected="${o.token() == filter.op()}">CREATE</option>
+      </select>
+    </div>
+    <div class="filter-field">
+      <label for="authorId" th:text="#{history.author}">Author</label>
+      <input id="authorId" name="authorId" type="text" th:value="${filter.authorId()}" maxlength="200">
+    </div>
+    <div class="filter-field filter-field-sm">
+      <label for="limit" th:text="#{paging.size}">Rows per page</label>
+      <select id="limit" name="limit">
+        <option th:each="n : ${sizes}" th:value="${n}" th:text="${n}" th:selected="${n == paging.limit()}">50</option>
+      </select>
+    </div>
+    <div class="filter-actions">
+      <button type="submit" th:text="#{common.apply}">Apply</button>
+      <a th:if="${hasFilters}" th:href="${resetHref}" class="button secondary" th:text="#{common.resetFilters}">Reset filters</a>
+    </div>
   </form>
 
-  <table th:if="${!#lists.isEmpty(page.items())}">
-    <caption class="sr-only" th:text="#{history.title}">History</caption>
-    <thead><tr>
-      <th scope="col" th:text="#{col.id}">ID</th><th scope="col" th:text="#{col.at}">At</th><th scope="col" th:text="#{history.target}">Target</th>
-      <th scope="col" th:text="#{history.op}">Operation</th><th scope="col" th:text="#{history.states}">States</th><th scope="col" th:text="#{history.author}">Author</th>
-      <th scope="col" th:text="#{history.reason}">Reason</th><th scope="col" th:text="#{history.changes}">Changes</th>
-    </tr></thead>
-    <tbody>
-      <th:block th:each="h : ${page.items()}"><tr>
-        <td th:text="${h.id()}">1</td>
-        <td><time th:replace="~{fragments :: time(${h.at()})}">t</time></td>
-        <td><span th:text="${h.entity()}">issue</span> <span th:text="${h.entityId()}">ID</span></td>
-        <td th:text="${h.op()}">CREATE</td>
-        <td th:text="${h.fromState()} + ' > ' + ${h.toState()}" th:if="${h.fromState() != null or h.toState() != null}">a > b</td>
-        <td th:unless="${h.fromState() != null or h.toState() != null}"></td>
-        <td th:text="${h.authorId()}">author</td>
-        <td><span th:text="${h.reason()}">reason</span> <th:block th:replace="~{fragments :: evidence(${h.evidenceUri()})}"></th:block></td>
-        <td class="code" th:text="${h.changes() == null} ? '' : ${h.changes().text()}">{}</td>
-      </tr>
-      <tr class="attachment-row" th:if="${attachments.containsKey(h.id())}" th:with="a=${attachments.get(h.id())}">
-        <td colspan="8">
-          <section th:attr="aria-label=#{history.attachment}">
-            <h2 class="attachment-title" th:text="#{history.attachment}">Attachment</h2>
-            <p th:if="${a.state().name() == 'NOT_FOUND'}" th:text="#{history.attachment.notFound}">None</p>
-            <th:block th:if="${a.state().name() != 'NOT_FOUND'}">
-              <dl class="facts" th:if="${#lists.isEmpty(a.files())}">
-                <dt th:text="#{history.attachment.uploadedBy}">Uploaded by</dt><dd th:text="${a.uploadedBy()}">author</dd>
-                <dt th:text="#{history.attachment.uploadedAt}">Uploaded at</dt><dd><time th:replace="~{fragments :: time(${a.uploadedAt()})}">t</time></dd>
-              </dl>
-              <p th:if="${#lists.isEmpty(a.files()) and a.state().name() == 'NOT_CONFIGURED'}" th:text="#{history.attachment.notConfigured}">Not configured</p>
-              <p th:if="${#lists.isEmpty(a.files()) and a.state().name() != 'NOT_CONFIGURED'}" th:text="#{history.attachment.unavailable}">Unavailable</p>
-              <div class="attachment-file" th:each="f : ${a.files()}">
-                <dl class="facts">
-                  <dt th:text="#{history.attachment.name}">File name</dt><dd th:text="${f.fileName()}">report.txt</dd>
-                  <dt th:text="#{history.attachment.type}">Media type</dt><dd th:text="${f.mediaType()}">text/plain</dd>
-                  <dt th:text="#{history.attachment.size}">Size</dt><dd th:text="${f.sizeBytes()}">0</dd>
-                  <dt th:text="#{history.attachment.sha256}">SHA-256</dt><dd class="code" th:text="${f.sha256()}">abc</dd>
-                  <dt th:text="#{history.attachment.uploadedBy}">Uploaded by</dt><dd th:text="${a.uploadedBy()}">author</dd>
-                  <dt th:text="#{history.attachment.uploadedAt}">Uploaded at</dt><dd><time th:replace="~{fragments :: time(${a.uploadedAt()})}">t</time></dd>
-                </dl>
-                <p th:if="${f.state().name() == 'NOT_CONFIGURED'}" th:text="#{history.attachment.notConfigured}">Not configured</p>
-                <p th:if="${f.state().name() == 'UNAVAILABLE'}" th:text="#{history.attachment.unavailable}">Unavailable</p>
-                <p th:if="${f.state().name() == 'DOWNLOAD'}" th:text="#{history.attachment.notText}">Not shown</p>
-                <th:block th:if="${f.isText()}">
-                  <h3 th:text="#{history.attachment.text}">Content</h3>
-                  <pre class="attachment-text" th:text="${f.text()}">text</pre>
-                  <p class="hint" th:if="${f.truncated()}" th:text="#{history.attachment.truncated}">Cut</p>
+  <div th:if="${!#lists.isEmpty(page.items())}" class="table-wrap">
+    <table>
+      <caption class="sr-only" th:text="#{history.title}">History</caption>
+      <thead>
+        <tr>
+          <th scope="col" th:text="#{col.id}">ID</th>
+          <th scope="col" th:text="#{col.at}">At</th>
+          <th scope="col" th:text="#{history.target}">Target</th>
+          <th scope="col" th:text="#{history.op}">Operation</th>
+          <th scope="col" th:text="#{history.states}">States</th>
+          <th scope="col" th:text="#{history.author}">Author</th>
+          <th scope="col" th:text="#{history.reason}">Reason</th>
+          <th scope="col" th:text="#{history.changes}">Changes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <th:block th:each="h : ${page.items()}">
+          <tr>
+            <td class="num" th:text="${h.id()}">1</td>
+            <td class="num"><time th:replace="~{fragments :: time(${h.at()})}">t</time></td>
+            <td>
+              <span class="badge" th:text="${h.entity()}">issue</span>
+              <a th:if="${@links.hasItemPage(h.entity())}" th:with="targetPage=${@links.itemPage(h.entity())}"
+                 th:href="@{${targetPage}(id=${h.entityId()})}" class="code" th:text="${h.entityId()}">ID</a>
+              <span th:unless="${@links.hasItemPage(h.entity())}" class="code" th:text="${h.entityId()}">ID</span>
+            </td>
+            <td class="code" th:text="${h.op()}">CREATE</td>
+            <td>
+              <span class="state-transition" th:if="${h.fromState() != null or h.toState() != null}">
+                <span th:if="${h.fromState() != null}" th:class="'badge badge-' + ${h.fromState()}" th:text="${h.fromState()}">OPEN</span>
+                <span aria-hidden="true">&#8594;</span>
+                <span th:if="${h.toState() != null}" th:class="'badge badge-' + ${h.toState()}" th:text="${h.toState()}">RESOLVED</span>
+              </span>
+              <span th:unless="${h.fromState() != null or h.toState() != null}" class="muted" th:text="#{common.noneValue}">—</span>
+            </td>
+            <td th:text="${h.authorId()}">author</td>
+            <td>
+              <span th:text="${h.reason()}">reason</span>
+              <th:block th:replace="~{fragments :: evidence(${h.evidenceUri()})}"></th:block>
+            </td>
+            <td class="code" data-changes-json th:attr="data-raw-label=#{history.changes.raw}"
+                th:text="${h.changes() == null} ? '' : ${h.changes().text()}">{}</td>
+          </tr>
+          <tr class="attachment-row" th:if="${attachments.containsKey(h.id())}" th:with="a=${attachments.get(h.id())}">
+            <td colspan="8">
+              <section class="attachment-panel" th:attr="aria-label=#{history.attachment}">
+                <h2 class="attachment-title" th:text="#{history.attachment}">Attachment</h2>
+                <p th:if="${a.state().name() == 'NOT_FOUND'}" class="hint" th:text="#{history.attachment.notFound}">None</p>
+                <th:block th:if="${a.state().name() != 'NOT_FOUND'}">
+                  <dl class="facts" th:if="${#lists.isEmpty(a.files())}">
+                    <dt th:text="#{history.attachment.uploadedBy}">Uploaded by</dt><dd th:text="${a.uploadedBy()}">author</dd>
+                    <dt th:text="#{history.attachment.uploadedAt}">Uploaded at</dt><dd class="num"><time th:replace="~{fragments :: time(${a.uploadedAt()})}">t</time></dd>
+                  </dl>
+                  <p th:if="${#lists.isEmpty(a.files()) and a.state().name() == 'NOT_CONFIGURED'}" class="alert alert-warning" th:text="#{history.attachment.notConfigured}">Not configured</p>
+                  <p th:if="${#lists.isEmpty(a.files()) and a.state().name() != 'NOT_CONFIGURED'}" class="alert alert-danger" th:text="#{history.attachment.unavailable}">Unavailable</p>
+                  <div class="attachment-file" th:each="f : ${a.files()}">
+                    <dl class="facts">
+                      <dt th:text="#{history.attachment.name}">File name</dt><dd th:text="${f.fileName()}">report.txt</dd>
+                      <dt th:text="#{history.attachment.type}">Media type</dt><dd class="code" th:text="${f.mediaType()}">text/plain</dd>
+                      <dt th:text="#{history.attachment.size}">Size</dt><dd class="num" th:text="${f.sizeBytes()}">0</dd>
+                      <dt th:text="#{history.attachment.sha256}">SHA-256</dt>
+                      <dd>
+                        <span class="cell-code">
+                          <code th:text="${f.sha256()}">abc</code>
+                          <button type="button" class="ghost btn-sm" th:attr="data-copy=${f.sha256()}" th:text="#{common.copy}">Copy</button>
+                        </span>
+                      </dd>
+                      <dt th:text="#{history.attachment.uploadedBy}">Uploaded by</dt><dd th:text="${a.uploadedBy()}">author</dd>
+                      <dt th:text="#{history.attachment.uploadedAt}">Uploaded at</dt><dd class="num"><time th:replace="~{fragments :: time(${a.uploadedAt()})}">t</time></dd>
+                    </dl>
+                    <p th:if="${f.state().name() == 'NOT_CONFIGURED'}" class="alert alert-warning" th:text="#{history.attachment.notConfigured}">Not configured</p>
+                    <p th:if="${f.state().name() == 'UNAVAILABLE'}" class="alert alert-danger" th:text="#{history.attachment.unavailable}">Unavailable</p>
+                    <p th:if="${f.state().name() == 'DOWNLOAD'}" class="hint" th:text="#{history.attachment.notText}">Not shown</p>
+                    <th:block th:if="${f.isText()}">
+                      <h3 th:text="#{history.attachment.text}">Content</h3>
+                      <pre class="attachment-text" th:text="${f.text()}">text</pre>
+                      <p class="hint" th:if="${f.truncated()}" th:text="#{history.attachment.truncated}">Cut</p>
+                    </th:block>
+                    <p th:if="${f.isDownload()}">
+                      <a class="button secondary btn-sm" th:if="${a.files().size() == 1}" th:href="@{/attachments/{id}/download(id=${a.id()})}" th:text="#{history.attachment.download}">Download</a>
+                      <a class="button secondary btn-sm" th:if="${a.files().size() > 1}" th:href="@{/attachments/{id}/download(id=${a.id()}, seq=${f.seq()})}" th:text="#{history.attachment.download}">Download</a>
+                    </p>
+                  </div>
                 </th:block>
-                <p th:if="${f.isDownload()}">
-                  <a th:if="${a.files().size() == 1}" th:href="@{/attachments/{id}/download(id=${a.id()})}" th:text="#{history.attachment.download}">Download</a>
-                  <a th:if="${a.files().size() > 1}" th:href="@{/attachments/{id}/download(id=${a.id()}, seq=${f.seq()})}" th:text="#{history.attachment.download}">Download</a>
-                </p>
-              </div>
-            </th:block>
-          </section>
-        </td>
-      </tr></th:block>
-    </tbody>
-  </table>
-  <p th:if="${#lists.isEmpty(page.items())}" th:text="#{common.noRows}">No rows.</p>
+              </section>
+            </td>
+          </tr>
+        </th:block>
+      </tbody>
+    </table>
+  </div>
+  <th:block th:if="${#lists.isEmpty(page.items())}" th:replace="~{fragments :: emptyState(${hasFilters}, ${resetHref})}"></th:block>
   <nav th:replace="~{fragments :: pager(${paging}, ${null})}"></nav>
 </main>
 <th:block th:replace="~{fragments :: footer}"></th:block>

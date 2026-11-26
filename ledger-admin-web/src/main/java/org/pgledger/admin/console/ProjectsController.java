@@ -2,6 +2,10 @@
 
 package org.pgledger.admin.console;
 
+import jakarta.servlet.http.HttpServletRequest;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import org.pgledger.admin.web.AdminHttpExceptionAdvice;
 import org.pgledger.application.admin.ProjectService;
 import org.pgledger.application.admin.ProjectService.ProjectCommand;
 import org.pgledger.domain.value.OwnerIdentity;
@@ -10,6 +14,7 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 /** The projects: the list and the form that adds one (stamped {@code user:owner} by the service, recorded with the signed-in owner). */
 @Controller
@@ -30,8 +35,16 @@ public class ProjectsController {
     }
 
     @PostMapping("/projects")
-    String add(@ModelAttribute ProjectCommand command, OwnerIdentity actor) {
+    String add(@ModelAttribute ProjectCommand command, OwnerIdentity actor, HttpServletRequest request,
+            RedirectAttributes flash) {
+        AdminHttpExceptionAdvice.recoverHtml(request, "projects", () -> {
+            Map<String, Object> model = new LinkedHashMap<>();
+            model.put("projects", choices.projects());
+            model.put("projectForm", command);
+            return model;
+        });
         projects.add(command, actor);
+        flash.addFlashAttribute("flashKey", "flash.projectAdded");
         return "redirect:/projects";
     }
 }

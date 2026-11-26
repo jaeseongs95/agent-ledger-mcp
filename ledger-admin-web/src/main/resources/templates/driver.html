@@ -4,42 +4,76 @@
 <body>
 <th:block th:replace="~{fragments :: header('driver')}"></th:block>
 <main id="main">
-  <h1 th:text="#{driver.title}">JDBC driver</h1>
-  <p th:text="#{driver.intro}">The product ships no JDBC driver.</p>
-  <p th:if="${justRegistered}" class="notice" role="status" th:text="#{driver.registered}">Registered.</p>
-  <p th:if="${restartRequired}" class="notice" role="status" th:text="#{driver.restartRequired}">Restart required.</p>
+  <div class="page-header">
+    <div class="page-header-text">
+      <h1 th:text="#{driver.title}">JDBC driver</h1>
+      <p class="hint" th:text="#{driver.intro}">The product ships no JDBC driver.</p>
+    </div>
+  </div>
 
-  <section>
-    <h2 th:text="#{driver.registeredFile}">Registered driver</h2>
-    <dl th:if="${registered != null}">
-      <dt th:text="#{driver.jar}">Jar</dt><dd th:text="${registered.jar()}">/path/driver.jar</dd>
-      <dt th:text="#{driver.class}">Driver class</dt><dd th:text="${registered.className()}">Driver</dd>
-      <dt th:text="#{driver.sha256}">SHA-256</dt><dd class="code" th:text="${registered.sha256()}">digest</dd>
-      <dt th:text="#{driver.registeredAt}">Registered at</dt><dd><time th:replace="~{fragments :: time(${registered.registeredAt()})}">t</time></dd>
-    </dl>
-    <p th:unless="${registered != null}" th:text="#{driver.none}">No driver is registered.</p>
-  </section>
+  <p th:if="${justRegistered}" class="alert alert-success notice" role="status" th:text="#{driver.registered}">Registered.</p>
+  <p th:if="${restartRequired}" class="alert alert-warning notice" role="status" th:text="#{driver.restartRequired}">Restart required.</p>
 
-  <section>
-    <h2 th:text="#{driver.effective}">Driver in use</h2>
-    <dl th:if="${effective.jar() != null}">
-      <dt th:text="#{driver.jar}">Jar</dt><dd th:text="${effective.jar()}">/path/driver.jar</dd>
-      <dt th:text="#{driver.class}">Driver class</dt><dd th:text="${effective.className()}">Driver</dd>
-      <dt th:text="#{driver.sha256}">SHA-256</dt><dd class="code" th:text="${effective.sha256()}">digest</dd>
-    </dl>
-    <p th:unless="${effective.jar() != null}" th:text="#{driver.noneInUse}">No driver is in use.</p>
-  </section>
+  <div class="grid-2">
+    <section class="card">
+      <div class="card-header">
+        <h2 th:text="#{driver.registeredFile}">Registered driver</h2>
+      </div>
+      <dl class="facts" th:if="${registered != null}">
+        <dt th:text="#{driver.jar}">Jar</dt><dd class="code" th:text="${registered.jar()}">/path/driver.jar</dd>
+        <dt th:text="#{driver.class}">Driver class</dt><dd class="code" th:text="${registered.className()}">Driver</dd>
+        <dt th:text="#{driver.sha256}">SHA-256</dt>
+        <dd>
+          <span class="cell-code">
+            <code th:text="${registered.sha256()}">digest</code>
+            <button type="button" class="ghost btn-sm" th:attr="data-copy=${registered.sha256()}" th:text="#{common.copy}">Copy</button>
+          </span>
+        </dd>
+        <dt th:text="#{driver.registeredAt}">Registered at</dt><dd class="num"><time th:replace="~{fragments :: time(${registered.registeredAt()})}">t</time></dd>
+      </dl>
+      <p class="hint" th:unless="${registered != null}" th:text="#{driver.none}">No driver is registered.</p>
+    </section>
 
-  <section>
-    <h2 th:text="#{driver.register}">Register a driver</h2>
-    <form method="post" th:action="@{/driver}" data-approve>
-      <label for="jar" th:text="#{driver.jar.label}">Absolute path of the driver jar</label>
-      <input id="jar" name="jar" type="text" required autocomplete="off">
-      <label for="className" th:text="#{driver.class.label}">Driver class (java.sql.Driver)</label>
-      <input id="className" name="className" type="text" required autocomplete="off">
-      <button type="submit" th:text="#{driver.submit}">Register</button>
+    <section class="card">
+      <div class="card-header">
+        <h2 th:text="#{driver.effective}">Driver in use</h2>
+      </div>
+      <dl class="facts" th:if="${effective.jar() != null}">
+        <dt th:text="#{driver.jar}">Jar</dt><dd class="code" th:text="${effective.jar()}">/path/driver.jar</dd>
+        <dt th:text="#{driver.class}">Driver class</dt><dd class="code" th:text="${effective.className()}">Driver</dd>
+        <dt th:text="#{driver.sha256}">SHA-256</dt>
+        <dd>
+          <span class="cell-code">
+            <code th:text="${effective.sha256()}">digest</code>
+            <button type="button" class="ghost btn-sm" th:attr="data-copy=${effective.sha256()}" th:text="#{common.copy}">Copy</button>
+          </span>
+        </dd>
+      </dl>
+      <p class="hint" th:unless="${effective.jar() != null}" th:text="#{driver.noneInUse}">No driver is in use.</p>
+    </section>
+  </div>
+
+  <section class="card">
+    <div class="card-header">
+      <h2 th:text="#{driver.register}">Register a driver</h2>
+      <th:block th:replace="~{fragments :: approveHint}"></th:block>
+    </div>
+    <form method="post" th:action="@{/driver}" data-approve class="form-wide">
+      <div class="form-grid">
+        <div class="form-field">
+          <label for="jar" th:text="#{driver.jar.label}">Absolute path of the driver jar</label>
+          <input id="jar" name="jar" type="text" required autocomplete="off" th:value="${driverForm != null} ? ${driverForm.jar()}">
+        </div>
+        <div class="form-field">
+          <label for="className" th:text="#{driver.class.label}">Driver class (java.sql.Driver)</label>
+          <input id="className" name="className" type="text" required autocomplete="off" th:value="${driverForm != null} ? ${driverForm.className()}">
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" th:text="#{driver.submit}">Register</button>
+        <span class="hint" th:text="#{driver.hint}">The new driver is used after the next start.</span>
+      </div>
     </form>
-    <p class="hint" th:text="#{driver.hint}">The new driver is used after the next start.</p>
   </section>
 </main>
 <th:block th:replace="~{fragments :: footer}"></th:block>

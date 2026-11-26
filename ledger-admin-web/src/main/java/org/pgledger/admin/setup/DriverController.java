@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * The driver page: what is registered, and the form that registers another (the owner only). A registration is recorded
- * with the signed-in owner.
+ * with the signed-in owner. Per ADM-063, refused driver paths or class names are never echoed back to the client.
  */
 @Controller
 public class DriverController {

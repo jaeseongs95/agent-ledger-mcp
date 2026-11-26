@@ -2,13 +2,18 @@
 
 package org.pgledger.admin.console;
 
+import java.util.Objects;
+import org.pgledger.domain.rule.AttentionKind;
 import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.value.Tokens;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
+import org.springframework.web.util.UriComponentsBuilder;
 
 /**
  * What the pages may turn into a link: evidence addresses are shown as links only when they are http or https, and the
- * item of the attention list goes to the page of its kind.
+ * item of the attention list or history row goes to the page of its kind. Also builds filtered drilldown links from the
+ * overview dashboard to the matching list pages.
  */
 @Component("links")
 public class Links {
@@ -20,6 +25,18 @@ public class Links {
     public boolean isHttp(String address) {
         return address != null && (address.regionMatches(true, 0, HTTP, 0, HTTP.length())
                 || address.regionMatches(true, 0, HTTPS, 0, HTTPS.length()));
+    }
+
+    /** True when the history/attention entity token has a dedicated detail page. */
+    public boolean hasItemPage(String entity) {
+        for (HistoryEntity candidate : HistoryEntity.values()) {
+            if (Objects.equals(candidate.token(), entity)) {
+                return candidate == HistoryEntity.ISSUE
+                        || candidate == HistoryEntity.SPEC
+                        || candidate == HistoryEntity.TASK;
+            }
+        }
+        return false;
     }
 
     /**
@@ -40,5 +57,40 @@ public class Links {
                     ISSUE_CASE ->
                 throw new IllegalArgumentException("the attention list has no item of the kind " + entity);
         };
+    }
+
+    /** Drilldown URL from an overview attention count to the matching list filtered by that attention kind. */
+    public String attentionHref(String project, AttentionKind kind) {
+        String path = switch (kind) {
+            case OPEN_WITH_DELIVERABLE, RESOLVED_WITHOUT_DELIVERABLE, OPEN_NO_OWNER -> "/issues";
+            case SPEC_COMPLETED_NOT_VERIFIED -> "/specs";
+            case TASK_UNKNOWN, DONE_NOT_VERIFIED -> "/tasks";
+        };
+        return filteredHref(path, project, "attention", kind.name());
+    }
+
+    /** Drilldown URL from an overview distribution bucket to the matching list filtered by a single parameter. */
+    public String statHref(String project, String path, String param, String value) {
+        return filteredHref(path, project, param, value);
+    }
+
+    /** Project-scoped URL to a list page, omitting the project query parameter when all projects are selected. */
+    public String projectHref(String path, String project) {
+        UriComponentsBuilder builder = UriComponentsBuilder.fromPath(path);
+        if (StringUtils.hasText(project)) {
+            builder.queryParam("project", project);
+        }
+        return builder.build().encode().toUriString();
+    }
+
+    private static String filteredHref(String path, String project, String param, String value) {
+        UriComponentsBuilder builder = UriComponentsBuilder.fromPath(path);
+        if (StringUtils.hasText(project)) {
+            builder.queryParam("project", project);
+        }
+        if (StringUtils.hasText(param) && StringUtils.hasText(value)) {
+            builder.queryParam(param, value);
+        }
+        return builder.build().encode().toUriString();
     }
 }

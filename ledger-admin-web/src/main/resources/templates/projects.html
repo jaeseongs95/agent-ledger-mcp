@@ -4,24 +4,68 @@
 <body>
 <th:block th:replace="~{fragments :: header('projects')}"></th:block>
 <main id="main">
-  <h1 th:text="#{projects.title}">Projects</h1>
-  <table th:if="${!#lists.isEmpty(projects)}">
-    <caption class="sr-only" th:text="#{projects.title}">Projects</caption>
-    <thead><tr><th scope="col" th:text="#{col.id}">ID</th><th scope="col" th:text="#{projects.code}">Code</th><th scope="col" th:text="#{projects.titleCol}">Title</th></tr></thead>
-    <tbody><tr th:each="p : ${projects}"><td th:text="${p.id()}">p1</td><td th:text="${p.code()}">P1</td><td th:text="${p.title()}">Title</td></tr></tbody>
-  </table>
-  <p th:if="${#lists.isEmpty(projects)}" th:text="#{projects.none}">No project yet.</p>
+  <div class="page-header">
+    <div class="page-header-text">
+      <h1 th:text="#{projects.title}">Projects</h1>
+    </div>
+  </div>
 
-  <section>
-    <h2 th:text="#{projects.add}">Add a project</h2>
-    <form method="post" th:action="@{/projects}" data-approve>
-      <label for="id" th:text="#{projects.id.label}">Project id</label>
-      <input id="id" name="id" type="text" required autocomplete="off">
-      <label for="code" th:text="#{projects.code.label}">Code (upper case, the prefix of issue, spec, and task ids)</label>
-      <input id="code" name="code" type="text" required autocomplete="off">
-      <label for="title" th:text="#{projects.title.label}">Title</label>
-      <input id="title" name="title" type="text" required maxlength="200" autocomplete="off">
-      <button type="submit" th:text="#{projects.submit}">Add</button>
+  <div th:if="${!#lists.isEmpty(projects)}" class="table-wrap">
+    <table>
+      <caption class="sr-only" th:text="#{projects.title}">Projects</caption>
+      <thead>
+        <tr>
+          <th scope="col" th:text="#{col.id}">ID</th>
+          <th scope="col" th:text="#{projects.code}">Code</th>
+          <th scope="col" th:text="#{projects.titleCol}">Title</th>
+          <th scope="col" th:text="#{projects.open}">Quick links</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr th:each="p : ${projects}">
+          <td class="code" th:text="${p.id()}">p1</td>
+          <td><span class="badge" th:text="${p.code()}">P1</span></td>
+          <td th:text="${p.title()}">Title</td>
+          <td class="cell-actions">
+            <span class="project-links">
+              <a class="button secondary btn-sm" th:href="@{/(project=${p.id()})}" th:text="#{nav.overview}">Overview</a>
+              <a class="button secondary btn-sm" th:href="@{/issues(project=${p.id()})}" th:text="#{nav.issues}">Issues</a>
+              <a class="button secondary btn-sm" th:href="@{/specs(project=${p.id()})}" th:text="#{nav.specs}">Specs</a>
+              <a class="button secondary btn-sm" th:href="@{/tasks(project=${p.id()})}" th:text="#{nav.tasks}">Tasks</a>
+              <a class="button secondary btn-sm" th:href="@{/history(project=${p.id()})}" th:text="#{nav.history}">History</a>
+            </span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div th:if="${#lists.isEmpty(projects)}" class="empty-state">
+    <p class="empty-state-title" th:text="#{projects.none}">No project yet.</p>
+  </div>
+
+  <section class="card">
+    <div class="card-header">
+      <h2 th:text="#{projects.add}">Add a project</h2>
+      <th:block th:replace="~{fragments :: approveHint}"></th:block>
+    </div>
+    <form method="post" th:action="@{/projects}" data-approve class="form-wide">
+      <div class="form-grid">
+        <div class="form-field">
+          <label for="id" th:text="#{projects.id.label}">Project id</label>
+          <input id="id" name="id" type="text" required autocomplete="off" th:value="${projectForm != null} ? ${projectForm.id()}">
+        </div>
+        <div class="form-field">
+          <label for="code" th:text="#{projects.code.label}">Code (upper case, the prefix of issue, spec, and task ids)</label>
+          <input id="code" name="code" type="text" required autocomplete="off" th:value="${projectForm != null} ? ${projectForm.code()}">
+        </div>
+        <div class="form-field form-field-full">
+          <label for="title" th:text="#{projects.title.label}">Title</label>
+          <input id="title" name="title" type="text" required maxlength="200" autocomplete="off" th:value="${projectForm != null} ? ${projectForm.title()}">
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" th:text="#{projects.submit}">Add</button>
+      </div>
     </form>
   </section>
 </main>

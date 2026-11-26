@@ -2,12 +2,16 @@
 
 package org.pgledger.admin.console;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import org.pgledger.admin.web.AdminHttpExceptionAdvice;
 import org.pgledger.admin.web.FormErrors;
 import org.pgledger.application.admin.GrantService;
 import org.pgledger.application.admin.GrantService.GrantCommand;
@@ -28,6 +32,7 @@ import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 /**
  * The live session grants, registered session keys, and HTTP Bearer session tokens.
@@ -39,6 +44,10 @@ import org.springframework.web.bind.annotation.PostMapping;
  */
 @Controller
 public class GrantsController {
+
+    private static final String TAB_GRANTS = "tab-btn-grants";
+    private static final String TAB_TOKENS = "tab-btn-tokens";
+    private static final String TAB_KEYS = "tab-btn-keys";
 
     /** The issue form with the pasted public key (the key is required: the grant screen registers it). */
     public record GrantForm(String author, String project, List<String> scopes, String expiresAt, String note,
@@ -104,7 +113,9 @@ public class GrantsController {
      * to the fingerprint, and the block must be for the author of the form.
      */
     @PostMapping("/grants/preview")
-    String preview(@Valid @ModelAttribute GrantForm form, BindingResult formErrors, Model model) {
+    String preview(@Valid @ModelAttribute GrantForm form, BindingResult formErrors, Model model,
+            HttpServletRequest request) {
+        AdminHttpExceptionAdvice.recoverHtml(request, "grants", () -> recoveryModel(TAB_GRANTS, "grantForm", form));
         forms.raiseIfAny(formErrors);
         PresentedKey presented = keys.present(form.author(), form.publicKey());
         Optional<SessionPublicKey> current = keys.live(form.author());
@@ -117,12 +128,15 @@ public class GrantsController {
                 presented.publicKey());
         model.addAttribute("preview", new Preview(shown, presented.fingerprint(), presented.server(),
                 alreadyRegistered));
+        model.addAttribute("activeTab", TAB_GRANTS);
         return "grants";
     }
 
     @PostMapping("/grants")
     String grant(@Valid @ModelAttribute GrantForm form, BindingResult formErrors,
-            @Valid @ModelAttribute Confirmation confirmation, BindingResult confirmationErrors, OwnerIdentity actor) {
+            @Valid @ModelAttribute Confirmation confirmation, BindingResult confirmationErrors, OwnerIdentity actor,
+            HttpServletRequest request, RedirectAttributes flash) {
+        AdminHttpExceptionAdvice.recoverHtml(request, "grants", () -> recoveryModel(TAB_GRANTS, "grantForm", form));
         forms.raiseIfAny(formErrors);
         PresentedKey presented = keys.present(form.author(), form.publicKey());
         forms.raiseIfAny(confirmationErrors);
@@ -134,41 +148,62 @@ public class GrantsController {
         } else {
             grants.grantReplacingKey(command, presented.publicKey(), confirmation.replaceFingerprint(), actor);
         }
+        flash.addFlashAttribute("flashKey", "flash.grantIssued");
         return "redirect:/grants";
     }
 
     @PostMapping("/grants/author")
-    String grantAuthor(@ModelAttribute AuthorGrantForm form, OwnerIdentity actor) {
+    String grantAuthor(@ModelAttribute AuthorGrantForm form, OwnerIdentity actor, HttpServletRequest request,
+            RedirectAttributes flash) {
+        AdminHttpExceptionAdvice.recoverHtml(request, "grants",
+                () -> recoveryModel(TAB_GRANTS, "authorGrantForm", form));
         grants.grant(new GrantCommand(form.author(), form.project(), form.scopes(), form.expiresAt(), form.note()),
                 actor);
+        flash.addFlashAttribute("flashKey", "flash.grantIssued");
         return "redirect:/grants";
     }
 
     @PostMapping("/grants/revoke")
-    String revoke(@ModelAttribute RevokeCommand command, OwnerIdentity actor) {
+    String revoke(@ModelAttribute RevokeCommand command, OwnerIdentity actor, HttpServletRequest request,
+            RedirectAttributes flash) {
+        AdminHttpExceptionAdvice.recoverHtml(request, "grants",
+                () -> recoveryModel(TAB_GRANTS, "revokeGrantForm", command));
         grants.revoke(command, actor);
+        flash.addFlashAttribute("flashKey", "flash.grantRevoked");
         return "redirect:/grants";
     }
 
     @PostMapping("/grants/keys/revoke")
-    String revokeKey(@ModelAttribute KeyRevokeForm form, OwnerIdentity actor) {
+    String revokeKey(@ModelAttribute KeyRevokeForm form, OwnerIdentity actor, HttpServletRequest request,
+            RedirectAttributes flash) {
+        AdminHttpExceptionAdvice.recoverHtml(request, "grants",
+                () -> recoveryModel(TAB_KEYS, "keyRevokeForm", form));
         keys.revokeConfirmed(form.author(), form.fingerprint(), actor);
-        return "redirect:/grants";
+        flash.addFlashAttribute("flashKey", "flash.keyRevoked");
+        return "redirect:/grants#tab-keys";
     }
 
     @PostMapping("/grants/tokens")
-    String issueToken(@ModelAttribute TokenIssueForm form, OwnerIdentity actor, Model model) {
+    String issueToken(@ModelAttribute TokenIssueForm form, OwnerIdentity actor, Model model,
+            HttpServletRequest request) {
+        AdminHttpExceptionAdvice.recoverHtml(request, "grants",
+                () -> recoveryModel(TAB_TOKENS, "tokenIssueForm", form));
         IssuedToken issued = tokens.issue(new IssueCommand(form.author(), form.expiresAt(), form.note()), actor);
         fill(model);
         model.addAttribute("issuedToken", issued);
+        model.addAttribute("activeTab", TAB_TOKENS);
         return "grants";
     }
 
     @PostMapping("/grants/tokens/revoke")
-    String revokeToken(@Valid @ModelAttribute TokenRevokeForm form, BindingResult formErrors, OwnerIdentity actor) {
+    String revokeToken(@Valid @ModelAttribute TokenRevokeForm form, BindingResult formErrors, OwnerIdentity actor,
+            HttpServletRequest request, RedirectAttributes flash) {
+        AdminHttpExceptionAdvice.recoverHtml(request, "grants",
+                () -> recoveryModel(TAB_TOKENS, "tokenRevokeForm", form));
         forms.raiseIfAny(formErrors);
         tokens.revoke(form.id(), actor);
-        return "redirect:/grants";
+        flash.addFlashAttribute("flashKey", "flash.tokenRevoked");
+        return "redirect:/grants#tab-tokens";
     }
 
     private void fill(Model model) {
@@ -177,6 +212,18 @@ public class GrantsController {
         model.addAttribute("tokens", tokens.listUnrevoked());
         model.addAttribute("choice", choices.project(null));
         model.addAttribute("scopes", Scope.values());
+    }
+
+    private Map<String, Object> recoveryModel(String activeTab, String formKey, Object formValue) {
+        Map<String, Object> model = new LinkedHashMap<>();
+        model.put("grants", grants.liveAll());
+        model.put("keys", keys.liveKeys());
+        model.put("tokens", tokens.listUnrevoked());
+        model.put("choice", choices.project(null));
+        model.put("scopes", Scope.values());
+        model.put("activeTab", activeTab);
+        model.put(formKey, formValue);
+        return model;
     }
 
     /** The owner repeated the fingerprint of the pasted key (letters of either case): compared with the computed one. */

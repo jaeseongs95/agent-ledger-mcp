@@ -11,6 +11,7 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 /**
  * The passkeys of the owner: the live ones (label, fingerprint, registration time), the registration of another one (the
@@ -43,8 +44,9 @@ public class PasskeysController {
     }
 
     @PostMapping("/passkeys/revoke")
-    String revoke(@RequestParam("credentialId") String credentialId, OwnerIdentity actor) {
+    String revoke(@RequestParam("credentialId") String credentialId, OwnerIdentity actor, RedirectAttributes flash) {
         passkeys.revoke(credentialId, actor);
+        flash.addFlashAttribute("flashKey", "flash.passkeyRevoked");
         return "redirect:/passkeys";
     }
 }

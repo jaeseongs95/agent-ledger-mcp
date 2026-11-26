@@ -6,11 +6,13 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 import org.pgledger.domain.error.InfrastructureCode;
 import org.pgledger.domain.error.InfrastructureException;
 import org.pgledger.domain.error.LedgerException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.propertyeditors.StringTrimmerEditor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -19,7 +21,6 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.server.ServletServerHttpRequest;
-import org.springframework.beans.propertyeditors.StringTrimmerEditor;
 import org.springframework.web.bind.WebDataBinder;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.InitBinder;
@@ -38,13 +39,19 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
  * id and answers with a plain sentence.
  *
  * <p>A browser that navigates (the request accepts {@code text/html}) gets the {@code error} page with the same
- * status; everything else gets the problem detail. The page can only be rendered inside the dispatcher: a failure that
- * a filter hands over before the dispatcher runs is always a problem detail.
+ * status — or, when a POST form handler registered an HTML recovery target via {@link #recoverHtml} and the failure is
+ * a 4xx client error, re-renders that form page with the inline error banner and preserved user input. Everything else
+ * gets the problem detail. The page can only be rendered inside the dispatcher: a failure that a filter hands over
+ * before the dispatcher runs is always a problem detail.
  */
 @RestControllerAdvice
 public class AdminHttpExceptionAdvice extends ResponseEntityExceptionHandler {
 
     private static final Logger LOG = LoggerFactory.getLogger(AdminHttpExceptionAdvice.class);
+    private static final String RECOVERY_ATTRIBUTE = AdminHttpExceptionAdvice.class.getName() + ".htmlFormRecovery";
+
+    private record HtmlRecovery(String view, Supplier<Map<String, Object>> model) {
+    }
 
     private final AdminProblems problems;
     private final LocaleResolver locales;
@@ -52,6 +59,14 @@ public class AdminHttpExceptionAdvice extends ResponseEntityExceptionHandler {
     public AdminHttpExceptionAdvice(AdminProblems problems, LocaleResolver localeResolver) {
         this.problems = problems;
         this.locales = localeResolver;
+    }
+
+    /**
+     * Registers a form page to re-render with an inline error banner and preserved inputs if this request fails with a
+     * 4xx {@link LedgerException} for a browser accepting {@code text/html}. JSON clients are completely unaffected.
+     */
+    public static void recoverHtml(HttpServletRequest request, String view, Supplier<Map<String, Object>> model) {
+        request.setAttribute(RECOVERY_ATTRIBUTE, new HtmlRecovery(view, model));
     }
 
     /** Every text field of a form is trimmed, and a field that is left empty is absent (null), so that "required" means it. */
@@ -102,12 +117,21 @@ public class AdminHttpExceptionAdvice extends ResponseEntityExceptionHandler {
 
     private Object render(ProblemDetail problem, HttpServletRequest request) {
         if (request.getAttribute(DispatcherServlet.WEB_APPLICATION_CONTEXT_ATTRIBUTE) != null && navigates(request)) {
+            int status = problem.getStatus();
+            Object code = problem.getProperties() == null ? "" : problem.getProperties().get("code");
+            if (status >= 400 && status < 500
+                    && request.getAttribute(RECOVERY_ATTRIBUTE) instanceof HtmlRecovery recovery) {
+                Map<String, Object> model = new LinkedHashMap<>(recovery.model().get());
+                model.put("formErrorDetail", problem.getDetail());
+                model.put("formErrorCode", code);
+                return new ModelAndView(recovery.view(), model, HttpStatus.valueOf(status));
+            }
             Map<String, Object> model = new LinkedHashMap<>();
-            model.put("status", problem.getStatus());
-            model.put("code", problem.getProperties() == null ? "" : problem.getProperties().get("code"));
+            model.put("status", status);
+            model.put("code", code);
             model.put("detail", problem.getDetail());
             model.put("traceId", problem.getProperties() == null ? null : problem.getProperties().get("traceId"));
-            return new ModelAndView("error", model, HttpStatus.valueOf(problem.getStatus()));
+            return new ModelAndView("error", model, HttpStatus.valueOf(status));
         }
         return ResponseEntity.status(problem.getStatus()).contentType(MediaType.APPLICATION_PROBLEM_JSON)
                 .body(problem);
@@ -118,5 +142,4 @@ public class AdminHttpExceptionAdvice extends ResponseEntityExceptionHandler {
         return new ServletServerHttpRequest(request).getHeaders().getAccept().stream()
                 .anyMatch(MediaType.TEXT_HTML::equalsTypeAndSubtype);
     }
-
 }

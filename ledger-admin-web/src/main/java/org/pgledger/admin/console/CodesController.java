@@ -2,8 +2,12 @@
 
 package org.pgledger.admin.console;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import org.pgledger.admin.web.AdminHttpExceptionAdvice;
 import org.pgledger.admin.web.FormErrors;
 import org.pgledger.application.admin.CommonCodeService;
 import org.pgledger.application.admin.CommonCodeService.CodeCommand;
@@ -21,6 +25,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 /**
  * The common codes: the list (retired ones included), the form that adds or changes one, and the refusal to delete
@@ -61,11 +66,22 @@ public class CodesController {
     }
 
     @PostMapping("/codes")
-    String set(@Valid @ModelAttribute CodeForm form, BindingResult errors, OwnerIdentity actor) {
+    String set(@Valid @ModelAttribute CodeForm form, BindingResult errors, OwnerIdentity actor,
+            HttpServletRequest request, RedirectAttributes flash) {
+        AdminHttpExceptionAdvice.recoverHtml(request, "codes", () -> {
+            Map<String, Object> model = new LinkedHashMap<>();
+            model.put("codes", choices.allCodes());
+            model.put("groups", CodeGroup.values());
+            model.put("states", CodeState.values());
+            model.put("directions", CodeDirection.values());
+            model.put("codeForm", form);
+            return model;
+        });
         forms.raiseIfAny(errors);
         codes.set(new CodeCommand(token(form.group()), form.code(), form.nameKo(), form.nameEn(),
                 form.descriptionKo(), form.descriptionEn(), form.sortOrder(), token(form.state()),
                 token(form.direction())), form.confirmReactivation() != null, actor);
+        flash.addFlashAttribute("flashKey", "flash.codeSaved");
         return "redirect:/codes";
     }
 

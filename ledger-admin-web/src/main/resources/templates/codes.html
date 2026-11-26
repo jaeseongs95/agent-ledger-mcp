@@ -4,57 +4,118 @@
 <body>
 <th:block th:replace="~{fragments :: header('codes')}"></th:block>
 <main id="main">
-  <h1 th:text="#{codes.title}">Common codes</h1>
-  <p th:text="#{codes.intro}">Codes are never deleted; a code that is not used any more is set to INACTIVE.</p>
+  <div class="page-header">
+    <div class="page-header-text">
+      <h1 th:text="#{codes.title}">Common codes</h1>
+      <p class="hint" th:text="#{codes.intro}">Codes are never deleted; a code that is not used any more is set to INACTIVE.</p>
+    </div>
+  </div>
 
-  <table th:if="${!#lists.isEmpty(codes)}">
-    <caption class="sr-only" th:text="#{codes.title}">Common codes</caption>
-    <thead><tr>
-      <th scope="col" th:text="#{codes.group}">Group</th><th scope="col" th:text="#{codes.code}">Code</th><th scope="col" th:text="#{codes.nameKo}">Name (ko)</th>
-      <th scope="col" th:text="#{codes.nameEn}">Name (en)</th><th scope="col" th:text="#{codes.sort}">Order</th><th scope="col" th:text="#{common.state}">State</th>
-      <th scope="col" th:text="#{codes.direction}">Direction</th>
-    </tr></thead>
-    <tbody>
-      <tr th:each="c : ${codes}">
-        <td th:text="${c.group()}">ISSUE_CATEGORY</td><td th:text="${c.code()}">ARC</td><td th:text="${c.nameKo()}">name</td><td th:text="${c.nameEn()}">name</td>
-        <td th:text="${c.sortOrder()}">1</td><td><span th:class="'badge badge-' + ${c.state()}" th:text="${c.state()}">ACTIVE</span></td>
-        <td th:if="${c.group() == 'RELATION_KIND'}" th:text="#{'codes.direction.' + ${c.direction().token()}}">no direction</td>
-        <td th:unless="${c.group() == 'RELATION_KIND'}">-</td>
-      </tr>
-    </tbody>
-  </table>
+  <div class="tab-list" data-code-filters th:if="${!#lists.isEmpty(codes)}">
+    <button type="button" class="tab-btn" data-filter-group="ALL" aria-pressed="true" th:text="#{codes.filter.all}">All groups</button>
+    <button type="button" class="tab-btn" th:each="g : ${groups}" th:attr="data-filter-group=${g.token()}" aria-pressed="false" th:text="${g.token()}">ISSUE_CATEGORY</button>
+  </div>
 
-  <section>
-    <h2 th:text="#{codes.set}">Add or change a code</h2>
-    <form method="post" th:action="@{/codes}" data-approve>
-      <label for="group" th:text="#{codes.group}">Group</label>
-      <select id="group" name="group" required>
-        <option th:each="g : ${groups}" th:value="${g.token()}" th:text="${g.token()}">ISSUE_CATEGORY</option>
-      </select>
-      <label for="code" th:text="#{codes.code}">Code</label>
-      <input id="code" name="code" type="text" required autocomplete="off">
-      <label for="nameKo" th:text="#{codes.nameKo}">Name (ko)</label>
-      <input id="nameKo" name="nameKo" type="text" required maxlength="200" autocomplete="off">
-      <label for="nameEn" th:text="#{codes.nameEn}">Name (en)</label>
-      <input id="nameEn" name="nameEn" type="text" maxlength="200" autocomplete="off">
-      <label for="descriptionKo" th:text="#{codes.descriptionKo}">Description (ko)</label>
-      <input id="descriptionKo" name="descriptionKo" type="text" maxlength="500" autocomplete="off">
-      <label for="descriptionEn" th:text="#{codes.descriptionEn}">Description (en)</label>
-      <input id="descriptionEn" name="descriptionEn" type="text" maxlength="500" autocomplete="off">
-      <label for="sortOrder" th:text="#{codes.sort}">Order</label>
-      <input id="sortOrder" name="sortOrder" type="number" min="0" max="100000">
-      <label for="state" th:text="#{common.state}">State</label>
-      <select id="state" name="state">
-        <option th:each="s : ${states}" th:value="${s.token()}" th:text="${s.token()}">ACTIVE</option>
-      </select>
-      <label for="direction" th:text="#{codes.direction}">Direction</label>
-      <select id="direction" name="direction" aria-describedby="direction-help">
-        <option value="" th:text="#{codes.direction.keep}">keep (CANONICAL for a new code)</option>
-        <option th:each="d : ${directions}" th:value="${d.token()}" th:text="#{'codes.direction.' + ${d.token()}}">CANONICAL</option>
-      </select>
-      <p id="direction-help" th:text="#{codes.direction.help}">Only for the group RELATION_KIND.</p>
-      <label class="check"><input type="checkbox" name="confirmReactivation" value="yes"> <span th:text="#{codes.confirmReactivation}">I confirm that a retired code becomes active again.</span></label>
-      <button type="submit" th:text="#{codes.submit}">Save</button>
+  <div th:if="${!#lists.isEmpty(codes)}" class="table-wrap">
+    <table>
+      <caption class="sr-only" th:text="#{codes.title}">Common codes</caption>
+      <thead>
+        <tr>
+          <th scope="col" th:text="#{codes.group}">Group</th>
+          <th scope="col" th:text="#{codes.code}">Code</th>
+          <th scope="col" th:text="#{codes.nameKo}">Name (ko)</th>
+          <th scope="col" th:text="#{codes.nameEn}">Name (en)</th>
+          <th scope="col" th:text="#{codes.sort}">Order</th>
+          <th scope="col" th:text="#{common.state}">State</th>
+          <th scope="col" th:text="#{codes.direction}">Direction</th>
+          <th scope="col" th:text="#{common.actions}">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr th:each="c : ${codes}" th:attr="data-code-group=${c.group()}">
+          <td class="code" th:text="${c.group()}">ISSUE_CATEGORY</td>
+          <td class="code" th:text="${c.code()}">ARC</td>
+          <td th:text="${c.nameKo()}">name</td>
+          <td th:text="${c.nameEn() != null} ? ${c.nameEn()} : #{common.noneValue}">name</td>
+          <td class="num" th:text="${c.sortOrder()}">1</td>
+          <td><span th:class="'badge badge-' + ${c.state()}" th:text="${c.state()}">ACTIVE</span></td>
+          <td th:if="${c.group() == 'RELATION_KIND'}" th:text="#{'codes.direction.' + ${c.direction().token()}}">no direction</td>
+          <td th:unless="${c.group() == 'RELATION_KIND'}" class="muted" th:text="#{common.noneValue}">—</td>
+          <td class="cell-actions">
+            <button type="button" class="secondary btn-sm"
+                    data-prefill-form="edit-code"
+                    th:attr="data-group=${c.group()},data-code=${c.code()},data-name-ko=${c.nameKo()},data-name-en=${c.nameEn() != null ? c.nameEn() : ''},data-description-ko=${c.descriptionKo() != null ? c.descriptionKo() : ''},data-description-en=${c.descriptionEn() != null ? c.descriptionEn() : ''},data-sort-order=${c.sortOrder()},data-state=${c.state()},data-direction=${c.group() == 'RELATION_KIND' ? c.direction().token() : ''},data-toast=#{codes.editFilled}"
+                    th:text="#{codes.edit}">Edit</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <section class="card">
+    <div class="card-header">
+      <h2 th:text="#{codes.set}">Add or change a code</h2>
+      <th:block th:replace="~{fragments :: approveHint}"></th:block>
+    </div>
+    <form id="code-editor-form" method="post" th:action="@{/codes}" data-approve class="form-wide">
+      <div class="form-grid">
+        <div class="form-field">
+          <label for="group" th:text="#{codes.group}">Group</label>
+          <select id="group" name="group" required>
+            <option th:each="g : ${groups}" th:value="${g.token()}" th:text="${g.token()}"
+                    th:selected="${codeForm != null and codeForm.group() == g}">ISSUE_CATEGORY</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="code" th:text="#{codes.code}">Code</label>
+          <input id="code" name="code" type="text" required autocomplete="off" th:value="${codeForm != null} ? ${codeForm.code()}">
+        </div>
+        <div class="form-field">
+          <label for="nameKo" th:text="#{codes.nameKo}">Name (ko)</label>
+          <input id="nameKo" name="nameKo" type="text" required maxlength="200" autocomplete="off" th:value="${codeForm != null} ? ${codeForm.nameKo()}">
+        </div>
+        <div class="form-field">
+          <label for="nameEn" th:text="#{codes.nameEn}">Name (en)</label>
+          <input id="nameEn" name="nameEn" type="text" maxlength="200" autocomplete="off" th:value="${codeForm != null} ? ${codeForm.nameEn()}">
+        </div>
+        <div class="form-field">
+          <label for="descriptionKo" th:text="#{codes.descriptionKo}">Description (ko)</label>
+          <input id="descriptionKo" name="descriptionKo" type="text" maxlength="500" autocomplete="off" th:value="${codeForm != null} ? ${codeForm.descriptionKo()}">
+        </div>
+        <div class="form-field">
+          <label for="descriptionEn" th:text="#{codes.descriptionEn}">Description (en)</label>
+          <input id="descriptionEn" name="descriptionEn" type="text" maxlength="500" autocomplete="off" th:value="${codeForm != null} ? ${codeForm.descriptionEn()}">
+        </div>
+        <div class="form-field">
+          <label for="sortOrder" th:text="#{codes.sort}">Order</label>
+          <input id="sortOrder" name="sortOrder" type="number" min="0" max="100000" th:value="${codeForm != null} ? ${codeForm.sortOrder()}">
+        </div>
+        <div class="form-field">
+          <label for="state" th:text="#{common.state}">State</label>
+          <select id="state" name="state">
+            <option th:each="s : ${states}" th:value="${s.token()}" th:text="${s.token()}"
+                    th:selected="${codeForm != null and codeForm.state() == s}">ACTIVE</option>
+          </select>
+        </div>
+        <div id="direction-field" class="form-field form-field-full">
+          <label for="direction" th:text="#{codes.direction}">Direction</label>
+          <select id="direction" name="direction" aria-describedby="direction-help">
+            <option value="" th:text="#{codes.direction.keep}">keep (CANONICAL for a new code)</option>
+            <option th:each="d : ${directions}" th:value="${d.token()}" th:text="#{'codes.direction.' + ${d.token()}}"
+                    th:selected="${codeForm != null and codeForm.direction() == d}">CANONICAL</option>
+          </select>
+          <p id="direction-help" class="hint" th:text="#{codes.direction.help}">Only for the group RELATION_KIND.</p>
+        </div>
+        <div id="reactivation-field" class="form-field form-field-full alert">
+          <label class="check">
+            <input type="checkbox" name="confirmReactivation" value="yes" th:checked="${codeForm != null and codeForm.confirmReactivation() != null}">
+            <span th:text="#{codes.confirmReactivation}">I confirm that a retired code becomes active again.</span>
+          </label>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" th:text="#{codes.submit}">Save</button>
+      </div>
     </form>
   </section>
 </main>
