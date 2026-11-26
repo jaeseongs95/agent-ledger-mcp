@@ -24,7 +24,7 @@ public class IssuesController {
 
     /** The filters and the paging position of the list, as the query string carries them. */
     public record IssueFilter(String project, String status, String severity, String category, String attention,
-            String owner, Integer limit, String cursor, String back) {
+            String owner, String taskId, Integer limit, String cursor, String back) {
     }
 
     private final Choices choices;
@@ -54,13 +54,13 @@ public class IssuesController {
         model.addAttribute("sizes", Paging.SIZES);
         boolean hasFilters = StringUtils.hasText(filter.status()) || StringUtils.hasText(filter.severity())
                 || StringUtils.hasText(filter.category()) || StringUtils.hasText(filter.attention())
-                || StringUtils.hasText(filter.owner());
+                || StringUtils.hasText(filter.owner()) || StringUtils.hasText(filter.taskId());
         model.addAttribute("hasFilters", hasFilters);
         model.addAttribute("resetHref", links.projectHref("/issues", project.selected()));
         if (project.selected() != null) {
             var page = lists.issues(new IssuesQuery(project.selected(), filter.status(), filter.severity(),
-                    filter.category(), filter.owner(), filter.attention(), Paging.limitOf(filter.limit()),
-                    filter.cursor()));
+                    filter.category(), null, null, filter.owner(), filter.attention(), filter.taskId(), null,
+                    Paging.limitOf(filter.limit()), filter.cursor()));
             Map<String, String> filters = new LinkedHashMap<>();
             filters.put("project", project.selected());
             filters.put("status", filter.status());
@@ -68,6 +68,7 @@ public class IssuesController {
             filters.put("category", filter.category());
             filters.put("attention", filter.attention());
             filters.put("owner", filter.owner());
+            filters.put("taskId", filter.taskId());
             model.addAttribute("page", page);
             model.addAttribute("paging", Paging.of("/issues", filters, filter.limit(), filter.cursor(),
                     filter.back(), page.nextCursor()));

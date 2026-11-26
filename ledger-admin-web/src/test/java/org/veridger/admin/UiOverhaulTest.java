@@ -55,6 +55,7 @@ class UiOverhaulTest {
         seeds.issue(project, "drilldown issue");
         seeds.spec(project, "drilldown spec");
         seeds.task(project, "drilldown task");
+        seeds.criterion(project, "R1", "1.0", "C1");
         Browser browser = Browser.signedIn(mvc);
 
         String html = browser.perform(browser.get("/?project=" + project.project())).andExpect(status().isOk())

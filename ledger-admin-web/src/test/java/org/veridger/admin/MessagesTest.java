@@ -28,8 +28,18 @@ import org.veridger.admin.support.Browser;
 import org.veridger.admin.update.UpdateService;
 import org.veridger.admin.update.UpdateStatus;
 import org.veridger.domain.rule.AttentionKind;
+import org.veridger.domain.rule.CheckResult;
 import org.veridger.domain.rule.CodeDirection;
+import org.veridger.domain.rule.CodeGroup;
+import org.veridger.domain.rule.CodeState;
+import org.veridger.domain.rule.CriterionState;
+import org.veridger.domain.rule.HistoryEntity;
+import org.veridger.domain.rule.HistoryOp;
+import org.veridger.domain.rule.IssueStatus;
 import org.veridger.domain.rule.RelationEnd;
+import org.veridger.domain.rule.Scope;
+import org.veridger.domain.rule.SpecStatus;
+import org.veridger.domain.rule.TaskState;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -97,6 +107,36 @@ class MessagesTest {
         }
         for (UpdateStatus.State state : UpdateStatus.State.values()) {
             names.add("updates.queue." + state);
+        }
+        for (IssueStatus status : IssueStatus.values()) {
+            names.add("issue.status." + status);
+        }
+        for (SpecStatus status : SpecStatus.values()) {
+            names.add("spec.status." + status);
+        }
+        for (TaskState state : TaskState.values()) {
+            names.add("task.state." + state);
+        }
+        for (CriterionState state : CriterionState.values()) {
+            names.add("criterion.state." + state);
+        }
+        for (HistoryEntity entity : HistoryEntity.values()) {
+            names.add("entity." + entity.token());
+        }
+        for (HistoryOp op : HistoryOp.values()) {
+            names.add("history.op." + op);
+        }
+        for (CodeGroup group : CodeGroup.values()) {
+            names.add("codes.group." + group);
+        }
+        for (CodeState state : CodeState.values()) {
+            names.add("codes.state." + state);
+        }
+        for (CheckResult result : CheckResult.values()) {
+            names.add("deliverable.checkResult." + result.token());
+        }
+        for (Scope scope : Scope.values()) {
+            names.add("grants.scope." + scope.token());
         }
         List<String> missing = new ArrayList<>();
         for (String file : List.of("admin.properties", "admin_ko.properties")) {

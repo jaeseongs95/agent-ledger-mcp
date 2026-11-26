@@ -14,10 +14,11 @@
     <div class="page-header-text">
       <h1 th:text="${task.id()} + ' - ' + ${task.title()}">Task</h1>
       <div class="form-actions">
-        <span th:class="'badge badge-' + ${task.state()}" th:text="${task.state()}">ACTIVE</span>
+        <span th:class="'badge badge-' + ${task.state()}" th:text="${@labels.taskState(task.state())}">Active</span>
       </div>
     </div>
     <div class="page-header-actions">
+      <a class="button secondary btn-sm" th:href="@{/issues(project=${task.projectId()}, taskId=${task.id()})}" th:text="#{nav.issues}">Issues</a>
       <a class="button secondary btn-sm" th:href="@{/history(project=${task.projectId()}, entity='task', entityId=${task.id()})}" th:text="#{item.fullHistory}">Full history</a>
     </div>
   </div>
@@ -44,41 +45,7 @@
 
       <section class="card" th:if="${!#lists.isEmpty(task.deliverables())}">
         <h2 th:text="#{deliverables.title}">Deliverables</h2>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col" th:text="#{col.kind}">Kind</th>
-                <th scope="col" th:text="#{deliverables.ref}">Reference</th>
-                <th scope="col" th:text="#{deliverables.location}">Location</th>
-                <th scope="col" th:text="#{deliverables.summary}">Summary</th>
-                <th scope="col" th:text="#{deliverables.check}">Check</th>
-                <th scope="col" th:text="#{deliverables.by}">By</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr th:each="d : ${task.deliverables()}">
-                <td><span class="badge" th:text="${d.kind()}">change</span></td>
-                <td>
-                  <span class="cell-code">
-                    <code th:text="${d.deliverableRef()}">ref</code>
-                    <button type="button" class="ghost btn-sm" th:attr="data-copy=${d.deliverableRef()}" th:text="#{common.copy}">Copy</button>
-                  </span>
-                </td>
-                <td class="code" th:text="${d.location() != null} ? ${d.location()} : #{common.noneValue}">loc</td>
-                <td th:text="${d.summary()}">summary</td>
-                <td>
-                  <span th:if="${d.checkRef() != null}" class="cell-code">
-                    <span class="code" th:text="${d.checkRef()}">check</span>
-                    <span th:if="${d.checkResult() != null}" th:class="'badge badge-' + ${d.checkResult()}" th:text="${d.checkResult()}">PASS</span>
-                  </span>
-                  <span th:unless="${d.checkRef() != null}" class="muted" th:text="#{common.noneValue}">—</span>
-                </td>
-                <td th:text="${d.by()}">by</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <th:block th:replace="~{fragments :: deliverables(${task.deliverables()})}"></th:block>
       </section>
     </div>
 
@@ -87,7 +54,7 @@
         <h2 th:text="#{item.metadata}">Details</h2>
         <dl class="facts">
           <dt th:text="#{common.project}">Project</dt><dd class="code"><a th:href="@{/(project=${task.projectId()})}" th:text="${task.projectId()}">p1</a></dd>
-          <dt th:text="#{common.state}">State</dt><dd><span th:class="'badge badge-' + ${task.state()}" th:text="${task.state()}">ACTIVE</span></dd>
+          <dt th:text="#{common.state}">State</dt><dd><span th:class="'badge badge-' + ${task.state()}" th:text="${@labels.taskState(task.state())}">Active</span></dd>
           <dt th:text="#{common.owner}">Owner</dt><dd th:text="${task.ownerActorId() != null} ? ${task.ownerActorId()} : #{common.noneValue}">owner</dd>
           <dt th:text="#{item.createdBy}">Created by</dt><dd th:text="${task.createdBy()}">author</dd>
           <dt th:text="#{task.completedBy}">Completed by</dt><dd th:text="${task.completedBy() != null} ? ${task.completedBy()} : #{common.noneValue}">reporter</dd>
@@ -102,7 +69,7 @@
         <ul class="link-list">
           <li th:each="i : ${task.issues()}"><a class="code" th:href="@{/issues/{id}(id=${i})}" th:text="${i}">ID</a></li>
           <li th:each="s : ${task.specs()}"><a class="code" th:href="@{/specs/detail(id=${s})}" th:text="${s}">spec</a></li>
-          <li th:each="c : ${task.criteria()}"><span class="code" th:text="${c}">criterion</span></li>
+          <li th:each="c : ${task.criteria()}"><a class="code" th:href="@{/criteria/detail(id=${c})}" th:text="${c}">criterion</a></li>
         </ul>
       </section>
     </aside>

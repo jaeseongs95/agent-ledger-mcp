@@ -3,7 +3,10 @@
 package org.veridger.application.read;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.veridger.database.repository.CriterionQueryRepository;
 import org.veridger.database.repository.IssueQueryRepository;
 import org.veridger.database.repository.IssueSummary;
@@ -40,11 +43,18 @@ import org.springframework.transaction.annotation.Transactional;
 public class ListService {
 
     public record IssuesQuery(String project, String status, String severity, String category, String createdFrom,
-            String createdTo, String owner, String attention, String order, Number maxRows, String cursor) {
+            String createdTo, String owner, String attention, String taskId, String order, Number maxRows,
+            String cursor) {
+
+        public IssuesQuery(String project, String status, String severity, String category, String createdFrom,
+                String createdTo, String owner, String attention, String order, Number maxRows, String cursor) {
+            this(project, status, severity, category, createdFrom, createdTo, owner, attention, null, order, maxRows,
+                    cursor);
+        }
 
         public IssuesQuery(String project, String status, String severity, String category, String owner,
                 String attention, Number maxRows, String cursor) {
-            this(project, status, severity, category, null, null, owner, attention, null, maxRows, cursor);
+            this(project, status, severity, category, null, null, owner, attention, null, null, maxRows, cursor);
         }
 
         public IssuesQuery {
@@ -56,6 +66,7 @@ public class ListService {
             createdTo = Texts.nullIfBlank(createdTo);
             owner = Texts.nullIfBlank(owner);
             attention = Texts.nullIfBlank(attention);
+            taskId = Texts.nullIfBlank(taskId);
             order = Texts.nullIfBlank(order);
         }
     }
@@ -109,6 +120,24 @@ public class ListService {
             String state, long version) {
     }
 
+    /** Per-milestone criterion readiness summary. */
+    public record MilestoneRollup(String milestone, long total, long met, long completed, long active, long planned,
+            long notMet, long unknown) {
+
+        public int metPercent() {
+            return total <= 0L ? 0 : (int) Math.round((met * 100.0) / total);
+        }
+    }
+
+    /** Linked work item counts for one milestone criterion. */
+    public record CriterionLinkCounts(long issues, long specs, long tasks) {
+        public static final CriterionLinkCounts ZERO = new CriterionLinkCounts(0L, 0L, 0L);
+
+        public long total() {
+            return issues + specs + tasks;
+        }
+    }
+
     private static final int MAX_OWNER_CHARS = 200;
 
     private final IssueQueryRepository issues;
@@ -135,11 +164,12 @@ public class ListService {
         Instant to = q.createdTo() == null ? null : UtcInstant.parse("created_to", q.createdTo()).value();
         String owner = checkOwner(q.owner());
         AttentionKind attention = parseAttention(q.attention(), HistoryEntity.ISSUE);
+        TaskId taskId = q.taskId() == null ? null : TaskId.of(q.taskId());
         IssueQueryRepository.Order order = q.order() == null ? IssueQueryRepository.Order.NEWEST_FIRST
                 : Tokens.parseName("order", q.order(), IssueQueryRepository.Order.values());
         MaxRows maxRows = cursors.maxRows(q.maxRows());
         IssueQueryRepository.Filter filter = new IssueQueryRepository.Filter(status, severity, category, from, to,
-                owner, attention);
+                owner, attention, taskId);
         Object criteriaKey = List.of(project.value(), String.valueOf(filter), order.name());
         var page = cursors.decode(q.cursor(), PageCursor.Kind.ISSUES, criteriaKey)
                 .map(ListService::issuePosition)
@@ -207,6 +237,29 @@ public class ListService {
                         Texts.orEmpty(r.criterionText()), r.state().name(), r.version()),
                 r -> null,
                 r -> r.id().value());
+    }
+
+    /** Per-milestone readiness rollups for a project, ordered by milestone name. */
+    public List<MilestoneRollup> milestoneRollups(String project) {
+        ProjectId projectId = requireProject(project);
+        return criteria.milestoneRollups(projectId).stream()
+                .map(r -> new MilestoneRollup(r.milestone(), r.total(), r.met(), r.completed(), r.active(),
+                        r.planned(), r.notMet(), r.unknown()))
+                .toList();
+    }
+
+    /** Batched counts of linked issues, specs, and tasks for a page of criterion ids. */
+    public Map<String, CriterionLinkCounts> criterionLinkCounts(Collection<String> criterionIds) {
+        if (criterionIds == null || criterionIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, CriterionQueryRepository.LinkCounts> raw = criteria.linkCounts(criterionIds);
+        Map<String, CriterionLinkCounts> out = new HashMap<>(raw.size());
+        for (Map.Entry<String, CriterionQueryRepository.LinkCounts> e : raw.entrySet()) {
+            CriterionQueryRepository.LinkCounts c = e.getValue();
+            out.put(e.getKey(), new CriterionLinkCounts(c.issues(), c.specs(), c.tasks()));
+        }
+        return out;
     }
 
     private static ProjectId requireProject(String raw) {

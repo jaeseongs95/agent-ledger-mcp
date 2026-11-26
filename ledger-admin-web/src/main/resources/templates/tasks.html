@@ -27,7 +27,7 @@
         <label for="state" th:text="#{common.state}">State</label>
         <select id="state" name="state">
           <option value="" th:text="#{common.any}">Any</option>
-          <option th:each="s : ${states}" th:value="${s.token()}" th:text="${s.token()}" th:selected="${s.token() == filter.state()}">ACTIVE</option>
+          <option th:each="s : ${states}" th:value="${s.token()}" th:text="${@labels.taskState(s.token())}" th:selected="${s.token() == filter.state()}">Active</option>
         </select>
       </div>
       <div class="filter-field">
@@ -67,16 +67,16 @@
         </thead>
         <tbody>
           <tr th:each="t : ${page.items()}">
-            <td class="code"><a th:href="@{/tasks/detail(id=${t.id()})}" th:text="${t.id()}">ID</a></td>
-            <td><span th:class="'badge badge-' + ${t.state()}" th:text="${t.state()}">ACTIVE</span></td>
-            <td th:text="${t.title()}">Title</td>
-            <td th:text="${t.ownerActorId() != null} ? ${t.ownerActorId()} : #{common.noneValue}">owner</td>
-            <td class="num"><time th:replace="~{fragments :: time(${t.updatedAt()})}">t</time></td>
+            <td class="cell-id"><a th:href="@{/tasks/detail(id=${t.id()})}" th:text="${t.id()}">ID</a></td>
+            <td class="cell-nowrap"><span th:class="'badge badge-' + ${t.state()}" th:text="${@labels.taskState(t.state())}">Active</span></td>
+            <td class="cell-title" th:text="${t.title()}">Title</td>
+            <td class="cell-owner" th:text="${t.ownerActorId() != null} ? ${t.ownerActorId()} : #{common.noneValue}">owner</td>
+            <td class="cell-time"><time th:replace="~{fragments :: time(${t.updatedAt()})}">t</time></td>
           </tr>
         </tbody>
       </table>
     </div>
-    <th:block th:if="${#lists.isEmpty(page.items())}" th:replace="~{fragments :: emptyState(${hasFilters}, ${resetHref})}"></th:block>
+    <th:block th:if="${#lists.isEmpty(page.items())}"><th:block th:replace="~{fragments :: emptyState(${hasFilters}, ${resetHref})}"></th:block></th:block>
     <nav th:replace="~{fragments :: pager(${paging}, ${total})}"></nav>
   </th:block>
 </main>

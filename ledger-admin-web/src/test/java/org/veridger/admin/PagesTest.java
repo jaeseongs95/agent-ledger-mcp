@@ -84,7 +84,8 @@ class PagesTest {
         seeds.dispute(issue, "https://evidence.example/1");
         Browser browser = Browser.signedIn(mvc);
 
-        assertThat(page(browser, "/?project=" + project.project())).contains("mcp-status", "attention", "Counts");
+        assertThat(page(browser, "/?project=" + project.project())).contains("mcp-status", "attention",
+                "Work &amp; gate breakdown");
         assertThat(page(browser, "/projects")).contains(project.project(), project.code());
         assertThat(page(browser, "/issues?project=" + project.project())).contains(issue, "the first issue");
         assertThat(page(browser, "/issues/" + issue)).contains("symptom of the first issue",

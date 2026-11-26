@@ -4,6 +4,7 @@ package org.veridger.admin.console;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import org.veridger.application.read.DetailService;
 import org.veridger.application.read.ListService;
 import org.veridger.application.read.ListService.CriteriaQuery;
@@ -98,15 +99,37 @@ public class TasksController {
         if (project.selected() != null) {
             var page = lists.criteria(new CriteriaQuery(project.selected(), filter.state(), filter.milestone(),
                     Paging.limitOf(filter.limit()), filter.cursor()));
+            var rollups = lists.milestoneRollups(project.selected());
+            var rawLinkCounts = lists.criterionLinkCounts(
+                    page.items().stream().map(ListService.CriterionItem::id).toList());
+            Map<String, ListService.CriterionLinkCounts> linkCounts = new LinkedHashMap<>();
+            for (ListService.CriterionItem item : page.items()) {
+                linkCounts.put(item.id(), rawLinkCounts.getOrDefault(item.id(), ListService.CriterionLinkCounts.ZERO));
+            }
+            boolean customMilestone = StringUtils.hasText(filter.milestone())
+                    && rollups.stream().noneMatch(r -> Objects.equals(r.milestone(), filter.milestone()));
             Map<String, String> filters = new LinkedHashMap<>();
             filters.put("project", project.selected());
             filters.put("state", filter.state());
             filters.put("milestone", filter.milestone());
             model.addAttribute("page", page);
+            model.addAttribute("rollups", rollups);
+            model.addAttribute("customMilestone", customMilestone);
+            model.addAttribute("linkCounts", linkCounts);
             model.addAttribute("paging", Paging.of("/criteria", filters, filter.limit(), filter.cursor(),
                     filter.back(), page.nextCursor()));
             model.addAttribute("total", stats.countCriteria(project.selected()));
         }
         return "criteria";
+    }
+
+    /**
+     * The page of one release gate (milestone criterion). Uses a query parameter so free-text ids containing
+     * {@code /}, {@code #}, {@code ?}, or {@code :} round-trip cleanly.
+     */
+    @GetMapping("/criteria/detail")
+    String criterion(@RequestParam("id") String id, Model model) {
+        model.addAttribute("criterion", details.criterion(id));
+        return "criterion";
     }
 }

@@ -14,7 +14,7 @@
     <div class="page-header-text">
       <h1 th:text="${spec.id()} + ' - ' + ${spec.title()}">Spec</h1>
       <div class="form-actions">
-        <span th:class="'badge badge-' + ${spec.status()}" th:text="${spec.status()}">DRAFT</span>
+        <span th:class="'badge badge-' + ${spec.status()}" th:text="${@labels.specStatus(spec.status())}">Draft</span>
         <span th:if="${spec.priority() != null}" th:class="'badge badge-' + ${spec.priority()}" th:text="${spec.priority()}">P1</span>
       </div>
     </div>
@@ -45,41 +45,7 @@
 
       <section class="card" th:if="${!#lists.isEmpty(spec.deliverables())}">
         <h2 th:text="#{deliverables.title}">Deliverables</h2>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col" th:text="#{col.kind}">Kind</th>
-                <th scope="col" th:text="#{deliverables.ref}">Reference</th>
-                <th scope="col" th:text="#{deliverables.location}">Location</th>
-                <th scope="col" th:text="#{deliverables.summary}">Summary</th>
-                <th scope="col" th:text="#{deliverables.check}">Check</th>
-                <th scope="col" th:text="#{deliverables.by}">By</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr th:each="d : ${spec.deliverables()}">
-                <td><span class="badge" th:text="${d.kind()}">change</span></td>
-                <td>
-                  <span class="cell-code">
-                    <code th:text="${d.deliverableRef()}">ref</code>
-                    <button type="button" class="ghost btn-sm" th:attr="data-copy=${d.deliverableRef()}" th:text="#{common.copy}">Copy</button>
-                  </span>
-                </td>
-                <td class="code" th:text="${d.location() != null} ? ${d.location()} : #{common.noneValue}">loc</td>
-                <td th:text="${d.summary()}">summary</td>
-                <td>
-                  <span th:if="${d.checkRef() != null}" class="cell-code">
-                    <span class="code" th:text="${d.checkRef()}">check</span>
-                    <span th:if="${d.checkResult() != null}" th:class="'badge badge-' + ${d.checkResult()}" th:text="${d.checkResult()}">PASS</span>
-                  </span>
-                  <span th:unless="${d.checkRef() != null}" class="muted" th:text="#{common.noneValue}">—</span>
-                </td>
-                <td th:text="${d.by()}">by</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <th:block th:replace="~{fragments :: deliverables(${spec.deliverables()})}"></th:block>
       </section>
 
       <section class="card">
@@ -100,11 +66,11 @@
             </thead>
             <tbody>
               <tr th:each="h : ${spec.recentChanges()}">
-                <td class="num" th:text="${h.id()}">1</td>
-                <td class="num"><time th:replace="~{fragments :: time(${h.at()})}">t</time></td>
-                <td class="code" th:text="${h.op()}">CREATE</td>
-                <td th:text="${h.author()}">author</td>
-                <td th:text="${h.reason()}">reason</td>
+                <td class="num cell-nowrap" th:text="${h.id()}">1</td>
+                <td class="cell-time"><time th:replace="~{fragments :: time(${h.at()})}">t</time></td>
+                <td class="cell-nowrap" th:text="${@labels.historyOp(h.op())}">Create</td>
+                <td class="cell-owner" th:text="${h.author()}">author</td>
+                <td class="cell-reason" th:text="${h.reason()}">reason</td>
               </tr>
             </tbody>
           </table>
@@ -118,7 +84,7 @@
         <h2 th:text="#{item.metadata}">Details</h2>
         <dl class="facts">
           <dt th:text="#{common.project}">Project</dt><dd class="code"><a th:href="@{/(project=${spec.projectId()})}" th:text="${spec.projectId()}">p1</a></dd>
-          <dt th:text="#{common.status}">Status</dt><dd><span th:class="'badge badge-' + ${spec.status()}" th:text="${spec.status()}">DRAFT</span></dd>
+          <dt th:text="#{common.status}">Status</dt><dd><span th:class="'badge badge-' + ${spec.status()}" th:text="${@labels.specStatus(spec.status())}">Draft</span></dd>
           <dt th:if="${spec.priority() != null}" th:text="#{specs.priority}">Priority</dt><dd th:if="${spec.priority() != null}" th:text="${spec.priority()}">P1</dd>
           <dt th:if="${spec.parentId() != null}" th:text="#{spec.parent}">Parent spec</dt><dd th:if="${spec.parentId() != null}"><a class="code" th:href="@{/specs/detail(id=${spec.parentId()})}" th:text="${spec.parentId()}">ID</a></dd>
           <dt th:text="#{common.owner}">Owner</dt><dd th:text="${spec.ownerActorId() != null} ? ${spec.ownerActorId()} : #{common.noneValue}">owner</dd>
@@ -136,7 +102,7 @@
           <li th:each="cs : ${spec.childSpecs()}"><a class="code" th:href="@{/specs/detail(id=${cs})}" th:text="${cs}">child</a></li>
           <li th:each="t : ${spec.tasks()}"><a class="code" th:href="@{/tasks/detail(id=${t})}" th:text="${t}">task</a></li>
           <li th:each="i : ${spec.issues()}"><a class="code" th:href="@{/issues/{id}(id=${i})}" th:text="${i}">issue</a></li>
-          <li th:each="c : ${spec.criteria()}"><span class="code" th:text="${c}">criterion</span></li>
+          <li th:each="c : ${spec.criteria()}"><a class="code" th:href="@{/criteria/detail(id=${c})}" th:text="${c}">criterion</a></li>
         </ul>
       </section>
     </aside>

@@ -1,5 +1,5 @@
 {
   "name": "veridger",
-  "version": "4.2.0",
+  "version": "4.3.0",
   "description": "Stamp ledger MCP calls with the Claude host session id"
 }

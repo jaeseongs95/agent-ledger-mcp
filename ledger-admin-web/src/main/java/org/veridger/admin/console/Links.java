@@ -33,17 +33,18 @@ public class Links {
             if (Objects.equals(candidate.token(), entity)) {
                 return candidate == HistoryEntity.ISSUE
                         || candidate == HistoryEntity.SPEC
-                        || candidate == HistoryEntity.TASK;
+                        || candidate == HistoryEntity.TASK
+                        || candidate == HistoryEntity.CRITERION;
             }
         }
         return false;
     }
 
     /**
-     * The page of an item of the attention list, as the link base the page gives the {@code id} to: the issue page
-     * ({@code /issues/{id}}, the id is a path segment) for an issue, the specification page ({@code /specs/detail}, the
-     * id is a query parameter: ids may be free text) for a specification, and the task page ({@code /tasks/detail}, the
-     * id is a query parameter) for a task.
+     * The page of an item of the attention or history list, as the link base the page gives the {@code id} to: the
+     * issue page ({@code /issues/{id}}, the id is a path segment) for an issue, the specification page
+     * ({@code /specs/detail}, query parameter) for a specification, the task page ({@code /tasks/detail}, query
+     * parameter) for a task, and the criterion page ({@code /criteria/detail}, query parameter) for a release gate.
      *
      * @throws org.veridger.domain.error.ValidationException when the text names no kind of row
      * @throws IllegalArgumentException for a kind of row that has no page of its own
@@ -53,7 +54,8 @@ public class Links {
             case ISSUE -> "/issues/{id}";
             case SPEC -> "/specs/detail";
             case TASK -> "/tasks/detail";
-            case CRITERION, DELIVERABLE, ISSUE_TASK, ISSUE_SPEC, SPEC_TASK, ISSUE_RELATION, CRITERION_LINK,
+            case CRITERION -> "/criteria/detail";
+            case DELIVERABLE, ISSUE_TASK, ISSUE_SPEC, SPEC_TASK, ISSUE_RELATION, CRITERION_LINK,
                     ISSUE_CASE ->
                 throw new IllegalArgumentException("the attention list has no item of the kind " + entity);
         };
