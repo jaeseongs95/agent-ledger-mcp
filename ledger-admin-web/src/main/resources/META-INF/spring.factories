@@ -1,1 +1,1 @@
-org.springframework.boot.diagnostics.FailureAnalyzer=org.agentledger.admin.app.ManagementPortFailureAnalyzer
+org.springframework.boot.diagnostics.FailureAnalyzer=org.veridger.admin.app.ManagementPortFailureAnalyzer

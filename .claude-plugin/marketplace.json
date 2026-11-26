@@ -1,5 +1,5 @@
 {
-  "name": "agent-ledger-mcp",
-  "owner": { "name": "agent-ledger-mcp maintainers" },
-  "plugins": [{ "name": "agent-ledger-mcp", "source": "./clients/claude", "description": "Host session attestation for ledger MCP tools" }]
+  "name": "veridger",
+  "owner": { "name": "veridger maintainers" },
+  "plugins": [{ "name": "veridger", "source": "./clients/claude", "description": "Host session attestation for ledger MCP tools" }]
 }

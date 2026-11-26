@@ -5,7 +5,7 @@
 // grants tabs/scope matrix/expiry presets/key-block auto-fill, codes editor/state modals,
 // and progressive JSON diff rendering in history.
 (() => {
-  const THEME_KEY = "agentledger.theme";
+  const THEME_KEY = "veridger.theme";
   const toastRegion = document.getElementById("ui-toast");
 
   function showToast(message) {
@@ -208,59 +208,7 @@
     if (dialog) { closeModal(dialog); }
   });
 
-  // 6. Progressive Tabs (Connect New Session modal)
-  let activateTabFn = null;
-  const tabList = document.querySelector("[data-tabs]");
-  if (tabList) {
-    const tabs = Array.from(tabList.querySelectorAll("[role='tab']"));
-    const panels = tabs.map((t) => document.getElementById(t.getAttribute("aria-controls"))).filter(Boolean);
-
-    function activateTab(tabId, updateHash) {
-      tabs.forEach((tab) => {
-        const active = tab.id === tabId;
-        tab.setAttribute("aria-selected", active ? "true" : "false");
-        tab.tabIndex = active ? 0 : -1;
-      });
-      panels.forEach((panel) => {
-        panel.hidden = panel.getAttribute("aria-labelledby") !== tabId;
-      });
-      if (updateHash && window.history && window.history.replaceState) {
-        const activeTab = tabs.find((t) => t.id === tabId);
-        if (activeTab && activeTab.dataset.hash) {
-          window.history.replaceState(null, "", "#" + activeTab.dataset.hash);
-        }
-      }
-    }
-    activateTabFn = activateTab;
-
-    const defaultTab = tabList.dataset.defaultTab;
-    const hash = window.location.hash.replace(/^#/, "");
-    const hashTab = hash ? tabs.find((t) => t.dataset.hash === hash) : null;
-    const initial = defaultTab
-      ? tabs.find((t) => t.id === defaultTab)
-      : (hashTab || tabs[0]);
-    if (initial) { activateTab(initial.id, false); }
-
-    tabs.forEach((tab, index) => {
-      tab.addEventListener("click", () => activateTab(tab.id, true));
-      tab.addEventListener("keydown", (event) => {
-        if (event.isComposing || event.keyCode === 229) { return; }
-        if (event.key === "ArrowRight") {
-          event.preventDefault();
-          const next = tabs[(index + 1) % tabs.length];
-          activateTab(next.id, true);
-          next.focus();
-        } else if (event.key === "ArrowLeft") {
-          event.preventDefault();
-          const prev = tabs[(index - 1 + tabs.length) % tabs.length];
-          activateTab(prev.id, true);
-          prev.focus();
-        }
-      });
-    });
-  }
-
-  // Expiry UTC quick presets
+  // 6. Expiry UTC quick presets
   document.addEventListener("click", (event) => {
     const btn = event.target.closest("[data-expiry-target]");
     if (!btn) { return; }
@@ -356,47 +304,6 @@
     }
   });
 
-  // Auto-fill Session ID when pasting the 4-line hook key block
-  document.querySelectorAll("[data-key-block-author-target]").forEach((textarea) => {
-    const targetId = textarea.dataset.keyBlockAuthorTarget;
-    const authorInput = targetId ? document.getElementById(targetId) : null;
-    if (!authorInput) { return; }
-    let lastAutofilled = "";
-    textarea.addEventListener("input", () => {
-      const match = textarea.value.match(/^\s*author:\s*(\S+)\s*$/im);
-      if (!match) { return; }
-      const extracted = match[1].trim();
-      if (!extracted) { return; }
-      const current = authorInput.value.trim();
-      if (!current || current === lastAutofilled) {
-        authorInput.value = extracted;
-        lastAutofilled = extracted;
-        showToast(textarea.dataset.autofillToast || "");
-      }
-    });
-  });
-
-  // Bearer token form: selecting a project pre-selects standard scopes; clearing project clears scopes
-  document.querySelectorAll("[data-token-issue-form]").forEach((form) => {
-    const projectSelect = form.querySelector("[data-token-project]");
-    const grantBox = form.querySelector(".optional-grant-box");
-    if (!projectSelect) { return; }
-
-    function syncTokenGrantBox(autoSelect) {
-      const hasProject = Boolean(projectSelect.value);
-      if (grantBox) { grantBox.classList.toggle("is-inactive", !hasProject); }
-      const boxes = Array.from(form.querySelectorAll('input[type="checkbox"][name="scopes"]'));
-      if (!hasProject) {
-        boxes.forEach((b) => { b.checked = false; });
-      } else if (autoSelect && boxes.every((b) => !b.checked)) {
-        boxes.forEach((b) => { b.checked = b.value !== "verify"; });
-      }
-    }
-
-    syncTokenGrantBox(false);
-    projectSelect.addEventListener("change", () => syncTokenGrantBox(true));
-  });
-
   // 8. Common Codes editor conditional state (direction for RELATION_KIND, reactivation warning)
   const codeGroupSelect = document.getElementById("group");
   const codeDirectionWrap = document.getElementById("direction-field");
@@ -444,11 +351,6 @@
     if (trigger.dataset.modalReset === "true") {
       const form = dialog.querySelector("form");
       if (form) { form.reset(); }
-    }
-
-    // Grants: Connect session tab selection
-    if (modalId === "modal-connect-session" && trigger.dataset.connectTab && activateTabFn) {
-      activateTabFn(trigger.dataset.connectTab, false);
     }
 
     // Grants: Edit project scopes matrix modal
@@ -541,24 +443,6 @@
           projLabel.textContent = mode === "project" ? project : (projLabel.dataset.allLabel || "All projects");
         }
       }
-    }
-
-    // Grants: Close session key modal
-    if (modalId === "modal-revoke-key") {
-      const author = trigger.dataset.author || "";
-      const fp = trigger.dataset.fingerprint || "";
-      setField("key-revoke-author", author);
-      setField("key-revoke-fingerprint", fp);
-      setText("revoke-key-author-label", author);
-      setText("revoke-key-fp-label", fp);
-    }
-
-    // Grants: Revoke bearer token modal
-    if (modalId === "modal-revoke-token") {
-      setField("token-revoke-id", trigger.dataset.tokenId || "");
-      setText("revoke-token-author-label", trigger.dataset.author || "—");
-      setText("revoke-token-id-label", trigger.dataset.tokenId || "—");
-      setText("revoke-token-prefix-label", trigger.dataset.tokenPrefix || "—");
     }
 
     // Codes: Add / Edit modal
@@ -691,16 +575,14 @@
     }
   });
 
-  // 11. Grants Search & Filter Toolbar — Korean IME-safe
+  // 11. Grants Search Toolbar — Korean IME-safe
   const sessionToolbar = document.querySelector("[data-session-toolbar]");
   if (sessionToolbar) {
     const searchInput = document.getElementById("session-search");
-    const filterButtons = Array.from(sessionToolbar.querySelectorAll("[data-session-filter]"));
     const cards = Array.from(document.querySelectorAll("[data-session-card]"));
     const emptyNotice = document.getElementById("session-filter-empty");
     const resetBtn = document.getElementById("session-filter-reset");
     const countEl = document.getElementById("session-filter-count");
-    let activeFilter = "all";
     let composing = false;
 
     function applySessionFilters() {
@@ -708,20 +590,7 @@
       let visible = 0;
       cards.forEach((card) => {
         const text = (card.dataset.searchText || ((card.dataset.author || "") + " " + (card.dataset.projects || ""))).toLowerCase();
-        const cred = card.dataset.cred || "none";
-        const grantCount = Number(card.dataset.grantCount || "0");
-        const matchesQuery = !q || text.includes(q);
-        let matchesFilter = true;
-        if (activeFilter === "key") {
-          matchesFilter = cred === "key" || cred === "both";
-        } else if (activeFilter === "token") {
-          matchesFilter = cred === "token" || cred === "both";
-        } else if (activeFilter === "nogrant") {
-          matchesFilter = grantCount === 0;
-        } else if (activeFilter === "nocred") {
-          matchesFilter = cred === "none";
-        }
-        const show = matchesQuery && matchesFilter;
+        const show = !q || text.includes(q);
         card.hidden = !show;
         if (show) { visible += 1; }
       });
@@ -734,18 +603,9 @@
       searchInput.addEventListener("compositionend", () => { composing = false; applySessionFilters(); });
       searchInput.addEventListener("input", () => { if (!composing) { applySessionFilters(); } });
     }
-    filterButtons.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        activeFilter = btn.dataset.sessionFilter || "all";
-        filterButtons.forEach((b) => b.setAttribute("aria-pressed", b === btn ? "true" : "false"));
-        applySessionFilters();
-      });
-    });
     if (resetBtn) {
       resetBtn.addEventListener("click", () => {
         if (searchInput) { searchInput.value = ""; }
-        activeFilter = "all";
-        filterButtons.forEach((b) => b.setAttribute("aria-pressed", b.dataset.sessionFilter === "all" ? "true" : "false"));
         applySessionFilters();
         if (searchInput) { searchInput.focus(); }
       });

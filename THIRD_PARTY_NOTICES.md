@@ -1,8 +1,8 @@
 # Third-Party Notices
 
-`agent-ledger-mcp` is licensed under `AGPL-3.0-or-later` (see [LICENSE](LICENSE) and [ADDITIONAL-TERMS.md](ADDITIONAL-TERMS.md)).
+`veridger` is licensed under `AGPL-3.0-or-later` (see [LICENSE](LICENSE) and [ADDITIONAL-TERMS.md](ADDITIONAL-TERMS.md)).
 
-The binary distributions of `agent-ledger-mcp` (`ledger-mcp-server.jar`, `ledger-admin-web.jar`, `ledger-cli.jar`, `ledger-client-hook.jar`, and `ledger-migrate-1x.jar`) include third-party open-source runtime libraries compatible with `AGPL-3.0-or-later`. No JDBC driver for the user's ledger DBMS is bundled (`driver-register` loads the user-supplied JDBC driver at runtime); `com.h2database:h2` is included solely in `ledger-seed` and `ledger-cli` to read the packaged installation seed bundle.
+The binary distributions of `veridger` (`ledger-mcp-server.jar`, `ledger-admin-web.jar`, `ledger-cli.jar`, `ledger-client-hook.jar`, and `ledger-migrate-1x.jar`) include third-party open-source runtime libraries compatible with `AGPL-3.0-or-later`. No JDBC driver for the user's ledger DBMS is bundled (`driver-register` loads the user-supplied JDBC driver at runtime); `com.h2database:h2` is included solely in `ledger-seed` and `ledger-cli` to read the packaged installation seed bundle.
 
 Run `./gradlew generateLicenseReport` to generate the machine-readable dependency license report under `build/reports/dependency-license/`, and `./gradlew checkThirdPartyNotices` (part of `./gradlew check`) to verify that every resolved runtime dependency group across all modules is accounted for in this file.
 

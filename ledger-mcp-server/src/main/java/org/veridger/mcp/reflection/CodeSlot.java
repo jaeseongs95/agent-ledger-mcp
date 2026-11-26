@@ -1,0 +1,17 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package org.veridger.mcp.reflection;
+
+import java.util.List;
+import org.veridger.domain.rule.CodeGroup;
+
+/**
+ * A place of a tool's input schema that holds a common code: the schema path ({@code fields.category}, an array
+ * item ends in {@code []}), the group whose active codes fill it, and the values that are allowed besides them.
+ */
+public record CodeSlot(String path, CodeGroup group, List<String> fixed) {
+
+    public CodeSlot {
+        fixed = List.copyOf(fixed);
+    }
+}

@@ -2,12 +2,12 @@
 
 ## English
 
-Every release of agent-ledger-mcp has one release note. This file defines its format; the English and the Korean text of the format are in this one file, and so are the two languages of every release note.
+Every release of veridger has one release note. This file defines its format; the English and the Korean text of the format are in this one file, and so are the two languages of every release note.
 
 ### Rules
 
 - One file per version, `docs/release-notes/<version>.md`, named with the version in Semantic Versioning form (`2.0.0`). Tags are written with a leading `v` (`v2.0.0`); the file name has none.
-- The file starts with the title `# agent-ledger-mcp <version>`.
+- The file starts with the title `# veridger <version>`.
 - The English part follows under the heading `## English`. The Korean part follows under a heading of the same level that is the name of the Korean language written in Korean. The two parts are in the same file; they are not linked to each other and neither is a translation file.
 - Each part has the nine sections of the table below, as headings of level three, in this order. A section that has nothing to report says so in one sentence; it is never omitted and never left empty.
 - Both parts state the same facts. Code (tool names, commands, setting keys, error tokens, values) is written in code spans or code blocks and is identical in both parts. Formal wording is used; no colloquial expressions.
@@ -34,12 +34,12 @@ The documentation tests of `ledger-cli` (DOC-023 to DOC-029 in `docs/testing/TES
 
 ## 한국어
 
-agent-ledger-mcp의 모든 릴리스에는 릴리스 노트가 하나 있습니다. 이 파일은 그 형식을 정의합니다. 형식의 영어 본문과 한국어 본문은 이 파일 하나에 있으며, 모든 릴리스 노트의 두 언어도 한 파일에 함께 둡니다.
+veridger의 모든 릴리스에는 릴리스 노트가 하나 있습니다. 이 파일은 그 형식을 정의합니다. 형식의 영어 본문과 한국어 본문은 이 파일 하나에 있으며, 모든 릴리스 노트의 두 언어도 한 파일에 함께 둡니다.
 
 ### 규칙
 
 - 버전마다 파일 하나, `docs/release-notes/<version>.md`이며 파일 이름은 유의적 버전(Semantic Versioning) 형태의 버전입니다(`2.0.0`). 태그는 앞에 `v`를 붙이지만(`v2.0.0`) 파일 이름에는 붙이지 않습니다.
-- 파일은 제목 `# agent-ledger-mcp <version>`으로 시작합니다.
+- 파일은 제목 `# veridger <version>`으로 시작합니다.
 - 영어 부분은 제목 `## English` 아래에 오고, 한국어 부분은 `## 한국어` 아래에 옵니다. 두 부분은 같은 파일에 있으며 서로 링크하지 않고, 어느 쪽도 별도의 번역 파일이 아닙니다.
 - 각 부분은 아래 표의 아홉 개 섹션을 3단계 제목으로 이 순서대로 가집니다. 보고할 내용이 없는 섹션은 한 문장으로 그렇게 적으며, 생략하거나 비워 두지 않습니다.
 - 두 부분은 같은 사실을 적습니다. 코드(도구 이름, 명령, 설정 키, 오류 토큰, 값)는 코드 스팬이나 코드 블록으로 쓰며 두 부분에서 동일합니다. 공식적인 표현을 쓰고 구어체 표현은 쓰지 않습니다.

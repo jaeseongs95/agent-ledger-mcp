@@ -1,4 +1,4 @@
-# agent-ledger-mcp
+# Veridger
 
 [한국어](README.ko.md)
 
@@ -13,7 +13,7 @@ choice: the installers write no proxy configuration and order no certificate.
 
 Version 2.0.0 is a rewrite in Java 25 and Spring Boot with its own tool contract (every write tool takes a required `operationKey`,
 every response uses the `ApiResult.v1` envelope, and no argument of an earlier version is accepted next to the new ones); what changed
-for a client is stated in the release notes ([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md)); the format of release notes is in
+for a client is stated in the release notes ([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md), [4.0.0](docs/release-notes/4.0.0.md)); the format of release notes is in
 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md).
 
 ## Contents
@@ -33,12 +33,10 @@ for a client is stated in the release notes ([2.0.0](docs/release-notes/2.0.0.md
 
 ## Concepts
 
-- **Author identity is proved, not claimed.** In `STANDARD` mode (`ledger.mcp.auth-mode`, the default), any standard MCP client can
-  authenticate as `<vendor>:<session-id>` with a per-author HTTP `Bearer` token (`lgt_...`) issued by `ledger-cli token-issue`, with no
-  client hook needed. When the shared gate token `ledger.mcp.token` is used (or in `ATTESTED` mode), every write and every
-  `ledger_whoami` carries the reserved key `_hostAttestation`, which the host hook of the client fills in and models must omit. For
-  example, the author is `claude:1f2e3d4c` or `codex:9a8b7c6d`; the owner of the ledger is `user:owner`. A tool has no `author_id`
-  argument.
+- **Author identity is stamped by the host hook, not claimed by the model.** Every MCP request authenticates over HTTP with the
+  configured `Bearer` token `ledger.mcp.token`, and every write call and `ledger_whoami` carries the reserved key `_hostAttestation`
+  set to `<vendor>:<session-id>`, which the client host hook stamps and models must omit. For example, the author is `claude:1f2e3d4c`
+  or `codex:9a8b7c6d`; the owner of the ledger is `user:owner`. A tool has no `author_id` argument.
 - **Writes need a live grant.** The owner grants an author a scope on a project with `ledger-cli grant` (or on the grants page of
   the admin web). The scopes are `issue`, `spec`, `task`, `deliverable` and `verify`. A write without a matching grant is refused. A
   write that touches rows of two projects (a spec, task or criterion moved to another project, a link, a merge into an issue of another
@@ -108,13 +106,11 @@ for a client is stated in the release notes ([2.0.0](docs/release-notes/2.0.0.md
   and MySQL do), all three must be utf8mb4: the default character set of the database of the JDBC URL (the schema that is checked), the variable
   character_set_server and the character set of the connection. `migrate` refuses to go on, before it changes anything, when the first two are not.
 
-A direct MCP caller is authenticated either by its per-author `Bearer` session token (`STANDARD` mode) or by the shared gate token
-`ledger.mcp.token` paired with `_hostAttestation`.
+A direct MCP caller is authenticated on HTTP by the configured `Bearer` token `ledger.mcp.token`, paired with the host-stamped `_hostAttestation`.
 
 ## MCP tools
 
-The server speaks MCP over Streamable HTTP at `/mcp` (default `127.0.0.1:8765`) and answers `/healthz`. Callers present either a
-per-author session token (`lgt_...`) or `ledger.mcp.token`. Every tool returns the `ApiResult.v1` envelope (`schemaVersion` `"1.0.0"`,
+The server speaks MCP over Streamable HTTP at `/mcp` (default `127.0.0.1:8765`) and answers `/healthz`. Callers present `ledger.mcp.token`. Every tool returns the `ApiResult.v1` envelope (`schemaVersion` `"1.0.0"`,
 `ok`, `data`, `error`). Every tool input is closed and flat (no raw SQL query argument, no untyped map): an unknown argument is
 refused, an object or an array argument must be sent as that JSON value (not as text), and the text `null` is a text, not a missing
 argument. A JSON `null` on an optional field counts as not given; an optional text field is cleared with an empty string.
@@ -232,10 +228,10 @@ The build is a Gradle multi-module project.
 | Module | What |
 |---|---|
 | `ledger-domain` | aggregates, value types, state rules, error codes and `ToolContract`, the list of tool names |
-| `ledger-attestation` | the `_hostAttestation` token, RFC 8785 canonical JSON and the Ed25519 key forms, shared by the hook and the server (JDK only) |
+| `ledger-attestation` | `_hostAttestation` wire helpers and RFC 8785 canonical JSON utilities shared by the hook and the server (JDK only) |
 | `ledger-files` | owner-only POSIX/ACL file and directory protection and `NOFOLLOW_LINKS` inspection, shared by the server, the CLI and the hook (JDK only) |
 | `ledger-database` | Spring Data JDBC repositories, the schema files `V{n}__*.sql` and their runner, the loader of the registered JDBC driver |
-| `ledger-application` | the application services: write gate, receipts, history, the write and read operations, grants, session keys |
+| `ledger-application` | the application services: write gate, receipts, history, the write and read operations, and session grants |
 | `ledger-mcp-server` | the Spring Boot MCP server (`ledger-mcp-server.jar`) |
 | `ledger-admin-web` | the Spring Boot admin web for the owner (`ledger-admin-web.jar`) |
 | `ledger-cli` | the owner command line tool (`ledger-cli.jar`) |
@@ -276,18 +272,16 @@ configuration tree (Spring Boot makes every file below a tree a property of the 
 | `ledger.jdbc.driver` | all | the registered driver, written by `driver-register` (jar, class, SHA-256), read at start |
 | `ledger.schema.name` | all | schema that holds the tables; created by `migrate` when missing; absent means the default schema of the account |
 | `ledger.schema.require-utc` | servers, CLI | refuse to start when the JVM or the database session is not UTC, default true |
-| `ledger.attestation.window` | servers | how far the time of an attestation may be from the server time, default `PT5M` |
 | `ledger.mcp.token` | MCP server, `mcp-check` | the bearer token of the agents, at least 16 characters (secret) |
-| `ledger.mcp.auth-mode` | MCP server | caller authentication mode: `STANDARD` (default, accepts per-author `Bearer` session tokens as well as `_hostAttestation`) or `ATTESTED` (requires `_hostAttestation` for author identity) |
 | `ledger.mcp.allowed-hosts` | MCP server | accepted `Host` values, default `127.0.0.1` and `localhost` |
 | `ledger.mcp.allowed-origins` | MCP server | accepted browser origins, default none |
 | `ledger.mcp.max-request-size` | MCP server | largest request body, default 1MB |
 | `ledger.mcp.code-poll-interval` | MCP server | how often a code change of another process is looked up, default 5s |
-| `ledger.admin.token` | admin web | the admin token, at least 16 characters (secret): the bearer of the read-only JSON endpoints under `/api`; with `ledger.admin.sign-in=token` it is also the password of the login page; it never approves a change |
+| `ledger.admin.token` | admin web | the admin token, at least 16 characters (secret): the bearer of the read-only JSON endpoints under `/api`; with `ledger.admin.sign-in=token` it is also the password of the login page |
 | `ledger.admin.agent-token` | admin web | required: the agents' bearer token, equal to `ledger.mcp.token`, and distinct from `ledger.admin.token`; the admin web refuses it with `AGENT_TOKEN_FORBIDDEN` (secret) |
 | `ledger.admin.allowed-hosts` | admin web | accepted `Host` values (DNS rebinding guard), default `127.0.0.1` and `localhost` |
-| `ledger.admin.driver-file` | admin web | the driver registration file the driver page writes, default `/etc/agent-ledger-mcp/jdbc-driver.yaml` |
-| `ledger.admin.driver-directory` | admin web | the one directory a driver jar may be taken from, default `/etc/agent-ledger-mcp/drivers` |
+| `ledger.admin.driver-file` | admin web | the driver registration file the driver page writes, default `/etc/veridger/jdbc-driver.yaml` |
+| `ledger.admin.driver-directory` | admin web | the one directory a driver jar may be taken from, default `/etc/veridger/drivers` |
 | `ledger.admin.sign-in` | admin web | how the owner signs in, exactly one of `token`, `oidc` or `passkey`; the login page offers only that one; absent means `passkey` for a new installation, and an installation with `ledger.admin.oidc.*` settings and no choice is refused at start (nothing is guessed) |
 | `ledger.admin.oidc.owner-email` | admin web | with `ledger.admin.sign-in=oidc`: the one e-mail address of the owner, which the provider must have verified; the provider itself is `spring.security.oauth2.client.*` |
 | `ledger.admin.oidc.issuer` | admin web | with `ledger.admin.sign-in=oidc`: the issuer (`iss`) the address counts for: an address is only meaningful at the issuer that verified it |
@@ -309,11 +303,11 @@ configuration tree (Spring Boot makes every file below a tree a property of the 
 | `ledger.attachments.upload-ttl` | servers, CLI | how long an upload lives after its last chunk, default 10m |
 | `ledger.attachments.orphan-grace` | servers, CLI | how long a file without a row (or a replaced file) waits before `attachments-check` moves it to `orphans/`, default 24h |
 | `ledger.attachments.reaper-interval` | MCP server | how often expired uploads are removed, default 1m |
-| `ledger.secrets.home` | `ledger-cli` | the directory of the installation that holds the settings, the driver registration, the driver jars and the secret directory, default `/etc/agent-ledger-mcp` on Linux and `C:/ProgramData/agent-ledger-mcp/etc` on Windows, where the installer of the host puts it |
-| `ledger.secrets.directory` | `ledger-cli` | the secret directory (it holds the folders `common`, `admin`, `mcp` and `tool` and is itself no configuration tree), default `secrets` below `ledger.secrets.home` (`/etc/agent-ledger-mcp/secrets` on Linux) |
-| `ledger.secrets.instance` | `ledger-cli` | the instance name that the default paths follow, default `agent-ledger-mcp` |
-| `ledger.cli.driver.directory` | `ledger-cli` | the directory `driver-register` takes a jar from, default `drivers` below `ledger.secrets.home` (`/etc/agent-ledger-mcp/drivers` on Linux) |
-| `ledger.cli.driver.file` | `ledger-cli` | the registration file `driver-register` writes, default `jdbc-driver.yaml` in `ledger.secrets.home` (`/etc/agent-ledger-mcp/jdbc-driver.yaml` on Linux) |
+| `ledger.secrets.home` | `ledger-cli` | the directory of the installation that holds the settings, the driver registration, the driver jars and the secret directory, default `/etc/veridger` on Linux and `C:/ProgramData/veridger/etc` on Windows, where the installer of the host puts it |
+| `ledger.secrets.directory` | `ledger-cli` | the secret directory (it holds the folders `common`, `admin`, `mcp` and `tool` and is itself no configuration tree), default `secrets` below `ledger.secrets.home` (`/etc/veridger/secrets` on Linux) |
+| `ledger.secrets.instance` | `ledger-cli` | the instance name that the default paths follow, default `veridger` |
+| `ledger.cli.driver.directory` | `ledger-cli` | the directory `driver-register` takes a jar from, default `drivers` below `ledger.secrets.home` (`/etc/veridger/drivers` on Linux) |
+| `ledger.cli.driver.file` | `ledger-cli` | the registration file `driver-register` writes, default `jdbc-driver.yaml` in `ledger.secrets.home` (`/etc/veridger/jdbc-driver.yaml` on Linux) |
 
 The servers listen on loopback only (MCP `127.0.0.1:8765`, admin web `127.0.0.1:8865`), fixed in the code of both: there is no setting
 for the address. To publish them, the operator puts a reverse proxy of their choice, which terminates HTTPS, on the same host and
@@ -332,7 +326,7 @@ under `/home`: the service account runs it too).
 What every target has in common:
 
 - **One service account.** The MCP server and the admin web run as one operating system account that belongs to no person: on
-  Linux the system user `agent-ledger-mcp` (no login, not root), on Windows the predefined account LocalService (no password). Its purpose
+  Linux the system user `veridger` (no login, not root), on Windows the predefined account LocalService (no password). Its purpose
   is to keep the secrets of the ledger, the admin token and the database password, away from the account of the person who works on
   the machine and from the agents that run under it: the secret directory is readable by the service account only (on Windows: by the installing user and, read only, by LocalService, and by nobody else). The secrets are
   kept in one folder per use and each service imports only its own and the common one, so the process of the MCP server no longer holds
@@ -340,8 +334,8 @@ What every target has in common:
   service). What this does not do: the two services run as one operating system user, so the file permissions do not keep one service from
   reading the folder of the other; the personal edition trusts the whole installation target, and the change is that no process
   carries a secret of another use in its environment. The two
-  services of an installation, called an instance, are named after it: the instance is `agent-ledger-mcp` unless `--name=<name>` gives
-  another name, and its services are `<name>` and `<name>-admin` (`agent-ledger-mcp` and `agent-ledger-mcp-admin` by default). The Linux user, the
+  services of an installation, called an instance, are named after it: the instance is `veridger` unless `--name=<name>` gives
+  another name, and its services are `<name>` and `<name>-admin` (`veridger` and `veridger-admin` by default). The Linux user, the
   directories (`/opt/<name>`, `/etc/<name>`, on Windows `C:\ProgramData\<name>`) and the WinSW ids follow the name, so a second instance, or an
   installation next to a host that still runs 1.x under the default names, needs only its own `--name=<name>` and its own ports.
 - **Two database accounts**, created beforehand with the tools of your DBMS (creating an account is not ANSI SQL and is not part of the
@@ -378,7 +372,7 @@ The options of `deploy/install.sh` are given as `--name=value`; the ones it does
 
 | Option | Meaning |
 |---|---|
-| `--name=<name>` | the name of the instance, default `agent-ledger-mcp`: lower-case letters, digits and hyphens, at most 23 characters, not ending with `-admin`; Java validates it before anything is created |
+| `--name=<name>` | the name of the instance, default `veridger`: lower-case letters, digits and hyphens, at most 23 characters, not ending with `-admin`; Java validates it before anything is created |
 | `--java=<path>` | the Java 25 runtime, default the `java` on the `PATH` of root; the service user runs it too, so it is at a path every account can execute (not under `/home`), which the script checks right after it creates the service user and before it makes anything else |
 | `--jars=<dir>` | the directory that holds the three jars |
 | `--driver-jar=<file>` | the JDBC driver jar |
@@ -404,7 +398,7 @@ before anything is read or written.
 
 ### Linux server
 
-Run as root; the user `agent-ledger-mcp` is created when it is missing, `prepare-host` (Java) creates `/opt/<name>` (root, 0755),
+Run as root; the user `veridger` is created when it is missing, `prepare-host` (Java) creates `/opt/<name>` (root, 0755),
 `/etc/<name>` (the service user, 0750), its `drivers` folder (root, 0755), its `secrets` folder with the folders `common`, `admin`, `mcp` and `tool` and the folder `attachment-keys` (the service user, 0700), copies the
 jars and the driver and renders the units into `/etc/systemd/system`, which are then enabled; the secrets are stored by the service
 user. A file that the installer did not render and that a rendered file replaces is kept as `<file>.backup`; to move a 1.x installation,
@@ -414,7 +408,7 @@ see Upgrading from 1.x.
 sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<driver-class> --owner-account=<ddl-account> --app-account=<app-account> --jdbc-url=<jdbc-url>
 ```
 
-The installer enables and restarts the two services (`<name>` and `<name>-admin`, `agent-ledger-mcp` and `agent-ledger-mcp-admin` by default); check them with `systemctl status agent-ledger-mcp agent-ledger-mcp-admin`.
+The installer enables and restarts the two services (`<name>` and `<name>-admin`, `veridger` and `veridger-admin` by default); check them with `systemctl status veridger veridger-admin`.
 
 ### Reaching the servers from outside
 
@@ -445,7 +439,7 @@ and the installer neither bundles nor downloads it.
 | `<ddl-account>` | the DDL account |
 | `<app-account>` | the application account |
 | `"<jdbc-url>"` | the JDBC URL, in quotes |
-| `"<name>"` | optional, in quotes: the name of the instance, default `agent-ledger-mcp` |
+| `"<name>"` | optional, in quotes: the name of the instance, default `veridger` |
 | `"<more options>"` | optional, in quotes, after the name: more options of `render-deploy`, for example the host names of a server |
 
 ```bat
@@ -456,7 +450,7 @@ A server that is reached from outside adds the host name of each service and put
 two loopback ports (see Reaching the servers from outside):
 
 ```bat
-deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <app-account> "<jdbc-url>" "agent-ledger-mcp" "--mcp-host=<mcp-host> --admin-host=<admin-host>"
+deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <app-account> "<jdbc-url>" "veridger" "--mcp-host=<mcp-host> --admin-host=<admin-host>"
 ```
 
 Everything lives in `C:\ProgramData\<name>`. Both services run as LocalService, restart after a failure (the WinSW
@@ -507,7 +501,7 @@ and the ports from it when an option is not given, and the installers ask for th
    (without a database there is no passkey to sign in with, so the driver page of the admin web is a console page).
 2. Set up the owner side: `project-add` and `code-set`; when you come from 1.x, see Upgrading from 1.x instead of creating projects by hand. On Linux run
    `ledger-cli` as the service user, for example `sudo -u <name> java -jar /opt/<name>/ledger-cli.jar --ledger.secrets.instance=<name> project-add ...`.
-3. Install the client hooks (see Client hooks), register the key of each session with `key-register` and issue the grants with `grant`.
+3. Install the client hooks (see Client hooks) and issue session grants directly with `grant` or on the grants page of the admin web.
 
 `migrate` applies the files `V{n}__*.sql` in order and records every attempt, with the SHA-256 of the file, in the table
 `schema_history`: one row for each attempt of a version, with the columns `version`, `attempt`, `script`, `digest`, `applied_at` and
@@ -539,16 +533,11 @@ service user), and every owner operation is recorded with that user.
 | `token-generate` | `token-generate <name> [--print] [--copy-to=<name>]` | store a random token (32 bytes from `SecureRandom`) as a secret; an existing secret is kept; `--print` shows a token that was just created, once; `--copy-to` stores the same token under a second name, once |
 | `migrate` | `migrate [--owner-account=<account>] [--app-account=<account>] [--stdin]` | apply the pending schema files, as the DDL account when `--owner-account` is given (its password is typed, or with `--stdin` read from standard input, and not stored), and then the grants of `dml-grants.sql` to the application account |
 | `setup` | `setup [--owner-account=<account>] [--app-account=<account>] [--stdin]` | the first setup: migrate as `migrate` does, check that the application account can use the schema (exit code `3` and the missing step when it cannot), add the seed codes that are missing (a code that exists is never changed) and compare the seed with the database by counts and digest; running it again changes nothing |
-| `key-register` | `key-register <author> <public-key-or-block> <fingerprint> [--replace=<current-fingerprint>]` | bind the public key a session printed to its author; a live key is replaced only with `--replace` |
-| `key-revoke` | `key-revoke <author> --fingerprint=<fingerprint>` | close the live key of an author |
-| `token-issue` | `token-issue <author> [--note=<text>] [--expires=<ISO-8601 with Z or an offset>]` | issue a standard HTTP `Bearer` session token (`lgt_...`) for an author, storing only its SHA-256 hash and prefix, and print the token once |
-| `token-revoke` | `token-revoke <id>` | revoke a session token by numeric id |
-| `token-list` | `token-list [<author>]` | list unrevoked session tokens of an author or of every author (never the secret) |
 | `passkey-code` | `passkey-code [--remove-existing]` | issue the one-time code that enrols a passkey of the owner in the admin web (shown once, valid 15 minutes, stored only as its hash; a new code ends the earlier unused one); `--remove-existing` closes every live passkey first, for an owner who lost them all |
 | `project-add` | `project-add <id> <code> <title>` | add a project |
 | `code-set` | `code-set <group> <code> <name-ko> [<description-ko>] [--name-en=<text>] [--description-en=<text>] [--sort=<n>] [--inactive] [--direction=<direction>]` | add or update a common code; `--direction` (`GIVEN` or `CANONICAL`) is for the group `RELATION_KIND` (see the `ledger_link` tool) |
 | `codes` | `codes [<group>]` | list the common codes |
-| `grant` | `grant <author> <project> <scope>... [--note=<text>] [--expires=<ISO-8601 with Z or an offset>]` | grant scopes on a project; the author needs a live session key or session token first |
+| `grant` | `grant <author> <project> <scope>... [--note=<text>] [--expires=<ISO-8601 with Z or an offset>]` | grant scopes on a project directly to an author (`<vendor>:<session-id>`) |
 | `revoke` | `revoke <author> [<project> [<scope>]]` | revoke live grants |
 | `grants` | `grants [<author>]` | list live grants |
 | `attachments-check` | `attachments-check [--purge-orphans]` | check the attachments against their files and keys: a file that no row names, and a file that `attachments-rekey` replaced, is moved to `orphans/` and never deleted; a file in `orphans/` whose row exists again is moved back; the report gives the counts and the ids (never a storage key or a path) of the attachments that are missing, damaged or pointed to by no history row, and the exit code is `1` when one is missing or damaged; a key file that is missing or a disk that cannot be read stops the check with that error and is never reported as a damaged file; `--purge-orphans` first deletes the files in `orphans/` that no row names (a file whose row exists again is not deleted, the check moves it back) and records the number in the audit trail |
@@ -571,20 +560,14 @@ the service account of the installation and never as root.
   `ledger.admin.token` into the login page of the application. With `oidc` the owner signs in with OpenID Connect, and the owner is **one e-mail address**
   (`ledger.admin.oidc.owner-email`, verified by the provider at `ledger.admin.oidc.issuer`); another address, or one the provider did not
   verify, is refused. Only one of the three is offered: with `oidc` or `passkey` the token form is absent and a posted token
-  finds no sign-in. The admin token `ledger.admin.token` also stays the bearer of the read-only JSON endpoints. Whichever sign-in
-  is chosen, a change is approved by a passkey, so a session opened with the token registers its first passkey with the one-time
-  code of `passkey-code`. The agents' token is refused, so an agent that holds the MCP token cannot grant itself
+  finds no sign-in. The admin token `ledger.admin.token` also stays the bearer of the read-only JSON endpoints. Once signed in, owner
+  changes apply directly under session and CSRF protection without per-action passkey re-approval. The agents' token is refused, so an agent that holds the MCP token cannot grant itself
   anything. Credential checks (passkey, one-time code, token) are slowed down once more than a budget of them arrive within a window
   (`ledger.admin.lockout.*`); nothing is ever locked, because a lock that anybody can trigger with wrong credentials locks the owner out as
   well. There is no limit per client either: the public reaches the services through the operator's reverse proxy on the same host, and
   the address that proxy forwards is a record of the request and not an identity (depending on the proxy, every user arrives as one
   address), so a lock by address would lock the owner with the attacker, and the personal edition, one person, has nobody to tell apart. A token
   made by `token-generate` (256 bits from `SecureRandom`) and the one-time code (100 bits) cannot be guessed, so a delay is all that is needed.
-- **Approval of every change by a passkey, whichever way you signed in.** Every change you make in the console (grants, session
-  keys, common codes, projects, the driver, closing a passkey) is approved with a passkey, with user verification: the page asks the
-  server for a challenge made from that very change and your session, the authenticator signs it, and the write goes with the
-  signature. A signature is good for that one change, once, for two minutes; one for another change or another session is refused.
-  Reading needs no approval. The commands of `ledger-cli` on the server are the owner's shell and need none.
 - **First passkey, another one, or a reset.** Run `ledger-cli passkey-code` on the server as the service account: it prints a
   one-time code (shown once, valid 15 minutes, stored only as its hash). On the login page type it under "Register a passkey"; that
   signs in an enrolment session (a quarter of an hour, it may register a passkey and nothing else), where "Register" creates the
@@ -598,9 +581,9 @@ the service account of the installation and never as root.
 - **Browser hardening.** Spring Security provides CSRF tokens, a `SameSite=Strict` session cookie that is `Secure` by default, the
   `Host` allow list and a Content Security Policy.
 - **Pages.** Overview (clickable KPI, attention and distribution drilldowns, and the state of the MCP server), projects, issues, specifications, tasks, criteria and history
-  (read only, with entity deep-links and JSON change diffs), attachments, common codes (searchable, with group and state filters and modal add, edit and deactivate/reactivate), grants (searchable session-centric cards with modal session connection, atomic per-project scope sync, bearer tokens with optional initial scopes and UTC expiry presets, and session keys), and the JDBC driver comparison page. Projects, grants and common codes keep their main views read-first and manage add, edit and revoke/deactivate actions in native modal dialogs with inline search bars. The console uses a 3-domain fixed sidebar with a keyboard-accessible mobile drawer, automatic and manual Light/Dark themes, and inline HTML form validation recovery (while `/driver` never echoes refused paths or class names). Times are sent as UTC and shown in the local
+  (read only, with entity deep-links and JSON change diffs), attachments, common codes (searchable, with group and state filters and modal add, edit and deactivate/reactivate), grants (searchable session-centric cards with 1-click modal session granting, atomic per-project scope sync, and UTC expiry presets), and the JDBC driver comparison page. Projects, grants and common codes keep their main views read-first and manage add, edit and revoke/deactivate actions in native modal dialogs with inline search bars. The console uses a 3-domain fixed sidebar with a keyboard-accessible mobile drawer, automatic and manual Light/Dark themes, and inline HTML form validation recovery (while `/driver` never echoes refused paths or class names). Times are sent as UTC and shown in the local
   time of the browser.
-- **Grants.** Sessions are grouped into per-author cards showing registered keys, bearer tokens and project scopes together. The owner connects a session in a modal (issuing a bearer token with optional initial project grants in one step, or pasting the public key a session printed and comparing its fingerprint before registration), adjusts all scopes of a project in one atomic sync, or revokes individual grants, tokens and keys through confirmation modals. A live key is replaced only on an explicit confirmation of that exact key.
+- **Grants.** Sessions are grouped into per-author cards showing project scopes directly. The owner grants project scopes to any session ID (`<vendor>:<session-id>`) in one modal with no key registration or per-session token issuance, adjusts all scopes of a project in one atomic sync, or revokes grants through confirmation modals.
 
 ## Client hooks
 
@@ -614,30 +597,23 @@ means. The plugin directories are in `clients/claude`, `clients/codex` and `clie
 needs a Java 25 runtime on the `PATH` of the client host; with no hook, or a failing hook, a write is refused with
 `HOST_ATTESTATION_REQUIRED`.
 
-The hook signs only the thirteen write tools and five attachment tools, named `mcp__<server>__ledger_<op>` or `mcp__<server>__<server>_ledger_<op>`
-(Codex Apps: `mcp__codex_apps__app_<app>_ledger_<op>`). The value of `_hostAttestation` is
-`ala3.<author>.<tool>.<operation key>.<arguments digest>.<issued at>.<signature>`: an Ed25519 signature over the author, the tool, the
-`operationKey` of the call (empty for `ledger_whoami` and the attachment tools), the SHA-256 of the RFC 8785 canonical form of the arguments (without
-`_hostAttestation`; a batch: every operation, its content, its order and the key of the batch) and the time. The hook reads the
-`operationKey` from the arguments the model sent and never makes one up; a call without one is refused by the server. A captured token
-cannot carry other content.
+The hook stamps only the thirteen write tools and five attachment tools, named `mcp__<server>__ledger_<op>` or `mcp__<server>__<server>_ledger_<op>`
+(Codex Apps: `mcp__codex_apps__app_<app>_ledger_<op>`). The value of `_hostAttestation` is `<vendor>:<session-id>` (for example
+`claude:1f2e3d4c` or `codex:9a8b7c6d`). If the model supplies `_hostAttestation` itself, the hook refuses the call (`RESERVED_FIELD`).
 
-- The hook keeps one Ed25519 key per MCP server name and author in an owner-only folder: `~/.agent-ledger-mcp/session-keys`, or the
-  absolute path in `LEDGER_HOOK_KEY_DIR`. A signature made for one server never verifies on another. For Codex Apps the server name
-  is `codex_apps.<app>`.
 - The resident program is started by the first call and needs no installation step: when the address file is missing, names a process
   that is gone (the process id and the start time must both match, so a reused id is not taken for it) or does not answer, the client
   starts `java -jar` of a copy of the program, and only one starts even when several calls arrive together (a lock on the state
   folder; the program holds a second lock of its own). The first call takes about a second, the later ones about a tenth of a second
   (measurements in the release notes). The program keeps running after the call and ends by itself after 15 minutes without a call
   (`LEDGER_HOOK_RESIDENT_IDLE_TIMEOUT`, an ISO-8601 duration such as `PT30M`), or with `java -jar ledger-client-hook.jar stop`.
-- There is one resident program per key folder. Its state folder, `~/.agent-ledger-mcp/resident/<id>/`, holds the address file (the port,
+- Its state folder, `~/.veridger/resident/<id>/`, holds the address file (the port,
   the process id and start time, the build, and a secret that is new for every start), the two lock files and `resident.log`, which
   has the output of the program and never a secret. The program listens on `127.0.0.1` only, at a port that the system chooses. Every
   request must carry the secret of the address file; it is compared in constant time and a request without it is refused with 401, so
   another account of the same PC cannot call the program. The folder and its files are owner-only (POSIX permissions, or an ACL for
   the owner, chosen by what the file system can do).
-- The program runs from a copy in `~/.agent-ledger-mcp/resident-runtime/<build>/`, so a running program never locks the jars of the
+- The program runs from a copy in `~/.veridger/resident-runtime/<build>/`, so a running program never locks the jars of the
   plugin folder: the plugin can be updated or removed at any time. A client whose program file is another build (an updated plugin)
   asks the running program to end, ends it if it does not, and starts the new one.
 - If the program cannot be reached or started, the call fails the way an unanswerable call always failed: exit code 2 and, on the
@@ -645,15 +621,11 @@ cannot carry other content.
   `HOST_ATTESTATION_REQUIRED`. Read `resident.log` in the state folder; check that `ledger-client-hook.jar` and
   `ledger-hook-resident.jar` are in the same folder and that `java` is JDK 25 or later. `java -jar ledger-client-hook.jar stop` ends a
   program that behaves oddly; the next call starts a new one. The folders `resident` and `resident-runtime` can be deleted while no
-  program runs; the keys are in `session-keys` and are not touched.
-- `java -jar ledger-client-hook.jar session-key <server> <author>` prints the server, the author, the public key and its fingerprint.
-  The owner compares the fingerprint and registers the key on that server with `ledger-cli key-register` or on the grants page.
-- The server verifies the signature, the tool, the operation key, the arguments and the time (`ledger.attestation.window`) before it
-  looks at any grant. A missing key and a wrong signature are the same refusal, `ATTESTATION_SIGNATURE_INVALID`; a different
-  content is `ATTESTATION_BINDING_MISMATCH`.
-- Limits: another process of the same operating system user can read the key file, so isolation inside one user needs separate
-  accounts. The hook creates the folder and the key file owner-only and reads an existing one whoever may reach it or owns it (a
-  link is followed): the personal edition trusts the whole PC. A directory where the key file belongs, and an empty key file, are refused.
+  program runs.
+- The server validates the `_hostAttestation` author format (`HOST_ATTESTATION_REQUIRED`, `AUTHOR_ID_FORMAT`) before checking the
+  session's live grants (`session_grant`).
+- Limits: network-level authentication relies on `ledger.mcp.token` (plus `Host` and `Origin` allow lists), while the client hook
+  prevents the model from spoofing `_hostAttestation` locally. Keep `ledger.mcp.token` restricted to trusted owner hosts.
 
 ## Upgrading from 1.x
 
@@ -740,7 +712,7 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
    it to the tool, which runs as the service user:
 
    ```sh
-   sudo sh -c 'runuser -u agent-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar import-secrets-1x --replace --stdin < /etc/pg-ledger-mcp/env'
+   sudo sh -c 'runuser -u veridger -- java -jar dist/ledger-migrate-1x.jar import-secrets-1x --replace --stdin < /etc/pg-ledger-mcp/env'
    ```
 
    - **What it reads.** The 1.x environment file, given with `--stdin` (as above) or with `--env=<file>` for an operator who can read the file as the
@@ -758,22 +730,21 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
    The services read their secrets at start, so restart the two services of 2.0:
 
    ```sh
-   sudo systemctl restart agent-ledger-mcp agent-ledger-mcp-admin
+   sudo systemctl restart veridger veridger-admin
    ```
 
 6. **Import the ledger with `import-1x`.** Store the password of a read-only account of the 1.x database as the service user, then run the import
    as the DDL account; the settings of the 1.x source are described in the table below:
 
    ```sh
-   sudo runuser -u agent-ledger-mcp -- java -jar dist/ledger-cli.jar secret-set ledger.import.source.password
-   sudo runuser -u agent-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar import-1x --owner-account=<ddl-account> --ledger.import.source.url=<jdbc-url> --ledger.import.source.username=<account>
+   sudo runuser -u veridger -- java -jar dist/ledger-cli.jar secret-set ledger.import.source.password
+   sudo runuser -u veridger -- java -jar dist/ledger-migrate-1x.jar import-1x --owner-account=<ddl-account> --ledger.import.source.url=<jdbc-url> --ledger.import.source.username=<account>
    ```
 
    The import writes the whole ledger; `--owner-account=<account>` runs it as the DDL account, whose
    password is typed with hidden input and is not stored (`--stdin` takes it from the first line of standard input instead and needs `--owner-account`).
    It reads the 1.x schema read only and writes the new schema in one transaction; see What the import does below.
-7. **Register the session keys.** The grants of 1.x are copied without a session key. Every author registers a session key with
-   `ledger-cli key-register`; then its grants work.
+7. **Review imported grants.** The grants of 1.x are copied directly and work as soon as the client hook stamps the session author id.
 8. **Check.** Run `ledger-cli mcp-check --url=<its public URL>` and `import-1x --verify-only` (it needs the settings of the 1.x source and
    changes nothing), and run `ledger-cli passkey-code` and register your first passkey in the admin web (the admin token of the installer signs a
    browser in only with `ledger.admin.sign-in=token`; the default is `passkey`). Clients: the tools `execute_sql_reader` and `search_objects_reader` were removed; the read tools replace them. The results of the write
@@ -791,7 +762,7 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
     and run `retire-1x` without options:
 
     ```sh
-    sudo runuser -u agent-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar retire-1x --ledger.import.source.username=<owner-account>
+    sudo runuser -u veridger -- java -jar dist/ledger-migrate-1x.jar retire-1x --ledger.import.source.username=<owner-account>
     ```
 
     It checks that the ledger of 2.0 still holds what 1.x held (2.0 may have been used since: the rows it added and the counters it
@@ -801,7 +772,7 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
     the SHA-256 of that list, and changes nothing. Read the list, then run `retire-1x --confirm=<sha256> --backup-tested`:
 
     ```sh
-    sudo runuser -u agent-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar retire-1x --ledger.import.source.username=<owner-account> --confirm=<sha256> --backup-tested
+    sudo runuser -u veridger -- java -jar dist/ledger-migrate-1x.jar retire-1x --ledger.import.source.username=<owner-account> --confirm=<sha256> --backup-tested
     ```
 
     The command cannot check the backup, so `--backup-tested` is your statement that the 1.x backup was made and its restore was tested. It drops
@@ -849,7 +820,8 @@ directory or give them on the command line as `--name=value`; the password is a 
 **Upgrade note: the admin web sign-in.** If you signed in to the admin web with OpenID Connect, say so: set `ledger.admin.sign-in=oidc`
 (an installation with `ledger.admin.oidc.*` settings and no `ledger.admin.sign-in` is refused at start with a message that names it),
 and give the one e-mail address of the owner, `ledger.admin.oidc.owner-email`, with the issuer it counts for,
-`ledger.admin.oidc.issuer`. Whichever way you sign in, register a passkey with `passkey-code`: it approves every change.
+`ledger.admin.oidc.issuer`. If you sign in with a passkey (`ledger.admin.sign-in=passkey`, the default), enroll it once with
+`passkey-code`; once signed in, owner mutations are protected by the session and CSRF token without per-action passkey re-approval.
 
 ## Build and test
 
@@ -930,7 +902,7 @@ together with the properties above.
 
 ## License
 
-From version 2.0, agent-ledger-mcp is licensed under the GNU Affero General Public License v3.0 or (at your option) any later version (`AGPL-3.0-or-later`); see [LICENSE](LICENSE), [ADDITIONAL-TERMS.md](ADDITIONAL-TERMS.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+From version 2.0, veridger is licensed under the GNU Affero General Public License v3.0 or (at your option) any later version (`AGPL-3.0-or-later`); see [LICENSE](LICENSE), [ADDITIONAL-TERMS.md](ADDITIONAL-TERMS.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 Copyright (C) 2026 Jaeseong Song
 

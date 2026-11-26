@@ -1,5 +1,5 @@
 {
-  "name": "agent-ledger-mcp",
-  "version": "3.0.0",
+  "name": "veridger",
+  "version": "4.0.0",
   "description": "Stamp ledger MCP calls with the Claude host session id"
 }

@@ -99,7 +99,7 @@
       </div>
       <p class="alert alert-danger modal-status" data-modal-status role="alert" tabindex="-1" hidden></p>
 
-      <form method="post" th:action="@{/projects}" data-approve class="form-wide">
+      <form method="post" th:action="@{/projects}" class="form-wide">
         <div class="form-grid">
           <div class="form-field">
             <label for="id" th:text="#{projects.id.label}">Project id</label>
@@ -115,7 +115,7 @@
           </div>
         </div>
         <div class="modal-footer">
-          <th:block th:replace="~{fragments :: approveHint}"></th:block>
+          <span class="muted"></span>
           <div class="modal-footer-actions">
             <button type="button" class="secondary" data-modal-close th:text="#{common.cancel}">Cancel</button>
             <button type="submit" th:text="#{projects.submit}">Add</button>

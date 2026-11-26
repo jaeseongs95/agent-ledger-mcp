@@ -1,8 +1,7 @@
 "use strict";
 // The passkey ceremonies of the admin pages, with the browser's WebAuthn API and the endpoints of Spring Security's WebAuthn
-// support (/webauthn/authenticate/options, /login/webauthn, /webauthn/register/options, /webauthn/register) and of this
-// application (/approval/intent). Every byte string travels as base64url. The script is a file of the application: the content
-// security policy forbids inline script.
+// support (/webauthn/authenticate/options, /login/webauthn, /webauthn/register/options, /webauthn/register).
+// Every byte string travels as base64url. The script is a file of the application: the content security policy forbids inline script.
 (() => {
   const b64 = {
     encode(buffer) {
@@ -24,33 +23,14 @@
   };
   const status = document.getElementById("passkey-status");
 
-  function modalStatusFor(form) {
-    if (!form) { return null; }
-    const dialog = form.closest("dialog");
-    return dialog ? dialog.querySelector("[data-modal-status]") : null;
-  }
-
-  function clearStatus(contextForm) {
-    const modalStatus = modalStatusFor(contextForm);
-    if (modalStatus) {
-      modalStatus.hidden = true;
-      modalStatus.textContent = "";
-    }
+  function clearStatus() {
     if (!status) { return; }
     status.hidden = true;
     status.textContent = "";
   }
 
-  function show(message, contextForm) {
+  function show(message) {
     const resolved = message || (status ? status.dataset.failed : "Failed");
-    const modalStatus = modalStatusFor(contextForm);
-    if (modalStatus) {
-      modalStatus.textContent = resolved;
-      modalStatus.hidden = false;
-      modalStatus.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      modalStatus.focus();
-      return;
-    }
     if (!status) { return; }
     status.textContent = resolved;
     status.hidden = false;
@@ -146,44 +126,9 @@
     window.location.href = "/passkeys?success";
   }
 
-  async function approve(form) {
-    const fields = [];
-    new FormData(form).forEach((value, name) => {
-      if (name !== "_csrf" && name !== "approval") { fields.push({ name, value: String(value) }); }
-    });
-    const options = await post("/approval/intent", {
-      method: "POST",
-      path: new URL(form.action, window.location.href).pathname,
-      fields
-    });
-    const credential = await navigator.credentials.get({
-      publicKey: {
-        challenge: b64.decode(options.challenge),
-        rpId: options.rpId,
-        allowCredentials: options.allowCredentials.map((id) => ({ type: "public-key", id: b64.decode(id) })),
-        userVerification: options.userVerification,
-        timeout: options.timeout
-      }
-    });
-    const response = credential.response;
-    let field = form.querySelector('input[name="approval"]');
-    if (!field) {
-      field = document.createElement("input");
-      field.type = "hidden";
-      field.name = "approval";
-      form.appendChild(field);
-    }
-    field.value = JSON.stringify({
-      credentialId: b64.encode(credential.rawId),
-      authenticatorData: b64.encode(response.authenticatorData),
-      clientDataJson: b64.encode(response.clientDataJSON),
-      signature: b64.encode(response.signature)
-    });
-  }
-
-  async function withBusy(button, task, busyLabel, contextForm) {
+  async function withBusy(button, task, busyLabel) {
     if (button && button.dataset.busy === "true") { return; }
-    clearStatus(contextForm);
+    clearStatus();
     const originalText = button ? button.textContent : null;
     if (button) {
       button.dataset.busy = "true";
@@ -195,7 +140,7 @@
       await task();
     } catch (failure) {
       console.error(failure);
-      show(friendlyMessage(failure), contextForm);
+      show(friendlyMessage(failure));
       if (button) {
         button.dataset.busy = "false";
         button.disabled = false;
@@ -207,8 +152,7 @@
 
   const signInButton = document.getElementById("passkey-signin");
   const registerButton = document.getElementById("passkey-register");
-  const approveForms = document.querySelectorAll("form[data-approve]");
-  const needsPasskey = Boolean(signInButton || registerButton || approveForms.length > 0);
+  const needsPasskey = Boolean(signInButton || registerButton);
 
   if (!window.PublicKeyCredential) {
     if (needsPasskey) {
@@ -218,7 +162,6 @@
   }
 
   const busyText = status ? status.dataset.busy : null;
-  const submittingText = status ? status.dataset.submitting : null;
 
   if (signInButton) {
     signInButton.addEventListener("click", () => withBusy(signInButton, signIn, busyText));
@@ -229,15 +172,4 @@
       return register(labelInput ? labelInput.value : "");
     }, busyText));
   }
-  approveForms.forEach((form) => {
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      const submitBtn = event.submitter || form.querySelector('button[type="submit"]');
-      withBusy(submitBtn, async () => {
-        await approve(form);
-        if (submitBtn && submittingText) { submitBtn.textContent = submittingText; }
-        form.submit();
-      }, busyText, form);
-    });
-  });
 })();
