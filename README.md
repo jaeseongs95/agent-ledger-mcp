@@ -13,7 +13,7 @@ choice: the installers write no proxy configuration and order no certificate.
 
 Version 2.0.0 is a rewrite in Java 25 and Spring Boot with its own tool contract (every write tool takes a required `operationKey`,
 every response uses the `ApiResult.v1` envelope, and no argument of an earlier version is accepted next to the new ones); what changed
-for a client is stated in the [release notes](docs/release-notes/2.0.0.md); the format of release notes is in
+for a client is stated in the release notes ([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md)); the format of release notes is in
 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md).
 
 ## Contents
@@ -597,8 +597,8 @@ the service account of the installation and never as root.
   is a row of its own).
 - **Browser hardening.** Spring Security provides CSRF tokens, a `SameSite=Strict` session cookie that is `Secure` by default, the
   `Host` allow list and a Content Security Policy.
-- **Pages.** Overview (attention counts and the state of the MCP server), projects, issues, specifications, tasks, criteria and history
-  (read only), attachments, common codes, grants with their session keys and session tokens, and the JDBC driver page. Times are sent as UTC and shown in the local
+- **Pages.** Overview (clickable KPI, attention and distribution drilldowns, and the state of the MCP server), projects, issues, specifications, tasks, criteria and history
+  (read only, with entity deep-links and JSON change diffs), attachments, common codes (with group filters and edit prefill), grants (3-tab hub for session grants, session tokens with UTC expiry presets, and session keys), and the JDBC driver comparison page. The console uses a 3-domain fixed sidebar with a keyboard-accessible mobile drawer, automatic and manual Light/Dark themes, and inline HTML form validation recovery (while `/driver` never echoes refused paths or class names). Times are sent as UTC and shown in the local
   time of the browser.
 - **Grants.** The owner pastes the public key a session printed, compares the fingerprint shown with the one the session showed, and
   only then the key is registered and the grants are issued. A live key is replaced only on an explicit confirmation of that exact key.
