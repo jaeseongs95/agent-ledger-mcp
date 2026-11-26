@@ -115,6 +115,15 @@ class DeployGoldenTest {
         return text.replace("veridger", "pg-ledger-mcp");
     }
 
+    /**
+     * 4.1.0: {@code ServiceSettings.admin} emits {@code ledger.admin.update.directory} pointing to {@code <etc>/update} so
+     * the Admin Web updater works on Windows and custom-named Linux instances. Stripping those two lines here proves nothing
+     * else in the rendered files changed while the dedicated assertion below checks that the setting is present.
+     */
+    private static String withoutUpdateDirectory(String content) {
+        return content.replaceAll("(?m)^    update:\\n      directory: '[^\\n]*/update'\\n", "");
+    }
+
     /** The SHA-256 of path and content of every rendered file, in the order the renderer gives them. */
     private static String digest(List<RenderedFile> files) {
         try {
@@ -122,7 +131,8 @@ class DeployGoldenTest {
             for (RenderedFile file : files) {
                 digest.update((withOldInstanceName(file.path()) + "\u0000"
                         + withOldInstanceName(withSingleSecretsTree(
-                                withOldOwnersExample(withRemovedLongTextLine(withoutAttachments(file.content())))))
+                                withOldOwnersExample(withRemovedLongTextLine(
+                                        withoutUpdateDirectory(withoutAttachments(file.content()))))))
                         + "\u0000")
                         .getBytes(StandardCharsets.UTF_8));
             }
@@ -151,6 +161,12 @@ class DeployGoldenTest {
         targets().forEach((name, values) -> actual.put(name, digest(DeployTestBeans.render(values))));
 
         assertThat(actual).isEqualTo(BEFORE_SETUP);
+        targets().forEach((name, values) -> {
+            RenderedFile adminYaml = DeployTestBeans.render(values).stream()
+                    .filter(f -> f.path().endsWith("/admin.yaml")).findFirst().orElseThrow();
+            assertThat(adminYaml.content()).as("update.directory in %s", name)
+                    .contains("    update:\n      directory: '").contains("/update'\n");
+        });
     }
 
     @Test
@@ -168,6 +184,12 @@ class DeployGoldenTest {
                             .render(context.getBean(DeployInputReader.class).parameters(values)))));
 
                     assertThat(actual).isEqualTo(BEFORE_SETUP);
+        targets().forEach((name, values) -> {
+            RenderedFile adminYaml = DeployTestBeans.render(values).stream()
+                    .filter(f -> f.path().endsWith("/admin.yaml")).findFirst().orElseThrow();
+            assertThat(adminYaml.content()).as("update.directory in %s", name)
+                    .contains("    update:\n      directory: '").contains("/update'\n");
+        });
                 });
     }
 

@@ -25,6 +25,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.veridger.admin.console.McpStatus;
 import org.veridger.admin.support.AdminTest;
 import org.veridger.admin.support.Browser;
+import org.veridger.admin.update.UpdateService;
+import org.veridger.admin.update.UpdateStatus;
 import org.veridger.domain.rule.AttentionKind;
 import org.veridger.domain.rule.CodeDirection;
 import org.veridger.domain.rule.RelationEnd;
@@ -89,6 +91,12 @@ class MessagesTest {
         }
         for (CodeDirection direction : CodeDirection.values()) {
             names.add("codes.direction." + direction.token());
+        }
+        for (UpdateService.Availability availability : UpdateService.Availability.values()) {
+            names.add("updates.availability." + availability);
+        }
+        for (UpdateStatus.State state : UpdateStatus.State.values()) {
+            names.add("updates.queue." + state);
         }
         List<String> missing = new ArrayList<>();
         for (String file : List.of("admin.properties", "admin_ko.properties")) {

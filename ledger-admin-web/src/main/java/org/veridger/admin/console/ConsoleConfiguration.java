@@ -6,9 +6,11 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 import org.veridger.admin.app.LedgerAdminProperties;
 import org.veridger.admin.passkey.PasskeyConfiguration;
+import org.veridger.admin.update.UpdateController;
 import org.veridger.application.LedgerApplicationConfiguration;
 import org.veridger.database.driver.DriverRegisteredCondition;
 import org.springframework.boot.context.TypeExcludeFilter;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Conditional;
@@ -28,8 +30,9 @@ import org.springframework.web.client.RestClient;
  */
 @Configuration(proxyBeanMethods = false)
 @Conditional(DriverRegisteredCondition.class)
+@EnableConfigurationProperties(GrantsUiProperties.class)
 @Import({LedgerApplicationConfiguration.class, PasskeyConfiguration.class})
-@ComponentScan(basePackageClasses = ConsoleConfiguration.class, excludeFilters = @ComponentScan.Filter(
+@ComponentScan(basePackageClasses = {ConsoleConfiguration.class, UpdateController.class}, excludeFilters = @ComponentScan.Filter(
         type = FilterType.CUSTOM, classes = TypeExcludeFilter.class))
 public class ConsoleConfiguration {
 
@@ -42,6 +45,20 @@ public class ConsoleConfiguration {
         Duration timeout = properties.mcp().timeout();
         JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(
                 HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).connectTimeout(timeout).build());
+        factory.setReadTimeout(timeout);
+        return builder.requestFactory(factory).build();
+    }
+
+    /**
+     * Shared {@link RestClient} bean for release checks and artifact downloads. Redirects are disabled so every redirect
+     * hop can be validated against the configured download-host allowlist before following it.
+     */
+    @Bean("updateRestClient")
+    public static RestClient updateRestClient(LedgerAdminProperties properties, RestClient.Builder builder) {
+        Duration timeout = properties.update().timeout();
+        JdkClientHttpRequestFactory factory = new JdkClientHttpRequestFactory(
+                HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
+                        .followRedirects(HttpClient.Redirect.NEVER).connectTimeout(timeout).build());
         factory.setReadTimeout(timeout);
         return builder.requestFactory(factory).build();
     }

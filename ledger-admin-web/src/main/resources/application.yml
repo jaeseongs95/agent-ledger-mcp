@@ -54,3 +54,10 @@ management:
   endpoint:
     health:
       show-details: never
+ledger:
+  admin:
+    grants:
+      known-hosts:
+        - codex
+        - claude
+        - gemini

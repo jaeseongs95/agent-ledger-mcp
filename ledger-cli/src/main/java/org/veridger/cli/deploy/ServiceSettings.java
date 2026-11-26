@@ -52,6 +52,8 @@ final class ServiceSettings {
         Text.line(yaml, "    driver-directory: " + Text.quoted(p.layout().etc() + "/drivers"));
         Text.line(yaml, "    mcp:");
         Text.line(yaml, "      health-url: " + Text.quoted("http://127.0.0.1:" + p.mcpPort() + "/healthz"));
+        Text.line(yaml, "    update:");
+        Text.line(yaml, "      directory: " + Text.quoted(p.layout().etc() + "/update"));
         return yaml.toString();
     }
 

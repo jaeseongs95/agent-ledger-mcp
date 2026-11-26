@@ -1,108 +1,221 @@
 #!/bin/sh
-# deploy/install.sh: the installer of veridger 2.x for a Linux host (a Linux server). It is thin on purpose: it starts
-# only what Java cannot do (create the operating system user, switch to it, enable and restart the units) and
-# everything else is `java -jar ledger-cli.jar <command>`: render-deploy --check (every option, validated first), prepare-host
-# (directories with owner and mode, the jars and the driver copied, units, settings),
-# secret-set, token-generate, driver-register and setup (schema, ANSI GRANTs and the seed codes of the new ledger).
+# deploy/install.sh: the installer of veridger for a Linux host (a Linux server). It stays thin on purpose: it runs
+# only what Java cannot do (download verified release JARs when --jars is omitted, create the OS user, switch to it,
+# install the least-privilege systemd updater unit, and enable/restart the systemd units) and delegates validation,
+# directory setup, file modes, secrets (common, admin, mcp, tool), tokens, driver registration, and schema setup to
+# `java -jar ledger-cli.jar`.
 # Documentation it follows: Spring Boot, "Installing Spring Boot Applications" (a systemd unit in /etc/systemd/system,
-# `systemctl enable`): https://docs.spring.io/spring-boot/how-to/deployment/installing.html ; systemd.exec(5) (User=, the
-# sandboxing options of the rendered units).
-# One service user (named after the instance, default veridger, never root) runs the MCP server and the admin web: the
-# secrets are readable by it alone, so the accounts the agents run as cannot read them. The secrets are in one folder per use below
-# /etc/<name>/secrets (common, admin, mcp, tool) and each service imports only the folders it needs, so the MCP server has none of the
-# secrets of the admin web in its settings (one user runs both, so file permissions do not separate them). --name=<instance> gives an instance of
-# its own (services <name> and <name>-admin, /opt/<name>, /etc/<name>), so two can live on one host with their own ports; the
-# name is validated by Java (render-deploy --check) before anything is created. Two database accounts: the application account
-# (both servers and the owner commands) and the DDL account (setup and the grants; its password is typed and not stored).
-# Run as root: sudo deploy/install.sh --jars=<dir> --driver-jar=<file> --driver-class=<class> --owner-account=<account>
-#   --app-account=<account> --jdbc-url=<url> [--java=<path>] [the other options of render-deploy]
-# --java=<path> is the Java 25 runtime (default: the java on the PATH of root); the service user runs it too, so it is outside any home directory.
-# Both accounts are created beforehand with the DBMS's own tools. It installs no package and no database. A re-run is an
-# upgrade: jars, driver jar and files are replaced, the schema and the grants are applied again, the services are restarted;
-# secrets, tokens and data are never replaced. The Java 25 check is the JVM's: the jars are compiled for it and no other runtime loads them.
-# An installation of an earlier major version is moved with the separate tool ledger-migrate-1x (see the README, Upgrading); this script does not know it.
-# --stdin gives the passwords on standard input instead of the terminal (an installation without one), as docker login
-# --password-stdin does: first the password of the application account (read only while it is not stored), then the DDL one.
-# Both services listen on 127.0.0.1 only. Reaching them from outside (a reverse proxy, a certificate) is the operator's, with a tool
-# the operator chooses; --mcp-host=<name> and --admin-host=<name> name the one host name each service accepts in its Host check
-# besides 127.0.0.1 and localhost, which are always accepted.
+# `systemctl enable`): https://docs.spring.io/spring-boot/how-to/deployment/installing.html ; systemd.exec(5) and
+# systemd.path(5) (sandboxing and least-privilege file-triggered self-update).
+#
+# Non-interactive usage (fully backward-compatible):
+#   sudo deploy/install.sh --jars=<dir> --driver-jar=<file> --driver-class=<class> --owner-account=<account>
+#     --app-account=<account> --jdbc-url=<url> [--java=<path>] [--name=<instance>] [--stdin] [render-deploy options]
+#
+# One-stop convenience usage (auto-downloads & SHA-256 verifies release JARs when --jars is omitted, and prompts for
+# missing required values when running in an interactive terminal without --stdin):
+#   sudo sh install.sh [--version=latest|v4.1.0] [--repo=jaeseongs95/veridger]
+#
+# Passwords are never accepted on a command line: Java reads them hidden from the terminal or via --stdin.
+# A re-run is an upgrade: jars, driver jar, and unit files are replaced while secrets, tokens, and data are preserved.
+# An installation of an earlier major version is moved with the separate tool ledger-migrate-1x (see the README).
 set -eu
 umask 022
-# The options of the JVM, written once (the preset of ledger-cli, JvmPreset, writes the same ones into the units; a test compares them).
 JVM_OPTS=-Duser.timezone=UTC
 
 NAME=
 JAVA=
 JARS=
+VERSION=latest
+REPO=jaeseongs95/veridger
 DRIVER_JAR=
 DRIVER_CLASS=
 OWNER=
 APP_ACCOUNT=
+JDBC_URL=
 STDIN=
-# The address the hint at the end gives to mcp-check: only with --mcp-port, else mcp-check uses the install default port itself.
+MCP_PORT_VAL=
+ADMIN_PORT_VAL=
 MCP_URL=
+TMP_JARS=
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 die() { echo "install.sh: $*" >&2; exit 1; }
-# runuser: a Java process cannot become another user, so the commands that touch the secrets are started as the service user.
+cleanup() { [ -z "$TMP_JARS" ] || rm -rf "$TMP_JARS"; }
+trap cleanup EXIT INT TERM
+# runuser: a Java process cannot become another user, so commands that touch secrets run as the service user.
 as_svc() { runuser -u "$SVC" -- "$JAVA" $JVM_OPTS -jar "$LIB/ledger-cli.jar" --ledger.secrets.instance="$NAME" "$@"; }
 
-# The options read here are taken out; the rest (a JDBC URL, ports, host names) goes on to Java.
+prompt_if_empty() {
+  var_name=$1
+  label=$2
+  default_val=$3
+  eval "cur_val=\$$var_name"
+  [ -n "$cur_val" ] && return 0
+  if [ -n "$STDIN" ] || [ ! -t 0 ]; then
+    return 0
+  fi
+  if [ -n "$default_val" ]; then
+    printf "%s [%s]: " "$label" "$default_val"
+  else
+    printf "%s: " "$label"
+  fi
+  IFS= read -r answer
+  [ -n "$answer" ] || answer=$default_val
+  eval "$var_name=\$answer"
+}
+
+verify_sha256_entry() {
+  sums_file=$1
+  file_path=$2
+  file_name=$3
+  expected=$(awk -v target="$file_name" '
+    { sub(/\r$/, "") }
+    $0 ~ /^[0-9a-fA-F]{64}[[:space:]]+\*?[^[:space:]\/\\]+$/ {
+      fname = $2; sub(/^\*/, "", fname);
+      if (fname == target) { count++; val = tolower($1) }
+    }
+    END { if (count == 1) print val }
+  ' "$sums_file")
+  [ -n "$expected" ] || die "SHA256SUMS is missing a unique entry for $file_name"
+  actual=$(sha256sum "$file_path" | awk '{print tolower($1)}')
+  [ "$actual" = "$expected" ] || die "SHA-256 verification failed for $file_name"
+}
+
+download_release_jars() {
+  command -v curl >/dev/null 2>&1 || die "curl is required when --jars is omitted"
+  command -v sha256sum >/dev/null 2>&1 || die "sha256sum is required to verify downloaded release JARs"
+  printf '%s\n' "$REPO" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' || die "invalid --repo value"
+  if [ "$VERSION" = "latest" ]; then
+    BASE_URL="https://github.com/$REPO/releases/latest/download"
+  elif printf '%s\n' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+    BASE_URL="https://github.com/$REPO/releases/download/$VERSION"
+  else
+    die "invalid --version tag (expected latest or vX.Y.Z)"
+  fi
+  TMP_JARS=$(mktemp -d)
+  echo "install.sh: downloading Veridger release artifacts from $BASE_URL ..."
+  curl -fsSL --proto '=https' --tlsv1.2 "$BASE_URL/SHA256SUMS" -o "$TMP_JARS/SHA256SUMS" || die "failed to download SHA256SUMS from $BASE_URL"
+  for asset in ledger-cli.jar ledger-mcp-server.jar ledger-admin-web.jar; do
+    curl -fsSL --proto '=https' --tlsv1.2 "$BASE_URL/$asset" -o "$TMP_JARS/$asset" || die "failed to download $asset from $BASE_URL"
+    verify_sha256_entry "$TMP_JARS/SHA256SUMS" "$TMP_JARS/$asset" "$asset"
+  done
+  if curl -fsSL --proto '=https' --tlsv1.2 "$BASE_URL/veridger-updater.sh" -o "$TMP_JARS/veridger-updater.sh"; then
+    verify_sha256_entry "$TMP_JARS/SHA256SUMS" "$TMP_JARS/veridger-updater.sh" "veridger-updater.sh"
+  else
+    rm -f "$TMP_JARS/veridger-updater.sh"
+  fi
+  JARS=$TMP_JARS
+}
+
 for arg in "$@"; do
   shift
   case $arg in
     --name=*) NAME=${arg#*=}; set -- "$@" "$arg" ;;
     --java=*) JAVA=${arg#*=} ;;
     --jars=*) JARS=${arg#*=} ;;
+    --version=*) VERSION=${arg#*=} ;;
+    --repo=*) REPO=${arg#*=} ;;
     --driver-jar=*) DRIVER_JAR=${arg#*=} ;;
     --driver-class=*) DRIVER_CLASS=${arg#*=} ;;
     --owner-account=*) OWNER=${arg#*=} ;;
     --app-account=*) APP_ACCOUNT=${arg#*=}; set -- "$@" "$arg" ;;
-    --mcp-port=*) MCP_URL=" --url=http://127.0.0.1:${arg#*=}/mcp"; set -- "$@" "$arg" ;;
+    --jdbc-url=*) JDBC_URL=${arg#*=}; set -- "$@" "$arg" ;;
+    --mcp-port=*) MCP_PORT_VAL=${arg#*=}; MCP_URL=" --url=http://127.0.0.1:${arg#*=}/mcp"; set -- "$@" "$arg" ;;
+    --admin-port=*) ADMIN_PORT_VAL=${arg#*=}; set -- "$@" "$arg" ;;
     --stdin) STDIN=--stdin ;;
     *) set -- "$@" "$arg" ;;
   esac
 done
-for v in "$JARS" "$DRIVER_JAR" "$DRIVER_CLASS" "$OWNER" "$APP_ACCOUNT"; do [ -n "$v" ] || die "an option is missing: see the header of this file"; done
-# The Java runtime is --java=<path> (kept out of the options that go on: prepare-host and render-deploy get it once, below), else the
-# one on the PATH of root. The service user runs it too (the units and the commands below), so it must not be under a home directory.
+
 [ -n "$JAVA" ] || JAVA=$(command -v java) || die "java is not installed: give --java=<path> of a Java 25 runtime"
-# The default name is an install default of the seed bundle, the one place the defaults are written: Java tells it.
-# A command that failed, or a value of another form than an instance name (a letter first, letters, digits and hyphens, no hyphen last, at most
-# 23 characters), stops the installation: the output of a failed command is no name.
+[ -n "$JARS" ] || download_release_jars
+
+if [ -t 0 ] && [ -z "$STDIN" ]; then
+  prompt_if_empty JDBC_URL "JDBC URL (e.g. jdbc:postgresql://127.0.0.1:5432/veridger)" ""
+  prompt_if_empty DRIVER_JAR "Path to JDBC driver JAR" ""
+  prompt_if_empty DRIVER_CLASS "JDBC driver class" "org.postgresql.Driver"
+  prompt_if_empty OWNER "Database DDL owner account" "ledger_owner"
+  prompt_if_empty APP_ACCOUNT "Database application account" "ledger_app"
+  case " $* " in
+    *" --jdbc-url="*) ;;
+    *) [ -n "$JDBC_URL" ] && set -- "$@" "--jdbc-url=$JDBC_URL" ;;
+  esac
+  case " $* " in
+    *" --app-account="*) ;;
+    *) [ -n "$APP_ACCOUNT" ] && set -- "$@" "--app-account=$APP_ACCOUNT" ;;
+  esac
+fi
+
+for v in "$JARS" "$DRIVER_JAR" "$DRIVER_CLASS" "$OWNER" "$APP_ACCOUNT"; do
+  [ -n "$v" ] || die "an option is missing: see the header of this file"
+done
+
 if [ -z "$NAME" ]; then
   NAME=$("$JAVA" $JVM_OPTS -jar "$JARS/ledger-cli.jar" --ledger.secrets.home=/nonexistent install-default instance-name) || die "install-default instance-name failed"
   case $NAME in
     ''|[!a-z]*|*[!a-z0-9-]*|*-|????????????????????????*) die "the install default instance-name is not an instance name" ;;
   esac
 fi
+[ -n "$MCP_PORT_VAL" ] || MCP_PORT_VAL=$("$JAVA" $JVM_OPTS -jar "$JARS/ledger-cli.jar" --ledger.secrets.home=/nonexistent install-default mcp-port) || die "install-default mcp-port failed"
+[ -n "$ADMIN_PORT_VAL" ] || ADMIN_PORT_VAL=$("$JAVA" $JVM_OPTS -jar "$JARS/ledger-cli.jar" --ledger.secrets.home=/nonexistent install-default admin-port) || die "install-default admin-port failed"
+
 SVC=$NAME
 ADMIN=$NAME-admin
+UPDATER=$NAME-updater
 LIB=/opt/$NAME
 ETC=/etc/$NAME
-# Every option, the name included, is validated by Java before anything is created.
+
 "$JAVA" $JVM_OPTS -jar "$JARS/ledger-cli.jar" --ledger.secrets.home=/nonexistent render-deploy --check --java="$JAVA" "$@"
 
 # useradd: Java has no API to create an operating system user. Status 9 is "name in use": the user of an earlier run stays.
 useradd --system --user-group --no-create-home --shell /usr/sbin/nologin "$SVC" || [ $? = 9 ]
-# runuser: the service user has to run the Java too; a runtime in a home directory (mode 0750) it cannot, so this stops before the directories, the jars and the secrets are made (the user itself is made first, the check runs as that user; a re-run finds it).
+# runuser: the service user must be able to execute Java; check right after creating the user and before creating anything else.
 runuser -u "$SVC" -- "$JAVA" -version >/dev/null 2>&1 || die "the service user $SVC cannot run $JAVA: use a Java 25 runtime outside the home directories that every account can read and execute"
-# Directories with owner and mode, the jars, the driver, the units and the settings: Java, as root.
 "$JAVA" $JVM_OPTS -jar "$JARS/ledger-cli.jar" --ledger.secrets.home=/nonexistent prepare-host --jars="$JARS" --driver-jar="$DRIVER_JAR" --java="$JAVA" "$@"
 
-# Secrets: typed with hidden input or generated, as the service user; an existing one is kept. The tokens are shown once.
 as_svc secret-set ledger.jdbc.password --if-absent $STDIN
 as_svc token-generate ledger.admin.token --print
-# The admin web must know the agents' token to refuse it: the same token under a second name.
 as_svc token-generate ledger.mcp.token --print --copy-to=ledger.admin.agent-token
-
-# The driver is registered after the secrets (a registered driver makes the commands connect).
 as_svc driver-register --jar="$ETC/drivers/${DRIVER_JAR##*/}" --class="$DRIVER_CLASS"
-
-# The first setup through the DDL account (schema, grants, the seed codes); its password is typed and not stored.
 as_svc setup --owner-account="$OWNER" --app-account="$APP_ACCOUNT" $STDIN
+
+# Install least-privilege host updater triggered by /etc/$NAME/update/request.properties (Admin Web Update button).
+UPDATER_SRC=
+if [ -f "$JARS/veridger-updater.sh" ]; then
+  UPDATER_SRC="$JARS/veridger-updater.sh"
+elif [ -f "$SCRIPT_DIR/veridger-updater.sh" ]; then
+  UPDATER_SRC="$SCRIPT_DIR/veridger-updater.sh"
+fi
+if [ -n "$UPDATER_SRC" ]; then
+  [ ! -L "$ETC" ] && [ ! -L "$ETC/update" ] || die "refused symbolic link at $ETC/update"
+  install -m 0755 -o root -g root "$UPDATER_SRC" "$LIB/veridger-updater.sh"
+  install -d -m 0700 -o "$SVC" -g "$SVC" "$ETC/update"
+  cat > "/etc/systemd/system/$UPDATER.service" <<EOF
+[Unit]
+Description=$NAME host updater (SHA-256 verified with automatic rollback)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=$LIB/veridger-updater.sh --name=$NAME --mcp-port=$MCP_PORT_VAL --admin-port=$ADMIN_PORT_VAL --repo=$REPO
+EOF
+  cat > "/etc/systemd/system/$UPDATER.path" <<EOF
+[Unit]
+Description=Watch $ETC/update/request.properties for Admin Web updates
+
+[Path]
+PathExists=$ETC/update/request.properties
+Unit=$UPDATER.service
+
+[Install]
+WantedBy=multi-user.target
+EOF
+fi
 
 # systemctl: the service manager of the host, Java does not talk to it.
 systemctl daemon-reload
 systemctl enable "$SVC" "$ADMIN"
+[ -f "/etc/systemd/system/$UPDATER.path" ] && systemctl enable --now "$UPDATER.path"
 systemctl restart "$SVC" "$ADMIN"
 echo "install.sh: done. Check the MCP server (it listens on 127.0.0.1) as the service user, which alone reads its token: runuser -u $SVC -- $JAVA $JVM_OPTS -jar $LIB/ledger-cli.jar --ledger.secrets.instance=$NAME mcp-check$MCP_URL"

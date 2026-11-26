@@ -44,6 +44,14 @@ public final class SessionAccessView {
     public record SessionCard(String author, List<ProjectGrantRow> projects, List<String> availableProjects,
             int totalGrantCount) {
 
+        public String host() {
+            return SessionAuthorInput.hostPart(author);
+        }
+
+        public String sessionId() {
+            return SessionAuthorInput.sessionPart(author);
+        }
+
         public String projectListText() {
             return projects.stream().map(ProjectGrantRow::project).collect(Collectors.joining(" "));
         }
@@ -54,6 +62,11 @@ public final class SessionAccessView {
 
         public String searchableText() {
             StringBuilder sb = new StringBuilder(author);
+            String host = host();
+            String sid = sessionId();
+            if (!host.isEmpty()) {
+                sb.append(' ').append(host).append(' ').append(sid);
+            }
             for (ProjectGrantRow row : projects) {
                 sb.append(' ').append(row.project());
                 if (row.note() != null && !row.note().isBlank()) {

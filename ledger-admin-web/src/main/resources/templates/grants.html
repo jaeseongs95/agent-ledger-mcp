@@ -83,7 +83,8 @@
         <div class="session-card-header">
           <div class="session-identity">
             <div class="session-name-row">
-              <code class="session-author-name" th:text="${s.author()}">codex:session-1</code>
+              <span th:if="${!s.host().isEmpty()}" class="badge badge-host" th:text="${s.host()}">codex</span>
+              <code class="session-author-name" th:text="${s.sessionId()}">session-1</code>
               <button type="button" class="ghost btn-sm" th:attr="data-copy=${s.author()}" th:text="#{common.copy}">Copy</button>
             </div>
             <div class="session-badges">
@@ -271,12 +272,31 @@
       <p class="alert alert-danger modal-status" data-modal-status role="alert" tabindex="-1" hidden></p>
 
       <form id="add-project-form" method="post" th:action="@{/grants/author}" class="form-wide" data-scope-picker>
-        <div class="form-grid">
+        <input id="enrolled-author" name="author" type="hidden"
+               th:value="${authorGrantForm != null ? authorGrantForm.resolvedAuthor() : ''}">
+        <div class="form-grid" th:with="split=${authorGrantForm != null ? authorGrantForm.split(knownHosts) : null}">
           <div class="form-field">
-            <label for="enrolled-author" th:text="#{grants.author.label}">Session ID (vendor:session)</label>
-            <input id="enrolled-author" name="author" type="text" list="known-authors-list" required autocomplete="off"
-                   th:placeholder="#{grants.author.placeholder}"
-                   th:value="${authorGrantForm != null} ? ${authorGrantForm.author()}">
+            <label for="enrolled-host" th:text="#{grants.host.label}">Host</label>
+            <select id="enrolled-host" name="host" data-host-select="enrolled" required>
+              <option th:each="h, hStat : ${knownHosts}" th:value="${h}" th:text="${h}"
+                      th:selected="${split != null ? split.hostSelect() == h : hStat.first}">host</option>
+              <option value="custom" th:text="#{grants.host.custom}"
+                      th:selected="${split != null and split.isCustom()}">Other (custom)</option>
+            </select>
+          </div>
+          <div class="form-field" id="enrolled-custom-host-wrap"
+               th:hidden="${split == null or !split.isCustom()}">
+            <label for="enrolled-custom-host" th:text="#{grants.host.customLabel}">Custom host</label>
+            <input id="enrolled-custom-host" name="customHost" type="text" autocomplete="off"
+                   th:placeholder="#{grants.host.customPlaceholder}"
+                   th:value="${split != null ? split.customHost() : ''}">
+          </div>
+          <div class="form-field">
+            <label for="enrolled-session-id" th:text="#{grants.sessionId.label}">Session ID</label>
+            <input id="enrolled-session-id" name="sessionId" type="text" required autocomplete="off"
+                   data-session-paste="enrolled"
+                   th:placeholder="#{grants.sessionId.placeholder}"
+                   th:value="${split != null ? split.sessionId() : ''}">
           </div>
           <div class="form-field">
             <label for="enrolled-project" th:text="#{common.project}">Project</label>
@@ -369,11 +389,31 @@
       </div>
 
       <form id="revoke-grant-form" method="post" th:action="@{/grants/revoke}" class="form-wide">
-        <div id="revoke-grant-fields">
+        <input id="revoke-author" name="author" type="hidden"
+               th:value="${revokeGrantForm != null ? revokeGrantForm.resolvedAuthor() : ''}">
+        <div id="revoke-grant-fields" th:with="rsplit=${revokeGrantForm != null ? revokeGrantForm.split(knownHosts) : null}">
           <div class="form-field">
-            <label for="revoke-author" th:text="#{grants.author.label}">Session ID (vendor:session)</label>
-            <input id="revoke-author" name="author" type="text" list="known-authors-list" required autocomplete="off"
-                   th:value="${revokeGrantForm != null} ? ${revokeGrantForm.author()}">
+            <label for="revoke-host" th:text="#{grants.host.label}">Host</label>
+            <select id="revoke-host" name="host" data-host-select="revoke">
+              <option th:each="h, hStat : ${knownHosts}" th:value="${h}" th:text="${h}"
+                      th:selected="${rsplit != null ? rsplit.hostSelect() == h : hStat.first}">host</option>
+              <option value="custom" th:text="#{grants.host.custom}"
+                      th:selected="${rsplit != null and rsplit.isCustom()}">Other (custom)</option>
+            </select>
+          </div>
+          <div class="form-field" id="revoke-custom-host-wrap"
+               th:hidden="${rsplit == null or !rsplit.isCustom()}">
+            <label for="revoke-custom-host" th:text="#{grants.host.customLabel}">Custom host</label>
+            <input id="revoke-custom-host" name="customHost" type="text" autocomplete="off"
+                   th:placeholder="#{grants.host.customPlaceholder}"
+                   th:value="${rsplit != null ? rsplit.customHost() : ''}">
+          </div>
+          <div class="form-field">
+            <label for="revoke-session-id" th:text="#{grants.sessionId.label}">Session ID</label>
+            <input id="revoke-session-id" name="sessionId" type="text" autocomplete="off"
+                   data-session-paste="revoke"
+                   th:placeholder="#{grants.sessionId.placeholder}"
+                   th:value="${rsplit != null ? rsplit.sessionId() : ''}">
           </div>
           <div class="form-field">
             <label for="revoke-project" th:text="#{grants.revoke.project}">Project (empty: all projects)</label>

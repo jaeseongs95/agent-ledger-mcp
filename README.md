@@ -13,7 +13,7 @@ choice: the installers write no proxy configuration and order no certificate.
 
 Version 2.0.0 is a rewrite in Java 25 and Spring Boot with its own tool contract (every write tool takes a required `operationKey`,
 every response uses the `ApiResult.v1` envelope, and no argument of an earlier version is accepted next to the new ones); what changed
-for a client is stated in the release notes ([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md), [4.0.0](docs/release-notes/4.0.0.md), [4.0.1](docs/release-notes/4.0.1.md)); the format of release notes is in
+for a client is stated in the release notes ([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md), [4.0.0](docs/release-notes/4.0.0.md), [4.0.1](docs/release-notes/4.0.1.md), [4.1.0](docs/release-notes/4.1.0.md)); the format of release notes is in
 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md).
 
 ## Contents
@@ -292,6 +292,9 @@ configuration tree (Spring Boot makes every file below a tree a property of the 
 | `ledger.admin.lockout.global-delay` | admin web | the wait before a credential is compared once the budget is used, default 1s; it slows down and never locks or refuses: the right credential always signs in |
 | `ledger.admin.mcp.health-url` | admin web | the `/healthz` URL of the MCP server shown on the overview; absent means not configured |
 | `ledger.admin.mcp.timeout` | admin web | timeout of that check, default 2s |
+| `ledger.admin.update.enabled` | admin web | enable the `/updates` release checker and staging button, default true |
+| `ledger.admin.update.repository` | admin web | GitHub repository (`owner/repo`) queried for releases, default `jaeseongs95/veridger` |
+| `ledger.admin.update.directory` | admin web | directory where verified update JARs and `request.properties` are staged for the host updater, default `/etc/veridger/update` |
 | `ledger.attachments.directory` | servers, CLI | where the files of the attachments are kept (the installer sets it to `<data folder>/attachments`); when it is not set the attachment tools are not registered |
 | `ledger.attachments.key-directory` | servers, CLI | where the key files are kept, outside `directory` (the start fails when it is inside); the installer sets it to `<settings folder>/attachment-keys`, beside the secret directory and not inside it |
 | `ledger.attachments.active-key-id` | servers, CLI | the key that new uploads are written with; `setup` writes it into `local.yaml`; the server does not start without the key file |
@@ -374,7 +377,9 @@ The options of `deploy/install.sh` are given as `--name=value`; the ones it does
 |---|---|
 | `--name=<name>` | the name of the instance, default `veridger`: lower-case letters, digits and hyphens, at most 23 characters, not ending with `-admin`; Java validates it before anything is created |
 | `--java=<path>` | the Java 25 runtime, default the `java` on the `PATH` of root; the service user runs it too, so it is at a path every account can execute (not under `/home`), which the script checks right after it creates the service user and before it makes anything else |
-| `--jars=<dir>` | the directory that holds the three jars |
+| `--jars=<dir>` | optional: the directory that holds the three jars; when omitted, the installer downloads the release jars and verifies `SHA256SUMS` automatically |
+| `--version=<tag>` | optional: release tag to download when `--jars` is omitted (`latest` or `vX.Y.Z`), default `latest` |
+| `--repo=<owner/name>` | optional: GitHub repository to download releases from when `--jars` is omitted, default `jaeseongs95/veridger` |
 | `--driver-jar=<file>` | the JDBC driver jar |
 | `--driver-class=<class>` | the driver class, which must accept the JDBC URL (for the PostgreSQL JDBC driver, `org.postgresql.Driver`) |
 | `--owner-account=<account>` | the DDL account (its password is asked for) |
@@ -408,7 +413,7 @@ see Upgrading from 1.x.
 sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<driver-class> --owner-account=<ddl-account> --app-account=<app-account> --jdbc-url=<jdbc-url>
 ```
 
-The installer enables and restarts the two services (`<name>` and `<name>-admin`, `veridger` and `veridger-admin` by default); check them with `systemctl status veridger veridger-admin`.
+The installer enables and restarts the two services (`<name>` and `<name>-admin`, `veridger` and `veridger-admin` by default) and installs the least-privilege host updater (`veridger-updater.sh` triggered by a systemd `.path` unit); check them with `systemctl status veridger veridger-admin`. When `--jars` and required options are omitted in an interactive terminal, `deploy/install.sh` downloads and verifies `SHA256SUMS` and prompts for missing values.
 
 ### Reaching the servers from outside
 
@@ -452,6 +457,8 @@ two loopback ports (see Reaching the servers from outside):
 ```bat
 deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <app-account> "<jdbc-url>" "veridger" "--mcp-host=<mcp-host> --admin-host=<admin-host>"
 ```
+
+For an interactive installation that downloads and verifies `SHA256SUMS` automatically, run `deploy\install.cmd --download`. The installer also registers the host updater script (`veridger-updater.cmd`) as a Scheduled Task for Admin Web updates.
 
 Everything lives in `C:\ProgramData\<name>`. Both services run as LocalService, restart after a failure (the WinSW
 configuration), and write their logs to the `logs` folder. `prepare-host` closes the folders to every account but SYSTEM and
@@ -583,7 +590,8 @@ the service account of the installation and never as root.
 - **Pages.** Overview (clickable KPI, attention and distribution drilldowns, and the state of the MCP server), projects, issues, specifications, tasks, criteria and history
   (read only, with entity deep-links and JSON change diffs), attachments, common codes (searchable, with group and state filters and modal add, edit and deactivate/reactivate), grants (searchable session-centric cards with 1-click modal session granting, atomic per-project scope sync, and UTC expiry presets), and the JDBC driver comparison page. Projects, grants and common codes keep their main views read-first and manage add, edit and revoke/deactivate actions in native modal dialogs with inline search bars. The console uses a 3-domain fixed sidebar with a keyboard-accessible mobile drawer, automatic and manual Light/Dark themes, and inline HTML form validation recovery (while `/driver` never echoes refused paths or class names). Times are sent as UTC and shown in the local
   time of the browser.
-- **Grants.** Sessions are grouped into per-author cards showing project scopes directly. The owner grants project scopes to any session ID (`<vendor>:<session-id>`) in one modal with no key registration or per-session token issuance, adjusts all scopes of a project in one atomic sync, or revokes grants through confirmation modals.
+- **Grants.** Sessions are grouped into per-author cards showing host badges and session IDs separately while preserving the stored `<vendor>:<session-id>` identifier. The owner selects the host (`codex`, `claude`, `gemini`, or custom) and enters the session ID in separate fields (pasting `<vendor>:<session-id>` auto-splits the fields) with no key registration or per-session token issuance, adjusts all scopes of a project in one atomic sync, or revokes grants through confirmation modals.
+- **Updates (`/updates`).** The owner can check GitHub Releases for newer versions and stage verified updates with one button. The admin web never executes OS commands directly: it downloads release JARs only from allowed hosts, verifies `SHA256SUMS`, blocks releases requiring schema migrations or major upgrades for manual `ledger-cli setup`, and stages `request.properties` inside `ledger.admin.update.directory` so `veridger-updater.sh` or `veridger-updater.cmd` replaces the JARs, restarts the services, checks `/healthz`, and rolls back automatically on failure.
 
 ## Client hooks
 
@@ -593,7 +601,7 @@ The hook is two programs that lie next to each other in the plugin folder. The h
 logging library) and, for every call, carries the input of the host over the loopback to the **resident program**,
 `ledger-hook-resident.jar` (a Spring Boot application), and prints what that answers. What the host sees did not change: the host
 JSON on the standard input, only the answer on the standard output (no JVM line, no log line), the exit codes and what a failure
-means. The plugin directories are in `clients/claude`, `clients/codex` and `clients/antigravity` (see the README of each). The hook
+means. The plugin directories are in `clients/claude`, `clients/codex` and `clients/antigravity` (see the README of each). For guided installation or upgrades, run `deploy/install-hook.sh` (Linux) or `deploy\install-hook.cmd` (Windows), which download and verify `SHA256SUMS` for both hook JARs, safely merge Codex, Claude, and Antigravity hook configurations with backups, and run a live smoke test. The hook
 needs a Java 25 runtime on the `PATH` of the client host; with no hook, or a failing hook, a write is refused with
 `HOST_ATTESTATION_REQUIRED`.
 

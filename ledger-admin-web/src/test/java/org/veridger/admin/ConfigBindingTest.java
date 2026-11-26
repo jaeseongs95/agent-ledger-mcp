@@ -196,4 +196,24 @@ class ConfigBindingTest {
             assertThat(properties.passkey().origins()).isEmpty();
         });
     }
+
+    @Test
+    @DisplayName("UPD-CFG-01: ledger.admin.update binds defaults and rejects invalid repository or API URL with userinfo")
+    void upd_settingsValidation() {
+        secrets().run(context -> {
+            LedgerAdminProperties.Update update = context.getBean(LedgerAdminProperties.class).update();
+            assertThat(update.enabled()).isTrue();
+            assertThat(update.repository()).isEqualTo("jaeseongs95/veridger");
+            assertThat(update.currentSchemaVersion()).isEqualTo(11);
+        });
+        secrets().withPropertyValues("ledger.admin.update.repository=bad repo name").run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(FailureText.of(context.getStartupFailure())).contains("ledger.admin.update.repository");
+        });
+        secrets().withPropertyValues("ledger.admin.update.api-base-url=https://user:pass@api.github.com").run(context -> {
+            assertThat(context).hasFailed();
+            assertThat(FailureText.of(context.getStartupFailure())).contains("ledger.admin.update.api-base-url")
+                    .doesNotContain("pass");
+        });
+    }
 }

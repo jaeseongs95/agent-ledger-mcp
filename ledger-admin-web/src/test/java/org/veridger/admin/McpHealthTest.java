@@ -61,7 +61,7 @@ class McpHealthTest {
                 org.springframework.util.unit.DataSize.ofKilobytes(64), Path.of("/unused"), Path.of("/unused-drivers"),
                 new LedgerAdminProperties.Lockout(Duration.ofSeconds(60), 50, Duration.ofSeconds(1)),
                 new LedgerAdminProperties.Oidc(null, null), new LedgerAdminProperties.Mcp(url, timeout), null,
-                new LedgerAdminProperties.Passkey(null, List.of(), "Ledger admin"));
+                new LedgerAdminProperties.Passkey(null, List.of(), "Ledger admin"), null);
     }
 
     private record Expected(Mode mode, McpStatus.State state, McpStatus.Reason reason, String text) {

@@ -41,7 +41,7 @@ class OwnerOidcUserServiceTest {
                 DataSize.ofKilobytes(64), java.nio.file.Path.of("/unused"), java.nio.file.Path.of("/unused-drivers"),
                 new LedgerAdminProperties.Lockout(Duration.ofSeconds(60), 50, Duration.ofSeconds(1)),
                 new LedgerAdminProperties.Oidc(issuer, email), new LedgerAdminProperties.Mcp(null, Duration.ofSeconds(2)),
-                SignInMethod.OIDC, new LedgerAdminProperties.Passkey(null, List.of(), "Ledger admin"));
+                SignInMethod.OIDC, new LedgerAdminProperties.Passkey(null, List.of(), "Ledger admin"), null);
     }
 
     private static OidcUserRequest request(String issuer, String subject, Consumer<OidcIdToken.Builder> tweak) {

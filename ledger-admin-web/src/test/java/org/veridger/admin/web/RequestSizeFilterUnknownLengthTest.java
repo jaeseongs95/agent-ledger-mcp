@@ -29,7 +29,7 @@ class RequestSizeFilterUnknownLengthTest {
     void r3F5_adminUnknownLengthWithoutTransferEncodingRefused() throws Exception {
         LedgerAdminProperties props = new LedgerAdminProperties("0123456789abcdef", "fedcba9876543210",
                 List.of("127.0.0.1"), DataSize.ofBytes(16), Path.of("/etc/veridger/jdbc-driver.yaml"),
-                Path.of("/etc/veridger/drivers"), null, null, null, null, null);
+                Path.of("/etc/veridger/drivers"), null, null, null, null, null, null);
         AtomicReference<Exception> resolved = new AtomicReference<>();
         HandlerExceptionResolver resolver = (req, res, handler, ex) -> {
             resolved.set(ex);
