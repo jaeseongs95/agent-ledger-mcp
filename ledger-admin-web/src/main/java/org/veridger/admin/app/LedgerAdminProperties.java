@@ -9,7 +9,9 @@ import jakarta.validation.constraints.NotEmpty;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
+import java.util.regex.Pattern;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.util.StringUtils;
@@ -51,7 +53,7 @@ public record LedgerAdminProperties(String token, String agentToken,
         @DefaultValue("/etc/veridger/jdbc-driver.yaml") Path driverFile,
         @DefaultValue("/etc/veridger/drivers") Path driverDirectory,
         @DefaultValue @Valid Lockout lockout, @DefaultValue @Valid Oidc oidc, @DefaultValue @Valid Mcp mcp,
-        SignInMethod signIn, @DefaultValue @Valid Passkey passkey) {
+        SignInMethod signIn, @DefaultValue @Valid Passkey passkey, @DefaultValue @Valid Update update) {
 
     /** The shortest token that is accepted as a secret. */
     public static final int MIN_TOKEN_LENGTH = 16;
@@ -66,7 +68,7 @@ public record LedgerAdminProperties(String token, String agentToken,
         return "LedgerAdminProperties[token=<hidden>, agentToken=<hidden>, allowedHosts=" + allowedHosts
                 + ", maxRequestSize=" + maxRequestSize + ", driverFile=" + driverFile + ", driverDirectory="
                 + driverDirectory + ", lockout=" + lockout + ", oidc=" + oidc + ", mcp=" + mcp + ", signIn=" + signIn
-                + ", passkey=" + passkey + "]";
+                + ", passkey=" + passkey + ", update=" + update + "]";
     }
 
     /** The maximum request size must be at least 1 byte and fit in an in-memory buffer check ({@code maxBytes + 1}). */
@@ -173,6 +175,54 @@ public record LedgerAdminProperties(String token, String agentToken,
             String scheme = url.getScheme();
             boolean web = "http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme);
             return web && StringUtils.hasText(url.getHost()) && url.getUserInfo() == null;
+        }
+    }
+
+    /**
+     * Settings for the least-privilege Admin Web self-updater ({@code ledger.admin.update.*}). The web process never
+     * executes OS commands; it verifies release artifacts against {@code SHA256SUMS} and stages an update request
+     * inside {@code directory} for the host's external updater unit or scheduled task.
+     */
+    public record Update(@DefaultValue("true") boolean enabled,
+            @DefaultValue("jaeseongs95/veridger") String repository,
+            @DefaultValue("https://api.github.com") String apiBaseUrl,
+            @DefaultValue({"github.com", "objects.githubusercontent.com",
+                    "release-assets.githubusercontent.com"}) @NotEmpty List<String> allowedDownloadHosts,
+            @DefaultValue("/etc/veridger/update") Path directory,
+            @DefaultValue("10s") Duration timeout,
+            @DefaultValue("4.1.0") String currentVersion,
+            @DefaultValue("11") @Min(1) int currentSchemaVersion) {
+
+        private static final Pattern REPOSITORY_PATTERN = Pattern.compile("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$");
+
+        public Update {
+            allowedDownloadHosts = allowedDownloadHosts.stream().map(h -> h.toLowerCase(Locale.ROOT)).toList();
+        }
+
+        @AssertTrue(message = "ledger.admin.update.repository must be of the form owner/repo")
+        public boolean isRepositoryUsable() {
+            return StringUtils.hasText(repository) && REPOSITORY_PATTERN.matcher(repository).matches();
+        }
+
+        @AssertTrue(message = "ledger.admin.update.api-base-url must be an http or https URL with a host and without "
+                + "user information")
+        public boolean isApiBaseUrlUsable() {
+            if (!StringUtils.hasText(apiBaseUrl)) {
+                return false;
+            }
+            try {
+                var url = UriComponentsBuilder.fromUriString(apiBaseUrl).build();
+                String scheme = url.getScheme();
+                boolean web = "http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme);
+                return web && StringUtils.hasText(url.getHost()) && url.getUserInfo() == null;
+            } catch (IllegalArgumentException invalid) {
+                return false;
+            }
+        }
+
+        @AssertTrue(message = "ledger.admin.update.timeout must be positive")
+        public boolean isTimeoutUsable() {
+            return timeout != null && !timeout.isNegative() && !timeout.isZero();
         }
     }
 }

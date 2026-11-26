@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}">
+<head th:replace="~{fragments :: head(#{updates.title})}"></head>
+<body>
+<th:block th:replace="~{fragments :: header('updates')}"></th:block>
+<main id="main">
+  <div class="page-header">
+    <div class="page-header-text">
+      <h1 th:text="#{updates.title}">Updates</h1>
+      <p class="hint" th:text="#{updates.subtitle}">Check GitHub Releases, verify SHA-256 checksums, and stage a safe server update with automatic rollback.</p>
+    </div>
+    <div class="page-header-actions action-btn-group">
+      <a th:href="@{/updates}" class="button secondary" th:text="#{updates.action.recheck}">Check again</a>
+      <button th:if="${update.canApply()}" type="button" data-modal-open="modal-apply-update"
+              th:text="#{updates.action.updateNow}">Update now</button>
+    </div>
+  </div>
+
+  <p th:if="${updateErrorKey != null}" class="alert alert-danger" role="alert" th:text="#{${updateErrorKey}}">Update failed.</p>
+
+  <section class="card" aria-labelledby="update-version-title">
+    <div class="card-header">
+      <h2 id="update-version-title" th:text="#{updates.section.version}">Version status</h2>
+      <span class="badge"
+            th:classappend="${update.availability().name() == 'UPDATE_AVAILABLE'} ? ' badge-OPEN' : (${update.availability().name() == 'SCHEMA_MIGRATION_REQUIRED' or update.availability().name() == 'CHECK_FAILED'} ? ' badge-DISPUTED' : ' badge-neutral')"
+            th:text="#{'updates.availability.' + ${update.availability()}}">Up to date</span>
+    </div>
+
+    <dl class="facts">
+      <dt th:text="#{updates.currentVersion}">Current version</dt>
+      <dd class="code" th:text="${update.currentVersion()}">4.1.0</dd>
+
+      <dt th:text="#{updates.latestVersion}">Latest release</dt>
+      <dd>
+        <span th:if="${!update.latestVersion().isEmpty()}" class="code" th:text="${update.latestVersion()}">4.1.0</span>
+        <span th:if="${update.latestVersion().isEmpty()}" class="muted">—</span>
+        <a th:if="${!update.releaseUrl().isEmpty()}" th:href="${update.releaseUrl()}" rel="noopener noreferrer"
+           class="button ghost btn-sm" th:text="#{updates.releaseNotes}">Release notes</a>
+      </dd>
+
+      <dt th:text="#{updates.repository}">Repository</dt>
+      <dd class="code" th:text="${update.repository()}">jaeseongs95/veridger</dd>
+
+      <dt th:text="#{updates.schemaVersion}">Database schema</dt>
+      <dd class="code" th:text="'V' + ${update.currentSchemaVersion()}">V11</dd>
+    </dl>
+
+    <div th:if="${update.availability().name() == 'SCHEMA_MIGRATION_REQUIRED'}" class="alert alert-warning" role="status">
+      <div class="alert-title" th:text="#{updates.schemaBlocked.title}">Manual upgrade required (schema change)</div>
+      <p th:text="#{updates.schemaBlocked.help}">The latest release requires a database schema migration or major upgrade. Run install.sh / install.cmd with your DDL account instead of one-click update.</p>
+    </div>
+
+    <p th:if="${update.availability().name() == 'CHECK_FAILED'}" class="alert alert-warning" role="status"
+       th:text="#{updates.checkFailed.help}">Could not reach the release feed. Check outbound HTTPS access or try again later.</p>
+
+    <p th:if="${update.availability().name() == 'DISABLED'}" class="hint"
+       th:text="#{updates.disabled.help}">Self-update checks are disabled in configuration (ledger.admin.update.enabled=false).</p>
+  </section>
+
+  <section class="card" aria-labelledby="update-queue-title">
+    <div class="card-header">
+      <h2 id="update-queue-title" th:text="#{updates.section.hostUpdater}">Host updater status</h2>
+      <span class="badge badge-neutral" th:text="#{'updates.queue.' + ${update.queueStatus().state()}}">Idle</span>
+    </div>
+
+    <p class="hint" th:text="#{updates.hostUpdater.explain}">The admin web verifies SHA256SUMS and stages JARs without elevated privileges. The host updater unit replaces the JARs, restarts both services, checks /healthz, and rolls back automatically on failure.</p>
+
+    <dl class="facts" th:if="${update.queueStatus().state().name() != 'IDLE'}">
+      <dt th:text="#{updates.queue.target}">Target version</dt>
+      <dd class="code" th:text="${update.queueStatus().targetVersion()}">4.1.1</dd>
+      <dt th:if="${!update.queueStatus().updatedAt().isEmpty()}" th:text="#{updates.queue.at}">Timestamp</dt>
+      <dd th:if="${!update.queueStatus().updatedAt().isEmpty()}" class="code" th:text="${update.queueStatus().updatedAt()}">2026-11-26T00:00:00Z</dd>
+      <dt th:if="${!update.queueStatus().detail().isEmpty()}" th:text="#{updates.queue.detail}">Detail</dt>
+      <dd th:if="${!update.queueStatus().detail().isEmpty()}" th:text="${update.queueStatus().detail()}">detail</dd>
+    </dl>
+  </section>
+
+  <dialog id="modal-apply-update" class="modal-dialog modal-dialog-sm" aria-labelledby="modal-apply-update-title">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <h2 id="modal-apply-update-title" th:text="#{updates.modal.title}">Confirm server update</h2>
+        <p class="hint" th:text="#{updates.modal.help}">Veridger will download the release JARs, verify SHA256SUMS, and trigger the host updater to restart both services with automatic rollback on failure.</p>
+      </div>
+      <button type="button" class="ghost btn-sm modal-close" data-modal-close th:attr="aria-label=#{common.close}">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M18 6 6 18M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-summary-box">
+        <dl class="facts">
+          <dt th:text="#{updates.currentVersion}">Current version</dt>
+          <dd class="code" th:text="${update.currentVersion()}">4.1.0</dd>
+          <dt th:text="#{updates.latestVersion}">Latest release</dt>
+          <dd class="code" th:text="${update.latestVersion()}">4.1.1</dd>
+        </dl>
+      </div>
+      <form id="apply-update-form" method="post" th:action="@{/updates/apply}" class="form-wide">
+        <div class="modal-footer">
+          <span class="muted"></span>
+          <div class="modal-footer-actions">
+            <button type="button" class="secondary" data-modal-close th:text="#{common.cancel}">Cancel</button>
+            <button type="submit" th:text="#{updates.modal.submit}">Verify &amp; update</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </dialog>
+</main>
+<th:block th:replace="~{fragments :: footer}"></th:block>
+</body>
+</html>

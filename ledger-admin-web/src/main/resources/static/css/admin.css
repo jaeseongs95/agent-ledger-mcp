@@ -454,8 +454,22 @@ main.narrow {
   color: var(--danger-text);
 }
 
-.alert[hidden], .error[hidden], .notice[hidden] {
+.alert[hidden], .error[hidden], .notice[hidden], .form-field[hidden] {
   display: none !important;
+}
+
+.badge.badge-host {
+  background: var(--accent-soft, rgba(59, 130, 246, 0.14));
+  color: var(--info-text, var(--accent));
+  border: 1px solid var(--accent-border, rgba(59, 130, 246, 0.35));
+  font-family: var(--font-mono, monospace);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
+.badge.badge-host::before {
+  display: none;
 }
 
 .alert-title {

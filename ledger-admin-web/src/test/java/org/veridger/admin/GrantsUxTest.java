@@ -174,4 +174,59 @@ class GrantsUxTest {
         assertThat(recoveryHtml).contains("Could not save the form").contains("value=\"" + badProjSession + "\"");
         assertThat(grants.live(badProjSession)).isEmpty();
     }
+
+    @Test
+    @DisplayName("GUX-06: /grants renders split host and sessionId inputs, grants/revokes via split fields, strips duplicate host prefix, and preserves custom host on 4xx")
+    void gux06_splitHostAndSessionIdInputs() throws Exception {
+        Seeded project = seeds.project();
+        String sid = "split-" + SEQUENCE.incrementAndGet();
+        String customSid = "custom-" + SEQUENCE.incrementAndGet();
+        Browser browser = Browser.signedIn(mvc);
+
+        String page = browser.perform(browser.get("/grants").header(HttpHeaders.ACCEPT_LANGUAGE, "en"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(page).contains("id=\"enrolled-host\"", "id=\"enrolled-session-id\"",
+                "id=\"revoke-host\"", "id=\"revoke-session-id\"");
+
+        // Grant using split host + sessionId (with redundant host prefix pasted in sessionId)
+        browser.perform(browser.form("/grants/author", Form.of("host", "codex", "sessionId", "codex:" + sid,
+                "project", project.project(), "scopes", "issue", "scopes", "task"), browser.csrfOf("/grants")))
+                .andExpect(status().is3xxRedirection());
+        assertThat(grants.live("codex:" + sid)).extracting(g -> g.scope().token())
+                .containsExactlyInAnyOrder("issue", "task");
+
+        // Grant using custom host
+        browser.perform(browser.form("/grants/author", Form.of("host", "custom", "customHost", "agent",
+                "sessionId", customSid, "project", project.project(), "scopes", "spec"), browser.csrfOf("/grants")))
+                .andExpect(status().is3xxRedirection());
+        assertThat(grants.live("agent:" + customSid)).extracting(g -> g.scope().token()).containsExactly("spec");
+
+        // Session card renders host badge and session id cleanly
+        String withCards = browser.perform(browser.get("/grants").header(HttpHeaders.ACCEPT_LANGUAGE, "en"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(withCards).contains("badge-host", "codex", sid, "data-author=\"codex:" + sid + "\"");
+
+        // Revoke using split host + sessionId
+        browser.perform(browser.form("/grants/revoke", Form.of("host", "codex", "sessionId", sid,
+                "project", project.project()), browser.csrfOf("/grants")))
+                .andExpect(status().is3xxRedirection());
+        assertThat(grants.live("codex:" + sid)).isEmpty();
+
+        // Locked session-card submission (host disabled/omitted, combined hidden author preserved) works for grant & revoke
+        browser.perform(browser.form("/grants/author", Form.of("author", "codex:" + sid, "sessionId", sid,
+                "project", project.project(), "scopes", "deliverable"), browser.csrfOf("/grants")))
+                .andExpect(status().is3xxRedirection());
+        assertThat(grants.live("codex:" + sid)).extracting(g -> g.scope().token()).containsExactly("deliverable");
+        browser.perform(browser.form("/grants/revoke", Form.of("author", "codex:" + sid, "sessionId", sid,
+                "project", project.project()), browser.csrfOf("/grants")))
+                .andExpect(status().is3xxRedirection());
+        assertThat(grants.live("codex:" + sid)).isEmpty();
+
+        // HTML 4xx preserves custom host and sessionId in recovery modal
+        String recovery = browser.perform(browser.form("/grants/author", Form.of("host", "custom",
+                "customHost", "myhost", "sessionId", "rec-01", "project", "no-such-proj-split", "scopes", "issue"),
+                browser.csrfOf("/grants")))
+                .andExpect(status().isNotFound()).andReturn().getResponse().getContentAsString();
+        assertThat(recovery).contains("value=\"myhost\"", "value=\"rec-01\"", "value=\"myhost:rec-01\"");
+    }
 }

@@ -33,8 +33,50 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 @Controller
 public class GrantsController {
 
-    /** Issues project grants directly for any valid {@code <vendor>:<session_id>} author. */
-    public record AuthorGrantForm(String author, String project, List<String> scopes, String expiresAt, String note) {
+    /** Issues project grants using split host/sessionId UI fields or a combined {@code <host>:<session_id>} author. */
+    public record AuthorGrantForm(String author, String host, String customHost, String sessionId, String project,
+            List<String> scopes, String expiresAt, String note) {
+
+        public String resolvedAuthor() {
+            return SessionAuthorInput.resolve(host, customHost, sessionId, author);
+        }
+
+        public SessionAuthorInput.Split split(List<String> knownHosts) {
+            if (sessionId != null && !sessionId.isBlank() && host != null && !host.isBlank()) {
+                return new SessionAuthorInput.Split(host, customHost == null ? "" : customHost, sessionId);
+            }
+            if (author != null && !author.isBlank()) {
+                return SessionAuthorInput.split(author, knownHosts);
+            }
+            if (sessionId != null && !sessionId.isBlank()) {
+                return new SessionAuthorInput.Split(SessionAuthorInput.defaultHost(knownHosts),
+                        customHost == null ? "" : customHost, sessionId);
+            }
+            return SessionAuthorInput.split(author, knownHosts);
+        }
+    }
+
+    /** Revokes project grants using split host/sessionId UI fields or a combined {@code <host>:<session_id>} author. */
+    public record RevokeForm(String author, String host, String customHost, String sessionId, String project,
+            String scope) {
+
+        public String resolvedAuthor() {
+            return SessionAuthorInput.resolve(host, customHost, sessionId, author);
+        }
+
+        public SessionAuthorInput.Split split(List<String> knownHosts) {
+            if (sessionId != null && !sessionId.isBlank() && host != null && !host.isBlank()) {
+                return new SessionAuthorInput.Split(host, customHost == null ? "" : customHost, sessionId);
+            }
+            if (author != null && !author.isBlank()) {
+                return SessionAuthorInput.split(author, knownHosts);
+            }
+            if (sessionId != null && !sessionId.isBlank()) {
+                return new SessionAuthorInput.Split(SessionAuthorInput.defaultHost(knownHosts),
+                        customHost == null ? "" : customHost, sessionId);
+            }
+            return SessionAuthorInput.split(author, knownHosts);
+        }
     }
 
     /** Synchronizes the active scopes of one author on one project in a single transaction. */
@@ -43,10 +85,12 @@ public class GrantsController {
 
     private final GrantService grants;
     private final Choices choices;
+    private final GrantsUiProperties uiProperties;
 
-    public GrantsController(GrantService grants, Choices choices) {
+    public GrantsController(GrantService grants, Choices choices, GrantsUiProperties uiProperties) {
         this.grants = grants;
         this.choices = choices;
+        this.uiProperties = uiProperties;
     }
 
     @GetMapping("/grants")
@@ -59,7 +103,7 @@ public class GrantsController {
     String grantAuthor(@ModelAttribute AuthorGrantForm form, OwnerIdentity actor, HttpServletRequest request,
             RedirectAttributes flash) {
         AdminHttpExceptionAdvice.recoverHtml(request, "grants", () -> recoveryModel("authorGrantForm", form));
-        grants.grant(new GrantCommand(form.author(), form.project(), form.scopes(), form.expiresAt(), form.note()),
+        grants.grant(new GrantCommand(form.resolvedAuthor(), form.project(), form.scopes(), form.expiresAt(), form.note()),
                 actor);
         flash.addFlashAttribute("flashKey", "flash.grantIssued");
         return "redirect:/grants";
@@ -80,10 +124,10 @@ public class GrantsController {
     }
 
     @PostMapping("/grants/revoke")
-    String revoke(@ModelAttribute RevokeCommand command, OwnerIdentity actor, HttpServletRequest request,
+    String revoke(@ModelAttribute RevokeForm form, OwnerIdentity actor, HttpServletRequest request,
             RedirectAttributes flash) {
-        AdminHttpExceptionAdvice.recoverHtml(request, "grants", () -> recoveryModel("revokeGrantForm", command));
-        grants.revoke(command, actor);
+        AdminHttpExceptionAdvice.recoverHtml(request, "grants", () -> recoveryModel("revokeGrantForm", form));
+        grants.revoke(new RevokeCommand(form.resolvedAuthor(), form.project(), form.scope()), actor);
         flash.addFlashAttribute("flashKey", "flash.grantRevoked");
         return "redirect:/grants";
     }
@@ -108,6 +152,7 @@ public class GrantsController {
         target.put("grants", liveGrants);
         target.put("sessions", sessions);
         target.put("knownAuthors", SessionAccessView.knownAuthors(sessions));
+        target.put("knownHosts", uiProperties.knownHosts());
         target.put("choice", choice);
         target.put("scopes", Scope.values());
     }

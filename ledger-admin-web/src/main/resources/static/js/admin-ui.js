@@ -339,6 +339,106 @@
     ? Array.from(enrolledProjectSelect.options).map((opt) => opt.value)
     : [];
 
+  // Split host + session ID helpers (Grants add/revoke modals)
+  function hostOptionsOf(selectEl) {
+    if (!selectEl) { return []; }
+    return Array.from(selectEl.options)
+      .map((opt) => opt.value)
+      .filter((v) => v && v !== "custom");
+  }
+
+  function defaultHostOf(selectEl) {
+    const opts = hostOptionsOf(selectEl);
+    return opts.length > 0 ? opts[0] : "custom";
+  }
+
+  function syncHostSelect(prefix) {
+    const hostEl = document.getElementById(prefix + "-host");
+    const customWrap = document.getElementById(prefix + "-custom-host-wrap");
+    const customInput = document.getElementById(prefix + "-custom-host");
+    if (!hostEl || !customWrap) { return; }
+    const isCustom = hostEl.value === "custom";
+    customWrap.hidden = !isCustom;
+    if (customInput) {
+      customInput.required = isCustom && !hostEl.disabled;
+      if (!isCustom) { customInput.value = ""; }
+    }
+  }
+
+  function populateSplitAuthor(prefix, fullAuthor, locked) {
+    const authorHidden = document.getElementById(prefix + "-author");
+    const hostEl = document.getElementById(prefix + "-host");
+    const customInput = document.getElementById(prefix + "-custom-host");
+    const sessionInput = document.getElementById(prefix + "-session-id");
+    if (authorHidden) { authorHidden.value = fullAuthor || ""; }
+    if (!hostEl || !sessionInput) { return; }
+    const knownHosts = new Set(hostOptionsOf(hostEl));
+    const fallbackHost = defaultHostOf(hostEl);
+    const isLocked = Boolean(locked);
+    if (!fullAuthor) {
+      hostEl.disabled = false;
+      hostEl.value = fallbackHost;
+      if (customInput) { customInput.value = ""; customInput.disabled = false; customInput.readOnly = false; }
+      sessionInput.value = "";
+      sessionInput.disabled = false;
+      sessionInput.readOnly = false;
+      sessionInput.required = true;
+      syncHostSelect(prefix);
+      return;
+    }
+    const colon = fullAuthor.indexOf(":");
+    const hostPart = colon > 0 ? fullAuthor.slice(0, colon) : "";
+    const sessionPart = colon > 0 ? fullAuthor.slice(colon + 1) : fullAuthor;
+    if (knownHosts.has(hostPart)) {
+      hostEl.value = hostPart;
+      if (customInput) { customInput.value = ""; }
+    } else if (hostPart) {
+      hostEl.value = "custom";
+      if (customInput) { customInput.value = hostPart; }
+    } else {
+      hostEl.value = fallbackHost;
+      if (customInput) { customInput.value = ""; }
+    }
+    sessionInput.value = sessionPart;
+    // When locked (session-card action), disable all split fields so only the hidden combined author field submits.
+    hostEl.disabled = isLocked;
+    if (customInput) {
+      customInput.disabled = isLocked;
+      customInput.readOnly = isLocked;
+    }
+    sessionInput.disabled = isLocked;
+    sessionInput.readOnly = isLocked;
+    sessionInput.required = !isLocked;
+    syncHostSelect(prefix);
+  }
+
+  document.querySelectorAll("[data-host-select]").forEach((sel) => {
+    const prefix = sel.dataset.hostSelect;
+    sel.addEventListener("change", () => syncHostSelect(prefix));
+    syncHostSelect(prefix);
+  });
+
+  // Auto-split when user pastes "<host>:<session-id>" into the Session ID input
+  document.querySelectorAll("[data-session-paste]").forEach((input) => {
+    const prefix = input.dataset.sessionPaste;
+    input.addEventListener("input", () => {
+      if (input.readOnly || input.disabled) { return; }
+      const raw = input.value.trim();
+      const colon = raw.indexOf(":");
+      if (colon <= 0 || colon === raw.length - 1) { return; }
+      const hostEl = document.getElementById(prefix + "-host");
+      if (!hostEl || hostEl.disabled) { return; }
+      const hostPart = raw.slice(0, colon);
+      const sessionPart = raw.slice(colon + 1);
+      const knownHosts = new Set(hostOptionsOf(hostEl));
+      if (knownHosts.has(hostPart)) {
+        hostEl.value = hostPart;
+        input.value = sessionPart;
+        syncHostSelect(prefix);
+      }
+    });
+  });
+
   // 9. Unified Modal Open Triggers & Context Population (Projects, Grants, Common Codes)
   document.addEventListener("click", (event) => {
     const trigger = event.target.closest("[data-modal-open]");
@@ -379,7 +479,6 @@
     if (modalId === "modal-add-project") {
       const mode = trigger.dataset.grantMode || "manual";
       const titleEl = document.getElementById("modal-add-project-title");
-      const authorInput = document.getElementById("enrolled-author");
       const form = document.getElementById("add-project-form");
       if (titleEl) {
         titleEl.textContent = mode === "session"
@@ -387,14 +486,10 @@
           : (titleEl.dataset.titleManual || titleEl.textContent);
       }
       if (form) { form.reset(); }
-      if (authorInput) {
-        if (mode === "session") {
-          authorInput.value = trigger.dataset.author || "";
-          authorInput.readOnly = true;
-        } else {
-          authorInput.value = "";
-          authorInput.readOnly = false;
-        }
+      if (mode === "session") {
+        populateSplitAuthor("enrolled", trigger.dataset.author || "", true);
+      } else {
+        populateSplitAuthor("enrolled", "", false);
       }
       if (enrolledProjectSelect) {
         const allowed = mode === "session" && trigger.dataset.availableProjects
@@ -429,11 +524,11 @@
         else if (mode === "project") { helpEl.textContent = helpEl.dataset.helpProject || helpEl.textContent; }
         else { helpEl.textContent = helpEl.dataset.helpManual || helpEl.textContent; }
       }
-      setField("revoke-author", mode === "manual" ? "" : author);
+      const isTargeted = mode === "session" || mode === "project";
+      populateSplitAuthor("revoke", isTargeted ? author : "", isTargeted);
       setField("revoke-project", mode === "project" ? project : "");
       setField("revoke-scope", "");
 
-      const isTargeted = mode === "session" || mode === "project";
       if (summaryBox) { summaryBox.hidden = !isTargeted; }
       if (fieldsWrap) { fieldsWrap.hidden = isTargeted; }
       if (isTargeted) {

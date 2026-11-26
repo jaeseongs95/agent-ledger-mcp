@@ -41,7 +41,7 @@ class LoginAttemptsTest {
                 List.of("localhost"), DataSize.ofKilobytes(64), Path.of("/unused"), Path.of("/unused-drivers"),
                 new LedgerAdminProperties.Lockout(WINDOW, budget, DELAY), new LedgerAdminProperties.Oidc(null, null),
                 new LedgerAdminProperties.Mcp(null, Duration.ofSeconds(2)), null,
-                new LedgerAdminProperties.Passkey(null, List.of(), "Ledger admin")), ticker);
+                new LedgerAdminProperties.Passkey(null, List.of(), "Ledger admin"), null), ticker);
     }
 
     private static List<Duration> admitted(LoginAttempts attempts, int times) {
