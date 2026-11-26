@@ -25,7 +25,8 @@ import org.springframework.stereotype.Component;
  * Writes rendered files below a root. Each file is written the way the secret store writes a secret: a temporary file in the
  * directory of the target, then an atomic move over the target, so a reader (systemd, the service) never sees half a
  * file and a failed write leaves the previous file as it was. The mode {@code rw-r--r--} is given when the temporary file
- * is created, never changed afterwards: the files hold no secret and the service users have to read them. The jars and the
+ * is created and explicitly applied via {@link FileModes#apply} before the atomic move so a restrictive caller {@code umask}
+ * cannot strip the group or world read bits: the files hold no secret and the service users have to read them. The jars and the
  * driver of an installation are copied the same way ({@link #copy}). It is a component because it changes the file system.
  *
  * <p>Without a root a file is written at its own path, and that path has to be a path of this host: a Windows drive path on a
@@ -215,6 +216,8 @@ public final class DeployFiles {
             try (OutputStream out = Files.newOutputStream(temporary)) {
                 content.writeTo(out);
             }
+            // POSIX createTempFile masks its creation mode with the caller's umask; apply the exact mode before rename.
+            FileModes.apply(temporary, FileModes.WORLD_READABLE);
             Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         } finally {
             Files.deleteIfExists(temporary);
