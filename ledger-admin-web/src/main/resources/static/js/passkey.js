@@ -18,19 +18,45 @@
     }
   };
 
-  const meta = (name) => { const element = document.querySelector('meta[name="' + name + '"]'); return element ? element.content : null; };
+  const meta = (name) => {
+    const element = document.querySelector('meta[name="' + name + '"]');
+    return element ? element.content : null;
+  };
   const status = document.getElementById("passkey-status");
+
+  function clearStatus() {
+    if (!status) { return; }
+    status.hidden = true;
+    status.textContent = "";
+  }
 
   function show(message) {
     if (!status) { return; }
     status.textContent = message || status.dataset.failed;
     status.hidden = false;
+    status.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    status.focus();
+  }
+
+  function friendlyMessage(failure) {
+    if (failure && (failure.name === "NotAllowedError" || failure.name === "AbortError")) {
+      return (status && status.dataset.cancelled) || (status && status.dataset.failed) || "Cancelled";
+    }
+    if (failure && failure.message) {
+      return failure.message;
+    }
+    return status ? status.dataset.failed : null;
   }
 
   async function post(url, body) {
     const headers = { "Content-Type": "application/json", "Accept": "application/json" };
     if (meta("_csrf")) { headers[meta("_csrf_header")] = meta("_csrf"); }
-    const response = await fetch(url, { method: "POST", headers, body: body === undefined ? undefined : JSON.stringify(body), credentials: "same-origin" });
+    const response = await fetch(url, {
+      method: "POST",
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      credentials: "same-origin"
+    });
     if (!response.ok) {
       let detail = null;
       try { detail = (await response.json()).detail; } catch (ignored) { detail = null; }
@@ -41,10 +67,15 @@
 
   const descriptors = (list) => (list || []).map((entry) => ({ ...entry, id: b64.decode(entry.id) }));
 
-  // sign-in with a passkey: the options and the login are the framework's endpoints
   async function signIn() {
     const options = await post("/webauthn/authenticate/options");
-    const credential = await navigator.credentials.get({ publicKey: { ...options, challenge: b64.decode(options.challenge), allowCredentials: descriptors(options.allowCredentials) } });
+    const credential = await navigator.credentials.get({
+      publicKey: {
+        ...options,
+        challenge: b64.decode(options.challenge),
+        allowCredentials: descriptors(options.allowCredentials)
+      }
+    });
     const response = credential.response;
     const result = await post("/login/webauthn", {
       id: credential.id,
@@ -63,38 +94,57 @@
     window.location.href = result.redirectUrl;
   }
 
-  // registration of a passkey (after the sign-in with the one-time code): the framework's endpoints
   async function register(label) {
     const options = await post("/webauthn/register/options");
-    const credential = await navigator.credentials.create({ publicKey: { ...options,
-      user: { ...options.user, id: b64.decode(options.user.id) }, challenge: b64.decode(options.challenge),
-      excludeCredentials: descriptors(options.excludeCredentials) } });
+    const credential = await navigator.credentials.create({
+      publicKey: {
+        ...options,
+        user: { ...options.user, id: b64.decode(options.user.id) },
+        challenge: b64.decode(options.challenge),
+        excludeCredentials: descriptors(options.excludeCredentials)
+      }
+    });
     const response = credential.response;
-    const result = await post("/webauthn/register", { publicKey: { credential: {
-      id: credential.id,
-      rawId: b64.encode(credential.rawId),
-      response: {
-        attestationObject: b64.encode(response.attestationObject),
-        clientDataJSON: b64.encode(response.clientDataJSON),
-        transports: response.getTransports ? response.getTransports() : []
-      },
-      type: credential.type,
-      clientExtensionResults: credential.getClientExtensionResults(),
-      authenticatorAttachment: credential.authenticatorAttachment
-    }, label } });
+    const result = await post("/webauthn/register", {
+      publicKey: {
+        credential: {
+          id: credential.id,
+          rawId: b64.encode(credential.rawId),
+          response: {
+            attestationObject: b64.encode(response.attestationObject),
+            clientDataJSON: b64.encode(response.clientDataJSON),
+            transports: response.getTransports ? response.getTransports() : []
+          },
+          type: credential.type,
+          clientExtensionResults: credential.getClientExtensionResults(),
+          authenticatorAttachment: credential.authenticatorAttachment
+        },
+        label
+      }
+    });
     if (!(result && result.success)) { throw new Error(); }
     window.location.href = "/passkeys?success";
   }
 
-  // the approval of an owner write: the server is told what is about to be sent, makes the challenge from it, the passkey signs
-  // the challenge, and the assertion goes with the form as the field "approval"
   async function approve(form) {
     const fields = [];
-    new FormData(form).forEach((value, name) => { if (name !== "_csrf" && name !== "approval") { fields.push({ name, value: String(value) }); } });
-    const options = await post("/approval/intent", { method: "POST", path: new URL(form.action, window.location.href).pathname, fields });
-    const credential = await navigator.credentials.get({ publicKey: { challenge: b64.decode(options.challenge), rpId: options.rpId,
-      allowCredentials: options.allowCredentials.map((id) => ({ type: "public-key", id: b64.decode(id) })),
-      userVerification: options.userVerification, timeout: options.timeout } });
+    new FormData(form).forEach((value, name) => {
+      if (name !== "_csrf" && name !== "approval") { fields.push({ name, value: String(value) }); }
+    });
+    const options = await post("/approval/intent", {
+      method: "POST",
+      path: new URL(form.action, window.location.href).pathname,
+      fields
+    });
+    const credential = await navigator.credentials.get({
+      publicKey: {
+        challenge: b64.decode(options.challenge),
+        rpId: options.rpId,
+        allowCredentials: options.allowCredentials.map((id) => ({ type: "public-key", id: b64.decode(id) })),
+        userVerification: options.userVerification,
+        timeout: options.timeout
+      }
+    });
     const response = credential.response;
     let field = form.querySelector('input[name="approval"]');
     if (!field) {
@@ -103,26 +153,71 @@
       field.name = "approval";
       form.appendChild(field);
     }
-    field.value = JSON.stringify({ credentialId: b64.encode(credential.rawId), authenticatorData: b64.encode(response.authenticatorData),
-      clientDataJson: b64.encode(response.clientDataJSON), signature: b64.encode(response.signature) });
+    field.value = JSON.stringify({
+      credentialId: b64.encode(credential.rawId),
+      authenticatorData: b64.encode(response.authenticatorData),
+      clientDataJson: b64.encode(response.clientDataJSON),
+      signature: b64.encode(response.signature)
+    });
   }
 
-  function run(task) { task().catch((failure) => { console.error(failure); show(failure && failure.message ? failure.message : null); }); }
+  async function withBusy(button, task, busyLabel) {
+    if (button && button.dataset.busy === "true") { return; }
+    clearStatus();
+    const originalText = button ? button.textContent : null;
+    if (button) {
+      button.dataset.busy = "true";
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+      if (busyLabel) { button.textContent = busyLabel; }
+    }
+    try {
+      await task();
+    } catch (failure) {
+      console.error(failure);
+      show(friendlyMessage(failure));
+      if (button) {
+        button.dataset.busy = "false";
+        button.disabled = false;
+        button.removeAttribute("aria-busy");
+        if (originalText !== null) { button.textContent = originalText; }
+      }
+    }
+  }
+
+  const signInButton = document.getElementById("passkey-signin");
+  const registerButton = document.getElementById("passkey-register");
+  const approveForms = document.querySelectorAll("form[data-approve]");
+  const needsPasskey = Boolean(signInButton || registerButton || approveForms.length > 0);
 
   if (!window.PublicKeyCredential) {
-    show(status ? status.dataset.failed : null);
+    if (needsPasskey) {
+      show(status ? (status.dataset.unsupported || status.dataset.failed) : null);
+    }
     return;
   }
-  const signInButton = document.getElementById("passkey-signin");
-  if (signInButton) { signInButton.addEventListener("click", () => run(signIn)); }
-  const registerButton = document.getElementById("passkey-register");
-  if (registerButton) {
-    registerButton.addEventListener("click", () => run(() => register(document.getElementById("passkey-label").value)));
+
+  const busyText = status ? status.dataset.busy : null;
+  const submittingText = status ? status.dataset.submitting : null;
+
+  if (signInButton) {
+    signInButton.addEventListener("click", () => withBusy(signInButton, signIn, busyText));
   }
-  document.querySelectorAll("form[data-approve]").forEach((form) => {
+  if (registerButton) {
+    registerButton.addEventListener("click", () => withBusy(registerButton, () => {
+      const labelInput = document.getElementById("passkey-label");
+      return register(labelInput ? labelInput.value : "");
+    }, busyText));
+  }
+  approveForms.forEach((form) => {
     form.addEventListener("submit", (event) => {
       event.preventDefault();
-      run(async () => { await approve(form); form.submit(); });
+      const submitBtn = event.submitter || form.querySelector('button[type="submit"]');
+      withBusy(submitBtn, async () => {
+        await approve(form);
+        if (submitBtn && submittingText) { submitBtn.textContent = submittingText; }
+        form.submit();
+      }, busyText);
     });
   });
 })();

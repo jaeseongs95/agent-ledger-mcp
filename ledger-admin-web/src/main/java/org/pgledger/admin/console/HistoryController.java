@@ -10,6 +10,7 @@ import org.pgledger.domain.rule.HistoryEntity;
 import org.pgledger.domain.rule.HistoryOp;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 
@@ -48,6 +49,11 @@ public class HistoryController {
         model.addAttribute("ops", HistoryOp.values());
         model.addAttribute("sizes", Paging.SIZES);
         model.addAttribute("page", page);
+        boolean hasFilters = StringUtils.hasText(filter.project()) || StringUtils.hasText(filter.entity())
+                || StringUtils.hasText(filter.entityId()) || StringUtils.hasText(filter.op())
+                || StringUtils.hasText(filter.authorId());
+        model.addAttribute("hasFilters", hasFilters);
+        model.addAttribute("resetHref", "/history");
         Map<Long, String> pointing = new LinkedHashMap<>();
         for (var row : page.items()) {
             if (row.attachmentId() != null) {

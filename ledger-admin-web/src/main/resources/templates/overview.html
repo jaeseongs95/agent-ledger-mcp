@@ -4,60 +4,152 @@
 <body>
 <th:block th:replace="~{fragments :: header('overview')}"></th:block>
 <main id="main">
-  <h1 th:text="#{overview.title}">Overview</h1>
+  <div class="page-header">
+    <div class="page-header-text">
+      <h1 th:text="#{overview.title}">Overview</h1>
+    </div>
+  </div>
 
   <form method="get" th:action="@{/}" class="filters">
-    <label for="project" th:text="#{common.project}">Project</label>
-    <select id="project" name="project">
-      <option value="" th:text="#{common.allProjects}">All projects</option>
-      <option th:each="p : ${overview.projects()}" th:value="${p.id()}" th:text="${p.id()} + ' (' + ${p.code()} + ')'" th:selected="${p.id() == overview.project()}">p1</option>
-    </select>
-    <button type="submit" th:text="#{common.apply}">Apply</button>
+    <div class="filter-field">
+      <label for="project" th:text="#{common.project}">Project</label>
+      <select id="project" name="project">
+        <option value="" th:text="#{common.allProjects}">All projects</option>
+        <option th:each="p : ${overview.projects()}" th:value="${p.id()}" th:text="${p.id()} + ' (' + ${p.code()} + ')'" th:selected="${p.id() == overview.project()}">p1</option>
+      </select>
+    </div>
+    <div class="filter-actions">
+      <button type="submit" th:text="#{common.apply}">Apply</button>
+      <a th:if="${overview.project() != null}" th:href="@{/}" class="button secondary" th:text="#{common.resetFilters}">Reset filters</a>
+    </div>
   </form>
 
-  <section id="mcp-status" th:attr="aria-label=#{overview.mcp}">
-    <h2 th:text="#{overview.mcp}">MCP server</h2>
+  <section id="mcp-status" class="card" th:attr="aria-label=#{overview.mcp}">
+    <div class="card-header">
+      <h2 th:text="#{overview.mcp}">MCP server</h2>
+      <span th:class="'badge badge-' + ${overview.mcp().state()}" th:text="#{'mcp.state.' + ${overview.mcp().state()}}">Up</span>
+    </div>
     <p th:class="'status status-' + ${overview.mcp().state()}">
       <span th:text="#{'mcp.state.' + ${overview.mcp().state()}}">Up</span>
-      <span th:if="${overview.mcp().reason().name() != 'NONE'}" th:text="'- ' + #{'mcp.reason.' + ${overview.mcp().reason()}}">reason</span>
+      <span th:if="${overview.mcp().reason().name() != 'NONE'}" th:text="' - ' + #{'mcp.reason.' + ${overview.mcp().reason()}}">reason</span>
     </p>
   </section>
 
-  <section id="attention">
-    <h2 th:text="#{overview.attention}">Needs attention</h2>
-    <ul class="counts">
+  <div class="kpi-grid">
+    <a class="kpi-card" th:with="href=${@links.projectHref('/issues', overview.project())}" th:href="${href}">
+      <span class="kpi-label" th:text="#{overview.kpi.issues}">Issues</span>
+      <span class="kpi-value" th:text="${overview.stats().issues()}">0</span>
+    </a>
+    <a class="kpi-card" th:with="href=${@links.projectHref('/specs', overview.project())}" th:href="${href}">
+      <span class="kpi-label" th:text="#{overview.kpi.specs}">Specifications</span>
+      <span class="kpi-value" th:text="${overview.stats().specs()}">0</span>
+    </a>
+    <a class="kpi-card" th:with="href=${@links.projectHref('/tasks', overview.project())}" th:href="${href}">
+      <span class="kpi-label" th:text="#{overview.kpi.tasks}">Tasks</span>
+      <span class="kpi-value" th:text="${overview.stats().tasks()}">0</span>
+    </a>
+    <a class="kpi-card" th:with="href=${@links.projectHref('/criteria', overview.project())}" th:href="${href}">
+      <span class="kpi-label" th:text="#{overview.kpi.criteria}">Criteria</span>
+      <span class="kpi-value" th:text="${overview.stats().criteria()}">0</span>
+    </a>
+  </div>
+
+  <section id="attention" class="card">
+    <div class="card-header">
+      <h2 th:text="#{overview.attention}">Needs attention</h2>
+    </div>
+    <ul class="counts-grid">
       <li th:each="c : ${overview.attentionCounts()}">
-        <span th:text="#{'attention.' + ${c.kind()}}">kind</span>:
-        <strong th:text="${c.count()} + (${c.atLeast()} ? '+' : '')">0</strong>
+        <a th:with="href=${@links.attentionHref(overview.project(), c.kind())}" th:href="${href}"
+           th:class="${c.count() > 0} ? 'count-chip count-chip-active' : 'count-chip'">
+          <span th:text="#{'attention.' + ${c.kind()}}">kind</span>
+          <strong th:text="${c.count()} + (${c.atLeast()} ? '+' : '')">0</strong>
+        </a>
       </li>
     </ul>
-    <table th:if="${!#lists.isEmpty(overview.attention())}">
-      <caption class="sr-only" th:text="#{overview.attention}">Needs attention</caption>
-      <thead><tr><th scope="col" th:text="#{col.kind}">Kind</th><th scope="col" th:text="#{col.entity}">Entity</th><th scope="col" th:text="#{col.id}">ID</th><th scope="col" th:text="#{col.project}">Project</th></tr></thead>
-      <tbody>
-        <tr th:each="item : ${overview.attention()}">
-          <td th:text="#{'attention.' + ${item.kind()}}">kind</td>
-          <td th:text="${item.entity()}">issue</td>
-          <td><a th:with="page=${@links.itemPage(item.entity())}" th:href="@{${page}(id=${item.id()})}" th:text="${item.id()}">ID</a></td>
-          <td th:text="${item.projectId()}">p1</td>
-        </tr>
-      </tbody>
-    </table>
-    <p th:if="${#lists.isEmpty(overview.attention())}" th:text="#{overview.attention.none}">Nothing needs attention.</p>
+    <p th:if="${overview.moreAttention()}" class="alert alert-warning" role="status" th:text="#{overview.moreAttention}">
+      Showing the first 25 items.
+    </p>
+    <div th:if="${!#lists.isEmpty(overview.attention())}" class="table-wrap">
+      <table>
+        <caption class="sr-only" th:text="#{overview.attention}">Needs attention</caption>
+        <thead>
+          <tr>
+            <th scope="col" th:text="#{col.kind}">Kind</th>
+            <th scope="col" th:text="#{col.entity}">Entity</th>
+            <th scope="col" th:text="#{col.id}">ID</th>
+            <th scope="col" th:text="#{col.project}">Project</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr th:each="item : ${overview.attention()}">
+            <td th:text="#{'attention.' + ${item.kind()}}">kind</td>
+            <td><span class="badge" th:text="${item.entity()}">issue</span></td>
+            <td><a th:with="page=${@links.itemPage(item.entity())}" th:href="@{${page}(id=${item.id()})}" th:text="${item.id()}">ID</a></td>
+            <td class="code" th:text="${item.projectId()}">p1</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p th:if="${#lists.isEmpty(overview.attention())}" class="hint" th:text="#{overview.attention.none}">Nothing needs attention.</p>
   </section>
 
   <section id="stats">
-    <h2 th:text="#{overview.stats}">Counts</h2>
-    <p th:text="#{overview.totals(${overview.stats().issues()}, ${overview.stats().specs()}, ${overview.stats().tasks()}, ${overview.stats().criteria()})}">Totals</p>
+    <div class="page-header">
+      <div class="page-header-text">
+        <h2 th:text="#{overview.stats}">Counts</h2>
+        <p class="hint" th:text="#{overview.totals(${overview.stats().issues()}, ${overview.stats().specs()}, ${overview.stats().tasks()}, ${overview.stats().criteria()})}">Totals</p>
+      </div>
+    </div>
     <div class="cards">
-      <article><h3 th:text="#{overview.issuesByStatus}">Issues by status</h3>
-        <dl><th:block th:each="e : ${overview.stats().issuesByStatus()}"><dt th:text="${e.key}">OPEN</dt><dd th:text="${e.value}">0</dd></th:block></dl></article>
-      <article><h3 th:text="#{overview.issuesBySeverity}">Issues by severity</h3>
-        <dl><th:block th:each="e : ${overview.stats().issuesBySeverity()}"><dt th:text="${e.key}">P1</dt><dd th:text="${e.value}">0</dd></th:block></dl></article>
-      <article><h3 th:text="#{overview.specsByStatus}">Specs by status</h3>
-        <dl><th:block th:each="e : ${overview.stats().specsByStatus()}"><dt th:text="${e.key}">DRAFT</dt><dd th:text="${e.value}">0</dd></th:block></dl></article>
-      <article><h3 th:text="#{overview.tasksByState}">Tasks by state</h3>
-        <dl><th:block th:each="e : ${overview.stats().tasksByState()}"><dt th:text="${e.key}">ACTIVE</dt><dd th:text="${e.value}">0</dd></th:block></dl></article>
+      <article>
+        <h3 th:text="#{overview.issuesByStatus}">Issues by status</h3>
+        <div th:if="${!#maps.isEmpty(overview.stats().issuesByStatus())}" class="dist-list">
+          <a th:each="e : ${overview.stats().issuesByStatus()}"
+             th:with="href=${@links.statHref(overview.project(), '/issues', 'status', e.key)}" th:href="${href}"
+             class="dist-row">
+            <span th:class="'badge badge-' + ${e.key}" th:text="${e.key}">OPEN</span>
+            <span class="dist-count" th:text="${e.value}">0</span>
+          </a>
+        </div>
+        <p th:if="${#maps.isEmpty(overview.stats().issuesByStatus())}" class="hint" th:text="#{overview.emptyChart}">No items yet.</p>
+      </article>
+      <article>
+        <h3 th:text="#{overview.issuesBySeverity}">Issues by severity</h3>
+        <div th:if="${!#maps.isEmpty(overview.stats().issuesBySeverity())}" class="dist-list">
+          <a th:each="e : ${overview.stats().issuesBySeverity()}"
+             th:with="href=${@links.statHref(overview.project(), '/issues', 'severity', e.key)}" th:href="${href}"
+             class="dist-row">
+            <span th:class="'badge badge-' + ${e.key}" th:text="${e.key}">P1</span>
+            <span class="dist-count" th:text="${e.value}">0</span>
+          </a>
+        </div>
+        <p th:if="${#maps.isEmpty(overview.stats().issuesBySeverity())}" class="hint" th:text="#{overview.emptyChart}">No items yet.</p>
+      </article>
+      <article>
+        <h3 th:text="#{overview.specsByStatus}">Specs by status</h3>
+        <div th:if="${!#maps.isEmpty(overview.stats().specsByStatus())}" class="dist-list">
+          <a th:each="e : ${overview.stats().specsByStatus()}"
+             th:with="href=${@links.statHref(overview.project(), '/specs', 'status', e.key)}" th:href="${href}"
+             class="dist-row">
+            <span th:class="'badge badge-' + ${e.key}" th:text="${e.key}">DRAFT</span>
+            <span class="dist-count" th:text="${e.value}">0</span>
+          </a>
+        </div>
+        <p th:if="${#maps.isEmpty(overview.stats().specsByStatus())}" class="hint" th:text="#{overview.emptyChart}">No items yet.</p>
+      </article>
+      <article>
+        <h3 th:text="#{overview.tasksByState}">Tasks by state</h3>
+        <div th:if="${!#maps.isEmpty(overview.stats().tasksByState())}" class="dist-list">
+          <a th:each="e : ${overview.stats().tasksByState()}"
+             th:with="href=${@links.statHref(overview.project(), '/tasks', 'state', e.key)}" th:href="${href}"
+             class="dist-row">
+            <span th:class="'badge badge-' + ${e.key}" th:text="${e.key}">ACTIVE</span>
+            <span class="dist-count" th:text="${e.value}">0</span>
+          </a>
+        </div>
+        <p th:if="${#maps.isEmpty(overview.stats().tasksByState())}" class="hint" th:text="#{overview.emptyChart}">No items yet.</p>
+      </article>
     </div>
   </section>
 </main>

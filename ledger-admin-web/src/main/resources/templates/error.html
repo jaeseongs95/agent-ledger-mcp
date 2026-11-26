@@ -4,12 +4,22 @@
 <body>
 <th:block th:replace="~{fragments :: header('error')}"></th:block>
 <main id="main" class="narrow">
-  <h1 th:text="#{error.page.title}">Something went wrong</h1>
-  <p class="error" role="alert"><span class="code" th:text="${status}">400</span></p>
-  <p th:if="${code != null and code != ''}"><span class="code" th:text="${code}">CODE</span></p>
-  <p th:text="${detail}">Detail</p>
-  <p th:if="${traceId != null}" th:text="#{error.page.trace(${traceId})}">Trace</p>
-  <p><a th:href="@{/}" th:text="#{error.page.home}">Back to the start</a></p>
+  <div class="auth-card">
+    <div>
+      <span class="badge badge-FAIL" th:text="${status}">400</span>
+      <span th:if="${code != null and code != ''}" class="badge" th:text="${code}">CODE</span>
+    </div>
+    <h1 th:text="#{error.page.title}">Something went wrong</h1>
+    <p class="alert alert-danger error" role="alert" th:text="${detail}">Detail</p>
+    <div th:if="${traceId != null}" class="cell-code">
+      <span class="hint" th:text="#{error.page.trace(${traceId})}">Trace</span>
+      <button type="button" class="secondary btn-sm" th:attr="data-copy=${traceId}" th:text="#{error.page.copyTrace}">Copy trace ID</button>
+    </div>
+    <div class="form-actions">
+      <button type="button" class="secondary" data-go-back th:attr="data-fallback=@{/}" th:text="#{common.back}">Go back</button>
+      <a class="button" th:href="@{/}" th:text="#{error.page.home}">Back to the start</a>
+    </div>
+  </div>
 </main>
 <th:block th:replace="~{fragments :: footer}"></th:block>
 </body>

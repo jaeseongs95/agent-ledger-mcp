@@ -14,6 +14,7 @@ import org.pgledger.domain.rule.CodeGroup;
 import org.pgledger.domain.rule.IssueStatus;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,12 +32,15 @@ public class IssuesController {
     private final ListService lists;
     private final DetailService details;
     private final StatsService stats;
+    private final Links links;
 
-    public IssuesController(Choices choices, ListService lists, DetailService details, StatsService stats) {
+    public IssuesController(Choices choices, ListService lists, DetailService details, StatsService stats,
+            Links links) {
         this.choices = choices;
         this.lists = lists;
         this.details = details;
         this.stats = stats;
+        this.links = links;
     }
 
     @GetMapping("/issues")
@@ -49,6 +53,11 @@ public class IssuesController {
         model.addAttribute("severities", choices.codes(CodeGroup.ISSUE_SEVERITY));
         model.addAttribute("categories", choices.codes(CodeGroup.ISSUE_CATEGORY));
         model.addAttribute("sizes", Paging.SIZES);
+        boolean hasFilters = StringUtils.hasText(filter.status()) || StringUtils.hasText(filter.severity())
+                || StringUtils.hasText(filter.category()) || StringUtils.hasText(filter.attention())
+                || StringUtils.hasText(filter.owner());
+        model.addAttribute("hasFilters", hasFilters);
+        model.addAttribute("resetHref", links.projectHref("/issues", project.selected()));
         if (project.selected() != null) {
             var page = lists.issues(new IssuesQuery(project.selected(), filter.status(), filter.severity(),
                     filter.category(), filter.owner(), filter.attention(), Paging.limitOf(filter.limit()),
