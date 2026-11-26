@@ -10,8 +10,8 @@ spring:
     fallback-to-system-locale: false
     encoding: UTF-8
   # A deployment reads the registration of the JDBC driver and the secrets through spring.config.import, set by the
-  # service unit (for example optional:file:/etc/pg-ledger-mcp/jdbc-driver.yaml, optional:configtree:/etc/pg-ledger-mcp/secrets/common/ and
-  # optional:configtree:/etc/pg-ledger-mcp/secrets/admin/: the admin web imports the secrets of its own use and of both services only).
+  # service unit (for example optional:file:/etc/agent-ledger-mcp/jdbc-driver.yaml, optional:configtree:/etc/agent-ledger-mcp/secrets/common/ and
+  # optional:configtree:/etc/agent-ledger-mcp/secrets/admin/: the admin web imports the secrets of its own use and of both services only).
 server:
   # The admin web listens on 127.0.0.1 only: LoopbackOnly sets the address in code, so there is no setting for it. Reaching it from
   # another machine is a reverse proxy of the operator on this host.

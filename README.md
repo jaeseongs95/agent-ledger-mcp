@@ -1,4 +1,4 @@
-# pg-ledger-mcp
+# agent-ledger-mcp
 
 [한국어](README.ko.md)
 
@@ -13,7 +13,7 @@ choice: the installers write no proxy configuration and order no certificate.
 
 Version 2.0.0 is a rewrite in Java 25 and Spring Boot with its own tool contract (every write tool takes a required `operationKey`,
 every response uses the `ApiResult.v1` envelope, and no argument of an earlier version is accepted next to the new ones); what changed
-for a client is stated in the release notes ([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md)); the format of release notes is in
+for a client is stated in the release notes ([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md)); the format of release notes is in
 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md).
 
 ## Contents
@@ -286,8 +286,8 @@ configuration tree (Spring Boot makes every file below a tree a property of the 
 | `ledger.admin.token` | admin web | the admin token, at least 16 characters (secret): the bearer of the read-only JSON endpoints under `/api`; with `ledger.admin.sign-in=token` it is also the password of the login page; it never approves a change |
 | `ledger.admin.agent-token` | admin web | required: the agents' bearer token, equal to `ledger.mcp.token`, and distinct from `ledger.admin.token`; the admin web refuses it with `AGENT_TOKEN_FORBIDDEN` (secret) |
 | `ledger.admin.allowed-hosts` | admin web | accepted `Host` values (DNS rebinding guard), default `127.0.0.1` and `localhost` |
-| `ledger.admin.driver-file` | admin web | the driver registration file the driver page writes, default `/etc/pg-ledger-mcp/jdbc-driver.yaml` |
-| `ledger.admin.driver-directory` | admin web | the one directory a driver jar may be taken from, default `/etc/pg-ledger-mcp/drivers` |
+| `ledger.admin.driver-file` | admin web | the driver registration file the driver page writes, default `/etc/agent-ledger-mcp/jdbc-driver.yaml` |
+| `ledger.admin.driver-directory` | admin web | the one directory a driver jar may be taken from, default `/etc/agent-ledger-mcp/drivers` |
 | `ledger.admin.sign-in` | admin web | how the owner signs in, exactly one of `token`, `oidc` or `passkey`; the login page offers only that one; absent means `passkey` for a new installation, and an installation with `ledger.admin.oidc.*` settings and no choice is refused at start (nothing is guessed) |
 | `ledger.admin.oidc.owner-email` | admin web | with `ledger.admin.sign-in=oidc`: the one e-mail address of the owner, which the provider must have verified; the provider itself is `spring.security.oauth2.client.*` |
 | `ledger.admin.oidc.issuer` | admin web | with `ledger.admin.sign-in=oidc`: the issuer (`iss`) the address counts for: an address is only meaningful at the issuer that verified it |
@@ -309,11 +309,11 @@ configuration tree (Spring Boot makes every file below a tree a property of the 
 | `ledger.attachments.upload-ttl` | servers, CLI | how long an upload lives after its last chunk, default 10m |
 | `ledger.attachments.orphan-grace` | servers, CLI | how long a file without a row (or a replaced file) waits before `attachments-check` moves it to `orphans/`, default 24h |
 | `ledger.attachments.reaper-interval` | MCP server | how often expired uploads are removed, default 1m |
-| `ledger.secrets.home` | `ledger-cli` | the directory of the installation that holds the settings, the driver registration, the driver jars and the secret directory, default `/etc/pg-ledger-mcp` on Linux and `C:/ProgramData/pg-ledger-mcp/etc` on Windows, where the installer of the host puts it |
-| `ledger.secrets.directory` | `ledger-cli` | the secret directory (it holds the folders `common`, `admin`, `mcp` and `tool` and is itself no configuration tree), default `secrets` below `ledger.secrets.home` (`/etc/pg-ledger-mcp/secrets` on Linux) |
-| `ledger.secrets.instance` | `ledger-cli` | the instance name that the default paths follow, default `pg-ledger-mcp` |
-| `ledger.cli.driver.directory` | `ledger-cli` | the directory `driver-register` takes a jar from, default `drivers` below `ledger.secrets.home` (`/etc/pg-ledger-mcp/drivers` on Linux) |
-| `ledger.cli.driver.file` | `ledger-cli` | the registration file `driver-register` writes, default `jdbc-driver.yaml` in `ledger.secrets.home` (`/etc/pg-ledger-mcp/jdbc-driver.yaml` on Linux) |
+| `ledger.secrets.home` | `ledger-cli` | the directory of the installation that holds the settings, the driver registration, the driver jars and the secret directory, default `/etc/agent-ledger-mcp` on Linux and `C:/ProgramData/agent-ledger-mcp/etc` on Windows, where the installer of the host puts it |
+| `ledger.secrets.directory` | `ledger-cli` | the secret directory (it holds the folders `common`, `admin`, `mcp` and `tool` and is itself no configuration tree), default `secrets` below `ledger.secrets.home` (`/etc/agent-ledger-mcp/secrets` on Linux) |
+| `ledger.secrets.instance` | `ledger-cli` | the instance name that the default paths follow, default `agent-ledger-mcp` |
+| `ledger.cli.driver.directory` | `ledger-cli` | the directory `driver-register` takes a jar from, default `drivers` below `ledger.secrets.home` (`/etc/agent-ledger-mcp/drivers` on Linux) |
+| `ledger.cli.driver.file` | `ledger-cli` | the registration file `driver-register` writes, default `jdbc-driver.yaml` in `ledger.secrets.home` (`/etc/agent-ledger-mcp/jdbc-driver.yaml` on Linux) |
 
 The servers listen on loopback only (MCP `127.0.0.1:8765`, admin web `127.0.0.1:8865`), fixed in the code of both: there is no setting
 for the address. To publish them, the operator puts a reverse proxy of their choice, which terminates HTTPS, on the same host and
@@ -332,7 +332,7 @@ under `/home`: the service account runs it too).
 What every target has in common:
 
 - **One service account.** The MCP server and the admin web run as one operating system account that belongs to no person: on
-  Linux the system user `pg-ledger-mcp` (no login, not root), on Windows the predefined account LocalService (no password). Its purpose
+  Linux the system user `agent-ledger-mcp` (no login, not root), on Windows the predefined account LocalService (no password). Its purpose
   is to keep the secrets of the ledger, the admin token and the database password, away from the account of the person who works on
   the machine and from the agents that run under it: the secret directory is readable by the service account only (on Windows: by the installing user and, read only, by LocalService, and by nobody else). The secrets are
   kept in one folder per use and each service imports only its own and the common one, so the process of the MCP server no longer holds
@@ -340,8 +340,8 @@ What every target has in common:
   service). What this does not do: the two services run as one operating system user, so the file permissions do not keep one service from
   reading the folder of the other; the personal edition trusts the whole installation target, and the change is that no process
   carries a secret of another use in its environment. The two
-  services of an installation, called an instance, are named after it: the instance is `pg-ledger-mcp` unless `--name=<name>` gives
-  another name, and its services are `<name>` and `<name>-admin` (`pg-ledger-mcp` and `pg-ledger-mcp-admin` by default). The Linux user, the
+  services of an installation, called an instance, are named after it: the instance is `agent-ledger-mcp` unless `--name=<name>` gives
+  another name, and its services are `<name>` and `<name>-admin` (`agent-ledger-mcp` and `agent-ledger-mcp-admin` by default). The Linux user, the
   directories (`/opt/<name>`, `/etc/<name>`, on Windows `C:\ProgramData\<name>`) and the WinSW ids follow the name, so a second instance, or an
   installation next to a host that still runs 1.x under the default names, needs only its own `--name=<name>` and its own ports.
 - **Two database accounts**, created beforehand with the tools of your DBMS (creating an account is not ANSI SQL and is not part of the
@@ -378,7 +378,7 @@ The options of `deploy/install.sh` are given as `--name=value`; the ones it does
 
 | Option | Meaning |
 |---|---|
-| `--name=<name>` | the name of the instance, default `pg-ledger-mcp`: lower-case letters, digits and hyphens, at most 23 characters, not ending with `-admin`; Java validates it before anything is created |
+| `--name=<name>` | the name of the instance, default `agent-ledger-mcp`: lower-case letters, digits and hyphens, at most 23 characters, not ending with `-admin`; Java validates it before anything is created |
 | `--java=<path>` | the Java 25 runtime, default the `java` on the `PATH` of root; the service user runs it too, so it is at a path every account can execute (not under `/home`), which the script checks right after it creates the service user and before it makes anything else |
 | `--jars=<dir>` | the directory that holds the three jars |
 | `--driver-jar=<file>` | the JDBC driver jar |
@@ -404,7 +404,7 @@ before anything is read or written.
 
 ### Linux server
 
-Run as root; the user `pg-ledger-mcp` is created when it is missing, `prepare-host` (Java) creates `/opt/<name>` (root, 0755),
+Run as root; the user `agent-ledger-mcp` is created when it is missing, `prepare-host` (Java) creates `/opt/<name>` (root, 0755),
 `/etc/<name>` (the service user, 0750), its `drivers` folder (root, 0755), its `secrets` folder with the folders `common`, `admin`, `mcp` and `tool` and the folder `attachment-keys` (the service user, 0700), copies the
 jars and the driver and renders the units into `/etc/systemd/system`, which are then enabled; the secrets are stored by the service
 user. A file that the installer did not render and that a rendered file replaces is kept as `<file>.backup`; to move a 1.x installation,
@@ -414,7 +414,7 @@ see Upgrading from 1.x.
 sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<driver-class> --owner-account=<ddl-account> --app-account=<app-account> --jdbc-url=<jdbc-url>
 ```
 
-The installer enables and restarts the two services (`<name>` and `<name>-admin`, `pg-ledger-mcp` and `pg-ledger-mcp-admin` by default); check them with `systemctl status pg-ledger-mcp pg-ledger-mcp-admin`.
+The installer enables and restarts the two services (`<name>` and `<name>-admin`, `agent-ledger-mcp` and `agent-ledger-mcp-admin` by default); check them with `systemctl status agent-ledger-mcp agent-ledger-mcp-admin`.
 
 ### Reaching the servers from outside
 
@@ -445,7 +445,7 @@ and the installer neither bundles nor downloads it.
 | `<ddl-account>` | the DDL account |
 | `<app-account>` | the application account |
 | `"<jdbc-url>"` | the JDBC URL, in quotes |
-| `"<name>"` | optional, in quotes: the name of the instance, default `pg-ledger-mcp` |
+| `"<name>"` | optional, in quotes: the name of the instance, default `agent-ledger-mcp` |
 | `"<more options>"` | optional, in quotes, after the name: more options of `render-deploy`, for example the host names of a server |
 
 ```bat
@@ -456,7 +456,7 @@ A server that is reached from outside adds the host name of each service and put
 two loopback ports (see Reaching the servers from outside):
 
 ```bat
-deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <app-account> "<jdbc-url>" "pg-ledger-mcp" "--mcp-host=<mcp-host> --admin-host=<admin-host>"
+deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <app-account> "<jdbc-url>" "agent-ledger-mcp" "--mcp-host=<mcp-host> --admin-host=<admin-host>"
 ```
 
 Everything lives in `C:\ProgramData\<name>`. Both services run as LocalService, restart after a failure (the WinSW
@@ -616,13 +616,13 @@ needs a Java 25 runtime on the `PATH` of the client host; with no hook, or a fai
 
 The hook signs only the thirteen write tools and five attachment tools, named `mcp__<server>__ledger_<op>` or `mcp__<server>__<server>_ledger_<op>`
 (Codex Apps: `mcp__codex_apps__app_<app>_ledger_<op>`). The value of `_hostAttestation` is
-`pgla2.<author>.<tool>.<operation key>.<arguments digest>.<issued at>.<signature>`: an Ed25519 signature over the author, the tool, the
+`ala3.<author>.<tool>.<operation key>.<arguments digest>.<issued at>.<signature>`: an Ed25519 signature over the author, the tool, the
 `operationKey` of the call (empty for `ledger_whoami` and the attachment tools), the SHA-256 of the RFC 8785 canonical form of the arguments (without
 `_hostAttestation`; a batch: every operation, its content, its order and the key of the batch) and the time. The hook reads the
 `operationKey` from the arguments the model sent and never makes one up; a call without one is refused by the server. A captured token
 cannot carry other content.
 
-- The hook keeps one Ed25519 key per MCP server name and author in an owner-only folder: `~/.pg-ledger-mcp/session-keys`, or the
+- The hook keeps one Ed25519 key per MCP server name and author in an owner-only folder: `~/.agent-ledger-mcp/session-keys`, or the
   absolute path in `LEDGER_HOOK_KEY_DIR`. A signature made for one server never verifies on another. For Codex Apps the server name
   is `codex_apps.<app>`.
 - The resident program is started by the first call and needs no installation step: when the address file is missing, names a process
@@ -631,13 +631,13 @@ cannot carry other content.
   folder; the program holds a second lock of its own). The first call takes about a second, the later ones about a tenth of a second
   (measurements in the release notes). The program keeps running after the call and ends by itself after 15 minutes without a call
   (`LEDGER_HOOK_RESIDENT_IDLE_TIMEOUT`, an ISO-8601 duration such as `PT30M`), or with `java -jar ledger-client-hook.jar stop`.
-- There is one resident program per key folder. Its state folder, `~/.pg-ledger-mcp/resident/<id>/`, holds the address file (the port,
+- There is one resident program per key folder. Its state folder, `~/.agent-ledger-mcp/resident/<id>/`, holds the address file (the port,
   the process id and start time, the build, and a secret that is new for every start), the two lock files and `resident.log`, which
   has the output of the program and never a secret. The program listens on `127.0.0.1` only, at a port that the system chooses. Every
   request must carry the secret of the address file; it is compared in constant time and a request without it is refused with 401, so
   another account of the same PC cannot call the program. The folder and its files are owner-only (POSIX permissions, or an ACL for
   the owner, chosen by what the file system can do).
-- The program runs from a copy in `~/.pg-ledger-mcp/resident-runtime/<build>/`, so a running program never locks the jars of the
+- The program runs from a copy in `~/.agent-ledger-mcp/resident-runtime/<build>/`, so a running program never locks the jars of the
   plugin folder: the plugin can be updated or removed at any time. A client whose program file is another build (an updated plugin)
   asks the running program to end, ends it if it does not, and starts the new one.
 - If the program cannot be reached or started, the call fails the way an unanswerable call always failed: exit code 2 and, on the
@@ -740,7 +740,7 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
    it to the tool, which runs as the service user:
 
    ```sh
-   sudo sh -c 'runuser -u pg-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar import-secrets-1x --replace --stdin < /etc/pg-ledger-mcp/env'
+   sudo sh -c 'runuser -u agent-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar import-secrets-1x --replace --stdin < /etc/pg-ledger-mcp/env'
    ```
 
    - **What it reads.** The 1.x environment file, given with `--stdin` (as above) or with `--env=<file>` for an operator who can read the file as the
@@ -758,15 +758,15 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
    The services read their secrets at start, so restart the two services of 2.0:
 
    ```sh
-   sudo systemctl restart pg-ledger-mcp pg-ledger-mcp-admin
+   sudo systemctl restart agent-ledger-mcp agent-ledger-mcp-admin
    ```
 
 6. **Import the ledger with `import-1x`.** Store the password of a read-only account of the 1.x database as the service user, then run the import
    as the DDL account; the settings of the 1.x source are described in the table below:
 
    ```sh
-   sudo runuser -u pg-ledger-mcp -- java -jar dist/ledger-cli.jar secret-set ledger.import.source.password
-   sudo runuser -u pg-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar import-1x --owner-account=<ddl-account> --ledger.import.source.url=<jdbc-url> --ledger.import.source.username=<account>
+   sudo runuser -u agent-ledger-mcp -- java -jar dist/ledger-cli.jar secret-set ledger.import.source.password
+   sudo runuser -u agent-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar import-1x --owner-account=<ddl-account> --ledger.import.source.url=<jdbc-url> --ledger.import.source.username=<account>
    ```
 
    The import writes the whole ledger; `--owner-account=<account>` runs it as the DDL account, whose
@@ -791,7 +791,7 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
     and run `retire-1x` without options:
 
     ```sh
-    sudo runuser -u pg-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar retire-1x --ledger.import.source.username=<owner-account>
+    sudo runuser -u agent-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar retire-1x --ledger.import.source.username=<owner-account>
     ```
 
     It checks that the ledger of 2.0 still holds what 1.x held (2.0 may have been used since: the rows it added and the counters it
@@ -801,7 +801,7 @@ the installer of 2.0 stops nothing of 1.x. Do the steps in this order.
     the SHA-256 of that list, and changes nothing. Read the list, then run `retire-1x --confirm=<sha256> --backup-tested`:
 
     ```sh
-    sudo runuser -u pg-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar retire-1x --ledger.import.source.username=<owner-account> --confirm=<sha256> --backup-tested
+    sudo runuser -u agent-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar retire-1x --ledger.import.source.username=<owner-account> --confirm=<sha256> --backup-tested
     ```
 
     The command cannot check the backup, so `--backup-tested` is your statement that the 1.x backup was made and its restore was tested. It drops
@@ -930,7 +930,7 @@ together with the properties above.
 
 ## License
 
-From version 2.0, pg-ledger-mcp is licensed under the GNU Affero General Public License v3.0 or (at your option) any later version (`AGPL-3.0-or-later`); see [LICENSE](LICENSE), [ADDITIONAL-TERMS.md](ADDITIONAL-TERMS.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+From version 2.0, agent-ledger-mcp is licensed under the GNU Affero General Public License v3.0 or (at your option) any later version (`AGPL-3.0-or-later`); see [LICENSE](LICENSE), [ADDITIONAL-TERMS.md](ADDITIONAL-TERMS.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 Copyright (C) 2026 Jaeseong Song
 

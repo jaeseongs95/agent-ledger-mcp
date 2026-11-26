@@ -1,0 +1,227 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package org.agentledger.cli.mcp;
+
+import io.modelcontextprotocol.client.McpClient;
+import io.modelcontextprotocol.client.McpSyncClient;
+import io.modelcontextprotocol.client.transport.HttpClientStreamableHttpTransport;
+import io.modelcontextprotocol.client.transport.McpHttpClientTransportAuthorizationException;
+import io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper;
+import io.modelcontextprotocol.spec.McpSchema.ListToolsResult;
+import io.modelcontextprotocol.spec.McpSchema.Tool;
+import java.io.IOException;
+import java.net.URI;
+import java.nio.channels.UnresolvedAddressException;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+import org.agentledger.cli.CliCommand;
+import org.agentledger.cli.CliMessages;
+import org.agentledger.cli.CliOptions;
+import org.agentledger.cli.CliOutput;
+import org.agentledger.cli.Command;
+import org.agentledger.cli.ErrorCode;
+import org.agentledger.cli.FailureException;
+import org.agentledger.cli.UsageException;
+import org.agentledger.cli.seed.InstallDefaults;
+import org.agentledger.domain.rule.ToolContract;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.stereotype.Component;
+import tools.jackson.databind.json.JsonMapper;
+
+/**
+ * {@code mcp-check [--url=<url>]}: connects to a running ledger MCP server with the MCP Java SDK client (the SDK the server
+ * runs on) over Streamable HTTP, lists its tools and checks that every tool of {@link ToolContract} is there; it prints
+ * how many tools the server lists. The URL defaults to the local server (loopback and the MCP port of the install defaults); it is
+ * {@code scheme://host[:port][/path]} without user information, query or fragment, so that nothing secret can be part of
+ * it. The bearer token is the setting {@code ledger.mcp.token} ({@link McpCheckProperties}: the secret store, or
+ * {@code --ledger.mcp.token=<token>}). The command needs no database.
+ *
+ * <p>Every failure is exit code 1 with a message that never contains the token or the text of an exception of the client
+ * (those can hold request headers): the token is missing, the URL cannot be reached, the server refused the request (a
+ * wrong bearer token, or a host name that is not on its allow list: 401 or 403), the answer is not an MCP answer, or
+ * tools are missing (their names are shown).
+ *
+ * <p>The client reports every failure of the transport as an unchecked exception whose type depends on the layer that
+ * failed (the SDK, Reactor, the JDK HTTP client), so the command catches {@link RuntimeException} here and nowhere else in
+ * the CLI, sorts the cause chain by type, and rethrows every case as a {@link FailureException}. The cause is not attached
+ * and the messages of the chain are left out of the output, the log and the failure: an exception of the client can carry the
+ * request, whose headers hold the bearer token, so a message or a stack trace could leak it. The diagnosis is kept without
+ * the messages: the exception class names of the whole chain are logged at WARN, and the message of an unclassified failure
+ * names them too, so nothing is swallowed.
+ */
+@Component
+public class McpCheckCommand implements Command {
+
+    static final String URL = "url";
+
+    private static final Logger LOG = LoggerFactory.getLogger(McpCheckCommand.class);
+
+    private static final String DEFAULT_PATH = "/mcp";
+    private static final Duration TIMEOUT = Duration.ofSeconds(15);
+
+    private final McpCheckProperties properties;
+    private final InstallDefaults defaults;
+    private final JsonMapper json;
+    private final CliOutput output;
+    private final CliMessages messages;
+
+    /** @param json the {@code JsonMapper} bean of Spring Boot, which the MCP client of this command writes its JSON with */
+    McpCheckCommand(McpCheckProperties properties, InstallDefaults defaults, JsonMapper json, CliOutput output,
+            CliMessages messages) {
+        this.properties = properties;
+        this.defaults = defaults;
+        this.json = json;
+        this.output = output;
+        this.messages = messages;
+    }
+
+    /** The address the MCP server binds to by default (the server listens on {@code 127.0.0.1} only, see {@code LoopbackOnly} of the MCP server): loopback, the MCP port of the install defaults. */
+    private String defaultUrl() {
+        return "http://127.0.0.1:" + defaults.mcpPort() + DEFAULT_PATH;
+    }
+
+    @Override
+    public CliCommand name() {
+        return CliCommand.MCP_CHECK;
+    }
+
+    @Override
+    public Set<String> options() {
+        return Set.of(URL);
+    }
+
+    @Override
+    public void run(List<String> operands, ApplicationArguments arguments) {
+        if (!operands.isEmpty()) {
+            throw new UsageException(ErrorCode.TOO_MANY_ARGUMENTS);
+        }
+        URI uri = endpoint(CliOptions.value(arguments, URL).orElseGet(this::defaultUrl));
+        String token = properties.token();
+        if (token == null || token.isBlank()) {
+            throw new FailureException(ErrorCode.MCP_TOKEN_MISSING);
+        }
+        String shown = uri.getScheme() + "://" + uri.getRawAuthority() + path(uri);
+        List<String> listed = listTools(uri, token, shown);
+        List<String> missing = ToolContract.all().stream().filter(name -> !listed.contains(name)).toList();
+        if (!missing.isEmpty()) {
+            throw new FailureException(ErrorCode.MCP_TOOL_MISSING, shown, String.join(", ", missing));
+        }
+        output.info(messages.get("mcp-check.ok", shown, String.valueOf(listed.size()),
+                String.valueOf(ToolContract.all().size())));
+    }
+
+    /** The URL as given: http or https, a host, and nothing that could carry a secret. */
+    private static URI endpoint(String text) {
+        URI uri;
+        try {
+            uri = URI.create(text.strip());
+        } catch (IllegalArgumentException notAUri) {
+            throw new UsageException(ErrorCode.INVALID_OPTION_VALUE);
+        }
+        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+        boolean web = "http".equals(scheme) || "https".equals(scheme);
+        if (!web || uri.getHost() == null || uri.getUserInfo() != null || uri.getRawQuery() != null
+                || uri.getRawFragment() != null) {
+            throw new UsageException(ErrorCode.INVALID_OPTION_VALUE);
+        }
+        return uri;
+    }
+
+    private static String path(URI uri) {
+        String path = uri.getRawPath();
+        return path == null || path.isEmpty() || "/".equals(path) ? DEFAULT_PATH : path;
+    }
+
+    private List<String> listTools(URI uri, String token, String shown) {
+        try (McpSyncClient client = openClient(uri, token, TIMEOUT)) {
+            return callTool(client, shown, () -> {
+                List<String> names = new ArrayList<>();
+                ListToolsResult page = client.listTools();
+                names.addAll(page.tools().stream().map(Tool::name).toList());
+                while (page.nextCursor() != null) {
+                    page = client.listTools(page.nextCursor());
+                    names.addAll(page.tools().stream().map(Tool::name).toList());
+                }
+                return names;
+            });
+        }
+    }
+
+    /** Resolves {@code --url} when non-null or the default loopback MCP endpoint from {@link InstallDefaults}. */
+    public URI resolveEndpoint(String urlOption) {
+        return endpoint(urlOption == null ? defaultUrl() : urlOption);
+    }
+
+    /** Returns the configured bearer token or fails with {@link ErrorCode#MCP_TOKEN_MISSING}. */
+    public String requireToken() {
+        String token = properties.token();
+        if (token == null || token.isBlank()) {
+            throw new FailureException(ErrorCode.MCP_TOKEN_MISSING);
+        }
+        return token;
+    }
+
+    /** Formats {@code uri} for log/error messages without query, fragment, or user info. */
+    public String shown(URI uri) {
+        return uri.getScheme() + "://" + uri.getRawAuthority() + path(uri);
+    }
+
+    /** Opens and initializes an authenticated {@link McpSyncClient} against {@code uri}. */
+    public McpSyncClient openClient(URI uri, String token, Duration timeout) {
+        String base = uri.getScheme() + "://" + uri.getRawAuthority();
+        String shown = shown(uri);
+        HttpClientStreamableHttpTransport transport = HttpClientStreamableHttpTransport.builder(base)
+                .endpoint(path(uri))
+                .jsonMapper(new JacksonMcpJsonMapper(json))
+                .connectTimeout(timeout)
+                .addHttpRequestCustomizer((request, method, target, body, context) ->
+                        request.header("Authorization", "Bearer " + token))
+                .build();
+        try {
+            McpSyncClient client = McpClient.sync(transport).requestTimeout(timeout).initializationTimeout(timeout)
+                    .build();
+            client.initialize();
+            return client;
+        } catch (RuntimeException failure) {
+            throw translate(failure, shown);
+        }
+    }
+
+    /** Executes an MCP client call and translates any SDK/transport failure to a safe {@link FailureException}. */
+    public <T> T callTool(McpSyncClient client, String shown, Supplier<T> action) {
+        try {
+            return action.get();
+        } catch (RuntimeException failure) {
+            throw translate(failure, shown);
+        }
+    }
+
+    /** Sorts the failure of the client by the type found in its cause chain; no text of an exception is passed on. */
+    private static FailureException translate(RuntimeException failure, String shown) {
+        List<String> chain = new ArrayList<>();
+        boolean refused = false;
+        boolean unreachable = false;
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            chain.add(cause.getClass().getSimpleName());
+            refused |= cause instanceof McpHttpClientTransportAuthorizationException;
+            unreachable |= cause instanceof IOException || cause instanceof UnresolvedAddressException;
+        }
+        LOG.warn("the MCP check of {} failed; exception chain (class names only, the messages can hold the request): {}", shown,
+                String.join(" <- ", chain));
+        if (refused) {
+            return new FailureException(ErrorCode.MCP_AUTHORIZATION_REFUSED, shown);
+        }
+        if (unreachable) {
+            return new FailureException(ErrorCode.MCP_UNREACHABLE, shown);
+        }
+        return new FailureException(ErrorCode.MCP_FAILED, shown,
+                chain.stream().collect(Collectors.joining(" <- ")));
+    }
+}

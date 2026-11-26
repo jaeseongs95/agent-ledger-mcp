@@ -1,0 +1,150 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package org.agentledger.admin.web;
+
+import java.util.List;
+import java.util.Locale;
+import org.agentledger.domain.error.AdminCode;
+import org.agentledger.domain.error.AdminException;
+import org.agentledger.domain.error.ConflictCode;
+import org.agentledger.domain.error.ConflictException;
+import org.agentledger.domain.error.ErrorCode;
+import org.agentledger.domain.error.InfrastructureCode;
+import org.agentledger.domain.error.InfrastructureException;
+import org.agentledger.domain.error.LedgerException;
+import org.agentledger.domain.error.LookupCode;
+import org.agentledger.domain.error.LookupException;
+import org.agentledger.domain.error.TransitionCode;
+import org.agentledger.domain.error.TransitionException;
+import org.agentledger.domain.error.TrustCode;
+import org.agentledger.domain.error.TrustException;
+import org.agentledger.domain.error.ValidationCode;
+import org.agentledger.domain.error.ValidationException;
+import org.agentledger.domain.error.ValidationIssue;
+import org.springframework.context.MessageSource;
+import org.springframework.context.MessageSourceResolvable;
+import org.springframework.context.support.DefaultMessageSourceResolvable;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
+import org.springframework.stereotype.Component;
+import org.springframework.util.IdGenerator;
+
+/**
+ * The one place that turns a failure of the admin web into a problem detail (RFC 9457): the business failures of the
+ * sealed {@link LedgerException} hierarchy by a complete {@code switch} (status by code, sentence from the message
+ * bundles in the language of the request), and the HTTP-only refusal of an identity that is not the owner. A problem
+ * carries the {@code code} token of the external contract; a server failure carries a {@code traceId} (also logged)
+ * and never the text of the original failure.
+ */
+@Component
+public class AdminProblems {
+
+    /** The token of a signed-in identity that is not the owner (the owner list of the OIDC sign-in). */
+    public static final String FORBIDDEN = "FORBIDDEN";
+
+    private final MessageSource messages;
+    private final IdGenerator ids;
+
+    public AdminProblems(MessageSource messages, IdGenerator ids) {
+        this.messages = messages;
+        this.ids = ids;
+    }
+
+    public ProblemDetail problem(LedgerException failure, Locale locale) {
+        HttpStatus status = status(failure.code());
+        ProblemDetail problem = switch (failure) {
+            case ValidationException invalid -> validation(invalid, locale);
+            case TrustException trust -> plain(trust, trust.args(), locale);
+            case TransitionException transition -> plain(transition, transition.args(), locale);
+            case ConflictException conflict -> plain(conflict, conflict.args(), locale);
+            case LookupException lookup -> plain(lookup, lookup.args(), locale);
+            case AdminException admin -> plain(admin, admin.args(), locale);
+            case InfrastructureException infrastructure -> plain(infrastructure, infrastructure.args(), locale);
+        };
+        problem.setStatus(status);
+        problem.setProperty("code", failure.code().token());
+        if (!failure.details().isEmpty()) {
+            problem.setProperty("details", failure.details());
+        }
+        return problem;
+    }
+
+    /** A problem for a status that has no business code: the sentence comes from the bundle key {@code error.<token>}. */
+    public ProblemDetail problem(HttpStatus status, String token, Locale locale) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status,
+                messages.getMessage("error." + token, new Object[0], token, locale));
+        problem.setProperty("code", token);
+        return problem;
+    }
+
+    /** The trace id of a server failure: it is in the problem and in the log line of the failure. */
+    public String newTraceId() {
+        return ids.generateId().toString();
+    }
+
+    /** The status of a code, by a complete switch over the code enums. */
+    static HttpStatus status(ErrorCode code) {
+        return switch (code) {
+            case TrustCode trust -> HttpStatus.FORBIDDEN;
+            case ValidationCode validation -> HttpStatus.BAD_REQUEST;
+            case TransitionCode transition -> HttpStatus.CONFLICT;
+            case ConflictCode conflict -> HttpStatus.CONFLICT;
+            case LookupCode lookup -> HttpStatus.NOT_FOUND;
+            case AdminCode admin -> switch (admin) {
+                case AGENT_TOKEN_FORBIDDEN, UNAUTHORIZED -> HttpStatus.UNAUTHORIZED;
+                case DNS_REBINDING_BLOCKED, CSRF_REJECTED, PASSKEY_APPROVAL_REQUIRED, PASSKEY_APPROVAL_INVALID,
+                    PASSKEY_NONE_REGISTERED, PASSKEY_CODE_INVALID -> HttpStatus.FORBIDDEN;
+                case PASSKEY_HOST_MISMATCH, PASSKEY_HTTPS_REQUIRED -> HttpStatus.BAD_REQUEST;
+                case PASSKEY_ASSERTION_INVALID -> HttpStatus.UNAUTHORIZED;
+                case PASSKEY_LAST_KEY -> HttpStatus.CONFLICT;
+                case TOO_MANY_AUTH_FAILURES -> HttpStatus.TOO_MANY_REQUESTS;
+                case COMMON_CODE_DELETE_FORBIDDEN -> HttpStatus.METHOD_NOT_ALLOWED;
+                case PAYLOAD_TOO_LARGE -> HttpStatus.CONTENT_TOO_LARGE;
+            };
+            case InfrastructureCode infrastructure -> switch (infrastructure) {
+                case DRIVER_NOT_CONFIGURED -> HttpStatus.SERVICE_UNAVAILABLE;
+                case DRIVER_INVALID -> HttpStatus.BAD_REQUEST;
+                case INTEGRITY_VIOLATION -> HttpStatus.CONFLICT;
+                case INTERNAL_ERROR, SCHEMA_FILE_NAME_INVALID, SCHEMA_VERSION_DUPLICATE, SCHEMA_VERSION_GAP,
+                    SCHEMA_FILES_UNREADABLE, SCHEMA_DATABASE_UNREACHABLE, SCHEMA_HISTORY_MISSING,
+                    SCHEMA_HISTORY_NOT_CREATED, SCHEMA_APPLIED_FILE_MISSING, SCHEMA_DIGEST_MISMATCH,
+                    SCHEMA_RECORDED_FAILED, SCHEMA_OUT_OF_ORDER, SCHEMA_PENDING, SCHEMA_MIGRATION_FAILED,
+                    SCHEMA_ENCODING_NOT_UTF8, SCHEMA_GRANT_FAILED, JVM_ZONE_NOT_UTC, SESSION_ZONE_NOT_UTC,
+                    SESSION_CLOCK_UNREADABLE, DATABASE_PRODUCT_UNREADABLE, DATABASE_PRODUCT_UNSUPPORTED,
+                    DATABASE_PRODUCT_MISMATCH, ARTIFACT_CORRUPTED, ARTIFACT_STORAGE_UNSAFE, ARTIFACT_KEY_MISSING,
+                    ARTIFACT_STORAGE_IO_ERROR, MANAGEMENT_PORT_SEPARATE -> HttpStatus.INTERNAL_SERVER_ERROR;
+            };
+        };
+    }
+
+    private ProblemDetail validation(ValidationException failure, Locale locale) {
+        List<ValidationIssue> issues = failure.issues();
+        ProblemDetail problem;
+        if (failure.code() == ValidationCode.VALIDATION_FAILED && !issues.isEmpty()) {
+            ValidationIssue first = issues.getFirst();
+            problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
+                    first.path() + ": " + reason(first, locale));
+            problem.setProperty("errors", issues.stream()
+                    .map(issue -> new Issue(issue.path(), reason(issue, locale), issue.allowed())).toList());
+        } else {
+            problem = plain(failure, failure.args(), locale);
+        }
+        return problem;
+    }
+
+    /** One failed input of a form: where, why, and the allowed values of a closed set. */
+    public record Issue(String path, String reason, List<String> allowed) {
+    }
+
+    private ProblemDetail plain(LedgerException failure, List<String> args, Locale locale) {
+        MessageSourceResolvable resolvable = new DefaultMessageSourceResolvable(
+                new String[] {failure.code().messageKey()}, args.toArray(), failure.code().token());
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, messages.getMessage(resolvable, locale));
+    }
+
+    private String reason(ValidationIssue issue, Locale locale) {
+        MessageSourceResolvable resolvable = new DefaultMessageSourceResolvable(
+                new String[] {issue.reason().messageKey()}, issue.reasonArgs().toArray(), issue.reason().name());
+        return messages.getMessage(resolvable, locale);
+    }
+}

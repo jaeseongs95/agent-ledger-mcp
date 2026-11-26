@@ -1,4 +1,4 @@
-# pg-ledger-mcp
+# agent-ledger-mcp
 
 [English](README.md)
 
@@ -10,7 +10,7 @@
 설치기는 프록시 설정을 쓰지 않고 인증서를 발급하지 않습니다.
 
 2.0.0 버전은 Java 25와 Spring Boot로 다시 작성한 것이며 자체 도구 계약을 가집니다(모든 쓰기 도구는 필수 `operationKey`를 받고, 모든 응답은 `ApiResult.v1` 봉투를 쓰며, 이전 버전의 인자는 새 인자와 함께 받아들이지 않습니다).
-클라이언트에 바뀐 내용은 릴리스 노트([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md))에 적습니다. 릴리스 노트의 형식은 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md)에 있습니다.
+클라이언트에 바뀐 내용은 릴리스 노트([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md))에 적습니다. 릴리스 노트의 형식은 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md)에 있습니다.
 
 ## 목차
 
@@ -215,8 +215,8 @@ MCP를 직접 호출하는 쪽은 작성자별 `Bearer` 세션 토큰(`STANDARD`
 | `ledger.admin.token` | 관리 웹 | 관리 토큰, 16자 이상(비밀): `/api` 아래 읽기 전용 JSON 엔드포인트의 bearer입니다. `ledger.admin.sign-in=token`이면 로그인 페이지의 비밀번호이기도 하며 변경은 결코 승인하지 않습니다 |
 | `ledger.admin.agent-token` | 관리 웹 | 필수: 에이전트의 bearer 토큰으로 `ledger.mcp.token`과 같은 값이어야 하고 `ledger.admin.token`과는 달라야 합니다. 관리 웹은 이 토큰을 `AGENT_TOKEN_FORBIDDEN`으로 거절합니다(비밀) |
 | `ledger.admin.allowed-hosts` | 관리 웹 | 허용하는 `Host` 값(DNS 리바인딩 방어), 기본 `127.0.0.1`과 `localhost` |
-| `ledger.admin.driver-file` | 관리 웹 | 드라이버 화면이 기록하는 드라이버 등록 파일, 기본 `/etc/pg-ledger-mcp/jdbc-driver.yaml` |
-| `ledger.admin.driver-directory` | 관리 웹 | 드라이버 jar를 가져올 수 있는 유일한 디렉터리, 기본 `/etc/pg-ledger-mcp/drivers` |
+| `ledger.admin.driver-file` | 관리 웹 | 드라이버 화면이 기록하는 드라이버 등록 파일, 기본 `/etc/agent-ledger-mcp/jdbc-driver.yaml` |
+| `ledger.admin.driver-directory` | 관리 웹 | 드라이버 jar를 가져올 수 있는 유일한 디렉터리, 기본 `/etc/agent-ledger-mcp/drivers` |
 | `ledger.admin.sign-in` | 관리 웹 | 소유자의 로그인 방식으로 `token`, `oidc`, `passkey` 중 정확히 하나이며 로그인 페이지는 그것만 제공합니다. 없으면 새 설치는 `passkey`이고, `ledger.admin.oidc.*` 설정이 있는데 선택이 없는 설치는 시작할 때 거절합니다(추측하지 않습니다) |
 | `ledger.admin.oidc.owner-email` | 관리 웹 | `ledger.admin.sign-in=oidc`일 때 소유자의 이메일 주소 하나이며 공급자가 확인한 주소여야 합니다. 공급자 자체는 `spring.security.oauth2.client.*`입니다 |
 | `ledger.admin.oidc.issuer` | 관리 웹 | `ledger.admin.sign-in=oidc`일 때 그 주소가 유효한 발급자(`iss`): 주소는 그것을 확인한 발급자 안에서만 의미가 있습니다 |
@@ -238,11 +238,11 @@ MCP를 직접 호출하는 쪽은 작성자별 `Bearer` 세션 토큰(`STANDARD`
 | `ledger.attachments.upload-ttl` | 서버, CLI | 마지막 청크 뒤 업로드가 사는 시간, 기본 10m |
 | `ledger.attachments.orphan-grace` | 서버, CLI | 행 없는 파일(또는 대체된 파일)을 `attachments-check`가 `orphans/`로 옮기기 전 유예, 기본 24h |
 | `ledger.attachments.reaper-interval` | MCP 서버 | 만료된 업로드를 지우는 주기, 기본 1m |
-| `ledger.secrets.home` | `ledger-cli` | 설정, 드라이버 등록, 드라이버 jar, 비밀 디렉터리를 담는 설치 디렉터리, 기본값은 Linux에서 `/etc/pg-ledger-mcp`, Windows에서 `C:/ProgramData/pg-ledger-mcp/etc`로, 그 호스트의 설치 프로그램이 두는 곳입니다 |
-| `ledger.secrets.directory` | `ledger-cli` | 비밀 디렉터리(폴더 `common`, `admin`, `mcp`, `tool`을 담으며 그 자체는 설정 트리가 아닙니다), 기본값은 `ledger.secrets.home` 아래 `secrets`(Linux에서 `/etc/pg-ledger-mcp/secrets`) |
-| `ledger.secrets.instance` | `ledger-cli` | 기본 경로가 따르는 인스턴스 이름, 기본 `pg-ledger-mcp` |
-| `ledger.cli.driver.directory` | `ledger-cli` | `driver-register`가 jar를 가져오는 디렉터리, 기본값은 `ledger.secrets.home` 아래 `drivers`(Linux에서 `/etc/pg-ledger-mcp/drivers`) |
-| `ledger.cli.driver.file` | `ledger-cli` | `driver-register`가 기록하는 등록 파일, 기본값은 `ledger.secrets.home`의 `jdbc-driver.yaml`(Linux에서 `/etc/pg-ledger-mcp/jdbc-driver.yaml`) |
+| `ledger.secrets.home` | `ledger-cli` | 설정, 드라이버 등록, 드라이버 jar, 비밀 디렉터리를 담는 설치 디렉터리, 기본값은 Linux에서 `/etc/agent-ledger-mcp`, Windows에서 `C:/ProgramData/agent-ledger-mcp/etc`로, 그 호스트의 설치 프로그램이 두는 곳입니다 |
+| `ledger.secrets.directory` | `ledger-cli` | 비밀 디렉터리(폴더 `common`, `admin`, `mcp`, `tool`을 담으며 그 자체는 설정 트리가 아닙니다), 기본값은 `ledger.secrets.home` 아래 `secrets`(Linux에서 `/etc/agent-ledger-mcp/secrets`) |
+| `ledger.secrets.instance` | `ledger-cli` | 기본 경로가 따르는 인스턴스 이름, 기본 `agent-ledger-mcp` |
+| `ledger.cli.driver.directory` | `ledger-cli` | `driver-register`가 jar를 가져오는 디렉터리, 기본값은 `ledger.secrets.home` 아래 `drivers`(Linux에서 `/etc/agent-ledger-mcp/drivers`) |
+| `ledger.cli.driver.file` | `ledger-cli` | `driver-register`가 기록하는 등록 파일, 기본값은 `ledger.secrets.home`의 `jdbc-driver.yaml`(Linux에서 `/etc/agent-ledger-mcp/jdbc-driver.yaml`) |
 
 서버는 루프백에서만 수신합니다(MCP `127.0.0.1:8765`, 관리 웹 `127.0.0.1:8865`). 두 서버의 코드에 고정되어 있어 주소를 바꾸는 설정은 없습니다. 외부에
 공개하려면 운영자가 고른 역방향 프록시(HTTPS를 종단함)를 같은 호스트에 두고, 그 프록시가 넘기는 호스트 이름 하나를 서비스의 허용 호스트에
@@ -257,11 +257,11 @@ MCP를 직접 호출하는 쪽은 작성자별 `Bearer` 세션 토큰(`STANDARD`
 
 모든 대상에 공통인 것은 다음과 같습니다.
 
-- **서비스 계정 하나.** MCP 서버와 관리 웹은 어떤 사람에게도 속하지 않는 운영체제 계정 하나로 실행합니다. Linux는 시스템 사용자 `pg-ledger-mcp`(로그인 없음,
+- **서비스 계정 하나.** MCP 서버와 관리 웹은 어떤 사람에게도 속하지 않는 운영체제 계정 하나로 실행합니다. Linux는 시스템 사용자 `agent-ledger-mcp`(로그인 없음,
   root 아님), Windows는 내장 계정 LocalService(비밀번호 없음)입니다. 목적은 장부의 비밀인 관리 토큰과 데이터베이스 비밀번호를 그 컴퓨터에서 일하는 사람의
   계정과 그 아래에서 도는 에이전트로부터 떼어 놓는 것이며, 비밀 디렉터리는 서비스 계정만 읽을 수 있습니다(Windows에서는 설치한 사용자와, 읽기만 하는 LocalService가 읽고 다른 누구도 읽지 못합니다). 비밀은 용도마다 폴더 하나에 두고 각 서비스는 자기 폴더와 공통 폴더만 읽어 들이므로, MCP 서버의 프로세스는 더 이상 관리 토큰이나 OpenID Connect 클라이언트 비밀을 설정에 가지지 않습니다(첨부의 키 파일도 어느 서비스의 속성도 아닙니다). 이것이 하지 못하는 일도 있습니다. 두 서비스는 같은 운영체제 사용자로 실행되므로 파일 권한이 한 서비스가 다른 서비스의 폴더를 읽는 것을 막지는 못합니다. 개인판은 설치 대상 전체를 신뢰하며, 이번 변경은 어떤 프로세스도 다른 용도의 비밀을 자기 환경에 싣지 않게 하는 것입니다. 한 설치를 인스턴스라고 부르며 서비스 이름은 그것을
-  따릅니다. 인스턴스는 `--name=<name>`이 다른 이름을 주지 않으면 `pg-ledger-mcp`이고, 서비스는 `<name>`과 `<name>-admin`입니다(기본값은 `pg-ledger-mcp`와
-  `pg-ledger-mcp-admin`). Linux 사용자, 디렉터리(`/opt/<name>`, `/etc/<name>`, Windows는 `C:\ProgramData\<name>`), WinSW id가 이름을 따르므로, 두 번째
+  따릅니다. 인스턴스는 `--name=<name>`이 다른 이름을 주지 않으면 `agent-ledger-mcp`이고, 서비스는 `<name>`과 `<name>-admin`입니다(기본값은 `agent-ledger-mcp`와
+  `agent-ledger-mcp-admin`). Linux 사용자, 디렉터리(`/opt/<name>`, `/etc/<name>`, Windows는 `C:\ProgramData\<name>`), WinSW id가 이름을 따르므로, 두 번째
   인스턴스나 기본 이름으로 아직 1.x가 도는 호스트 옆의 설치에는 자기 `--name=<name>`과 자기 포트만 있으면 됩니다.
 - **데이터베이스 계정 둘.** 설치 전에 DBMS의 도구로 만들어 둡니다(계정 생성은 ANSI SQL이 아니며 제품에 속하지 않습니다). 앱 계정은 두 서버와 `ledger-cli`의
   소유자 명령이 함께 쓰며, `migrate`가 `ledger-database/src/main/resources/db-templates/dml-grants.sql`의 최소 권한을 부여합니다(DDL 없음, 이력에
@@ -292,7 +292,7 @@ cp ledger-cli/build/libs/ledger-cli.jar ledger-mcp-server/build/libs/ledger-mcp-
 
 | 옵션 | 뜻 |
 |---|---|
-| `--name=<name>` | 인스턴스 이름, 기본값 `pg-ledger-mcp`: 소문자, 숫자, 하이픈, 23자 이내, `-admin`으로 끝나지 않음. Java가 무엇이든 만들기 전에 검증합니다 |
+| `--name=<name>` | 인스턴스 이름, 기본값 `agent-ledger-mcp`: 소문자, 숫자, 하이픈, 23자 이내, `-admin`으로 끝나지 않음. Java가 무엇이든 만들기 전에 검증합니다 |
 | `--java=<path>` | Java 25 런타임. 기본값은 root의 `PATH`에 있는 `java`이며, 서비스 사용자도 실행하므로 모든 계정이 실행할 수 있는 경로(`/home` 아래가 아닌 곳)여야 하고, 스크립트가 서비스 사용자를 만든 직후, 다른 것을 만들기 전에 이를 확인합니다 |
 | `--jars=<dir>` | jar 세 개가 있는 디렉터리 |
 | `--driver-jar=<file>` | JDBC 드라이버 jar |
@@ -316,7 +316,7 @@ cp ledger-cli/build/libs/ledger-cli.jar ledger-mcp-server/build/libs/ledger-mcp-
 
 ### Linux 서버
 
-root로 실행합니다. 사용자 `pg-ledger-mcp`가 없으면 만들고, `prepare-host`(Java)가 `/opt/<name>`(root, 0755), `/etc/<name>`(서비스 사용자, 0750), 그 아래
+root로 실행합니다. 사용자 `agent-ledger-mcp`가 없으면 만들고, `prepare-host`(Java)가 `/opt/<name>`(root, 0755), `/etc/<name>`(서비스 사용자, 0750), 그 아래
 `drivers` 폴더(root, 0755)와 `secrets` 폴더 및 그 아래의 `common`, `admin`, `mcp`, `tool` 폴더, 키 폴더 `attachment-keys`(서비스 사용자, 0700)를 만들고, jar와 드라이버를 복사하고, 유닛을 `/etc/systemd/system`에 렌더하며, 유닛은 이어서 활성화합니다.
 비밀은 서비스 사용자가 저장합니다. 설치 프로그램이 렌더하지 않은 파일을 렌더한 파일이 대체하면 그 파일은 `<file>.backup`으로 보관합니다. 1.x 설치를 옮기려면 1.x에서 업그레이드를 참조합니다.
 
@@ -324,7 +324,7 @@ root로 실행합니다. 사용자 `pg-ledger-mcp`가 없으면 만들고, `prep
 sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<driver-class> --owner-account=<ddl-account> --app-account=<app-account> --jdbc-url=<jdbc-url>
 ```
 
-설치 프로그램은 서비스 둘(`<name>`과 `<name>-admin`, 기본값은 `pg-ledger-mcp`와 `pg-ledger-mcp-admin`)을 활성화하고 재시작합니다. `systemctl status pg-ledger-mcp pg-ledger-mcp-admin`으로 확인합니다.
+설치 프로그램은 서비스 둘(`<name>`과 `<name>-admin`, 기본값은 `agent-ledger-mcp`와 `agent-ledger-mcp-admin`)을 활성화하고 재시작합니다. `systemctl status agent-ledger-mcp agent-ledger-mcp-admin`으로 확인합니다.
 
 ### 밖에서 접근하기
 
@@ -351,7 +351,7 @@ sudo deploy/install.sh --jars=dist --driver-jar=<driver-jar> --driver-class=<dri
 | `<ddl-account>` | DDL 계정 |
 | `<app-account>` | 앱 계정 |
 | `"<jdbc-url>"` | JDBC URL, 따옴표 안에 |
-| `"<name>"` | 선택, 따옴표 안에: 인스턴스 이름, 기본값 `pg-ledger-mcp` |
+| `"<name>"` | 선택, 따옴표 안에: 인스턴스 이름, 기본값 `agent-ledger-mcp` |
 | `"<more options>"` | 선택, 이름 뒤에 따옴표 안에: `render-deploy`의 다른 옵션, 예를 들어 서버의 호스트 이름 |
 
 ```bat
@@ -361,7 +361,7 @@ deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <a
 외부에서 접근하는 서버는 서비스마다 호스트 이름을 더하고, 직접 준비한 역방향 프록시를 두 루프백 포트 앞에 둡니다(밖에서 접근하기 참조).
 
 ```bat
-deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <app-account> "<jdbc-url>" "pg-ledger-mcp" "--mcp-host=<mcp-host> --admin-host=<admin-host>"
+deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <app-account> "<jdbc-url>" "agent-ledger-mcp" "--mcp-host=<mcp-host> --admin-host=<admin-host>"
 ```
 
 모든 것은 `C:\ProgramData\<name>`에 놓입니다. 두 서비스는 LocalService로 실행하고, 실패하면 다시 시작하며(WinSW 설정), 로그는 `logs` 폴더에 씁니다.
@@ -490,22 +490,22 @@ JDBC 드라이버의 타입 정보는 드라이버가 판단할 수 없는 형�
 
 훅은 쓰기 도구 13종과 첨부 도구 5종에만 서명하며, 도구 이름은 `mcp__<server>__ledger_<op>` 또는 `mcp__<server>__<server>_ledger_<op>`입니다
 (Codex Apps는 `mcp__codex_apps__app_<app>_ledger_<op>`). `_hostAttestation`의 값은
-`pgla2.<author>.<tool>.<operation key>.<arguments digest>.<issued at>.<signature>`이며, 작성자, 도구, 호출의 `operationKey`(`ledger_whoami`와 첨부 도구는 빈 값), 인자의 RFC 8785 정규형(`_hostAttestation` 제외, 배치는 모든 연산과 그 내용, 순서, 배치의 키)의
+`ala3.<author>.<tool>.<operation key>.<arguments digest>.<issued at>.<signature>`이며, 작성자, 도구, 호출의 `operationKey`(`ledger_whoami`와 첨부 도구는 빈 값), 인자의 RFC 8785 정규형(`_hostAttestation` 제외, 배치는 모든 연산과 그 내용, 순서, 배치의 키)의
 SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인자에서 `operationKey`를 읽을 뿐 키를 만들어 넣지 않으며, 키가 없는 호출은 서버가 거절합니다. 가로챈 토큰으로 다른 내용을 보낼 수 없습니다.
 
-- 훅은 MCP 서버 이름과 작성자마다 Ed25519 키 하나를 소유자 전용 폴더에 보관합니다. 기본은 `~/.pg-ledger-mcp/session-keys`이며, `LEDGER_HOOK_KEY_DIR`에 절대 경로를 주어 바꿀 수 있습니다.
+- 훅은 MCP 서버 이름과 작성자마다 Ed25519 키 하나를 소유자 전용 폴더에 보관합니다. 기본은 `~/.agent-ledger-mcp/session-keys`이며, `LEDGER_HOOK_KEY_DIR`에 절대 경로를 주어 바꿀 수 있습니다.
   한 서버용 서명은 다른 서버에서 검증되지 않습니다. Codex Apps의 서버 이름은 `codex_apps.<app>`입니다.
 - 상주 프로그램은 첫 호출이 띄우며 설치 단계가 따로 없습니다. 주소 파일이 없거나, 이미 사라진 프로세스를 가리키거나(프로세스 번호와 시작
   시각이 모두 맞아야 하므로 재사용된 번호는 그 프로그램으로 보지 않습니다) 응답하지 않으면 클라이언트가 프로그램의 복사본으로 `java -jar`를
   실행하며, 호출 여러 개가 동시에 와도 하나만 뜹니다(상태 폴더의 잠금이 하나, 프로그램 자신의 잠금이 또 하나). 첫 호출은 약 1초, 이후
   호출은 약 0.1초 걸립니다(측정은 릴리스 노트). 프로그램은 호출이 끝난 뒤에도 남아 있다가 15분 동안 호출이 없으면 스스로 끝납니다
   (`LEDGER_HOOK_RESIDENT_IDLE_TIMEOUT`, `PT30M` 같은 ISO-8601 기간). `java -jar ledger-client-hook.jar stop`으로도 끝낼 수 있습니다.
-- 상주 프로그램은 키 폴더마다 하나입니다. 상태 폴더 `~/.pg-ledger-mcp/resident/<id>/`에는 주소 파일(포트, 프로세스 번호와 시작 시각, 판,
+- 상주 프로그램은 키 폴더마다 하나입니다. 상태 폴더 `~/.agent-ledger-mcp/resident/<id>/`에는 주소 파일(포트, 프로세스 번호와 시작 시각, 판,
   시작할 때마다 새로 만드는 비밀 값), 잠금 파일 둘, 프로그램의 출력이 담긴 `resident.log`(비밀 값은 절대 쓰지 않음)가 있습니다. 프로그램은
   시스템이 고른 포트에서 `127.0.0.1`로만 연결을 받습니다. 모든 요청은 주소 파일의 비밀 값을 가져야 하고, 값은 상수 시간으로 비교하며
   없으면 401로 거절하므로 같은 PC의 다른 계정은 프로그램을 부를 수 없습니다. 폴더와 파일은 소유자 전용입니다(POSIX 권한, 또는 파일
   시스템이 지원하는 경우 소유자만 허용하는 ACL).
-- 프로그램은 `~/.pg-ledger-mcp/resident-runtime/<build>/`의 복사본에서 실행되므로 실행 중인 프로그램이 플러그인 폴더의 jar를 잠그지 않습니다.
+- 프로그램은 `~/.agent-ledger-mcp/resident-runtime/<build>/`의 복사본에서 실행되므로 실행 중인 프로그램이 플러그인 폴더의 jar를 잠그지 않습니다.
   플러그인은 언제든 갱신하거나 삭제할 수 있습니다. 프로그램 파일의 판이 다른 클라이언트(갱신된 플러그인)는 실행 중인 프로그램에 끝내 달라고
   요청하고, 끝나지 않으면 끝낸 뒤 새 프로그램을 띄웁니다.
 - 프로그램에 닿지 못하거나 띄우지 못하면 호출은 답할 수 없는 호출이 늘 그랬듯 실패합니다. 종료 코드 2와 표준 오류의
@@ -592,7 +592,7 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인�
    1.x 파일은 root가 소유하고 비밀 저장소는 서비스 사용자가 소유하므로, root가 파일을 열어 서비스 사용자로 실행하는 도구에 넘겨 줍니다.
 
    ```sh
-   sudo sh -c 'runuser -u pg-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar import-secrets-1x --replace --stdin < /etc/pg-ledger-mcp/env'
+   sudo sh -c 'runuser -u agent-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar import-secrets-1x --replace --stdin < /etc/pg-ledger-mcp/env'
    ```
 
    - **읽는 것.** 1.x 환경 파일이며, 위처럼 `--stdin`으로 주거나 서비스 사용자로 파일을 읽을 수 있는 운영자는 `--env=<file>`로 줍니다. 둘 중 정확히 하나를 줍니다.
@@ -608,15 +608,15 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인�
    서비스는 시작할 때 비밀을 읽으므로 2.0의 두 서비스를 재시작합니다.
 
    ```sh
-   sudo systemctl restart pg-ledger-mcp pg-ledger-mcp-admin
+   sudo systemctl restart agent-ledger-mcp agent-ledger-mcp-admin
    ```
 
 6. **`import-1x`로 장부를 가져옵니다.** 서비스 사용자로 1.x 데이터베이스의 읽기 전용 계정 비밀번호를 저장한 다음, DDL 계정으로 가져오기를 실행합니다.
    1.x 원본의 설정은 아래 표에 있습니다.
 
    ```sh
-   sudo runuser -u pg-ledger-mcp -- java -jar dist/ledger-cli.jar secret-set ledger.import.source.password
-   sudo runuser -u pg-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar import-1x --owner-account=<ddl-account> --ledger.import.source.url=<jdbc-url> --ledger.import.source.username=<account>
+   sudo runuser -u agent-ledger-mcp -- java -jar dist/ledger-cli.jar secret-set ledger.import.source.password
+   sudo runuser -u agent-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar import-1x --owner-account=<ddl-account> --ledger.import.source.url=<jdbc-url> --ledger.import.source.username=<account>
    ```
 
    가져오기는 장부 전체를 쓰며, `--owner-account=<account>`가 DDL 계정으로 실행합니다. 그 비밀번호는 숨김 입력으로 받으며 저장하지 않습니다
@@ -633,7 +633,7 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인�
     비밀번호를 `secret-set ledger.import.source.password`로 저장하고 `ledger.import.source.username`을 그 계정으로 지정한 뒤 옵션 없이 `retire-1x`를 실행합니다.
 
     ```sh
-    sudo runuser -u pg-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar retire-1x --ledger.import.source.username=<owner-account>
+    sudo runuser -u agent-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar retire-1x --ledger.import.source.username=<owner-account>
     ```
 
     이 명령은 2.0 장부가 1.x가 가졌던 것을 여전히 가지고 있는지(그 뒤 2.0을 썼을 수 있으므로 2.0이 추가한 행과 앞으로 옮긴 카운터는 보지 않고, 2.0이 고친 행은 받아들이며,
@@ -641,7 +641,7 @@ SHA-256, 시각에 대한 Ed25519 서명입니다. 훅은 모델이 보낸 인�
     모든 객체를 제거 순서대로 보여 주며 그 목록의 SHA-256을 출력할 뿐 아무것도 바꾸지 않습니다. 목록을 읽은 뒤 `retire-1x --confirm=<sha256> --backup-tested`를 실행합니다.
 
     ```sh
-    sudo runuser -u pg-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar retire-1x --ledger.import.source.username=<owner-account> --confirm=<sha256> --backup-tested
+    sudo runuser -u agent-ledger-mcp -- java -jar dist/ledger-migrate-1x.jar retire-1x --ledger.import.source.username=<owner-account> --confirm=<sha256> --backup-tested
     ```
 
     명령은 백업을 확인할 수 없으므로 `--backup-tested`는 1.x 백업을 만들었고 그 복원을 시험했다는 사용자의 확인입니다. 명령은 트리거, 뷰, 표, 함수, 시퀀스, 스키마를 하나의 트랜잭션으로
@@ -753,7 +753,7 @@ JVM이 인식하는 프로세서 수를 제한할 수 있습니다. 속성은 �
 
 ## 라이선스
 
-pg-ledger-mcp는 2.0 버전부터 GNU Affero General Public License v3.0 또는 (선택에 따라) 그 이후 판(`AGPL-3.0-or-later`)에 따라 배포합니다. 자세한 내용은 [LICENSE](LICENSE), [ADDITIONAL-TERMS.ko.md](ADDITIONAL-TERMS.ko.md), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)를 참조하십시오.
+agent-ledger-mcp는 2.0 버전부터 GNU Affero General Public License v3.0 또는 (선택에 따라) 그 이후 판(`AGPL-3.0-or-later`)에 따라 배포합니다. 자세한 내용은 [LICENSE](LICENSE), [ADDITIONAL-TERMS.ko.md](ADDITIONAL-TERMS.ko.md), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)를 참조하십시오.
 
 Copyright (C) 2026 Jaeseong Song
 

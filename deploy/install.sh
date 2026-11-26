@@ -1,5 +1,5 @@
 #!/bin/sh
-# deploy/install.sh: the installer of pg-ledger-mcp 2.x for a Linux host (a Linux server). It is thin on purpose: it starts
+# deploy/install.sh: the installer of agent-ledger-mcp 2.x for a Linux host (a Linux server). It is thin on purpose: it starts
 # only what Java cannot do (create the operating system user, switch to it, enable and restart the units) and
 # everything else is `java -jar ledger-cli.jar <command>`: render-deploy --check (every option, validated first), prepare-host
 # (directories with owner and mode, the jars and the driver copied, units, settings),
@@ -7,7 +7,7 @@
 # Documentation it follows: Spring Boot, "Installing Spring Boot Applications" (a systemd unit in /etc/systemd/system,
 # `systemctl enable`): https://docs.spring.io/spring-boot/how-to/deployment/installing.html ; systemd.exec(5) (User=, the
 # sandboxing options of the rendered units).
-# One service user (named after the instance, default pg-ledger-mcp, never root) runs the MCP server and the admin web: the
+# One service user (named after the instance, default agent-ledger-mcp, never root) runs the MCP server and the admin web: the
 # secrets are readable by it alone, so the accounts the agents run as cannot read them. The secrets are in one folder per use below
 # /etc/<name>/secrets (common, admin, mcp, tool) and each service imports only the folders it needs, so the MCP server has none of the
 # secrets of the admin web in its settings (one user runs both, so file permissions do not separate them). --name=<instance> gives an instance of
