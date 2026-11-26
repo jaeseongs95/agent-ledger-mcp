@@ -15,15 +15,19 @@ import org.pgledger.admin.web.AdminHttpExceptionAdvice;
 import org.pgledger.admin.web.FormErrors;
 import org.pgledger.application.admin.GrantService;
 import org.pgledger.application.admin.GrantService.GrantCommand;
+import org.pgledger.application.admin.GrantService.IssuedTokenWithGrants;
 import org.pgledger.application.admin.GrantService.RevokeCommand;
+import org.pgledger.application.admin.GrantService.SyncCommand;
+import org.pgledger.application.admin.GrantService.SyncResult;
 import org.pgledger.application.admin.SessionKeyService;
 import org.pgledger.application.admin.SessionKeyService.PresentedKey;
 import org.pgledger.application.admin.SessionTokenService;
 import org.pgledger.application.admin.SessionTokenService.IssueCommand;
-import org.pgledger.application.admin.SessionTokenService.IssuedToken;
 import org.pgledger.domain.error.ValidationException;
 import org.pgledger.domain.error.ValidationReason;
+import org.pgledger.domain.model.SessionGrant;
 import org.pgledger.domain.model.SessionPublicKey;
+import org.pgledger.domain.model.SessionToken;
 import org.pgledger.domain.rule.Scope;
 import org.pgledger.domain.value.OwnerIdentity;
 import org.springframework.stereotype.Controller;
@@ -35,19 +39,18 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 /**
- * The live session grants, registered session keys, and HTTP Bearer session tokens.
+ * The session-centric access control console ({@code /grants}): live session grants, registered Ed25519 session keys,
+ * and HTTP Bearer session tokens.
  *
- * <p>Attested sessions register an Ed25519 public key together with their grants ({@link GrantService#grantWithKey})
- * after comparing the fingerprint on the preview screen. Standard HTTP Bearer sessions receive a one-time session
- * token ({@link SessionTokenService#issue}) and may be granted scopes on projects ({@link GrantService#grant}). Every
- * operation is recorded with the signed-in owner.
+ * <p>All state-changing endpoints require WebAuthn passkey approval via {@code ApprovalInterceptor} and record the
+ * signed-in owner in {@code owner_audit}. Existing form endpoints remain fully supported alongside {@code /grants/sync}
+ * (single-transaction per-project scope sync) and optional initial project grants during bearer token issuance.
  */
 @Controller
 public class GrantsController {
 
-    private static final String TAB_GRANTS = "tab-btn-grants";
-    private static final String TAB_TOKENS = "tab-btn-tokens";
-    private static final String TAB_KEYS = "tab-btn-keys";
+    private static final String CONNECT_TAB_TOKEN = "connect-tab-token";
+    private static final String CONNECT_TAB_KEY = "connect-tab-key";
 
     /** The issue form with the pasted public key (the key is required: the grant screen registers it). */
     public record GrantForm(String author, String project, List<String> scopes, String expiresAt, String note,
@@ -70,7 +73,7 @@ public class GrantsController {
     public record Preview(GrantForm form, String fingerprint, String server, boolean alreadyRegistered) {
     }
 
-    /** The form that closes a key: the author and the fingerprint of its live key, typed by the owner. */
+    /** The form that closes a key: the author and the fingerprint of its live key, confirmed by the owner. */
     public record KeyRevokeForm(String author, String fingerprint) {
     }
 
@@ -78,8 +81,15 @@ public class GrantsController {
     public record AuthorGrantForm(String author, String project, List<String> scopes, String expiresAt, String note) {
     }
 
-    /** Issues a standard HTTP Bearer session token for an author; the raw secret is shown once in the response. */
-    public record TokenIssueForm(String author, String expiresAt, String note) {
+    /** Synchronizes the active scopes of one author on one project in a single passkey-approved submission. */
+    public record SyncForm(String author, String project, List<String> scopes, String expiresAt, String note) {
+    }
+
+    /**
+     * Issues a standard HTTP Bearer session token for an author; the raw secret is shown once in the response. Optional
+     * {@code project} and {@code scopes} allow granting initial permissions in the same transaction.
+     */
+    public record TokenIssueForm(String author, String expiresAt, String note, String project, List<String> scopes) {
     }
 
     /** Revokes a standard HTTP Bearer session token by numeric id. */
@@ -115,7 +125,8 @@ public class GrantsController {
     @PostMapping("/grants/preview")
     String preview(@Valid @ModelAttribute GrantForm form, BindingResult formErrors, Model model,
             HttpServletRequest request) {
-        AdminHttpExceptionAdvice.recoverHtml(request, "grants", () -> recoveryModel(TAB_GRANTS, "grantForm", form));
+        AdminHttpExceptionAdvice.recoverHtml(request, "grants",
+                () -> recoveryModel(CONNECT_TAB_KEY, "grantForm", form));
         forms.raiseIfAny(formErrors);
         PresentedKey presented = keys.present(form.author(), form.publicKey());
         Optional<SessionPublicKey> current = keys.live(form.author());
@@ -128,7 +139,7 @@ public class GrantsController {
                 presented.publicKey());
         model.addAttribute("preview", new Preview(shown, presented.fingerprint(), presented.server(),
                 alreadyRegistered));
-        model.addAttribute("activeTab", TAB_GRANTS);
+        model.addAttribute("activeConnectTab", CONNECT_TAB_KEY);
         return "grants";
     }
 
@@ -136,7 +147,8 @@ public class GrantsController {
     String grant(@Valid @ModelAttribute GrantForm form, BindingResult formErrors,
             @Valid @ModelAttribute Confirmation confirmation, BindingResult confirmationErrors, OwnerIdentity actor,
             HttpServletRequest request, RedirectAttributes flash) {
-        AdminHttpExceptionAdvice.recoverHtml(request, "grants", () -> recoveryModel(TAB_GRANTS, "grantForm", form));
+        AdminHttpExceptionAdvice.recoverHtml(request, "grants",
+                () -> recoveryModel(CONNECT_TAB_KEY, "grantForm", form));
         forms.raiseIfAny(formErrors);
         PresentedKey presented = keys.present(form.author(), form.publicKey());
         forms.raiseIfAny(confirmationErrors);
@@ -156,10 +168,25 @@ public class GrantsController {
     String grantAuthor(@ModelAttribute AuthorGrantForm form, OwnerIdentity actor, HttpServletRequest request,
             RedirectAttributes flash) {
         AdminHttpExceptionAdvice.recoverHtml(request, "grants",
-                () -> recoveryModel(TAB_GRANTS, "authorGrantForm", form));
+                () -> recoveryModel(CONNECT_TAB_TOKEN, "authorGrantForm", form));
         grants.grant(new GrantCommand(form.author(), form.project(), form.scopes(), form.expiresAt(), form.note()),
                 actor);
         flash.addFlashAttribute("flashKey", "flash.grantIssued");
+        return "redirect:/grants";
+    }
+
+    @PostMapping("/grants/sync")
+    String sync(@ModelAttribute SyncForm form, OwnerIdentity actor, HttpServletRequest request,
+            RedirectAttributes flash) {
+        AdminHttpExceptionAdvice.recoverHtml(request, "grants",
+                () -> recoveryModel(CONNECT_TAB_TOKEN, "syncForm", form));
+        SyncResult result = grants.syncProjectScopes(
+                new SyncCommand(form.author(), form.project(), form.scopes(), form.expiresAt(), form.note()), actor);
+        if (result.added() == 0 && result.revoked() == 0) {
+            flash.addFlashAttribute("flashKey", "flash.grantUnchanged");
+        } else {
+            flash.addFlashAttribute("flashKey", "flash.grantSynced");
+        }
         return "redirect:/grants";
     }
 
@@ -167,7 +194,7 @@ public class GrantsController {
     String revoke(@ModelAttribute RevokeCommand command, OwnerIdentity actor, HttpServletRequest request,
             RedirectAttributes flash) {
         AdminHttpExceptionAdvice.recoverHtml(request, "grants",
-                () -> recoveryModel(TAB_GRANTS, "revokeGrantForm", command));
+                () -> recoveryModel(CONNECT_TAB_TOKEN, "revokeGrantForm", command));
         grants.revoke(command, actor);
         flash.addFlashAttribute("flashKey", "flash.grantRevoked");
         return "redirect:/grants";
@@ -177,21 +204,26 @@ public class GrantsController {
     String revokeKey(@ModelAttribute KeyRevokeForm form, OwnerIdentity actor, HttpServletRequest request,
             RedirectAttributes flash) {
         AdminHttpExceptionAdvice.recoverHtml(request, "grants",
-                () -> recoveryModel(TAB_KEYS, "keyRevokeForm", form));
+                () -> recoveryModel(CONNECT_TAB_KEY, "keyRevokeForm", form));
         keys.revokeConfirmed(form.author(), form.fingerprint(), actor);
         flash.addFlashAttribute("flashKey", "flash.keyRevoked");
-        return "redirect:/grants#tab-keys";
+        return "redirect:/grants";
     }
 
     @PostMapping("/grants/tokens")
     String issueToken(@ModelAttribute TokenIssueForm form, OwnerIdentity actor, Model model,
             HttpServletRequest request) {
         AdminHttpExceptionAdvice.recoverHtml(request, "grants",
-                () -> recoveryModel(TAB_TOKENS, "tokenIssueForm", form));
-        IssuedToken issued = tokens.issue(new IssueCommand(form.author(), form.expiresAt(), form.note()), actor);
+                () -> recoveryModel(CONNECT_TAB_TOKEN, "tokenIssueForm", form));
+        IssuedTokenWithGrants result = grants.issueTokenWithOptionalGrants(
+                new IssueCommand(form.author(), form.expiresAt(), form.note()), form.project(), form.scopes(), actor);
         fill(model);
-        model.addAttribute("issuedToken", issued);
-        model.addAttribute("activeTab", TAB_TOKENS);
+        model.addAttribute("issuedToken", result.token());
+        if (result.project() != null && !result.scopes().isEmpty()) {
+            model.addAttribute("issuedTokenProject", result.project());
+            model.addAttribute("issuedTokenScopes", result.scopes());
+        }
+        model.addAttribute("activeConnectTab", CONNECT_TAB_TOKEN);
         return "grants";
     }
 
@@ -199,31 +231,41 @@ public class GrantsController {
     String revokeToken(@Valid @ModelAttribute TokenRevokeForm form, BindingResult formErrors, OwnerIdentity actor,
             HttpServletRequest request, RedirectAttributes flash) {
         AdminHttpExceptionAdvice.recoverHtml(request, "grants",
-                () -> recoveryModel(TAB_TOKENS, "tokenRevokeForm", form));
+                () -> recoveryModel(CONNECT_TAB_TOKEN, "tokenRevokeForm", form));
         forms.raiseIfAny(formErrors);
         tokens.revoke(form.id(), actor);
         flash.addFlashAttribute("flashKey", "flash.tokenRevoked");
-        return "redirect:/grants#tab-tokens";
+        return "redirect:/grants";
     }
 
     private void fill(Model model) {
-        model.addAttribute("grants", grants.liveAll());
-        model.addAttribute("keys", keys.liveKeys());
-        model.addAttribute("tokens", tokens.listUnrevoked());
-        model.addAttribute("choice", choices.project(null));
-        model.addAttribute("scopes", Scope.values());
+        populateCommon(model.asMap());
     }
 
-    private Map<String, Object> recoveryModel(String activeTab, String formKey, Object formValue) {
+    private Map<String, Object> recoveryModel(String activeConnectTab, String formKey, Object formValue) {
         Map<String, Object> model = new LinkedHashMap<>();
-        model.put("grants", grants.liveAll());
-        model.put("keys", keys.liveKeys());
-        model.put("tokens", tokens.listUnrevoked());
-        model.put("choice", choices.project(null));
-        model.put("scopes", Scope.values());
-        model.put("activeTab", activeTab);
+        populateCommon(model);
+        model.put("activeConnectTab", activeConnectTab);
         model.put(formKey, formValue);
         return model;
+    }
+
+    private void populateCommon(Map<String, Object> target) {
+        List<SessionGrant> liveGrants = grants.liveAll();
+        List<SessionPublicKey> liveKeys = keys.liveKeys();
+        List<SessionToken> unrevokedTokens = tokens.listUnrevoked();
+        Choices.ProjectChoice choice = choices.project(null);
+        List<String> projectIds = choice.projects().stream().map(p -> p.id()).toList();
+        List<SessionAccessView.SessionCard> sessions = SessionAccessView.build(liveGrants, liveKeys, unrevokedTokens,
+                projectIds);
+
+        target.put("grants", liveGrants);
+        target.put("keys", liveKeys);
+        target.put("tokens", unrevokedTokens);
+        target.put("sessions", sessions);
+        target.put("enrolledAuthors", SessionAccessView.enrolledAuthors(sessions));
+        target.put("choice", choice);
+        target.put("scopes", Scope.values());
     }
 
     /** The owner repeated the fingerprint of the pasted key (letters of either case): compared with the computed one. */

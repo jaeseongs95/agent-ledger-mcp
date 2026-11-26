@@ -9,14 +9,41 @@
       <h1 th:text="#{codes.title}">Common codes</h1>
       <p class="hint" th:text="#{codes.intro}">Codes are never deleted; a code that is not used any more is set to INACTIVE.</p>
     </div>
+    <div class="page-header-actions">
+      <button type="button" data-modal-open="modal-code-editor" data-code-action="add"
+              th:text="#{codes.action.add}">+ Add code</button>
+    </div>
   </div>
 
-  <div class="tab-list" data-code-filters th:if="${!#lists.isEmpty(codes)}">
-    <button type="button" class="tab-btn" data-filter-group="ALL" aria-pressed="true" th:text="#{codes.filter.all}">All groups</button>
-    <button type="button" class="tab-btn" th:each="g : ${groups}" th:attr="data-filter-group=${g.token()}" aria-pressed="false" th:text="${g.token()}">ISSUE_CATEGORY</button>
+  <!-- Search & Filter toolbar -->
+  <div th:if="${!#lists.isEmpty(codes)}" class="list-toolbar" data-code-toolbar>
+    <div class="list-toolbar-main">
+      <div class="search-box">
+        <svg class="icon search-box-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path>
+        </svg>
+        <label for="code-search" class="sr-only" th:text="#{codes.search.label}">Search common codes</label>
+        <input id="code-search" type="search" autocomplete="off"
+               th:placeholder="#{codes.search.placeholder}"
+               placeholder="Search by code, name (ko/en), or group...">
+      </div>
+      <div class="filter-pills" role="group" data-code-group-filters th:attr="aria-label=#{codes.filter.groupLabel}">
+        <button type="button" class="filter-pill" data-filter-group="ALL" aria-pressed="true" th:text="#{codes.filter.all}">All groups</button>
+        <button type="button" class="filter-pill" th:each="g : ${groups}" th:attr="data-filter-group=${g.token()}" aria-pressed="false" th:text="${g.token()}">ISSUE_CATEGORY</button>
+      </div>
+      <div class="filter-pills" role="group" data-code-state-filters th:attr="aria-label=#{codes.filter.stateLabel}">
+        <button type="button" class="filter-pill" data-filter-state="ALL" aria-pressed="true" th:text="#{codes.filter.stateAll}">All states</button>
+        <button type="button" class="filter-pill" th:each="s : ${states}" th:attr="data-filter-state=${s.token()}" aria-pressed="false" th:text="${s.token()}">ACTIVE</button>
+      </div>
+    </div>
+    <div class="toolbar-meta">
+      <span id="code-filter-count"
+            th:attr="data-count-pattern=#{common.showingCount}"
+            th:text="#{common.showingCount(${#lists.size(codes)}, ${#lists.size(codes)})}">Showing 0 of 0</span>
+    </div>
   </div>
 
-  <div th:if="${!#lists.isEmpty(codes)}" class="table-wrap">
+  <div th:if="${!#lists.isEmpty(codes)}" class="table-wrap" id="codes-table-wrap">
     <table>
       <caption class="sr-only" th:text="#{codes.title}">Common codes</caption>
       <thead>
@@ -32,7 +59,9 @@
         </tr>
       </thead>
       <tbody>
-        <tr th:each="c : ${codes}" th:attr="data-code-group=${c.group()}">
+        <tr th:each="c : ${codes}"
+            data-code-row
+            th:attr="data-code-group=${c.group()},data-code-state=${c.state()},data-search-text=${c.group() + ' ' + c.code() + ' ' + c.nameKo() + ' ' + (c.nameEn() != null ? c.nameEn() : '')}">
           <td class="code" th:text="${c.group()}">ISSUE_CATEGORY</td>
           <td class="code" th:text="${c.code()}">ARC</td>
           <td th:text="${c.nameKo()}">name</td>
@@ -42,82 +71,183 @@
           <td th:if="${c.group() == 'RELATION_KIND'}" th:text="#{'codes.direction.' + ${c.direction().token()}}">no direction</td>
           <td th:unless="${c.group() == 'RELATION_KIND'}" class="muted" th:text="#{common.noneValue}">—</td>
           <td class="cell-actions">
-            <button type="button" class="secondary btn-sm"
-                    data-prefill-form="edit-code"
-                    th:attr="data-group=${c.group()},data-code=${c.code()},data-name-ko=${c.nameKo()},data-name-en=${c.nameEn() != null ? c.nameEn() : ''},data-description-ko=${c.descriptionKo() != null ? c.descriptionKo() : ''},data-description-en=${c.descriptionEn() != null ? c.descriptionEn() : ''},data-sort-order=${c.sortOrder()},data-state=${c.state()},data-direction=${c.group() == 'RELATION_KIND' ? c.direction().token() : ''},data-toast=#{codes.editFilled}"
-                    th:text="#{codes.edit}">Edit</button>
+            <div class="action-btn-group">
+              <button type="button" class="secondary btn-sm"
+                      data-modal-open="modal-code-editor"
+                      data-code-action="edit"
+                      th:attr="data-group=${c.group()},data-code=${c.code()},data-name-ko=${c.nameKo()},data-name-en=${c.nameEn() != null ? c.nameEn() : ''},data-description-ko=${c.descriptionKo() != null ? c.descriptionKo() : ''},data-description-en=${c.descriptionEn() != null ? c.descriptionEn() : ''},data-sort-order=${c.sortOrder()},data-state=${c.state()},data-direction=${c.group() == 'RELATION_KIND' ? c.direction().token() : ''}"
+                      th:text="#{codes.edit}">Edit</button>
+              <button th:if="${#strings.toString(c.state()) == 'ACTIVE'}" type="button" class="ghost danger-text btn-sm"
+                      data-modal-open="modal-code-state"
+                      data-code-state-action="deactivate"
+                      th:attr="data-group=${c.group()},data-code=${c.code()},data-name-ko=${c.nameKo()},data-name-en=${c.nameEn() != null ? c.nameEn() : ''},data-description-ko=${c.descriptionKo() != null ? c.descriptionKo() : ''},data-description-en=${c.descriptionEn() != null ? c.descriptionEn() : ''},data-sort-order=${c.sortOrder()},data-direction=${c.group() == 'RELATION_KIND' ? c.direction().token() : ''}"
+                      th:text="#{codes.deactivate}">Deactivate</button>
+              <button th:if="${#strings.toString(c.state()) == 'INACTIVE'}" type="button" class="secondary btn-sm"
+                      data-modal-open="modal-code-state"
+                      data-code-state-action="reactivate"
+                      th:attr="data-group=${c.group()},data-code=${c.code()},data-name-ko=${c.nameKo()},data-name-en=${c.nameEn() != null ? c.nameEn() : ''},data-description-ko=${c.descriptionKo() != null ? c.descriptionKo() : ''},data-description-en=${c.descriptionEn() != null ? c.descriptionEn() : ''},data-sort-order=${c.sortOrder()},data-direction=${c.group() == 'RELATION_KIND' ? c.direction().token() : ''}"
+                      th:text="#{codes.reactivate}">Reactivate</button>
+            </div>
           </td>
         </tr>
       </tbody>
     </table>
   </div>
 
-  <section class="card">
-    <div class="card-header">
-      <h2 th:text="#{codes.set}">Add or change a code</h2>
-      <th:block th:replace="~{fragments :: approveHint}"></th:block>
+  <div id="code-filter-empty" class="empty-state" hidden>
+    <p class="empty-state-title" th:text="#{common.noMatch}">No items match the current filters.</p>
+    <button type="button" class="secondary btn-sm" id="code-filter-reset" th:text="#{common.resetFilters}">Reset filters</button>
+  </div>
+
+  <!-- Add / Edit Common Code Modal -->
+  <dialog id="modal-code-editor" class="modal-dialog modal-dialog-wide"
+          th:attr="data-open-on-load=${codeForm != null}"
+          aria-labelledby="modal-code-editor-title">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <h2 id="modal-code-editor-title"
+            th:attr="data-title-add=#{codes.modal.addTitle},data-title-edit=#{codes.modal.editTitle}"
+            th:text="#{codes.set}">Add or change a code</h2>
+        <p class="hint" th:text="#{codes.intro}">Codes are never deleted; a code that is not used any more is set to INACTIVE.</p>
+      </div>
+      <button type="button" class="ghost btn-sm modal-close" data-modal-close th:attr="aria-label=#{common.close}">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M18 6 6 18M6 6l12 12"></path>
+        </svg>
+      </button>
     </div>
-    <form id="code-editor-form" method="post" th:action="@{/codes}" data-approve class="form-wide">
-      <div class="form-grid">
-        <div class="form-field">
-          <label for="group" th:text="#{codes.group}">Group</label>
-          <select id="group" name="group" required>
-            <option th:each="g : ${groups}" th:value="${g.token()}" th:text="${g.token()}"
-                    th:selected="${codeForm != null and codeForm.group() == g}">ISSUE_CATEGORY</option>
-          </select>
+    <div class="modal-body">
+      <div th:if="${codeForm != null and formErrorDetail != null}" class="alert alert-danger" role="alert">
+        <div class="alert-title" th:text="#{form.errorTitle}">Could not save the form</div>
+        <p th:text="${formErrorDetail}">Validation failed.</p>
+      </div>
+      <p class="alert alert-danger modal-status" data-modal-status role="alert" tabindex="-1" hidden></p>
+
+      <form id="code-editor-form" method="post" th:action="@{/codes}" data-approve class="form-wide">
+        <div class="form-grid">
+          <div class="form-field">
+            <label for="group" th:text="#{codes.group}">Group</label>
+            <select id="group" name="group" required>
+              <option th:each="g : ${groups}" th:value="${g.token()}" th:text="${g.token()}"
+                      th:selected="${codeForm != null and codeForm.group() == g}">ISSUE_CATEGORY</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="code" th:text="#{codes.code}">Code</label>
+            <input id="code" name="code" type="text" required autocomplete="off" th:value="${codeForm != null} ? ${codeForm.code()}">
+          </div>
+          <div class="form-field">
+            <label for="nameKo" th:text="#{codes.nameKo}">Name (ko)</label>
+            <input id="nameKo" name="nameKo" type="text" required maxlength="200" autocomplete="off" th:value="${codeForm != null} ? ${codeForm.nameKo()}">
+          </div>
+          <div class="form-field">
+            <label for="nameEn" th:text="#{codes.nameEn}">Name (en)</label>
+            <input id="nameEn" name="nameEn" type="text" maxlength="200" autocomplete="off" th:value="${codeForm != null} ? ${codeForm.nameEn()}">
+          </div>
+          <div class="form-field">
+            <label for="descriptionKo" th:text="#{codes.descriptionKo}">Description (ko)</label>
+            <input id="descriptionKo" name="descriptionKo" type="text" maxlength="500" autocomplete="off" th:value="${codeForm != null} ? ${codeForm.descriptionKo()}">
+          </div>
+          <div class="form-field">
+            <label for="descriptionEn" th:text="#{codes.descriptionEn}">Description (en)</label>
+            <input id="descriptionEn" name="descriptionEn" type="text" maxlength="500" autocomplete="off" th:value="${codeForm != null} ? ${codeForm.descriptionEn()}">
+          </div>
+          <div class="form-field">
+            <label for="sortOrder" th:text="#{codes.sort}">Order</label>
+            <input id="sortOrder" name="sortOrder" type="number" min="0" max="100000" th:value="${codeForm != null} ? ${codeForm.sortOrder()}">
+          </div>
+          <div class="form-field">
+            <label for="state" th:text="#{common.state}">State</label>
+            <select id="state" name="state">
+              <option th:each="s : ${states}" th:value="${s.token()}" th:text="${s.token()}"
+                      th:selected="${codeForm != null and codeForm.state() == s}">ACTIVE</option>
+            </select>
+          </div>
+          <div id="direction-field" class="form-field form-field-full">
+            <label for="direction" th:text="#{codes.direction}">Direction</label>
+            <select id="direction" name="direction" aria-describedby="direction-help">
+              <option value="" th:text="#{codes.direction.keep}">keep (CANONICAL for a new code)</option>
+              <option th:each="d : ${directions}" th:value="${d.token()}" th:text="#{'codes.direction.' + ${d.token()}}"
+                      th:selected="${codeForm != null and codeForm.direction() == d}">CANONICAL</option>
+            </select>
+            <p id="direction-help" class="hint" th:text="#{codes.direction.help}">Only for the group RELATION_KIND.</p>
+          </div>
+          <div id="reactivation-field" class="form-field form-field-full alert">
+            <label class="check">
+              <input id="confirmReactivation" type="checkbox" name="confirmReactivation" value="yes"
+                     th:checked="${codeForm != null and codeForm.confirmReactivation() != null}">
+              <span th:text="#{codes.confirmReactivation}">I confirm that a retired code becomes active again.</span>
+            </label>
+          </div>
         </div>
-        <div class="form-field">
-          <label for="code" th:text="#{codes.code}">Code</label>
-          <input id="code" name="code" type="text" required autocomplete="off" th:value="${codeForm != null} ? ${codeForm.code()}">
+        <div class="modal-footer">
+          <th:block th:replace="~{fragments :: approveHint}"></th:block>
+          <div class="modal-footer-actions">
+            <button type="button" class="secondary" data-modal-close th:text="#{common.cancel}">Cancel</button>
+            <button type="submit" th:text="#{codes.submit}">Save</button>
+          </div>
         </div>
-        <div class="form-field">
-          <label for="nameKo" th:text="#{codes.nameKo}">Name (ko)</label>
-          <input id="nameKo" name="nameKo" type="text" required maxlength="200" autocomplete="off" th:value="${codeForm != null} ? ${codeForm.nameKo()}">
-        </div>
-        <div class="form-field">
-          <label for="nameEn" th:text="#{codes.nameEn}">Name (en)</label>
-          <input id="nameEn" name="nameEn" type="text" maxlength="200" autocomplete="off" th:value="${codeForm != null} ? ${codeForm.nameEn()}">
-        </div>
-        <div class="form-field">
-          <label for="descriptionKo" th:text="#{codes.descriptionKo}">Description (ko)</label>
-          <input id="descriptionKo" name="descriptionKo" type="text" maxlength="500" autocomplete="off" th:value="${codeForm != null} ? ${codeForm.descriptionKo()}">
-        </div>
-        <div class="form-field">
-          <label for="descriptionEn" th:text="#{codes.descriptionEn}">Description (en)</label>
-          <input id="descriptionEn" name="descriptionEn" type="text" maxlength="500" autocomplete="off" th:value="${codeForm != null} ? ${codeForm.descriptionEn()}">
-        </div>
-        <div class="form-field">
-          <label for="sortOrder" th:text="#{codes.sort}">Order</label>
-          <input id="sortOrder" name="sortOrder" type="number" min="0" max="100000" th:value="${codeForm != null} ? ${codeForm.sortOrder()}">
-        </div>
-        <div class="form-field">
-          <label for="state" th:text="#{common.state}">State</label>
-          <select id="state" name="state">
-            <option th:each="s : ${states}" th:value="${s.token()}" th:text="${s.token()}"
-                    th:selected="${codeForm != null and codeForm.state() == s}">ACTIVE</option>
-          </select>
-        </div>
-        <div id="direction-field" class="form-field form-field-full">
-          <label for="direction" th:text="#{codes.direction}">Direction</label>
-          <select id="direction" name="direction" aria-describedby="direction-help">
-            <option value="" th:text="#{codes.direction.keep}">keep (CANONICAL for a new code)</option>
-            <option th:each="d : ${directions}" th:value="${d.token()}" th:text="#{'codes.direction.' + ${d.token()}}"
-                    th:selected="${codeForm != null and codeForm.direction() == d}">CANONICAL</option>
-          </select>
-          <p id="direction-help" class="hint" th:text="#{codes.direction.help}">Only for the group RELATION_KIND.</p>
-        </div>
-        <div id="reactivation-field" class="form-field form-field-full alert">
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Deactivate / Reactivate Quick Confirmation Modal -->
+  <dialog id="modal-code-state" class="modal-dialog modal-dialog-sm" aria-labelledby="modal-code-state-title">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <h2 id="modal-code-state-title"
+            th:attr="data-title-deactivate=#{codes.modal.deactivateTitle},data-title-reactivate=#{codes.modal.reactivateTitle}"
+            th:text="#{codes.modal.deactivateTitle}">Deactivate common code</h2>
+        <p id="modal-code-state-desc" class="hint"
+           th:attr="data-desc-deactivate=#{codes.modal.deactivateDesc},data-desc-reactivate=#{codes.modal.reactivateDesc}"
+           th:text="#{codes.modal.deactivateDesc}">Common codes are never deleted.</p>
+      </div>
+      <button type="button" class="ghost btn-sm modal-close" data-modal-close th:attr="aria-label=#{common.close}">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M18 6 6 18M6 6l12 12"></path>
+        </svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p class="alert alert-danger modal-status" data-modal-status role="alert" tabindex="-1" hidden></p>
+      <div id="code-state-summary" class="modal-summary-box">
+        <dl class="facts">
+          <dt th:text="#{codes.group}">Group</dt>
+          <dd class="code" id="code-state-summary-group">—</dd>
+          <dt th:text="#{codes.code}">Code</dt>
+          <dd class="code" id="code-state-summary-code">—</dd>
+          <dt th:text="#{codes.nameKo}">Name (ko)</dt>
+          <dd id="code-state-summary-name">—</dd>
+        </dl>
+      </div>
+      <form id="code-state-form" method="post" th:action="@{/codes}" data-approve class="form-wide">
+        <input type="hidden" name="group" id="code-state-group">
+        <input type="hidden" name="code" id="code-state-code">
+        <input type="hidden" name="nameKo" id="code-state-nameKo">
+        <input type="hidden" name="nameEn" id="code-state-nameEn">
+        <input type="hidden" name="descriptionKo" id="code-state-descriptionKo">
+        <input type="hidden" name="descriptionEn" id="code-state-descriptionEn">
+        <input type="hidden" name="sortOrder" id="code-state-sortOrder">
+        <input type="hidden" name="direction" id="code-state-direction">
+        <input type="hidden" name="state" id="code-state-target">
+        <div id="code-state-reactivate-wrap" class="alert alert-warning" hidden>
           <label class="check">
-            <input type="checkbox" name="confirmReactivation" value="yes" th:checked="${codeForm != null and codeForm.confirmReactivation() != null}">
+            <input type="checkbox" name="confirmReactivation" value="yes" id="code-state-confirm-reactivation">
             <span th:text="#{codes.confirmReactivation}">I confirm that a retired code becomes active again.</span>
           </label>
         </div>
-      </div>
-      <div class="form-actions">
-        <button type="submit" th:text="#{codes.submit}">Save</button>
-      </div>
-    </form>
-  </section>
+        <div class="modal-footer">
+          <th:block th:replace="~{fragments :: approveHint}"></th:block>
+          <div class="modal-footer-actions">
+            <button type="button" class="secondary" data-modal-close th:text="#{common.cancel}">Cancel</button>
+            <button type="submit" id="code-state-submit" class="danger"
+                    th:attr="data-label-deactivate=#{codes.modal.deactivateSubmit},data-label-reactivate=#{codes.modal.reactivateSubmit}"
+                    th:text="#{codes.modal.deactivateSubmit}">Set INACTIVE</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </dialog>
 </main>
 <th:block th:replace="~{fragments :: footer}"></th:block>
 </body>

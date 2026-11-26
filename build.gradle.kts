@@ -15,7 +15,7 @@ plugins {
 }
 
 group = "org.pgledger"
-version = "2.1.0"
+version = "2.1.1"
 
 spotless {
     java {
@@ -161,7 +161,7 @@ subprojects {
     apply(plugin = "java-library")
 
     group = "org.pgledger"
-    version = "2.1.0"
+    version = "2.1.1"
 
     val projectName = project.name
     val usesDatabase = projectName in databaseModules

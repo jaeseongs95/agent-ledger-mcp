@@ -8,9 +8,34 @@
     <div class="page-header-text">
       <h1 th:text="#{projects.title}">Projects</h1>
     </div>
+    <div class="page-header-actions">
+      <button type="button" data-modal-open="modal-project-add" data-modal-reset="true"
+              th:text="#{projects.action.add}">+ Add project</button>
+    </div>
   </div>
 
-  <div th:if="${!#lists.isEmpty(projects)}" class="table-wrap">
+  <!-- Search toolbar -->
+  <div th:if="${!#lists.isEmpty(projects)}" class="list-toolbar" data-table-search-bar="project-rows">
+    <div class="list-toolbar-main">
+      <div class="search-box">
+        <svg class="icon search-box-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path>
+        </svg>
+        <label for="project-search" class="sr-only" th:text="#{projects.search.label}">Search projects</label>
+        <input id="project-search" type="search" autocomplete="off"
+               data-table-search="project-rows"
+               th:placeholder="#{projects.search.placeholder}"
+               placeholder="Search by project ID, code, or title...">
+      </div>
+    </div>
+    <div class="toolbar-meta">
+      <span data-search-count="project-rows"
+            th:attr="data-count-pattern=#{common.showingCount}"
+            th:text="#{common.showingCount(${#lists.size(projects)}, ${#lists.size(projects)})}">Showing 0 of 0</span>
+    </div>
+  </div>
+
+  <div th:if="${!#lists.isEmpty(projects)}" class="table-wrap" data-table-wrap="project-rows">
     <table>
       <caption class="sr-only" th:text="#{projects.title}">Projects</caption>
       <thead>
@@ -21,8 +46,9 @@
           <th scope="col" th:text="#{projects.open}">Quick links</th>
         </tr>
       </thead>
-      <tbody>
-        <tr th:each="p : ${projects}">
+      <tbody id="project-rows">
+        <tr th:each="p : ${projects}" data-search-item
+            th:attr="data-search-text=${p.id() + ' ' + p.code() + ' ' + p.title()}">
           <td class="code" th:text="${p.id()}">p1</td>
           <td><span class="badge" th:text="${p.code()}">P1</span></td>
           <td th:text="${p.title()}">Title</td>
@@ -39,35 +65,65 @@
       </tbody>
     </table>
   </div>
-  <div th:if="${#lists.isEmpty(projects)}" class="empty-state">
-    <p class="empty-state-title" th:text="#{projects.none}">No project yet.</p>
+
+  <div id="project-rows-empty" class="empty-state" hidden>
+    <p class="empty-state-title" th:text="#{common.noMatch}">No items match the current filters.</p>
+    <button type="button" class="secondary btn-sm" data-search-reset="project-rows" th:text="#{common.resetFilters}">Reset filters</button>
   </div>
 
-  <section class="card">
-    <div class="card-header">
-      <h2 th:text="#{projects.add}">Add a project</h2>
-      <th:block th:replace="~{fragments :: approveHint}"></th:block>
+  <div th:if="${#lists.isEmpty(projects)}" class="empty-state">
+    <p class="empty-state-title" th:text="#{projects.none}">No project yet.</p>
+    <button type="button" data-modal-open="modal-project-add" data-modal-reset="true"
+            th:text="#{projects.action.add}">+ Add project</button>
+  </div>
+
+  <!-- Add Project Modal -->
+  <dialog id="modal-project-add" class="modal-dialog"
+          th:attr="data-open-on-load=${projectForm != null}"
+          aria-labelledby="modal-project-add-title">
+    <div class="modal-header">
+      <div class="modal-title-group">
+        <h2 id="modal-project-add-title" th:text="#{projects.add}">Add a project</h2>
+        <p class="hint" th:text="#{projects.modal.help}">Create a new project. Its code becomes the uppercase prefix for issue, spec, and task IDs.</p>
+      </div>
+      <button type="button" class="ghost btn-sm modal-close" data-modal-close th:attr="aria-label=#{common.close}">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M18 6 6 18M6 6l12 12"></path>
+        </svg>
+      </button>
     </div>
-    <form method="post" th:action="@{/projects}" data-approve class="form-wide">
-      <div class="form-grid">
-        <div class="form-field">
-          <label for="id" th:text="#{projects.id.label}">Project id</label>
-          <input id="id" name="id" type="text" required autocomplete="off" th:value="${projectForm != null} ? ${projectForm.id()}">
-        </div>
-        <div class="form-field">
-          <label for="code" th:text="#{projects.code.label}">Code (upper case, the prefix of issue, spec, and task ids)</label>
-          <input id="code" name="code" type="text" required autocomplete="off" th:value="${projectForm != null} ? ${projectForm.code()}">
-        </div>
-        <div class="form-field form-field-full">
-          <label for="title" th:text="#{projects.title.label}">Title</label>
-          <input id="title" name="title" type="text" required maxlength="200" autocomplete="off" th:value="${projectForm != null} ? ${projectForm.title()}">
-        </div>
+    <div class="modal-body">
+      <div th:if="${projectForm != null and formErrorDetail != null}" class="alert alert-danger" role="alert">
+        <div class="alert-title" th:text="#{form.errorTitle}">Could not save the form</div>
+        <p th:text="${formErrorDetail}">Validation failed.</p>
       </div>
-      <div class="form-actions">
-        <button type="submit" th:text="#{projects.submit}">Add</button>
-      </div>
-    </form>
-  </section>
+      <p class="alert alert-danger modal-status" data-modal-status role="alert" tabindex="-1" hidden></p>
+
+      <form method="post" th:action="@{/projects}" data-approve class="form-wide">
+        <div class="form-grid">
+          <div class="form-field">
+            <label for="id" th:text="#{projects.id.label}">Project id</label>
+            <input id="id" name="id" type="text" required autocomplete="off" th:value="${projectForm != null} ? ${projectForm.id()}">
+          </div>
+          <div class="form-field">
+            <label for="code" th:text="#{projects.code.label}">Code (upper case, the prefix of issue, spec, and task ids)</label>
+            <input id="code" name="code" type="text" required autocomplete="off" th:value="${projectForm != null} ? ${projectForm.code()}">
+          </div>
+          <div class="form-field form-field-full">
+            <label for="title" th:text="#{projects.title.label}">Title</label>
+            <input id="title" name="title" type="text" required maxlength="200" autocomplete="off" th:value="${projectForm != null} ? ${projectForm.title()}">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <th:block th:replace="~{fragments :: approveHint}"></th:block>
+          <div class="modal-footer-actions">
+            <button type="button" class="secondary" data-modal-close th:text="#{common.cancel}">Cancel</button>
+            <button type="submit" th:text="#{projects.submit}">Add</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </dialog>
 </main>
 <th:block th:replace="~{fragments :: footer}"></th:block>
 </body>

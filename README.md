@@ -13,7 +13,7 @@ choice: the installers write no proxy configuration and order no certificate.
 
 Version 2.0.0 is a rewrite in Java 25 and Spring Boot with its own tool contract (every write tool takes a required `operationKey`,
 every response uses the `ApiResult.v1` envelope, and no argument of an earlier version is accepted next to the new ones); what changed
-for a client is stated in the release notes ([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md)); the format of release notes is in
+for a client is stated in the release notes ([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md)); the format of release notes is in
 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md).
 
 ## Contents
@@ -598,10 +598,9 @@ the service account of the installation and never as root.
 - **Browser hardening.** Spring Security provides CSRF tokens, a `SameSite=Strict` session cookie that is `Secure` by default, the
   `Host` allow list and a Content Security Policy.
 - **Pages.** Overview (clickable KPI, attention and distribution drilldowns, and the state of the MCP server), projects, issues, specifications, tasks, criteria and history
-  (read only, with entity deep-links and JSON change diffs), attachments, common codes (with group filters and edit prefill), grants (3-tab hub for session grants, session tokens with UTC expiry presets, and session keys), and the JDBC driver comparison page. The console uses a 3-domain fixed sidebar with a keyboard-accessible mobile drawer, automatic and manual Light/Dark themes, and inline HTML form validation recovery (while `/driver` never echoes refused paths or class names). Times are sent as UTC and shown in the local
+  (read only, with entity deep-links and JSON change diffs), attachments, common codes (searchable, with group and state filters and modal add, edit and deactivate/reactivate), grants (searchable session-centric cards with modal session connection, atomic per-project scope sync, bearer tokens with optional initial scopes and UTC expiry presets, and session keys), and the JDBC driver comparison page. Projects, grants and common codes keep their main views read-first and manage add, edit and revoke/deactivate actions in native modal dialogs with inline search bars. The console uses a 3-domain fixed sidebar with a keyboard-accessible mobile drawer, automatic and manual Light/Dark themes, and inline HTML form validation recovery (while `/driver` never echoes refused paths or class names). Times are sent as UTC and shown in the local
   time of the browser.
-- **Grants.** The owner pastes the public key a session printed, compares the fingerprint shown with the one the session showed, and
-  only then the key is registered and the grants are issued. A live key is replaced only on an explicit confirmation of that exact key.
+- **Grants.** Sessions are grouped into per-author cards showing registered keys, bearer tokens and project scopes together. The owner connects a session in a modal (issuing a bearer token with optional initial project grants in one step, or pasting the public key a session printed and comparing its fingerprint before registration), adjusts all scopes of a project in one atomic sync, or revokes individual grants, tokens and keys through confirmation modals. A live key is replaced only on an explicit confirmation of that exact key.
 
 ## Client hooks
 

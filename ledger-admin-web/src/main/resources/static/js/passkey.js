@@ -24,15 +24,35 @@
   };
   const status = document.getElementById("passkey-status");
 
-  function clearStatus() {
+  function modalStatusFor(form) {
+    if (!form) { return null; }
+    const dialog = form.closest("dialog");
+    return dialog ? dialog.querySelector("[data-modal-status]") : null;
+  }
+
+  function clearStatus(contextForm) {
+    const modalStatus = modalStatusFor(contextForm);
+    if (modalStatus) {
+      modalStatus.hidden = true;
+      modalStatus.textContent = "";
+    }
     if (!status) { return; }
     status.hidden = true;
     status.textContent = "";
   }
 
-  function show(message) {
+  function show(message, contextForm) {
+    const resolved = message || (status ? status.dataset.failed : "Failed");
+    const modalStatus = modalStatusFor(contextForm);
+    if (modalStatus) {
+      modalStatus.textContent = resolved;
+      modalStatus.hidden = false;
+      modalStatus.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      modalStatus.focus();
+      return;
+    }
     if (!status) { return; }
-    status.textContent = message || status.dataset.failed;
+    status.textContent = resolved;
     status.hidden = false;
     status.scrollIntoView({ behavior: "smooth", block: "nearest" });
     status.focus();
@@ -161,9 +181,9 @@
     });
   }
 
-  async function withBusy(button, task, busyLabel) {
+  async function withBusy(button, task, busyLabel, contextForm) {
     if (button && button.dataset.busy === "true") { return; }
-    clearStatus();
+    clearStatus(contextForm);
     const originalText = button ? button.textContent : null;
     if (button) {
       button.dataset.busy = "true";
@@ -175,7 +195,7 @@
       await task();
     } catch (failure) {
       console.error(failure);
-      show(friendlyMessage(failure));
+      show(friendlyMessage(failure), contextForm);
       if (button) {
         button.dataset.busy = "false";
         button.disabled = false;
@@ -217,7 +237,7 @@
         await approve(form);
         if (submitBtn && submittingText) { submitBtn.textContent = submittingText; }
         form.submit();
-      }, busyText);
+      }, busyText, form);
     });
   });
 })();
