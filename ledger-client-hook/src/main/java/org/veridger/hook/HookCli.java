@@ -21,16 +21,25 @@ import org.springframework.stereotype.Component;
 public final class HookCli {
 
     private static final Logger LOG = LoggerFactory.getLogger(HookCli.class);
+    /** Upper bound on stdin bytes accepted from the host process to prevent unbounded heap allocation. */
+    static final int MAX_STDIN_BYTES = 32 * 1024 * 1024;
     private static final int EXIT_OK = 0;
     private static final int EXIT_BLOCK_OR_USAGE = 2;
     private static final String USAGE = "usage: java -jar ledger-client-hook.jar <" + Client.choices() + ">";
 
     private final JsonCodec codec;
     private final LedgerHook hook;
+    private final int maxStdinBytes;
 
+    @org.springframework.beans.factory.annotation.Autowired
     HookCli(JsonCodec codec, LedgerHook hook) {
+        this(codec, hook, MAX_STDIN_BYTES);
+    }
+
+    HookCli(JsonCodec codec, LedgerHook hook, int maxStdinBytes) {
         this.codec = codec;
         this.hook = hook;
+        this.maxStdinBytes = maxStdinBytes;
     }
 
     /**
@@ -54,7 +63,12 @@ public final class HookCli {
 
     private Response handle(Client client, InputStream in) {
         try {
-            return hook.handle(client, in.readAllBytes());
+            byte[] bytes = in.readNBytes(maxStdinBytes + 1);
+            if (bytes.length > maxStdinBytes) {
+                return new Response.InputFailure(
+                        new IOException("stdin exceeds maximum allowed size of " + maxStdinBytes + " bytes"));
+            }
+            return hook.handle(client, bytes);
         } catch (IOException e) {
             return new Response.InputFailure(e);
         }

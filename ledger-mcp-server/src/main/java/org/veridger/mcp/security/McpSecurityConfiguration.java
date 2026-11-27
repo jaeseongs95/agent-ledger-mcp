@@ -65,7 +65,7 @@ public class McpSecurityConfiguration {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(requests -> requests
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
-                        .requestMatchers(EndpointRequest.to(HealthEndpoint.class)).permitAll()
+                        .requestMatchers(EndpointRequest.to(HealthEndpoint.class)).access(origin)
                         .anyRequest().access(AuthorizationManagers.allOf(origin,
                                 AuthenticatedAuthorizationManager.authenticated())))
                 .oauth2ResourceServer(resource -> resource.authenticationManagerResolver(request -> agents))

@@ -48,12 +48,12 @@ final class ServiceSettings {
         Text.line(yaml, "  admin:");
         hosts(yaml, p.adminHost());
         passkey(yaml, p.adminHost());
-        Text.line(yaml, "    driver-file: " + Text.quoted(p.layout().etc() + "/jdbc-driver.yaml"));
+        Text.line(yaml, "    driver-file: " + Text.quoted(p.layout().driverStateDirectory() + "/jdbc-driver.yaml"));
         Text.line(yaml, "    driver-directory: " + Text.quoted(p.layout().etc() + "/drivers"));
         Text.line(yaml, "    mcp:");
         Text.line(yaml, "      health-url: " + Text.quoted("http://127.0.0.1:" + p.mcpPort() + "/healthz"));
         Text.line(yaml, "    update:");
-        Text.line(yaml, "      directory: " + Text.quoted(p.layout().etc() + "/update"));
+        Text.line(yaml, "      directory: " + Text.quoted(p.layout().updateDirectory()));
         return yaml.toString();
     }
 

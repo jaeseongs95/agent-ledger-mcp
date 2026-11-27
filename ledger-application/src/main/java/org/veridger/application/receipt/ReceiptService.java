@@ -89,6 +89,7 @@ public class ReceiptService {
     public <R> Reservation<R> reserve(OperationKey id, ReceiptOperation operation, Sha256 digest, AuthorId author,
             Channel channel, Class<R> responseType) {
         LoadedReceipt loaded = receipts.findByAuthorIdAndOperationKey(author, id)
+                .filter(stored -> Objects.equals(author, stored.authorId()) && Objects.equals(id, stored.operationKey()))
                 .<LoadedReceipt>map(LoadedReceipt.Found::new)
                 .orElseGet(LoadedReceipt.Absent::new);
         return reserveWithLoaded(id, operation, digest, author, channel, responseType, loaded);
@@ -103,7 +104,7 @@ public class ReceiptService {
             AuthorId author, Channel channel, Class<R> responseType, LoadedReceipt loaded) {
         return switch (loaded) {
             case LoadedReceipt.Found found -> new Reservation.Replayed<>(
-                    storedResponse(found.receipt(), id, operation, digest, channel, responseType));
+                    storedResponse(found.receipt(), author, id, operation, digest, channel, responseType));
             case LoadedReceipt.Absent absent -> insertReservation(id, operation, digest, author, channel);
         };
     }
@@ -111,7 +112,9 @@ public class ReceiptService {
     /** Looks up a stored receipt once for reuse across answered-target resolution and reservation. */
     public LoadedReceipt find(AuthorId author, String operationKey) {
         return OperationKey.find(operationKey)
-                .flatMap(id -> receipts.findByAuthorIdAndOperationKey(author, id))
+                .flatMap(id -> receipts.findByAuthorIdAndOperationKey(author, id)
+                        .filter(stored -> Objects.equals(author, stored.authorId())
+                                && Objects.equals(id, stored.operationKey())))
                 .<LoadedReceipt>map(LoadedReceipt.Found::new)
                 .orElseGet(LoadedReceipt.Absent::new);
     }
@@ -147,10 +150,11 @@ public class ReceiptService {
         return new Reservation.Reserved<>();
     }
 
-    /** The response stored for an operation key that this author reserved before; it must be the same request. */
-    private <R> R storedResponse(Receipt stored, OperationKey id, ReceiptOperation operation, Sha256 digest,
-            Channel channel, Class<R> responseType) {
-        boolean same = stored.operation() == operation && Objects.equals(stored.payloadSha256(), digest)
+    /** The response stored for an operation key that this author reserved before; it must be the exact same request. */
+    private <R> R storedResponse(Receipt stored, AuthorId author, OperationKey id, ReceiptOperation operation,
+            Sha256 digest, Channel channel, Class<R> responseType) {
+        boolean same = Objects.equals(stored.authorId(), author) && Objects.equals(stored.operationKey(), id)
+                && stored.operation() == operation && Objects.equals(stored.payloadSha256(), digest)
                 && Objects.equals(stored.login(), channel.login());
         if (!same) {
             throw new ConflictException(ConflictCode.OPERATION_CONFLICT, List.of(id.toString()));

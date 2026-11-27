@@ -6,7 +6,7 @@
 # hooks/settings, and runs a live smoke test on mcp__veridger__ledger_ledger_whoami.
 #
 # Usage:
-#   sh install-hook.sh [--version=latest|v4.3.0] [--jars=<local-dir>] [--hosts=codex,claude,antigravity]
+#   sh install-hook.sh [--version=latest|v4.3.1] [--jars=<local-dir>] [--hosts=codex,claude,antigravity]
 #                      [--java=<path>] [--repo=jaeseongs95/veridger]
 set -eu
 umask 077
@@ -30,7 +30,7 @@ for arg in "$@"; do
     --hosts=*) HOSTS=${arg#*=} ;;
     --java=*) JAVA=${arg#*=} ;;
     -h|--help)
-      echo "Usage: sh install-hook.sh [--version=latest|v4.3.0] [--jars=<dir>] [--hosts=codex,claude,antigravity] [--java=<path>]"
+      echo "Usage: sh install-hook.sh [--version=latest|v4.3.1] [--jars=<dir>] [--hosts=codex,claude,antigravity] [--java=<path>]"
       exit 0 ;;
     *) die "unknown option: $arg" ;;
   esac
@@ -80,9 +80,9 @@ if [ -z "$JARS" ]; then
   fi
   TMP_DIR=$(mktemp -d)
   echo "install-hook.sh: downloading Veridger hook JARs from $BASE_URL ..."
-  curl -fsSL --proto '=https' --tlsv1.2 "$BASE_URL/SHA256SUMS" -o "$TMP_DIR/SHA256SUMS" || die "failed to download SHA256SUMS"
+  curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 "$BASE_URL/SHA256SUMS" -o "$TMP_DIR/SHA256SUMS" || die "failed to download SHA256SUMS"
   for f in ledger-client-hook.jar ledger-hook-resident.jar; do
-    curl -fsSL --proto '=https' --tlsv1.2 "$BASE_URL/$f" -o "$TMP_DIR/$f" || die "failed to download $f"
+    curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 "$BASE_URL/$f" -o "$TMP_DIR/$f" || die "failed to download $f"
     verify_sha256_entry "$TMP_DIR/SHA256SUMS" "$TMP_DIR/$f" "$f"
   done
   JARS=$TMP_DIR

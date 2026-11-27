@@ -63,7 +63,8 @@ class AttachmentDiskMarginTest {
                 ConflictCode.ARTIFACT_STORAGE_FULL);
 
         assertThat(full.details()).containsKeys("requestedBytes", "usableBytes", "marginBytes");
-        assertThat(full.details().get("requestedBytes")).containsExactly("600");
+        // 600 plaintext bytes + 32-byte file header + 32-byte chunk overhead = 664 encrypted bytes upper bound
+        assertThat(full.details().get("requestedBytes")).containsExactly("664");
         assertThat(Long.parseLong(full.details().get("marginBytes").getFirst())).isEqualTo(DataSize.ofGigabytes(1_000_000).toBytes());
         assertThat(s.count("SELECT COUNT(*) FROM upload_staging WHERE owner = ?", actor)).as("no row").isZero();
         Expect.failure(() -> flow.begin(null, Uploads.begin(Uploads.body(600, 52))), TrustCode.HOST_ATTESTATION_REQUIRED);

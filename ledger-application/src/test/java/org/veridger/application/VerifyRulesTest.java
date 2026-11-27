@@ -336,12 +336,13 @@ class VerifyRulesTest {
     }
 
     @Test
-    @DisplayName("VRF-018: the registrant and the case sessions of an issue merged into this one count as reporters of it, the deliverables of the merged issue do not")
+    @DisplayName("VRF-018: the registrant, case sessions, and contributors of an issue merged into this one all count as reporters of it; an independent reviewer can verify")
     void vrf018_mergedIssuesAreReported(Scenario s) {
         String registrarOfB = s.actorWith("issue", "verify");
         String observerOfB = s.actorWith("issue", "verify");
         String recorderOfA = s.actorWith("deliverable", "verify");
         String recorderOfB = s.actorWith("deliverable", "verify");
+        String independent = s.actorWith("verify");
         SaveResult a = s.newIssue("a");
         var fieldsOfB = s.issueFields("b");
         SaveResult b = s.bean(SaveService.class).save(registrarOfB, s.create("issue", null, fieldsOfB));
@@ -351,11 +352,11 @@ class VerifyRulesTest {
         s.deliver(recorderOfB, b.id(), Scenario.ref('b'));
         MergeFixture.merge(s, b.id(), s.issue(b.id()).version(), a.id());
         long version = s.issue(a.id()).version();
-        for (String refused : List.of(Scenario.AUTHOR, registrarOfB, observerOfB, recorderOfA)) {
+        for (String refused : List.of(Scenario.AUTHOR, registrarOfB, observerOfB, recorderOfA, recorderOfB)) {
             Expect.failure(() -> review(s, refused, "issue", a.id(), version, "VERIFIED"),
                     TransitionCode.SAME_SESSION);
         }
-        assertThat(review(s, recorderOfB, "issue", a.id(), version, "VERIFIED").to()).isEqualTo("VERIFIED");
+        assertThat(review(s, independent, "issue", a.id(), version, "VERIFIED").to()).isEqualTo("VERIFIED");
     }
 
     @Test

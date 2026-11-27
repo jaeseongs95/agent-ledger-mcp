@@ -130,7 +130,7 @@ class PasskeyServiceTest {
     }
 
     @Test
-    @DisplayName("PSK-SVC-05: a passkey is stored with its fingerprint and an audit row that says who and which key; a second save of the same credential changes nothing")
+    @DisplayName("PSK-SVC-05: a passkey is stored with its fingerprint and audit row; a repeat save keeps immutable metadata intact while advancing signatureCount monotonically")
     void svc05_save(Scenario s) {
         PasskeyService service = s.bean(PasskeyService.class);
         reset(s);
@@ -139,11 +139,18 @@ class PasskeyServiceTest {
         service.save(stored, WEB);
         service.save(new NewPasskey(stored.credentialId(), USER, stored.publicKey(), 9, 0, 1, 1, "", stored.attestationObject(),
                 "renamed"), WEB);
+        // A lower or equal non-zero counter must be rejected and never regress the stored monotonic signatureCount
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.save(new NewPasskey(stored.credentialId(),
+                USER, stored.publicKey(), 5, 0, 1, 1, "", stored.attestationObject(), "renamed-again"), WEB))
+                .isInstanceOf(IllegalArgumentException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.save(new NewPasskey(stored.credentialId(),
+                USER, stored.publicKey(), 9, 0, 1, 1, "", stored.attestationObject(), "renamed-equal"), WEB))
+                .isInstanceOf(IllegalArgumentException.class);
 
         assertThat(service.live()).singleElement().satisfies(live -> {
             assertThat(live.credentialId()).isEqualTo(stored.credentialId());
             assertThat(live.label()).isEqualTo("phone");
-            assertThat(live.signatureCount()).isZero();
+            assertThat(live.signatureCount()).isEqualTo(9L);
             assertThat(live.uvInitialized()).isEqualTo(1);
             assertThat(live.transports()).isEqualTo("internal,hybrid");
             assertThat(live.registeredBy()).isEqualTo(WEB.value());

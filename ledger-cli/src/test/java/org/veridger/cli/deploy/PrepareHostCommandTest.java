@@ -117,11 +117,14 @@ class PrepareHostCommandTest {
         // ATA-036, SPL-004: the key folder beside the secrets (in no configuration tree), the data folder and the attachment folder
         // below it: the service user's alone
         assertThat(mode(root.resolve("etc/veridger/attachment-keys"))).isEqualTo("rwx------");
+        assertThat(mode(root.resolve("etc/veridger/driver-state"))).isEqualTo("rwx------");
+        assertThat(mode(root.resolve("etc/veridger/update"))).isEqualTo("rwx------");
         assertThat(mode(root.resolve("var/lib/veridger"))).isEqualTo("rwx------");
         assertThat(mode(root.resolve("var/lib/veridger/attachments"))).isEqualTo("rwx------");
         UserPrincipal serviceUser = Files.getOwner(tmp);
         for (String folder : List.of("etc/veridger/secrets", "etc/veridger/secrets/common", "etc/veridger/secrets/admin",
                 "etc/veridger/secrets/mcp", "etc/veridger/secrets/tool", "etc/veridger/attachment-keys",
+                "etc/veridger/driver-state", "etc/veridger/update",
                 "var/lib/veridger", "var/lib/veridger/attachments")) {
             assertThat(Files.getOwner(root.resolve(folder))).as(folder).isEqualTo(serviceUser);
         }
@@ -319,7 +322,8 @@ class PrepareHostCommandTest {
         UserPrincipal service = ServicePrincipalAcl.principal(fileSystem);
         List<AclEntry> homeAcl = Files.getFileAttributeView(home, AclFileAttributeView.class).getAcl();
         assertThat(homeAcl.stream().map(AclEntry::principal)).as(home.toString()).containsExactlyInAnyOrder(system, administrators);
-        for (Path folder : List.of(home.resolve("lib"), home.resolve("etc"), home.resolve("etc/drivers"), home.resolve("logs"),
+        for (Path folder : List.of(home.resolve("lib"), home.resolve("etc"), home.resolve("etc/drivers"),
+                home.resolve("etc/driver-state"), home.resolve("etc/update"), home.resolve("logs"),
                 home.resolve("data"), home.resolve("data/attachments"))) {
             List<AclEntry> acl = Files.getFileAttributeView(folder, AclFileAttributeView.class).getAcl();
             assertThat(acl.stream().map(AclEntry::principal)).as(folder.toString()).containsExactlyInAnyOrder(system, administrators, service);

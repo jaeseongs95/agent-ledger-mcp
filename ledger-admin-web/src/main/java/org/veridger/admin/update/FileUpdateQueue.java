@@ -31,6 +31,7 @@ public final class FileUpdateQueue implements UpdateQueue {
     private static final String STATUS_FILE = "status.properties";
     private static final String STAGED_DIR = "staged";
     private static final String SHA256SUMS = "SHA256SUMS";
+    private static final long MAX_STATE_FILE_BYTES = 64L * 1024L;
 
     private final Path directory;
 
@@ -40,14 +41,17 @@ public final class FileUpdateQueue implements UpdateQueue {
 
     @Override
     public UpdateStatus readStatus() {
+        if (Files.isSymbolicLink(directory) || !Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
+            return UpdateStatus.idle();
+        }
         Path request = directory.resolve(REQUEST_FILE);
-        if (Files.exists(request, LinkOption.NOFOLLOW_LINKS) && !Files.isSymbolicLink(request)) {
+        if (Files.isRegularFile(request, LinkOption.NOFOLLOW_LINKS)) {
             Properties props = loadProperties(request);
             return new UpdateStatus(UpdateStatus.State.PENDING, props.getProperty("targetVersion", ""),
                     props.getProperty("requestedAt", ""), "");
         }
         Path status = directory.resolve(STATUS_FILE);
-        if (Files.exists(status, LinkOption.NOFOLLOW_LINKS) && !Files.isSymbolicLink(status)) {
+        if (Files.isRegularFile(status, LinkOption.NOFOLLOW_LINKS)) {
             Properties props = loadProperties(status);
             UpdateStatus.State state = parseState(props.getProperty("state", "IDLE"));
             return new UpdateStatus(state, props.getProperty("targetVersion", ""),
@@ -61,6 +65,9 @@ public final class FileUpdateQueue implements UpdateQueue {
             String sha256SumsContent, String requestedBy, Instant requestedAt) throws IOException {
         rejectSymlink(directory);
         Files.createDirectories(directory);
+        if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("update directory is not a real directory");
+        }
         Path requestTarget = directory.resolve(REQUEST_FILE);
         rejectSymlink(requestTarget);
         if (Files.exists(requestTarget, LinkOption.NOFOLLOW_LINKS)) {
@@ -69,6 +76,9 @@ public final class FileUpdateQueue implements UpdateQueue {
         Path staged = directory.resolve(STAGED_DIR);
         rejectSymlink(staged);
         Files.createDirectories(staged);
+        if (!Files.isDirectory(staged, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("staged directory is not a real directory");
+        }
 
         for (Map.Entry<String, Path> entry : verifiedJars.entrySet()) {
             Path destination = staged.resolve(entry.getKey()).normalize();
@@ -114,6 +124,10 @@ public final class FileUpdateQueue implements UpdateQueue {
 
     private static Properties loadProperties(Path file) {
         try {
+            if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS) || Files.size(file) > MAX_STATE_FILE_BYTES) {
+                LOG.warn("refusing oversized or non-regular update state file {}", file.getFileName());
+                return new Properties();
+            }
             String raw = Files.readString(file, StandardCharsets.UTF_8);
             if (!raw.isEmpty() && raw.charAt(0) == '\uFEFF') {
                 raw = raw.substring(1);

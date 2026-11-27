@@ -126,11 +126,15 @@ public class PasskeyService {
     }
 
     /**
-     * Stores a passkey that the WebAuthn registration made and records who registered it. A credential id that is stored
-     * already is left as it is (the history of a credential is never changed, so the update after a sign-in changes nothing).
+     * Stores a passkey that the WebAuthn registration made and records who registered it. For an already-registered
+     * credential id, the immutable {@code owner_passkey} row is never changed, while a higher WebAuthn
+     * {@code signatureCount} is persisted monotonically in {@code owner_passkey_counter} for clone/rollback detection.
      */
     public void save(NewPasskey passkey, OwnerIdentity actor) {
         if (passkeys.exists(passkey.credentialId())) {
+            if (!passkeys.advanceSignatureCount(passkey.credentialId(), passkey.signatureCount(), clock.instant())) {
+                throw new IllegalArgumentException("passkey signature count did not advance");
+            }
             return;
         }
         if (passkey.credentialId().length() > OwnerPasskey.CREDENTIAL_ID_MAX_LENGTH) {

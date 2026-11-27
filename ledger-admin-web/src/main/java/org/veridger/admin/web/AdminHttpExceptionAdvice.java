@@ -17,6 +17,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.InvalidMediaTypeException;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -108,9 +109,16 @@ public class AdminHttpExceptionAdvice extends ResponseEntityExceptionHandler {
             HttpStatusCode status, WebRequest request) {
         ResponseEntity<Object> response = super.handleExceptionInternal(failure, body, headers, status, request);
         // the base class makes the problem of a standard exception here (the body that is passed in is null), so the
-        // code is added to what it answers with
-        if (response != null && response.getBody() instanceof ProblemDetail problem && problem.getProperties() == null) {
-            problem.setProperty("code", HttpErrorCode.of(status).name());
+        // code is added to what it answers with, and Content-Type is forced to application/problem+json so strict
+        // Accept headers cannot convert a 4xx problem detail into 406 Not Acceptable
+        if (response != null && response.getBody() instanceof ProblemDetail problem) {
+            if (problem.getProperties() == null) {
+                problem.setProperty("code", HttpErrorCode.of(status).name());
+            }
+            HttpHeaders updated = new HttpHeaders();
+            updated.putAll(response.getHeaders());
+            updated.setContentType(MediaType.APPLICATION_PROBLEM_JSON);
+            return new ResponseEntity<>(problem, updated, response.getStatusCode());
         }
         return response;
     }
@@ -139,7 +147,12 @@ public class AdminHttpExceptionAdvice extends ResponseEntityExceptionHandler {
 
     /** A browser navigation names {@code text/html} in its Accept header; an API client does not. */
     private static boolean navigates(HttpServletRequest request) {
-        return new ServletServerHttpRequest(request).getHeaders().getAccept().stream()
-                .anyMatch(MediaType.TEXT_HTML::equalsTypeAndSubtype);
+        try {
+            return new ServletServerHttpRequest(request).getHeaders().getAccept().stream()
+                    .anyMatch(MediaType.TEXT_HTML::equalsTypeAndSubtype);
+        } catch (InvalidMediaTypeException invalid) {
+            LOG.debug("ignoring malformed Accept header when choosing error representation", invalid);
+            return false;
+        }
     }
 }

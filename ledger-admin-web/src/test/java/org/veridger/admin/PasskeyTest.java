@@ -204,4 +204,58 @@ class PasskeyTest {
         assertThat(passkeys.live()).hasSize(before).extracting(live -> live.label()).doesNotContain("intruder");
         owner.perform(owner.get("/passkeys")).andExpect(status().isOk());
     }
+
+    @Test
+    @DisplayName("SEC-AW-01: WebAuthn signatureCount advances monotonically in V13 owner_passkey_counter and rejects rolled-back or cloned assertions")
+    void aw01_signCountRollbackIsRejectedWhileAdvancingCounterSucceeds() throws Exception {
+        Browser enrolling = new Browser(mvc);
+        enrolling.signInWithCode(passkeys.issueCode(TestOwners.OWNER, false).code()).andExpect(status().is3xxRedirection());
+        String csrf = enrolling.csrfOf("/passkeys");
+        SoftwarePasskey hw = new SoftwarePasskey();
+
+        MvcResult regOptions = enrolling.perform(post(enrolling, "/webauthn/register/options", csrf, null))
+                .andExpect(status().isOk()).andReturn();
+        String regChallenge = JsonPath.read(regOptions.getResponse().getContentAsString(), "$.challenge");
+        SoftwarePasskey.Registration registration = hw.registration(regChallenge, TestPasskeys.RP_ID, TestPasskeys.ORIGIN);
+        String regBody = "{\"publicKey\":{\"credential\":{\"id\":\"" + registration.credentialId() + "\",\"rawId\":\""
+                + registration.credentialId() + "\",\"response\":{\"attestationObject\":\"" + registration.attestationObject()
+                + "\",\"clientDataJSON\":\"" + registration.clientDataJson() + "\",\"transports\":[]},\"type\":\"public-key\","
+                + "\"clientExtensionResults\":{}},\"label\":\"hw-key\"}}";
+        enrolling.perform(post(enrolling, "/webauthn/register", csrf, regBody)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+        try {
+            // First sign-in with signCount=10 succeeds and persists 10
+            Browser b1 = new Browser(mvc);
+            String c1 = b1.csrfOf("/login");
+            String ch1 = JsonPath.read(b1.perform(post(b1, "/webauthn/authenticate/options", c1, null))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), "$.challenge");
+            b1.perform(post(b1, "/login/webauthn", c1,
+                    loginBody(hw.assertionWithSignCount(ch1, TestPasskeys.RP_ID, TestPasskeys.ORIGIN, 10))))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.authenticated").value(true));
+            assertThat(passkeys.findLive(hw.credentialId()).orElseThrow().signatureCount()).isEqualTo(10L);
+
+            // Cloned/replayed assertion with signCount=10 (not greater than stored 10) must be rejected
+            Browser b2 = new Browser(mvc);
+            String c2 = b2.csrfOf("/login");
+            String ch2 = JsonPath.read(b2.perform(post(b2, "/webauthn/authenticate/options", c2, null))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), "$.challenge");
+            assertThat(b2.perform(post(b2, "/login/webauthn", c2,
+                    loginBody(hw.assertionWithSignCount(ch2, TestPasskeys.RP_ID, TestPasskeys.ORIGIN, 10))))
+                    .andReturn().getResponse().getStatus()).isGreaterThanOrEqualTo(400);
+
+            // Advancing counter to signCount=11 succeeds and persists 11
+            Browser b3 = new Browser(mvc);
+            String c3 = b3.csrfOf("/login");
+            String ch3 = JsonPath.read(b3.perform(post(b3, "/webauthn/authenticate/options", c3, null))
+                    .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), "$.challenge");
+            b3.perform(post(b3, "/login/webauthn", c3,
+                    loginBody(hw.assertionWithSignCount(ch3, TestPasskeys.RP_ID, TestPasskeys.ORIGIN, 11))))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.authenticated").value(true));
+            assertThat(passkeys.findLive(hw.credentialId()).orElseThrow().signatureCount()).isEqualTo(11L);
+        } finally {
+            Browser owner = Browser.signedIn(mvc);
+            owner.perform(owner.form("/passkeys/revoke", Form.of("credentialId", hw.credentialId()),
+                    owner.csrfOf("/passkeys"))).andExpect(status().is3xxRedirection());
+        }
+    }
 }

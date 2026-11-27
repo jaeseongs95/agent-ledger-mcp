@@ -109,6 +109,6 @@ class AttachmentDeployTest {
                 .filter(line -> line.startsWith("ReadWritePaths=")).toList();
 
         assertThat(mcp).containsExactly("ReadWritePaths=/var/lib/veridger/attachments");
-        assertThat(admin).containsExactly("ReadWritePaths=/etc/veridger");
+        assertThat(admin).containsExactly("ReadWritePaths=/etc/veridger/driver-state /etc/veridger/update");
     }
 }

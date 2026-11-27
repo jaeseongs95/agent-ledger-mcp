@@ -4,6 +4,7 @@ package org.veridger.cli.deploy;
 
 import java.io.IOException;
 import java.nio.file.FileSystem;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
@@ -127,6 +128,8 @@ final class WindowsPlatform implements ServicePlatform, ServiceWrappers {
         UserPrincipal installer = processUser.current(fileSystem);
         Path home = lib.getParent();
         Path drivers = etc.resolve("drivers");
+        Path driverState = hostPath(root, layout.driverStateDirectory());
+        Path update = hostPath(root, layout.updateDirectory());
         Path data = hostPath(root, layout.data());
         Path attachments = hostPath(root, layout.attachmentDirectory());
         // the secret directory and one folder per use (SecretFolder), then the key folder of the attachments, which is beside them
@@ -136,16 +139,35 @@ final class WindowsPlatform implements ServicePlatform, ServiceWrappers {
             secretFolders.add(hostPath(root, layout.secretFolder(folder)));
         }
         secretFolders.add(hostPath(root, layout.attachmentKeyDirectory()));
-        // The folders and what the service account may do in each; the secrets are not among them (see below). The settings folder is
-        // changed by the admin web (its driver page replaces the registration file jdbc-driver.yaml there through a temporary file and a
-        // move), which is the one reason of "modify" there; nothing of the services writes in the folder of the driver jars (the admin web
-        // only checks a jar in it, the operator puts it there), so it is read and run only, like the jars (Linux: root, 0755).
-        List<Folder> folders = List.of(new Folder(lib, WindowsAccess.READ_EXECUTE), new Folder(etc, WindowsAccess.MODIFY),
-                new Folder(drivers, WindowsAccess.READ_EXECUTE), new Folder(logs, WindowsAccess.MODIFY),
-                new Folder(data, WindowsAccess.MODIFY), new Folder(attachments, WindowsAccess.MODIFY));
+        // The folders and what the service account may do in each; the secrets are not among them (see below). The settings
+        // folder itself is read-only for the service account so it can never rewrite application.yaml or local.yaml; only the
+        // dedicated driver-state and update subdirectories grant modify rights to the service account.
+        List<Folder> folders = List.of(new Folder(lib, WindowsAccess.READ_EXECUTE),
+                new Folder(etc, WindowsAccess.READ_EXECUTE), new Folder(drivers, WindowsAccess.READ_EXECUTE),
+                new Folder(driverState, WindowsAccess.MODIFY), new Folder(update, WindowsAccess.MODIFY),
+                new Folder(logs, WindowsAccess.MODIFY), new Folder(data, WindowsAccess.MODIFY),
+                new Folder(attachments, WindowsAccess.MODIFY));
+        // Verify every pre-existing installation path is neither a symlink nor owned by an untrusted account before an elevated
+        // run modifies ACLs or writes beneath it (prevents C:\ProgramData pre-creation squat / junction takeover).
+        Set<UserPrincipal> trustedOwners = Set.of(system, administrators, installer);
+        List<Path> managedPaths = new ArrayList<>(List.of(home, lib, etc, drivers, driverState, update, logs, data,
+                attachments));
+        for (Path path : managedPaths) {
+            if (Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
+                access.requireTrustedOwner(path, trustedOwners);
+            }
+        }
+        for (Path secretFolder : secretFolders) {
+            if (Files.exists(secretFolder, LinkOption.NOFOLLOW_LINKS)) {
+                access.requireTrustedOwner(secretFolder, trustedOwners);
+                if (!Files.isDirectory(secretFolder, LinkOption.NOFOLLOW_LINKS)) {
+                    throw new FileSystemException(secretFolder.toString(), null, "not a directory");
+                }
+            }
+        }
         // What a run changes is read first, so a failed run can put it back (nothing is changed by reading).
         List<WindowsAccess.Saved> saved = new ArrayList<>();
-        for (Path path : List.of(home, lib, etc, drivers, logs, data, attachments)) {
+        for (Path path : managedPaths) {
             if (Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
                 saved.add(access.save(path));
             }

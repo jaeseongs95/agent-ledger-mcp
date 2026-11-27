@@ -24,7 +24,7 @@ public class AuthorAttestationVerifier implements AttestationVerifier {
         if (presented == null || presented.isBlank()) {
             throw new TrustException(TrustCode.HOST_ATTESTATION_REQUIRED, List.of());
         }
-        if (!AuthorId.matches(presented)) {
+        if (!AuthorId.isSessionId(presented)) {
             return new Proof.MalformedAuthor(presented);
         }
         return new Proof.Proven(AuthorId.of(presented));

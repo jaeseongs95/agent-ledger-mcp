@@ -110,14 +110,16 @@ class DeployRendererTest {
         assertThat(start).isEqualTo("ExecStart=/usr/lib/jvm/java-25/bin/java -Duser.timezone=UTC -XX:+ExitOnOutOfMemoryError -jar /opt/veridger/" + jar
                 + " --spring.config.import=file:/etc/veridger/application.yaml,file:/etc/veridger/" + settingsFile
                 + ",optional:file:/etc/veridger/local.yaml,optional:file:/etc/veridger/jdbc-driver.yaml,"
+                + "optional:file:/etc/veridger/driver-state/jdbc-driver.yaml,"
                 + "optional:configtree:/etc/veridger/secrets/common/,optional:configtree:/etc/veridger/secrets/"
                 + ("mcp.yaml".equals(settingsFile) ? "mcp" : "admin") + "/");
     }
 
     static Stream<Arguments> units() {
-        // ATA-036: the MCP server writes the attachment files, so its read-only file system has that one folder open
+        // ATA-036 / SYS-04: MCP writes attachments; admin writes only isolated driver-state and update subdirectories
         return Stream.of(Arguments.of(MCP_UNIT, "ledger-mcp-server.jar", "mcp.yaml", "/var/lib/veridger/attachments"),
-                Arguments.of(ADMIN_UNIT, "ledger-admin-web.jar", "admin.yaml", "/etc/veridger"));
+                Arguments.of(ADMIN_UNIT, "ledger-admin-web.jar", "admin.yaml",
+                        "/etc/veridger/driver-state /etc/veridger/update"));
     }
 
     // ---- INS-016: the settings ----
@@ -154,7 +156,7 @@ class DeployRendererTest {
         assertThat(admin.getProperty("ledger.admin.passkey.rp-id")).isEqualTo("admin.example.org");
         assertThat(admin.getProperty("ledger.admin.passkey.origins[0]")).isEqualTo("https://admin.example.org");
         assertThat(admin.getProperty("ledger.admin.passkey.origins[1]")).isNull();
-        assertThat(admin.getProperty("ledger.admin.driver-file")).isEqualTo("/etc/veridger/jdbc-driver.yaml");
+        assertThat(admin.getProperty("ledger.admin.driver-file")).isEqualTo("/etc/veridger/driver-state/jdbc-driver.yaml");
         assertThat(admin.getProperty("ledger.admin.driver-directory")).isEqualTo("/etc/veridger/drivers");
         assertThat(admin.getProperty("ledger.admin.mcp.health-url")).isEqualTo("http://127.0.0.1:8765/healthz");
         for (EnumerablePropertySource<?> settings : List.of(shared, mcp, admin)) {
@@ -364,6 +366,7 @@ class DeployRendererTest {
         assertThat(element(configuration, "arguments")).isEqualTo("-Duser.timezone=UTC -XX:+ExitOnOutOfMemoryError -jar " + HOME + "/lib/" + jar
                 + " --spring.config.import=file:" + HOME + "/etc/application.yaml,file:" + HOME + "/etc/" + settingsFile
                 + ",optional:file:" + HOME + "/etc/local.yaml,optional:file:" + HOME + "/etc/jdbc-driver.yaml,"
+                + "optional:file:" + HOME + "/etc/driver-state/jdbc-driver.yaml,"
                 + "optional:configtree:" + HOME + "/etc/secrets/common/,optional:configtree:" + HOME + "/etc/secrets/"
                 + ("mcp.yaml".equals(settingsFile) ? "mcp" : "admin") + "/");
         assertThat(element(configuration, "logpath")).isEqualTo("C:\\ProgramData\\veridger\\logs");
@@ -389,7 +392,7 @@ class DeployRendererTest {
                 HOME + "/lib/veridger-admin.xml", HOME + "/etc/application.yaml", HOME + "/etc/mcp.yaml",
                 HOME + "/etc/admin.yaml");
         EnumerablePropertySource<?> admin = yaml(file(files, HOME + "/etc/admin.yaml"));
-        assertThat(admin.getProperty("ledger.admin.driver-file")).isEqualTo(HOME + "/etc/jdbc-driver.yaml");
+        assertThat(admin.getProperty("ledger.admin.driver-file")).isEqualTo(HOME + "/etc/driver-state/jdbc-driver.yaml");
         assertThat(admin.getProperty("ledger.admin.driver-directory")).isEqualTo(HOME + "/etc/drivers");
         assertThat(List.of(yaml(file(files, HOME + "/etc/mcp.yaml")).getPropertyNames())).containsExactlyInAnyOrder(
                 "server.port", "ledger.mcp.allowed-hosts[0]", "ledger.mcp.allowed-hosts[1]");
@@ -429,11 +432,13 @@ class DeployRendererTest {
                 "ExecStart=/usr/lib/jvm/java-25/bin/java -Duser.timezone=UTC -XX:+ExitOnOutOfMemoryError -jar /opt/acme-test/ledger-mcp-server.jar "
                         + "--spring.config.import=file:/etc/acme-test/application.yaml,file:/etc/acme-test/mcp.yaml,"
                         + "optional:file:/etc/acme-test/local.yaml,optional:file:/etc/acme-test/jdbc-driver.yaml,"
+                        + "optional:file:/etc/acme-test/driver-state/jdbc-driver.yaml,"
                         + "optional:configtree:/etc/acme-test/secrets/common/,optional:configtree:/etc/acme-test/secrets/mcp/");
-        assertThat(admin.lines().toList()).contains("User=acme-test", "ReadWritePaths=/etc/acme-test",
+        assertThat(admin.lines().toList()).contains("User=acme-test",
+                "ReadWritePaths=/etc/acme-test/driver-state /etc/acme-test/update",
                 "After=network-online.target acme-test.service");
         assertThat(yaml(file(files, "/etc/acme-test/admin.yaml")).getProperty("ledger.admin.driver-file"))
-                .isEqualTo("/etc/acme-test/jdbc-driver.yaml");
+                .isEqualTo("/etc/acme-test/driver-state/jdbc-driver.yaml");
         for (RenderedFile rendered : files) {
             assertThat(rendered.path() + rendered.content()).as(rendered.path()).doesNotContain("pg-ledger")
                     .doesNotContain("agent-ledger").doesNotContain("veridger");

@@ -80,7 +80,8 @@ final class LinuxPlatform implements ServicePlatform {
                 new RenderedFile(DeployLayout.UNIT_DIRECTORY + "/" + mcp.name() + ".service",
                         SystemdUnits.unit(p, mcp, "network-online.target", layout.attachmentDirectory())),
                 new RenderedFile(DeployLayout.UNIT_DIRECTORY + "/" + admin.name() + ".service",
-                        SystemdUnits.unit(p, admin, "network-online.target " + mcp.name() + ".service", layout.etc())));
+                        SystemdUnits.unit(p, admin, "network-online.target " + mcp.name() + ".service",
+                                layout.driverStateDirectory() + " " + layout.updateDirectory())));
     }
 
     @Override
@@ -103,6 +104,8 @@ final class LinuxPlatform implements ServicePlatform {
         // alone (a folder that exists gets the same owner and mode as a new one); the data of the installation is new with
         // this version, so nothing of it exists before
         secretFolders.add(hostPath(root, layout.attachmentKeyDirectory()));
+        secretFolders.add(hostPath(root, layout.driverStateDirectory()));
+        secretFolders.add(hostPath(root, layout.updateDirectory()));
         secretFolders.add(hostPath(root, layout.data()));
         secretFolders.add(hostPath(root, layout.attachmentDirectory()));
         // What a run changes is read first, so that a failed run can put it back, as the Windows platform does with the ACLs
@@ -115,7 +118,7 @@ final class LinuxPlatform implements ServicePlatform {
         }
         try {
             host.directory(lib, "rwxr-xr-x", null, null);
-            host.directory(etc, "rwxr-x---", user, group);
+            host.directory(etc, "rwxr-x---", null, group);
             host.directory(drivers, "rwxr-xr-x", null, null);
             for (Path secretFolder : secretFolders) {
                 host.directory(secretFolder, "rwx------", user, group);

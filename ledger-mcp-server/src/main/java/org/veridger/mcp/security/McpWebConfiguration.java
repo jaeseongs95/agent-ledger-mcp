@@ -2,12 +2,16 @@
 
 package org.veridger.mcp.security;
 
+import org.springframework.ai.mcp.server.common.autoconfigure.properties.McpServerStreamableHttpProperties;
 import org.springframework.boot.security.autoconfigure.web.servlet.SecurityFilterProperties;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/** Registers the size check for every request: after the security chain (a request that is not allowed is not read). */
+/**
+ * Registers the size check strictly on the authenticated MCP endpoint, after the security chain (so unauthenticated
+ * endpoints such as {@code /healthz} never buffer chunked request bodies).
+ */
 @Configuration(proxyBeanMethods = false)
 public class McpWebConfiguration {
 
@@ -17,9 +21,10 @@ public class McpWebConfiguration {
      * filter itself is the component {@link RequestSizeFilter}.
      */
     @Bean
-    FilterRegistrationBean<RequestSizeFilter> requestSizeFilterRegistration(RequestSizeFilter filter) {
+    FilterRegistrationBean<RequestSizeFilter> requestSizeFilterRegistration(RequestSizeFilter filter,
+            McpServerStreamableHttpProperties streamableProperties) {
         FilterRegistrationBean<RequestSizeFilter> registration = new FilterRegistrationBean<>(filter);
-        registration.addUrlPatterns("/*");
+        registration.addUrlPatterns(streamableProperties.getMcpEndpoint());
         registration.setOrder(SecurityFilterProperties.DEFAULT_FILTER_ORDER + 1);
         return registration;
     }

@@ -46,6 +46,8 @@ final class HostFiles {
         }
         if (owner != null) {
             view.setOwner(owner);
+        }
+        if (group != null) {
             view.setGroup(group);
         }
         FileModes.apply(path, mode);

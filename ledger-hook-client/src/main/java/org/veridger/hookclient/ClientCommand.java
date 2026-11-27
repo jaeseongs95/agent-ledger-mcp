@@ -22,14 +22,22 @@ public final class ClientCommand {
 
     /** The word that ends the resident program of the key folder. */
     static final String STOP = "stop";
+    /** Upper bound on stdin bytes accepted from the host process to prevent unbounded heap allocation. */
+    static final int MAX_STDIN_BYTES = 32 * 1024 * 1024;
 
     private static final int EXIT_FAILED = 2;
     private static final byte[] OUTPUT_FAILED = "ledger: could not write the hook output\n".getBytes(StandardCharsets.UTF_8);
 
     private final HookClient hook;
+    private final int maxStdinBytes;
 
     public ClientCommand(HookClient hook) {
+        this(hook, MAX_STDIN_BYTES);
+    }
+
+    ClientCommand(HookClient hook, int maxStdinBytes) {
         this.hook = hook;
+        this.maxStdinBytes = maxStdinBytes;
     }
 
     /** Runs the command and returns the exit code of the process. */
@@ -39,7 +47,7 @@ public final class ClientCommand {
                 hook.stop();
                 return 0;
             }
-            HookAnswer answer = hook.call(new HookCall(List.of(arguments), in.readAllBytes()));
+            HookAnswer answer = hook.call(new HookCall(List.of(arguments), readBounded(in, maxStdinBytes)));
             out.write(answer.stdout(), 0, answer.stdout().length);
             out.flush();
             err.write(answer.stderr(), 0, answer.stderr().length);
@@ -56,6 +64,14 @@ public final class ClientCommand {
         } catch (IOException failure) {
             return fail(err, "ledger: hook I/O failure: " + failure.getClass().getSimpleName());
         }
+    }
+
+    private static byte[] readBounded(InputStream in, int limit) throws IOException {
+        byte[] bytes = in.readNBytes(limit + 1);
+        if (bytes.length > limit) {
+            throw new IOException("stdin exceeds maximum allowed size of " + limit + " bytes");
+        }
+        return bytes;
     }
 
     private static int fail(PrintStream err, String message) {

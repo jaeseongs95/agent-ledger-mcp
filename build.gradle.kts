@@ -15,12 +15,16 @@ plugins {
 }
 
 group = "org.veridger"
-version = "4.3.0"
+version = "4.3.1"
 
 spotless {
     java {
         target("*/src/**/*.java")
         licenseHeader("// SPDX-License-Identifier: AGPL-3.0-or-later\n\n", "package ")
+    }
+    format("windowsBatch") {
+        target("deploy/*.cmd")
+        lineEndings = com.diffplug.spotless.LineEnding.WINDOWS
     }
 }
 
@@ -161,7 +165,7 @@ subprojects {
     apply(plugin = "java-library")
 
     group = "org.veridger"
-    version = "4.3.0"
+    version = "4.3.1"
 
     val projectName = project.name
     val usesDatabase = projectName in databaseModules

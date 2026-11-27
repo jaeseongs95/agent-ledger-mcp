@@ -466,7 +466,7 @@ public class AttachmentStore {
             long position = 0;
             long plainStart = 0;
             long index = 0;
-            long wantedEnd = offset + maxBytes;
+            long wantedEnd = offset > Long.MAX_VALUE - maxBytes ? Long.MAX_VALUE : offset + maxBytes;
             ByteBuffer collected = ByteBuffer.allocate(maxBytes);
             while (position < size) {
                 // only the length is read to follow the structure; the body of a segment is read when it is opened
@@ -502,6 +502,23 @@ public class AttachmentStore {
         } catch (IOException failure) {
             throw failed(failure);
         }
+    }
+
+    /**
+     * Conservative upper bound of encrypted on-disk bytes for a bundle's declared payload bytes, including per-segment
+     * framing ({@code LENGTH + IV + TAG}) and one encrypted end marker per file.
+     */
+    static long encryptedBytesUpperBound(long totalDeclaredBytes, int fileCount) {
+        long clampedBytes = Math.max(0L, totalDeclaredBytes);
+        long files = Math.max(1L, fileCount);
+        long segmentOverhead = (long) SegmentCipher.LENGTH_BYTES + SegmentCipher.IV_BYTES + SegmentCipher.TAG_BYTES;
+        long maxDataSegments = clampedBytes == 0L ? 0L : Math.max(files, (clampedBytes + 4095L) / 4096L);
+        long totalSegments = maxDataSegments + files;
+        if (totalSegments > Long.MAX_VALUE / segmentOverhead) {
+            return Long.MAX_VALUE;
+        }
+        long overhead = totalSegments * segmentOverhead;
+        return clampedBytes > Long.MAX_VALUE - overhead ? Long.MAX_VALUE : clampedBytes + overhead;
     }
 
     /** Opens every segment of the file and returns the size and SHA-256 of the plain bytes; any damage is ARTIFACT_CORRUPTED. */

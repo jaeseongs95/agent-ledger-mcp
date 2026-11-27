@@ -14,7 +14,7 @@
 #
 # One-stop convenience usage (auto-downloads & SHA-256 verifies release JARs when --jars is omitted, and prompts for
 # missing required values when running in an interactive terminal without --stdin):
-#   sudo sh install.sh [--version=latest|v4.3.0] [--repo=jaeseongs95/veridger]
+#   sudo sh install.sh [--version=latest|v4.3.1] [--repo=jaeseongs95/veridger]
 #
 # Passwords are never accepted on a command line: Java reads them hidden from the terminal or via --stdin.
 # A re-run is an upgrade: jars, driver jar, and unit files are replaced while secrets, tokens, and data are preserved.
@@ -95,12 +95,12 @@ download_release_jars() {
   fi
   TMP_JARS=$(mktemp -d)
   echo "install.sh: downloading Veridger release artifacts from $BASE_URL ..."
-  curl -fsSL --proto '=https' --tlsv1.2 "$BASE_URL/SHA256SUMS" -o "$TMP_JARS/SHA256SUMS" || die "failed to download SHA256SUMS from $BASE_URL"
+  curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 "$BASE_URL/SHA256SUMS" -o "$TMP_JARS/SHA256SUMS" || die "failed to download SHA256SUMS from $BASE_URL"
   for asset in ledger-cli.jar ledger-mcp-server.jar ledger-admin-web.jar; do
-    curl -fsSL --proto '=https' --tlsv1.2 "$BASE_URL/$asset" -o "$TMP_JARS/$asset" || die "failed to download $asset from $BASE_URL"
+    curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 "$BASE_URL/$asset" -o "$TMP_JARS/$asset" || die "failed to download $asset from $BASE_URL"
     verify_sha256_entry "$TMP_JARS/SHA256SUMS" "$TMP_JARS/$asset" "$asset"
   done
-  if curl -fsSL --proto '=https' --tlsv1.2 "$BASE_URL/veridger-updater.sh" -o "$TMP_JARS/veridger-updater.sh"; then
+  if curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 "$BASE_URL/veridger-updater.sh" -o "$TMP_JARS/veridger-updater.sh"; then
     verify_sha256_entry "$TMP_JARS/SHA256SUMS" "$TMP_JARS/veridger-updater.sh" "veridger-updater.sh"
   else
     rm -f "$TMP_JARS/veridger-updater.sh"
@@ -128,6 +128,7 @@ for arg in "$@"; do
   esac
 done
 
+printf '%s\n' "$REPO" | grep -Eq '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' || die "invalid --repo value"
 [ -n "$JAVA" ] || JAVA=$(command -v java) || die "java is not installed: give --java=<path> of a Java 25 runtime"
 [ -n "$JARS" ] || download_release_jars
 
@@ -168,11 +169,32 @@ ETC=/etc/$NAME
 
 "$JAVA" $JVM_OPTS -jar "$JARS/ledger-cli.jar" --ledger.secrets.home=/nonexistent render-deploy --check --java="$JAVA" "$@"
 
+# Stop any running instance services before prepare-host modifies binaries/directories on upgrades.
+systemctl stop "$SVC" "$ADMIN" >/dev/null 2>&1 || true
 # useradd: Java has no API to create an operating system user. Status 9 is "name in use": the user of an earlier run stays.
 useradd --system --user-group --no-create-home --shell /usr/sbin/nologin "$SVC" || [ $? = 9 ]
 # runuser: the service user must be able to execute Java; check right after creating the user and before creating anything else.
 runuser -u "$SVC" -- "$JAVA" -version >/dev/null 2>&1 || die "the service user $SVC cannot run $JAVA: use a Java 25 runtime outside the home directories that every account can read and execute"
 "$JAVA" $JVM_OPTS -jar "$JARS/ledger-cli.jar" --ledger.secrets.home=/nonexistent prepare-host --jars="$JARS" --driver-jar="$DRIVER_JAR" --java="$JAVA" "$@"
+
+# Record root-owned installed version floor for the host updater.
+if command -v python3 >/dev/null 2>&1; then
+  INSTALLED_VER=$(python3 - "$LIB/ledger-cli.jar" <<'PY' 2>/dev/null || true
+import sys, zipfile
+with zipfile.ZipFile(sys.argv[1], "r") as zf:
+    for line in zf.read("META-INF/MANIFEST.MF").decode("utf-8", errors="ignore").splitlines():
+        if line.startswith("Implementation-Version:"):
+            print(line.split(":", 1)[1].strip())
+            break
+PY
+)
+  if printf '%s\n' "$INSTALLED_VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+    printf '%s\n' "$INSTALLED_VER" > "$LIB/.installed-version.new"
+    chown root:root "$LIB/.installed-version.new"
+    chmod 0644 "$LIB/.installed-version.new"
+    mv -f "$LIB/.installed-version.new" "$LIB/.installed-version"
+  fi
+fi
 
 as_svc secret-set ledger.jdbc.password --if-absent $STDIN
 as_svc token-generate ledger.admin.token --print
@@ -198,6 +220,7 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+TimeoutStartSec=180
 ExecStart=$LIB/veridger-updater.sh --name=$NAME --mcp-port=$MCP_PORT_VAL --admin-port=$ADMIN_PORT_VAL --repo=$REPO
 EOF
   cat > "/etc/systemd/system/$UPDATER.path" <<EOF

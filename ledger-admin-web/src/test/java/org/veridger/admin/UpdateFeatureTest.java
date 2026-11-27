@@ -57,6 +57,9 @@ class UpdateFeatureTest {
     @Autowired
     private MockMvc mvc;
 
+    @Autowired
+    private tools.jackson.databind.json.JsonMapper mapper;
+
     private HttpServer server;
 
     @AfterEach
@@ -162,7 +165,7 @@ class UpdateFeatureTest {
         Path updateDir = tempDir.resolve("update");
         LedgerAdminProperties p = props(base, updateDir, "4.1.0", 11);
         Clock fixed = Clock.fixed(Instant.parse("2026-11-26T12:00:00Z"), ZoneOffset.UTC);
-        UpdateService service = new UpdateService(p, new GitHubReleaseClient(p, testRestClient()),
+        UpdateService service = new UpdateService(p, new GitHubReleaseClient(p, testRestClient(), mapper),
                 new ChecksumVerifier(), new FileUpdateQueue(p), fixed);
 
         UpdateService.UpdateView before = service.inspect();
@@ -230,7 +233,7 @@ class UpdateFeatureTest {
 
         Path updateDir = tempDir.resolve("update");
         LedgerAdminProperties p = props(base, updateDir, "4.1.0", 11);
-        UpdateService service = new UpdateService(p, new GitHubReleaseClient(p, testRestClient()),
+        UpdateService service = new UpdateService(p, new GitHubReleaseClient(p, testRestClient(), mapper),
                 new ChecksumVerifier(), new FileUpdateQueue(p), Clock.systemUTC());
 
         UpdateService.ApplyResult result = service.applyLatest(TestOwners.OWNER);
@@ -256,7 +259,7 @@ class UpdateFeatureTest {
         String base = "http://127.0.0.1:" + http.getAddress().getPort();
         Path updateDir = tempDir.resolve("update");
         LedgerAdminProperties p = props(base, updateDir, "4.1.0", 11);
-        UpdateService service = new UpdateService(p, new GitHubReleaseClient(p, testRestClient()),
+        UpdateService service = new UpdateService(p, new GitHubReleaseClient(p, testRestClient(), mapper),
                 new ChecksumVerifier(), new FileUpdateQueue(p), Clock.systemUTC());
 
         UpdateService.UpdateView view = service.inspect();
@@ -273,7 +276,7 @@ class UpdateFeatureTest {
     @DisplayName("UPD-04: SSRF protection rejects external hosts, HTTPS-to-HTTP downgrade, schema overflow, and malformed asset URLs")
     void upd04_ssrfDownloadHostRejected(@TempDir Path tempDir) throws Exception {
         LedgerAdminProperties p = props("https://api.github.com", tempDir.resolve("update"), "4.1.0", 11);
-        GitHubReleaseClient client = new GitHubReleaseClient(p, testRestClient());
+        GitHubReleaseClient client = new GitHubReleaseClient(p, testRestClient(), mapper);
         org.assertj.core.api.Assertions.assertThatThrownBy(
                 () -> client.downloadBytes(URI.create("https://169.254.169.254/latest/meta-data/"), 1024))
                 .isInstanceOf(IOException.class)
@@ -300,7 +303,7 @@ class UpdateFeatureTest {
         HttpServer http = startReleaseServer(overflowJson, Map.of());
         String base = "http://127.0.0.1:" + http.getAddress().getPort();
         LedgerAdminProperties localProps = props(base, tempDir.resolve("overflow"), "4.1.0", 11);
-        UpdateService service = new UpdateService(localProps, new GitHubReleaseClient(localProps, testRestClient()),
+        UpdateService service = new UpdateService(localProps, new GitHubReleaseClient(localProps, testRestClient(), mapper),
                 new ChecksumVerifier(), new FileUpdateQueue(localProps), Clock.systemUTC());
         assertThat(service.inspect().availability()).isEqualTo(UpdateService.Availability.SCHEMA_MIGRATION_REQUIRED);
 
@@ -315,7 +318,7 @@ class UpdateFeatureTest {
                   "assets": [{"name":"ledger-cli.jar","browser_download_url":"http://[::1","size":10}]
                 }
                 """);
-        UpdateService freshService = new UpdateService(localProps, new GitHubReleaseClient(localProps, testRestClient()),
+        UpdateService freshService = new UpdateService(localProps, new GitHubReleaseClient(localProps, testRestClient(), mapper),
                 new ChecksumVerifier(), new FileUpdateQueue(localProps), Clock.systemUTC());
         assertThat(freshService.inspect().availability()).isEqualTo(UpdateService.Availability.CHECK_FAILED);
     }
@@ -365,7 +368,7 @@ class UpdateFeatureTest {
                     return now.get();
                 }
             };
-            UpdateService service = new UpdateService(p, new GitHubReleaseClient(p, testRestClient()),
+            UpdateService service = new UpdateService(p, new GitHubReleaseClient(p, testRestClient(), mapper),
                     new ChecksumVerifier(), new FileUpdateQueue(p), mutableClock);
 
             // First inspect fetches once; second inspect within 5 minutes hits cache

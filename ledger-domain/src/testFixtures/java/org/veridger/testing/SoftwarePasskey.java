@@ -16,6 +16,7 @@ import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A WebAuthn authenticator in software (ES256, EC P-256), for the tests: it writes what a browser passkey returns, every part
@@ -40,6 +41,7 @@ public final class SoftwarePasskey {
 
     private final byte[] credentialId = new byte[32];
     private final KeyPair pair;
+    private final AtomicInteger signCount = new AtomicInteger();
 
     /** A new credential with a key of its own. */
     public SoftwarePasskey() {
@@ -128,8 +130,13 @@ public final class SoftwarePasskey {
 
     /** The authenticator data: the hash of the relying party id, the flags and a counter. */
     public static byte[] authenticatorData(String rpId, int flags) {
-        return ByteBuffer.allocate(37).put(sha256(rpId.getBytes(StandardCharsets.UTF_8))).put((byte) flags).putInt(1)
-                .array();
+        return authenticatorData(rpId, flags, 1);
+    }
+
+    /** The authenticator data with an explicit 32-bit signature counter (for clone/rollback regression tests). */
+    public static byte[] authenticatorData(String rpId, int flags, int counter) {
+        return ByteBuffer.allocate(37).put(sha256(rpId.getBytes(StandardCharsets.UTF_8))).put((byte) flags)
+                .putInt(counter).array();
     }
 
     /** The client data JSON a browser writes for a ceremony of this type, challenge and origin. */
@@ -160,9 +167,15 @@ public final class SoftwarePasskey {
                 base64url(clientData("webauthn.create", challenge, origin).getBytes(StandardCharsets.UTF_8)));
     }
 
-    /** A good assertion over the challenge for the relying party and the origin (user present and verified). */
+    /** A good assertion over the challenge for the relying party and the origin, advancing the monotonic signCount. */
     public Assertion assertion(String challenge, String rpId, String origin) {
-        return assertion(clientData("webauthn.get", challenge, origin), authenticatorData(rpId, PRESENT_AND_VERIFIED));
+        return assertionWithSignCount(challenge, rpId, origin, signCount.incrementAndGet());
+    }
+
+    /** An assertion with an explicit signature counter value (for clone/rollback and synced-passkey tests). */
+    public Assertion assertionWithSignCount(String challenge, String rpId, String origin, int counter) {
+        return assertion(clientData("webauthn.get", challenge, origin),
+                authenticatorData(rpId, PRESENT_AND_VERIFIED, counter));
     }
 
     /** The assertion over exactly this client data and this authenticator data (a test bends them). */

@@ -16,7 +16,9 @@ import java.io.InputStreamReader;
 import java.net.URLDecoder;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
+import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.StandardCharsets;
+import java.nio.charset.UnsupportedCharsetException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
@@ -27,7 +29,10 @@ import org.veridger.admin.app.LedgerAdminProperties;
 import org.veridger.domain.error.AdminCode;
 import org.veridger.domain.error.AdminException;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.http.InvalidMediaTypeException;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.servlet.HandlerExceptionResolver;
 
@@ -63,6 +68,14 @@ public final class RequestSizeFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
+        Charset charset;
+        try {
+            charset = resolveCharset(request);
+        } catch (InvalidMediaTypeException | IllegalCharsetNameException | UnsupportedCharsetException invalid) {
+            errors.resolveException(request, response, null,
+                    new HttpMediaTypeNotSupportedException("Unsupported character encoding"));
+            return;
+        }
         long declared = request.getContentLengthLong();
         if (declared > maxBytes) {
             refuse(request, response);
@@ -75,11 +88,25 @@ public final class RequestSizeFilter extends OncePerRequestFilter {
                 return;
             }
             if (body.length > 0) {
-                chain.doFilter(new BufferedBodyRequest(request, body), response);
+                chain.doFilter(new BufferedBodyRequest(request, body, charset), response);
                 return;
             }
         }
         chain.doFilter(request, response);
+    }
+
+    private static Charset resolveCharset(HttpServletRequest request) {
+        Charset fromHeader = null;
+        String contentType = request.getContentType();
+        if (contentType != null && !contentType.isBlank()) {
+            fromHeader = MediaType.parseMediaType(contentType).getCharset();
+        }
+        String encoding = request.getCharacterEncoding();
+        Charset fromRequest = encoding == null ? null : Charset.forName(encoding);
+        if (fromHeader != null) {
+            return fromHeader;
+        }
+        return fromRequest == null ? StandardCharsets.UTF_8 : fromRequest;
     }
 
     private void refuse(HttpServletRequest request, HttpServletResponse response) {
@@ -96,11 +123,13 @@ public final class RequestSizeFilter extends OncePerRequestFilter {
         private static final String FORM = "application/x-www-form-urlencoded";
 
         private final byte[] body;
+        private final Charset charset;
         private Map<String, String[]> parameters;
 
-        BufferedBodyRequest(HttpServletRequest request, byte[] body) {
+        BufferedBodyRequest(HttpServletRequest request, byte[] body, Charset charset) {
             super(request);
             this.body = body;
+            this.charset = charset;
         }
 
         @Override
@@ -158,8 +187,7 @@ public final class RequestSizeFilter extends OncePerRequestFilter {
         }
 
         private Charset charset() {
-            String name = getCharacterEncoding();
-            return name == null ? StandardCharsets.UTF_8 : Charset.forName(name);
+            return charset;
         }
 
         @Override
