@@ -1,6 +1,6 @@
 {
   "$schema": "https://antigravity.google/schemas/v1/plugin.json",
   "name": "veridger-host-attestation",
-  "version": "4.3.2",
+  "version": "4.4.0",
   "description": "Fill ledger host attestation from Antigravity conversation metadata."
 }

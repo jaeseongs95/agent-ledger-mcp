@@ -18,7 +18,7 @@ plugins {
 }
 
 group = "org.veridger"
-version = "4.3.2"
+version = "4.4.0"
 
 spotless {
     java {
@@ -222,7 +222,7 @@ subprojects {
     apply(plugin = "jacoco")
 
     group = "org.veridger"
-    version = "4.3.2"
+    version = "4.4.0"
 
     tasks.withType<JacocoReport>().configureEach {
         mustRunAfter(tasks.withType<Test>())
