@@ -137,9 +137,11 @@ public class AttachmentPanels {
         for (AttachmentFile file : bundleFiles) {
             panels.add(filePanel(attachment.id(), file, store));
         }
-        State overall = panels.stream().anyMatch(f -> f.state() == State.TEXT || f.state() == State.DOWNLOAD)
-                ? panels.getFirst().state()
-                : panels.getFirst().state();
+        State overall = panels.stream()
+                .map(FilePanel::state)
+                .filter(s -> s == State.TEXT || s == State.DOWNLOAD)
+                .findFirst()
+                .orElse(panels.getFirst().state());
         return new Panel(attachment.id(), overall, attachment.createdBy().value(), attachment.createdAt(),
                 List.copyOf(panels));
     }

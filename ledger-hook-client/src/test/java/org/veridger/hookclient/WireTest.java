@@ -57,17 +57,20 @@ class WireTest {
     @Test
     @DisplayName("R9-D0096-E a request that lies about its sizes is refused before anything is allocated: too many words, a negative or huge length, a body that ends early, bytes after the end")
     void refusesWhatIsOutsideTheLimits() throws IOException {
-        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(call(Wire.MAX_ARGUMENTS + 1, 0, 0, 0))))
-                .isInstanceOf(IOException.class);
-        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(call(-1, 0, 0, 0)))).isInstanceOf(IOException.class);
-        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(call(1, Wire.MAX_ARGUMENT_BYTES + 1, 0, 0))))
-                .isInstanceOf(IOException.class);
-        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(call(0, 0, Integer.MAX_VALUE, 0))))
-                .isInstanceOf(IOException.class);
-        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(call(0, 0, Wire.MAX_STDIN_BYTES + 1, 0))))
-                .isInstanceOf(IOException.class);
-        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(call(0, 0, -5, 0)))).isInstanceOf(IOException.class);
-        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(call(0, 0, 10, 4)))).isInstanceOf(IOException.class);
+        byte[] tooManyArgs = call(Wire.MAX_ARGUMENTS + 1, 0, 0, 0);
+        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(tooManyArgs))).isInstanceOf(IOException.class);
+        byte[] negativeArgs = call(-1, 0, 0, 0);
+        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(negativeArgs))).isInstanceOf(IOException.class);
+        byte[] hugeArg = call(1, Wire.MAX_ARGUMENT_BYTES + 1, 0, 0);
+        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(hugeArg))).isInstanceOf(IOException.class);
+        byte[] maxIntStdin = call(0, 0, Integer.MAX_VALUE, 0);
+        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(maxIntStdin))).isInstanceOf(IOException.class);
+        byte[] overLimitStdin = call(0, 0, Wire.MAX_STDIN_BYTES + 1, 0);
+        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(overLimitStdin))).isInstanceOf(IOException.class);
+        byte[] negativeStdin = call(0, 0, -5, 0);
+        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(negativeStdin))).isInstanceOf(IOException.class);
+        byte[] truncatedStdin = call(0, 0, 10, 4);
+        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(truncatedStdin))).isInstanceOf(IOException.class);
         byte[] withTail = wire.encode(new HookCall(List.of("codex"), new byte[3]));
         byte[] longer = java.util.Arrays.copyOf(withTail, withTail.length + 1);
         assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(longer))).isInstanceOf(IOException.class);

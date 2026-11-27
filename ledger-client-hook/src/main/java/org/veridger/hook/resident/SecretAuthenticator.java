@@ -29,6 +29,6 @@ final class SecretAuthenticator extends BasicAuthenticator {
     public boolean checkCredentials(String username, String password) {
         boolean user = USER.equals(username);
         boolean known = MessageDigest.isEqual(secret, password.getBytes(StandardCharsets.UTF_8));
-        return user & known;
+        return user && known;
     }
 }

@@ -2,6 +2,7 @@
 
 package org.veridger.admin.update;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -125,19 +126,24 @@ public final class GitHubReleaseClient implements ReleaseClient {
         return new ReleaseInfo(dto.tag_name(), version, htmlUrl, assets, requiredSchema);
     }
 
+    @FunctionalInterface
+    private interface OutputSupplier {
+        OutputStream open() throws IOException;
+    }
+
     @Override
     public byte[] downloadBytes(URI url, long maxBytes) throws IOException {
-        Path temp = Files.createTempFile("veridger-update-dl-", ".tmp");
-        try {
-            downloadToFile(url, temp, maxBytes);
-            return Files.readAllBytes(temp);
-        } finally {
-            Files.deleteIfExists(temp);
-        }
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        downloadToOutput(url, () -> buffer, maxBytes);
+        return buffer.toByteArray();
     }
 
     @Override
     public void downloadToFile(URI url, Path target, long maxBytes) throws IOException {
+        downloadToOutput(url, () -> Files.newOutputStream(target), maxBytes);
+    }
+
+    private void downloadToOutput(URI url, OutputSupplier target, long maxBytes) throws IOException {
         URI current = url;
         for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
             validateDownloadUri(current);
@@ -151,7 +157,7 @@ public final class GitHubReleaseClient implements ReleaseClient {
     }
 
     /** Executes one HTTP GET hop; returns the redirect target URI if 3xx, or null when written to {@code target}. */
-    private URI fetchHop(URI uri, Path target, long maxBytes) throws IOException {
+    private URI fetchHop(URI uri, OutputSupplier target, long maxBytes) throws IOException {
         try {
             return client.get().uri(uri)
                     .header(HttpHeaders.USER_AGENT, "Veridger-Admin-Updater")
@@ -203,10 +209,10 @@ public final class GitHubReleaseClient implements ReleaseClient {
         }
     }
 
-    private static void copyBounded(InputStream in, Path target, long maxBytes) throws IOException {
+    private static void copyBounded(InputStream in, OutputSupplier target, long maxBytes) throws IOException {
         long total = 0L;
         byte[] buffer = new byte[STREAM_BUFFER];
-        try (OutputStream out = Files.newOutputStream(target)) {
+        try (OutputStream out = target.open()) {
             int read;
             while ((read = in.read(buffer)) != -1) {
                 total += read;

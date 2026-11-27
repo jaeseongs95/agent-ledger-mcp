@@ -19,6 +19,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -65,6 +66,27 @@ public class AttachmentStore {
 
     /** One page of a body: the bytes, where they start and the size of the whole body. */
     public record Page(byte[] data, long offset, long totalSize) {
+
+        @Override
+        public boolean equals(Object o) {
+            return this == o || (o instanceof Page other
+                    && offset == other.offset
+                    && totalSize == other.totalSize
+                    && Arrays.equals(data, other.data));
+        }
+
+        @Override
+        public int hashCode() {
+            int result = Arrays.hashCode(data);
+            result = 31 * result + Long.hashCode(offset);
+            result = 31 * result + Long.hashCode(totalSize);
+            return result;
+        }
+
+        @Override
+        public String toString() {
+            return "Page[data=" + Arrays.toString(data) + ", offset=" + offset + ", totalSize=" + totalSize + "]";
+        }
     }
 
     /** What the whole file holds when every segment has been opened: the size and the SHA-256 of the plain bytes. */

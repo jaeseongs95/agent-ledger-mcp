@@ -13,6 +13,7 @@ import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Properties;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -58,6 +59,18 @@ public final class FileUpdateQueue implements UpdateQueue {
                     props.getProperty("updatedAt", ""), props.getProperty("detail", ""));
         }
         return UpdateStatus.idle();
+    }
+
+    @Override
+    public Path createVerificationDirectory() throws IOException {
+        rejectSymlink(directory);
+        Files.createDirectories(directory);
+        if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("update directory is not a real directory");
+        }
+        Path verifyDir = directory.resolve(".verify-" + UUID.randomUUID());
+        rejectSymlink(verifyDir);
+        return Files.createDirectory(verifyDir);
     }
 
     @Override

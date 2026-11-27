@@ -3,7 +3,9 @@
 package org.veridger.application.attachment;
 
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 /** Value records exchanged by {@link AttachmentFlow}, {@link UploadService}, MCP tools, and admin panels. */
 public final class UploadCommands {
@@ -73,5 +75,31 @@ public final class UploadCommands {
             byte[] data,
             String mediaType,
             String fileName) {
+
+        @Override
+        public boolean equals(Object o) {
+            return this == o || (o instanceof Page other
+                    && seq == other.seq
+                    && offsetBytes == other.offsetBytes
+                    && totalBytes == other.totalBytes
+                    && size == other.size
+                    && Objects.equals(attachmentId, other.attachmentId)
+                    && Arrays.equals(data, other.data)
+                    && Objects.equals(mediaType, other.mediaType)
+                    && Objects.equals(fileName, other.fileName));
+        }
+
+        @Override
+        public int hashCode() {
+            int result = Objects.hash(attachmentId, seq, offsetBytes, totalBytes, size, mediaType, fileName);
+            return 31 * result + Arrays.hashCode(data);
+        }
+
+        @Override
+        public String toString() {
+            return "Page[attachmentId=" + attachmentId + ", seq=" + seq + ", offsetBytes=" + offsetBytes
+                    + ", totalBytes=" + totalBytes + ", size=" + size + ", data=" + Arrays.toString(data)
+                    + ", mediaType=" + mediaType + ", fileName=" + fileName + "]";
+        }
     }
 }

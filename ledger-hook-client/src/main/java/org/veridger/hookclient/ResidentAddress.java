@@ -20,11 +20,12 @@ import java.util.Base64;
 public record ResidentAddress(int port, long pid, long processStart, String build, String secret) {
 
     private static final int SECRET_BYTES = 32;
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     /** A new secret: 256 random bits as URL-safe base64 text. */
     public static String newSecret() {
         byte[] bytes = new byte[SECRET_BYTES];
-        new SecureRandom().nextBytes(bytes);
+        RANDOM.nextBytes(bytes);
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 

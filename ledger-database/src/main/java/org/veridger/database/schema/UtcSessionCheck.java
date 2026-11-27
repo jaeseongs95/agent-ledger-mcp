@@ -62,7 +62,7 @@ public class UtcSessionCheck {
     public void verifySessionZone() {
         LocalDateTime session = readSessionClock();
         LocalDateTime utc = UtcTime.toDb(clock.instant());
-        Duration skew = Duration.between(utc, session).abs();
+        Duration skew = Duration.between(utc.atOffset(ZoneOffset.UTC), session.atOffset(ZoneOffset.UTC)).abs();
         if (skew.compareTo(TOLERANCE) > 0) {
             throw new InfrastructureException(InfrastructureCode.SESSION_ZONE_NOT_UTC, List.of(skew.toString()));
         }
