@@ -23,7 +23,10 @@
             <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
           </svg>
         </span>
-        <span th:text="#{app.name}">Ledger admin</span>
+        <span class="brand-text">
+          <strong id="sidebar-name">Veridger</strong>
+          <small th:text="#{app.name}">Ledger admin</small>
+        </span>
       </a>
       <button type="button" id="sidebar-close" class="ghost btn-sm sidebar-close" th:attr="aria-label=#{nav.menu.close}">
         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -119,8 +122,14 @@
             <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
           </svg>
         </span>
-        <span th:text="#{app.name}">Ledger admin</span>
+        <span>Veridger</span>
       </span>
+      <nav class="topbar-location" th:if="${@ui.console() and !#bools.isTrue(enrolling) and active != 'login'}"
+           th:attr="aria-label=#{nav.location}">
+        <a th:if="${active != 'overview'}" th:href="@{/}" th:text="#{nav.overview}">Overview</a>
+        <span th:if="${active != 'overview'}" class="breadcrumb-sep" aria-hidden="true">/</span>
+        <span aria-current="page" th:text="#{${'nav.' + active}}">Overview</span>
+      </nav>
       <span class="session-pill" th:if="${#bools.isTrue(enrolling)}" th:text="#{nav.enrollingBadge}">Enrollment session</span>
     </div>
 
@@ -167,7 +176,8 @@
 
 <!-- a link for an evidence address: only http and https become links, anything else stays plain text -->
 <th:block th:fragment="evidence(address)">
-  <a th:if="${@links.isHttp(address)}" th:href="${address}" rel="noopener noreferrer" th:text="${address}">https://example.invalid</a>
+  <a th:if="${@links.isHttp(address)}" th:href="${address}" th:title="${address}"
+     rel="noopener noreferrer" th:text="${address}">https://example.invalid</a>
   <span th:if="${address != null and !@links.isHttp(address)}" th:text="${address}">text</span>
 </th:block>
 
@@ -216,21 +226,28 @@
 </div>
 
 <th:block th:fragment="dateFilters(history)">
-  <div class="filter-field" th:unless="${history}">
-    <label for="dateField" th:text="#{dates.field}">Date field</label>
-    <select id="dateField" name="dateField">
-      <option value="created" th:text="#{col.created}" th:selected="${dates.dateField() != 'updated'}">Registered</option>
-      <option value="updated" th:text="#{col.updated}" th:selected="${dates.dateField() == 'updated'}">Last modified</option>
-    </select>
-  </div>
-  <div class="filter-field">
-    <label for="dateFrom" th:text="#{dates.from}">Start date</label>
-    <input id="dateFrom" name="dateFrom" type="date" th:value="${dates.dateFrom()}">
-  </div>
-  <div class="filter-field">
-    <label for="dateTo" th:text="#{dates.to}">End date</label>
-    <input id="dateTo" name="dateTo" type="date" th:value="${dates.dateTo()}">
-  </div>
+  <details class="filter-disclosure" th:open="${!#strings.isEmpty(dates.dateFrom()) or !#strings.isEmpty(dates.dateTo())}">
+    <summary>
+      <span th:text="#{dates.range}">Date range</span>
+    </summary>
+    <div class="filter-date-fields">
+      <div class="filter-field filter-date-kind" th:unless="${history}">
+        <label for="dateField" th:text="#{dates.field}">Date field</label>
+        <select id="dateField" name="dateField">
+          <option value="created" th:text="#{col.created}" th:selected="${dates.dateField() != 'updated'}">Registered</option>
+          <option value="updated" th:text="#{col.updated}" th:selected="${dates.dateField() == 'updated'}">Last modified</option>
+        </select>
+      </div>
+      <div class="filter-field">
+        <label for="dateFrom" th:text="#{dates.from}">Start date</label>
+        <input id="dateFrom" name="dateFrom" type="date" th:value="${dates.dateFrom()}">
+      </div>
+      <div class="filter-field">
+        <label for="dateTo" th:text="#{dates.to}">End date</label>
+        <input id="dateTo" name="dateTo" type="date" th:value="${dates.dateTo()}">
+      </div>
+    </div>
+  </details>
   <input name="dateZone" type="hidden" th:value="${dates.dateZone()}" data-date-zone>
   <input name="sort" type="hidden" th:value="${dates.sort()}">
   <input name="direction" type="hidden" th:value="${dates.direction()}">
@@ -247,6 +264,17 @@
   <th:block th:replace="~{fragments :: time(${instant})}"></th:block>
   <span th:if="${instant == null}" th:text="#{common.noneValue}">—</span>
 </td>
+
+<th:block th:fragment="textPreview(value, limit)">
+  <span th:if="${#strings.isEmpty(value)}" class="muted" th:text="#{common.noneValue}">—</span>
+  <th:block th:unless="${#strings.isEmpty(value)}">
+    <details th:if="${#strings.length(value) > limit}" class="table-text-preview">
+      <summary th:text="${#strings.abbreviate(value, limit)}">Text preview</summary>
+      <div th:text="${value}">Full text</div>
+    </details>
+    <span th:unless="${#strings.length(value) > limit}" th:text="${value}">Text</span>
+  </th:block>
+</th:block>
 
 <!-- previous and next of a paged list; page-size is part of the filter form of the page -->
 <nav th:fragment="pager(paging, total)" class="pager" th:attr="aria-label=#{paging.label}">

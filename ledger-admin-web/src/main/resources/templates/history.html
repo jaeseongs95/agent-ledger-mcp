@@ -3,65 +3,72 @@
 <head th:replace="~{fragments :: head(#{history.title})}"></head>
 <body>
 <th:block th:replace="~{fragments :: header('history')}"></th:block>
-<main id="main">
+<main id="main" class="record-page">
   <div class="page-header">
     <div class="page-header-text">
       <h1 th:text="#{history.title}">History</h1>
     </div>
   </div>
 
-  <form method="get" th:action="@{/history}" class="filters">
-    <div class="filter-field">
-      <label for="project" th:text="#{common.project}">Project</label>
-      <select id="project" name="project">
-        <option value="" th:text="#{common.allProjects}">All projects</option>
-        <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.displayName()}" th:selected="${p.id() == filter.project()}">p1</option>
-      </select>
+  <form method="get" th:action="@{/history}" class="filters list-filters">
+    <div class="filter-grid">
+      <div class="filter-field">
+        <label for="project" th:text="#{common.project}">Project</label>
+        <select id="project" name="project">
+          <option value="" th:text="#{common.allProjects}">All projects</option>
+          <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.displayName()}" th:selected="${p.id() == filter.project()}">p1</option>
+        </select>
+      </div>
+      <div class="filter-field">
+        <label for="entity" th:text="#{history.entity}">Entity</label>
+        <select id="entity" name="entity">
+          <option value="" th:text="#{common.any}">Any</option>
+          <option th:each="e : ${entities}" th:value="${e.token()}" th:text="${@labels.entity(e.token())}" th:selected="${e.token() == filter.entity()}">Issue</option>
+        </select>
+      </div>
+      <div class="filter-field">
+        <label for="entityId" th:text="#{history.entityId}">Entity id</label>
+        <input id="entityId" name="entityId" type="text" th:value="${filter.entityId()}" maxlength="300">
+      </div>
+      <div class="filter-field">
+        <label for="op" th:text="#{history.op}">Operation</label>
+        <select id="op" name="op">
+          <option value="" th:text="#{common.any}">Any</option>
+          <option th:each="o : ${ops}" th:value="${o.token()}" th:text="${@labels.historyOp(o.token())}" th:selected="${o.token() == filter.op()}">Create</option>
+        </select>
+      </div>
+      <div class="filter-field">
+        <label for="authorId" th:text="#{history.author}">Author</label>
+        <input id="authorId" name="authorId" type="text" th:value="${filter.authorId()}" maxlength="200">
+      </div>
+      <div class="filter-field filter-field-sm">
+        <label for="limit" th:text="#{paging.size}">Rows per page</label>
+        <select id="limit" name="limit">
+          <option th:each="n : ${sizes}" th:value="${n}" th:text="${n}" th:selected="${n == paging.limit()}">50</option>
+        </select>
+      </div>
     </div>
-    <div class="filter-field">
-      <label for="entity" th:text="#{history.entity}">Entity</label>
-      <select id="entity" name="entity">
-        <option value="" th:text="#{common.any}">Any</option>
-        <option th:each="e : ${entities}" th:value="${e.token()}" th:text="${@labels.entity(e.token())}" th:selected="${e.token() == filter.entity()}">Issue</option>
-      </select>
-    </div>
-    <div class="filter-field">
-      <label for="entityId" th:text="#{history.entityId}">Entity id</label>
-      <input id="entityId" name="entityId" type="text" th:value="${filter.entityId()}" maxlength="300">
-    </div>
-    <div class="filter-field">
-      <label for="op" th:text="#{history.op}">Operation</label>
-      <select id="op" name="op">
-        <option value="" th:text="#{common.any}">Any</option>
-        <option th:each="o : ${ops}" th:value="${o.token()}" th:text="${@labels.historyOp(o.token())}" th:selected="${o.token() == filter.op()}">Create</option>
-      </select>
-    </div>
-    <div class="filter-field">
-      <label for="authorId" th:text="#{history.author}">Author</label>
-      <input id="authorId" name="authorId" type="text" th:value="${filter.authorId()}" maxlength="200">
-    </div>
-    <th:block th:replace="~{fragments :: dateFilters(true)}"></th:block>
-    <div class="filter-field filter-field-sm">
-      <label for="limit" th:text="#{paging.size}">Rows per page</label>
-      <select id="limit" name="limit">
-        <option th:each="n : ${sizes}" th:value="${n}" th:text="${n}" th:selected="${n == paging.limit()}">50</option>
-      </select>
-    </div>
-    <div class="filter-actions">
-      <button type="submit" th:text="#{common.apply}">Apply</button>
-      <a th:if="${hasFilters}" th:href="${resetHref}" class="button secondary" th:text="#{common.resetFilters}">Reset filters</a>
+    <div class="filter-controls">
+      <th:block th:replace="~{fragments :: dateFilters(true)}"></th:block>
+      <div class="filter-actions">
+        <button type="submit" th:text="#{common.apply}">Apply</button>
+        <a th:if="${hasFilters}" th:href="${resetHref}" class="button secondary" th:text="#{common.resetFilters}">Reset filters</a>
+      </div>
     </div>
   </form>
 
-  <div th:if="${!#lists.isEmpty(page.items())}" class="table-wrap">
-    <table>
+  <th:block th:if="${paging.hasPrevious() or paging.hasNext()}">
+    <nav th:replace="~{fragments :: pager(${paging}, ${null})}"></nav>
+  </th:block>
+  <div th:if="${!#lists.isEmpty(page.items())}" class="table-wrap results-table" role="region" tabindex="0" th:attr="aria-label=#{history.title}">
+    <table class="history-table">
       <caption class="sr-only" th:text="#{history.title}">History</caption>
       <thead>
         <tr>
           <th scope="col" th:text="#{col.id}">ID</th>
-          <th th:replace="~{fragments :: dateHeader(#{col.created}, ${createdSort})}">Registered</th>
           <th scope="col" th:text="#{history.target}">Target</th>
           <th scope="col" th:text="#{history.op}">Operation</th>
+          <th th:replace="~{fragments :: dateHeader(#{col.created}, ${createdSort})}">Registered</th>
           <th scope="col" th:text="#{history.states}">States</th>
           <th scope="col" th:text="#{history.author}">Author</th>
           <th scope="col" th:text="#{history.reason}">Reason</th>
@@ -72,7 +79,6 @@
         <th:block th:each="h : ${page.items()}">
           <tr>
             <td class="num cell-nowrap" th:text="${h.id()}">1</td>
-            <td class="cell-time"><time th:replace="~{fragments :: time(${h.at()})}">t</time></td>
             <td>
               <span class="cell-target">
                 <span class="badge" th:attr="title=${h.entity()}" th:text="${@labels.entity(h.entity())}">Issue</span>
@@ -82,6 +88,7 @@
               </span>
             </td>
             <td class="cell-nowrap" th:attr="title=${h.op()}" th:text="${@labels.historyOp(h.op())}">Create</td>
+            <td class="cell-time"><time th:replace="~{fragments :: time(${h.at()})}">t</time></td>
             <td class="cell-nowrap">
               <span class="state-transition" th:if="${h.fromState() != null or h.toState() != null}">
                 <span th:if="${h.fromState() != null}" th:class="'badge badge-' + ${h.fromState()}"
@@ -94,7 +101,7 @@
             </td>
             <td class="cell-owner" th:text="${h.authorId()}">author</td>
             <td class="cell-reason">
-              <span th:text="${h.reason()}">reason</span>
+              <th:block th:replace="~{fragments :: textPreview(${h.reason()}, 96)}"></th:block>
               <th:block th:replace="~{fragments :: evidence(${h.evidenceUri()})}"></th:block>
             </td>
             <td class="cell-changes" data-changes-json

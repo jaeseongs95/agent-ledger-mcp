@@ -3,12 +3,12 @@
 <head th:replace="~{fragments :: head(#{login.title})}"></head>
 <body>
 <th:block th:replace="~{fragments :: header('login')}"></th:block>
-<main id="main" class="narrow">
+<main id="main" class="narrow auth-page">
   <div class="auth-card">
-    <div>
+    <header class="auth-heading">
       <h1 th:text="#{login.title}">Sign in</h1>
       <p class="hint" th:text="#{app.name}">Ledger admin</p>
-    </div>
+    </header>
 
     <p th:if="${errorKey != null}" class="alert alert-danger error" role="alert" th:text="#{${errorKey}}">Sign-in failed.</p>
     <p th:if="${loggedOut}" class="alert alert-success notice" role="status" th:text="#{login.loggedOut}">You are signed out.</p>

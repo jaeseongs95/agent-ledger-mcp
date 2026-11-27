@@ -3,7 +3,7 @@
 <head th:replace="~{fragments :: head(#{criteria.title})}"></head>
 <body>
 <th:block th:replace="~{fragments :: header('criteria')}"></th:block>
-<main id="main">
+<main id="main" class="record-page">
   <div class="page-header">
     <div class="page-header-text">
       <h1 th:text="#{criteria.title}">Release gates</h1>
@@ -17,18 +17,63 @@
   </div>
 
   <th:block th:if="${choice.selected() != null}">
-    <section th:if="${rollups != null and !#lists.isEmpty(rollups)}" class="rollup-section"
-             th:attr="aria-label=#{criteria.rollup.heading}">
-      <div class="rollup-grid">
+    <form method="get" th:action="@{/criteria}" class="filters list-filters">
+      <div class="filter-grid">
+        <div class="filter-field">
+          <label for="project" th:text="#{common.project}">Project</label>
+          <select id="project" name="project">
+            <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.displayName()}" th:selected="${p.id() == choice.selected()}">p1</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label for="state" th:text="#{common.state}">State</label>
+          <select id="state" name="state">
+            <option value="" th:text="#{common.any}">Any</option>
+            <option th:each="s : ${states}" th:value="${s.token()}" th:text="${@labels.criterionState(s.token())}" th:selected="${s.token() == filter.state()}">Met</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label for="milestone" th:text="#{criteria.milestone}">Milestone</label>
+          <select id="milestone" name="milestone">
+            <option value="" th:text="#{criteria.allMilestones}">All milestones</option>
+            <option th:each="r : ${rollups}" th:value="${r.milestone()}" th:text="${r.milestone()}"
+                    th:selected="${r.milestone() == filter.milestone()}">v1.0</option>
+            <option th:if="${customMilestone}"
+                    th:value="${filter.milestone()}" th:text="${filter.milestone()}" selected>custom</option>
+          </select>
+        </div>
+        <div class="filter-field filter-field-sm">
+          <label for="limit" th:text="#{paging.size}">Rows per page</label>
+          <select id="limit" name="limit">
+            <option th:each="n : ${sizes}" th:value="${n}" th:text="${n}" th:selected="${n == paging.limit()}">50</option>
+          </select>
+        </div>
+      </div>
+      <div class="filter-controls">
+        <th:block th:replace="~{fragments :: dateFilters(false)}"></th:block>
+        <div class="filter-actions">
+          <button type="submit" th:text="#{common.apply}">Apply</button>
+          <a th:if="${hasFilters}" th:href="${resetHref}" class="button secondary" th:text="#{common.resetFilters}">Reset filters</a>
+        </div>
+      </div>
+    </form>
+
+    <details th:if="${rollups != null and !#lists.isEmpty(rollups)}" class="rollup-section disclosure"
+             th:open="${#lists.size(rollups) <= 4}">
+      <summary>
+        <span class="rollup-heading">
+          <span th:text="#{criteria.rollup.heading}">Milestone readiness</span>
+          <span class="muted" th:text="#{criteria.rollup.count(${#lists.size(rollups)})}">36 milestones</span>
+        </span>
+      </summary>
+      <div class="rollup-grid" role="region" tabindex="0" th:attr="aria-label=#{criteria.rollup.heading}">
         <a th:each="r : ${rollups}"
            th:with="selected=${r.milestone() == filter.milestone()},
                     href=${selected ? @links.projectHref('/criteria', choice.selected()) : @links.statHref(choice.selected(), '/criteria', 'milestone', r.milestone())}"
            th:href="${href}"
            th:class="${selected} ? 'rollup-card rollup-card-active' : 'rollup-card'">
-          <div class="rollup-card-head">
-            <span class="rollup-name" th:text="${r.milestone()}">v1.0</span>
-            <span class="rollup-pct" th:text="#{criteria.rollup.progress(${r.met()}, ${r.total()}, ${r.metPercent()})}">0 / 0 met (0%)</span>
-          </div>
+          <span class="rollup-name" th:text="${r.milestone()}">v1.0</span>
+          <span class="rollup-pct" th:text="#{criteria.rollup.progress(${r.met()}, ${r.total()}, ${r.metPercent()})}">0 / 0 met (0%)</span>
           <progress class="gate-progress" th:value="${r.met()}" th:max="${r.total() > 0 ? r.total() : 1}"
                     th:attr="aria-label=${r.milestone()}"></progress>
           <div class="rollup-meta">
@@ -43,69 +88,37 @@
           </div>
         </a>
       </div>
-    </section>
+    </details>
 
-    <form method="get" th:action="@{/criteria}" class="filters">
-      <div class="filter-field">
-        <label for="project" th:text="#{common.project}">Project</label>
-        <select id="project" name="project">
-          <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.displayName()}" th:selected="${p.id() == choice.selected()}">p1</option>
-        </select>
-      </div>
-      <div class="filter-field">
-        <label for="state" th:text="#{common.state}">State</label>
-        <select id="state" name="state">
-          <option value="" th:text="#{common.any}">Any</option>
-          <option th:each="s : ${states}" th:value="${s.token()}" th:text="${@labels.criterionState(s.token())}" th:selected="${s.token() == filter.state()}">Met</option>
-        </select>
-      </div>
-      <div class="filter-field">
-        <label for="milestone" th:text="#{criteria.milestone}">Milestone</label>
-        <select id="milestone" name="milestone">
-          <option value="" th:text="#{criteria.allMilestones}">All milestones</option>
-          <option th:each="r : ${rollups}" th:value="${r.milestone()}" th:text="${r.milestone()}"
-                  th:selected="${r.milestone() == filter.milestone()}">v1.0</option>
-          <option th:if="${customMilestone}"
-                  th:value="${filter.milestone()}" th:text="${filter.milestone()}" selected>custom</option>
-        </select>
-      </div>
-      <th:block th:replace="~{fragments :: dateFilters(false)}"></th:block>
-      <div class="filter-field filter-field-sm">
-        <label for="limit" th:text="#{paging.size}">Rows per page</label>
-        <select id="limit" name="limit">
-          <option th:each="n : ${sizes}" th:value="${n}" th:text="${n}" th:selected="${n == paging.limit()}">50</option>
-        </select>
-      </div>
-      <div class="filter-actions">
-        <button type="submit" th:text="#{common.apply}">Apply</button>
-        <a th:if="${hasFilters}" th:href="${resetHref}" class="button secondary" th:text="#{common.resetFilters}">Reset filters</a>
-      </div>
-    </form>
-
-    <div th:if="${!#lists.isEmpty(page.items())}" class="table-wrap">
-      <table>
+    <th:block th:if="${paging.hasPrevious() or paging.hasNext()}">
+      <nav th:replace="~{fragments :: pager(${paging}, ${total})}"></nav>
+    </th:block>
+    <div th:if="${!#lists.isEmpty(page.items())}" class="table-wrap results-table" role="region" tabindex="0" th:attr="aria-label=#{criteria.title}">
+      <table class="criteria-table">
         <caption class="sr-only" th:text="#{criteria.title}">Release gates</caption>
         <thead>
           <tr>
             <th scope="col" th:text="#{col.id}">ID</th>
+            <th scope="col" th:text="#{criteria.text}">Criterion</th>
+            <th scope="col" th:text="#{common.state}">State</th>
             <th scope="col" th:text="#{criteria.milestone}">Milestone</th>
             <th scope="col" th:text="#{criteria.goal}">Goal</th>
             <th scope="col" th:text="#{criteria.code}">Code</th>
-            <th scope="col" th:text="#{common.state}">State</th>
             <th scope="col" th:text="#{criteria.linkedWork}">Linked work</th>
-            <th scope="col" th:text="#{criteria.text}">Criterion</th>
             <th th:replace="~{fragments :: dateHeader(#{col.created}, ${createdSort})}">Registered</th>
             <th th:replace="~{fragments :: dateHeader(#{col.updated}, ${updatedSort})}">Last modified</th>
           </tr>
         </thead>
         <tbody>
           <tr th:each="c : ${page.items()}" th:with="lc=${linkCounts[c.id()]}">
-            <td class="cell-id"><a th:href="@{/criteria/detail(id=${c.id()})}" th:text="${c.id()}">ID</a></td>
-            <td class="cell-nowrap" th:text="${c.milestoneName()}">1.0</td>
-            <td class="cell-nowrap" th:text="${c.goalLabel() != null and !#strings.isEmpty(c.goalLabel())} ? ${c.goalLabel()} : #{common.noneValue}">goal</td>
-            <td class="cell-id" th:text="${c.code()}">C1</td>
+            <td class="cell-id"><a class="criterion-id-link" th:href="@{/criteria/detail(id=${c.id()})}"
+                                   th:title="${c.id()}" th:text="${c.id()}">ID</a></td>
+            <td class="cell-criterion"><th:block th:replace="~{fragments :: textPreview(${c.criterionText()}, 80)}"></th:block></td>
             <td class="cell-nowrap"><span th:class="'badge badge-' + ${c.state()}" th:text="${@labels.criterionState(c.state())}">Unknown</span></td>
-            <td class="cell-nowrap">
+            <td><th:block th:replace="~{fragments :: textPreview(${c.milestoneName()}, 48)}"></th:block></td>
+            <td><th:block th:replace="~{fragments :: textPreview(${c.goalLabel()}, 48)}"></th:block></td>
+            <td class="cell-id" th:text="${c.code()}">C1</td>
+            <td>
               <span th:if="${lc.total() > 0}" class="link-counts">
                 <span th:if="${lc.issues() > 0}" class="link-count-pill" th:text="#{entity.issue} + ' ' + ${lc.issues()}">Issue 1</span>
                 <span th:if="${lc.specs() > 0}" class="link-count-pill" th:text="#{entity.spec} + ' ' + ${lc.specs()}">Spec 1</span>
@@ -113,7 +126,6 @@
               </span>
               <span th:if="${lc.total() == 0}" class="muted" th:text="#{common.noneValue}">—</span>
             </td>
-            <td class="cell-criterion" th:text="${c.criterionText()}">text</td>
             <td th:replace="~{fragments :: dateCell(${c.createdAt()})}">t</td>
             <td th:replace="~{fragments :: dateCell(${c.updatedAt()})}">t</td>
           </tr>

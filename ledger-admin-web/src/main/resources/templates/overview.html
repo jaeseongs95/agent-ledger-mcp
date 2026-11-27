@@ -3,13 +3,11 @@
 <head th:replace="~{fragments :: head(#{overview.title})}"></head>
 <body>
 <th:block th:replace="~{fragments :: header('overview')}"></th:block>
-<main id="main">
-  <div class="page-header">
+<main id="main" class="overview-page">
+  <div class="page-header overview-workspace">
     <div class="page-header-text">
       <h1 th:text="#{overview.title}">Overview</h1>
       <p class="hint" th:text="#{overview.subtitle}">Action queue and live readiness snapshot across your ledger projects.</p>
-    </div>
-    <div class="overview-header-meta">
       <span th:if="${overview.mcp().state().name() != 'DOWN'}" id="mcp-status"
             th:class="'mcp-pill status-' + ${overview.mcp().state()}"
             th:attr="aria-label=#{overview.mcp}">
@@ -17,6 +15,21 @@
         <span th:class="'badge badge-' + ${overview.mcp().state()}" th:text="#{'mcp.state.' + ${overview.mcp().state()}}">Up</span>
       </span>
     </div>
+    <form th:if="${!#lists.isEmpty(overview.projects())}" method="get" th:action="@{/}" class="overview-scope">
+      <div class="filter-field">
+        <label for="project" th:text="#{common.project}">Project</label>
+        <select id="project" name="project">
+          <option value="" th:text="#{common.allProjects}">All projects</option>
+          <option th:each="p : ${overview.projects()}" th:value="${p.id()}" th:text="${p.displayName()}"
+                  th:selected="${p.id() == overview.project()}">p1</option>
+        </select>
+      </div>
+      <div class="filter-actions">
+        <button type="submit" th:text="#{common.apply}">Apply</button>
+        <a th:if="${overview.project() != null}" th:href="@{/}" class="button secondary"
+           th:text="#{common.resetFilters}">Reset filters</a>
+      </div>
+    </form>
   </div>
 
   <section th:if="${overview.mcp().state().name() == 'DOWN'}" id="mcp-status"
@@ -27,20 +40,6 @@
     </div>
     <p th:if="${overview.mcp().reason().name() != 'NONE'}" th:text="#{'mcp.reason.' + ${overview.mcp().reason()}}">reason</p>
   </section>
-
-  <form th:if="${!#lists.isEmpty(overview.projects())}" method="get" th:action="@{/}" class="filters">
-    <div class="filter-field">
-      <label for="project" th:text="#{common.project}">Project</label>
-      <select id="project" name="project">
-        <option value="" th:text="#{common.allProjects}">All projects</option>
-          <option th:each="p : ${overview.projects()}" th:value="${p.id()}" th:text="${p.displayName()}" th:selected="${p.id() == overview.project()}">p1</option>
-      </select>
-    </div>
-    <div class="filter-actions">
-      <button type="submit" th:text="#{common.apply}">Apply</button>
-      <a th:if="${overview.project() != null}" th:href="@{/}" class="button secondary" th:text="#{common.resetFilters}">Reset filters</a>
-    </div>
-  </form>
 
   <!-- Empty state: zero projects -->
   <section th:if="${#lists.isEmpty(overview.projects())}" class="empty-state">
@@ -64,6 +63,7 @@
 
   <!-- Live Governance Cockpit (when items exist) -->
   <th:block th:if="${!#lists.isEmpty(overview.projects()) and console.totalItems() > 0}">
+    <h2 class="overview-section-title" th:text="#{overview.workSummary}">Work summary</h2>
     <div class="cockpit-tiles">
       <article th:class="${console.needsVerification() > 0} ? 'cockpit-tile cockpit-tile-info' : 'cockpit-tile'">
         <div class="cockpit-tile-head">
