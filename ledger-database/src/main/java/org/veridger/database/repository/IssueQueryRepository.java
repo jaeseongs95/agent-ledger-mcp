@@ -40,7 +40,7 @@ public class IssueQueryRepository {
     }
 
     /** Position after the last row of a page. */
-    public record Position(Instant createdAt, IssueId id) {
+    public record Position(Instant at, IssueId id) {
     }
 
     private static final String LATEST_DELIVERABLE_OWNER = "(SELECT d.recorded_by FROM deliverable d WHERE d.id = "
@@ -61,6 +61,11 @@ public class IssueQueryRepository {
 
     public KeysetPage<IssueSummary> page(ProjectId project, Filter filter, MaxRows maxRows, Order order,
             Position after) {
+        return page(project, filter, maxRows, order, DateQuery.NONE, after);
+    }
+
+    public KeysetPage<IssueSummary> page(ProjectId project, Filter filter, MaxRows maxRows, Order order,
+            DateQuery dates, Position after) {
         StringBuilder sql = new StringBuilder("SELECT id, title, category, severity, status, merged_into, "
                 + EFFECTIVE_OWNER + " AS effective_owner, version, created_at, updated_at "
                 + "FROM issue WHERE project_id = :project");
@@ -88,13 +93,12 @@ public class IssueQueryRepository {
         if (filter.taskId() != null) {
             sql.append(" AND EXISTS (SELECT 1 FROM issue_task it WHERE it.task_id = :taskId AND it.issue_id = issue.id)");
         }
-        boolean newest = order == Order.NEWEST_FIRST;
+        dates.appendRange(sql);
+        DateQuery sort = dates.defaultOrder(DateQuery.Column.CREATED, order == Order.OLDEST_FIRST);
         if (after != null) {
-            String cmp = newest ? "<" : ">";
-            sql.append(" AND (created_at ").append(cmp).append(" :after OR (created_at = :after AND id ")
-                    .append(cmp).append(" :afterId))");
+            sort.appendSeek(sql, "id", after.at(), false);
         }
-        sql.append(newest ? " ORDER BY created_at DESC, id DESC" : " ORDER BY created_at ASC, id ASC");
+        sort.appendOrder(sql, "id", false);
         JdbcClient.StatementSpec spec = jdbc.sql(sqlBuilder.applyLimit(sql.toString(), ":row_count"))
                 .param("project", project.value()).param("row_count", maxRows.value() + 1);
         if (filter.status() != null) {
@@ -118,8 +122,9 @@ public class IssueQueryRepository {
         if (filter.taskId() != null) {
             spec = spec.param("taskId", filter.taskId().value());
         }
+        spec = dates.bindRange(spec);
         if (after != null) {
-            spec = spec.param("after", UtcTime.toDb(after.createdAt())).param("afterId", after.id().value());
+            spec = sort.bindSeek(spec, after.at(), after.id().value());
         }
         return readPage(spec, maxRows);
     }

@@ -5,9 +5,12 @@ package org.veridger.application.read;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
-import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import org.veridger.database.repository.DateQuery;
 import org.veridger.database.repository.HistoryQueryRepository;
 import org.veridger.database.repository.HistoryRepository;
 import org.veridger.domain.error.ValidationException;
@@ -27,7 +30,7 @@ import org.springframework.validation.annotation.Validated;
 
 /**
  * The history, the receipt of every write: by id list, id range, entity, project, operation, author and time,
- * always ascending by id. {@code before_data} comes back only when asked for and only for the rows that have it.
+ * ascending by id by default. {@code before_data} comes back only when asked for and present.
  */
 @Service
 @Transactional(readOnly = true)
@@ -76,6 +79,10 @@ public class HistoryService {
     }
 
     public Page<HistoryView> history(@Valid HistoryQuery q) {
+        return history(q, DateQuery.NONE);
+    }
+
+    public Page<HistoryView> history(@Valid HistoryQuery q, DateQuery dates) {
         // @Size counts the list and does not look at its items: an item that is null is refused here, as a blank keyword of a
         // search is, and does not reach the filter (whose copy of the list refuses a null with a NullPointerException)
         if (q.ids() != null && q.ids().stream().anyMatch(Objects::isNull)) {
@@ -90,18 +97,38 @@ public class HistoryService {
                 q.atFrom() == null ? null : UtcInstant.parse("at_from", q.atFrom()).value(),
                 q.atTo() == null ? null : UtcInstant.parse("at_to", q.atTo()).value());
         MaxRows maxRows = cursors.maxRows(q.maxRows());
-        long after = cursors.decode(q.cursor(), PageCursor.Kind.HISTORY, filter).map(Cursors.Position::number)
-                .orElse(0L);
-        var ids = queries.page(filter, after, maxRows);
+        Object criteriaKey = dates.cursorCriteria(filter);
+        var positions = cursors.decode(q.cursor(), PageCursor.Kind.HISTORY, criteriaKey)
+                .map(pos -> historyPosition(pos, dates))
+                .map(after -> queries.positions(filter, maxRows, dates, after))
+                .orElseGet(() -> queries.positions(filter, maxRows, dates, null));
+        if (positions.rows().isEmpty()) {
+            return new Page<>(List.of(), false, null);
+        }
+        List<Long> ids = positions.rows().stream().map(HistoryQueryRepository.Position::id).toList();
+        Map<Long, HistoryEntry> entries = rows.findByIdIn(ids).stream()
+                .collect(Collectors.toMap(HistoryEntry::id, Function.identity()));
         boolean withBefore = q.includeBefore() != null && q.includeBefore();
         // the id of an entity is compared exactly: a DBMS that ignores case in = also returns the rows of the id in another case
-        List<HistoryView> views = ids.rows().isEmpty() ? List.of() : rows.findByIdIn(ids.rows()).stream()
-                .sorted(Comparator.comparing(HistoryEntry::id))
+        List<HistoryView> views = ids.stream().map(entries::get).filter(Objects::nonNull)
                 .filter(row -> q.entityId() == null || Objects.equals(row.entityId(), q.entityId()))
                 .map(row -> view(row, withBefore)).toList();
-        String next = ids.truncated() && !ids.rows().isEmpty()
-                ? cursors.encode(PageCursor.Kind.HISTORY, filter, null, Long.toString(ids.rows().getLast())) : null;
-        return new Page<>(views, ids.truncated(), next);
+        var last = positions.rows().getLast();
+        String next = positions.truncated() ? cursors.encode(PageCursor.Kind.HISTORY, criteriaKey,
+                dates.sort() == null ? null : last.at().toString(), Long.toString(last.id())) : null;
+        return new Page<>(views, positions.truncated(), next);
+    }
+
+    private static HistoryQueryRepository.Position historyPosition(Cursors.Position pos, DateQuery dates) {
+        if ((dates.sort() == null) != (pos.sortKey() == null)) {
+            throw ValidationException.invalid("cursor", ValidationReason.CURSOR_DAMAGED);
+        }
+        try {
+            Instant time = pos.sortKey() == null ? null : UtcInstant.parse("cursor", pos.sortKey()).value();
+            return new HistoryQueryRepository.Position(pos.number(), time);
+        } catch (ValidationException invalid) {
+            throw ValidationException.invalid("cursor", ValidationReason.CURSOR_DAMAGED, invalid);
+        }
     }
 
     /** One row as a view, optionally with its {@code before_data}. */

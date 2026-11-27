@@ -40,21 +40,33 @@
       <span class="hint" th:text="#{grants.sessions.help}">Toggle scopes per project and click Save changes once — additions and removals apply together in one transaction.</span>
     </div>
 
-    <!-- Search Toolbar -->
-    <div th:if="${!#lists.isEmpty(sessions)}" class="list-toolbar" data-session-toolbar>
-      <div class="list-toolbar-main">
-        <div class="search-box">
-          <svg class="icon search-box-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path>
-          </svg>
-          <label for="session-search" class="sr-only" th:text="#{grants.filter.searchLabel}">Search sessions or projects</label>
-          <input id="session-search" type="search" autocomplete="off"
-                 th:placeholder="#{grants.filter.searchPlaceholder}"
-                 placeholder="Search by session ID or project...">
-        </div>
+    <div th:if="${!#lists.isEmpty(sessions)}" class="filters" data-session-toolbar>
+      <div class="filter-field">
+        <label for="grant-project-filter" th:text="#{projects.name}">Project name</label>
+        <input id="grant-project-filter" type="search" autocomplete="off">
       </div>
-      <div class="toolbar-meta">
-        <span id="session-filter-count"
+      <div class="filter-field">
+        <label for="session-search" th:text="#{grants.filter.session}">Session ID</label>
+        <input id="session-search" type="search" autocomplete="off">
+      </div>
+      <div class="filter-field">
+        <label for="grant-host-filter" th:text="#{grants.filter.host}">Host</label>
+        <select id="grant-host-filter">
+          <option value="" th:text="#{common.any}">Any</option>
+          <option th:each="host : ${filterHosts}" th:value="${host}" th:text="${host}">codex</option>
+        </select>
+      </div>
+      <div class="filter-field">
+        <label for="grant-scope-filter" th:text="#{grants.filter.scope}">Permission</label>
+        <select id="grant-scope-filter">
+          <option value="" th:text="#{common.any}">Any</option>
+          <option th:each="scope : ${scopes}" th:value="${scope.token()}"
+                  th:text="#{${'grants.scope.' + scope.token()}}">Issue</option>
+        </select>
+      </div>
+      <div class="filter-actions">
+        <button type="button" class="secondary btn-sm" data-session-filter-reset th:text="#{common.resetFilters}">Reset filters</button>
+        <span id="session-filter-count" aria-live="polite"
               th:attr="data-count-pattern=#{common.showingCount}"
               th:text="#{common.showingCount(${#lists.size(sessions)}, ${#lists.size(sessions)})}">Showing 0 of 0</span>
       </div>
@@ -69,7 +81,6 @@
 
     <div id="session-filter-empty" class="empty-state" hidden>
       <p class="empty-state-title" th:text="#{common.noMatch}">No items match the current filters.</p>
-      <button type="button" class="secondary btn-sm" id="session-filter-reset" th:text="#{common.resetFilters}">Reset filters</button>
     </div>
 
     <!-- Session Cards -->
@@ -77,7 +88,7 @@
       <article th:each="s : ${sessions}"
                class="session-card"
                data-session-card
-               th:attr="data-author=${s.author()},data-projects=${s.projectListText()},data-search-text=${s.searchableText()},data-grant-count=${s.totalGrantCount()}">
+               th:attr="data-session-id=${s.sessionId()},data-host=${s.host()}">
 
         <!-- Session Card Header -->
         <div class="session-card-header">
@@ -115,10 +126,12 @@
             <span class="muted" th:text="#{grants.session.noProjects}">No project permissions assigned yet.</span>
           </div>
 
-          <div th:each="p : ${s.projects()}" class="project-grant-row">
+          <div th:each="p : ${s.projects()}" class="project-grant-row" data-project-grant
+               th:with="projectName=${projectNames.getOrDefault(p.project(), p.project())}"
+               th:attr="data-project-name=${projectName},data-scopes=${p.initialScopesCsv()}">
             <div class="project-grant-row-info">
               <div class="project-grant-meta">
-                <code class="project-pill" th:text="${p.project()}">p1</code>
+                <span class="project-pill" th:attr="title=${p.project()}" th:text="${projectName}">p1</span>
                 <span class="project-meta-item">
                   <span class="muted" th:text="#{grants.expiresAt}">Expires</span>:
                   <th:block th:if="${p.expiresAt() != null}"><time th:replace="~{fragments :: time(${p.expiresAt()})}"></time></th:block>
@@ -301,7 +314,7 @@
           <div class="form-field">
             <label for="enrolled-project" th:text="#{common.project}">Project</label>
             <select id="enrolled-project" name="project" required>
-              <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.id()}"
+              <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.displayName()}"
                       th:selected="${authorGrantForm != null and p.id() == authorGrantForm.project()}">p1</option>
             </select>
           </div>
@@ -419,7 +432,7 @@
             <label for="revoke-project" th:text="#{grants.revoke.project}">Project (empty: all projects)</label>
             <select id="revoke-project" name="project">
               <option value="" th:text="#{common.allProjects}">All projects</option>
-              <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.id()}"
+              <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.displayName()}"
                       th:selected="${revokeGrantForm != null and p.id() == revokeGrantForm.project()}">p1</option>
             </select>
           </div>

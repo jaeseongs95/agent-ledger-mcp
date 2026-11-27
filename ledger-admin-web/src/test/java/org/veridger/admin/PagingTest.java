@@ -55,4 +55,10 @@ class PagingTest {
         assertThat(Paging.limitOf(1_000)).isEqualTo(100);
         assertThat(Paging.limitOf(25)).isEqualTo(25);
     }
+
+    @Test
+    void plusInTheDateZoneIsEncodedAsALiteral() {
+        Paging first = Paging.of("/history", Map.of("dateZone", "Etc/GMT+4"), 25, null, null, "C1");
+        assertThat(first.nextHref()).contains("dateZone=Etc/GMT%2B4");
+    }
 }

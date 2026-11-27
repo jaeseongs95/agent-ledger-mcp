@@ -44,7 +44,7 @@ public enum LegacyTable {
 
     PROJECT("project", "project", List.of("id"), List.of("id"),
             List.of(text("id"), text("code"), text("title"), text("created_by")),
-            List.of(text("id"), text("code"), text("title"), number("next_issue_no"), number("next_spec_no"),
+            List.of(text("id"), text("code"), text("title"), text("display_name"), number("next_issue_no"), number("next_spec_no"),
                     number("next_task_no"), number("version"), text("created_by")), false, After.VERSIONED,
             List.of("next_issue_no", "next_spec_no", "next_task_no")),
 

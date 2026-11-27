@@ -74,10 +74,6 @@
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
             <span th:text="#{nav.grants}">Grants</span>
           </a></li>
-          <li><a th:href="@{/codes}" th:attr="aria-current=${active == 'codes'} ? 'page'">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"></path><circle cx="7" cy="7" r="1.5"></circle></svg>
-            <span th:text="#{nav.codes}">Codes</span>
-          </a></li>
         </ul>
       </div>
 
@@ -218,6 +214,39 @@
   <p th:if="${#bools.isTrue(hasFilters)}" th:text="#{common.noMatch}">No items match the current filters.</p>
   <a th:if="${#bools.isTrue(hasFilters) and resetHref != null}" th:href="${resetHref}" class="button secondary btn-sm" th:text="#{common.resetFilters}">Reset filters</a>
 </div>
+
+<th:block th:fragment="dateFilters(history)">
+  <div class="filter-field" th:unless="${history}">
+    <label for="dateField" th:text="#{dates.field}">Date field</label>
+    <select id="dateField" name="dateField">
+      <option value="created" th:text="#{col.created}" th:selected="${dates.dateField() != 'updated'}">Registered</option>
+      <option value="updated" th:text="#{col.updated}" th:selected="${dates.dateField() == 'updated'}">Last modified</option>
+    </select>
+  </div>
+  <div class="filter-field">
+    <label for="dateFrom" th:text="#{dates.from}">Start date</label>
+    <input id="dateFrom" name="dateFrom" type="date" th:value="${dates.dateFrom()}">
+  </div>
+  <div class="filter-field">
+    <label for="dateTo" th:text="#{dates.to}">End date</label>
+    <input id="dateTo" name="dateTo" type="date" th:value="${dates.dateTo()}">
+  </div>
+  <input name="dateZone" type="hidden" th:value="${dates.dateZone()}" data-date-zone>
+  <input name="sort" type="hidden" th:value="${dates.sort()}">
+  <input name="direction" type="hidden" th:value="${dates.direction()}">
+</th:block>
+
+<th th:fragment="dateHeader(label, dateSort)" scope="col" th:attr="aria-sort=${dateSort.ariaSort()}">
+  <a class="date-sort" th:href="${dateSort.href()}">
+    <span th:text="${label}">Date</span>
+    <span th:text="${dateSort.arrow()}" aria-hidden="true">↕</span>
+  </a>
+</th>
+
+<td th:fragment="dateCell(instant)" class="cell-time">
+  <th:block th:replace="~{fragments :: time(${instant})}"></th:block>
+  <span th:if="${instant == null}" th:text="#{common.noneValue}">—</span>
+</td>
 
 <!-- previous and next of a paged list; page-size is part of the filter form of the page -->
 <nav th:fragment="pager(paging, total)" class="pager" th:attr="aria-label=#{paging.label}">

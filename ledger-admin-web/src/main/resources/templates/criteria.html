@@ -49,7 +49,7 @@
       <div class="filter-field">
         <label for="project" th:text="#{common.project}">Project</label>
         <select id="project" name="project">
-          <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.id()}" th:selected="${p.id() == choice.selected()}">p1</option>
+          <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.displayName()}" th:selected="${p.id() == choice.selected()}">p1</option>
         </select>
       </div>
       <div class="filter-field">
@@ -69,6 +69,7 @@
                   th:value="${filter.milestone()}" th:text="${filter.milestone()}" selected>custom</option>
         </select>
       </div>
+      <th:block th:replace="~{fragments :: dateFilters(false)}"></th:block>
       <div class="filter-field filter-field-sm">
         <label for="limit" th:text="#{paging.size}">Rows per page</label>
         <select id="limit" name="limit">
@@ -93,6 +94,8 @@
             <th scope="col" th:text="#{common.state}">State</th>
             <th scope="col" th:text="#{criteria.linkedWork}">Linked work</th>
             <th scope="col" th:text="#{criteria.text}">Criterion</th>
+            <th th:replace="~{fragments :: dateHeader(#{col.created}, ${createdSort})}">Registered</th>
+            <th th:replace="~{fragments :: dateHeader(#{col.updated}, ${updatedSort})}">Last modified</th>
           </tr>
         </thead>
         <tbody>
@@ -111,6 +114,8 @@
               <span th:if="${lc.total() == 0}" class="muted" th:text="#{common.noneValue}">—</span>
             </td>
             <td class="cell-criterion" th:text="${c.criterionText()}">text</td>
+            <td th:replace="~{fragments :: dateCell(${c.createdAt()})}">t</td>
+            <td th:replace="~{fragments :: dateCell(${c.updatedAt()})}">t</td>
           </tr>
         </tbody>
       </table>

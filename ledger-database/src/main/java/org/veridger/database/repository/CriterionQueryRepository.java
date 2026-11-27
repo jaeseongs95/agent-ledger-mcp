@@ -2,6 +2,7 @@
 
 package org.veridger.database.repository;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -11,6 +12,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.veridger.database.time.UtcTime;
 import org.veridger.domain.rule.CriterionState;
 import org.veridger.domain.value.CriterionId;
 import org.veridger.domain.value.MaxRows;
@@ -31,7 +33,11 @@ public class CriterionQueryRepository {
 
     /** Columns shown in a milestone criterion list. */
     public record CriterionSummary(CriterionId id, String milestone, String goalLabel, String code,
-            String criterionText, CriterionState state, long version) {
+            String criterionText, CriterionState state, long version, Instant createdAt, Instant updatedAt) {
+    }
+
+    /** The date may be absent for criteria without a history row. */
+    public record Position(Instant at, CriterionId id) {
     }
 
     /** Per-milestone criterion counts grouped by state. */
@@ -55,18 +61,37 @@ public class CriterionQueryRepository {
     }
 
     public KeysetPage<CriterionSummary> page(ProjectId project, Filter filter, MaxRows maxRows, CriterionId after) {
-        StringBuilder sql = new StringBuilder("SELECT id, milestone_name, goal_label, code, criterion_text, state, "
-                + "version FROM milestone_criterion WHERE project_id = :project");
+        return page(project, filter, maxRows, DateQuery.NONE, after == null ? null : new Position(null, after));
+    }
+
+    public KeysetPage<CriterionSummary> page(ProjectId project, Filter filter, MaxRows maxRows, DateQuery dates,
+            Position after) {
+        StringBuilder sql = new StringBuilder("SELECT c.id, c.milestone_name, c.goal_label, c.code, c.criterion_text, "
+                + "c.state, c.version, dates.created_at, dates.updated_at FROM milestone_criterion c "
+                + "LEFT JOIN (SELECT h.entity_id, "
+                + "MIN(CASE WHEN h.op IN ('CREATE', 'IMPORT') THEN h.occurred_at END) AS created_at, "
+                + "MAX(h.occurred_at) AS updated_at "
+                + "FROM history h WHERE h.entity = 'CRITERION' AND h.entity_id IN "
+                + "(SELECT id FROM milestone_criterion WHERE project_id = :project) GROUP BY h.entity_id) dates "
+                + "ON dates.entity_id = c.id WHERE c.project_id = :project");
         if (filter.state() != null) {
             sql.append(" AND state = :state");
         }
         if (filter.milestone() != null) {
             sql.append(" AND milestone_name = :milestone");
         }
-        if (after != null) {
-            sql.append(" AND id < :after");
+        dates.appendRange(sql);
+        if (dates.sort() != null) {
+            if (after != null) {
+                dates.appendSeek(sql, "c.id", after.at(), true);
+            }
+            dates.appendOrder(sql, "c.id", true);
+        } else {
+            if (after != null) {
+                sql.append(" AND c.id < :after");
+            }
+            sql.append(" ORDER BY c.id DESC");
         }
-        sql.append(" ORDER BY id DESC");
         JdbcClient.StatementSpec spec = jdbc.sql(sqlBuilder.applyLimit(sql.toString(), ":row_count"))
                 .param("project", project.value()).param("row_count", maxRows.value() + 1);
         if (filter.state() != null) {
@@ -75,13 +100,15 @@ public class CriterionQueryRepository {
         if (filter.milestone() != null) {
             spec = spec.param("milestone", filter.milestone());
         }
+        spec = dates.bindRange(spec);
         if (after != null) {
-            spec = spec.param("after", after.value());
+            spec = dates.sort() == null ? spec.param("after", after.id().value())
+                    : dates.bindSeek(spec, after.at(), after.id().value());
         }
         List<CriterionSummary> fetched = spec.query((rs, n) -> new CriterionSummary(
                 CriterionId.of(rs.getString("id")), rs.getString("milestone_name"), rs.getString("goal_label"),
                 rs.getString("code"), rs.getString("criterion_text"), CriterionState.valueOf(rs.getString("state")),
-                rs.getLong("version"))).list();
+                rs.getLong("version"), UtcTime.read(rs, "created_at"), UtcTime.read(rs, "updated_at"))).list();
         return KeysetPage.of(fetched, maxRows.value());
     }
 

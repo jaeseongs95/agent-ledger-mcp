@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
-import java.util.stream.Collectors;
 import org.veridger.domain.model.SessionGrant;
 
 /**
@@ -52,28 +51,8 @@ public final class SessionAccessView {
             return SessionAuthorInput.sessionPart(author);
         }
 
-        public String projectListText() {
-            return projects.stream().map(ProjectGrantRow::project).collect(Collectors.joining(" "));
-        }
-
         public String availableProjectsCsv() {
             return String.join(",", availableProjects);
-        }
-
-        public String searchableText() {
-            StringBuilder sb = new StringBuilder(author);
-            String host = host();
-            String sid = sessionId();
-            if (!host.isEmpty()) {
-                sb.append(' ').append(host).append(' ').append(sid);
-            }
-            for (ProjectGrantRow row : projects) {
-                sb.append(' ').append(row.project());
-                if (row.note() != null && !row.note().isBlank()) {
-                    sb.append(' ').append(row.note());
-                }
-            }
-            return sb.toString();
         }
     }
 

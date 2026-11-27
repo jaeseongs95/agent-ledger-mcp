@@ -144,7 +144,16 @@ public class HistoryQueryRepository {
 
     /** The ids matching the filter in id order, after {@code afterId} (use 0 for the first page). */
     public KeysetPage<Long> page(Filter filter, long afterId, MaxRows maxRows) {
-        StringBuilder sql = new StringBuilder("SELECT h.id FROM history h WHERE h.id > :after");
+        var page = positions(filter, maxRows, DateQuery.NONE, new Position(afterId, null));
+        return new KeysetPage<>(page.rows().stream().map(Position::id).toList(), page.truncated());
+    }
+
+    public record Position(long id, Instant at) {
+    }
+
+    /** Ordered row keys. The service loads the full history rows only after applying the page limit. */
+    public KeysetPage<Position> positions(Filter filter, MaxRows maxRows, DateQuery dates, Position after) {
+        StringBuilder sql = new StringBuilder("SELECT h.id, h.occurred_at FROM history h WHERE h.id > 0");
         if (!filter.ids().isEmpty()) {
             sql.append(" AND h.id IN (:ids)");
         }
@@ -175,9 +184,20 @@ public class HistoryQueryRepository {
         if (filter.atTo() != null) {
             sql.append(" AND h.occurred_at <= :atTo");
         }
-        sql.append(" ORDER BY h.id");
+        dates.appendRange(sql);
+        if (dates.sort() != null) {
+            if (after != null) {
+                dates.appendSeek(sql, "h.id", after.at(), false);
+            }
+            dates.appendOrder(sql, "h.id", false);
+        } else {
+            if (after != null) {
+                sql.append(" AND h.id > :after");
+            }
+            sql.append(" ORDER BY h.id");
+        }
         JdbcClient.StatementSpec spec = jdbc.sql(sqlBuilder.applyLimit(sql.toString(), ":row_count"))
-                .param("after", afterId).param("row_count", maxRows.value() + 1);
+                .param("row_count", maxRows.value() + 1);
         if (!filter.ids().isEmpty()) {
             spec = spec.param("ids", filter.ids());
         }
@@ -208,7 +228,13 @@ public class HistoryQueryRepository {
         if (filter.atTo() != null) {
             spec = spec.param("atTo", UtcTime.toDb(filter.atTo()));
         }
-        return KeysetPage.of(spec.query(Long.class).list(), maxRows.value());
+        spec = dates.bindRange(spec);
+        if (after != null) {
+            spec = dates.sort() == null ? spec.param("after", after.id())
+                    : dates.bindSeek(spec, after.at(), after.id());
+        }
+        return KeysetPage.of(spec.query((rs, n) -> new Position(rs.getLong("id"),
+                UtcTime.read(rs, "occurred_at"))).list(), maxRows.value());
     }
 
     /** Lightweight transition projection (omitting {@code before_data} and {@code changes} blobs), oldest first. */

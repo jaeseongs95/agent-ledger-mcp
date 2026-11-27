@@ -15,7 +15,7 @@
       <label for="project" th:text="#{common.project}">Project</label>
       <select id="project" name="project">
         <option value="" th:text="#{common.allProjects}">All projects</option>
-        <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.id()}" th:selected="${p.id() == filter.project()}">p1</option>
+        <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.displayName()}" th:selected="${p.id() == filter.project()}">p1</option>
       </select>
     </div>
     <div class="filter-field">
@@ -40,6 +40,7 @@
       <label for="authorId" th:text="#{history.author}">Author</label>
       <input id="authorId" name="authorId" type="text" th:value="${filter.authorId()}" maxlength="200">
     </div>
+    <th:block th:replace="~{fragments :: dateFilters(true)}"></th:block>
     <div class="filter-field filter-field-sm">
       <label for="limit" th:text="#{paging.size}">Rows per page</label>
       <select id="limit" name="limit">
@@ -58,7 +59,7 @@
       <thead>
         <tr>
           <th scope="col" th:text="#{col.id}">ID</th>
-          <th scope="col" th:text="#{col.at}">At</th>
+          <th th:replace="~{fragments :: dateHeader(#{col.created}, ${createdSort})}">Registered</th>
           <th scope="col" th:text="#{history.target}">Target</th>
           <th scope="col" th:text="#{history.op}">Operation</th>
           <th scope="col" th:text="#{history.states}">States</th>

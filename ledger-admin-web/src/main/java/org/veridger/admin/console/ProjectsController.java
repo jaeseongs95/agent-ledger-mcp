@@ -8,6 +8,7 @@ import java.util.Map;
 import org.veridger.admin.web.AdminHttpExceptionAdvice;
 import org.veridger.application.admin.ProjectService;
 import org.veridger.application.admin.ProjectService.ProjectCommand;
+import org.veridger.application.admin.ProjectService.RenameCommand;
 import org.veridger.domain.value.OwnerIdentity;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -37,14 +38,25 @@ public class ProjectsController {
     @PostMapping("/projects")
     String add(@ModelAttribute ProjectCommand command, OwnerIdentity actor, HttpServletRequest request,
             RedirectAttributes flash) {
-        AdminHttpExceptionAdvice.recoverHtml(request, "projects", () -> {
-            Map<String, Object> model = new LinkedHashMap<>();
-            model.put("projects", choices.projects());
-            model.put("projectForm", command);
-            return model;
-        });
+        AdminHttpExceptionAdvice.recoverHtml(request, "projects", () -> recovery("projectForm", command));
         projects.add(command, actor);
         flash.addFlashAttribute("flashKey", "flash.projectAdded");
         return "redirect:/projects";
+    }
+
+    @PostMapping("/projects/rename")
+    String rename(@ModelAttribute RenameCommand command, OwnerIdentity actor, HttpServletRequest request,
+            RedirectAttributes flash) {
+        AdminHttpExceptionAdvice.recoverHtml(request, "projects", () -> recovery("renameForm", command));
+        projects.rename(command, actor);
+        flash.addFlashAttribute("flashKey", "flash.projectRenamed");
+        return "redirect:/projects";
+    }
+
+    private Map<String, Object> recovery(String key, Object form) {
+        Map<String, Object> model = new LinkedHashMap<>();
+        model.put("projects", choices.projects());
+        model.put(key, form);
+        return model;
     }
 }

@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.veridger.database.repository.CriterionQueryRepository;
+import org.veridger.database.repository.DateQuery;
 import org.veridger.database.repository.IssueQueryRepository;
 import org.veridger.database.repository.IssueSummary;
 import org.veridger.database.repository.SpecQueryRepository;
@@ -117,7 +118,7 @@ public class ListService {
     }
 
     public record CriterionItem(String id, String milestoneName, String goalLabel, String code, String criterionText,
-            String state, long version) {
+            String state, long version, Instant createdAt, Instant updatedAt) {
     }
 
     /** Per-milestone criterion readiness summary. */
@@ -156,6 +157,10 @@ public class ListService {
     }
 
     public Page<IssueItem> issues(IssuesQuery q) {
+        return issues(q, DateQuery.NONE);
+    }
+
+    public Page<IssueItem> issues(IssuesQuery q, DateQuery dates) {
         ProjectId project = requireProject(q.project());
         IssueStatus status = q.status() == null ? null : Tokens.parseName("status", q.status(), IssueStatus.values());
         CodeValue severity = q.severity() == null ? null : CodeValue.of(q.severity());
@@ -170,18 +175,22 @@ public class ListService {
         MaxRows maxRows = cursors.maxRows(q.maxRows());
         IssueQueryRepository.Filter filter = new IssueQueryRepository.Filter(status, severity, category, from, to,
                 owner, attention, taskId);
-        Object criteriaKey = List.of(project.value(), String.valueOf(filter), order.name());
+        Object criteriaKey = dates.cursorCriteria(List.of(project.value(), String.valueOf(filter), order.name()));
         var page = cursors.decode(q.cursor(), PageCursor.Kind.ISSUES, criteriaKey)
                 .map(ListService::issuePosition)
-                .map(after -> issues.page(project, filter, maxRows, order, after))
-                .orElseGet(() -> issues.page(project, filter, maxRows, order, null));
+                .map(after -> issues.page(project, filter, maxRows, order, dates, after))
+                .orElseGet(() -> issues.page(project, filter, maxRows, order, dates, null));
         return cursors.page(page, PageCursor.Kind.ISSUES, criteriaKey,
                 ListService::toIssueItem,
-                r -> new UtcInstant(r.createdAt()).toString(),
+                r -> dates.sortKey(r.createdAt(), r.updatedAt()).toString(),
                 r -> r.id().value());
     }
 
     public Page<SpecItem> specs(SpecsQuery q) {
+        return specs(q, DateQuery.NONE);
+    }
+
+    public Page<SpecItem> specs(SpecsQuery q, DateQuery dates) {
         ProjectId project = requireProject(q.project());
         SpecStatus status = q.status() == null ? null : Tokens.parseName("status", q.status(), SpecStatus.values());
         SpecId parentId = q.parentId() == null ? null : SpecId.of(q.parentId());
@@ -191,51 +200,59 @@ public class ListService {
         MaxRows maxRows = cursors.maxRows(q.maxRows());
         SpecQueryRepository.Filter filter = new SpecQueryRepository.Filter(status, parentId, priority, owner,
                 attention);
-        Object criteriaKey = List.of(project.value(), String.valueOf(filter));
+        Object criteriaKey = dates.cursorCriteria(List.of(project.value(), String.valueOf(filter)));
         var page = cursors.decode(q.cursor(), PageCursor.Kind.SPECS, criteriaKey)
                 .map(ListService::specPosition)
-                .map(after -> specs.page(project, filter, maxRows, after))
-                .orElseGet(() -> specs.page(project, filter, maxRows, null));
+                .map(after -> specs.page(project, filter, maxRows, dates, after))
+                .orElseGet(() -> specs.page(project, filter, maxRows, dates, null));
         return cursors.page(page, PageCursor.Kind.SPECS, criteriaKey,
                 ListService::toSpecItem,
-                r -> new UtcInstant(r.createdAt()).toString(),
+                r -> dates.sortKey(r.createdAt(), r.updatedAt()).toString(),
                 r -> r.id().value());
     }
 
     public Page<TaskItem> tasks(TasksQuery q) {
+        return tasks(q, DateQuery.NONE);
+    }
+
+    public Page<TaskItem> tasks(TasksQuery q, DateQuery dates) {
         ProjectId project = requireProject(q.project());
         TaskState state = q.state() == null ? null : Tokens.parseName("state", q.state(), TaskState.values());
         String owner = checkOwner(q.owner());
         AttentionKind attention = parseAttention(q.attention(), HistoryEntity.TASK);
         MaxRows maxRows = cursors.maxRows(q.maxRows());
         TaskQueryRepository.Filter filter = new TaskQueryRepository.Filter(state, owner, attention);
-        Object criteriaKey = List.of(project.value(), String.valueOf(filter));
+        Object criteriaKey = dates.cursorCriteria(List.of(project.value(), String.valueOf(filter)));
         var page = cursors.decode(q.cursor(), PageCursor.Kind.TASKS, criteriaKey)
                 .map(ListService::taskPosition)
-                .map(after -> tasks.page(project, filter, maxRows, after))
-                .orElseGet(() -> tasks.page(project, filter, maxRows, null));
+                .map(after -> tasks.page(project, filter, maxRows, dates, after))
+                .orElseGet(() -> tasks.page(project, filter, maxRows, dates, null));
         return cursors.page(page, PageCursor.Kind.TASKS, criteriaKey,
                 r -> new TaskItem(r.id().value(), r.title(), r.state().name(), r.ownerActorId(), r.version(),
                         r.createdAt(), r.updatedAt()),
-                r -> new UtcInstant(r.createdAt()).toString(),
+                r -> dates.sortKey(r.createdAt(), r.updatedAt()).toString(),
                 r -> r.id().value());
     }
 
     public Page<CriterionItem> criteria(CriteriaQuery q) {
+        return criteria(q, DateQuery.NONE);
+    }
+
+    public Page<CriterionItem> criteria(CriteriaQuery q, DateQuery dates) {
         ProjectId project = requireProject(q.project());
         CriterionState state = q.state() == null ? null
                 : Tokens.parseName("state", q.state(), CriterionState.values());
         MaxRows maxRows = cursors.maxRows(q.maxRows());
         CriterionQueryRepository.Filter filter = new CriterionQueryRepository.Filter(state, q.milestone());
-        Object criteriaKey = List.of(project.value(), String.valueOf(filter));
+        Object criteriaKey = dates.cursorCriteria(List.of(project.value(), String.valueOf(filter)));
         var page = cursors.decode(q.cursor(), PageCursor.Kind.CRITERIA, criteriaKey)
-                .map(ListService::criterionPosition)
-                .map(after -> criteria.page(project, filter, maxRows, after))
-                .orElseGet(() -> criteria.page(project, filter, maxRows, null));
+                .map(pos -> criterionPosition(pos, dates))
+                .map(after -> criteria.page(project, filter, maxRows, dates, after))
+                .orElseGet(() -> criteria.page(project, filter, maxRows, dates, null));
         return cursors.page(page, PageCursor.Kind.CRITERIA, criteriaKey,
                 r -> new CriterionItem(r.id().value(), r.milestone(), r.goalLabel(), r.code(),
-                        Texts.orEmpty(r.criterionText()), r.state().name(), r.version()),
-                r -> null,
+                        Texts.orEmpty(r.criterionText()), r.state().name(), r.version(), r.createdAt(), r.updatedAt()),
+                r -> criterionSortKey(r, dates),
                 r -> r.id().value());
     }
 
@@ -339,12 +356,18 @@ public class ListService {
         }
     }
 
-    private static CriterionId criterionPosition(Cursors.Position pos) {
-        if (pos.sortKey() != null) {
+    private static String criterionSortKey(CriterionQueryRepository.CriterionSummary row, DateQuery dates) {
+        Instant time = dates.sortKey(row.createdAt(), row.updatedAt());
+        return dates.sort() == null || time == null ? null : time.toString();
+    }
+
+    private static CriterionQueryRepository.Position criterionPosition(Cursors.Position pos, DateQuery dates) {
+        if (dates.sort() == null && pos.sortKey() != null) {
             throw ValidationException.invalid("cursor", ValidationReason.CURSOR_DAMAGED);
         }
         try {
-            return CriterionId.of(pos.id());
+            Instant time = pos.sortKey() == null ? null : UtcInstant.parse("cursor", pos.sortKey()).value();
+            return new CriterionQueryRepository.Position(time, CriterionId.of(pos.id()));
         } catch (ValidationException invalid) {
             throw ValidationException.invalid("cursor", ValidationReason.CURSOR_DAMAGED, invalid);
         }

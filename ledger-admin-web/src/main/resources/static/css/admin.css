@@ -785,6 +785,7 @@ input[type="text"],
 input[type="search"],
 input[type="password"],
 input[type="number"],
+input[type="date"],
 select,
 textarea {
   font: inherit;
@@ -845,7 +846,7 @@ form.filters {
   flex: 0 1 110px;
 }
 
-form.filters label {
+.filters label {
   display: block;
   font-size: 0.78rem;
   font-weight: 600;
@@ -902,6 +903,12 @@ thead th {
   letter-spacing: 0.03em;
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+.date-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 tbody tr:last-child td {
