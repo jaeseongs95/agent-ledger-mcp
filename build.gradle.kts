@@ -69,7 +69,10 @@ val jacocoAggregateReport = tasks.register<JacocoReport>("jacocoAggregateReport"
     description = "Generates an aggregated JaCoCo XML coverage report across all subproject test suites (including serverTest and cross-module integration tests)."
     dependsOn(javaSourceSubprojects.map { it.tasks.matching { t -> t.name == "classes" } })
     mustRunAfter(subprojects.map { it.tasks.withType<Test>() })
-    executionData.from(subprojects.map { it.layout.buildDirectory.asFileTree.matching { include("jacoco/*.exec") } })
+    executionData.from(
+        subprojects.map { it.layout.buildDirectory.asFileTree.matching { include("jacoco/*.exec") } },
+        layout.buildDirectory.asFileTree.matching { include("jacoco-ci/**/*.exec") },
+    )
     sourceDirectories.from(javaSourceSubprojects.map { it.layout.projectDirectory.dir("src/main/java") })
     classDirectories.from(javaSourceSubprojects.map { it.layout.buildDirectory.dir("classes/java/main") })
     reports {
