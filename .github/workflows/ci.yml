@@ -43,6 +43,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 25 (Temurin)
         uses: actions/setup-java@v5
@@ -85,6 +87,16 @@ jobs:
             -Pledger.test.app-password-file="$RUNNER_TEMP/app.pw" \
             spotlessCheck check
 
+      - name: Run SonarQube Analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "SONAR_TOKEN secret is not configured; skipping SonarQube analysis."
+            exit 0
+          fi
+          ./gradlew --no-daemon --max-workers=1 sonar
+
   windows:
     name: check (windows-latest, JDK 25, PostgreSQL 18)
     runs-on: windows-latest
@@ -92,6 +104,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 25 (Temurin)
         uses: actions/setup-java@v5

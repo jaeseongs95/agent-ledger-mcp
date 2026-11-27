@@ -12,6 +12,7 @@ plugins {
     base
     alias(libs.plugins.spotless)
     alias(libs.plugins.license.report)
+    alias(libs.plugins.sonarqube)
 }
 
 group = "org.veridger"
@@ -35,6 +36,14 @@ licenseReport {
     renderers = arrayOf<ReportRenderer>(JsonReportRenderer("index.json", false), InventoryMarkdownReportRenderer())
     filters = arrayOf<DependencyFilter>(LicenseBundleNormalizer())
     allowedLicensesFile = layout.projectDirectory.file("docs/allowed-licenses.json").asFile
+}
+
+sonar {
+    properties {
+        property("sonar.projectKey", "veridger")
+        property("sonar.projectName", "veridger")
+        property("sonar.host.url", "https://sonar.jaeseong.dev")
+    }
 }
 
 tasks.matching { it.name in setOf("generateLicenseReport", "checkLicense", "checkLicensePreparation") }.configureEach {
