@@ -10,6 +10,7 @@ import org.gradle.process.CommandLineArgumentProvider
 
 plugins {
     base
+    jacoco
     alias(libs.plugins.spotless)
     alias(libs.plugins.license.report)
     alias(libs.plugins.sonarqube)
@@ -39,11 +40,19 @@ licenseReport {
     allowedLicensesFile = layout.projectDirectory.file("docs/allowed-licenses.json").asFile
 }
 
+val aggregatedJacocoXml = layout.buildDirectory.file("reports/jacoco/jacocoAggregateReport/jacocoAggregateReport.xml")
+
 sonar {
     properties {
         property("sonar.projectKey", "veridger")
         property("sonar.projectName", "veridger")
-        property("sonar.host.url", "https://sonar.jaeseong.dev")
+        property(
+            "sonar.host.url",
+            providers.environmentVariable("SONAR_HOST_URL").orNull?.trim()?.takeIf { it.isNotEmpty() }
+                ?: "https://sonar.jaeseong.dev",
+        )
+        property("sonar.verbose", "false")
+        property("sonar.log.level", "INFO")
         providers.gradleProperty("sonar.token-file").orNull?.let { path ->
             val tokenFile = file(path)
             require(tokenFile.isFile) { "sonar.token-file does not exist: $path" }
@@ -51,6 +60,22 @@ sonar {
             require(token.isNotEmpty()) { "sonar.token-file is empty: $path" }
             property("sonar.token", token)
         }
+    }
+}
+
+val javaSourceSubprojects = subprojects.filter { it.file("src/main/java").isDirectory }
+val jacocoAggregateReport = tasks.register<JacocoReport>("jacocoAggregateReport") {
+    group = "verification"
+    description = "Generates an aggregated JaCoCo XML coverage report across all subproject test suites (including serverTest and cross-module integration tests)."
+    dependsOn(javaSourceSubprojects.map { it.tasks.matching { t -> t.name == "classes" } })
+    mustRunAfter(subprojects.map { it.tasks.withType<Test>() })
+    executionData.from(subprojects.map { it.layout.buildDirectory.asFileTree.matching { include("jacoco/*.exec") } })
+    sourceDirectories.from(javaSourceSubprojects.map { it.layout.projectDirectory.dir("src/main/java") })
+    classDirectories.from(javaSourceSubprojects.map { it.layout.buildDirectory.dir("classes/java/main") })
+    reports {
+        xml.required = true
+        xml.outputLocation = aggregatedJacocoXml
+        html.required = false
     }
 }
 
@@ -198,9 +223,18 @@ subprojects {
 
     tasks.withType<JacocoReport>().configureEach {
         mustRunAfter(tasks.withType<Test>())
+        executionData.from(layout.buildDirectory.asFileTree.matching { include("jacoco/*.exec") })
         reports {
             xml.required = true
             html.required = false
+        }
+    }
+
+    if (file("src/main/java").isDirectory) {
+        sonar {
+            properties {
+                property("sonar.coverage.jacoco.xmlReportPaths", aggregatedJacocoXml.get().asFile.absolutePath)
+            }
         }
     }
 

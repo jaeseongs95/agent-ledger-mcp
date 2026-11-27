@@ -5,8 +5,11 @@ on:
     branches:
       - main
       - develop
+      - "feat/**"
       - "feature/**"
+      - "fix/**"
       - "release/**"
+      - "hotfix/**"
   pull_request:
   workflow_dispatch:
 
@@ -85,17 +88,24 @@ jobs:
             -Pledger.test.maxHeapSize=1g \
             -Pledger.test.jdbc-password-file="$RUNNER_TEMP/owner.pw" \
             -Pledger.test.app-password-file="$RUNNER_TEMP/app.pw" \
-            spotlessCheck check jacocoTestReport
+            spotlessCheck check jacocoTestReport jacocoAggregateReport
 
       - name: Run SonarQube Analysis
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'))
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
         run: |
           if [ -z "$SONAR_TOKEN" ]; then
             echo "SONAR_TOKEN secret is not configured; skipping SonarQube analysis."
             exit 0
           fi
-          ./gradlew --no-daemon --no-configuration-cache --max-workers=1 sonar
+          ./gradlew --no-daemon --max-workers=1 sonar \
+            -Dsonar.projectKey=veridger \
+            -Dsonar.verbose=false \
+            -Dsonar.log.level=INFO \
+            -Dsonar.qualitygate.wait=true \
+            -Dsonar.qualitygate.timeout=300
 
   windows:
     name: check (windows-latest, JDK 25, PostgreSQL 18)
