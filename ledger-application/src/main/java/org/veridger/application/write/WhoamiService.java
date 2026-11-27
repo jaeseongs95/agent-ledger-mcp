@@ -55,12 +55,12 @@ public class WhoamiService {
             case McpCallerResolver.Proof.MalformedAuthor malformed ->
                 new Whoami(malformed.text(), false, channel.mayVerify(), channel.login(), List.of());
             case McpCallerResolver.Proof.Proven proven -> {
-                List<GrantView> live = grants.findLive(proven.author(), clock.instant()).stream()
-                        .map(WhoamiService::view).toList();
+                List<SessionGrant> live = grants.findLive(proven.author(), clock.instant());
                 boolean canVerify = channel.mayVerify()
-                        || live.stream().anyMatch(grant -> Scope.VERIFY.token().equals(grant.scope()));
+                        || live.stream().anyMatch(grant -> grant.scope() == Scope.VERIFY);
                 String login = canVerify ? Channel.REVIEWER.login() : channel.login();
-                yield new Whoami(proven.author().value(), true, canVerify, login, live);
+                List<GrantView> views = live.stream().map(WhoamiService::view).toList();
+                yield new Whoami(proven.author().value(), true, canVerify, login, views);
             }
         };
     }
