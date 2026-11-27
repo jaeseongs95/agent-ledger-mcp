@@ -73,6 +73,10 @@ public class LegacyTargetRepository {
         return List.copyOf(names);
     }
 
+    private static String countSql(String table) {
+        return "SELECT COUNT(*) FROM " + table;
+    }
+
     /**
      * The tables of the new schema that already hold ledger data, in the order of the copy, and {@code owner_audit} last when
      * an earlier import left its row. Empty on a schema that only {@code migrate} and {@code setup} have prepared (the seed codes
@@ -81,7 +85,7 @@ public class LegacyTargetRepository {
     public List<String> tablesWithData() {
         List<String> found = new ArrayList<>();
         for (String table : DATA_TABLES) {
-            Long rows = jdbc.sql("SELECT COUNT(*) FROM " + table).query(Long.class).single();
+            Long rows = jdbc.sql(countSql(table)).query(Long.class).single();
             if (rows != null && rows > 0) {
                 found.add(table);
             }

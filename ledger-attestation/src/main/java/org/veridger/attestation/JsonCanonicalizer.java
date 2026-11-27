@@ -60,6 +60,7 @@ public final class JsonCanonicalizer {
     private static final int ES_MAX_INTEGER_DIGITS = 21;
     private static final int ES_MIN_FRACTION_EXPONENT = -6;
     private static final int MAX_PRECISION = 17;
+    private static final BigDecimal HALF = BigDecimal.valueOf(5, 1);
     /** The largest integer below which every integer is exactly a double: 2**53 - 1 (ECMAScript Number.MAX_SAFE_INTEGER). */
     private static final long MAX_SAFE_INTEGER = (1L << 53) - 1;
     /** Deeper values are refused: the canonical form is built recursively, and real tool arguments are shallow. */
@@ -273,7 +274,7 @@ public final class JsonCanonicalizer {
 
     /** The decimal with the fewest significant digits (trailing zeros stripped) that converts back to the double. */
     private static BigDecimal shortestDigits(double magnitude) {
-        BigDecimal exact = new BigDecimal(magnitude);
+        BigDecimal exact = exactDouble(magnitude);
         for (int precision = 1; precision < MAX_PRECISION; precision++) {
             BigDecimal candidate = exact.round(new MathContext(precision, RoundingMode.HALF_EVEN));
             if (candidate.doubleValue() == magnitude) {
@@ -281,5 +282,18 @@ public final class JsonCanonicalizer {
             }
         }
         return exact.round(new MathContext(MAX_PRECISION, RoundingMode.HALF_EVEN)).stripTrailingZeros();
+    }
+
+    /** Exact mathematical value of a finite positive IEEE-754 double from its raw bits. */
+    private static BigDecimal exactDouble(double magnitude) {
+        long bits = Double.doubleToRawLongBits(magnitude);
+        int rawExponent = (int) ((bits >>> 52) & 0x7FFL);
+        long rawSignificand = bits & 0x000F_FFFF_FFFF_FFFFL;
+        long significand = rawExponent == 0 ? rawSignificand : (rawSignificand | 0x0010_0000_0000_0000L);
+        int binaryExponent = rawExponent == 0 ? -1074 : rawExponent - 1075;
+        BigDecimal value = BigDecimal.valueOf(significand);
+        return binaryExponent >= 0
+                ? value.multiply(BigDecimal.TWO.pow(binaryExponent))
+                : value.multiply(HALF.pow(-binaryExponent));
     }
 }

@@ -6,6 +6,7 @@ import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.InputStream;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -20,6 +21,7 @@ public class StandardInput {
 
     private final InputStream stream;
 
+    @Autowired
     public StandardInput() {
         this.stream = ofProcess();
     }

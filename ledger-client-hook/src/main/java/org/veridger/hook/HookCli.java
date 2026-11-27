@@ -32,7 +32,7 @@ public final class HookCli {
     private final int maxStdinBytes;
 
     @org.springframework.beans.factory.annotation.Autowired
-    HookCli(JsonCodec codec, LedgerHook hook) {
+    public HookCli(JsonCodec codec, LedgerHook hook) {
         this(codec, hook, MAX_STDIN_BYTES);
     }
 

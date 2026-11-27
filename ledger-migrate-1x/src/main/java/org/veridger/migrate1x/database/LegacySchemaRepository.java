@@ -47,7 +47,7 @@ import org.springframework.stereotype.Component;
 @Component
 public final class LegacySchemaRepository {
 
-    private static final Pattern SCHEMA = Pattern.compile("[a-z][a-z0-9_]{0,29}");
+    private static final Pattern SCHEMA_PATTERN = Pattern.compile("[a-z][a-z0-9_]{0,29}");
     private static final Pattern ROLE = Pattern.compile("[A-Za-z][A-Za-z0-9_]{0,62}");
 
     private static final String SCHEMA_PARAMETER = "schema";
@@ -124,7 +124,7 @@ public final class LegacySchemaRepository {
      * @throws IllegalArgumentException when the schema or a role name is not an identifier of the usual form
      */
     public LegacySchemaRepository(JdbcClient jdbc, DataSource dataSource, String schema, List<String> roles) {
-        if (schema == null || !SCHEMA.matcher(schema).matches()) {
+        if (schema == null || !SCHEMA_PATTERN.matcher(schema).matches()) {
             throw new IllegalArgumentException("the legacy schema must be lower case letters, digits and _ (max 30): "
                     + schema);
         }
@@ -185,7 +185,7 @@ public final class LegacySchemaRepository {
         for (LegacyObject object : objects) {
             if (isTable(object)) {
                 if (!tables.isEmpty()) {
-                    jdbc.sql("DROP TABLE " + String.join(", ", tables)).update();
+                    jdbc.sql(dropTablesSql(tables)).update();
                     tables = List.of();
                 }
             } else {
@@ -194,6 +194,10 @@ public final class LegacySchemaRepository {
                 }
             }
         }
+    }
+
+    private static String dropTablesSql(List<String> quotedTables) {
+        return "DROP TABLE " + String.join(", ", quotedTables);
     }
 
     private static boolean isTable(LegacyObject object) {

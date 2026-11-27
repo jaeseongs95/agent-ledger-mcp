@@ -18,36 +18,31 @@ public final class Sha256Hex {
     private Sha256Hex() {
     }
 
+    /** Sink receiving raw bytes for streaming SHA-256 computation. */
+    @FunctionalInterface
+    public interface ChunkSink {
+        void update(byte[] bytes, int offset, int length);
+    }
+
+    /** Source that feeds chunks into a local {@link MessageDigest} inside {@link #stream(StreamSource)}. */
+    @FunctionalInterface
+    public interface StreamSource<E extends Exception> {
+        void feed(ChunkSink sink) throws E;
+    }
+
     /**
-     * A digest that is fed piece by piece (a file that is read in chunks), the streaming form of {@link #of}: the same algorithm,
-     * the same 64 lower-case hex characters. It is not thread safe and is used once.
+     * Streams chunks through a fresh local SHA-256 {@link MessageDigest} and returns the 64 lower-case hex characters.
+     * The digest never escapes this call frame, so it cannot be shared across threads or reused after finishing.
      */
-    public static Running running() {
+    public static <E extends Exception> String stream(StreamSource<E> source) throws E {
+        MessageDigest digest;
         try {
-            return new Running(MessageDigest.getInstance(ALGORITHM));
+            digest = MessageDigest.getInstance(ALGORITHM);
         } catch (NoSuchAlgorithmException failure) {
             throw new IllegalStateException("SHA-256 is mandatory on every JVM", failure);
         }
-    }
-
-    /** The state of a digest that is being fed. */
-    public static final class Running {
-
-        private final MessageDigest digest;
-
-        private Running(MessageDigest digest) {
-            this.digest = digest;
-        }
-
-        /** Adds {@code length} bytes of {@code bytes} from {@code offset}. */
-        public void update(byte[] bytes, int offset, int length) {
-            digest.update(bytes, offset, length);
-        }
-
-        /** The digest of everything added, 64 lower-case hex characters; the object is finished then. */
-        public String finish() {
-            return HexFormat.of().formatHex(digest.digest());
-        }
+        source.feed(digest::update);
+        return HexFormat.of().formatHex(digest.digest());
     }
 
     /** The digest of {@code bytes}, 64 lower-case hex characters. */

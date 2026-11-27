@@ -147,7 +147,7 @@ public final class ToolBinding {
                     issues, Map.of(), causes.isEmpty() ? null : causes.getFirst());
         }
         // bind the current tool name and canonical arguments digest into ToolScope for downstream gate/diagnostics
-        return ScopedValue.where(ToolScope.CURRENT, name).where(ToolScope.ARGUMENTS_DIGEST, argumentsDigest(given))
+        return ScopedValue.where(ToolScope.TOOL_NAME, name).where(ToolScope.ARGUMENTS_DIGEST, argumentsDigest(given))
                 .call(() -> invoke(values));
     }
 

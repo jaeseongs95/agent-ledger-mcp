@@ -43,7 +43,11 @@ public final class SeedBundle {
 
     /** The bundle that is packed with the program: the resource {@value #RESOURCE} of the class path. */
     public static SeedBundle packaged() {
-        return new SeedBundle(SeedBundle::readPackaged);
+        return packaged(SeedBundle.class.getClassLoader());
+    }
+
+    static SeedBundle packaged(ClassLoader loader) {
+        return new SeedBundle(() -> readPackaged(loader));
     }
 
     /** The bundle in a file of the file system (the build output, a test). */
@@ -87,8 +91,8 @@ public final class SeedBundle {
     }
 
     /** The resource is copied to a temporary directory (H2 opens a file, not a jar entry) that is removed again. */
-    private static Content readPackaged() {
-        try (InputStream stream = SeedBundle.class.getClassLoader().getResourceAsStream(RESOURCE)) {
+    private static Content readPackaged(ClassLoader loader) {
+        try (InputStream stream = loader.getResourceAsStream(RESOURCE)) {
             if (stream == null) {
                 throw new SeedUnavailableException("the seed bundle " + RESOURCE + " is not on the class path of the program");
             }

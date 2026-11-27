@@ -118,22 +118,29 @@ public class LinkRepository {
                 .list();
     }
 
+    private static final String INSERT_TASK_LINK = "INSERT INTO criterion_link (link_key, criterion_id, task_id, created_by) "
+            + "SELECT :key, c.id, :target, :by FROM milestone_criterion c WHERE c.id = :criterion "
+            + "AND NOT EXISTS (SELECT 1 FROM criterion_link x WHERE x.link_key = :key)";
+    private static final String INSERT_ISSUE_LINK = "INSERT INTO criterion_link (link_key, criterion_id, issue_id, created_by) "
+            + "SELECT :key, c.id, :target, :by FROM milestone_criterion c WHERE c.id = :criterion "
+            + "AND NOT EXISTS (SELECT 1 FROM criterion_link x WHERE x.link_key = :key)";
+    private static final String INSERT_SPEC_LINK = "INSERT INTO criterion_link (link_key, criterion_id, spec_id, created_by) "
+            + "SELECT :key, c.id, :target, :by FROM milestone_criterion c WHERE c.id = :criterion "
+            + "AND NOT EXISTS (SELECT 1 FROM criterion_link x WHERE x.link_key = :key)";
+
     public boolean add(CriterionLink link) {
-        String col;
+        String sql;
         String target;
         if (link.taskId() != null) {
-            col = "task_id";
+            sql = INSERT_TASK_LINK;
             target = link.taskId().value();
         } else if (link.issueId() != null) {
-            col = "issue_id";
+            sql = INSERT_ISSUE_LINK;
             target = link.issueId().value();
         } else {
-            col = "spec_id";
+            sql = INSERT_SPEC_LINK;
             target = link.specId().value();
         }
-        String sql = "INSERT INTO criterion_link (link_key, criterion_id, " + col + ", created_by) "
-                + "SELECT :key, c.id, :target, :by FROM milestone_criterion c WHERE c.id = :criterion "
-                + "AND NOT EXISTS (SELECT 1 FROM criterion_link x WHERE x.link_key = :key)";
         return jdbc.sql(sql)
                 .param("key", link.linkKey())
                 .param("target", target)

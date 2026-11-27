@@ -46,7 +46,7 @@ public final class LegacySourceRepository {
     public static final String TRANSACTION_MANAGER = "legacySourceTransactionManager";
 
     /** The legacy schema name is an identifier, so it cannot be a bind value: it is checked against this form. */
-    private static final Pattern SCHEMA = Pattern.compile("[a-z][a-z0-9_]{0,29}");
+    private static final Pattern SCHEMA_PATTERN = Pattern.compile("[a-z][a-z0-9_]{0,29}");
 
     /**
      * The steps of the legacy installer that the import needs: the schema itself and the three later migrations
@@ -78,7 +78,7 @@ public final class LegacySourceRepository {
      * @throws IllegalArgumentException when the schema is not an identifier of that form
      */
     public LegacySourceRepository(JdbcClient jdbc, DataSource dataSource, String schema) {
-        if (schema == null || !SCHEMA.matcher(schema).matches()) {
+        if (schema == null || !SCHEMA_PATTERN.matcher(schema).matches()) {
             throw new IllegalArgumentException("the legacy schema must be lower case letters, digits and _ (max 30): "
                     + schema);
         }
@@ -107,8 +107,7 @@ public final class LegacySourceRepository {
         })) {
             return REQUIRED_STEPS;
         }
-        Set<String> present = new HashSet<>(jdbc.sql("SELECT step FROM " + schema + "." + MIGRATION_TABLE)
-                .query(String.class).list());
+        Set<String> present = new HashSet<>(jdbc.sql(migrationStepsSql()).query(String.class).list());
         List<String> missing = new ArrayList<>();
         for (String step : REQUIRED_STEPS) {
             if (!present.contains(step)) {
@@ -123,5 +122,9 @@ public final class LegacySourceRepository {
         List<LegacyColumn> columns = table.sourceColumns();
         jdbc.sql(table.sourceSelect(schema)).query((RowCallbackHandler) rs -> consumer.accept(
                 LegacyRow.ofSource(rs, columns)));
+    }
+
+    private String migrationStepsSql() {
+        return "SELECT step FROM " + schema + "." + MIGRATION_TABLE;
     }
 }

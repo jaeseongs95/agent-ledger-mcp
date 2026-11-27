@@ -64,8 +64,8 @@ class EmptyTextTest {
                 Patch.absent(), Patch.absent(), Patch.absent()));
         Expect.invalid(() -> CriterionFields.of(Patch.set("p1"), Patch.set(""), Patch.absent(), Patch.set("C1"),
                 Patch.set("t")));
-        Expect.invalid(() -> SpecFields.of(Patch.set("p1"), Patch.absent(), Patch.set(""), Patch.set("s"),
-                Patch.set("ac"), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent()));
+        assertThat(Expect.invalid(() -> SpecFields.of(Patch.set("p1"), Patch.absent(), Patch.set(""), Patch.set("s"),
+                Patch.set("ac"), Patch.absent(), Patch.absent(), Patch.absent(), Patch.absent()))).isNotNull();
     }
 
     @Test

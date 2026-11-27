@@ -307,8 +307,10 @@ public class AttachmentStore {
                         throw new ConflictException(ConflictCode.ARTIFACT_INCOMPLETE, List.of("a chunk is not recorded"));
                     }
                 }
-                Sha256Hex.Running digest = Sha256Hex.running();
-                long plainBytes = walk(channel, storedBytes, nextSequence, aes, key, digest);
+                long[] plainBytesHolder = new long[1];
+                String computedSha256 = Sha256Hex.stream(
+                        sink -> plainBytesHolder[0] = walk(channel, storedBytes, nextSequence, aes, key, sink));
+                long plainBytes = plainBytesHolder[0];
                 if (plainBytes < declaredSize) {
                     throw new ConflictException(ConflictCode.ARTIFACT_INCOMPLETE,
                             List.of("received " + plainBytes + " of " + declaredSize + " bytes"));
@@ -317,7 +319,7 @@ public class AttachmentStore {
                     throw new ConflictException(ConflictCode.ARTIFACT_HASH_MISMATCH,
                             List.of("size " + plainBytes + ", declared " + declaredSize));
                 }
-                if (!Objects.equals(digest.finish(), declaredSha256.hex())) {
+                if (!Objects.equals(computedSha256, declaredSha256.hex())) {
                     throw new ConflictException(ConflictCode.ARTIFACT_HASH_MISMATCH, List.of("SHA-256"));
                 }
                 if (marked) {
@@ -383,7 +385,7 @@ public class AttachmentStore {
      * damage.
      */
     private long walk(FileChannel channel, long limit, long count, AttachmentKeys.Key aes, StorageKey key,
-            Sha256Hex.Running digest) throws IOException {
+            Sha256Hex.ChunkSink digest) throws IOException {
         byte[] prefix = SegmentCipher.aadPrefix(key);
         long position = 0;
         long plainBytes = 0;
@@ -553,30 +555,33 @@ public class AttachmentStore {
         byte[] prefix = SegmentCipher.aadPrefix(key);
         try (FileChannel channel = files.openRead(file)) {
             long size = channel.size();
-            long position = 0;
-            long index = 0;
-            long plainBytes = 0;
-            Sha256Hex.Running digest = Sha256Hex.running();
-            while (position < size) {
-                byte[] body = readBody(channel, position, size);
-                long next = position + SegmentCipher.LENGTH_BYTES + body.length;
-                boolean last = next == size;
-                byte[] plain = cipher.openWithPrefix(aes, prefix, index, last, body);
-                if (last) {
-                    if (plain.length != 0) {
-                        throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
-                    }
-                } else {
-                    digest.update(plain, 0, plain.length);
-                    plainBytes += plain.length;
-                }
-                position = next;
-                index++;
-            }
             if (size == 0) {
                 throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
             }
-            return new Content(plainBytes, Sha256.of(digest.finish()));
+            long[] plainBytesHolder = new long[1];
+            String hex = Sha256Hex.stream(sink -> {
+                long position = 0;
+                long index = 0;
+                long plainBytes = 0;
+                while (position < size) {
+                    byte[] body = readBody(channel, position, size);
+                    long next = position + SegmentCipher.LENGTH_BYTES + body.length;
+                    boolean last = next == size;
+                    byte[] plain = cipher.openWithPrefix(aes, prefix, index, last, body);
+                    if (last) {
+                        if (plain.length != 0) {
+                            throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
+                        }
+                    } else {
+                        sink.update(plain, 0, plain.length);
+                        plainBytes += plain.length;
+                    }
+                    position = next;
+                    index++;
+                }
+                plainBytesHolder[0] = plainBytes;
+            });
+            return new Content(plainBytesHolder[0], Sha256.of(hex));
         } catch (IOException failure) {
             throw failed(failure);
         }

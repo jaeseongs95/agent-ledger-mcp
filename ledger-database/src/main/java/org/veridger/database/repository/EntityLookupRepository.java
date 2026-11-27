@@ -44,23 +44,54 @@ public class EntityLookupRepository {
     /**
      * Exact case-sensitive lookup across issues, specifications, tasks, and milestone criteria in chunked SQL queries.
      */
+    private static final String FIND_ANY_VARCHAR = "SELECT 'ISSUE' AS entity, id, project_id, status AS state, version, merged_into "
+            + "FROM issue WHERE id IN (:ids) "
+            + "UNION ALL "
+            + "SELECT 'SPEC' AS entity, id, project_id, status AS state, version, CAST(NULL AS VARCHAR(120)) AS merged_into "
+            + "FROM spec WHERE id IN (:ids) "
+            + "UNION ALL "
+            + "SELECT 'TASK' AS entity, id, project_id, state, version, CAST(NULL AS VARCHAR(120)) AS merged_into "
+            + "FROM task WHERE id IN (:ids) "
+            + "UNION ALL "
+            + "SELECT 'CRITERION' AS entity, id, project_id, state, version, CAST(NULL AS VARCHAR(120)) AS merged_into "
+            + "FROM milestone_criterion WHERE id IN (:ids)";
+    private static final String FIND_ANY_CHAR = "SELECT 'ISSUE' AS entity, id, project_id, status AS state, version, merged_into "
+            + "FROM issue WHERE id IN (:ids) "
+            + "UNION ALL "
+            + "SELECT 'SPEC' AS entity, id, project_id, status AS state, version, CAST(NULL AS CHAR(120)) AS merged_into "
+            + "FROM spec WHERE id IN (:ids) "
+            + "UNION ALL "
+            + "SELECT 'TASK' AS entity, id, project_id, state, version, CAST(NULL AS CHAR(120)) AS merged_into "
+            + "FROM task WHERE id IN (:ids) "
+            + "UNION ALL "
+            + "SELECT 'CRITERION' AS entity, id, project_id, state, version, CAST(NULL AS CHAR(120)) AS merged_into "
+            + "FROM milestone_criterion WHERE id IN (:ids)";
+    private static final String FIND_ANY_VARCHAR2 = "SELECT 'ISSUE' AS entity, id, project_id, status AS state, version, merged_into "
+            + "FROM issue WHERE id IN (:ids) "
+            + "UNION ALL "
+            + "SELECT 'SPEC' AS entity, id, project_id, status AS state, version, CAST(NULL AS VARCHAR2(120)) AS merged_into "
+            + "FROM spec WHERE id IN (:ids) "
+            + "UNION ALL "
+            + "SELECT 'TASK' AS entity, id, project_id, state, version, CAST(NULL AS VARCHAR2(120)) AS merged_into "
+            + "FROM task WHERE id IN (:ids) "
+            + "UNION ALL "
+            + "SELECT 'CRITERION' AS entity, id, project_id, state, version, CAST(NULL AS VARCHAR2(120)) AS merged_into "
+            + "FROM milestone_criterion WHERE id IN (:ids)";
+
     public List<TypedFound> findAny(Collection<String> ids) {
         if (ids == null || ids.isEmpty()) {
             return List.of();
         }
         Set<String> asked = new HashSet<>(ids);
-        String nullMerged = sqlBuilder.nullText(120);
-        String sql = "SELECT 'ISSUE' AS entity, id, project_id, status AS state, version, merged_into "
-                + "FROM issue WHERE id IN (:ids) "
-                + "UNION ALL "
-                + "SELECT 'SPEC' AS entity, id, project_id, status AS state, version, " + nullMerged + " AS merged_into "
-                + "FROM spec WHERE id IN (:ids) "
-                + "UNION ALL "
-                + "SELECT 'TASK' AS entity, id, project_id, state, version, " + nullMerged + " AS merged_into "
-                + "FROM task WHERE id IN (:ids) "
-                + "UNION ALL "
-                + "SELECT 'CRITERION' AS entity, id, project_id, state, version, " + nullMerged + " AS merged_into "
-                + "FROM milestone_criterion WHERE id IN (:ids)";
+        String nullText = sqlBuilder.nullText(120);
+        String sql;
+        if ("CAST(NULL AS CHAR(120))".equals(nullText)) {
+            sql = FIND_ANY_CHAR;
+        } else if ("CAST(NULL AS VARCHAR2(120))".equals(nullText)) {
+            sql = FIND_ANY_VARCHAR2;
+        } else {
+            sql = FIND_ANY_VARCHAR;
+        }
         List<TypedFound> out = new ArrayList<>();
         for (List<String> chunk : chunks(ids)) {
             jdbc.sql(sql)

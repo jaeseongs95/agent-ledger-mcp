@@ -665,7 +665,9 @@ class SchemaMigratorTest {
     void sch010_theApplicationStartsOnAnUpToDateSchema() {
         Path two = files(Map.of("V1__one.sql", ONE, "V2__two.sql", TWO));
         migrator(two).migrate();
-        startApplication(two).close();
+        try (var context = startApplication(two)) {
+            assertThat(context.isActive()).isTrue();
+        }
     }
 
     @Test

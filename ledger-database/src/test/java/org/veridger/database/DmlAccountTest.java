@@ -3,6 +3,7 @@
 package org.veridger.database;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import javax.sql.DataSource;
@@ -194,8 +195,8 @@ class DmlAccountTest {
 
     @ParameterizedTest
     @MethodSource("statementsTheApplicationAccountMayRun")
-    void repo023_theApplicationAccountMayAppendToTheHistoryAndReadTheSchemaHistory(String sql) throws Exception {
-        allowed(shared().app(), sql);
+    void repo023_theApplicationAccountMayAppendToTheHistoryAndReadTheSchemaHistory(String sql) {
+        assertThatCode(() -> allowed(shared().app(), sql)).doesNotThrowAnyException();
     }
 
     @ParameterizedTest

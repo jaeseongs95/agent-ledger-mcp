@@ -149,6 +149,19 @@ class SecurityHardeningTest {
         }
     }
 
+    @Test
+    @DisplayName("SEC-MCP-06: cookie-less POST /mcp without Bearer is 401, while cookie-bearing POST /mcp without CSRF token is 403")
+    void mcp06_csrfEnforcedWhenCookiesPresentAndBearerRequiredWithoutCookies(RawHttp http) throws IOException {
+        Reply anonNoCookie = http.initialize();
+        assertThat(anonNoCookie.status()).isEqualTo(401);
+
+        String body = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}";
+        String cookiePost = sendRawHttp("POST /mcp HTTP/1.1\r\nHost: 127.0.0.1:" + port
+                + "\r\nCookie: ambient=1\r\nContent-Type: application/json\r\nContent-Length: "
+                + body.length() + "\r\nConnection: close\r\n\r\n" + body);
+        assertThat(cookiePost).startsWith("HTTP/1.1 403 ");
+    }
+
     private String sendRawHttp(String request) throws IOException {
         try (Socket socket = new Socket("127.0.0.1", port)) {
             socket.setSoTimeout(5000);

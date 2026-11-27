@@ -42,7 +42,7 @@ public class DriverDataSourceConfiguration {
     @Bean
     ApplicationAccountSettings applicationAccountSettings(ConfigurableEnvironment environment) {
         MutablePropertySources sources = new MutablePropertySources(environment.getPropertySources());
-        sources.remove(OwnerAccountPropertySource.NAME);
+        sources.remove(OwnerAccountPropertySource.SOURCE_NAME);
         // the attached view of the environment would show the owner account again (Boot names it "configurationProperties",
         // ConfigurationPropertySources.attach, the name itself is not public)
         sources.remove(ATTACHED_VIEW);

@@ -322,7 +322,7 @@ class DocsTest {
         while (matcher.find()) {
             options.add(matcher.group(1));
         }
-        options.addAll(RenderDeployCommand.OPTIONS);
+        options.addAll(RenderDeployCommand.OPTION_NAMES);
         return options.stream().distinct().sorted().toList();
     }
 

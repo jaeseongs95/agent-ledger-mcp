@@ -20,9 +20,9 @@ class ToolCallTest {
     @DisplayName("SVC-GATE-42 (TXA-05): the call is read from the scope as one of three variants, never as null: outside a tool call, a tool without a digest, a tool with its digest; a digest without a tool is outside a tool call")
     void gate42_currentIsOneOfThreeVariants() {
         assertThat(ToolCall.current()).isEqualTo(new ToolCall.Outside());
-        ScopedValue.where(ToolScope.CURRENT, TOOL)
+        ScopedValue.where(ToolScope.TOOL_NAME, TOOL)
                 .run(() -> assertThat(ToolCall.current()).isEqualTo(new ToolCall.Named(TOOL)));
-        ScopedValue.where(ToolScope.CURRENT, TOOL).where(ToolScope.ARGUMENTS_DIGEST, DIGEST)
+        ScopedValue.where(ToolScope.TOOL_NAME, TOOL).where(ToolScope.ARGUMENTS_DIGEST, DIGEST)
                 .run(() -> assertThat(ToolCall.current()).isEqualTo(new ToolCall.Digested(TOOL, DIGEST)));
         ScopedValue.where(ToolScope.ARGUMENTS_DIGEST, DIGEST)
                 .run(() -> assertThat(ToolCall.current()).isEqualTo(new ToolCall.Outside()));

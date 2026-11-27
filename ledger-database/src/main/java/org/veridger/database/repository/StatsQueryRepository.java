@@ -24,91 +24,106 @@ public class StatsQueryRepository {
     }
 
     public Map<String, Long> issuesByStatus(ProjectId project) {
-        return counts("issue", "status", project);
+        return counts(
+                "SELECT status AS bucket, COUNT(*) AS n FROM issue GROUP BY status ORDER BY status",
+                "SELECT status AS bucket, COUNT(*) AS n FROM issue WHERE project_id = :project GROUP BY status ORDER BY status",
+                project);
     }
 
     public Map<String, Long> issuesBySeverity(ProjectId project) {
-        return counts("issue", "severity", project);
+        return counts(
+                "SELECT severity AS bucket, COUNT(*) AS n FROM issue GROUP BY severity ORDER BY severity",
+                "SELECT severity AS bucket, COUNT(*) AS n FROM issue WHERE project_id = :project GROUP BY severity ORDER BY severity",
+                project);
     }
 
     public Map<String, Long> specsByStatus(ProjectId project) {
-        return counts("spec", "status", project);
+        return counts(
+                "SELECT status AS bucket, COUNT(*) AS n FROM spec GROUP BY status ORDER BY status",
+                "SELECT status AS bucket, COUNT(*) AS n FROM spec WHERE project_id = :project GROUP BY status ORDER BY status",
+                project);
     }
 
     public Map<String, Long> tasksByState(ProjectId project) {
-        return counts("task", "state", project);
+        return counts(
+                "SELECT state AS bucket, COUNT(*) AS n FROM task GROUP BY state ORDER BY state",
+                "SELECT state AS bucket, COUNT(*) AS n FROM task WHERE project_id = :project GROUP BY state ORDER BY state",
+                project);
     }
 
     public Map<String, Long> criteriaByState(ProjectId project) {
-        return counts("milestone_criterion", "state", project);
+        return counts(
+                "SELECT state AS bucket, COUNT(*) AS n FROM milestone_criterion GROUP BY state ORDER BY state",
+                "SELECT state AS bucket, COUNT(*) AS n FROM milestone_criterion WHERE project_id = :project GROUP BY state ORDER BY state",
+                project);
     }
 
     /** New issues per UTC day, oldest day first. */
     public Map<LocalDate, Long> issuesCreatedPerDay(ProjectId project) {
-        return perDay("issue", project);
+        return perDay(
+                "SELECT CAST(created_at AS DATE) AS bucket, COUNT(*) AS n FROM issue GROUP BY CAST(created_at AS DATE) ORDER BY CAST(created_at AS DATE)",
+                "SELECT CAST(created_at AS DATE) AS bucket, COUNT(*) AS n FROM issue WHERE project_id = :project GROUP BY CAST(created_at AS DATE) ORDER BY CAST(created_at AS DATE)",
+                project);
     }
 
     /** New specs per UTC day, oldest day first. */
     public Map<LocalDate, Long> specsCreatedPerDay(ProjectId project) {
-        return perDay("spec", project);
+        return perDay(
+                "SELECT CAST(created_at AS DATE) AS bucket, COUNT(*) AS n FROM spec GROUP BY CAST(created_at AS DATE) ORDER BY CAST(created_at AS DATE)",
+                "SELECT CAST(created_at AS DATE) AS bucket, COUNT(*) AS n FROM spec WHERE project_id = :project GROUP BY CAST(created_at AS DATE) ORDER BY CAST(created_at AS DATE)",
+                project);
     }
 
     /** New tasks per UTC day, oldest day first. */
     public Map<LocalDate, Long> tasksCreatedPerDay(ProjectId project) {
-        return perDay("task", project);
+        return perDay(
+                "SELECT CAST(created_at AS DATE) AS bucket, COUNT(*) AS n FROM task GROUP BY CAST(created_at AS DATE) ORDER BY CAST(created_at AS DATE)",
+                "SELECT CAST(created_at AS DATE) AS bucket, COUNT(*) AS n FROM task WHERE project_id = :project GROUP BY CAST(created_at AS DATE) ORDER BY CAST(created_at AS DATE)",
+                project);
     }
 
     /** Single-table issue count for a project (or the whole ledger when {@code project} is null). */
     public long countIssues(ProjectId project) {
-        return countTable("issue", project);
+        return countTable("SELECT COUNT(*) FROM issue", "SELECT COUNT(*) FROM issue WHERE project_id = :project", project);
     }
 
     /** Single-table spec count for a project (or the whole ledger when {@code project} is null). */
     public long countSpecs(ProjectId project) {
-        return countTable("spec", project);
+        return countTable("SELECT COUNT(*) FROM spec", "SELECT COUNT(*) FROM spec WHERE project_id = :project", project);
     }
 
     /** Single-table task count for a project (or the whole ledger when {@code project} is null). */
     public long countTasks(ProjectId project) {
-        return countTable("task", project);
+        return countTable("SELECT COUNT(*) FROM task", "SELECT COUNT(*) FROM task WHERE project_id = :project", project);
     }
 
     /** Single-table milestone criterion count for a project (or the whole ledger when {@code project} is null). */
     public long countCriteria(ProjectId project) {
-        return countTable("milestone_criterion", project);
+        return countTable("SELECT COUNT(*) FROM milestone_criterion",
+                "SELECT COUNT(*) FROM milestone_criterion WHERE project_id = :project", project);
     }
 
-    private long countTable(String table, ProjectId project) {
-        String sql = "SELECT COUNT(*) FROM " + table + (project == null ? "" : " WHERE project_id = :project");
-        JdbcClient.StatementSpec spec = jdbc.sql(sql);
-        if (project != null) {
-            spec = spec.param("project", project.value());
-        }
+    private long countTable(String allSql, String byProjectSql, ProjectId project) {
+        JdbcClient.StatementSpec spec = project == null
+                ? jdbc.sql(allSql)
+                : jdbc.sql(byProjectSql).param("project", project.value());
         return spec.query(Long.class).single();
     }
 
-    private Map<String, Long> counts(String table, String column, ProjectId project) {
-        String sql = "SELECT " + column + " AS bucket, COUNT(*) AS n FROM " + table
-                + (project == null ? "" : " WHERE project_id = :project") + " GROUP BY " + column + " ORDER BY "
-                + column;
-        JdbcClient.StatementSpec spec = jdbc.sql(sql);
-        if (project != null) {
-            spec = spec.param("project", project.value());
-        }
+    private Map<String, Long> counts(String allSql, String byProjectSql, ProjectId project) {
+        JdbcClient.StatementSpec spec = project == null
+                ? jdbc.sql(allSql)
+                : jdbc.sql(byProjectSql).param("project", project.value());
         Map<String, Long> counts = new LinkedHashMap<>();
         spec.query((rs, n) -> Map.entry(rs.getString("bucket"), rs.getLong("n"))).list()
                 .forEach(e -> counts.put(e.getKey(), e.getValue()));
         return counts;
     }
 
-    private Map<LocalDate, Long> perDay(String table, ProjectId project) {
-        String sql = "SELECT CAST(created_at AS DATE) AS bucket, COUNT(*) AS n FROM " + table
-                + (project == null ? "" : " WHERE project_id = :project")
-                + " GROUP BY CAST(created_at AS DATE) ORDER BY CAST(created_at AS DATE)";
-        JdbcClient.StatementSpec spec = jdbc.sql(sql);
-        if (project != null) {
-            spec = spec.param("project", project.value());
-        }
+    private Map<LocalDate, Long> perDay(String allSql, String byProjectSql, ProjectId project) {
+        JdbcClient.StatementSpec spec = project == null
+                ? jdbc.sql(allSql)
+                : jdbc.sql(byProjectSql).param("project", project.value());
         Map<LocalDate, Long> counts = new LinkedHashMap<>();
         spec.query((rs, n) -> Map.entry(rs.getObject("bucket", LocalDate.class), rs.getLong("n"))).list()
                 .forEach(e -> counts.put(e.getKey(), e.getValue()));

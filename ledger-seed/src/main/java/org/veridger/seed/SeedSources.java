@@ -21,14 +21,14 @@ import java.util.regex.Pattern;
  * <li>{@value #CATEGORIES}: tab separated, a header line and one line per code: {@code code}, the Korean and the English name,
  * the Korean and the English description. The sort order is the position in the file (10, 20, ...), the group is
  * {@code ISSUE_CATEGORY}, the state {@code ACTIVE}.</li>
- * <li>{@value #DEFAULTS}: {@code name=value} lines, {@code #} starts a comment line; the defaults of the installation (the
+ * <li>{@value #DEFAULTS_FILE}: {@code name=value} lines, {@code #} starts a comment line; the defaults of the installation (the
  * instance name, the ports).</li>
  * </ul>
  */
 public final class SeedSources {
 
     public static final String CATEGORIES = "issue-categories.tsv";
-    public static final String DEFAULTS = "install-defaults.properties";
+    public static final String DEFAULTS_FILE = "install-defaults.properties";
 
     /** The distance between two sort orders, so that the owner can put a code between two of the seed. */
     static final int SORT_STEP = 10;

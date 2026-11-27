@@ -24,7 +24,7 @@ class ToolScopeTest {
     @Test
     @DisplayName("W7-TS-01 inside a tool call with a tool and a digest both are present")
     void insideACall() {
-        ScopedValue.where(ToolScope.CURRENT, "ledger_save").where(ToolScope.ARGUMENTS_DIGEST, DIGEST).run(() -> {
+        ScopedValue.where(ToolScope.TOOL_NAME, "ledger_save").where(ToolScope.ARGUMENTS_DIGEST, DIGEST).run(() -> {
             assertThat(ToolScope.current()).contains("ledger_save");
             assertThat(ToolScope.argumentsDigest()).contains(DIGEST);
         });
@@ -33,7 +33,7 @@ class ToolScopeTest {
     @Test
     @DisplayName("W7-TS-01 inside a tool call whose arguments have no digest (a call without attestation) the tool is present and the digest is empty")
     void aCallWithoutADigest() {
-        ScopedValue.where(ToolScope.CURRENT, "ledger_save").where(ToolScope.ARGUMENTS_DIGEST, (String) null).run(() -> {
+        ScopedValue.where(ToolScope.TOOL_NAME, "ledger_save").where(ToolScope.ARGUMENTS_DIGEST, (String) null).run(() -> {
             assertThat(ToolScope.current()).contains("ledger_save");
             assertThat(ToolScope.argumentsDigest()).isEmpty();
         });

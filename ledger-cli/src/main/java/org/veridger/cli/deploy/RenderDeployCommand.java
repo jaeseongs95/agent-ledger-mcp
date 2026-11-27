@@ -32,7 +32,7 @@ import org.springframework.stereotype.Component;
 public class RenderDeployCommand implements Command {
 
     /** The options of the command; the documentation test reads this set, so an option cannot be added undocumented. */
-    public static final Set<String> OPTIONS = DeployOptions.NAMES;
+    public static final Set<String> OPTION_NAMES = DeployOptions.NAMES;
 
     private final DeployInputReader inputs;
     private final DeployRenderer renderer;
@@ -58,7 +58,7 @@ public class RenderDeployCommand implements Command {
 
     @Override
     public Set<String> options() {
-        return OPTIONS;
+        return OPTION_NAMES;
     }
 
     @Override

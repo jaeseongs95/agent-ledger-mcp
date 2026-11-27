@@ -114,8 +114,9 @@ public sealed interface FileProtection
                 Set.copyOf(PosixFilePermissions.fromString("rwx------"));
         public static final Set<PosixFilePermission> FILE_MODE =
                 Set.copyOf(PosixFilePermissions.fromString("rw-------"));
-        public static final Set<PosixFilePermission> GROUP_AND_OTHERS =
-                Set.copyOf(PosixFilePermissions.fromString("---rwxrwx"));
+        public static final Set<PosixFilePermission> GROUP_AND_OTHERS = Set.of(
+                PosixFilePermission.GROUP_READ, PosixFilePermission.GROUP_WRITE, PosixFilePermission.GROUP_EXECUTE,
+                PosixFilePermission.OTHERS_READ, PosixFilePermission.OTHERS_WRITE, PosixFilePermission.OTHERS_EXECUTE);
 
         @Override
         public FileAttribute<?>[] directoryAttributes() {

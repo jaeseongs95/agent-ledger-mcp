@@ -10,7 +10,7 @@ import java.util.Optional;
  * attestation was signed for. Outside a tool call they are unbound, which the gate treats as a mismatch.
  *
  * <ul>
- * <li>{@link #CURRENT}: the wire name of the tool (for example {@code ledger_save}).
+ * <li>{@link #TOOL_NAME}: the wire name of the tool (for example {@code ledger_save}).
  * <li>{@link #ARGUMENTS_DIGEST}: the digest of the arguments of the call as the server received them (64 lower-case hex
  *     characters, computed by the tool binding with the class that the client hook signs with), so a token that was
  *     signed for other arguments, or for a batch with other operations, is refused.
@@ -18,7 +18,7 @@ import java.util.Optional;
  */
 public final class ToolScope {
 
-    public static final ScopedValue<String> CURRENT = ScopedValue.newInstance();
+    public static final ScopedValue<String> TOOL_NAME = ScopedValue.newInstance();
 
     public static final ScopedValue<String> ARGUMENTS_DIGEST = ScopedValue.newInstance();
 
@@ -27,7 +27,7 @@ public final class ToolScope {
 
     /** The name of the tool being called; empty outside a tool call. */
     public static Optional<String> current() {
-        return CURRENT.isBound() ? Optional.ofNullable(CURRENT.get()) : Optional.empty();
+        return TOOL_NAME.isBound() ? Optional.ofNullable(TOOL_NAME.get()) : Optional.empty();
     }
 
     /**

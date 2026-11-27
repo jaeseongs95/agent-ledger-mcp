@@ -114,8 +114,9 @@ class CatalogChangeTest {
         session.drainListChanges(THREE_POLLS);
         session.awaitNoListChange(THREE_POLLS);
 
-        session.ok("ledger_issue_save", Calls.IssueSave.create(scenario.projectId(), "a write", Scenario.AUTHOR),
-                WriteOutputs.Saved.class);
+        WriteOutputs.Saved saved = session.ok("ledger_issue_save",
+                Calls.IssueSave.create(scenario.projectId(), "a write", Scenario.AUTHOR), WriteOutputs.Saved.class);
+        assertThat(saved.version()).isEqualTo(1L);
 
         session.awaitNoListChange(THREE_POLLS);
     }

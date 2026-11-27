@@ -48,7 +48,7 @@ public class PrepareHostCommand implements Command {
     static final String DRIVER_JAR = "driver-jar";
 
     /** The options of the command; the documentation test reads this set, so an option cannot be added undocumented. */
-    public static final Set<String> OPTIONS = optionNames();
+    public static final Set<String> OPTION_NAMES = optionNames();
 
     private final DeployInputReader inputs;
     private final DeployRenderer renderer;
@@ -80,7 +80,7 @@ public class PrepareHostCommand implements Command {
 
     @Override
     public Set<String> options() {
-        return OPTIONS;
+        return OPTION_NAMES;
     }
 
     @Override

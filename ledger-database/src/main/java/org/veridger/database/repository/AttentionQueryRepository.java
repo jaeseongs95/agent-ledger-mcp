@@ -109,8 +109,7 @@ public class AttentionQueryRepository {
         boolean hasProject = project != null;
         Map<AttentionKind, BoundedCount> result = new EnumMap<>(AttentionKind.class);
         for (AttentionKind kind : AttentionKind.values()) {
-            String inner = sqlBuilder.applyLimit(AttentionSql.idsBranch(kind, hasProject) + " ORDER BY id", ":row_count");
-            JdbcClient.StatementSpec spec = jdbc.sql("SELECT COUNT(*) FROM (" + inner + ") c")
+            JdbcClient.StatementSpec spec = jdbc.sql(AttentionSql.countLimited(sqlBuilder, kind, hasProject))
                     .param("row_count", cap + 1);
             if (hasProject) {
                 spec = spec.param("project", project.value());

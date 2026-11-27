@@ -161,13 +161,13 @@ class OwnerAccountPropertySourceTest {
             StandardEnvironment piped = new StandardEnvironment();
             piped.getPropertySources().addFirst(new SimpleCommandLinePropertySource("--owner-account=ledger_ddl", "--stdin", command));
             processor.postProcessEnvironment(piped, null);
-            assertThat(piped.getPropertySources().get(OwnerAccountPropertySource.NAME).getSource())
+            assertThat(piped.getPropertySources().get(OwnerAccountPropertySource.SOURCE_NAME).getSource())
                     .as(command + " --stdin").isInstanceOf(StdinSecretInput.class);
 
             StandardEnvironment typed = new StandardEnvironment();
             typed.getPropertySources().addFirst(new SimpleCommandLinePropertySource("--owner-account=ledger_ddl", command));
             processor.postProcessEnvironment(typed, null);
-            assertThat(typed.getPropertySources().get(OwnerAccountPropertySource.NAME).getSource())
+            assertThat(typed.getPropertySources().get(OwnerAccountPropertySource.SOURCE_NAME).getSource())
                     .as(command + " without --stdin").isInstanceOf(ConsoleSecretInput.class);
         }
     }

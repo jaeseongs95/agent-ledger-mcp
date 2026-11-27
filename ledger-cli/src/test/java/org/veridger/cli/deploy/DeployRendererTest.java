@@ -160,7 +160,9 @@ class DeployRendererTest {
         assertThat(admin.getProperty("ledger.admin.driver-directory")).isEqualTo("/etc/veridger/drivers");
         assertThat(admin.getProperty("ledger.admin.mcp.health-url")).isEqualTo("http://127.0.0.1:8765/healthz");
         for (EnumerablePropertySource<?> settings : List.of(shared, mcp, admin)) {
-            assertThat(List.of(settings.getPropertyNames())).noneMatch(name -> name.matches("(?i).*(password|token|secret).*"));
+            assertThat(List.of(settings.getPropertyNames()))
+                    .map(name -> name.toLowerCase(Locale.ROOT))
+                    .noneMatch(name -> name.contains("password") || name.contains("token") || name.contains("secret"));
         }
     }
 
@@ -327,8 +329,12 @@ class DeployRendererTest {
         PropertyPlaceholderHelper helper = new PropertyPlaceholderHelper("${", "}", ":", null, true);
         String imported = helper.replacePlaceholders(properties.getProperty("spring.config.import"),
                 DeployRendererTest::linuxHost);
-        String unitImport = file(render(values()), MCP_UNIT).lines().filter(line -> line.startsWith("ExecStart="))
-                .findFirst().orElseThrow().replaceFirst(".*--spring\\.config\\.import=", "");
+        String execStart = file(render(values()), MCP_UNIT).lines().filter(line -> line.startsWith("ExecStart="))
+                .findFirst().orElseThrow();
+        String importFlag = "--spring.config.import=";
+        int importIndex = execStart.indexOf(importFlag);
+        assertThat(importIndex).isGreaterThanOrEqualTo(0);
+        String unitImport = execStart.substring(importIndex + importFlag.length());
 
         List<String> expected = List.of(unitImport.split(",")).stream().filter(source -> !source.endsWith("/mcp.yaml"))
                 .map(source -> source.startsWith("optional:") ? source : "optional:" + source).toList();

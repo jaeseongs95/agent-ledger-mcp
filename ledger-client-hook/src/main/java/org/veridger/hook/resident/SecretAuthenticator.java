@@ -15,13 +15,13 @@ import java.security.MessageDigest;
  */
 final class SecretAuthenticator extends BasicAuthenticator {
 
-    private static final String REALM = "ledger-client-hook";
+    private static final String AUTH_REALM = "ledger-client-hook";
     private static final String USER = "hook";
 
     private final byte[] secret;
 
     SecretAuthenticator(String secret) {
-        super(REALM);
+        super(AUTH_REALM);
         this.secret = secret.getBytes(StandardCharsets.UTF_8);
     }
 
