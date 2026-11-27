@@ -167,7 +167,29 @@ class GrantProjectTest {
                 Instant.parse("2030-01-01T00:00:00Z")));
         assertThat(whoami.authorFormatOk()).isTrue();
         assertThat(whoami.canVerifyLogin()).isFalse();
+        assertThat(whoami.login()).isEqualTo("ledger_author");
         assertThat(s.bean(WhoamiService.class).whoami(author, Channel.REVIEWER).canVerifyLogin()).isTrue();
+
+        // Live verify grant activates canVerifyLogin and reviewer login label; expiry or revoke reverts to false/ledger_author
+        s.bean(GrantService.class).grant(new GrantCommand(author, s.projectId(), List.of("verify"),
+                "2026-11-05T11:30:00Z", null), TestOwners.OWNER);
+        var withLiveVerify = s.bean(WhoamiService.class).whoami(author, Channel.AUTHOR);
+        assertThat(withLiveVerify.canVerifyLogin()).isTrue();
+        assertThat(withLiveVerify.login()).isEqualTo("ledger_reviewer");
+
+        s.ctx().clock().set(Instant.parse("2026-11-05T12:00:00Z"));
+        var withExpiredVerify = s.bean(WhoamiService.class).whoami(author, Channel.AUTHOR);
+        assertThat(withExpiredVerify.canVerifyLogin()).isFalse();
+        assertThat(withExpiredVerify.login()).isEqualTo("ledger_author");
+
+        s.bean(GrantService.class).grant(new GrantCommand(author, s.projectId(), List.of("verify"),
+                "2030-01-01T00:00:00Z", null), TestOwners.OWNER);
+        assertThat(s.bean(WhoamiService.class).whoami(author, Channel.AUTHOR).canVerifyLogin()).isTrue();
+
+        s.bean(GrantService.class).revoke(new RevokeCommand(author, s.projectId(), "verify"), TestOwners.OWNER);
+        var afterRevoke = s.bean(WhoamiService.class).whoami(author, Channel.AUTHOR);
+        assertThat(afterRevoke.canVerifyLogin()).isFalse();
+        assertThat(afterRevoke.login()).isEqualTo("ledger_author");
     }
 
     @Test

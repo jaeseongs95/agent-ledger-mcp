@@ -10,6 +10,7 @@ import org.veridger.application.gate.ToolCall;
 import org.veridger.database.repository.GrantStateRepository;
 import org.veridger.domain.model.SessionGrant;
 import org.veridger.domain.rule.Channel;
+import org.veridger.domain.rule.Scope;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,7 +23,11 @@ public class WhoamiService {
     public record GrantView(String project, String scope, Instant expiresAt) {
     }
 
-    /** The author, whether its format is valid, whether the channel can verify, the login and the live grants. */
+    /**
+     * The author, whether its format is valid, whether this caller can perform reviewer verifications (either via the
+     * reviewer channel or by holding any live {@link Scope#VERIFY} grant on the unified MCP connection), the resolved
+     * login label, and the live grants.
+     */
     public record Whoami(String author, boolean authorFormatOk, boolean canVerifyLogin, String login,
             List<GrantView> grants) {
 
@@ -52,7 +57,10 @@ public class WhoamiService {
             case McpCallerResolver.Proof.Proven proven -> {
                 List<GrantView> live = grants.findLive(proven.author(), clock.instant()).stream()
                         .map(WhoamiService::view).toList();
-                yield new Whoami(proven.author().value(), true, channel.mayVerify(), channel.login(), live);
+                boolean canVerify = channel.mayVerify()
+                        || live.stream().anyMatch(grant -> Scope.VERIFY.token().equals(grant.scope()));
+                String login = canVerify ? Channel.REVIEWER.login() : channel.login();
+                yield new Whoami(proven.author().value(), true, canVerify, login, live);
             }
         };
     }
