@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.support.MessageSourceAccessor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -36,12 +37,26 @@ public class McpHttpExceptionAdvice extends ResponseEntityExceptionHandler {
         this.ids = ids;
     }
 
-    /** The body is larger than the limit: 413 with the code {@code PAYLOAD_TOO_LARGE}. */
+    /** The body is larger than the limit: 413 with {@code application/problem+json} and code {@code PAYLOAD_TOO_LARGE}. */
     @ExceptionHandler(RequestTooLargeException.class)
-    ResponseEntity<Object> tooLarge(RequestTooLargeException failure, WebRequest request) {
+    ResponseEntity<Object> tooLarge(RequestTooLargeException failure) {
         HttpStatus status = HttpStatus.CONTENT_TOO_LARGE;
-        return handleExceptionInternal(failure, problem(status, McpHttpCode.PAYLOAD_TOO_LARGE), new HttpHeaders(), status,
-                request);
+        return ResponseEntity.status(status).contentType(MediaType.APPLICATION_PROBLEM_JSON)
+                .body(problem(status, McpHttpCode.PAYLOAD_TOO_LARGE));
+    }
+
+    /** Standard Spring MVC errors (e.g. 415 from RequestSizeFilter) also render as {@code application/problem+json} even when the caller sent {@code Accept: text/event-stream}. */
+    @Override
+    protected ResponseEntity<Object> handleExceptionInternal(Exception failure, Object body, HttpHeaders headers,
+            HttpStatusCode status, WebRequest request) {
+        ResponseEntity<Object> response = super.handleExceptionInternal(failure, body, headers, status, request);
+        if (response != null && response.getBody() instanceof ProblemDetail problem) {
+            HttpHeaders updated = new HttpHeaders();
+            updated.putAll(response.getHeaders());
+            updated.setContentType(MediaType.APPLICATION_PROBLEM_JSON);
+            return new ResponseEntity<>(problem, updated, response.getStatusCode());
+        }
+        return response;
     }
 
     /** The boundary: anything unexpected is logged with its cause and answered without any internal detail. */

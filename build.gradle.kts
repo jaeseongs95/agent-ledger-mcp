@@ -10,17 +10,24 @@ import org.gradle.process.CommandLineArgumentProvider
 
 plugins {
     base
+    jacoco
     alias(libs.plugins.spotless)
     alias(libs.plugins.license.report)
+    alias(libs.plugins.sonarqube)
+    alias(libs.plugins.pitest) apply false
 }
 
 group = "org.veridger"
-version = "4.3.0"
+version = "4.3.1"
 
 spotless {
     java {
         target("*/src/**/*.java")
         licenseHeader("// SPDX-License-Identifier: AGPL-3.0-or-later\n\n", "package ")
+    }
+    format("windowsBatch") {
+        target("deploy/*.cmd")
+        lineEndings = com.diffplug.spotless.LineEnding.WINDOWS
     }
 }
 
@@ -33,8 +40,58 @@ licenseReport {
     allowedLicensesFile = layout.projectDirectory.file("docs/allowed-licenses.json").asFile
 }
 
+val aggregatedJacocoXml = layout.buildDirectory.file("reports/jacoco/jacocoAggregateReport/jacocoAggregateReport.xml")
+
+sonar {
+    properties {
+        property("sonar.projectKey", "veridger")
+        property("sonar.projectName", "veridger")
+        property(
+            "sonar.host.url",
+            providers.environmentVariable("SONAR_HOST_URL").orNull?.trim()?.takeIf { it.isNotEmpty() }
+                ?: "https://sonar.jaeseong.dev",
+        )
+        property("sonar.verbose", "false")
+        property("sonar.log.level", "INFO")
+        providers.gradleProperty("sonar.token-file").orNull?.let { path ->
+            val tokenFile = file(path)
+            require(tokenFile.isFile) { "sonar.token-file does not exist: $path" }
+            val token = tokenFile.readText(Charsets.UTF_8).lineSequence().firstOrNull()?.trim().orEmpty()
+            require(token.isNotEmpty()) { "sonar.token-file is empty: $path" }
+            property("sonar.token", token)
+        }
+    }
+}
+
+val javaSourceSubprojects = subprojects.filter { it.file("src/main/java").isDirectory }
+val jacocoAggregateReport = tasks.register<JacocoReport>("jacocoAggregateReport") {
+    group = "verification"
+    description = "Generates an aggregated JaCoCo XML coverage report across all subproject test suites (including serverTest and cross-module integration tests)."
+    dependsOn(javaSourceSubprojects.map { it.tasks.matching { t -> t.name == "classes" } })
+    mustRunAfter(subprojects.map { it.tasks.withType<Test>() })
+    executionData.from(
+        subprojects.map { it.layout.buildDirectory.asFileTree.matching { include("jacoco/*.exec") } },
+        layout.buildDirectory.asFileTree.matching { include("jacoco-ci/**/*.exec") },
+    )
+    sourceDirectories.from(javaSourceSubprojects.map { it.layout.projectDirectory.dir("src/main/java") })
+    classDirectories.from(javaSourceSubprojects.map { it.layout.buildDirectory.dir("classes/java/main") })
+    reports {
+        xml.required = true
+        xml.outputLocation = aggregatedJacocoXml
+        html.required = false
+    }
+}
+
 tasks.matching { it.name in setOf("generateLicenseReport", "checkLicense", "checkLicensePreparation") }.configureEach {
     notCompatibleWithConfigurationCache("dependency-license-report 3.1.5 tasks retain Project references")
+}
+allprojects {
+    tasks.matching { it.name in setOf("sonar", "sonarqube", "sonarResolver") }.configureEach {
+        notCompatibleWithConfigurationCache("SonarQube token and classpath resolver must not be serialized into the configuration cache")
+    }
+}
+tasks.matching { it.name in setOf("sonar", "sonarqube") }.configureEach {
+    dependsOn(subprojects.map { it.tasks.matching { t -> t.name in setOf("classes", "testClasses") } })
 }
 
 abstract class VerifyThirdPartyNotices : DefaultTask() {
@@ -84,6 +141,9 @@ val ledgerTestPasswordFiles = listOf(
 // build cache: the state of the database is an input that Gradle cannot see (docs/testing/TEST_CASES.md section 30, BLD-DB-01).
 val databaseModules = setOf("ledger-database", "ledger-application", "ledger-mcp-server", "ledger-admin-web", "ledger-cli",
     "ledger-migrate-1x", "ledger-system-test")
+
+// Core pure-Java modules verified with PIT (Pitest) mutation testing in addition to JaCoCo line/branch coverage.
+val pitestModules = setOf("ledger-domain", "ledger-attestation", "ledger-files", "ledger-seed", "ledger-hook-client")
 
 // The one test database is a shared external resource: each test JVM opens up to 10 connections to its role, which has a
 // connection limit. With parallel execution on, the test tasks of the database modules must not run at the same time (docs/testing/
@@ -159,9 +219,45 @@ abstract class JarPathProperty : CommandLineArgumentProvider {
 
 subprojects {
     apply(plugin = "java-library")
+    apply(plugin = "jacoco")
 
     group = "org.veridger"
-    version = "4.3.0"
+    version = "4.3.1"
+
+    tasks.withType<JacocoReport>().configureEach {
+        mustRunAfter(tasks.withType<Test>())
+        executionData.from(layout.buildDirectory.asFileTree.matching { include("jacoco/*.exec") })
+        reports {
+            xml.required = true
+            html.required = false
+        }
+    }
+
+    if (file("src/main/java").isDirectory) {
+        sonar {
+            properties {
+                property("sonar.coverage.jacoco.xmlReportPaths", aggregatedJacocoXml.get().asFile.absolutePath)
+            }
+        }
+    }
+
+    if (project.name in pitestModules) {
+        apply(plugin = "info.solidsoft.pitest")
+        extensions.configure<info.solidsoft.gradle.pitest.PitestPluginExtension> {
+            pitestVersion.set(rootProject.libs.versions.pitest.get())
+            junit5PluginVersion.set(rootProject.libs.versions.pitestJunit5.get())
+            targetClasses.set(setOf("org.veridger.*"))
+            targetTests.set(setOf("org.veridger.*Test"))
+            threads.set(2)
+            outputFormats.set(setOf("XML", "HTML"))
+            timestampedReports.set(false)
+            jvmArgs.set(listOf("-Duser.timezone=UTC", "-Dfile.encoding=UTF-8"))
+            failWhenNoMutations.set(false)
+        }
+        tasks.matching { it.name == "pitest" }.configureEach {
+            notCompatibleWithConfigurationCache("PIT mutation testing executes dynamic mutant runs")
+        }
+    }
 
     val projectName = project.name
     val usesDatabase = projectName in databaseModules

@@ -24,6 +24,7 @@ public record Paging(int limit, int number, String previousHref, String nextHref
 
     public static final int DEFAULT_LIMIT = 50;
     public static final int MAX_LIMIT = 100;
+    public static final int MAX_TRAIL = 200;
     private static final String FIRST_PAGE = "-";
 
     /** The page size choices of the page-size select. */
@@ -53,8 +54,10 @@ public record Paging(int limit, int number, String previousHref, String nextHref
     public static Paging of(String path, Map<String, String> filters, Integer limit, String cursor, String back,
             String nextCursor) {
         int size = limitOf(limit);
-        List<String> trail = StringUtils.hasText(back)
+        List<String> rawTrail = StringUtils.hasText(back)
                 ? List.of(StringUtils.commaDelimitedListToStringArray(back)) : List.of();
+        List<String> trail = rawTrail.size() > MAX_TRAIL
+                ? rawTrail.subList(rawTrail.size() - MAX_TRAIL, rawTrail.size()) : rawTrail;
         boolean first = !StringUtils.hasText(cursor);
         String previousHref = null;
         if (!first) {
@@ -66,6 +69,9 @@ public record Paging(int limit, int number, String previousHref, String nextHref
         if (nextCursor != null) {
             List<String> after = new ArrayList<>(trail);
             after.add(first ? FIRST_PAGE : cursor);
+            if (after.size() > MAX_TRAIL) {
+                after = after.subList(after.size() - MAX_TRAIL, after.size());
+            }
             nextHref = href(path, filters, size, nextCursor, after);
         }
         return new Paging(size, first ? 1 : trail.size() + 1, previousHref, nextHref);

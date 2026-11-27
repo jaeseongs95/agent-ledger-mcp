@@ -114,9 +114,9 @@ public final class ToolBinding {
     }
 
     /**
-     * Binds the arguments and calls the tool. The name of the tool and the digest of the arguments are bound to
-     * {@link ToolScope} for the call, which is how the write gate learns which tool and which arguments the author
-     * attestation of the call has to be signed for.
+     * Binds the arguments and calls the tool. The tool name and the RFC 8785 digest of the raw arguments are bound to
+     * {@link ToolScope} for the call (v4.x authenticates callers via the host-stamped {@code <vendor>:<session-id>}
+     * {@code _hostAttestation} value, while the canonical arguments digest remains available in scope for diagnostics).
      *
      * @throws ValidationException when the arguments do not fit the tool
      */
@@ -146,17 +146,15 @@ public final class ToolBinding {
             throw new ValidationException(ValidationCode.VALIDATION_FAILED, List.of(issues.getFirst().path()),
                     issues, Map.of(), causes.isEmpty() ? null : causes.getFirst());
         }
-        // the gate compares the tool and the arguments the author attestation was signed for with those of this call
-        return ScopedValue.where(ToolScope.CURRENT, name).where(ToolScope.ARGUMENTS_DIGEST, argumentsDigest(given))
+        // bind the current tool name and canonical arguments digest into ToolScope for downstream gate/diagnostics
+        return ScopedValue.where(ToolScope.TOOL_NAME, name).where(ToolScope.ARGUMENTS_DIGEST, argumentsDigest(given))
                 .call(() -> invoke(values));
     }
 
     /**
-     * The digest of the arguments exactly as they arrived ({@link ArgumentsDigest}: RFC 8785 canonical form, SHA-256,
-     * the same class the client hook signs with), so the attestation covers what was sent and nothing else: a captured
-     * token cannot carry other content (F1/F3). A call without {@code _hostAttestation} has nothing signed (the gate
-     * refuses it before it looks at a digest), and arguments that are no JSON (which the wire cannot carry) have none
-     * either: {@code null} equals no signed digest.
+     * Computes the RFC 8785 SHA-256 digest of the raw arguments when {@code _hostAttestation} is present. In v4.x,
+     * host attestation uses the host-stamped {@code <vendor>:<session-id>} identity rather than cryptographic signatures,
+     * while non-JSON arguments leave the digest {@code null} and log a debug diagnostic.
      */
     private String argumentsDigest(Map<String, Object> given) {
         if (!given.containsKey(ArgumentsDigest.ATTESTATION_MEMBER)) {

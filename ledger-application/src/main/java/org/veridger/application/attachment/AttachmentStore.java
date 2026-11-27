@@ -19,6 +19,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -65,6 +66,27 @@ public class AttachmentStore {
 
     /** One page of a body: the bytes, where they start and the size of the whole body. */
     public record Page(byte[] data, long offset, long totalSize) {
+
+        @Override
+        public boolean equals(Object o) {
+            return this == o || (o instanceof Page other
+                    && offset == other.offset
+                    && totalSize == other.totalSize
+                    && Arrays.equals(data, other.data));
+        }
+
+        @Override
+        public int hashCode() {
+            int result = Arrays.hashCode(data);
+            result = 31 * result + Long.hashCode(offset);
+            result = 31 * result + Long.hashCode(totalSize);
+            return result;
+        }
+
+        @Override
+        public String toString() {
+            return "Page[data=" + Arrays.toString(data) + ", offset=" + offset + ", totalSize=" + totalSize + "]";
+        }
     }
 
     /** What the whole file holds when every segment has been opened: the size and the SHA-256 of the plain bytes. */
@@ -285,8 +307,10 @@ public class AttachmentStore {
                         throw new ConflictException(ConflictCode.ARTIFACT_INCOMPLETE, List.of("a chunk is not recorded"));
                     }
                 }
-                Sha256Hex.Running digest = Sha256Hex.running();
-                long plainBytes = walk(channel, storedBytes, nextSequence, aes, key, digest);
+                long[] plainBytesHolder = new long[1];
+                String computedSha256 = Sha256Hex.stream(
+                        sink -> plainBytesHolder[0] = walk(channel, storedBytes, nextSequence, aes, key, sink));
+                long plainBytes = plainBytesHolder[0];
                 if (plainBytes < declaredSize) {
                     throw new ConflictException(ConflictCode.ARTIFACT_INCOMPLETE,
                             List.of("received " + plainBytes + " of " + declaredSize + " bytes"));
@@ -295,7 +319,7 @@ public class AttachmentStore {
                     throw new ConflictException(ConflictCode.ARTIFACT_HASH_MISMATCH,
                             List.of("size " + plainBytes + ", declared " + declaredSize));
                 }
-                if (!Objects.equals(digest.finish(), declaredSha256.hex())) {
+                if (!Objects.equals(computedSha256, declaredSha256.hex())) {
                     throw new ConflictException(ConflictCode.ARTIFACT_HASH_MISMATCH, List.of("SHA-256"));
                 }
                 if (marked) {
@@ -361,7 +385,7 @@ public class AttachmentStore {
      * damage.
      */
     private long walk(FileChannel channel, long limit, long count, AttachmentKeys.Key aes, StorageKey key,
-            Sha256Hex.Running digest) throws IOException {
+            Sha256Hex.ChunkSink digest) throws IOException {
         byte[] prefix = SegmentCipher.aadPrefix(key);
         long position = 0;
         long plainBytes = 0;
@@ -466,7 +490,7 @@ public class AttachmentStore {
             long position = 0;
             long plainStart = 0;
             long index = 0;
-            long wantedEnd = offset + maxBytes;
+            long wantedEnd = offset > Long.MAX_VALUE - maxBytes ? Long.MAX_VALUE : offset + maxBytes;
             ByteBuffer collected = ByteBuffer.allocate(maxBytes);
             while (position < size) {
                 // only the length is read to follow the structure; the body of a segment is read when it is opened
@@ -504,6 +528,23 @@ public class AttachmentStore {
         }
     }
 
+    /**
+     * Conservative upper bound of encrypted on-disk bytes for a bundle's declared payload bytes, including per-segment
+     * framing ({@code LENGTH + IV + TAG}) and one encrypted end marker per file.
+     */
+    static long encryptedBytesUpperBound(long totalDeclaredBytes, int fileCount) {
+        long clampedBytes = Math.max(0L, totalDeclaredBytes);
+        long files = Math.max(1L, fileCount);
+        long segmentOverhead = (long) SegmentCipher.LENGTH_BYTES + SegmentCipher.IV_BYTES + SegmentCipher.TAG_BYTES;
+        long maxDataSegments = clampedBytes == 0L ? 0L : Math.max(files, (clampedBytes + 4095L) / 4096L);
+        long totalSegments = maxDataSegments + files;
+        if (totalSegments > Long.MAX_VALUE / segmentOverhead) {
+            return Long.MAX_VALUE;
+        }
+        long overhead = totalSegments * segmentOverhead;
+        return clampedBytes > Long.MAX_VALUE - overhead ? Long.MAX_VALUE : clampedBytes + overhead;
+    }
+
     /** Opens every segment of the file and returns the size and SHA-256 of the plain bytes; any damage is ARTIFACT_CORRUPTED. */
     public Content verify(StorageKey key, String keyId) {
         AttachmentKeys.Key aes = keys.byId(keyId);
@@ -514,30 +555,33 @@ public class AttachmentStore {
         byte[] prefix = SegmentCipher.aadPrefix(key);
         try (FileChannel channel = files.openRead(file)) {
             long size = channel.size();
-            long position = 0;
-            long index = 0;
-            long plainBytes = 0;
-            Sha256Hex.Running digest = Sha256Hex.running();
-            while (position < size) {
-                byte[] body = readBody(channel, position, size);
-                long next = position + SegmentCipher.LENGTH_BYTES + body.length;
-                boolean last = next == size;
-                byte[] plain = cipher.openWithPrefix(aes, prefix, index, last, body);
-                if (last) {
-                    if (plain.length != 0) {
-                        throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
-                    }
-                } else {
-                    digest.update(plain, 0, plain.length);
-                    plainBytes += plain.length;
-                }
-                position = next;
-                index++;
-            }
             if (size == 0) {
                 throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
             }
-            return new Content(plainBytes, Sha256.of(digest.finish()));
+            long[] plainBytesHolder = new long[1];
+            String hex = Sha256Hex.stream(sink -> {
+                long position = 0;
+                long index = 0;
+                long plainBytes = 0;
+                while (position < size) {
+                    byte[] body = readBody(channel, position, size);
+                    long next = position + SegmentCipher.LENGTH_BYTES + body.length;
+                    boolean last = next == size;
+                    byte[] plain = cipher.openWithPrefix(aes, prefix, index, last, body);
+                    if (last) {
+                        if (plain.length != 0) {
+                            throw new InfrastructureException(InfrastructureCode.ARTIFACT_CORRUPTED, List.of());
+                        }
+                    } else {
+                        sink.update(plain, 0, plain.length);
+                        plainBytes += plain.length;
+                    }
+                    position = next;
+                    index++;
+                }
+                plainBytesHolder[0] = plainBytes;
+            });
+            return new Content(plainBytesHolder[0], Sha256.of(hex));
         } catch (IOException failure) {
             throw failed(failure);
         }

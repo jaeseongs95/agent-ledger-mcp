@@ -218,6 +218,7 @@ class TimeZoneTest {
             expected.put("request_receipt.created_at", I);
             expected.put("schema_history.applied_at", LedgerTestContext.START);
             expected.put("owner_passkey.registered_at", I);
+            expected.put("owner_passkey_counter.updated_at", I.plusSeconds(12));
             expected.put("owner_passkey_revocation.revoked_at", I.plusSeconds(9));
             expected.put("owner_passkey_code.issued_at", I);
             expected.put("owner_passkey_code.expires_at", I.plusSeconds(900));
@@ -287,6 +288,7 @@ class TimeZoneTest {
         ctx.tx(() -> {
             passkeys.insert(new OwnerPasskey("credential-1", "owner", "public-key", 0, 1, 0, 0, null, "attestation",
                     "laptop", "AAAA-BBBB-CCCC-DDDD", "owner", I));
+            passkeys.advanceSignatureCount("credential-1", 1L, I.plusSeconds(12));
             passkeys.revoke("credential-1", "owner", I.plusSeconds(9));
             return null;
         });

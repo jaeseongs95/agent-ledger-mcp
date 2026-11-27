@@ -495,7 +495,9 @@ public class UploadService {
             throw notFound(uploadId);
         }
         UploadStaging row = uploads.findById(uploadId).orElseThrow(() -> notFound(uploadId));
-        if (caller != null && !Objects.equals(row.owner(), caller)) {
+        if (caller == null) {
+            gate.requireAnyLiveGrant(row.owner());
+        } else if (!Objects.equals(row.owner(), caller)) {
             throw notFound(uploadId);
         }
         return row;

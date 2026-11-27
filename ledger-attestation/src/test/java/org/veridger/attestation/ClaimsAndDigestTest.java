@@ -106,4 +106,43 @@ class ClaimsAndDigestTest {
         KeyPair pair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
         assertThat(PublicKeys.fingerprint(pair.getPublic())).isEqualTo(Sha256Hex.of(pair.getPublic().getEncoded()));
     }
+
+    @Test
+    @DisplayName("ATT-053 streaming SHA-256 uses a local digest, handles slices and empty streams, and matches Sha256Hex.of")
+    void sha256Stream() {
+        byte[] full = "veridger-streaming-digest-check".getBytes(StandardCharsets.UTF_8);
+        String streamed = Sha256Hex.stream(sink -> {
+            sink.update(full, 0, 8);
+            sink.update(full, 8, full.length - 8);
+        });
+        assertThat(streamed).isEqualTo(Sha256Hex.of(full));
+        assertThat(Sha256Hex.stream(sink -> {
+        })).isEqualTo(Sha256Hex.of(new byte[0]));
+        assertThatThrownBy(() -> Sha256Hex.stream(sink -> {
+            throw new IllegalStateException("boom");
+        })).isInstanceOf(IllegalStateException.class).hasMessage("boom");
+    }
+
+    @Test
+    @DisplayName("ATT-054 JCS canonical number formatting preserves RFC 8785 shortest round-trip vectors and safe integer types")
+    void canonicalNumbersRfc8785() {
+        assertThat(JsonCanonicalizer.canonicalize(0.1)).isEqualTo("0.1");
+        assertThat(JsonCanonicalizer.canonicalize(-0.0)).isEqualTo("0");
+        assertThat(JsonCanonicalizer.canonicalize(1e23)).isEqualTo("1e+23");
+        assertThat(JsonCanonicalizer.canonicalize(1e-6)).isEqualTo("0.000001");
+        assertThat(JsonCanonicalizer.canonicalize(1e-7)).isEqualTo("1e-7");
+        assertThat(JsonCanonicalizer.canonicalize(9007199254740991L)).isEqualTo("9007199254740991");
+        assertThat(JsonCanonicalizer.canonicalize(-9007199254740991L)).isEqualTo("-9007199254740991");
+        assertThat(JsonCanonicalizer.canonicalize((byte) 7)).isEqualTo("7");
+        assertThat(JsonCanonicalizer.canonicalize((short) -12)).isEqualTo("-12");
+        assertThat(JsonCanonicalizer.canonicalize(1.5f)).isEqualTo("1.5");
+        assertThat(JsonCanonicalizer.canonicalize(java.math.BigInteger.valueOf(9007199254740991L)))
+                .isEqualTo("9007199254740991");
+        assertThat(JsonCanonicalizer.canonicalize(java.math.BigInteger.valueOf(-9007199254740991L)))
+                .isEqualTo("-9007199254740991");
+        assertThat(JsonCanonicalizer.canonicalize(Double.MIN_VALUE)).isEqualTo("5e-324");
+        assertThat(JsonCanonicalizer.canonicalize(Double.MIN_NORMAL)).isEqualTo("2.2250738585072014e-308");
+        assertThat(JsonCanonicalizer.canonicalize(1e20)).isEqualTo("100000000000000000000");
+        assertThat(JsonCanonicalizer.canonicalize(1e21)).isEqualTo("1e+21");
+    }
 }

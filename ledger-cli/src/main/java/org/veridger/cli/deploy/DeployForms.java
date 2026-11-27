@@ -27,7 +27,7 @@ public final class DeployForms {
      * ({@link ServicePlatform}); this is what the platforms share.
      */
     static final String SEGMENT = "(?!\\.{1,2}(?:/|$))[A-Za-z0-9._+-]+";
-    static final String HOST = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*";
+    static final String HOST = "[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*+";
     /**
      * The characters of a URI without quotes, backslash, {@code $}, braces and white space, and no password word anywhere:
      * a JDBC URL never holds a password (the passwords are secrets of the secret store).

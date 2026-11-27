@@ -39,7 +39,7 @@ public final class SeedBuilder {
      */
     public static Path build(Path sources, Path output) {
         List<SeedCode> codes = SeedSources.codes(sources.resolve(SeedSources.CATEGORIES));
-        Map<String, String> defaults = SeedSources.defaults(sources.resolve(SeedSources.DEFAULTS));
+        Map<String, String> defaults = SeedSources.defaults(sources.resolve(SeedSources.DEFAULTS_FILE));
         Path file = output.resolve(SeedBundle.RESOURCE);
         try {
             Files.createDirectories(output);

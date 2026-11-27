@@ -127,7 +127,7 @@ class SingleHostTest {
     @DisplayName("PCS-002 the options of the site and of the certificate are no options of the installer commands any more")
     void pcs002_noSiteOptions() {
         assertThat(DeployOptions.NAMES).doesNotContain("nginx-conf", "tls-certificate", "tls-key", "tls-acme", "acme-directory");
-        assertThat(PrepareHostCommand.OPTIONS).doesNotContain("nginx-conf", "tls-certificate", "tls-key", "tls-acme", "acme-directory");
-        assertThat(RenderDeployCommand.OPTIONS).doesNotContain("nginx-conf", "tls-certificate", "tls-key", "tls-acme", "acme-directory");
+        assertThat(PrepareHostCommand.OPTION_NAMES).doesNotContain("nginx-conf", "tls-certificate", "tls-key", "tls-acme", "acme-directory");
+        assertThat(RenderDeployCommand.OPTION_NAMES).doesNotContain("nginx-conf", "tls-certificate", "tls-key", "tls-acme", "acme-directory");
     }
 }

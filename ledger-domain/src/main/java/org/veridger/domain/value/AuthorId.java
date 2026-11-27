@@ -36,8 +36,12 @@ public record AuthorId(String value) implements ActorId {
 
     /** True for {@code user:owner} and for session authors; {@code user:} is reserved for the owner. */
     public static boolean matches(String value) {
-        return value != null && (OWNER_VALUE.equals(value)
-                || (SESSION_FORMAT.matcher(value).matches() && !value.startsWith("user:")));
+        return value != null && (OWNER_VALUE.equals(value) || isSessionId(value));
+    }
+
+    /** True only for {@code <vendor>:<session-id>} session authors; rejects {@code user:owner} and any {@code user:*}. */
+    public static boolean isSessionId(String value) {
+        return value != null && SESSION_FORMAT.matcher(value).matches() && !value.startsWith("user:");
     }
 
     /** The client namespace part before the colon, or {@code user} for the owner. */

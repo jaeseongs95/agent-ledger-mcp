@@ -5,8 +5,11 @@ on:
     branches:
       - main
       - develop
+      - "feat/**"
       - "feature/**"
+      - "fix/**"
       - "release/**"
+      - "hotfix/**"
   pull_request:
   workflow_dispatch:
 
@@ -43,6 +46,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 25 (Temurin)
         uses: actions/setup-java@v5
@@ -83,7 +88,16 @@ jobs:
             -Pledger.test.maxHeapSize=1g \
             -Pledger.test.jdbc-password-file="$RUNNER_TEMP/owner.pw" \
             -Pledger.test.app-password-file="$RUNNER_TEMP/app.pw" \
-            spotlessCheck check
+            spotlessCheck check jacocoTestReport
+
+      - name: Upload JaCoCo execution data (Ubuntu)
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'))
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-exec-ubuntu
+          path: "**/build/jacoco/*.exec"
+          retention-days: 1
+          if-no-files-found: error
 
   windows:
     name: check (windows-latest, JDK 25, PostgreSQL 18)
@@ -92,6 +106,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 25 (Temurin)
         uses: actions/setup-java@v5
@@ -144,3 +160,65 @@ jobs:
             "-Pledger.test.app-password-file=$appPwFile" `
             "-Djava.io.tmpdir=$testTmpSlash" `
             spotlessCheck check
+
+      - name: Upload JaCoCo execution data (Windows)
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'))
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-exec-windows
+          path: "**/build/jacoco/*.exec"
+          retention-days: 1
+          if-no-files-found: error
+
+  sonar:
+    name: sonarqube (dual-OS aggregated coverage)
+    needs: [ubuntu, windows]
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 25 (Temurin)
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Download Ubuntu JaCoCo execution data
+        uses: actions/download-artifact@v4
+        with:
+          name: jacoco-exec-ubuntu
+          path: build/jacoco-ci/ubuntu
+
+      - name: Download Windows JaCoCo execution data
+        uses: actions/download-artifact@v4
+        with:
+          name: jacoco-exec-windows
+          path: build/jacoco-ci/windows
+
+      - name: Generate Dual-OS Aggregated JaCoCo Report
+        run: |
+          ./gradlew --no-daemon --max-workers=1 jacocoAggregateReport
+
+      - name: Run SonarQube Analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          if [ -z "$SONAR_TOKEN" ]; then
+            echo "SONAR_TOKEN secret is not configured; skipping SonarQube analysis."
+            exit 0
+          fi
+          ./gradlew --no-daemon --max-workers=1 sonar \
+            -Dsonar.projectKey=veridger \
+            -Dsonar.verbose=false \
+            -Dsonar.log.level=INFO \
+            -Dsonar.qualitygate.wait=true \
+            -Dsonar.qualitygate.timeout=300

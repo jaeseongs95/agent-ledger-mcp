@@ -3,6 +3,7 @@
 package org.veridger.database;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 import java.sql.SQLException;
@@ -63,15 +64,17 @@ class DatabaseEncodingTest {
     @Test
     @DisplayName("RUN-026 a UTF-8 database answers the length 3 and the text, and is accepted")
     void run026_theAnswerOfAUtf8DatabaseIsAccepted() {
-        DatabaseEncoding.requireUtf8(true, 3, PROBE);
+        assertThatCode(() -> DatabaseEncoding.requireUtf8(true, 3, PROBE)).doesNotThrowAnyException();
     }
 
     @Test
     @DisplayName("RUN-026 where the length counts UTF-16 code units only the value is compared: 4 is accepted, and so is any length")
     void run026_aDatabaseThatCountsCodeUnitsIsJudgedByTheValueAlone() {
-        DatabaseEncoding.requireUtf8(false, 4, PROBE);
-        DatabaseEncoding.requireUtf8(false, 3, PROBE);
-        DatabaseEncoding.requireUtf8(false, 10, PROBE);
+        assertThatCode(() -> {
+            DatabaseEncoding.requireUtf8(false, 4, PROBE);
+            DatabaseEncoding.requireUtf8(false, 3, PROBE);
+            DatabaseEncoding.requireUtf8(false, 10, PROBE);
+        }).doesNotThrowAnyException();
     }
 
     /** The answers of a database that is not UTF-8, for a database that counts code points. */
@@ -88,7 +91,7 @@ class DatabaseEncodingTest {
                 Arguments.of(3L, "한글"),
                 Arguments.of(3L, ""),
                 Arguments.of(3L, null),
-                Arguments.of(3L, "���"));
+                Arguments.of(3L, "\uFFFD\uFFFD\uFFFD"));
     }
 
     @ParameterizedTest

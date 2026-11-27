@@ -13,6 +13,7 @@ import org.veridger.application.admin.PasskeyService;
 import org.veridger.application.admin.PasskeyService.NewPasskey;
 import org.veridger.domain.model.OwnerPasskey;
 import org.veridger.domain.value.OwnerIdentity;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.webauthn.api.AuthenticatorTransport;
@@ -29,11 +30,12 @@ import org.springframework.stereotype.Component;
  * implemented on the ANSI tables of V7 through {@link PasskeyService} (a byte string is base64url text, a flag is 0 or 1, no
  * BLOB). The framework's JDBC implementation is not used because its columns are BLOBs and booleans.
  *
- * <p>The history of a credential is append-only: {@link #save} stores a credential that is not stored yet and leaves an existing
- * one as it is (the framework saves the credential again after every sign-in with a new counter and time of last use, which are
- * not kept: a synced passkey does not count, and an approval is bound to one change by its one-use challenge); a credential is
- * closed by a revocation row through {@link PasskeyService#revoke}, never through the framework's {@link #delete}, which is
- * refused. There is one owner, so every credential belongs to the one user entity.
+ * <p>The credential metadata in {@code owner_passkey} is append-only: {@link #save} stores a credential that is not stored
+ * yet and advances its monotonic {@code signatureCount} in the V13 {@code owner_passkey_counter} table on subsequent
+ * sign-ins so Spring Security enforces clone and counter-rollback detection for hardware authenticators while keeping
+ * {@code owner_passkey} immutable. A credential is closed by a revocation row through {@link PasskeyService#revoke}, never
+ * through the framework's {@link #delete}, which is refused. There is one owner, so every credential belongs to the one user
+ * entity.
  */
 @Component
 public class LedgerUserCredentialRepository implements UserCredentialRepository {
@@ -60,11 +62,15 @@ public class LedgerUserCredentialRepository implements UserCredentialRepository 
         if (attestation == null) {
             throw new IllegalArgumentException("a passkey needs its attestation object");
         }
-        passkeys.save(new NewPasskey(record.getCredentialId().toBase64UrlString(),
-                record.getUserEntityUserId().toBase64UrlString(), new Bytes(record.getPublicKey().getBytes())
-                        .toBase64UrlString(), record.getSignatureCount(), flag(record.isUvInitialized()),
-                flag(record.isBackupEligible()), flag(record.isBackupState()), transports(record.getTransports()),
-                attestation.toBase64UrlString(), record.getLabel()), actor());
+        try {
+            passkeys.save(new NewPasskey(record.getCredentialId().toBase64UrlString(),
+                    record.getUserEntityUserId().toBase64UrlString(), new Bytes(record.getPublicKey().getBytes())
+                            .toBase64UrlString(), record.getSignatureCount(), flag(record.isUvInitialized()),
+                    flag(record.isBackupEligible()), flag(record.isBackupState()), transports(record.getTransports()),
+                    attestation.toBase64UrlString(), record.getLabel()), actor());
+        } catch (IllegalArgumentException counterRejected) {
+            throw new BadCredentialsException("passkey signature counter rejected", counterRejected);
+        }
     }
 
     @Override

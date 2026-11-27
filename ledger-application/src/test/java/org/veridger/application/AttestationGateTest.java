@@ -83,7 +83,9 @@ class AttestationGateTest {
             assertThat(failure.args()).isEmpty();
             assertThat(Expect.message(failure)).doesNotContain(text);
         }
-        assertThat(verifier.verify("user:owner", CALL, "").value()).isEqualTo("user:owner");
+        LedgerException ownerRefused = Expect.failure(() -> verifier.verify("user:owner", CALL, ""),
+                TrustCode.AUTHOR_ID_FORMAT);
+        assertThat(ownerRefused.args()).isEmpty();
         assertThat(verifier.verify("codex:session-1", CALL, "").value()).isEqualTo("codex:session-1");
     }
 

@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Callable;
@@ -118,10 +119,10 @@ class CommonCodeTest {
                 null, null, 26, null), TestOwners.OWNER);
         assertThat(updated.code().nameEn()).isEqualTo("Changed");
         assertThat(updated.code().createdBy().value()).isEqualTo("user:owner");
-        assertThat(Arrays.stream(CommonCodeService.class.getMethods()).map(m -> m.getName()))
-                .noneMatch(n -> n.matches("(?i).*(delete|remove|rename).*"));
-        assertThat(Arrays.stream(CommonCodeRepository.class.getMethods()).map(m -> m.getName()))
-                .noneMatch(n -> n.matches("(?i).*(delete|remove|rename).*"));
+        assertThat(Arrays.stream(CommonCodeService.class.getMethods()).map(m -> m.getName().toLowerCase(Locale.ROOT)))
+                .noneMatch(n -> n.contains("delete") || n.contains("remove") || n.contains("rename"));
+        assertThat(Arrays.stream(CommonCodeRepository.class.getMethods()).map(m -> m.getName().toLowerCase(Locale.ROOT)))
+                .noneMatch(n -> n.contains("delete") || n.contains("remove") || n.contains("rename"));
     }
 
     record Limit(String name, CodeCommand command, ErrorCode expected) {

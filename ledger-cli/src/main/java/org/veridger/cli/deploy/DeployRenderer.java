@@ -47,7 +47,8 @@ public final class DeployRenderer {
     static String configImport(DeployLayout layout, Service service) {
         String etc = layout.etc();
         StringBuilder sources = new StringBuilder("file:" + etc + "/application.yaml,file:" + etc + "/" + service.settingsFile()
-                + ",optional:file:" + etc + "/local.yaml,optional:file:" + etc + "/jdbc-driver.yaml");
+                + ",optional:file:" + etc + "/local.yaml,optional:file:" + etc + "/jdbc-driver.yaml,optional:file:"
+                + layout.driverStateDirectory() + "/jdbc-driver.yaml");
         for (SecretFolder folder : service.secretFolders()) {
             sources.append(",optional:configtree:").append(layout.secretFolder(folder)).append('/');
         }

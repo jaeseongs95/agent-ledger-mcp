@@ -9,11 +9,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.jar.JarInputStream;
-import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -28,7 +28,14 @@ class MigrationToolJarTest {
     private static final int PROCESS_SECONDS = 120;
     private static final String TOOL_MAIN = "BOOT-INF/classes/org/veridger/migrate1x/Migrate1xApplication.class";
     /** A class named after 1.x, whatever the case: the body has none (the tool's own classes are under migrate1x). */
-    private static final Pattern ONE_X_CLASS = Pattern.compile(".*(?:(?i:legacy|1x)|OneX|ONE_X).*\\.class");
+    private static boolean isOneXClass(String entryName) {
+        if (!entryName.endsWith(".class")) {
+            return false;
+        }
+        String lower = entryName.toLowerCase(Locale.ROOT);
+        return lower.contains("legacy") || lower.contains("1x")
+                || entryName.contains("OneX") || entryName.contains("ONE_X");
+    }
     private static final String TOKEN = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     private static Path jar(String property) {
@@ -70,7 +77,7 @@ class MigrationToolJarTest {
             List<String> names = entries(jar(property));
             assertThat(names).as(property + " has no class of the tool")
                     .noneMatch(name -> name.contains("org/veridger/migrate1x/"));
-            assertThat(names).as(property + " has no class named after 1.x").noneMatch(name -> ONE_X_CLASS.matcher(name).matches());
+            assertThat(names).as(property + " has no class named after 1.x").noneMatch(MigrationToolJarTest::isOneXClass);
         }
     }
 

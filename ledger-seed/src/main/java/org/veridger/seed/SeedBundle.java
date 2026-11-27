@@ -5,8 +5,10 @@ package org.veridger.seed;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.DirectoryStream;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -41,7 +43,11 @@ public final class SeedBundle {
 
     /** The bundle that is packed with the program: the resource {@value #RESOURCE} of the class path. */
     public static SeedBundle packaged() {
-        return new SeedBundle(SeedBundle::readPackaged);
+        return packaged(SeedBundle.class.getClassLoader());
+    }
+
+    static SeedBundle packaged(ClassLoader loader) {
+        return new SeedBundle(() -> readPackaged(loader));
     }
 
     /** The bundle in a file of the file system (the build output, a test). */
@@ -85,12 +91,12 @@ public final class SeedBundle {
     }
 
     /** The resource is copied to a temporary directory (H2 opens a file, not a jar entry) that is removed again. */
-    private static Content readPackaged() {
-        try (InputStream stream = SeedBundle.class.getClassLoader().getResourceAsStream(RESOURCE)) {
+    private static Content readPackaged(ClassLoader loader) {
+        try (InputStream stream = loader.getResourceAsStream(RESOURCE)) {
             if (stream == null) {
                 throw new SeedUnavailableException("the seed bundle " + RESOURCE + " is not on the class path of the program");
             }
-            Path directory = Files.createTempDirectory("ledger-seed");
+            Path directory = createPrivateTempDirectory();
             try {
                 Path file = directory.resolve(RESOURCE);
                 Files.copy(stream, file);
@@ -101,6 +107,21 @@ public final class SeedBundle {
         } catch (IOException e) {
             throw new SeedUnavailableException("the seed bundle cannot be copied for reading: " + e.getMessage(), e);
         }
+    }
+
+    private static Path createPrivateTempDirectory() throws IOException {
+        if (FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+            return Files.createTempDirectory("ledger-seed",
+                    PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwx------")));
+        }
+        String localTemp = System.getenv("TEMP");
+        if (localTemp != null && !localTemp.isBlank()) {
+            Path parent = Path.of(localTemp);
+            if (Files.isDirectory(parent)) {
+                return Files.createTempDirectory(parent, "ledger-seed");
+            }
+        }
+        throw new IOException("no user-private temporary directory available for reading the seed bundle");
     }
 
     private static Content read(Path file) {

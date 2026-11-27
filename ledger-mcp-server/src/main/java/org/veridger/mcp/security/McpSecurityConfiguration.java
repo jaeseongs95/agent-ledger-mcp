@@ -11,14 +11,21 @@ import org.springframework.boot.security.autoconfigure.actuate.web.servlet.Endpo
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.InsufficientAuthenticationException;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authorization.AuthenticatedAuthorizationManager;
 import org.springframework.security.authorization.AuthorizationManagers;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.AccessDeniedHandlerImpl;
+import org.springframework.security.web.csrf.CsrfException;
 import org.springframework.security.web.firewall.HttpFirewall;
 import org.springframework.security.web.firewall.HttpStatusRequestRejectedHandler;
 import org.springframework.security.web.firewall.RequestRejectedHandler;
@@ -60,12 +67,25 @@ public class McpSecurityConfiguration {
     SecurityFilterChain mcpSecurity(HttpSecurity http, AgentTokenProvider tokens,
             TransportOriginAuthorization origin) throws Exception {
         AuthenticationManager agents = new ProviderManager(tokens);
+        BearerTokenAuthenticationEntryPoint bearerEntryPoint = new BearerTokenAuthenticationEntryPoint();
+        AccessDeniedHandlerImpl forbidden = new AccessDeniedHandlerImpl();
         return http
-                .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(ex -> ex.accessDeniedHandler((request, response, denied) -> {
+                    Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+                    boolean unauthenticated = auth == null || !auth.isAuthenticated()
+                            || auth instanceof AnonymousAuthenticationToken;
+                    boolean hasCookies = request.getCookies() != null && request.getCookies().length > 0;
+                    if (denied instanceof CsrfException && unauthenticated && !hasCookies) {
+                        bearerEntryPoint.commence(request, response,
+                                new InsufficientAuthenticationException("Bearer token required", denied));
+                        return;
+                    }
+                    forbidden.handle(request, response, denied);
+                }))
                 .authorizeHttpRequests(requests -> requests
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
-                        .requestMatchers(EndpointRequest.to(HealthEndpoint.class)).permitAll()
+                        .requestMatchers(EndpointRequest.to(HealthEndpoint.class)).access(origin)
                         .anyRequest().access(AuthorizationManagers.allOf(origin,
                                 AuthenticatedAuthorizationManager.authenticated())))
                 .oauth2ResourceServer(resource -> resource.authenticationManagerResolver(request -> agents))

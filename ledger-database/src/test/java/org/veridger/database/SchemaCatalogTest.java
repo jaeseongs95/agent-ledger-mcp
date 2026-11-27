@@ -46,8 +46,8 @@ class SchemaCatalogTest {
             "issue_task", "issue_spec", "spec_task", "issue_relation", "milestone_criterion", "criterion_link",
             "session_grant", "session_key", "session_token", "owner_audit", "history", "request_receipt", "common_code",
             "code_revision", "id_counter", "schema_history", "driver_audit_key", "owner_passkey_user",
-            "owner_passkey", "owner_passkey_revocation", "owner_passkey_code", "upload_staging", "upload_quota_gate",
-            "attachment", "attachment_file", "attachment_storage");
+            "owner_passkey", "owner_passkey_counter", "owner_passkey_revocation", "owner_passkey_code",
+            "upload_staging", "upload_quota_gate", "attachment", "attachment_file", "attachment_storage");
 
     /** The timestamp columns of the schema, exactly as the catalogue lists them (SCH-018). */
     static final Set<String> TIMESTAMP_COLUMNS = Set.of("issue.created_at", "issue.updated_at", "spec.created_at",
@@ -58,7 +58,7 @@ class SchemaCatalogTest {
             "session_token.issued_at", "session_token.expires_at", "session_token.revoked_at",
             "session_token.last_used_at", "owner_audit.occurred_at", "history.occurred_at",
             "request_receipt.created_at", "schema_history.applied_at", "owner_passkey.registered_at",
-            "owner_passkey_revocation.revoked_at", "owner_passkey_code.issued_at",
+            "owner_passkey_counter.updated_at", "owner_passkey_revocation.revoked_at", "owner_passkey_code.issued_at",
             "owner_passkey_code.expires_at", "owner_passkey_code.used_at", "upload_staging.expires_at",
             "upload_staging.created_at", "upload_staging.updated_at", "attachment.created_at",
             "attachment_storage.created_at");

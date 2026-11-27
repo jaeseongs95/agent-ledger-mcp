@@ -115,8 +115,16 @@ public class SchemaHistoryRepository {
      */
     public void createSchemaIfMissing(String schema) {
         if (!schemaExists(schema)) {
-            jdbc.sql("CREATE SCHEMA " + schema).update();
+            jdbc.sql(createSchemaSql(schema)).update();
         }
+    }
+
+    private static String createSchemaSql(String schema) {
+        if (!SIMPLE_NAME.matcher(schema).matches()) {
+            throw new IllegalArgumentException("schema name must be lower case letters, digits and _ (max 30): "
+                    + schema);
+        }
+        return "CREATE SCHEMA " + schema;
     }
 
     /** Whether the schema is there (the JDBC metadata folds the name like the DBMS does). */

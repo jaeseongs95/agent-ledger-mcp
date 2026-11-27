@@ -47,8 +47,38 @@ class SeedTest {
     private static final Pattern SECRET_WORD = Pattern.compile("(?i)pass(word|wd)|secret|token|credential|private[ -]?key|api[ -]?key");
     /** A provider, a cloud or a host of an operator's own environment: no name of one belongs in a public product. */
     private static final Pattern ENVIRONMENT_NAME = Pattern.compile("(?i)lightsail|cloudflare|amazon|\\baws\\b|azure|google|ssh-prod|ssh-test");
-    private static final Pattern URL_WITH_CREDENTIALS = Pattern.compile("[a-z]+://[^/\\s]*:[^@\\s]*@");
     private static final Pattern LONG_RANDOM = Pattern.compile("[A-Za-z0-9+/_=-]{32,}");
+
+    /** Linear check for URL-embedded credentials ({@code scheme://user:pass@}) without regex backtracking. */
+    private static boolean containsUrlWithCredentials(String text) {
+        int pos = 0;
+        while ((pos = text.indexOf("://", pos)) >= 0) {
+            int schemeStart = pos;
+            while (schemeStart > 0 && text.charAt(schemeStart - 1) >= 'a' && text.charAt(schemeStart - 1) <= 'z') {
+                schemeStart--;
+            }
+            if (schemeStart < pos) {
+                int authorityStart = pos + 3;
+                int colon = -1;
+                for (int i = authorityStart; i < text.length(); i++) {
+                    char c = text.charAt(i);
+                    if (c == '/' || Character.isWhitespace(c)) {
+                        break;
+                    }
+                    if (c == ':' && colon < 0) {
+                        colon = i;
+                    } else if (c == '@') {
+                        if (colon > authorityStart && i > colon + 1) {
+                            return true;
+                        }
+                        break;
+                    }
+                }
+            }
+            pos += 3;
+        }
+        return false;
+    }
 
     private static Path source(String name) {
         return Repository.resolve(SOURCES.resolve(name).toString().replace('\\', '/'));
@@ -94,7 +124,7 @@ class SeedTest {
         Map<String, String> defaults = SeedBundle.packaged().installDefaults();
 
         assertThat(defaults).containsOnlyKeys(InstallDefaults.NAMES.toArray(String[]::new));
-        assertThat(defaults).isEqualTo(SeedSources.defaults(source(SeedSources.DEFAULTS)));
+        assertThat(defaults).isEqualTo(SeedSources.defaults(source(SeedSources.DEFAULTS_FILE)));
         InstallDefaults typed = new InstallDefaults(new PackagedSeed());
         assertThat(typed.instanceName()).isEqualTo("veridger");
         assertThat(typed.mcpPort()).isEqualTo(8765);
@@ -121,7 +151,7 @@ class SeedTest {
         for (String text : everyText(SeedBundle.packaged())) {
             assertThat(SECRET_WORD.matcher(text).find()).as("secret word in %s", shortened(text)).isFalse();
             assertThat(ENVIRONMENT_NAME.matcher(text).find()).as("environment name in %s", shortened(text)).isFalse();
-            assertThat(URL_WITH_CREDENTIALS.matcher(text).find()).as("credentials in %s", shortened(text)).isFalse();
+            assertThat(containsUrlWithCredentials(text)).as("credentials in %s", shortened(text)).isFalse();
         }
         for (String value : SeedBundle.packaged().installDefaults().values()) {
             assertThat(LONG_RANDOM.matcher(value).matches()).as("random value %s", value).isFalse();

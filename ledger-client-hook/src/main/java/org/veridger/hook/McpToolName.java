@@ -34,11 +34,11 @@ record McpToolName(String server, WriteTool tool) {
      */
     static final Set<String> GATEWAY_PREFIXES = Set.of("ledger", "veridger");
     /** A server name as the hook accepts it from a host. */
-    private static final Pattern SERVER = Pattern.compile("[" + SERVER_CHARACTERS + "]{1," + MAX_SERVER_LENGTH + "}");
+    private static final Pattern SERVER_PATTERN = Pattern.compile("[" + SERVER_CHARACTERS + "]{1," + MAX_SERVER_LENGTH + "}");
 
     /** Whether the text is a valid MCP server name. */
     static boolean isServerName(String text) {
-        return text != null && SERVER.matcher(text).matches();
+        return text != null && SERVER_PATTERN.matcher(text).matches();
     }
 
     /**

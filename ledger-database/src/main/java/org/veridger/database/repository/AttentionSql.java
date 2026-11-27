@@ -68,6 +68,12 @@ final class AttentionSql {
         return sql.toString();
     }
 
+    /** Bounded single-kind row count SQL limited to {@code :row_count} rows so large tables remain O(cap). */
+    static String countLimited(SqlBuilder sqlBuilder, AttentionKind kind, boolean withProject) {
+        String inner = sqlBuilder.applyLimit(idsBranch(kind, withProject) + " ORDER BY id", ":row_count");
+        return "SELECT COUNT(*) FROM (" + inner + ") c";
+    }
+
     /**
      * All kinds as one select list of {@code kind, id, project_id}, in the order the kinds are declared. The table of a
      * kind is the token of the entity it is about ({@code defect}, {@code task}), which is also the name of the table.

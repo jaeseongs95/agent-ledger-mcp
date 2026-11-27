@@ -16,6 +16,9 @@ public interface UpdateQueue {
     /** Reads the current queued or completed updater state without modifying files. */
     UpdateStatus readStatus();
 
+    /** Creates an owner-private temporary directory inside the update queue directory for artifact verification. */
+    Path createVerificationDirectory() throws IOException;
+
     /** Stages verified release artifacts and atomically writes {@code request.properties} to trigger the host updater. */
     void stageAndRequest(ReleaseInfo release, Map<String, Path> verifiedJars, Map<String, String> sha256ByName,
             String sha256SumsContent, String requestedBy, Instant requestedAt) throws IOException;

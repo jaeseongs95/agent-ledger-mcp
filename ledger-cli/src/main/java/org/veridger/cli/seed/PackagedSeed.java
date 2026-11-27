@@ -9,6 +9,7 @@ import org.veridger.cli.FailureException;
 import org.veridger.seed.SeedBundle;
 import org.veridger.seed.SeedCode;
 import org.veridger.seed.SeedUnavailableException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
@@ -22,6 +23,7 @@ public class PackagedSeed {
 
     private final SeedBundle bundle;
 
+    @Autowired
     public PackagedSeed() {
         this(SeedBundle.packaged());
     }

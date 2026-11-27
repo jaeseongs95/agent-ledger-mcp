@@ -50,7 +50,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 public record LedgerAdminProperties(String token, String agentToken,
         @DefaultValue({"127.0.0.1", "localhost"}) @NotEmpty List<String> allowedHosts,
         @DefaultValue("64KB") DataSize maxRequestSize,
-        @DefaultValue("/etc/veridger/jdbc-driver.yaml") Path driverFile,
+        @DefaultValue("/etc/veridger/driver-state/jdbc-driver.yaml") Path driverFile,
         @DefaultValue("/etc/veridger/drivers") Path driverDirectory,
         @DefaultValue @Valid Lockout lockout, @DefaultValue @Valid Oidc oidc, @DefaultValue @Valid Mcp mcp,
         SignInMethod signIn, @DefaultValue @Valid Passkey passkey, @DefaultValue @Valid Update update) {
@@ -190,8 +190,8 @@ public record LedgerAdminProperties(String token, String agentToken,
                     "release-assets.githubusercontent.com"}) @NotEmpty List<String> allowedDownloadHosts,
             @DefaultValue("/etc/veridger/update") Path directory,
             @DefaultValue("10s") Duration timeout,
-            @DefaultValue("4.3.0") String currentVersion,
-            @DefaultValue("12") @Min(1) int currentSchemaVersion) {
+            @DefaultValue("4.3.1") String currentVersion,
+            @DefaultValue("13") @Min(1) int currentSchemaVersion) {
 
         private static final Pattern REPOSITORY_PATTERN = Pattern.compile("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$");
 

@@ -457,13 +457,11 @@ class GateTest {
     }
 
     @Test
-    @DisplayName("SVC-GATE-16: user:owner is a valid author and still needs a grant")
+    @DisplayName("SVC-GATE-16: user:owner is reserved for direct owner operations and refused as an agent session author")
     void gate16_ownerNeedsAGrantToo(Scenario s) {
         Expect.failure(() -> s.bean(SaveService.class).save("user:owner", s.create("issue", null,
-                s.issueFields("t"))), TrustCode.SESSION_NOT_GRANTED);
-        s.grant("user:owner", s.projectId(), "issue");
-        assertThat(s.bean(SaveService.class).save("user:owner", s.create("issue", null, s.issueFields("t")))
-                .author()).isEqualTo("user:owner");
+                s.issueFields("t"))), TrustCode.AUTHOR_ID_FORMAT);
+        Expect.failure(() -> s.grant("user:owner", s.projectId(), "issue"), TrustCode.AUTHOR_ID_FORMAT);
     }
 
     @Test

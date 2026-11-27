@@ -156,7 +156,19 @@ class JarContentTest {
     @DisplayName("HK-018 the licence and notice texts of the dependencies are kept in the jar under META-INF/third-party")
     void licenceTextsAreKept() throws IOException {
         List<String> names = entries();
-        assertThat(names).anyMatch(n -> n.matches("META-INF/third-party/jackson-databind-[^/]+/[^/]*(LICENSE|NOTICE)[^/]*"));
-        assertThat(names).anyMatch(n -> n.matches("META-INF/third-party/jackson-core-[^/]+/[^/]*(LICENSE|NOTICE)[^/]*"));
+        assertThat(names).anyMatch(n -> hasThirdPartyNotice(n, "META-INF/third-party/jackson-databind-"));
+        assertThat(names).anyMatch(n -> hasThirdPartyNotice(n, "META-INF/third-party/jackson-core-"));
+    }
+
+    private static boolean hasThirdPartyNotice(String entryName, String prefix) {
+        if (!entryName.startsWith(prefix)) {
+            return false;
+        }
+        int slash = entryName.indexOf('/', prefix.length());
+        if (slash < 0 || entryName.indexOf('/', slash + 1) >= 0) {
+            return false;
+        }
+        String file = entryName.substring(slash + 1);
+        return file.contains("LICENSE") || file.contains("NOTICE");
     }
 }

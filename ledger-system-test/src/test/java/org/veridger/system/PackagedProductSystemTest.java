@@ -199,7 +199,7 @@ class PackagedProductSystemTest {
         Files.write(copy, Files.readAllBytes(source));
         JavaProcess.Result result = cli(false, null, "driver-register", "--jar=" + copy, "--class=org.postgresql.Driver");
         assertThat(result.exit()).as(result.streams()).isZero();
-        String registration = Files.readString(etc.resolve("jdbc-driver.yaml"));
+        String registration = Files.readString(etc.resolve("driver-state").resolve("jdbc-driver.yaml"));
         String sha256 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(copy)));
         assertThat(registration).contains("org.postgresql.Driver").containsIgnoringCase(sha256);
     }

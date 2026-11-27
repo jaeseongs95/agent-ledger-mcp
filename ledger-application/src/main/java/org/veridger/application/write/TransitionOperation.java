@@ -339,22 +339,25 @@ public class TransitionOperation extends WriteOperation<TransitionCommand, Trans
         }
         List<Issue> sources = new ArrayList<>(List.of(row));
         mergeChain.mergedInto(row.id()).forEach(merged -> sources.add(rows.issue(merged)));
-        List<HistoryEntry> entries = historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.ISSUE,
-                row.id().value());
-        List<SessionKey> reporters = new ArrayList<>(
-                ownerContributors(HistoryEntity.ISSUE, row.ownerActorId(), entries));
-        for (HistoryEntry entry : entries) {
-            if (entry.authorId() == null) {
-                continue;
-            }
-            if (entry.op() == HistoryOp.EDIT) {
-                reporters.add(entry.authorId().sessionKey());
-            } else if (entry.op() == HistoryOp.TRANSITION
-                    && Objects.equals(IssueStatus.RESOLVED.name(), entry.toState())) {
-                reporters.add(entry.authorId().sessionKey());
-            }
-        }
+        List<SessionKey> reporters = new ArrayList<>();
         for (Issue source : sources) {
+            if (!Objects.equals(source.id(), row.id())) {
+                reporters.addAll(deliverableContributors(DeliverableTarget.ISSUE, source.id().value()));
+            }
+            List<HistoryEntry> entries = historyRows.findByEntityAndEntityIdOrderById(HistoryEntity.ISSUE,
+                    source.id().value());
+            reporters.addAll(ownerContributors(HistoryEntity.ISSUE, source.ownerActorId(), entries));
+            for (HistoryEntry entry : entries) {
+                if (entry.authorId() == null) {
+                    continue;
+                }
+                if (entry.op() == HistoryOp.EDIT) {
+                    reporters.add(entry.authorId().sessionKey());
+                } else if (entry.op() == HistoryOp.TRANSITION
+                        && Objects.equals(IssueStatus.RESOLVED.name(), entry.toState())) {
+                    reporters.add(entry.authorId().sessionKey());
+                }
+            }
             if (source.createdBy() != null) {
                 reporters.add(source.createdBy().sessionKey());
             }

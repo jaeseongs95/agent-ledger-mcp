@@ -2,6 +2,7 @@
 
 package org.veridger.admin.update;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -22,16 +23,19 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.veridger.admin.app.LedgerAdminProperties;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * GitHub Releases client backed by Spring's {@link RestClient}. Every download hop validates scheme, userinfo absence,
- * and host allowlist before following redirects so a compromised or misconfigured redirect can never perform SSRF.
+ * port, and host allowlist before following redirects so a compromised or misconfigured redirect can never perform SSRF.
  */
 @Component
 public final class GitHubReleaseClient implements ReleaseClient {
 
     private static final int MAX_REDIRECTS = 3;
     private static final int STREAM_BUFFER = 16_384;
+    private static final int MAX_RELEASE_JSON_BYTES = 4 * 1024 * 1024;
     private static final Pattern SCHEMA_MARKER = Pattern.compile("(?i)schema[- ]version\\s*[:=]\\s*V?(\\d+)");
 
     /** Typed projection of the GitHub Releases API response (no JSON tree model). */
@@ -44,14 +48,16 @@ public final class GitHubReleaseClient implements ReleaseClient {
     }
 
     private final RestClient client;
+    private final JsonMapper mapper;
     private final URI latestUri;
     private final boolean requireHttps;
     private final Set<String> allowedHosts;
     private final int currentSchemaVersion;
 
     public GitHubReleaseClient(LedgerAdminProperties properties,
-            @Qualifier("updateRestClient") RestClient client) {
+            @Qualifier("updateRestClient") RestClient client, JsonMapper mapper) {
         this.client = client;
+        this.mapper = mapper;
         LedgerAdminProperties.Update cfg = properties.update();
         String base = cfg.apiBaseUrl().endsWith("/")
                 ? cfg.apiBaseUrl().substring(0, cfg.apiBaseUrl().length() - 1)
@@ -74,7 +80,25 @@ public final class GitHubReleaseClient implements ReleaseClient {
             dto = client.get().uri(latestUri)
                     .header(HttpHeaders.ACCEPT, "application/vnd.github+json")
                     .header(HttpHeaders.USER_AGENT, "Veridger-Admin-Updater")
-                    .retrieve().body(GitHubReleaseDto.class);
+                    .exchange((request, response) -> {
+                        HttpStatusCode status = response.getStatusCode();
+                        if (!status.is2xxSuccessful()) {
+                            throw new IOException("release metadata request failed with HTTP " + status.value());
+                        }
+                        long contentLength = response.getHeaders().getContentLength();
+                        if (contentLength > MAX_RELEASE_JSON_BYTES) {
+                            throw new IOException("release metadata exceeds maximum allowed size");
+                        }
+                        byte[] raw = response.getBody().readNBytes(MAX_RELEASE_JSON_BYTES + 1);
+                        if (raw.length > MAX_RELEASE_JSON_BYTES) {
+                            throw new IOException("release metadata exceeded maximum allowed size while streaming");
+                        }
+                        try {
+                            return mapper.readValue(raw, GitHubReleaseDto.class);
+                        } catch (JacksonException malformed) {
+                            throw new IOException("failed to parse latest release metadata", malformed);
+                        }
+                    });
         } catch (RestClientException e) {
             throw new IOException("failed to fetch latest release metadata", e);
         }
@@ -102,19 +126,24 @@ public final class GitHubReleaseClient implements ReleaseClient {
         return new ReleaseInfo(dto.tag_name(), version, htmlUrl, assets, requiredSchema);
     }
 
+    @FunctionalInterface
+    private interface OutputSupplier {
+        OutputStream open() throws IOException;
+    }
+
     @Override
     public byte[] downloadBytes(URI url, long maxBytes) throws IOException {
-        Path temp = Files.createTempFile("veridger-update-dl-", ".tmp");
-        try {
-            downloadToFile(url, temp, maxBytes);
-            return Files.readAllBytes(temp);
-        } finally {
-            Files.deleteIfExists(temp);
-        }
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        downloadToOutput(url, () -> buffer, maxBytes);
+        return buffer.toByteArray();
     }
 
     @Override
     public void downloadToFile(URI url, Path target, long maxBytes) throws IOException {
+        downloadToOutput(url, () -> Files.newOutputStream(target), maxBytes);
+    }
+
+    private void downloadToOutput(URI url, OutputSupplier target, long maxBytes) throws IOException {
         URI current = url;
         for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
             validateDownloadUri(current);
@@ -128,7 +157,7 @@ public final class GitHubReleaseClient implements ReleaseClient {
     }
 
     /** Executes one HTTP GET hop; returns the redirect target URI if 3xx, or null when written to {@code target}. */
-    private URI fetchHop(URI uri, Path target, long maxBytes) throws IOException {
+    private URI fetchHop(URI uri, OutputSupplier target, long maxBytes) throws IOException {
         try {
             return client.get().uri(uri)
                     .header(HttpHeaders.USER_AGENT, "Veridger-Admin-Updater")
@@ -170,16 +199,20 @@ public final class GitHubReleaseClient implements ReleaseClient {
         if (uri.getRawUserInfo() != null) {
             throw new IOException("download URL must not contain user information");
         }
+        int port = uri.getPort();
+        if (requireHttps && port != -1 && port != 443) {
+            throw new IOException("download URL port is not allowed");
+        }
         String host = uri.getHost();
         if (host == null || !allowedHosts.contains(host.toLowerCase(Locale.ROOT))) {
             throw new IOException("download host is not in the configured allowlist");
         }
     }
 
-    private static void copyBounded(InputStream in, Path target, long maxBytes) throws IOException {
+    private static void copyBounded(InputStream in, OutputSupplier target, long maxBytes) throws IOException {
         long total = 0L;
         byte[] buffer = new byte[STREAM_BUFFER];
-        try (OutputStream out = Files.newOutputStream(target)) {
+        try (OutputStream out = target.open()) {
             int read;
             while ((read = in.read(buffer)) != -1) {
                 total += read;

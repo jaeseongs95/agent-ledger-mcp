@@ -162,7 +162,9 @@ public class GrantService {
     }
 
     private void closeLive(AuthorId author, ProjectId project, Scope scope, Instant now) {
-        grants.findByActiveKey(SessionGrant.liveKey(author, project, scope))
+        String activeKey = SessionGrant.liveKey(author, project, scope);
+        grants.findByActiveKey(activeKey)
+                .filter(open -> Objects.equals(activeKey, open.activeKey()))
                 .ifPresent(open -> state.revoke(open.id(), now));
     }
 

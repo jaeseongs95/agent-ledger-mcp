@@ -3,6 +3,7 @@
 package org.veridger.cli.deploy;
 
 import java.io.IOException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
@@ -79,6 +80,20 @@ final class WindowsAccess {
 
     private static AclFileAttributeView view(Path path) {
         return Files.getFileAttributeView(path, AclFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
+    }
+
+    /**
+     * Verifies that an existing path is neither a symbolic link nor owned by an untrusted account before an elevated run
+     * modifies its ACL or writes beneath it. Read-only: never changes ownership.
+     */
+    void requireTrustedOwner(Path path, Set<UserPrincipal> trustedOwners) throws IOException {
+        if (Files.isSymbolicLink(path)) {
+            throw new FileSystemException(path.toString(), null, "symbolic link");
+        }
+        UserPrincipal owner = Files.getOwner(path, LinkOption.NOFOLLOW_LINKS);
+        if (!trustedOwners.contains(owner)) {
+            throw new FileSystemException(path.toString(), null, "untrusted owner");
+        }
     }
 
     /** Replaces the ACL of the path. The owner is never changed. */

@@ -134,6 +134,19 @@ class DeployGoldenTest {
         return content.replace("-Duser.timezone=UTC -XX:+ExitOnOutOfMemoryError -jar ", "-Duser.timezone=UTC -jar ");
     }
 
+    /**
+     * 4.3.1 (SYS-04): {@code jdbc-driver.yaml} writes moved to {@code <etc>/driver-state/jdbc-driver.yaml}, services
+     * append that source to {@code spring.config.import}, and {@code veridger-admin.service} scopes
+     * {@code ReadWritePaths=} to {@code <etc>/driver-state <etc>/update} so {@code <etc>} stays read-only to the service
+     * account. Normalizing those three lines here proves nothing else in the rendered files changed while explicit
+     * assertions verify each hardening line.
+     */
+    private static String withoutDriverStateIsolation(String content) {
+        return content.replaceAll(",optional:file:[^,\\n<]*/driver-state/jdbc-driver\\.yaml", "")
+                .replaceAll("driver-file: '([^'\\n]*)/driver-state/jdbc-driver\\.yaml'", "driver-file: '$1/jdbc-driver.yaml'")
+                .replaceAll("(?m)^ReadWritePaths=([^\\n]*)/driver-state \\1/update$", "ReadWritePaths=$1");
+    }
+
     /** The SHA-256 of path and content of every rendered file, in the order the renderer gives them. */
     private static String digest(List<RenderedFile> files) {
         try {
@@ -142,7 +155,8 @@ class DeployGoldenTest {
                 digest.update((withOldInstanceName(file.path()) + "\u0000"
                         + withOldInstanceName(withSingleSecretsTree(
                                 withOldOwnersExample(withRemovedLongTextLine(
-                                        withoutExitOnOom(withoutUpdateDirectory(withoutAttachments(file.content())))))))
+                                        withoutDriverStateIsolation(
+                                                withoutExitOnOom(withoutUpdateDirectory(withoutAttachments(file.content()))))))))
                         + "\u0000")
                         .getBytes(StandardCharsets.UTF_8));
             }
@@ -175,13 +189,15 @@ class DeployGoldenTest {
             List<RenderedFile> rendered = DeployTestBeans.render(values);
             RenderedFile adminYaml = rendered.stream()
                     .filter(f -> f.path().endsWith("/admin.yaml")).findFirst().orElseThrow();
-            assertThat(adminYaml.content()).as("update.directory in %s", name)
+            assertThat(adminYaml.content()).as("update.directory and driver-state in %s", name)
+                    .contains("    driver-file: '").contains("/driver-state/jdbc-driver.yaml'\n")
                     .contains("    update:\n      directory: '").contains("/update'\n");
             List<RenderedFile> serviceUnits = rendered.stream()
                     .filter(f -> f.path().endsWith(".service") || f.path().endsWith(".xml")).toList();
             assertThat(serviceUnits).as("service definitions in %s", name).isNotEmpty()
-                    .allSatisfy(unit -> assertThat(unit.content()).as("ExitOnOutOfMemoryError in %s", unit.path())
-                            .contains("-XX:+ExitOnOutOfMemoryError"));
+                    .allSatisfy(unit -> assertThat(unit.content()).as("ExitOnOutOfMemoryError and driver-state import in %s", unit.path())
+                            .contains("-XX:+ExitOnOutOfMemoryError")
+                            .contains("/driver-state/jdbc-driver.yaml"));
         });
     }
 
@@ -204,13 +220,15 @@ class DeployGoldenTest {
             List<RenderedFile> rendered = DeployTestBeans.render(values);
             RenderedFile adminYaml = rendered.stream()
                     .filter(f -> f.path().endsWith("/admin.yaml")).findFirst().orElseThrow();
-            assertThat(adminYaml.content()).as("update.directory in %s", name)
+            assertThat(adminYaml.content()).as("update.directory and driver-state in %s", name)
+                    .contains("    driver-file: '").contains("/driver-state/jdbc-driver.yaml'\n")
                     .contains("    update:\n      directory: '").contains("/update'\n");
             List<RenderedFile> serviceUnits = rendered.stream()
                     .filter(f -> f.path().endsWith(".service") || f.path().endsWith(".xml")).toList();
             assertThat(serviceUnits).as("service definitions in %s", name).isNotEmpty()
-                    .allSatisfy(unit -> assertThat(unit.content()).as("ExitOnOutOfMemoryError in %s", unit.path())
-                            .contains("-XX:+ExitOnOutOfMemoryError"));
+                    .allSatisfy(unit -> assertThat(unit.content()).as("ExitOnOutOfMemoryError and driver-state import in %s", unit.path())
+                            .contains("-XX:+ExitOnOutOfMemoryError")
+                            .contains("/driver-state/jdbc-driver.yaml"));
         });
                 });
     }

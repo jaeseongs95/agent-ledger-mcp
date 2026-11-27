@@ -90,7 +90,8 @@ class WindowsPlatformTest {
 
     /** The host of an earlier installation: every folder, the folders of the secrets with two secrets, the folder of the keys. */
     private void installed() throws IOException {
-        for (String folder : List.of("lib", "etc", "etc/drivers", "logs", "data", "data/attachments", "etc/attachment-keys")) {
+        for (String folder : List.of("lib", "etc", "etc/drivers", "etc/driver-state", "etc/update", "logs", "data",
+                "data/attachments", "etc/attachment-keys")) {
             Files.createDirectories(home.resolve(folder));
         }
         for (Path folder : folders) {
@@ -123,9 +124,10 @@ class WindowsPlatformTest {
         InOrder order = inOrder(access);
         order.verify(access).set(home, WindowsAccess.closed(SYSTEM, ADMINISTRATORS));
         order.verify(access).set(home.resolve("lib"), closedWith(WindowsAccess.READ_EXECUTE));
-        order.verify(access).set(home.resolve("etc"), closedWith(WindowsAccess.MODIFY));
-        // the services write nothing in the driver folder (the registration file is in etc): read and run, like the jars (item 8 of the review)
+        order.verify(access).set(home.resolve("etc"), closedWith(WindowsAccess.READ_EXECUTE));
         order.verify(access).set(home.resolve("etc/drivers"), closedWith(WindowsAccess.READ_EXECUTE));
+        order.verify(access).set(home.resolve("etc/driver-state"), closedWith(WindowsAccess.MODIFY));
+        order.verify(access).set(home.resolve("etc/update"), closedWith(WindowsAccess.MODIFY));
         order.verify(access).set(home.resolve("logs"), closedWith(WindowsAccess.MODIFY));
         order.verify(access).set(home.resolve("data"), closedWith(WindowsAccess.MODIFY));
         order.verify(access).set(home.resolve("data/attachments"), closedWith(WindowsAccess.MODIFY));
@@ -154,7 +156,8 @@ class WindowsPlatformTest {
 
         prepare();
 
-        for (String folder : List.of("", "lib", "etc", "etc/drivers", "logs", "data", "data/attachments")) {
+        for (String folder : List.of("", "lib", "etc", "etc/drivers", "etc/driver-state", "etc/update", "logs", "data",
+                "data/attachments")) {
             verify(access).set(eq(home.resolve(folder)), any());
         }
         verify(access, never()).set(eq(secrets), any());
@@ -196,8 +199,9 @@ class WindowsPlatformTest {
 
         assertThatThrownBy(this::prepare).isSameAs(full);
 
-        assertThat(restored(7)).as("the seven folders that exist, in reverse").containsExactly(home.resolve("data/attachments"),
-                home.resolve("data"), home.resolve("logs"), home.resolve("etc/drivers"), home.resolve("etc"), home.resolve("lib"), home);
+        assertThat(restored(9)).as("the nine folders that exist, in reverse").containsExactly(home.resolve("data/attachments"),
+                home.resolve("data"), home.resolve("logs"), home.resolve("etc/update"), home.resolve("etc/driver-state"),
+                home.resolve("etc/drivers"), home.resolve("etc"), home.resolve("lib"), home);
     }
 
     @Test
@@ -211,7 +215,20 @@ class WindowsPlatformTest {
 
         assertThatThrownBy(this::prepare).isSameAs(full).hasSuppressedException(stuck);
 
-        assertThat(restored(7)).as("all seven, although one failed").hasSize(7).endsWith(home.resolve("lib"), home);
+        assertThat(restored(9)).as("all nine, although one failed").hasSize(9).endsWith(home.resolve("lib"), home);
+    }
+
+    @Test
+    @DisplayName("SYS-05 pre-existing home owned by an untrusted account is refused before modifying any ACL")
+    void sys05_untrustedPreExistingOwnerIsRefusedBeforeModifyingAcls() throws IOException {
+        Files.createDirectories(home);
+        java.nio.file.FileSystemException untrusted = new java.nio.file.FileSystemException(home.toString(), null,
+                "untrusted owner");
+        doThrow(untrusted).when(access).requireTrustedOwner(eq(home), any());
+
+        assertThatThrownBy(this::prepare).isSameAs(untrusted);
+
+        verify(access, never()).set(any(), any());
     }
 
     @Test

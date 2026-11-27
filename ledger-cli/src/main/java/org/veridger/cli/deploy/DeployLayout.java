@@ -113,6 +113,22 @@ public record DeployLayout(Platform platform,
         return etc + "/attachment-keys";
     }
 
+    /**
+     * Where the admin web writes {@code jdbc-driver.yaml}: {@code <etc>/driver-state}. Isolated from {@code <etc>} so
+     * the service account never holds write permission on {@code application.yaml}, {@code local.yaml}, or service configs.
+     */
+    public String driverStateDirectory() {
+        return etc + "/driver-state";
+    }
+
+    /**
+     * Where the admin web stages self-update requests ({@code request.properties}, {@code staged/}): {@code <etc>/update}.
+     * Isolated from {@code <etc>} so the service account can only write inside its dedicated update subdirectory.
+     */
+    public String updateDirectory() {
+        return etc + "/update";
+    }
+
     /** The secret directory, {@code <etc>/secrets}: it holds one folder per use ({@link #secretFolder}) and is itself no configuration tree. */
     public String secretDirectory() {
         return etc + "/secrets";

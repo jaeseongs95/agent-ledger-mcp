@@ -56,7 +56,7 @@ class HostDefaultsTest {
 
         assertThat(environment.getProperty("ledger.secrets.home")).isEqualTo(etc);
         assertThat(environment.getProperty("ledger.secrets.directory")).isEqualTo(etc + "/secrets");
-        assertThat(environment.getProperty("ledger.cli.driver.file")).isEqualTo(etc + "/jdbc-driver.yaml");
+        assertThat(environment.getProperty("ledger.cli.driver.file")).isEqualTo(etc + "/driver-state/jdbc-driver.yaml");
         assertThat(environment.getProperty("ledger.cli.driver.directory")).isEqualTo(etc + "/drivers");
         assertThat(environment.getProperty("spring.config.import")).as("the import reads the files of the same directory")
                 .contains("optional:file:" + etc + "/application.yaml", "optional:configtree:" + etc + "/secrets/common/",

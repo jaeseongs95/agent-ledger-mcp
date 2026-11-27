@@ -25,7 +25,7 @@ import org.springframework.core.env.PropertySource;
 public final class OwnerAccountPropertySource extends PropertySource<SecretInput> {
 
     /** The name of the source in the environment. */
-    public static final String NAME = "ownerAccount";
+    public static final String SOURCE_NAME = "ownerAccount";
 
     static final String USERNAME_KEY = "ledger.jdbc.username";
     static final String PASSWORD_KEY = "ledger.jdbc.password";
@@ -40,7 +40,7 @@ public final class OwnerAccountPropertySource extends PropertySource<SecretInput
      * @param input   where the password is read from
      */
     public OwnerAccountPropertySource(String account, String prompt, SecretInput input) {
-        super(NAME, input);
+        super(SOURCE_NAME, input);
         this.account = account;
         this.prompt = prompt;
     }

@@ -2,6 +2,8 @@
 
 package org.veridger.mcp.security;
 
+import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.function.Supplier;
@@ -31,7 +33,9 @@ public final class TransportOriginAuthorization implements AuthorizationManager<
     @Override
     public AuthorizationDecision authorize(Supplier<? extends Authentication> authentication,
             RequestAuthorizationContext context) {
-        String origin = context.getRequest().getHeader(HttpHeaders.ORIGIN);
-        return new AuthorizationDecision(origin == null || allowed.contains(origin.toLowerCase(Locale.ROOT)));
+        List<String> origins = Collections.list(context.getRequest().getHeaders(HttpHeaders.ORIGIN));
+        boolean permitted = origins.isEmpty()
+                || (origins.size() == 1 && allowed.contains(origins.getFirst().toLowerCase(Locale.ROOT)));
+        return new AuthorizationDecision(permitted);
     }
 }

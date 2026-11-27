@@ -43,9 +43,25 @@ class InstallScriptsTest {
     private static final String UPD_SH = "deploy/veridger-updater.sh";
     private static final String UPD_CMD = "deploy/veridger-updater.cmd";
 
-    /** An option that carries a secret value; {@code --ledger.secrets.home=} and {@code instance=} are not secrets. */
-    private static final Pattern SECRET_OPTION = Pattern
-            .compile("(?i)--(?!ledger\\.secrets\\.(home|instance)=)[a-z.-]*(password|token|secret)[a-z.-]*=");
+    /** Returns true when a script line passes a secret-bearing {@code --...=} option (excluding {@code ledger.secrets.home/instance}). */
+    private static boolean containsSecretOption(String line) {
+        int pos = 0;
+        while ((pos = line.indexOf("--", pos)) >= 0) {
+            int eq = line.indexOf('=', pos + 2);
+            if (eq < 0) {
+                break;
+            }
+            String optionName = line.substring(pos + 2, eq).toLowerCase(Locale.ROOT);
+            if (optionName.chars().allMatch(c -> (c >= 'a' && c <= 'z') || c == '.' || c == '-')
+                    && !"ledger.secrets.home".equals(optionName)
+                    && !"ledger.secrets.instance".equals(optionName)
+                    && (optionName.contains("password") || optionName.contains("token") || optionName.contains("secret"))) {
+                return true;
+            }
+            pos += 2;
+        }
+        return false;
+    }
     private static final Pattern FORBIDDEN_TOOLS_SH = Pattern.compile(
             "\\b(git|apt|apt-get|yum|dnf|zypper|pip|npm|psql|pg_dump|createuser|createdb|certbot|cloudflared|ssh|scp)\\b");
 
@@ -99,7 +115,7 @@ class InstallScriptsTest {
         assertThat(all.getFirst()).isEqualTo("#!/bin/sh");
         assertThat(all).contains("set -eu", "umask 022");
         for (String line : code) {
-            assertThat(line).as(line).doesNotContainPattern(SECRET_OPTION);
+            assertThat(containsSecretOption(line)).as(line).isFalse();
             assertThat(FORBIDDEN_TOOLS_SH.matcher(line).find()).as(line).isFalse();
             if (line.contains("secret-set") || line.contains("token-generate")) {
                 assertThat(line).matches(
@@ -152,7 +168,7 @@ class InstallScriptsTest {
         List<String> code = cmdCodeLines(CMD);
 
         for (String line : code) {
-            assertThat(line).as(line).doesNotContainPattern(SECRET_OPTION);
+            assertThat(containsSecretOption(line)).as(line).isFalse();
             if (line.contains("secret-set")) {
                 assertThat(line).contains(" --if-absent");
             }

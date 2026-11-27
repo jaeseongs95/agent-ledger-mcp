@@ -20,6 +20,7 @@ import org.veridger.application.attachment.UploadService.FileView;
 import org.veridger.application.attachment.UploadService.FinishPlan;
 import org.veridger.domain.error.ConflictCode;
 import org.veridger.domain.error.ConflictException;
+import org.veridger.domain.error.LedgerException;
 import org.veridger.domain.error.ValidationException;
 import org.veridger.domain.error.ValidationReason;
 import org.veridger.domain.model.UploadStaging;
@@ -49,7 +50,8 @@ public class AttachmentFlow {
         return switch (service.planBegin(actor, command)) {
             case BeginPlan.Replay replay -> replay.begun();
             case BeginPlan.Create create -> {
-                store.requireDiskSpace(create.totalDeclaredBytes());
+                int fileCount = command != null && command.files() != null ? command.files().size() : 1;
+                store.requireDiskSpace(AttachmentStore.encryptedBytesUpperBound(create.totalDeclaredBytes(), fileCount));
                 try {
                     yield service.begin(actor, command);
                 } catch (DuplicateKeyException race) {
@@ -78,7 +80,14 @@ public class AttachmentFlow {
                 UploadStaging row = append.row();
                 long storedBytes = store.append(row.storageKey(), row.keyId(), row.storedBytes(),
                         command.sequence(), plain, declaredChunkSha);
-                yield service.recordChunk(actor, row, storedBytes, plain.length, declaredChunkSha);
+                try {
+                    yield service.recordChunk(actor, row, storedBytes, plain.length, declaredChunkSha);
+                } catch (LedgerException failed) {
+                    if (command.sequence() == 0L) {
+                        store.remove(row.storageKey());
+                    }
+                    throw failed;
+                }
             }
         };
     }

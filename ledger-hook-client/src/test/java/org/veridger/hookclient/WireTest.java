@@ -57,17 +57,20 @@ class WireTest {
     @Test
     @DisplayName("R9-D0096-E a request that lies about its sizes is refused before anything is allocated: too many words, a negative or huge length, a body that ends early, bytes after the end")
     void refusesWhatIsOutsideTheLimits() throws IOException {
-        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(call(Wire.MAX_ARGUMENTS + 1, 0, 0, 0))))
-                .isInstanceOf(IOException.class);
-        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(call(-1, 0, 0, 0)))).isInstanceOf(IOException.class);
-        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(call(1, Wire.MAX_ARGUMENT_BYTES + 1, 0, 0))))
-                .isInstanceOf(IOException.class);
-        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(call(0, 0, Integer.MAX_VALUE, 0))))
-                .isInstanceOf(IOException.class);
-        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(call(0, 0, Wire.MAX_STDIN_BYTES + 1, 0))))
-                .isInstanceOf(IOException.class);
-        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(call(0, 0, -5, 0)))).isInstanceOf(IOException.class);
-        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(call(0, 0, 10, 4)))).isInstanceOf(IOException.class);
+        byte[] tooManyArgs = call(Wire.MAX_ARGUMENTS + 1, 0, 0, 0);
+        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(tooManyArgs))).isInstanceOf(IOException.class);
+        byte[] negativeArgs = call(-1, 0, 0, 0);
+        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(negativeArgs))).isInstanceOf(IOException.class);
+        byte[] hugeArg = call(1, Wire.MAX_ARGUMENT_BYTES + 1, 0, 0);
+        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(hugeArg))).isInstanceOf(IOException.class);
+        byte[] maxIntStdin = call(0, 0, Integer.MAX_VALUE, 0);
+        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(maxIntStdin))).isInstanceOf(IOException.class);
+        byte[] overLimitStdin = call(0, 0, Wire.MAX_STDIN_BYTES + 1, 0);
+        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(overLimitStdin))).isInstanceOf(IOException.class);
+        byte[] negativeStdin = call(0, 0, -5, 0);
+        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(negativeStdin))).isInstanceOf(IOException.class);
+        byte[] truncatedStdin = call(0, 0, 10, 4);
+        assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(truncatedStdin))).isInstanceOf(IOException.class);
         byte[] withTail = wire.encode(new HookCall(List.of("codex"), new byte[3]));
         byte[] longer = java.util.Arrays.copyOf(withTail, withTail.length + 1);
         assertThatThrownBy(() -> wire.decodeCall(new ByteArrayInputStream(longer))).isInstanceOf(IOException.class);
@@ -80,5 +83,27 @@ class WireTest {
         assertThat(Wire.MAX_STDIN_BYTES).isGreaterThan(50 * 349_528);
         assertThat(Wire.MAX_REQUEST_BYTES).isGreaterThan(Wire.MAX_STDIN_BYTES);
         assertThat(Wire.MAX_ANSWER_BYTES).isGreaterThanOrEqualTo(Wire.MAX_STDIN_BYTES);
+    }
+
+    @Test
+    @DisplayName("HookCall, HookAnswer, and ResidentAddress enforce content-based equality, hashCode, and secret redaction")
+    void recordEqualityAndResidentSecret() {
+        HookCall c1 = new HookCall(List.of("codex"), new byte[] {1, 2, 3});
+        HookCall c2 = new HookCall(List.of("codex"), new byte[] {1, 2, 3});
+        HookCall c3 = new HookCall(List.of("codex"), new byte[] {1, 2, 4});
+        assertThat(c1).isEqualTo(c2).hasSameHashCodeAs(c2).isNotEqualTo(c3);
+        assertThat(c1.toString()).contains("codex", "[1, 2, 3]");
+
+        HookAnswer a1 = new HookAnswer(0, new byte[] {4, 5}, new byte[] {6});
+        HookAnswer a2 = new HookAnswer(0, new byte[] {4, 5}, new byte[] {6});
+        HookAnswer a3 = new HookAnswer(2, new byte[] {4, 5}, new byte[] {7});
+        assertThat(a1).isEqualTo(a2).hasSameHashCodeAs(a2).isNotEqualTo(a3);
+        assertThat(a1.toString()).contains("[4, 5]", "[6]");
+
+        String s1 = ResidentAddress.newSecret();
+        String s2 = ResidentAddress.newSecret();
+        assertThat(s1).isNotBlank().isNotEqualTo(s2);
+        ResidentAddress addr = new ResidentAddress(12345, 99L, 0L, "build-1", s1);
+        assertThat(addr.toString()).doesNotContain(s1).contains("12345");
     }
 }

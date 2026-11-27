@@ -137,11 +137,16 @@ public class WriteGate {
      */
     public GateSession openWithAnyGrant(String actor, Channel channel) {
         AuthorId author = callerResolver.verifyForWrite(actor, ToolCall.current(), "");
+        requireAnyLiveGrant(author);
+        return new GateSession(author, channel);
+    }
+
+    /** Verifies that {@code author} still holds at least one live grant (used by unsigned capability upload paths). */
+    public void requireAnyLiveGrant(AuthorId author) {
         if (grants.findLive(author, clock.instant()).isEmpty()) {
             throw new TrustException(TrustCode.SESSION_NOT_GRANTED, List.of(author.value(), "any", "any"),
                     Map.of("author", List.of(author.value())));
         }
-        return new GateSession(author, channel);
     }
 
     private static void requireReviewerForVerification(Channel channel, List<Target> targets) {

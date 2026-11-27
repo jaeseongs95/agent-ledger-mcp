@@ -180,7 +180,7 @@ public final class UpdateService {
             String sumsText = StandardCharsets.UTF_8.decode(ByteBuffer.wrap(sumsBytes)).toString();
             Map<String, String> expectedHashes = verifier.parseManifest(sumsText);
 
-            tempDir = Files.createTempDirectory("veridger-update-verify-");
+            tempDir = queue.createVerificationDirectory();
             Map<String, Path> downloaded = new LinkedHashMap<>();
             Map<String, String> verifiedHashes = new LinkedHashMap<>();
             for (Map.Entry<String, ReleaseAsset> entry : jarAssets.entrySet()) {

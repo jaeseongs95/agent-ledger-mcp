@@ -36,7 +36,7 @@ class SeedBuilderTest {
         Path sources = Files.createDirectories(directory.resolve("src"));
         Files.writeString(sources.resolve(SeedSources.CATEGORIES), HEADER + "\n" + GOOD_ROW + "\nBBB\t둘째\tSecond\t둘째 설명\tThe second one.\n",
                 StandardCharsets.UTF_8);
-        Files.writeString(sources.resolve(SeedSources.DEFAULTS), "# a comment\ninstance-name=demo\nmcp-port=9000\n", StandardCharsets.UTF_8);
+        Files.writeString(sources.resolve(SeedSources.DEFAULTS_FILE), "# a comment\ninstance-name=demo\nmcp-port=9000\n", StandardCharsets.UTF_8);
         return sources;
     }
 
@@ -109,7 +109,7 @@ class SeedBuilderTest {
     @DisplayName("SET-005 a bad defaults file (a name with a space, a name twice, an empty value, no value, nothing) stops the build the same way")
     void badDefaultsFile(String content, String where, String reason) throws IOException {
         Path sources = sources();
-        Files.writeString(sources.resolve(SeedSources.DEFAULTS), content, StandardCharsets.UTF_8);
+        Files.writeString(sources.resolve(SeedSources.DEFAULTS_FILE), content, StandardCharsets.UTF_8);
         Path output = directory.resolve("out");
 
         assertThatThrownBy(() -> SeedBuilder.build(sources, output)).isInstanceOf(SeedUnavailableException.class)
@@ -121,10 +121,10 @@ class SeedBuilderTest {
     @DisplayName("SET-005 a missing source file, and a bundle file that is missing, stop with a message that names the file")
     void missingFiles() throws IOException {
         Path sources = sources();
-        Files.delete(sources.resolve(SeedSources.DEFAULTS));
+        Files.delete(sources.resolve(SeedSources.DEFAULTS_FILE));
 
         assertThatThrownBy(() -> SeedBuilder.build(sources, directory.resolve("out"))).isInstanceOf(SeedUnavailableException.class)
-                .hasMessageContaining(SeedSources.DEFAULTS);
+                .hasMessageContaining(SeedSources.DEFAULTS_FILE);
         assertThatThrownBy(() -> SeedBundle.ofFile(directory.resolve("none").resolve(SeedBundle.RESOURCE)).codes())
                 .isInstanceOf(SeedUnavailableException.class).hasMessageContaining(SeedBundle.RESOURCE);
     }
