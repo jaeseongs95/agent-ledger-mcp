@@ -6,7 +6,7 @@
 # hooks/settings, and runs a live smoke test on mcp__veridger__ledger_ledger_whoami.
 #
 # Usage:
-#   sh install-hook.sh [--version=latest|v4.4.0] [--jars=<local-dir>] [--hosts=codex,claude,antigravity]
+#   sh install-hook.sh [--version=latest|v4.4.1] [--jars=<local-dir>] [--hosts=codex,claude,antigravity]
 #                      [--java=<path>] [--repo=jaeseongs95/veridger]
 set -eu
 umask 077
@@ -30,7 +30,7 @@ for arg in "$@"; do
     --hosts=*) HOSTS=${arg#*=} ;;
     --java=*) JAVA=${arg#*=} ;;
     -h|--help)
-      echo "Usage: sh install-hook.sh [--version=latest|v4.4.0] [--jars=<dir>] [--hosts=codex,claude,antigravity] [--java=<path>]"
+      echo "Usage: sh install-hook.sh [--version=latest|v4.4.1] [--jars=<dir>] [--hosts=codex,claude,antigravity] [--java=<path>]"
       exit 0 ;;
     *) die "unknown option: $arg" ;;
   esac

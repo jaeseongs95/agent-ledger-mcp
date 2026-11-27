@@ -12,15 +12,11 @@
 
   <div class="page-header">
     <div class="page-header-text">
-      <h1 th:text="${criterion.milestoneName()} + ' · ' + ${criterion.code()}">Milestone · C1</h1>
+      <h1 th:text="${criterion.code()}">C1</h1>
+      <p class="hint" th:text="${criterion.milestoneName()}">Milestone</p>
       <div class="form-actions">
         <span th:class="'badge badge-' + ${criterion.state()}" th:text="${@labels.criterionState(criterion.state())}">Active</span>
-        <span class="badge" th:text="${criterion.milestoneName()}">v1.0</span>
-        <span th:if="${criterion.goalLabel() != null and !#strings.isEmpty(criterion.goalLabel())}" class="badge" th:text="${criterion.goalLabel()}">Goal</span>
       </div>
-    </div>
-    <div class="page-header-actions">
-      <a class="button secondary btn-sm" th:href="@{/history(project=${criterion.projectId()}, entity='criterion', entityId=${criterion.id()})}" th:text="#{item.fullHistory}">Full history</a>
     </div>
   </div>
 
@@ -54,7 +50,7 @@
                 <td class="cell-time"><time th:replace="~{fragments :: time(${h.at()})}">t</time></td>
                 <td class="cell-nowrap" th:text="${@labels.historyOp(h.op())}">Create</td>
                 <td class="cell-owner" th:text="${h.author()}">author</td>
-                <td class="cell-reason" th:text="${h.reason()}">reason</td>
+                <td class="cell-reason"><th:block th:replace="~{fragments :: textPreview(${h.reason()}, 96)}"></th:block></td>
               </tr>
             </tbody>
           </table>

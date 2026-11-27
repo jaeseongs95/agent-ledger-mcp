@@ -1,14 +1,24 @@
-/* Precision Operational Console design tokens (Light & Dark, WCAG AA >= 4.5:1) */
+/* Shared Veridger console tokens */
 
 :root {
   color-scheme: light;
 
   /* Surface hierarchy */
-  --bg-canvas: #f8fafc;
+  --bg-canvas: #f1f3f8;
   --bg-surface: #ffffff;
-  --bg-surface-subtle: #f1f5f9;
-  --bg-surface-hover: #f8fafc;
-  --bg-sidebar: #ffffff;
+  --bg-surface-subtle: #f3f5fa;
+  --bg-surface-hover: #f4f6ff;
+  --bg-sidebar: #151a31;
+  --sidebar-line: #343b56;
+  --sidebar-text: #e0e5f7;
+  --sidebar-muted: #a4aecb;
+  --sidebar-hover: #252c49;
+  --sidebar-active: #323c65;
+  --sidebar-indicator: #b1b8ff;
+  --workspace-surface: #202b54;
+  --workspace-end: #333a72;
+  --workspace-text: #f7f8ff;
+  --workspace-muted: #d5dcf5;
 
   /* Text hierarchy */
   --text-primary: #0f172a;
@@ -22,10 +32,10 @@
   --border-strong: #94a3b8;
 
   /* Brand & focus */
-  --accent: #1d4ed8;
-  --accent-hover: #1e40af;
-  --accent-soft: #eff6ff;
-  --accent-border: #bfdbfe;
+  --accent: #3e4cb8;
+  --accent-hover: #303a94;
+  --accent-soft: #edf0ff;
+  --accent-border: #c7cefd;
   --accent-text: #ffffff;
   --focus-ring: #d97706;
 
@@ -73,8 +83,8 @@
 
   /* Radii */
   --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  --radius-md: 9px;
+  --radius-lg: 14px;
   --radius-pill: 9999px;
 
   /* Shadows */
@@ -84,7 +94,7 @@
 
   /* Layout metrics */
   --sidebar-width: 248px;
-  --topbar-height: 56px;
+  --topbar-height: 64px;
   --content-max: 1320px;
 }
 
@@ -96,7 +106,6 @@
     --bg-surface: #111827;
     --bg-surface-subtle: #192231;
     --bg-surface-hover: #1e293b;
-    --bg-sidebar: #0e1420;
 
     --text-primary: #f1f5f9;
     --text-secondary: #cbd5e1;
@@ -107,10 +116,10 @@
     --border-default: #334155;
     --border-strong: #475569;
 
-    --accent: #60a5fa;
-    --accent-hover: #93c5fd;
-    --accent-soft: rgba(59, 130, 246, 0.16);
-    --accent-border: rgba(96, 165, 250, 0.36);
+    --accent: #aebaff;
+    --accent-hover: #c9d1ff;
+    --accent-soft: rgba(130, 144, 255, 0.17);
+    --accent-border: rgba(174, 186, 255, 0.42);
     --accent-text: #0b0f17;
     --focus-ring: #fbbf24;
 
@@ -154,7 +163,6 @@
   --bg-surface: #111827;
   --bg-surface-subtle: #192231;
   --bg-surface-hover: #1e293b;
-  --bg-sidebar: #0e1420;
 
   --text-primary: #f1f5f9;
   --text-secondary: #cbd5e1;
@@ -165,10 +173,10 @@
   --border-default: #334155;
   --border-strong: #475569;
 
-  --accent: #60a5fa;
-  --accent-hover: #93c5fd;
-  --accent-soft: rgba(59, 130, 246, 0.16);
-  --accent-border: rgba(96, 165, 250, 0.36);
+  --accent: #aebaff;
+  --accent-hover: #c9d1ff;
+  --accent-soft: rgba(130, 144, 255, 0.17);
+  --accent-border: rgba(174, 186, 255, 0.42);
   --accent-text: #0b0f17;
   --focus-ring: #fbbf24;
 

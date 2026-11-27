@@ -3,7 +3,7 @@
 <head th:replace="~{fragments :: head(#{projects.title})}"></head>
 <body>
 <th:block th:replace="~{fragments :: header('projects')}"></th:block>
-<main id="main">
+<main id="main" class="record-page">
   <div class="page-header">
     <div class="page-header-text">
       <h1 th:text="#{projects.title}">Projects</h1>
@@ -35,7 +35,8 @@
     </div>
   </div>
 
-  <div th:if="${!#lists.isEmpty(projects)}" class="table-wrap" data-table-wrap="project-rows">
+  <div th:if="${!#lists.isEmpty(projects)}" class="table-wrap" data-table-wrap="project-rows"
+       role="region" tabindex="0" th:attr="aria-label=#{projects.title}">
     <table>
       <caption class="sr-only" th:text="#{projects.title}">Projects</caption>
       <thead>

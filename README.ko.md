@@ -10,7 +10,7 @@
 설치기는 프록시 설정을 쓰지 않고 인증서를 발급하지 않습니다.
 
 2.0.0 버전은 Java 25와 Spring Boot로 다시 작성한 것이며 자체 도구 계약을 가집니다(모든 쓰기 도구는 필수 `operationKey`를 받고, 모든 응답은 `ApiResult.v1` 봉투를 쓰며, 이전 버전의 인자는 새 인자와 함께 받아들이지 않습니다).
-클라이언트에 바뀐 내용은 릴리스 노트([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md), [4.0.0](docs/release-notes/4.0.0.md), [4.0.1](docs/release-notes/4.0.1.md), [4.1.0](docs/release-notes/4.1.0.md), [4.2.0](docs/release-notes/4.2.0.md), [4.3.0](docs/release-notes/4.3.0.md), [4.3.1](docs/release-notes/4.3.1.md), [4.3.2](docs/release-notes/4.3.2.md), [4.4.0](docs/release-notes/4.4.0.md))에 적습니다. 릴리스 노트의 형식은 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md)에 있습니다.
+클라이언트에 바뀐 내용은 릴리스 노트([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md), [4.0.0](docs/release-notes/4.0.0.md), [4.0.1](docs/release-notes/4.0.1.md), [4.1.0](docs/release-notes/4.1.0.md), [4.2.0](docs/release-notes/4.2.0.md), [4.3.0](docs/release-notes/4.3.0.md), [4.3.1](docs/release-notes/4.3.1.md), [4.3.2](docs/release-notes/4.3.2.md), [4.4.0](docs/release-notes/4.4.0.md), [4.4.1](docs/release-notes/4.4.1.md))에 적습니다. 릴리스 노트의 형식은 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md)에 있습니다.
 
 ## 목차
 

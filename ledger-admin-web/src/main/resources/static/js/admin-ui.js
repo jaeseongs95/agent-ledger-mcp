@@ -69,21 +69,37 @@
     });
   }
 
-  // 2. Responsive sidebar drawer with keyboard Escape and focus restoration
+  // 2. Responsive sidebar drawer
   const sidebar = document.getElementById("sidebar");
   const backdrop = document.getElementById("sidebar-backdrop");
   const openBtn = document.getElementById("sidebar-open");
   const closeBtn = document.getElementById("sidebar-close");
+  const mobileDrawer = window.matchMedia("(max-width: 1023px)");
+  let drawerBackground = [];
 
-  function setDrawer(open) {
-    if (!sidebar) { return; }
+  function setDrawer(open, restoreFocus = true) {
+    if (!sidebar || (open && !mobileDrawer.matches) || (sidebar.dataset.open === "true") === open) { return; }
     sidebar.dataset.open = open ? "true" : "false";
     if (backdrop) { backdrop.hidden = !open; }
     if (openBtn) { openBtn.setAttribute("aria-expanded", open ? "true" : "false"); }
     if (open) {
-      const firstLink = sidebar.querySelector("a, button");
-      if (firstLink) { firstLink.focus(); }
-    } else if (openBtn) {
+      sidebar.setAttribute("role", "dialog");
+      sidebar.setAttribute("aria-modal", "true");
+      sidebar.setAttribute("aria-labelledby", "sidebar-name");
+      drawerBackground = Array.from(document.body.children).filter((element) =>
+        element !== sidebar && element !== backdrop && !element.inert && element.tagName !== "SCRIPT"
+      );
+      drawerBackground.forEach((element) => { element.inert = true; });
+      (sidebar.querySelector('[aria-current="page"]') || closeBtn).focus();
+      return;
+    }
+
+    sidebar.removeAttribute("role");
+    sidebar.removeAttribute("aria-modal");
+    sidebar.removeAttribute("aria-labelledby");
+    drawerBackground.forEach((element) => { element.inert = false; });
+    drawerBackground = [];
+    if (restoreFocus && openBtn) {
       openBtn.focus();
     }
   }
@@ -97,10 +113,28 @@
   if (backdrop) {
     backdrop.addEventListener("click", () => setDrawer(false));
   }
-  document.addEventListener("keydown", (event) => {
+  mobileDrawer.addEventListener("change", () => {
+    if (!mobileDrawer.matches) { setDrawer(false, false); }
+  });
+  sidebar?.addEventListener("keydown", (event) => {
     if (event.isComposing || event.keyCode === 229) { return; }
-    if (event.key === "Escape" && sidebar && sidebar.dataset.open === "true") {
+    if (sidebar.dataset.open !== "true") { return; }
+    if (event.key === "Escape") {
+      event.preventDefault();
       setDrawer(false);
+      return;
+    }
+    if (event.key === "Tab") {
+      const controls = sidebar.querySelectorAll("a[href], button:not([disabled])");
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
   });
 
@@ -855,7 +889,7 @@
     const list = document.createElement("div");
     list.className = "changes-list";
 
-    const maxPreview = 3;
+    const maxPreview = 1;
     keys.slice(0, maxPreview).forEach((key) => {
       const val = parsed[key];
       const line = document.createElement("div");

@@ -3,7 +3,7 @@
 <head th:replace="~{fragments :: head(#{grants.title})}"></head>
 <body>
 <th:block th:replace="~{fragments :: header('grants')}"></th:block>
-<main id="main">
+<main id="main" class="grants-page">
   <div class="page-header">
     <div class="page-header-text">
       <h1 th:text="#{grants.title}">Session grants</h1>
@@ -40,7 +40,7 @@
       <span class="hint" th:text="#{grants.sessions.help}">Toggle scopes per project and click Save changes once — additions and removals apply together in one transaction.</span>
     </div>
 
-    <div th:if="${!#lists.isEmpty(sessions)}" class="filters" data-session-toolbar>
+    <div th:if="${!#lists.isEmpty(sessions)}" class="session-toolbar" data-session-toolbar>
       <div class="filter-field">
         <label for="grant-project-filter" th:text="#{projects.name}">Project name</label>
         <input id="grant-project-filter" type="search" autocomplete="off">
