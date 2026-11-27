@@ -99,7 +99,7 @@ class WindowsSecretsTest {
 
     @Test
     @RequiresNonPosixFileSystem
-    @DisplayName("PCS-036 prepare-host, a secret of the installing user, prepare-host again: both runs succeed, the secret and its folders are unchanged, and the service account LocalService has the effective right to read the secret, the secrets folder and the jars, to change the settings, and nothing on the secrets but read; Everyone has no right on the secrets")
+    @DisplayName("PCS-036 prepare-host, a secret of the installing user, prepare-host again: both runs succeed, the secret and its folders are unchanged, and the service account LocalService has the effective right to read the secret, the secrets folder, the settings folder and the jars, to write only driver-state and update (not etc), and nothing on the secrets but read; Everyone has no right on the secrets")
     void pcs036_aRerunAndTheServiceAccountReads(Cli cli) throws IOException {
         assumeTrue(elevated(), "this needs an elevated prompt: only an administrator may close the home to everybody else");
         assertThat(prepareHost(cli).code()).as("the first run").isEmpty();
@@ -130,8 +130,14 @@ class WindowsSecretsTest {
         Path jar = home().resolve("lib").resolve(DeployLayout.MCP_JAR);
         assertThat(WindowsEffectiveRights.of(jar, SERVICE) & WindowsEffectiveRights.FILE_READ_DATA).as("the service account reads the jar").isNotZero();
         assertThat(WindowsEffectiveRights.of(jar, SERVICE) & WindowsEffectiveRights.FILE_WRITE_DATA).as("and does not write it").isZero();
+        assertThat(WindowsEffectiveRights.of(home().resolve("etc"), SERVICE) & WindowsEffectiveRights.FILE_READ_DATA)
+                .as("the service account reads the settings folder").isNotZero();
         assertThat(WindowsEffectiveRights.of(home().resolve("etc"), SERVICE) & WindowsEffectiveRights.FILE_WRITE_DATA)
-                .as("the service account changes the settings folder").isNotZero();
+                .as("the service account does not write the settings folder directly").isZero();
+        for (String writable : List.of("etc/driver-state", "etc/update")) {
+            assertThat(WindowsEffectiveRights.of(home().resolve(writable), SERVICE) & WindowsEffectiveRights.FILE_WRITE_DATA)
+                    .as("the service account writes %s", writable).isNotZero();
+        }
     }
 
     @Test
