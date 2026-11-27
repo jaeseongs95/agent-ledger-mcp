@@ -280,9 +280,9 @@ class ManifestTest {
 
     @ParameterizedTest
     @ValueSource(strings = { "claude/.claude-plugin/plugin.json", "codex/plugin.json", "antigravity/plugin.json" })
-    @DisplayName("FUP-CLI-03 the version of every plugin is the version of the release, 4.4.0")
+    @DisplayName("FUP-CLI-03 the version of every plugin is the version of the release, 4.4.1")
     void pluginVersionIsTheRelease(String file) throws IOException {
-        assertThat(read(file).path("version").stringValue()).isEqualTo("4.4.0");
+        assertThat(read(file).path("version").stringValue()).isEqualTo("4.4.1");
     }
 
     @ParameterizedTest
