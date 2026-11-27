@@ -205,7 +205,7 @@ class ConfigBindingTest {
             assertThat(update.enabled()).isTrue();
             assertThat(update.repository()).isEqualTo("jaeseongs95/veridger");
             assertThat(update.currentVersion()).isEqualTo("4.3.2");
-            assertThat(update.currentSchemaVersion()).isEqualTo(13);
+            assertThat(update.currentSchemaVersion()).isEqualTo(14);
         });
         secrets().withPropertyValues("ledger.admin.update.repository=bad repo name").run(context -> {
             assertThat(context).hasFailed();

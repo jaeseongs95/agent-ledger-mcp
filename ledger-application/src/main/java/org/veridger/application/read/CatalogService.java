@@ -2,6 +2,8 @@
 
 package org.veridger.application.read;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -35,7 +37,8 @@ public class CatalogService {
     public record CodesQuery(String group, Boolean includeInactive, Number maxRows, String cursor) {
     }
 
-    public record ProjectView(String id, String code, String title) {
+    public record ProjectView(String id, String code, String title, @JsonIgnore String displayName,
+            @JsonIgnore long version) {
     }
 
     /** A code as listed; {@code direction} is how a relation of the code keeps its two ends (CANONICAL outside RELATION_KIND). */
@@ -61,7 +64,7 @@ public class CatalogService {
         int start = cursors.decode(q.cursor(), PageCursor.Kind.PROJECTS, criteria)
                 .map(after -> startAfter(all, p -> true, key, after)).orElse(0);
         return slice(all, start, maxRows, PageCursor.Kind.PROJECTS, criteria, key,
-                p -> new ProjectView(p.id().value(), p.code().value(), p.title()));
+                p -> new ProjectView(p.id().value(), p.code().value(), p.title(), p.displayName(), p.version()));
     }
 
     public Page<CodeView> codes(CodesQuery q) {

@@ -3,6 +3,10 @@
 (function () {
   "use strict";
   var format = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
+  var zone = format.resolvedOptions().timeZone;
+  document.querySelectorAll("[data-date-zone]").forEach(function (field) {
+    if (!field.value && zone) { field.value = zone; }
+  });
   var times = document.querySelectorAll("time[datetime]");
   for (var i = 0; i < times.length; i++) {
     var time = times[i];

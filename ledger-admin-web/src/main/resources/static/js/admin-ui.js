@@ -453,6 +453,14 @@
       if (form) { form.reset(); }
     }
 
+    if (modalId === "modal-project-rename") {
+      setField("rename-project", trigger.dataset.project);
+      setField("rename-project-version", trigger.dataset.version);
+      setField("rename-project-name", trigger.dataset.name);
+      const error = dialog.querySelector("[data-project-rename-error]");
+      if (error) { error.hidden = true; }
+    }
+
     // Grants: Edit project scopes matrix modal
     if (modalId === "modal-edit-scopes") {
       const form = document.getElementById("edit-scopes-form");
@@ -673,38 +681,52 @@
   // 11. Grants Search Toolbar — Korean IME-safe
   const sessionToolbar = document.querySelector("[data-session-toolbar]");
   if (sessionToolbar) {
+    const projectInput = document.getElementById("grant-project-filter");
     const searchInput = document.getElementById("session-search");
-    const cards = Array.from(document.querySelectorAll("[data-session-card]"));
+    const hostSelect = document.getElementById("grant-host-filter");
+    const scopeSelect = document.getElementById("grant-scope-filter");
+    const cards = Array.from(document.querySelectorAll("[data-session-card]"), (element) => ({
+      element,
+      projects: Array.from(element.querySelectorAll("[data-project-grant]"))
+    }));
     const emptyNotice = document.getElementById("session-filter-empty");
-    const resetBtn = document.getElementById("session-filter-reset");
+    const resetBtn = sessionToolbar.querySelector("[data-session-filter-reset]");
     const countEl = document.getElementById("session-filter-count");
-    let composing = false;
 
     function applySessionFilters() {
-      const q = (searchInput ? searchInput.value : "").trim().toLowerCase();
+      const project = projectInput.value.trim().toLowerCase();
+      const session = searchInput.value.trim().toLowerCase();
+      const host = hostSelect.value;
+      const scope = scopeSelect.value;
       let visible = 0;
-      cards.forEach((card) => {
-        const text = (card.dataset.searchText || ((card.dataset.author || "") + " " + (card.dataset.projects || ""))).toLowerCase();
-        const show = !q || text.includes(q);
-        card.hidden = !show;
+      cards.forEach(({ element, projects }) => {
+        let matchingProject = false;
+        projects.forEach((row) => {
+          const matches = row.dataset.projectName.toLowerCase().includes(project)
+            && (!scope || row.dataset.scopes.split(",").includes(scope));
+          row.hidden = !matches;
+          matchingProject ||= matches;
+        });
+        const show = matchingProject && (!host || element.dataset.host === host)
+          && element.dataset.sessionId.toLowerCase().includes(session);
+        element.hidden = !show;
         if (show) { visible += 1; }
       });
       formatCount(countEl, visible, cards.length);
       if (emptyNotice) { emptyNotice.hidden = visible > 0 || cards.length === 0; }
     }
 
-    if (searchInput) {
-      searchInput.addEventListener("compositionstart", () => { composing = true; });
-      searchInput.addEventListener("compositionend", () => { composing = false; applySessionFilters(); });
-      searchInput.addEventListener("input", () => { if (!composing) { applySessionFilters(); } });
-    }
-    if (resetBtn) {
-      resetBtn.addEventListener("click", () => {
-        if (searchInput) { searchInput.value = ""; }
-        applySessionFilters();
-        if (searchInput) { searchInput.focus(); }
-      });
-    }
+    [projectInput, searchInput].forEach((input) => {
+      input.addEventListener("compositionend", applySessionFilters);
+      input.addEventListener("input", (event) => { if (!event.isComposing) { applySessionFilters(); } });
+    });
+    [hostSelect, scopeSelect].forEach((select) => select.addEventListener("change", applySessionFilters));
+    resetBtn.addEventListener("click", () => {
+      [projectInput, searchInput, hostSelect, scopeSelect].forEach((input) => { input.value = ""; });
+      applySessionFilters();
+      projectInput.focus();
+    });
+    applySessionFilters();
   }
 
   // 12. Common Codes Search + Group + State Filter — Korean IME-safe

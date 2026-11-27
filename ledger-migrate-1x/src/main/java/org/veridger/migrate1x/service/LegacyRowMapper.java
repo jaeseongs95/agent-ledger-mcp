@@ -250,6 +250,7 @@ final class LegacyRowMapper {
 
     private static void project(LegacyRow s, Map<String, Object> t, ImportCounters counters, Violations v) {
         copy(s, t, "id", "code", "title", "created_by");
+        t.put("display_name", s.text("code"));
         matches(v, "id", s.text("id"), ProjectId.FORMAT, ValidationReason.MUST_MATCH);
         matches(v, "code", s.text("code"), ProjectCode.FORMAT, ValidationReason.MUST_MATCH);
         t.put("next_issue_no", counters.issueNumber(s.text("id")));

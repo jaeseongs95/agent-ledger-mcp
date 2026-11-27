@@ -88,6 +88,11 @@ public record Paging(int limit, int number, String previousHref, String nextHref
                 uri.queryParam(name, value);
             }
         });
-        return uri.build().encode().toUriString();
+        // A literal plus in a zone such as Etc/GMT+4 must survive form-style query decoding.
+        return uri.build().encode().toUriString().replace("+", "%2B");
+    }
+
+    static String firstHref(String path, Map<String, String> filters, Integer limit) {
+        return href(path, filters, limitOf(limit), null, List.of());
     }
 }

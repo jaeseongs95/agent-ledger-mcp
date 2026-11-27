@@ -191,7 +191,7 @@ public record LedgerAdminProperties(String token, String agentToken,
             @DefaultValue("/etc/veridger/update") Path directory,
             @DefaultValue("10s") Duration timeout,
             @DefaultValue("4.3.2") String currentVersion,
-            @DefaultValue("13") @Min(1) int currentSchemaVersion) {
+            @DefaultValue("14") @Min(1) int currentSchemaVersion) {
 
         private static final Pattern REPOSITORY_PATTERN = Pattern.compile("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$");
 

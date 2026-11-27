@@ -16,6 +16,7 @@ public enum OwnerAction {
     TOKEN_REVOKED,
     CODE_SET,
     PROJECT_ADDED,
+    PROJECT_RENAMED,
     DRIVER_REGISTERED,
     IMPORT,
     PASSKEY_CODE_ISSUED,

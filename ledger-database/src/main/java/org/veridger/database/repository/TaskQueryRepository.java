@@ -33,7 +33,7 @@ public class TaskQueryRepository {
     }
 
     /** Position after the last row of a page. */
-    public record Position(Instant createdAt, TaskId id) {
+    public record Position(Instant at, TaskId id) {
     }
 
     private final JdbcClient jdbc;
@@ -45,6 +45,11 @@ public class TaskQueryRepository {
     }
 
     public KeysetPage<TaskSummary> page(ProjectId project, Filter filter, MaxRows maxRows, Position after) {
+        return page(project, filter, maxRows, DateQuery.NONE, after);
+    }
+
+    public KeysetPage<TaskSummary> page(ProjectId project, Filter filter, MaxRows maxRows, DateQuery dates,
+            Position after) {
         StringBuilder sql = new StringBuilder("SELECT id, title, state, owner_actor_id, version, created_at, "
                 + "updated_at FROM task WHERE project_id = :project");
         if (filter.state() != null) {
@@ -56,10 +61,12 @@ public class TaskQueryRepository {
         if (filter.attention() != null) {
             sql.append(" AND ").append(AttentionSql.condition(filter.attention(), HistoryEntity.TASK));
         }
+        dates.appendRange(sql);
+        DateQuery order = dates.defaultOrder(DateQuery.Column.CREATED, false);
         if (after != null) {
-            sql.append(" AND (created_at < :after OR (created_at = :after AND id < :afterId))");
+            order.appendSeek(sql, "id", after.at(), false);
         }
-        sql.append(" ORDER BY created_at DESC, id DESC");
+        order.appendOrder(sql, "id", false);
         JdbcClient.StatementSpec spec = jdbc.sql(sqlBuilder.applyLimit(sql.toString(), ":row_count"))
                 .param("project", project.value()).param("row_count", maxRows.value() + 1);
         if (filter.state() != null) {
@@ -68,8 +75,9 @@ public class TaskQueryRepository {
         if (filter.owner() != null) {
             spec = spec.param("owner", filter.owner());
         }
+        spec = dates.bindRange(spec);
         if (after != null) {
-            spec = spec.param("after", UtcTime.toDb(after.createdAt())).param("afterId", after.id().value());
+            spec = order.bindSeek(spec, after.at(), after.id().value());
         }
         List<TaskSummary> fetched = spec.query((rs, n) -> new TaskSummary(TaskId.of(rs.getString("id")),
                 rs.getString("title"), TaskState.valueOf(rs.getString("state")), rs.getString("owner_actor_id"),

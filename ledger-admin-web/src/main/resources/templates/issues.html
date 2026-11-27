@@ -20,7 +20,7 @@
       <div class="filter-field">
         <label for="project" th:text="#{common.project}">Project</label>
         <select id="project" name="project">
-          <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.id()}" th:selected="${p.id() == choice.selected()}">p1</option>
+          <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.displayName()}" th:selected="${p.id() == choice.selected()}">p1</option>
         </select>
       </div>
       <div class="filter-field">
@@ -59,6 +59,7 @@
         <label for="owner" th:text="#{common.owner}">Owner</label>
         <input id="owner" name="owner" type="text" th:value="${filter.owner()}" maxlength="200">
       </div>
+      <th:block th:replace="~{fragments :: dateFilters(false)}"></th:block>
       <div class="filter-field filter-field-sm">
         <label for="limit" th:text="#{paging.size}">Rows per page</label>
         <select id="limit" name="limit">
@@ -82,7 +83,8 @@
             <th scope="col" th:text="#{common.status}">Status</th>
             <th scope="col" th:text="#{col.title}">Title</th>
             <th scope="col" th:text="#{common.owner}">Owner</th>
-            <th scope="col" th:text="#{col.updated}">Updated</th>
+            <th th:replace="~{fragments :: dateHeader(#{col.created}, ${createdSort})}">Registered</th>
+            <th th:replace="~{fragments :: dateHeader(#{col.updated}, ${updatedSort})}">Last modified</th>
           </tr>
         </thead>
         <tbody>
@@ -93,7 +95,8 @@
             <td class="cell-nowrap"><span th:class="'badge badge-' + ${i.status()}" th:text="${@labels.issueStatus(i.status())}">Open</span></td>
             <td class="cell-title" th:text="${i.title()}">Title</td>
             <td class="cell-owner" th:text="${i.owner() != null} ? ${i.owner()} : #{common.noneValue}">owner</td>
-            <td class="cell-time"><time th:replace="~{fragments :: time(${i.updatedAt()})}">t</time></td>
+            <td th:replace="~{fragments :: dateCell(${i.createdAt()})}">t</td>
+            <td th:replace="~{fragments :: dateCell(${i.updatedAt()})}">t</td>
           </tr>
         </tbody>
       </table>

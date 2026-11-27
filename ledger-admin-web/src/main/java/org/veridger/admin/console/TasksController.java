@@ -49,7 +49,8 @@ public class TasksController {
     }
 
     @GetMapping("/tasks")
-    String tasks(@ModelAttribute("filter") TaskFilter filter, Model model) {
+    String tasks(@ModelAttribute("filter") TaskFilter filter, @ModelAttribute("dates") ListDateFilter dates,
+            Model model) {
         Choices.ProjectChoice project = choices.project(filter.project());
         model.addAttribute("choice", project);
         model.addAttribute("states", TaskState.values());
@@ -57,17 +58,18 @@ public class TasksController {
             AttentionKind.DONE_NOT_VERIFIED});
         model.addAttribute("sizes", Paging.SIZES);
         boolean hasFilters = StringUtils.hasText(filter.state()) || StringUtils.hasText(filter.owner())
-                || StringUtils.hasText(filter.attention());
+                || StringUtils.hasText(filter.attention()) || dates.hasRange();
         model.addAttribute("hasFilters", hasFilters);
         model.addAttribute("resetHref", links.projectHref("/tasks", project.selected()));
         if (project.selected() != null) {
             var page = lists.tasks(new TasksQuery(project.selected(), filter.state(), filter.owner(),
-                    filter.attention(), Paging.limitOf(filter.limit()), filter.cursor()));
+                    filter.attention(), Paging.limitOf(filter.limit()), filter.cursor()), dates.query(false));
             Map<String, String> filters = new LinkedHashMap<>();
             filters.put("project", project.selected());
             filters.put("state", filter.state());
             filters.put("owner", filter.owner());
             filters.put("attention", filter.attention());
+            dates.populate(model, "/tasks", filters, filter.limit(), "created");
             model.addAttribute("page", page);
             model.addAttribute("paging", Paging.of("/tasks", filters, filter.limit(), filter.cursor(),
                     filter.back(), page.nextCursor()));
@@ -88,17 +90,19 @@ public class TasksController {
     }
 
     @GetMapping("/criteria")
-    String criteria(@ModelAttribute("filter") CriterionFilter filter, Model model) {
+    String criteria(@ModelAttribute("filter") CriterionFilter filter, @ModelAttribute("dates") ListDateFilter dates,
+            Model model) {
         Choices.ProjectChoice project = choices.project(filter.project());
         model.addAttribute("choice", project);
         model.addAttribute("states", CriterionState.values());
         model.addAttribute("sizes", Paging.SIZES);
-        boolean hasFilters = StringUtils.hasText(filter.state()) || StringUtils.hasText(filter.milestone());
+        boolean hasFilters = StringUtils.hasText(filter.state()) || StringUtils.hasText(filter.milestone())
+                || dates.hasRange();
         model.addAttribute("hasFilters", hasFilters);
         model.addAttribute("resetHref", links.projectHref("/criteria", project.selected()));
         if (project.selected() != null) {
             var page = lists.criteria(new CriteriaQuery(project.selected(), filter.state(), filter.milestone(),
-                    Paging.limitOf(filter.limit()), filter.cursor()));
+                    Paging.limitOf(filter.limit()), filter.cursor()), dates.query(false));
             var rollups = lists.milestoneRollups(project.selected());
             var rawLinkCounts = lists.criterionLinkCounts(
                     page.items().stream().map(ListService.CriterionItem::id).toList());
@@ -112,6 +116,7 @@ public class TasksController {
             filters.put("project", project.selected());
             filters.put("state", filter.state());
             filters.put("milestone", filter.milestone());
+            dates.populate(model, "/criteria", filters, filter.limit(), null);
             model.addAttribute("page", page);
             model.addAttribute("rollups", rollups);
             model.addAttribute("customMilestone", customMilestone);

@@ -26,7 +26,7 @@ public class SpecQueryRepository {
     }
 
     /** Position after the last row of a page. */
-    public record Position(Instant createdAt, SpecId id) {
+    public record Position(Instant at, SpecId id) {
     }
 
     private final JdbcClient jdbc;
@@ -38,6 +38,11 @@ public class SpecQueryRepository {
     }
 
     public KeysetPage<SpecSummary> page(ProjectId project, Filter filter, MaxRows maxRows, Position after) {
+        return page(project, filter, maxRows, DateQuery.NONE, after);
+    }
+
+    public KeysetPage<SpecSummary> page(ProjectId project, Filter filter, MaxRows maxRows, DateQuery dates,
+            Position after) {
         StringBuilder sql = new StringBuilder("SELECT id, parent_id, title, status, priority, owner_actor_id, "
                 + "version, created_at, updated_at FROM spec WHERE project_id = :project");
         if (filter.status() != null) {
@@ -55,10 +60,12 @@ public class SpecQueryRepository {
         if (filter.attention() != null) {
             sql.append(" AND ").append(AttentionSql.condition(filter.attention(), HistoryEntity.SPEC));
         }
+        dates.appendRange(sql);
+        DateQuery order = dates.defaultOrder(DateQuery.Column.CREATED, false);
         if (after != null) {
-            sql.append(" AND (created_at < :after OR (created_at = :after AND id < :afterId))");
+            order.appendSeek(sql, "id", after.at(), false);
         }
-        sql.append(" ORDER BY created_at DESC, id DESC");
+        order.appendOrder(sql, "id", false);
         JdbcClient.StatementSpec stmt = jdbc.sql(sqlBuilder.applyLimit(sql.toString(), ":row_count"))
                 .param("project", project.value()).param("row_count", maxRows.value() + 1);
         if (filter.status() != null) {
@@ -73,8 +80,9 @@ public class SpecQueryRepository {
         if (filter.owner() != null) {
             stmt = stmt.param("owner", filter.owner());
         }
+        stmt = dates.bindRange(stmt);
         if (after != null) {
-            stmt = stmt.param("after", UtcTime.toDb(after.createdAt())).param("afterId", after.id().value());
+            stmt = order.bindSeek(stmt, after.at(), after.id().value());
         }
         List<SpecSummary> fetched = stmt.query((rs, n) -> {
             String rawParent = rs.getString("parent_id");

@@ -41,25 +41,27 @@ public class SpecsController {
     }
 
     @GetMapping("/specs")
-    String list(@ModelAttribute("filter") SpecFilter filter, Model model) {
+    String list(@ModelAttribute("filter") SpecFilter filter, @ModelAttribute("dates") ListDateFilter dates,
+            Model model) {
         Choices.ProjectChoice project = choices.project(filter.project());
         model.addAttribute("choice", project);
         model.addAttribute("statuses", SpecStatus.values());
         model.addAttribute("attentions", new AttentionKind[] {AttentionKind.SPEC_COMPLETED_NOT_VERIFIED});
         model.addAttribute("sizes", Paging.SIZES);
         boolean hasFilters = StringUtils.hasText(filter.status()) || StringUtils.hasText(filter.priority())
-                || StringUtils.hasText(filter.owner()) || StringUtils.hasText(filter.attention());
+                || StringUtils.hasText(filter.owner()) || StringUtils.hasText(filter.attention()) || dates.hasRange();
         model.addAttribute("hasFilters", hasFilters);
         model.addAttribute("resetHref", links.projectHref("/specs", project.selected()));
         if (project.selected() != null) {
             var page = lists.specs(new SpecsQuery(project.selected(), filter.status(), null, filter.priority(),
-                    filter.owner(), filter.attention(), Paging.limitOf(filter.limit()), filter.cursor()));
+                    filter.owner(), filter.attention(), Paging.limitOf(filter.limit()), filter.cursor()), dates.query(false));
             Map<String, String> filters = new LinkedHashMap<>();
             filters.put("project", project.selected());
             filters.put("status", filter.status());
             filters.put("priority", filter.priority());
             filters.put("owner", filter.owner());
             filters.put("attention", filter.attention());
+            dates.populate(model, "/specs", filters, filter.limit(), "created");
             model.addAttribute("page", page);
             model.addAttribute("paging", Paging.of("/specs", filters, filter.limit(), filter.cursor(),
                     filter.back(), page.nextCursor()));

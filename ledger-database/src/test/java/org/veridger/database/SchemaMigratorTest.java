@@ -22,6 +22,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -173,7 +174,7 @@ class SchemaMigratorTest {
     void sch001_aFreshDatabaseGetsEveryRealFileInOrderWithItsDigest() {
         SchemaMigrator real = TestSchemaServices.migrator(pool,
                 new SchemaProperties(SchemaProperties.DEFAULT_LOCATION, true, null), clock);
-        assertThat(real.migrate()).containsExactly(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13);
+        assertThat(real.migrate()).containsExactly(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14);
         assertThat(history()).isEqualTo(List.of(
                 succeeded(1, 1, "V1__core_tables.sql", resource("db/V1__core_tables.sql"), T0),
                 succeeded(2, 1, "V2__history_and_receipts.sql", resource("db/V2__history_and_receipts.sql"), T0),
@@ -192,9 +193,33 @@ class SchemaMigratorTest {
                 succeeded(12, 1, "V12__performance_indexes.sql",
                         resource("db/V12__performance_indexes.sql"), T0),
                 succeeded(13, 1, "V13__owner_passkey_counter.sql",
-                        resource("db/V13__owner_passkey_counter.sql"), T0)));
+                        resource("db/V13__owner_passkey_counter.sql"), T0),
+                succeeded(14, 1, "V14__project_display_name_and_date_indexes.sql",
+                        resource("db/V14__project_display_name_and_date_indexes.sql"), T0)));
         assertThat(tableExists("issue")).isTrue();
         assertThat(tableExists("spec")).isTrue();
+    }
+
+    @Test
+    void v14BackfillsProjectNamesFromCodesWithoutChangingExistingFields() throws IOException {
+        var shipped = MigrationFile.load(new PathMatchingResourcePatternResolver(), SchemaProperties.DEFAULT_LOCATION);
+        Map<String, String> throughV13 = new LinkedHashMap<>();
+        for (var file : shipped) {
+            if (file.version() <= 13) {
+                throughV13.put(file.fileName(), file.text());
+            }
+        }
+        Path dir = files(throughV13);
+        migrator(dir).migrate();
+        JdbcClient jdbc = JdbcClient.create(pool);
+        jdbc.sql("INSERT INTO project (id, code, title, next_issue_no, version, created_by) "
+                + "VALUES ('old', 'OLD', 'Original description', 7, 2, 'user:owner')").update();
+        String v14 = "V14__project_display_name_and_date_indexes.sql";
+        Files.writeString(dir.resolve(v14), resource("db/" + v14));
+        assertThat(migrator(dir).migrate()).containsExactly(14);
+        assertThat(jdbc.sql("SELECT code, title, display_name, next_issue_no, version FROM project WHERE id = 'old'")
+                .query().singleRow()).containsEntry("code", "OLD").containsEntry("title", "Original description")
+                .containsEntry("display_name", "OLD").containsEntry("next_issue_no", 7L).containsEntry("version", 2L);
     }
 
     /** RUN-004: the declaration that the dialect of SqlBuilder gives for the placeholder on the test PostgreSQL holds a long text. */

@@ -25,7 +25,7 @@
         <input id="project-search" type="search" autocomplete="off"
                data-table-search="project-rows"
                th:placeholder="#{projects.search.placeholder}"
-               placeholder="Search by project ID, code, or title...">
+               placeholder="Search by project ID, name, or description...">
       </div>
     </div>
     <div class="toolbar-meta">
@@ -41,16 +41,21 @@
       <thead>
         <tr>
           <th scope="col" th:text="#{col.id}">ID</th>
-          <th scope="col" th:text="#{projects.code}">Code</th>
-          <th scope="col" th:text="#{projects.titleCol}">Title</th>
+          <th scope="col" th:text="#{projects.name}">Project name</th>
+          <th scope="col" th:text="#{projects.description}">Project description</th>
           <th scope="col" th:text="#{projects.open}">Quick links</th>
         </tr>
       </thead>
       <tbody id="project-rows">
         <tr th:each="p : ${projects}" data-search-item
-            th:attr="data-search-text=${p.id() + ' ' + p.code() + ' ' + p.title()}">
+            th:attr="data-search-text=${p.id() + ' ' + p.displayName() + ' ' + p.code() + ' ' + p.title()}">
           <td class="code" th:text="${p.id()}">p1</td>
-          <td><span class="badge" th:text="${p.code()}">P1</span></td>
+          <td>
+            <span th:text="${p.displayName()}">P1</span>
+            <button type="button" class="ghost btn-sm" data-modal-open="modal-project-rename"
+                    th:attr="data-project=${p.id()},data-name=${p.displayName()},data-version=${p.version()}"
+                    th:text="#{projects.rename}">Rename</button>
+          </td>
           <td th:text="${p.title()}">Title</td>
           <td class="cell-actions">
             <span class="project-links">
@@ -111,7 +116,12 @@
             <input id="code" name="code" type="text" required autocomplete="off" th:value="${projectForm != null} ? ${projectForm.code()}">
           </div>
           <div class="form-field form-field-full">
-            <label for="title" th:text="#{projects.title.label}">Title</label>
+            <label for="displayName" th:text="#{projects.name}">Project name</label>
+            <input id="displayName" name="displayName" type="text" required maxlength="200"
+                   th:value="${projectForm != null} ? ${projectForm.displayName()}">
+          </div>
+          <div class="form-field form-field-full">
+            <label for="title" th:text="#{projects.description}">Project description</label>
             <input id="title" name="title" type="text" required maxlength="200" autocomplete="off" th:value="${projectForm != null} ? ${projectForm.title()}">
           </div>
         </div>
@@ -120,6 +130,33 @@
           <div class="modal-footer-actions">
             <button type="button" class="secondary" data-modal-close th:text="#{common.cancel}">Cancel</button>
             <button type="submit" th:text="#{projects.submit}">Add</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </dialog>
+  <dialog id="modal-project-rename" class="modal-dialog" aria-labelledby="modal-project-rename-title"
+          th:attr="data-open-on-load=${renameForm != null}">
+    <div class="modal-header">
+      <h2 id="modal-project-rename-title" th:text="#{projects.rename}">Rename project</h2>
+      <button type="button" class="ghost btn-sm modal-close" data-modal-close th:attr="aria-label=#{common.close}">×</button>
+    </div>
+    <div class="modal-body">
+      <p th:if="${renameForm != null and formErrorDetail != null}" class="alert alert-danger"
+         data-project-rename-error role="alert" th:text="${formErrorDetail}">Could not rename the project.</p>
+      <form method="post" th:action="@{/projects/rename}" class="form-wide">
+        <input id="rename-project" name="id" type="hidden" th:value="${renameForm != null} ? ${renameForm.id()}">
+        <input id="rename-project-version" name="version" type="hidden"
+               th:value="${renameForm != null} ? ${renameForm.version()}">
+        <div class="form-field">
+          <label for="rename-project-name" th:text="#{projects.name}">Project name</label>
+          <input id="rename-project-name" name="displayName" type="text" required maxlength="200" autofocus
+                 th:value="${renameForm != null} ? ${renameForm.displayName()}">
+        </div>
+        <div class="modal-footer">
+          <div class="modal-footer-actions">
+            <button type="button" class="secondary" data-modal-close th:text="#{common.cancel}">Cancel</button>
+            <button type="submit" th:text="#{common.save}">Save</button>
           </div>
         </div>
       </form>

@@ -8,12 +8,15 @@ import java.util.List;
 import org.veridger.database.repository.ProjectRepository;
 import org.veridger.domain.error.ConflictCode;
 import org.veridger.domain.error.ConflictException;
+import org.veridger.domain.error.LookupCode;
+import org.veridger.domain.error.LookupException;
 import org.veridger.domain.model.Project;
 import org.veridger.domain.rule.OwnerAction;
 import org.veridger.domain.value.AuthorId;
 import org.veridger.domain.value.OwnerIdentity;
 import org.veridger.domain.value.ProjectCode;
 import org.veridger.domain.value.ProjectId;
+import org.veridger.domain.value.TextRule;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,7 +33,14 @@ public class ProjectService {
 
     /** A project to add: id, code (the prefix of its issue, spec, and task ids) and title. */
     public record ProjectCommand(@NotNull(message = "{reason.REQUIRED}") String id,
-            @NotNull(message = "{reason.REQUIRED}") String code, String title) {
+            @NotNull(message = "{reason.REQUIRED}") String code, String title, String displayName) {
+
+        public ProjectCommand(String id, String code, String title) {
+            this(id, code, title, null);
+        }
+    }
+
+    public record RenameCommand(String id, String displayName, @NotNull(message = "{reason.REQUIRED}") Long version) {
     }
 
     private final ProjectRepository projects;
@@ -44,7 +54,7 @@ public class ProjectService {
     public Project add(@Valid ProjectCommand command, OwnerIdentity actor) {
         ProjectId id = ProjectId.of(command.id());
         ProjectCode code = ProjectCode.of(command.code());
-        Project project = Project.open(id, code, command.title());
+        Project project = Project.open(id, code, command.title(), command.displayName());
         if (projects.existsById(id) || projects.findByCode(code).isPresent()) {
             throw new ConflictException(ConflictCode.DUPLICATE_KEY, List.of("project " + id.value()));
         }
@@ -57,6 +67,21 @@ public class ProjectService {
         }
         audit.record(actor, OwnerAction.PROJECT_ADDED, id.value(), "code=" + code.value());
         return added;
+    }
+
+    public void rename(@Valid RenameCommand command, OwnerIdentity actor) {
+        ProjectId id = ProjectId.of(command.id());
+        String name = TextRule.PROJECT_NAME.required(command.displayName());
+        Project current = projects.findById(id)
+                .filter(project -> project.id().equals(id))
+                .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND, List.of("project", id.value())));
+        if (name.equals(current.displayName())) {
+            return;
+        }
+        if (!projects.rename(id, name, command.version())) {
+            throw new ConflictException(ConflictCode.CONCURRENT_MODIFICATION, List.of("project", id.value()));
+        }
+        audit.record(actor, OwnerAction.PROJECT_RENAMED, id.value(), name);
     }
 
     @Transactional(readOnly = true)

@@ -146,13 +146,17 @@ public class GrantsController {
     private void populateCommon(Map<String, Object> target) {
         List<SessionGrant> liveGrants = grants.liveAll();
         Choices.ProjectChoice choice = choices.project(null);
-        List<String> projectIds = choice.projects().stream().map(p -> p.id()).toList();
-        List<SessionAccessView.SessionCard> sessions = SessionAccessView.build(liveGrants, projectIds);
+        Map<String, String> projectNames = new LinkedHashMap<>();
+        choice.projects().forEach(project -> projectNames.put(project.id(), project.displayName()));
+        List<SessionAccessView.SessionCard> sessions = SessionAccessView.build(liveGrants, List.copyOf(projectNames.keySet()));
 
         target.put("grants", liveGrants);
         target.put("sessions", sessions);
         target.put("knownAuthors", SessionAccessView.knownAuthors(sessions));
         target.put("knownHosts", uiProperties.knownHosts());
+        target.put("filterHosts", sessions.stream().map(SessionAccessView.SessionCard::host)
+                .filter(host -> !host.isEmpty()).distinct().sorted().toList());
+        target.put("projectNames", projectNames);
         target.put("choice", choice);
         target.put("scopes", Scope.values());
     }

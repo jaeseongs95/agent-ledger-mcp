@@ -14,7 +14,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 
-/** The append-only history, newest rows last (ordered by history id), filtered and paged. */
+/** The append-only history, filtered and paged with an optional date order. */
 @Controller
 public class HistoryController {
 
@@ -34,16 +34,18 @@ public class HistoryController {
     }
 
     @GetMapping("/history")
-    String list(@ModelAttribute("filter") HistoryFilter filter, Model model) {
+    String list(@ModelAttribute("filter") HistoryFilter filter, @ModelAttribute("dates") ListDateFilter dates,
+            Model model) {
         var page = history.history(new HistoryQuery(null, null, null, filter.entity(), filter.entityId(),
                 filter.project(), filter.op(), filter.authorId(), null, null, null, Paging.limitOf(filter.limit()),
-                filter.cursor()));
+                filter.cursor()), dates.query(true));
         Map<String, String> filters = new LinkedHashMap<>();
         filters.put("project", filter.project());
         filters.put("entity", filter.entity());
         filters.put("entityId", filter.entityId());
         filters.put("op", filter.op());
         filters.put("authorId", filter.authorId());
+        dates.populate(model, "/history", filters, filter.limit(), null);
         model.addAttribute("choice", choices.project(null));
         model.addAttribute("entities", HistoryEntity.values());
         model.addAttribute("ops", HistoryOp.values());
@@ -51,7 +53,7 @@ public class HistoryController {
         model.addAttribute("page", page);
         boolean hasFilters = StringUtils.hasText(filter.project()) || StringUtils.hasText(filter.entity())
                 || StringUtils.hasText(filter.entityId()) || StringUtils.hasText(filter.op())
-                || StringUtils.hasText(filter.authorId());
+                || StringUtils.hasText(filter.authorId()) || dates.hasRange();
         model.addAttribute("hasFilters", hasFilters);
         model.addAttribute("resetHref", "/history");
         Map<Long, String> pointing = new LinkedHashMap<>();

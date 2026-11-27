@@ -4,14 +4,18 @@ package org.veridger.admin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.veridger.admin.console.Paging;
 import org.veridger.admin.support.AdminTest;
 import org.veridger.admin.support.Browser;
+import org.veridger.admin.support.Browser.Form;
 import org.veridger.admin.support.Seeds;
 import org.veridger.admin.support.Seeds.Seeded;
 import org.veridger.application.admin.GrantService;
@@ -31,6 +35,7 @@ import org.veridger.testing.TestOwners;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.web.servlet.MockMvc;
 
 /**
@@ -66,6 +71,97 @@ class AdminUiRedesignTest {
 
     @Autowired
     private GrantService grants;
+
+    @Autowired
+    private JdbcClient jdbc;
+
+    @Test
+    void dateRangesAndSortingUseTheSameCalendarAndContinueAcrossPages() throws Exception {
+        Seeded project = seeds.project();
+        String late = seeds.issue(project, "Date filter late");
+        String early = seeds.issue(project, "Date filter early");
+        String nextDay = seeds.issue(project, "Date filter next day");
+        setIssueTime(late, "2026-09-01T14:59:59");
+        setIssueTime(early, "2026-08-31T15:00:00");
+        setIssueTime(nextDay, "2026-09-01T15:00:00");
+        Browser browser = Browser.signedIn(mvc);
+
+        var first = browser.perform(browser.get("/issues").param("project", project.project())
+                .param("dateField", "updated").param("dateFrom", "2026-09-01").param("dateTo", "2026-09-01")
+                .param("dateZone", "Asia/Seoul").param("sort", "updated").param("direction", "asc").param("limit", "1"))
+                .andExpect(status().isOk()).andReturn();
+        assertThat(first.getResponse().getContentAsString()).contains(early, "aria-sort=\"ascending\"")
+                .doesNotContain(late, nextDay);
+        Paging paging = (Paging) first.getModelAndView().getModel().get("paging");
+        assertThat(paging.nextHref()).contains("dateField=updated", "dateFrom=2026-09-01", "dateTo=2026-09-01",
+                "sort=updated", "direction=asc", "dateZone=Asia/Seoul");
+        var second = browser.perform(browser.get(paging.nextHref())).andExpect(status().isOk()).andReturn();
+        assertThat(second.getResponse().getContentAsString()).contains(late).doesNotContain(early, nextDay);
+        assertThat(((Paging) second.getModelAndView().getModel().get("paging")).hasNext()).isFalse();
+
+        var history = browser.perform(browser.get("/history").param("project", project.project())
+                .param("dateFrom", "2026-09-01").param("dateTo", "2026-09-01").param("dateZone", "Asia/Seoul")
+                .param("sort", "created").param("direction", "asc").param("limit", "1"))
+                .andExpect(status().isOk()).andReturn();
+        assertThat(history.getResponse().getContentAsString()).contains(early).doesNotContain(late, nextDay);
+        Paging historyPaging = (Paging) history.getModelAndView().getModel().get("paging");
+        String nextHistory = browser.perform(browser.get(historyPaging.nextHref())).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(nextHistory).contains(late).doesNotContain(early, nextDay);
+    }
+
+    private void setIssueTime(String id, String timestamp) {
+        LocalDateTime time = LocalDateTime.parse(timestamp);
+        jdbc.sql("UPDATE issue SET updated_at = :time WHERE id = :id").param("time", time).param("id", id).update();
+        setHistoryTime("ISSUE", id, time);
+    }
+
+    private void setHistoryTime(String entity, String id, LocalDateTime time) {
+        jdbc.sql("UPDATE history SET occurred_at = :time WHERE entity = :entity AND entity_id = :id")
+                .param("time", time).param("entity", entity).param("id", id).update();
+    }
+
+    @Test
+    void criterionRegistrationDateComesFromItsCreationHistory() throws Exception {
+        Seeded project = seeds.project();
+        String first = seeds.criterion(project, "1", "date test", "first-date");
+        String second = seeds.criterion(project, "2", "date test", "second-date");
+        setHistoryTime("CRITERION", first, LocalDateTime.parse("2026-09-01T09:00:00"));
+        setHistoryTime("CRITERION", second, LocalDateTime.parse("2026-09-02T09:00:00"));
+        Browser browser = Browser.signedIn(mvc);
+        String html = browser.perform(browser.get("/criteria").param("project", project.project())
+                .param("dateField", "created").param("dateFrom", "2026-09-01").param("dateTo", "2026-09-01")
+                .param("sort", "created").param("direction", "desc"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(html).contains(first, "aria-sort=\"descending\"", "datetime=\"2026-09-01T09:00:00Z\"")
+                .doesNotContain(second);
+    }
+
+    @Test
+    void aProjectCanBeRenamedWithoutChangingItsIdentifierOrGrants() throws Exception {
+        Seeded project = seeds.project();
+        String originalId = seeds.issue(project, "Before rename");
+        Browser browser = Browser.signedIn(mvc);
+        String version = jdbc.sql("SELECT version FROM project WHERE id = :id").param("id", project.project())
+                .query(Long.class).single().toString();
+        String csrf = browser.csrfOf("/projects");
+        browser.perform(browser.form("/projects/rename",
+                Form.of("id", project.project(), "displayName", "새 프로젝트명", "version", version), csrf))
+                .andExpect(redirectedUrl("/projects"));
+        browser.perform(browser.form("/projects/rename",
+                Form.of("id", project.project(), "displayName", "Stale edit", "version", version), csrf))
+                .andExpect(status().isConflict());
+
+        String projectPage = browser.perform(browser.get("/projects").header(HttpHeaders.ACCEPT_LANGUAGE, "ko"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(projectPage).contains("새 프로젝트명", "프로젝트 설명").doesNotContain("href=\"/codes\"");
+        String grantsPage = browser.perform(browser.get("/grants")).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(grantsPage).contains("grant-project-filter", "session-search", "grant-host-filter", "grant-scope-filter",
+                "data-project-name=\"새 프로젝트명\"");
+        assertThat(originalId).isEqualTo(project.issueId(1));
+        assertThat(seeds.issue(project, "After rename")).isEqualTo(project.issueId(2));
+    }
 
     @Test
     @DisplayName("UI-430-01: /issues filters by taskId, preserves the filter value and paging, and reset clears it")
