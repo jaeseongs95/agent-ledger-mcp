@@ -19,11 +19,15 @@ jackson = "3.2.1"
 spotless = "8.10.4"
 licenseReport = "3.1.5"
 sonarqube = "7.5.0.8588"
+pitestPlugin = "1.19.0"
+pitest = "1.30.2"
+pitestJunit5 = "1.2.3"
 
 [plugins]
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 license-report = { id = "com.github.jk1.dependency-license-report", version.ref = "licenseReport" }
 sonarqube = { id = "org.sonarqube", version.ref = "sonarqube" }
+pitest = { id = "info.solidsoft.pitest", version.ref = "pitestPlugin" }
 
 [libraries]
 # The Jackson 3 BOM at the version of the comment of jackson above, declared next to the Boot BOM in build.gradle.kts.

@@ -85,7 +85,7 @@ jobs:
             -Pledger.test.maxHeapSize=1g \
             -Pledger.test.jdbc-password-file="$RUNNER_TEMP/owner.pw" \
             -Pledger.test.app-password-file="$RUNNER_TEMP/app.pw" \
-            spotlessCheck check
+            spotlessCheck check jacocoTestReport
 
       - name: Run SonarQube Analysis
         env:

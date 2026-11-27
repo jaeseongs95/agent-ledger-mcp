@@ -13,6 +13,7 @@ plugins {
     alias(libs.plugins.spotless)
     alias(libs.plugins.license.report)
     alias(libs.plugins.sonarqube)
+    alias(libs.plugins.pitest) apply false
 }
 
 group = "org.veridger"
@@ -113,6 +114,9 @@ val ledgerTestPasswordFiles = listOf(
 val databaseModules = setOf("ledger-database", "ledger-application", "ledger-mcp-server", "ledger-admin-web", "ledger-cli",
     "ledger-migrate-1x", "ledger-system-test")
 
+// Core pure-Java modules verified with PIT (Pitest) mutation testing in addition to JaCoCo line/branch coverage.
+val pitestModules = setOf("ledger-domain", "ledger-attestation", "ledger-files", "ledger-seed", "ledger-hook-client")
+
 // The one test database is a shared external resource: each test JVM opens up to 10 connections to its role, which has a
 // connection limit. With parallel execution on, the test tasks of the database modules must not run at the same time (docs/testing/
 // TEST_CASES.md section 30, BLD-DB-03). Every such task uses this service, and the service allows one user at a time; no other task
@@ -187,9 +191,36 @@ abstract class JarPathProperty : CommandLineArgumentProvider {
 
 subprojects {
     apply(plugin = "java-library")
+    apply(plugin = "jacoco")
 
     group = "org.veridger"
     version = "4.3.1"
+
+    tasks.withType<JacocoReport>().configureEach {
+        mustRunAfter(tasks.withType<Test>())
+        reports {
+            xml.required = true
+            html.required = false
+        }
+    }
+
+    if (project.name in pitestModules) {
+        apply(plugin = "info.solidsoft.pitest")
+        extensions.configure<info.solidsoft.gradle.pitest.PitestPluginExtension> {
+            pitestVersion.set(rootProject.libs.versions.pitest.get())
+            junit5PluginVersion.set(rootProject.libs.versions.pitestJunit5.get())
+            targetClasses.set(setOf("org.veridger.*"))
+            targetTests.set(setOf("org.veridger.*Test"))
+            threads.set(2)
+            outputFormats.set(setOf("XML", "HTML"))
+            timestampedReports.set(false)
+            jvmArgs.set(listOf("-Duser.timezone=UTC", "-Dfile.encoding=UTF-8"))
+            failWhenNoMutations.set(false)
+        }
+        tasks.matching { it.name == "pitest" }.configureEach {
+            notCompatibleWithConfigurationCache("PIT mutation testing executes dynamic mutant runs")
+        }
+    }
 
     val projectName = project.name
     val usesDatabase = projectName in databaseModules
