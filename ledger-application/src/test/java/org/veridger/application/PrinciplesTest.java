@@ -255,6 +255,8 @@ class PrinciplesTest {
 
         var granted = whoami.whoami(Scenario.AUTHOR, Channel.AUTHOR);
         assertThat(granted.authorFormatOk()).isTrue();
+        assertThat(granted.canVerifyLogin()).isTrue();
+        assertThat(granted.login()).isEqualTo("ledger_reviewer");
         assertThat(granted.author()).isEqualTo(Scenario.AUTHOR);
         assertThat(granted.grants().stream().filter(grant -> Objects.equals(grant.project(), s.projectId()))
                 .map(WhoamiService.GrantView::scope).toList()).containsExactlyInAnyOrder("issue", "spec", "task",

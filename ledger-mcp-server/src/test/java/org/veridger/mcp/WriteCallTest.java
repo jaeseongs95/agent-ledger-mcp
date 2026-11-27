@@ -306,6 +306,19 @@ class WriteCallTest {
     }
 
     @Test
+    @DisplayName("MCW-010b: whoami of an attestation with live verify grant reports can_verify_login=true and ledger_reviewer")
+    void whoamiOfAVerifyGrantedReviewer(McpSession session, Scenario scenario) {
+        String reviewer = scenario.actorWith("verify-only", "verify");
+
+        Whoami who = session.ok("ledger_whoami", Calls.Whoami.as(reviewer), Whoami.class);
+
+        assertThat(who).isEqualTo(new Whoami("ledger_reviewer", reviewer, true, true,
+                List.of(new Grant(scenario.projectId(), "verify", null))));
+        assertThat(session.tool("ledger_whoami").description()).contains("single MCP connection", "can_verify_login");
+        assertThat(session.tool("ledger_review").description()).contains("single MCP connection", "verify");
+    }
+
+    @Test
     @DisplayName("MCW-011: whoami of an author without grants has none")
     void whoamiOfAnUngrantedAuthor(McpSession session) {
         Whoami who = session.ok("ledger_whoami", Calls.Whoami.as(Scenario.NOGRANT), Whoami.class);
