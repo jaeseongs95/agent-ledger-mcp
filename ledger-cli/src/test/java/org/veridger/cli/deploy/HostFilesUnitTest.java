@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystemException;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
@@ -19,52 +18,60 @@ import org.veridger.cli.ErrorCode;
 import org.veridger.cli.FailureException;
 
 /**
- * Unit tests for {@link HostFiles} covering product jar staging, file system view checks, absent-directory save, and
- * structured {@link FailureException} mapping.
+ * Unit tests for {@link HostFiles} covering view checks, missing-path save, product jar copying, and failure formatting.
  */
 class HostFilesUnitTest {
 
-    @Test
-    @DisplayName("DEP-HF-01 copyProduct copies all three Veridger jars and JDBC driver jar into lib and drivers")
-    void copyProductStagesAllJarsAndDriver(@TempDir Path dir) throws IOException {
-        Path jars = dir.resolve("jars");
-        Path lib = dir.resolve("lib");
-        Path drivers = dir.resolve("drivers");
-        Files.createDirectories(jars);
-        Files.createDirectories(lib);
-        Files.createDirectories(drivers);
-        Files.writeString(jars.resolve(DeployLayout.CLI_JAR), "cli", StandardCharsets.UTF_8);
-        Files.writeString(jars.resolve(DeployLayout.MCP_JAR), "mcp", StandardCharsets.UTF_8);
-        Files.writeString(jars.resolve(DeployLayout.ADMIN_JAR), "admin", StandardCharsets.UTF_8);
-        Path driver = dir.resolve("postgresql-test.jar");
-        Files.writeString(driver, "driver", StandardCharsets.UTF_8);
-
-        HostFiles hostFiles = new HostFiles(new DeployFiles());
-        hostFiles.copyProduct(jars, driver, lib, drivers);
-
-        assertThat(lib.resolve(DeployLayout.CLI_JAR)).hasContent("cli");
-        assertThat(lib.resolve(DeployLayout.MCP_JAR)).hasContent("mcp");
-        assertThat(lib.resolve(DeployLayout.ADMIN_JAR)).hasContent("admin");
-        assertThat(drivers.resolve("postgresql-test.jar")).hasContent("driver");
-        assertThat(hostFiles.save(dir.resolve("does-not-exist"))).isEmpty();
-    }
+    @TempDir
+    Path tempDir;
 
     @Test
-    @DisplayName("DEP-HF-02 requireView and failure map unsupported views and IOException subclasses cleanly")
-    void requireViewAndFailureMapping() {
+    @DisplayName("HFL-01 requireView, save(missing), copyProduct, and failure formatting cover all host-file helper paths")
+    void hostFilesHelpersAndFailureFormatting() throws IOException {
         HostFiles hostFiles = new HostFiles(new DeployFiles());
+
+        // requireView succeeds for basic view and fails with HOST_UNSUPPORTED for nonexistent view
         hostFiles.requireView(FileSystems.getDefault(), "basic");
         assertThatThrownBy(() -> hostFiles.requireView(FileSystems.getDefault(), "nonexistent-view"))
-                .isInstanceOf(FailureException.class)
-                .extracting(e -> ((FailureException) e).code()).isEqualTo(ErrorCode.HOST_UNSUPPORTED);
+                .isInstanceOfSatisfying(FailureException.class, e -> {
+                    assertThat(e.code()).isEqualTo(ErrorCode.HOST_UNSUPPORTED);
+                    assertThat(e.arguments()).containsExactly("nonexistent-view");
+                });
 
-        FailureException fsFail = HostFiles.failure(new FileSystemException("/opt/veridger", null, "denied"));
-        assertThat(fsFail.code()).isEqualTo(ErrorCode.HOST_FAILED);
+        // save(missing) returns Optional.empty()
+        assertThat(hostFiles.save(tempDir.resolve("does-not-exist"))).isEmpty();
 
-        FailureException userFail = HostFiles.failure(new UserPrincipalNotFoundException("veridger-svc"));
-        assertThat(userFail.code()).isEqualTo(ErrorCode.HOST_FAILED);
+        // copyProduct copies all three product jars + driver jar
+        Path jars = Files.createDirectories(tempDir.resolve("jars"));
+        Files.writeString(jars.resolve(DeployLayout.CLI_JAR), "cli");
+        Files.writeString(jars.resolve(DeployLayout.MCP_JAR), "mcp");
+        Files.writeString(jars.resolve(DeployLayout.ADMIN_JAR), "admin");
+        Path driver = tempDir.resolve("postgresql-42.jar");
+        Files.writeString(driver, "driver");
+        Path lib = tempDir.resolve("out/lib");
+        Path drivers = tempDir.resolve("out/drivers");
+        hostFiles.copyProduct(jars, driver, lib, drivers);
+        assertThat(Files.readString(lib.resolve(DeployLayout.CLI_JAR))).isEqualTo("cli");
+        assertThat(Files.readString(lib.resolve(DeployLayout.MCP_JAR))).isEqualTo("mcp");
+        assertThat(Files.readString(lib.resolve(DeployLayout.ADMIN_JAR))).isEqualTo("admin");
+        assertThat(Files.readString(drivers.resolve("postgresql-42.jar"))).isEqualTo("driver");
 
-        FailureException genericFail = HostFiles.failure(new IOException("disk error"));
-        assertThat(genericFail.code()).isEqualTo(ErrorCode.HOST_FAILED);
+        // failure(IOException) formats every branch cleanly without leaking exception message text
+        FailureException backupDiffers = HostFiles.failure(
+                new DeployFiles.BackupDiffersException(Path.of("a.conf"), Path.of("a.conf.backup")));
+        assertThat(backupDiffers.code()).isEqualTo(ErrorCode.HOST_FAILED);
+        assertThat(backupDiffers.arguments()).containsExactly("a.conf and a.conf.backup", "BackupDiffersException");
+
+        FailureException fsWithFile = HostFiles.failure(new FileSystemException("/etc/x", null, "secret detail"));
+        assertThat(fsWithFile.arguments()).containsExactly("/etc/x", "FileSystemException");
+
+        FailureException fsNoFile = HostFiles.failure(new FileSystemException(null, null, "secret detail"));
+        assertThat(fsNoFile.arguments()).containsExactly("-", "FileSystemException");
+
+        FailureException missingUser = HostFiles.failure(new UserPrincipalNotFoundException("veridger-svc"));
+        assertThat(missingUser.arguments()).containsExactly("veridger-svc", "UserPrincipalNotFoundException");
+
+        FailureException genericIo = HostFiles.failure(new IOException("internal path detail"));
+        assertThat(genericIo.arguments()).containsExactly("-", "IOException");
     }
 }

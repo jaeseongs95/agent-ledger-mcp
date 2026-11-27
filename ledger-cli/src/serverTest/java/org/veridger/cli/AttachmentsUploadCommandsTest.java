@@ -159,6 +159,150 @@ class AttachmentsUploadCommandsTest {
         }
     }
 
+    @Test
+    @DisplayName("ATA-044: attachments-send uploads 0-byte files, decodes text-only/direct/error payloads, and probes on interruption")
+    void zeroByteTextPayloadsErrorsAndInterruptedProbe(Cli cli) throws Exception {
+        Path empty = tmp.resolve("empty.bin");
+        Files.write(empty, new byte[0]);
+        String emptySha = Sha256.ofBytes(new byte[0]).hex();
+
+        Path data = tmp.resolve("data.bin");
+        byte[] content = "payload-bytes".getBytes(StandardCharsets.UTF_8);
+        Files.write(data, content);
+        String dataSha = Sha256.ofBytes(content).hex();
+
+        String attachmentId = UUID.randomUUID().toString();
+        AtomicInteger interruptProbes = new AtomicInteger();
+
+        try (McpTestServer server = McpTestServer.start(Files.createDirectories(tmp.resolve("tomcat3")), TOKEN,
+                spec -> {
+                    Tool statusTool = Tool.builder("artifact_status", Map.of("type", "object")).build();
+                    spec.toolCall(statusTool, (exchange, request) -> {
+                        String id = String.valueOf(request.arguments().get("uploadId"));
+                        if ("empty-direct".equals(id)) {
+                            // Direct UploadStatusPayload (no envelope wrapper) in text content only
+                            String raw = "{\"kind\":\"upload\",\"attachmentId\":\"" + attachmentId
+                                    + "\",\"seq\":1,\"state\":\"STAGING\",\"size\":0,\"sha256\":\"" + emptySha
+                                    + "\",\"received\":0,\"sequence\":0}";
+                            return CallToolResult.builder().addTextContent(raw).build();
+                        }
+                        if ("ok-false-status".equals(id)) {
+                            return CallToolResult.builder()
+                                    .addTextContent("{\"ok\":false,\"error\":{\"code\":\"BAD_STATE\",\"message\":\"expired\"}}")
+                                    .build();
+                        }
+                        if ("malformed-status".equals(id)) {
+                            return CallToolResult.builder().addTextContent("{not-json").build();
+                        }
+                        if ("empty-content".equals(id)) {
+                            return CallToolResult.builder().build();
+                        }
+                        if ("err-direct-json".equals(id)) {
+                            return CallToolResult.builder().isError(true)
+                                    .addTextContent("{\"code\":\"DIRECT_ERR\",\"message\":\"direct refusal\"}")
+                                    .build();
+                        }
+                        if ("err-colon-text".equals(id)) {
+                            return CallToolResult.builder().isError(true)
+                                    .addTextContent("COLON_ERR: plain refusal")
+                                    .build();
+                        }
+                        if ("err-plain-text".equals(id)) {
+                            return CallToolResult.builder().isError(true)
+                                    .addTextContent("no-colon-not-json")
+                                    .build();
+                        }
+                        if ("err-unknown-json".equals(id)) {
+                            return CallToolResult.builder().isError(true)
+                                    .addTextContent("{}")
+                                    .build();
+                        }
+                        if ("interrupt-stopped".equals(id)) {
+                            int n = interruptProbes.incrementAndGet();
+                            String raw = "{\"ok\":true,\"data\":{\"kind\":\"upload\",\"attachmentId\":\""
+                                    + attachmentId + "\",\"seq\":0,\"state\":\"STAGING\",\"size\":" + content.length
+                                    + ",\"sha256\":\"" + dataSha + "\",\"received\":" + (n == 1 ? 0 : 4)
+                                    + ",\"sequence\":" + (n == 1 ? 0 : 1) + "}}";
+                            return CallToolResult.builder().addTextContent(raw).build();
+                        }
+                        if ("interrupt-completed".equals(id)) {
+                            int n = interruptProbes.incrementAndGet();
+                            String st = n == 1 ? "STAGING" : "COMPLETED";
+                            long rec = n == 1 ? 0 : content.length;
+                            String raw = "{\"ok\":true,\"data\":{\"kind\":\"upload\",\"attachmentId\":\""
+                                    + attachmentId + "\",\"seq\":2,\"state\":\"" + st + "\",\"size\":" + content.length
+                                    + ",\"sha256\":\"" + dataSha + "\",\"received\":" + rec
+                                    + ",\"sequence\":" + (n == 1 ? 0 : 1) + "}}";
+                            return CallToolResult.builder().addTextContent(raw).build();
+                        }
+                        if ("chunk-refused".equals(id)) {
+                            String raw = "{\"ok\":true,\"data\":{\"kind\":\"upload\",\"attachmentId\":\""
+                                    + attachmentId + "\",\"seq\":0,\"state\":\"STAGING\",\"size\":" + content.length
+                                    + ",\"sha256\":\"" + dataSha + "\",\"received\":0,\"sequence\":0}}";
+                            return CallToolResult.builder().addTextContent(raw).build();
+                        }
+                        return CallToolResult.builder().addTextContent("{}").build();
+                    });
+                    Tool chunkTool = Tool.builder("artifact_chunk", Map.of("type", "object")).build();
+                    spec.toolCall(chunkTool, (exchange, request) -> {
+                        String id = String.valueOf(request.arguments().get("uploadId"));
+                        if ("empty-direct".equals(id)) {
+                            return CallToolResult.builder()
+                                    .addTextContent("{\"ok\":true,\"data\":{\"sequence\":0,\"received\":0}}")
+                                    .build();
+                        }
+                        if ("chunk-refused".equals(id)) {
+                            return CallToolResult.builder()
+                                    .addTextContent("{\"ok\":false,\"error\":{\"code\":\"CHUNK_BAD\",\"message\":\"bad hash\"}}")
+                                    .build();
+                        }
+                        // Malformed chunk JSON triggers MCP_FAILED -> sendAndVerify catches and probes status!
+                        return CallToolResult.builder().addTextContent("{broken-chunk-json").build();
+                    });
+                })) {
+            Cli authed = cli.withArguments("--ledger.mcp.token=" + TOKEN);
+
+            // 0-byte upload via direct status payload
+            RecordingOutput emptyOut = new RecordingOutput();
+            Outcome emptyRes = run(authed, emptyOut, "attachments-send", empty.toString(),
+                    "--upload-id=empty-direct", "--url=" + server.url());
+            assertThat(emptyRes.exitCode()).isZero();
+            assertThat(mapper.readValue(emptyOut.info(), UploadClient.Sent.class).seq()).isEqualTo(1);
+
+            // Error decoding & refusal branches
+            assertThat(run(authed, new RecordingOutput(), "attachments-send", data.toString(),
+                    "--upload-id=ok-false-status", "--url=" + server.url()).code()).contains(ErrorCode.ATTACHMENTS_TOOL_REFUSED);
+            assertThat(run(authed, new RecordingOutput(), "attachments-send", data.toString(),
+                    "--upload-id=malformed-status", "--url=" + server.url()).code()).contains(ErrorCode.MCP_FAILED);
+            assertThat(run(authed, new RecordingOutput(), "attachments-send", data.toString(),
+                    "--upload-id=empty-content", "--url=" + server.url()).code()).contains(ErrorCode.MCP_FAILED);
+            assertThat(run(authed, new RecordingOutput(), "attachments-send", data.toString(),
+                    "--upload-id=err-direct-json", "--url=" + server.url()).code()).contains(ErrorCode.ATTACHMENTS_TOOL_REFUSED);
+            assertThat(run(authed, new RecordingOutput(), "attachments-send", data.toString(),
+                    "--upload-id=err-colon-text", "--url=" + server.url()).code()).contains(ErrorCode.ATTACHMENTS_TOOL_REFUSED);
+            assertThat(run(authed, new RecordingOutput(), "attachments-send", data.toString(),
+                    "--upload-id=err-plain-text", "--url=" + server.url()).code()).contains(ErrorCode.MCP_FAILED);
+            assertThat(run(authed, new RecordingOutput(), "attachments-send", data.toString(),
+                    "--upload-id=err-unknown-json", "--url=" + server.url()).code()).contains(ErrorCode.ATTACHMENTS_TOOL_REFUSED);
+            assertThat(run(authed, new RecordingOutput(), "attachments-send", data.toString(),
+                    "--upload-id=chunk-refused", "--url=" + server.url()).code()).contains(ErrorCode.ATTACHMENTS_TOOL_REFUSED);
+
+            // Interrupted chunk -> status probe returns Stopped with resume coordinates
+            interruptProbes.set(0);
+            Outcome stoppedRes = run(authed, new RecordingOutput(), "attachments-send", data.toString(),
+                    "--upload-id=interrupt-stopped", "--url=" + server.url());
+            assertThat(stoppedRes.exitCode()).isEqualTo(ExitStatus.FAILURE.code());
+
+            // Interrupted chunk -> status probe discovers server already COMPLETED -> returns Sent (exit 0)
+            interruptProbes.set(0);
+            RecordingOutput recoveredOut = new RecordingOutput();
+            Outcome recoveredRes = run(authed, recoveredOut, "attachments-send", data.toString(),
+                    "--upload-id=interrupt-completed", "--url=" + server.url());
+            assertThat(recoveredRes.exitCode()).isZero();
+            assertThat(mapper.readValue(recoveredOut.info(), UploadClient.Sent.class).seq()).isEqualTo(2);
+        }
+    }
+
     private McpTestServer startUploadServer(String uploadId, String attachmentId, long declaredSize,
             String declaredSha, ByteArrayOutputStream assembled, AtomicLong expectedSeq, AtomicInteger chunkCalls)
             throws IOException {

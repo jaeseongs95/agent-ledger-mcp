@@ -235,36 +235,14 @@ public final class JsonCanonicalizer {
         return out.toString();
     }
 
-    /**
-     * The double that stands for the number: a decimal number as it is, an integer only when it lies in the range in
-     * which an integer is exactly a double (see the class comment).
-     */
+    /** The double that stands for a decimal JSON number ({@link Double}, {@link Float}, or {@link BigDecimal}). */
     private static double doubleOf(Number number) {
         return switch (number) {
             case Double decimal -> decimal.doubleValue();
             case Float decimal -> decimal.doubleValue();
             case BigDecimal decimal -> decimal.doubleValue();
-            case Byte integer -> integer.doubleValue();
-            case Short integer -> integer.doubleValue();
-            case Integer integer -> integer.doubleValue();
-            case Long integer -> safeInteger(integer);
-            case BigInteger integer -> safeInteger(integer);
             default -> throw new IllegalArgumentException("not a JSON number type: " + number.getClass().getName());
         };
-    }
-
-    private static double safeInteger(long integer) {
-        if (integer < -MAX_SAFE_INTEGER || integer > MAX_SAFE_INTEGER) {
-            throw outOfRange();
-        }
-        return integer;
-    }
-
-    private static double safeInteger(BigInteger integer) {
-        if (integer.abs().compareTo(BigInteger.valueOf(MAX_SAFE_INTEGER)) > 0) {
-            throw outOfRange();
-        }
-        return integer.doubleValue();
     }
 
     private static IllegalArgumentException outOfRange() {

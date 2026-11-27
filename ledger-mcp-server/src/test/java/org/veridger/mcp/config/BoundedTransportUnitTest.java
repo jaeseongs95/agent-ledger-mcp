@@ -6,20 +6,29 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.modelcontextprotocol.json.jackson3.JacksonMcpJsonMapper;
+import io.modelcontextprotocol.server.McpServer;
+import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.spec.HttpHeaders;
+import io.modelcontextprotocol.spec.McpError;
 import io.modelcontextprotocol.spec.McpSchema;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.web.servlet.function.HandlerFunction;
 import org.springframework.web.servlet.function.ServerRequest;
 import org.springframework.web.servlet.function.ServerResponse;
@@ -147,5 +156,161 @@ class BoundedTransportUnitTest {
         } finally {
             noDelete.closeGracefully().block();
         }
+    }
+
+    @Test
+    @DisplayName("TRN-03 full session lifecycle: init, cap 503, parse error, factory failures, notifications, responses, SSE requests, eviction, delete, and shutdown")
+    void fullSessionLifecycleAndFailurePaths() throws Exception {
+        JsonMapper rawMapper = JsonMapper.builder().build();
+        JacksonMcpJsonMapper mapper = new JacksonMcpJsonMapper(rawMapper);
+        AtomicReference<Instant> now = new AtomicReference<>(Instant.parse("2026-11-27T00:00:00Z"));
+        Clock mutableClock = new Clock() {
+            @Override
+            public ZoneId getZone() {
+                return ZoneOffset.UTC;
+            }
+
+            @Override
+            public Clock withZone(ZoneId zone) {
+                return this;
+            }
+
+            @Override
+            public Instant instant() {
+                return now.get();
+            }
+        };
+
+        transport = new BoundedStreamableServerTransportProvider(
+                mapper, "/mcp", false, Duration.ofSeconds(5), Duration.ofSeconds(30), 2L, mutableClock);
+
+        // Invalid JSON body -> 400 PARSE_ERROR
+        MockHttpServletRequest badJson = postRequest("{not-valid-json", null);
+        assertThat(dispatch(transport, badJson).statusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        // Factory throwing IllegalArgumentException / McpError -> 400 and decrements pendingAdmissions
+        transport.setSessionFactory(req -> {
+            throw new IllegalArgumentException("bad init params");
+        });
+        assertThat(dispatch(transport, initRequest(1)).statusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        transport.setSessionFactory(req -> {
+            throw McpError.builder(McpSchema.ErrorCodes.INVALID_PARAMS).message("bad protocol").build();
+        });
+        assertThat(dispatch(transport, initRequest(2)).statusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        // Factory throwing unexpected RuntimeException -> rethrown and decrements pendingAdmissions
+        transport.setSessionFactory(req -> {
+            throw new IllegalStateException("unexpected factory failure");
+        });
+        assertThatThrownBy(() -> dispatch(transport, initRequest(3)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("unexpected factory failure");
+
+        // Wire real MCP SDK sync server onto transport
+        McpSyncServer server = McpServer.sync(transport)
+                .serverInfo("veridger-unit-test", "1.0.0")
+                .capabilities(McpSchema.ServerCapabilities.builder().tools(true).build())
+                .build();
+        try {
+            // Initialize session 1 -> 200 OK with mcp-session-id header
+            ServerResponse initResp1 = dispatch(transport, initRequest(10));
+            assertThat(initResp1.statusCode()).isEqualTo(HttpStatus.OK);
+            String session1 = initResp1.headers().getFirst(HttpHeaders.MCP_SESSION_ID);
+            assertThat(session1).isNotBlank();
+            assertThat(transport.activeSessionCount()).isEqualTo(1);
+
+            // Initialize session 2 -> 200 OK; session 3 -> 503 maxSessions reached
+            ServerResponse initResp2 = dispatch(transport, initRequest(11));
+            assertThat(initResp2.statusCode()).isEqualTo(HttpStatus.OK);
+            String session2 = initResp2.headers().getFirst(HttpHeaders.MCP_SESSION_ID);
+            assertThat(transport.activeSessionCount()).isEqualTo(2);
+            assertThat(dispatch(transport, initRequest(12)).statusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+
+            // POST notification -> 202 Accepted
+            MockHttpServletRequest notif = postRequest(
+                    "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}", session1);
+            assertThat(dispatch(transport, notif).statusCode()).isEqualTo(HttpStatus.ACCEPTED);
+
+            // POST JSONRPCResponse for unknown request id -> dispatched to session.accept(response) which throws McpError
+            MockHttpServletRequest rpcResp = postRequest(
+                    "{\"jsonrpc\":\"2.0\",\"id\":99,\"result\":{}}", session1);
+            assertThatThrownBy(() -> dispatch(transport, rpcResp))
+                    .isInstanceOf(McpError.class)
+                    .hasMessageContaining("99");
+
+            // POST JSONRPCRequest (ping) -> SSE response executed via ServerResponse.writeTo
+            MockHttpServletRequest pingReq = postRequest(
+                    "{\"jsonrpc\":\"2.0\",\"id\":42,\"method\":\"ping\"}", session1);
+            pingReq.setAsyncSupported(true);
+            ServerResponse pingResp = dispatch(transport, pingReq);
+            assertThat(pingResp.statusCode()).isEqualTo(HttpStatus.OK);
+            MockHttpServletResponse servletResp = new MockHttpServletResponse();
+            ServerResponse.Context ctx = new ServerResponse.Context() {
+                @Override
+                public List<org.springframework.http.converter.HttpMessageConverter<?>> messageConverters() {
+                    return List.of(new JacksonJsonHttpMessageConverter(rawMapper));
+                }
+            };
+            pingResp.writeTo(pingReq, servletResp, ctx);
+
+            // POST JSONRPCRequest for unknown method -> exercises SSE error frame path (sendError)
+            MockHttpServletRequest badMethodReq = postRequest(
+                    "{\"jsonrpc\":\"2.0\",\"id\":43,\"method\":\"unknown/nonexistent\"}", session1);
+            badMethodReq.setAsyncSupported(true);
+            ServerResponse badMethodResp = dispatch(transport, badMethodReq);
+            assertThat(badMethodResp.statusCode()).isEqualTo(HttpStatus.OK);
+            badMethodResp.writeTo(badMethodReq, new MockHttpServletResponse(), ctx);
+
+            // notifyClients skips POST-only sessions cleanly without throwing
+            transport.notifyClients("notifications/tools/list_changed", Map.of()).block();
+
+            // GET SSE listening stream with Last-Event-ID header
+            MockHttpServletRequest getSse = new MockHttpServletRequest(HttpMethod.GET.name(), "/mcp");
+            getSse.addHeader("Accept", MediaType.TEXT_EVENT_STREAM_VALUE);
+            getSse.addHeader(HttpHeaders.MCP_SESSION_ID, session1);
+            getSse.addHeader(HttpHeaders.LAST_EVENT_ID, "evt-0");
+            getSse.setAsyncSupported(true);
+            ServerResponse sseResp = dispatch(transport, getSse);
+            assertThat(sseResp.statusCode()).isEqualTo(HttpStatus.OK);
+
+            // DELETE session 2 -> 200 OK
+            MockHttpServletRequest del2 = new MockHttpServletRequest(HttpMethod.DELETE.name(), "/mcp");
+            del2.addHeader(HttpHeaders.MCP_SESSION_ID, session2);
+            assertThat(dispatch(transport, del2).statusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(transport.activeSessionCount()).isEqualTo(1);
+
+            // Advance clock beyond idle timeout -> evictIdleSessions evicts session 1
+            now.set(now.get().plusSeconds(35));
+            transport.evictIdleSessions();
+            assertThat(transport.activeSessionCount()).isZero();
+
+            // Re-initialize a fresh session and confirm closeGracefully closes active sessions cleanly
+            ServerResponse initResp3 = dispatch(transport, initRequest(13));
+            assertThat(initResp3.statusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(transport.activeSessionCount()).isEqualTo(1);
+            transport.closeGracefully().block();
+            assertThat(transport.activeSessionCount()).isZero();
+        } finally {
+            server.closeGracefully();
+        }
+    }
+
+    private static MockHttpServletRequest initRequest(int id) {
+        String body = "{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"method\":\"" + McpSchema.METHOD_INITIALIZE
+                + "\",\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},"
+                + "\"clientInfo\":{\"name\":\"unit-client\",\"version\":\"1.0\"}}}";
+        return postRequest(body, null);
+    }
+
+    private static MockHttpServletRequest postRequest(String body, String sessionId) {
+        MockHttpServletRequest req = new MockHttpServletRequest(HttpMethod.POST.name(), "/mcp");
+        req.addHeader("Accept", MediaType.APPLICATION_JSON_VALUE + ", " + MediaType.TEXT_EVENT_STREAM_VALUE);
+        req.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        if (sessionId != null) {
+            req.addHeader(HttpHeaders.MCP_SESSION_ID, sessionId);
+        }
+        req.setContent(body.getBytes(StandardCharsets.UTF_8));
+        return req;
     }
 }
