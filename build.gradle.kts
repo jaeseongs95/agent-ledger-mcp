@@ -43,11 +43,21 @@ sonar {
         property("sonar.projectKey", "veridger")
         property("sonar.projectName", "veridger")
         property("sonar.host.url", "https://sonar.jaeseong.dev")
+        providers.gradleProperty("sonar.token-file").orNull?.let { path ->
+            val tokenFile = file(path)
+            require(tokenFile.isFile) { "sonar.token-file does not exist: $path" }
+            val token = tokenFile.readText(Charsets.UTF_8).lineSequence().firstOrNull()?.trim().orEmpty()
+            require(token.isNotEmpty()) { "sonar.token-file is empty: $path" }
+            property("sonar.token", token)
+        }
     }
 }
 
 tasks.matching { it.name in setOf("generateLicenseReport", "checkLicense", "checkLicensePreparation") }.configureEach {
     notCompatibleWithConfigurationCache("dependency-license-report 3.1.5 tasks retain Project references")
+}
+tasks.matching { it.name == "sonar" }.configureEach {
+    notCompatibleWithConfigurationCache("SonarQube token and scan state must not be serialized into the configuration cache")
 }
 
 abstract class VerifyThirdPartyNotices : DefaultTask() {

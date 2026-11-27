@@ -95,7 +95,7 @@ jobs:
             echo "SONAR_TOKEN secret is not configured; skipping SonarQube analysis."
             exit 0
           fi
-          ./gradlew --no-daemon --max-workers=1 sonar
+          ./gradlew --no-daemon --no-configuration-cache --max-workers=1 sonar
 
   windows:
     name: check (windows-latest, JDK 25, PostgreSQL 18)
