@@ -56,8 +56,13 @@ sonar {
 tasks.matching { it.name in setOf("generateLicenseReport", "checkLicense", "checkLicensePreparation") }.configureEach {
     notCompatibleWithConfigurationCache("dependency-license-report 3.1.5 tasks retain Project references")
 }
-tasks.matching { it.name == "sonar" }.configureEach {
-    notCompatibleWithConfigurationCache("SonarQube token and scan state must not be serialized into the configuration cache")
+allprojects {
+    tasks.matching { it.name in setOf("sonar", "sonarqube", "sonarResolver") }.configureEach {
+        notCompatibleWithConfigurationCache("SonarQube token and classpath resolver must not be serialized into the configuration cache")
+    }
+}
+tasks.matching { it.name in setOf("sonar", "sonarqube") }.configureEach {
+    dependsOn(subprojects.map { it.tasks.matching { t -> t.name in setOf("classes", "testClasses") } })
 }
 
 abstract class VerifyThirdPartyNotices : DefaultTask() {
