@@ -311,4 +311,23 @@ class AttachmentStoreTest {
 
         assertThat(Files.exists(fixture.fileOf(fresh))).isFalse();
     }
+
+    @Test
+    @DisplayName("AttachmentStore.Page and UploadCommands.Page compare byte[] by content in equals/hashCode/toString")
+    void pageRecordsUseContentEquality() {
+        AttachmentStore.Page sp1 = new AttachmentStore.Page(new byte[] {1, 2, 3}, 0L, 3L);
+        AttachmentStore.Page sp2 = new AttachmentStore.Page(new byte[] {1, 2, 3}, 0L, 3L);
+        AttachmentStore.Page sp3 = new AttachmentStore.Page(new byte[] {1, 2, 4}, 0L, 3L);
+        assertThat(sp1).isEqualTo(sp2).hasSameHashCodeAs(sp2).isNotEqualTo(sp3);
+        assertThat(sp1.toString()).contains("[1, 2, 3]");
+
+        var up1 = new org.veridger.application.attachment.UploadCommands.Page(
+                "att-1", 0, 0L, 3L, 3, new byte[] {9, 8}, "text/plain", "a.txt");
+        var up2 = new org.veridger.application.attachment.UploadCommands.Page(
+                "att-1", 0, 0L, 3L, 3, new byte[] {9, 8}, "text/plain", "a.txt");
+        var up3 = new org.veridger.application.attachment.UploadCommands.Page(
+                "att-1", 0, 0L, 3L, 3, new byte[] {9, 7}, "text/plain", "a.txt");
+        assertThat(up1).isEqualTo(up2).hasSameHashCodeAs(up2).isNotEqualTo(up3);
+        assertThat(up1.toString()).contains("[9, 8]", "a.txt");
+    }
 }

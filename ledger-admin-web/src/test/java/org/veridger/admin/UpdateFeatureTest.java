@@ -3,6 +3,7 @@
 package org.veridger.admin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.flash;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -431,6 +432,49 @@ class UpdateFeatureTest {
         } finally {
             Files.deleteIfExists(statusDir.resolve("status.properties"));
             Files.deleteIfExists(statusDir);
+        }
+    }
+
+    @Test
+    @DisplayName("UPD-07: FileUpdateQueue creates verification directories inside its private update dir (never /tmp) and GitHubReleaseClient.downloadBytes enforces maxBytes in memory")
+    void upd07_privateVerificationDirectoryAndBoundedMemoryDownload(@TempDir Path workDir) throws Exception {
+        Path updateDir = workDir.resolve("update");
+        FileUpdateQueue queue = new FileUpdateQueue(props("https://api.github.com", updateDir, "4.3.1", 13));
+        Path verifyDir = queue.createVerificationDirectory();
+        try {
+            assertThat(verifyDir.getParent()).isEqualTo(updateDir.toAbsolutePath().normalize());
+            assertThat(verifyDir.getFileName().toString()).startsWith(".verify-");
+            assertThat(Files.isDirectory(verifyDir)).isTrue();
+        } finally {
+            Files.deleteIfExists(verifyDir);
+        }
+
+        HttpServer http = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        try {
+            byte[] small = "ok-manifest".getBytes(StandardCharsets.UTF_8);
+            byte[] huge = new byte[256];
+            http.createContext("/small", ex -> {
+                ex.sendResponseHeaders(200, small.length);
+                try (OutputStream out = ex.getResponseBody()) {
+                    out.write(small);
+                }
+            });
+            http.createContext("/huge", ex -> {
+                ex.sendResponseHeaders(200, huge.length);
+                try (OutputStream out = ex.getResponseBody()) {
+                    out.write(huge);
+                }
+            });
+            http.start();
+            String base = "http://127.0.0.1:" + http.getAddress().getPort();
+            LedgerAdminProperties localProps = props(base, updateDir, "4.3.1", 13);
+            GitHubReleaseClient client = new GitHubReleaseClient(localProps, testRestClient(), mapper);
+            assertThat(client.downloadBytes(URI.create(base + "/small"), 64)).isEqualTo(small);
+            assertThatThrownBy(() -> client.downloadBytes(URI.create(base + "/huge"), 64))
+                    .isInstanceOf(IOException.class)
+                    .hasRootCauseMessage("release asset exceeds maximum allowed size");
+        } finally {
+            http.stop(0);
         }
     }
 }

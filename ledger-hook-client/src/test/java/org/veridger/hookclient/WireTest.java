@@ -84,4 +84,26 @@ class WireTest {
         assertThat(Wire.MAX_REQUEST_BYTES).isGreaterThan(Wire.MAX_STDIN_BYTES);
         assertThat(Wire.MAX_ANSWER_BYTES).isGreaterThanOrEqualTo(Wire.MAX_STDIN_BYTES);
     }
+
+    @Test
+    @DisplayName("HookCall, HookAnswer, and ResidentAddress enforce content-based equality, hashCode, and secret redaction")
+    void recordEqualityAndResidentSecret() {
+        HookCall c1 = new HookCall(List.of("codex"), new byte[] {1, 2, 3});
+        HookCall c2 = new HookCall(List.of("codex"), new byte[] {1, 2, 3});
+        HookCall c3 = new HookCall(List.of("codex"), new byte[] {1, 2, 4});
+        assertThat(c1).isEqualTo(c2).hasSameHashCodeAs(c2).isNotEqualTo(c3);
+        assertThat(c1.toString()).contains("codex", "[1, 2, 3]");
+
+        HookAnswer a1 = new HookAnswer(0, new byte[] {4, 5}, new byte[] {6});
+        HookAnswer a2 = new HookAnswer(0, new byte[] {4, 5}, new byte[] {6});
+        HookAnswer a3 = new HookAnswer(2, new byte[] {4, 5}, new byte[] {7});
+        assertThat(a1).isEqualTo(a2).hasSameHashCodeAs(a2).isNotEqualTo(a3);
+        assertThat(a1.toString()).contains("[4, 5]", "[6]");
+
+        String s1 = ResidentAddress.newSecret();
+        String s2 = ResidentAddress.newSecret();
+        assertThat(s1).isNotBlank().isNotEqualTo(s2);
+        ResidentAddress addr = new ResidentAddress(12345, 99L, 0L, "build-1", s1);
+        assertThat(addr.toString()).doesNotContain(s1).contains("12345");
+    }
 }

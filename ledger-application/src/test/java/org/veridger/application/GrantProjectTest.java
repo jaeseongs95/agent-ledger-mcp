@@ -235,4 +235,51 @@ class GrantProjectTest {
         Expect.failure(() -> s.bean(ProjectService.class).add(new ProjectCommand("another-id", s.code(), "t"), TestOwners.OWNER),
                 ConflictCode.DUPLICATE_KEY);
     }
+
+    @Test
+    @DisplayName("SVC-GRT-14: syncProjectScopes reconciles added, kept, and revoked scopes atomically and live/liveAll reflect state")
+    void grt14_syncProjectScopesAndLiveQueries(Scenario s) {
+        String author = "claude:grt14-sync";
+        GrantService grants = s.bean(GrantService.class);
+        String otherProject = s.otherProject();
+        grants.grant(new GrantCommand(author, otherProject, List.of("spec"), null, "other-proj"), TestOwners.OWNER);
+
+        GrantService.SyncResult initial = grants.syncProjectScopes(
+                new GrantService.SyncCommand(author, s.projectId(), List.of("issue", "task"), "2030-01-01T00:00:00Z",
+                        "initial"),
+                TestOwners.OWNER);
+        assertThat(initial.added()).isEqualTo(2);
+        assertThat(initial.revoked()).isZero();
+        assertThat(grants.live(author)).hasSize(3);
+        assertThat(grants.liveAll()).extracting(g -> g.authorId().value()).contains(author);
+
+        // Keep 'task', revoke 'issue', add 'spec'
+        GrantService.SyncResult diff = grants.syncProjectScopes(
+                new GrantService.SyncCommand(author, s.projectId(), List.of("task", "spec"), "", "reconcile"),
+                TestOwners.OWNER);
+        assertThat(diff.added()).isEqualTo(1);
+        assertThat(diff.revoked()).isEqualTo(1);
+        assertThat(grants.live(author)).filteredOn(g -> s.projectId().equals(g.projectId().value()))
+                .extracting(g -> g.scope().token()).containsExactlyInAnyOrder("task", "spec");
+
+        // No-op sync with identical scopes issues 0 and revokes 0
+        GrantService.SyncResult noOp = grants.syncProjectScopes(
+                new GrantService.SyncCommand(author, s.projectId(), List.of("task", "spec"), null, null),
+                TestOwners.OWNER);
+        assertThat(noOp.added()).isZero();
+        assertThat(noOp.revoked()).isZero();
+
+        // Syncing null/empty scopes revokes all scopes on this project without touching otherProject
+        GrantService.SyncResult cleared = grants.syncProjectScopes(
+                new GrantService.SyncCommand(author, s.projectId(), null, null, null),
+                TestOwners.OWNER);
+        assertThat(cleared.added()).isZero();
+        assertThat(cleared.revoked()).isEqualTo(2);
+        assertThat(grants.live(author)).hasSize(1);
+
+        // Unknown project is NOT_FOUND
+        Expect.failure(() -> grants.syncProjectScopes(
+                new GrantService.SyncCommand(author, "no-such-project", List.of("issue"), null, null),
+                TestOwners.OWNER), LookupCode.NOT_FOUND);
+    }
 }
