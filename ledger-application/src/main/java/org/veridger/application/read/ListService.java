@@ -176,10 +176,10 @@ public class ListService {
         IssueQueryRepository.Filter filter = new IssueQueryRepository.Filter(status, severity, category, from, to,
                 owner, attention, taskId);
         Object criteriaKey = dates.cursorCriteria(List.of(project.value(), String.valueOf(filter), order.name()));
-        var after = cursors.decode(q.cursor(), PageCursor.Kind.ISSUES, criteriaKey)
+        var page = cursors.decode(q.cursor(), PageCursor.Kind.ISSUES, criteriaKey)
                 .map(ListService::issuePosition)
-                .orElse(null);
-        var page = issues.page(project, filter, maxRows, order, dates, after);
+                .map(after -> issues.page(project, filter, maxRows, order, dates, after))
+                .orElseGet(() -> issues.page(project, filter, maxRows, order, dates, null));
         return cursors.page(page, PageCursor.Kind.ISSUES, criteriaKey,
                 ListService::toIssueItem,
                 r -> dates.sortKey(r.createdAt(), r.updatedAt()).toString(),
@@ -201,10 +201,10 @@ public class ListService {
         SpecQueryRepository.Filter filter = new SpecQueryRepository.Filter(status, parentId, priority, owner,
                 attention);
         Object criteriaKey = dates.cursorCriteria(List.of(project.value(), String.valueOf(filter)));
-        var after = cursors.decode(q.cursor(), PageCursor.Kind.SPECS, criteriaKey)
+        var page = cursors.decode(q.cursor(), PageCursor.Kind.SPECS, criteriaKey)
                 .map(ListService::specPosition)
-                .orElse(null);
-        var page = specs.page(project, filter, maxRows, dates, after);
+                .map(after -> specs.page(project, filter, maxRows, dates, after))
+                .orElseGet(() -> specs.page(project, filter, maxRows, dates, null));
         return cursors.page(page, PageCursor.Kind.SPECS, criteriaKey,
                 ListService::toSpecItem,
                 r -> dates.sortKey(r.createdAt(), r.updatedAt()).toString(),
@@ -223,10 +223,10 @@ public class ListService {
         MaxRows maxRows = cursors.maxRows(q.maxRows());
         TaskQueryRepository.Filter filter = new TaskQueryRepository.Filter(state, owner, attention);
         Object criteriaKey = dates.cursorCriteria(List.of(project.value(), String.valueOf(filter)));
-        var after = cursors.decode(q.cursor(), PageCursor.Kind.TASKS, criteriaKey)
+        var page = cursors.decode(q.cursor(), PageCursor.Kind.TASKS, criteriaKey)
                 .map(ListService::taskPosition)
-                .orElse(null);
-        var page = tasks.page(project, filter, maxRows, dates, after);
+                .map(after -> tasks.page(project, filter, maxRows, dates, after))
+                .orElseGet(() -> tasks.page(project, filter, maxRows, dates, null));
         return cursors.page(page, PageCursor.Kind.TASKS, criteriaKey,
                 r -> new TaskItem(r.id().value(), r.title(), r.state().name(), r.ownerActorId(), r.version(),
                         r.createdAt(), r.updatedAt()),
@@ -245,10 +245,10 @@ public class ListService {
         MaxRows maxRows = cursors.maxRows(q.maxRows());
         CriterionQueryRepository.Filter filter = new CriterionQueryRepository.Filter(state, q.milestone());
         Object criteriaKey = dates.cursorCriteria(List.of(project.value(), String.valueOf(filter)));
-        var after = cursors.decode(q.cursor(), PageCursor.Kind.CRITERIA, criteriaKey)
+        var page = cursors.decode(q.cursor(), PageCursor.Kind.CRITERIA, criteriaKey)
                 .map(pos -> criterionPosition(pos, dates))
-                .orElse(null);
-        var page = criteria.page(project, filter, maxRows, dates, after);
+                .map(after -> criteria.page(project, filter, maxRows, dates, after))
+                .orElseGet(() -> criteria.page(project, filter, maxRows, dates, null));
         return cursors.page(page, PageCursor.Kind.CRITERIA, criteriaKey,
                 r -> new CriterionItem(r.id().value(), r.milestone(), r.goalLabel(), r.code(),
                         Texts.orEmpty(r.criterionText()), r.state().name(), r.version(), r.createdAt(), r.updatedAt()),

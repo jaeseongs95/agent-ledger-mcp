@@ -98,10 +98,10 @@ public class HistoryService {
                 q.atTo() == null ? null : UtcInstant.parse("at_to", q.atTo()).value());
         MaxRows maxRows = cursors.maxRows(q.maxRows());
         Object criteriaKey = dates.cursorCriteria(filter);
-        var after = cursors.decode(q.cursor(), PageCursor.Kind.HISTORY, criteriaKey)
+        var positions = cursors.decode(q.cursor(), PageCursor.Kind.HISTORY, criteriaKey)
                 .map(pos -> historyPosition(pos, dates))
-                .orElse(null);
-        var positions = queries.positions(filter, maxRows, dates, after);
+                .map(after -> queries.positions(filter, maxRows, dates, after))
+                .orElseGet(() -> queries.positions(filter, maxRows, dates, null));
         if (positions.rows().isEmpty()) {
             return new Page<>(List.of(), false, null);
         }

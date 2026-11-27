@@ -5,6 +5,7 @@ package org.veridger.application.admin;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.util.List;
+import java.util.Objects;
 import org.veridger.database.repository.ProjectRepository;
 import org.veridger.domain.error.ConflictCode;
 import org.veridger.domain.error.ConflictException;
@@ -73,9 +74,9 @@ public class ProjectService {
         ProjectId id = ProjectId.of(command.id());
         String name = TextRule.PROJECT_NAME.required(command.displayName());
         Project current = projects.findById(id)
-                .filter(project -> project.id().equals(id))
+                .filter(project -> Objects.equals(project.id(), id))
                 .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND, List.of("project", id.value())));
-        if (name.equals(current.displayName())) {
+        if (Objects.equals(name, current.displayName())) {
             return;
         }
         if (!projects.rename(id, name, command.version())) {
