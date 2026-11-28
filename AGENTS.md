@@ -6,11 +6,16 @@
 - 중간 수정은 작업 브랜치에 올린다. 변경을 작업 브랜치에서 완료하고 검증한 뒤 PR로 `develop`에 통합한다.
 - `develop`에 변경을 통합하면 `repository-checks.yml`의 Ubuntu·Windows 테스트 결과를 확인한다. 개발 SonarQube 분석은 로컬에서 기존 `veridger` 프로젝트로 실행한다.
 - 전체 코드 커버리지는 90% 이상, 미해결 보안·신뢰성·유지관리성 이슈는 각 0건을 목표로 한다. SonarQube 지표를 확인할 때는 분석 커밋과 전체 코드·신규 코드 범위를 함께 기록한다.
-- 개발 분석은 분석할 커밋을 체크아웃하고 로컬 PostgreSQL 테스트 설정과 `SONAR_HOST_URL` 환경 변수를 준비한 뒤 실행한다. 새 JaCoCo 보고서를 만든 다음 분석한다. 로컬 SonarQube 인증은 `SONAR_TOKEN` 환경 변수 또는 저장소 밖 토큰 파일을 지정하는 Gradle 속성 `sonar.token-file`을 사용한다.
+- 개발 분석은 분석할 커밋을 체크아웃하고 로컬 PostgreSQL 테스트 설정과 `SONAR_HOST_URL` 환경 변수를 준비한 뒤 실행한다. 로컬 SonarQube 인증은 `SONAR_TOKEN` 환경 변수 또는 저장소 밖 토큰 파일을 지정하는 Gradle 속성 `sonar.token-file`을 사용한다.
+- Python 가상 환경에 `python -m pip install --require-hashes -r .github/scripts/coverage-requirements.txt`를 한 번 실행한다. 분석 전에 Java와 Python 테스트 보고서를 함께 만든다.
 
   ```powershell
   .\gradlew.bat --no-daemon clean check jacocoAggregateReport
   if ($LASTEXITCODE -ne 0) { throw '테스트 또는 JaCoCo 보고서 생성 실패' }
+  python -B -m coverage run --data-file=build/.coverage-badges --branch --include=.github/scripts/sonar_badges.py -m unittest discover -s .github/scripts
+  if ($LASTEXITCODE -ne 0) { throw '배지 테스트 실패' }
+  python -B -m coverage xml --data-file=build/.coverage-badges --fail-under=90 -o build/reports/coverage/sonar-badges.xml
+  if ($LASTEXITCODE -ne 0) { throw 'Python 커버리지 보고서 생성 실패' }
   .\gradlew.bat --no-daemon sonar '-Dsonar.qualitygate.wait=true'
   ```
 
