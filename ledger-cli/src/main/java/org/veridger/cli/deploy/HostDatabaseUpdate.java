@@ -3,6 +3,7 @@
 package org.veridger.cli.deploy;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
 import java.nio.CharBuffer;
@@ -19,9 +20,11 @@ import java.util.List;
 import java.util.HashMap;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import org.veridger.cli.StreamCliOutput;
 import org.veridger.cli.secret.ConsoleSecretInput;
+import org.veridger.cli.secret.SecretInput;
 import org.veridger.cli.secret.StandardInput;
 import org.veridger.cli.secret.StdinSecretInput;
 import org.veridger.cli.secret.SystemProcessUser;
@@ -72,14 +75,19 @@ public final class HostDatabaseUpdate {
     }
 
     public static int run(String[] args) {
+        return run(args, StandardInput::ofProcess);
+    }
+
+    static int run(String[] args, Supplier<InputStream> standardInput) {
         try {
             switch (Operation.read(args)) {
                 case PROVISION -> {
                     if (args.length != 9 && !(args.length == 10 && "--stdin".equals(args[9]))) {
                         throw new IllegalArgumentException("Invalid host-update provision arguments");
                     }
+                    SecretInput input = args.length == 10 ? new StdinSecretInput(standardInput.get()) : new ConsoleSecretInput();
                     provision(Path.of(args[2]), Path.of(args[3]), Path.of(args[4]), Path.of(args[5]),
-                            args[6], args[7], args[8], args.length == 10);
+                            args[6], args[7], args[8], input);
                 }
                 case PLAN -> {
                     requireLength(args, 5);
@@ -117,7 +125,7 @@ public final class HostDatabaseUpdate {
     }
 
     private static void provision(Path lib, Path etc, Path driver, Path pgDump, String owner, String expectedUrl,
-            String expectedApp, boolean stdin) throws IOException {
+            String expectedApp, SecretInput input) throws IOException {
         Database database = readDatabase(etc);
         if (!Objects.equals(expectedUrl, database.url()) || !Objects.equals(expectedApp, database.appAccount())) {
             throw new IOException("Installer JDBC URL and application account differ from the effective database settings");
@@ -126,7 +134,6 @@ public final class HostDatabaseUpdate {
         if (!GrantApplier.isAccountName(owner) || owner.equalsIgnoreCase(database.appAccount())) {
             throw new IllegalArgumentException("Use a separate PostgreSQL database owner account for schema updates");
         }
-        var input = stdin ? new StdinSecretInput(StandardInput.ofProcess()) : new ConsoleSecretInput();
         char[] secret = input.read("PostgreSQL owner password (stored for host schema updates): ");
         if (secret == null || secret.length == 0) {
             throw new IllegalArgumentException("A PostgreSQL owner password is required");

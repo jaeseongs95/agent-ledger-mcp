@@ -240,6 +240,35 @@ class ReadContractTest {
     }
 
     @Test
+    void rejectsVersionSelectionOnEditsAndRollsBackWhenTheSelectedVersionIsMissing(
+            McpSession session, Scenario scenario) {
+        Seed seed = Seed.create(session, scenario);
+        var versions = scenario.bean(ProjectVersionService.class);
+        String name = "Review scope";
+        versions.add(seed.project(), name, null);
+
+        var batch = Args.of().with("default_reason", Scenario.REASON).with("_hostAttestation", Scenario.AUTHOR);
+        var edit = Args.of().with("op", "save").with("entity", "issue").with("id", seed.issue()).with("expected_version", 1)
+                .with("fields", Args.of().with("title", "Should not replace title"))
+                .with("project_version", name);
+        assertThat(session.failed("ledger_batch", batch.with("operationKey", Calls.freshKey())
+                .with("ops", List.of(edit))).code()).isEqualTo("VALIDATION_FAILED");
+        assertThat(session.ok("ledger_issue", new Calls.IdOnly(seed.issue()), ReadOutputs.Issue.class).projectVersions())
+                .isEmpty();
+
+        String id = scenario.criterionId("VERSION-ROLLBACK");
+        String title = "Unregistered version";
+        var version = Args.of().with("op", "project_version").with("project_id", seed.project()).with("name", "Transient")
+                .with("create", true);
+        var criterion = Args.of().with("op", "save").with("entity", "criterion").with("id", id)
+                .with("fields", Calls.Fields.criterion(seed.project(), name, "RC-02")).with("project_version", title);
+        assertThat(session.failed("ledger_batch", batch.with("operationKey", Calls.freshKey())
+                .with("ops", List.of(version, criterion))).code()).isEqualTo("NOT_FOUND");
+        assertThat(versions.list(seed.project())).extracting(ProjectVersionService.Version::name).containsExactly(name);
+        assertThat(session.ok("ledger_get", new Calls.Ids(List.of(id)), ReadOutputs.Got.class).notFound()).containsExactly(id);
+    }
+
+    @Test
     void mixedDetailSelectionAndPaginationAvoidLargeResponses(McpSession session, Scenario scenario) {
         Seed seed = Seed.create(session, scenario);
         var ids = List.of(seed.issue(), seed.spec(), seed.task(), seed.criterion());
