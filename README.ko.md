@@ -142,7 +142,7 @@ MCP를 직접 호출하는 쪽은 HTTP에서 설정된 `Bearer` 토큰 `ledger.m
 `reason`으로 덮어쓸 수 있습니다. 첨부 원문은 필요한 바이트 범위를 지정하고 `["text","size","totalBytes"]`를 선택합니다.
 
 프로젝트의 `issue` 권한이 있는 에이전트는 `ledger_batch`에서 버전을 관리할 수 있습니다. 예를 들어
-`{"op":"project_version","project_id":"studio","name":"검토본 2","create":true,"link_issue_ids":["STUDIO-I-0001"]}`을
+`{"op":"project_version","project_id":"studio","name":"Review 2","create":true,"link_issue_ids":["STUDIO-I-0001"]}`을
 하나의 작업으로 보내면 버전 등록과 이슈 연결이 함께 반영됩니다. 항목의 `reason` 또는 배치의 `default_reason`을 지정하세요.
 `original_name`으로 이름을 바꾸고 `unlink_issue_ids`로 연결을 해제합니다. `description`을 생략하면 기존 설명을 유지합니다.
 연결·해제 목록에는 같은 프로젝트 이슈를 각각 최대 200개 지정할 수 있습니다. 버전 조회는 `ledger_projects(include_versions=true)`를 사용합니다.
