@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Set;
 import org.veridger.database.time.UtcTime;
 import org.veridger.domain.rule.CriterionState;
+import org.veridger.domain.rule.HistoryEntity;
 import org.veridger.domain.value.CriterionId;
 import org.veridger.domain.value.MaxRows;
 import org.veridger.domain.value.ProjectId;
@@ -66,6 +67,11 @@ public class CriterionQueryRepository {
 
     public KeysetPage<CriterionSummary> page(ProjectId project, Filter filter, MaxRows maxRows, DateQuery dates,
             Position after) {
+        return page(project, filter, maxRows, dates, after, null);
+    }
+
+    public KeysetPage<CriterionSummary> page(ProjectId project, Filter filter, MaxRows maxRows, DateQuery dates,
+            Position after, String projectVersionId) {
         StringBuilder sql = new StringBuilder("SELECT c.id, c.milestone_name, c.goal_label, c.code, c.criterion_text, "
                 + "c.state, c.version, dates.created_at, dates.updated_at FROM milestone_criterion c "
                 + "LEFT JOIN (SELECT h.entity_id, "
@@ -80,6 +86,7 @@ public class CriterionQueryRepository {
         if (filter.milestone() != null) {
             sql.append(" AND milestone_name = :milestone");
         }
+        ProjectVersionRepository.appendItemFilter(sql, projectVersionId, "c.id", HistoryEntity.CRITERION);
         dates.appendRange(sql);
         if (dates.sort() != null) {
             if (after != null) {
@@ -100,7 +107,7 @@ public class CriterionQueryRepository {
         if (filter.milestone() != null) {
             spec = spec.param("milestone", filter.milestone());
         }
-        spec = dates.bindRange(spec);
+        spec = dates.bindRange(ProjectVersionRepository.bindItemFilter(spec, projectVersionId));
         if (after != null) {
             spec = dates.sort() == null ? spec.param("after", after.id().value())
                     : dates.bindSeek(spec, after.at(), after.id().value());

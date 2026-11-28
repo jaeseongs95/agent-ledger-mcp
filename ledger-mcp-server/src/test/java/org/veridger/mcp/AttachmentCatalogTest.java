@@ -131,20 +131,19 @@ class AttachmentCatalogTest {
     }
 
     @Test
-    @DisplayName("ATA-020: the descriptions say what a caller needs: uploads only through these tools, the sizes, operationKey required and repeatable, the repeated last chunk, and the codes ARTIFACT_BUSY, ARTIFACT_INCOMPLETE, ARTIFACT_HASH_MISMATCH")
+    @DisplayName("ATA-020: upload descriptions explain file and chunk limits, retries, and how to resume")
     void theDescriptionsSayWhatTheCallerNeeds(McpSession session) {
         String begin = session.tool("artifact_begin").description();
         String chunk = session.tool("artifact_chunk").description();
         String finish = session.tool("artifact_finish").description();
         SchemaView beginInput = SchemaView.of(session.mapper(), session.tool("artifact_begin").inputSchema());
 
-        assertThat(begin).contains("no other way").contains("operationKey is required").contains("repeatable")
-                .contains("262144").contains("64 MiB");
+        assertThat(begin).contains("1..64 files", "same files on retry", "artifact_chunk", "artifact_finish", "64 MiB");
         assertThat(beginInput.properties().get("operationKey").description()).contains("Required");
-        assertThat(chunk).contains("262144").contains("349528").contains("repeated chunk is answered with the current state")
-                .contains("ARTIFACT_BUSY").contains("send the same chunk again later");
-        assertThat(finish).contains("ARTIFACT_INCOMPLETE").contains("send the last chunk again")
-                .contains("ARTIFACT_HASH_MISMATCH").contains("the bytes are kept");
+        assertThat(chunk).contains("262144", "349528", "repeated chunk returns the current state",
+                "ARTIFACT_BUSY", "retry the same chunk later");
+        assertThat(finish).contains("ARTIFACT_INCOMPLETE", "resume with artifact_status and artifact_chunk",
+                "ARTIFACT_HASH_MISMATCH", "bytes are kept until expiry", "attachment_id");
     }
 
     @Test
@@ -161,11 +160,9 @@ class AttachmentCatalogTest {
         assertThat(chunk.required()).doesNotContain("operationKey");
         assertThat(finish.properties()).doesNotContainKey("operationKey");
         assertThat(finish.required()).doesNotContain("operationKey");
-        assertThat(session.tool("artifact_begin").description()).contains("the server never makes a key up");
-        assertThat(session.tool("artifact_chunk").description()).contains("takes no operationKey")
-                .contains("the one exception").contains("uploadId, sequence and chunkSha256");
-        assertThat(session.tool("artifact_finish").description()).contains("takes no operationKey")
-                .contains("the one exception").contains("repeatable by its attachmentId");
+        assertThat(session.tool("artifact_begin").description()).contains("caller-chosen operationKey");
+        assertThat(session.tool("artifact_chunk").description()).contains("Retry by uploadId, sequence and chunkSha256");
+        assertThat(session.tool("artifact_finish").description()).contains("Retry with the same attachmentId");
     }
 
     @Test

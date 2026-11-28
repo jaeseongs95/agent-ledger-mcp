@@ -98,13 +98,7 @@ public class IssueQueryRepository {
         if (filter.taskId() != null) {
             sql.append(" AND EXISTS (SELECT 1 FROM issue_task it WHERE it.task_id = :taskId AND it.issue_id = issue.id)");
         }
-        if (projectVersionId != null) {
-            sql.append("""
-                     AND EXISTS (SELECT 1 FROM project_version_item ipv
-                     WHERE ipv.project_id = issue.project_id AND ipv.item_id = issue.id
-                     AND ipv.item_kind = 'issue' AND ipv.version_id = :projectVersionId)
-                    """);
-        }
+        ProjectVersionRepository.appendItemFilter(sql, projectVersionId, "id", HistoryEntity.ISSUE);
         dates.appendRange(sql);
         DateQuery sort = dates.defaultOrder(DateQuery.Column.CREATED, order == Order.OLDEST_FIRST);
         if (after != null) {
@@ -134,9 +128,7 @@ public class IssueQueryRepository {
         if (filter.taskId() != null) {
             spec = spec.param("taskId", filter.taskId().value());
         }
-        if (projectVersionId != null) {
-            spec = spec.param("projectVersionId", projectVersionId);
-        }
+        spec = ProjectVersionRepository.bindItemFilter(spec, projectVersionId);
         spec = dates.bindRange(spec);
         if (after != null) {
             spec = sort.bindSeek(spec, after.at(), after.id().value());

@@ -271,11 +271,10 @@ function initializeAdminPage() {
     syncCodeFormState();
   }
 
-  // Snapshot all project options in #enrolled-project so session-specific filtering can restore them in manual mode
+  // Keep the server-rendered names when filtering the grant dialog's project options.
   const enrolledProjectSelect = document.getElementById("enrolled-project");
-  const allEnrolledProjectIds = enrolledProjectSelect
-    ? Array.from(enrolledProjectSelect.options).map((opt) => opt.value)
-    : [];
+  const enrolledProjects = new Map(Array.from(enrolledProjectSelect?.options ?? [],
+    (option) => [option.value, option.label]));
 
   // Split host + session ID helpers (Grants add/revoke modals)
   function hostOptionsOf(selectEl) {
@@ -409,7 +408,7 @@ function initializeAdminPage() {
       setField("edit-scopes-author", author);
       setField("edit-scopes-project", project);
       setText("edit-scopes-author-label", author);
-      setText("edit-scopes-project-label", project);
+      setText("edit-scopes-project-label", enrolledProjects.get(project) ?? project);
       setField("edit-scopes-expires", trigger.dataset.expires || "");
       setField("edit-scopes-note", trigger.dataset.note || "");
       if (form) {
@@ -438,16 +437,11 @@ function initializeAdminPage() {
         populateSplitAuthor("enrolled", "", false);
       }
       if (enrolledProjectSelect) {
-        const allowed = mode === "session" && trigger.dataset.availableProjects
-          ? trigger.dataset.availableProjects.split(",").map((s) => s.trim()).filter(Boolean)
-          : allEnrolledProjectIds;
-        enrolledProjectSelect.textContent = "";
-        allowed.forEach((projId) => {
-          const opt = document.createElement("option");
-          opt.value = projId;
-          opt.textContent = projId;
-          enrolledProjectSelect.appendChild(opt);
-        });
+        const allowed = mode === "session" ? new Set((trigger.dataset.availableProjects || "").split(",")) : null;
+        const options = Array.from(enrolledProjects)
+          .filter(([id]) => !allowed || allowed.has(id))
+          .map(([id, name]) => new Option(name, id));
+        enrolledProjectSelect.replaceChildren(...options);
       }
       if (form) {
         form.querySelectorAll('input[type="checkbox"][name="scopes"]').forEach((box) => {
@@ -481,7 +475,8 @@ function initializeAdminPage() {
         setText("revoke-summary-author", author);
         const projLabel = document.getElementById("revoke-summary-project");
         if (projLabel) {
-          projLabel.textContent = mode === "project" ? project : (projLabel.dataset.allLabel || "All projects");
+          projLabel.textContent = mode === "project" ? (enrolledProjects.get(project) ?? project)
+            : (projLabel.dataset.allLabel || "All projects");
         }
       }
     }

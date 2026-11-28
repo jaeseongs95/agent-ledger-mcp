@@ -146,8 +146,7 @@ public class GrantsController {
     private void populateCommon(Map<String, Object> target) {
         List<SessionGrant> liveGrants = grants.liveAll();
         Choices.ProjectChoice choice = choices.project(null);
-        Map<String, String> projectNames = new LinkedHashMap<>();
-        choice.projects().forEach(project -> projectNames.put(project.id(), project.displayName()));
+        Map<String, String> projectNames = Choices.projectNames(choice.projects());
         List<SessionAccessView.SessionCard> sessions = SessionAccessView.build(liveGrants, List.copyOf(projectNames.keySet()));
 
         target.put("grants", liveGrants);

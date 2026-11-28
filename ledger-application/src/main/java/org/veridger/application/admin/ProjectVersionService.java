@@ -34,8 +34,6 @@ import org.veridger.domain.value.TextRule;
 @Transactional
 public class ProjectVersionService {
 
-    private static final int MAX_ISSUE_LINKS = 200;
-
     public record Version(String id, String name, String description) {}
 
     public record VersionItems(Version version, List<ProjectVersionRepository.Item> items, String next) {}
@@ -55,10 +53,12 @@ public class ProjectVersionService {
         }
     }
 
-    public record Change(String projectId, String name, boolean create, String originalName, String description,
-            List<String> linkIssueIds, List<String> unlinkIssueIds) {}
+    public record ItemRef(HistoryEntity entity, String id) {}
 
-    public record Outcome(String id, String name, boolean created, List<String> linked, List<String> unlinked) {}
+    public record Change(String projectId, String name, boolean create, String originalName, String description,
+            Set<ItemRef> linked, Set<ItemRef> unlinked) {}
+
+    public record Outcome(String id, String name, boolean created, List<ItemRef> linked, List<ItemRef> unlinked) {}
 
     private final ProjectRepository projects;
     private final IssueRepository issues;
@@ -162,9 +162,7 @@ public class ProjectVersionService {
         ProjectId project = ProjectId.of(change.projectId());
         String name = TextRule.PROJECT_VERSION_NAME.required(change.name());
         String description = TextRule.PROJECT_VERSION_DESCRIPTION.optional(change.description());
-        var linked = issueIds(change.linkIssueIds(), "link_issue_ids");
-        var unlinked = issueIds(change.unlinkIssueIds(), "unlink_issue_ids");
-        validateIssueSelection(project, linked, unlinked);
+        validateSelection(project, change.linked(), change.unlinked());
         String versionId;
         if (change.create()) {
             if (change.originalName() != null) {
@@ -186,40 +184,25 @@ public class ProjectVersionService {
             }
         }
         return new Outcome(versionId, name, change.create(),
-                linked.stream().filter(id -> versions.link(project.value(), id, versionId)).toList(),
-                unlinked.stream().filter(id -> versions.unlink(project.value(), id, versionId)).toList());
+                change.linked().stream()
+                        .filter(item -> versions.linkItem(project.value(), item.entity(), item.id(), versionId)).toList(),
+                change.unlinked().stream()
+                        .filter(item -> versions.unlinkItem(project.value(), item.entity(), item.id(), versionId)).toList());
     }
 
-    private void validateIssueSelection(ProjectId project, Set<String> linked, Set<String> unlinked) {
-        if (linked.stream().anyMatch(unlinked::contains)) {
-            throw ValidationException.invalid("unlink_issue_ids", ValidationReason.MUST_DIFFER_FROM, "link_issue_ids");
-        }
-        Set<String> selected = new LinkedHashSet<>(linked);
+    private void validateSelection(ProjectId project, Set<ItemRef> linked, Set<ItemRef> unlinked) {
+        Set<ItemRef> selected = new LinkedHashSet<>(linked);
         selected.addAll(unlinked);
-        Set<String> sameProject = lookup.findAny(selected).stream()
-                .filter(row -> row.entity() == HistoryEntity.ISSUE && Objects.equals(project.value(), row.row().projectId()))
-                .map(row -> row.row().id()).collect(Collectors.toSet());
-        selected.stream().filter(id -> !sameProject.contains(id)).findFirst().ifPresent(id -> {
-            throw new LookupException(LookupCode.NOT_FOUND, List.of("issue", id));
+        Set<ItemRef> sameProject = lookup.findAny(selected.stream().map(ItemRef::id).toList()).stream()
+                .filter(row -> Objects.equals(project.value(), row.row().projectId()))
+                .map(row -> new ItemRef(row.entity(), row.row().id())).collect(Collectors.toSet());
+        selected.stream().filter(item -> !sameProject.contains(item)).findFirst().ifPresent(item -> {
+            throw new LookupException(LookupCode.NOT_FOUND, List.of(item.entity().token(), item.id()));
         });
     }
 
-    private static Set<String> issueIds(List<String> ids, String path) {
-        Set<String> unique = new LinkedHashSet<>();
-        if (ids == null) {
-            return unique;
-        }
-        if (ids.size() > MAX_ISSUE_LINKS) {
-            throw ValidationException.invalid(path, ValidationReason.MUST_HOLD_ITEMS, "0", Integer.toString(MAX_ISSUE_LINKS));
-        }
-        for (String id : ids) {
-            unique.add(IssueId.of(id).value());
-        }
-        return unique;
-    }
-
     private void lockProject(ProjectId id) {
-        // Serialize edits and issue links in the same project without database uniqueness constraints.
+        // Serialize version changes in the same project without database uniqueness constraints.
         var project = projects.findById(id).filter(row -> Objects.equals(row.id(), id))
                 .orElseThrow(() -> new LookupException(LookupCode.NOT_FOUND, List.of("project", id.value())));
         if (!projects.pinVersion(id, project.version())) {

@@ -240,6 +240,7 @@ public final class ReadOutputs {
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
     public record ProjectRow(@JsonProperty("id") String id, @JsonProperty("code") String code,
+            @JsonProperty("display_name") String displayName,
             @JsonProperty("title") String title,
             @JsonProperty("versions") @JsonInclude(JsonInclude.Include.NON_NULL) List<ProjectVersion> versions) {
     }
@@ -371,7 +372,7 @@ public final class ReadOutputs {
     }
 
     public static ProjectRow projectRow(CatalogService.ProjectView p, List<CatalogService.VersionView> versions) {
-        return new ProjectRow(p.id(), p.code(), p.title(), versions == null ? null
+        return new ProjectRow(p.id(), p.code(), p.displayName(), p.title(), versions == null ? null
                 : versions.stream().map(v -> new ProjectVersion(v.name(), v.description())).toList());
     }
 

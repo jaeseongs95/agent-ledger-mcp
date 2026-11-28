@@ -134,7 +134,7 @@ Write tools (authenticated author and a live grant are needed). Every write tool
 | `ledger_review` | reviewer | independent verification (`VERIFIED`, `MET`, `NOT_MET`) and reopening (`evidence_uri` required) |
 | `ledger_review_correct` | reviewer | mark a reviewer verification row as wrong |
 
-Attachment tools (authenticated author with at least one live grant; see Attachments below):
+Attachment tools. Use a session with a live grant to start, seal, inspect a sealed bundle or read it. The authenticated `attachments-send` CLI uses the per-file `uploadId` to send and resume chunks directly.
 
 | Tool | What |
 |---|---|
@@ -151,17 +151,17 @@ Read tools (no attestation and no grant; structured queries that replace the raw
 | `ledger_get` | state and row version for up to 200 IDs. Set `include_details=true` for full details across up to 10 mixed issue, spec, task or criterion IDs |
 | `ledger_issue` | one issue with deliverables, tasks, specs, criteria, cases (including merged issues), relations, `owner_actor_id` and recent history |
 | `ledger_spec` | one specification with summary, acceptance criteria, parent/child specs, deliverables, tasks, issues, criteria and recent history |
-| `ledger_task` | one task with purpose, success condition, origin, owner, deliverables, issues, specs, criteria and recent history |
+| `ledger_task` | one task with purpose, success condition, origin, owner, deliverables and related records. Use `ledger_history` for changes |
 | `ledger_criterion` | one milestone criterion with milestone, goal label, code, criterion text, state and linked tasks, issues and specs |
 | `ledger_history` | append-only history and receipts by ids, id range, entity, project, operation, author or time range; `include_before` adds `before_data` |
-| `ledger_search` | issues, specs, tasks and criteria by keywords, case-insensitive, `match` is `ANY` (default) or `ALL` |
+| `ledger_search` | find IDs across record types by keyword or by `project` and `project_version`. Keywords use `ANY` (default) or `ALL` |
 | `ledger_issues` | issues of a project, filtered by status, severity, category, attention kind, owner and `project_version` |
-| `ledger_specs` | specifications of a project, filtered by status, parent id, priority, owner and attention kind |
-| `ledger_tasks` | tasks of a project, filtered by state, owner and attention kind |
-| `ledger_criteria` | milestone criteria of a project, filtered by state and `milestone_name` |
+| `ledger_specs` | specifications by status, parent ID, priority, owner, attention or `project_version` |
+| `ledger_tasks` | tasks by state, owner, attention or `project_version` |
+| `ledger_criteria` | release criteria by state, `milestone_name` or `project_version` |
 | `ledger_attention` | items needing action: `OPEN_WITH_DELIVERABLE`, `RESOLVED_WITHOUT_DELIVERABLE`, `OPEN_NO_OWNER`, `SPEC_COMPLETED_NOT_VERIFIED`, `TASK_UNKNOWN`, `DONE_NOT_VERIFIED` |
 | `ledger_stats` | counts per state and severity of one project or of all; `bucket` = `day` adds new items per UTC day |
-| `ledger_projects` | projects with id, code and title. Set `include_versions=true` to include their registered project versions |
+| `ledger_projects` | projects by stable `project` ID or case-insensitive `display_name` substring. Returns the stable `id`, record ID prefix `code`, description `title` and current `display_name`. Use `include_versions=true` for version names |
 | `ledger_codes` | common codes; retired codes included with `include_inactive` |
 
 The list read tools take `max_rows` (1 to 1000, default 50) and `cursor`; their answers carry `truncated` and `next_cursor`. `ledger_search` applies `created_from` and `created_to` to issues, specs and tasks; a criterion has no creation time, so a search with either bound leaves criteria out (a search for criteria only with a bound returns nothing).
@@ -175,11 +175,22 @@ Use `structured_only=true` when the client consumes MCP `structuredContent`. The
 For author writes sharing a reason, provide `default_reason` once in `ledger_batch`. Items can override it with
 their own `reason`. For attachment text, request `["text","size","totalBytes"]` with the needed byte range.
 
-An agent with the project's `issue` grant can manage versions with a `ledger_batch` item such as
-`{"op":"project_version","project_id":"studio","name":"Review 2","create":true,"link_issue_ids":["STUDIO-I-0001"]}`.
-Provide `reason` on the item or `default_reason` on the batch. Use `original_name` to rename, omit `description` to
-keep the current description, and use `unlink_issue_ids` to remove links. Each link list accepts up to 200 issues in
-the same project. Read versions via `ledger_projects(include_versions=true)`.
+Use `ledger_batch` with `op=project_version` to register, rename or change a version description with the project's
+`issue` grant. For existing records, pass `link_items` or `unlink_items` grouped by kind:
+
+```json
+{"op":"project_version","project_id":"studio","name":"Review 2","link_items":{"spec":["STUDIO-S-0001"],"task":["STUDIO-T-0001"]}}
+```
+
+Use `create=true` to register the version, or `original_name` to rename it. Each direction accepts at most 200 record IDs
+from the same project. The item scopes are `issue` for an issue, `spec` for a specification, and `task` for a task or
+release criterion. Existing callers can still use `link_issue_ids` and `unlink_issue_ids`. Supply `reason` on the operation
+or `default_reason` on the batch. To create a record and connect it at once, use `op=save` with `project_version`.
+
+Use `ledger_projects(project=..., include_versions=true)` to retrieve exact version names. Use `ledger_search` with
+`project` and `project_version` to list all linked record types without keywords, or use the corresponding list tool to
+filter a single type. Retrieve known IDs and their version links with `ledger_get(include_details=true)`.
+Use `ledger_link` for relationships between two ledger records.
 
 Use `ledger_search` to find unknown records, `ledger_get` for known IDs, and `ledger_attention` for the follow-up
 queue. Set `include_context=true` on the queue to fetch titles, owners and update times in the same call. Use

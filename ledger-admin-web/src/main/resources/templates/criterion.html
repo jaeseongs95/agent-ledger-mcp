@@ -64,7 +64,8 @@
         <h2 th:text="#{item.metadata}">Details</h2>
         <dl class="facts">
           <dt th:text="#{col.id}">ID</dt><dd class="code" th:text="${criterion.id()}">ID</dd>
-          <dt th:text="#{common.project}">Project</dt><dd class="code"><a th:href="@{/(project=${criterion.projectId()})}" th:text="${criterion.projectId()}">p1</a></dd>
+          <dt th:text="#{common.project}">Project</dt>
+          <dd><a th:href="@{/(project=${criterion.projectId()})}" th:text="${@choices.projectName(criterion.projectId())}">p1</a></dd>
           <th:block th:replace="~{fragments :: relatedVersions(${criterion.projectId()}, 'criterion')}"></th:block>
           <dt th:text="#{criteria.milestone}">Milestone</dt>
           <dd><a th:href="@{/criteria(project=${criterion.projectId()}, milestone=${criterion.milestoneName()})}" th:text="${criterion.milestoneName()}">v1.0</a></dd>

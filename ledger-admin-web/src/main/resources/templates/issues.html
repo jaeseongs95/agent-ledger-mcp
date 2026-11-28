@@ -24,7 +24,7 @@
             <option th:unless="${projectListed}" th:value="${choice.selected()}"
                     th:text="${choice.selected()}" selected>Project</option>
             <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:selected="${p.id() == choice.selected()}"
-                    th:text="${p.displayName() == p.id() ? p.displayName() : p.displayName() + ' (' + p.id() + ')'}">Project</option>
+                    th:text="${p.displayName()}">Project</option>
           </select>
         </div>
         <div class="filter-field">

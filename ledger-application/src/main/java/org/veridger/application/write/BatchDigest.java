@@ -63,11 +63,23 @@ final class BatchDigest {
         return CanonicalPayload.Fields.empty().text("op", "project_version").text("project_id", input.projectId())
                 .text("name", input.name()).text("reason", input.reason()).text("create", text(input.create()))
                 .text("original_name", input.originalName())
-                .text("description", input.description()).with("link_issue_ids", issueIds(input.linkIssueIds()))
-                .with("unlink_issue_ids", issueIds(input.unlinkIssueIds()));
+                .text("description", input.description()).with("link_issue_ids", ids(input.linkIssueIds()))
+                .with("unlink_issue_ids", ids(input.unlinkIssueIds()))
+                .with("link_items", versionItems(input.linkItems())).with("unlink_items", versionItems(input.unlinkItems()));
     }
 
-    private static CanonicalPayload.Items issueIds(List<String> ids) {
+    private static CanonicalPayload.Fields versionItems(BatchOpInput.VersionItems items) {
+        if (items == null) {
+            return null;
+        }
+        CanonicalPayload.Fields fields = CanonicalPayload.Fields.empty();
+        for (var entry : items.byEntity().entrySet()) {
+            fields = fields.with(entry.getKey().token(), ids(entry.getValue()));
+        }
+        return fields;
+    }
+
+    private static CanonicalPayload.Items ids(List<String> ids) {
         return ids == null ? null : new CanonicalPayload.Items(ids.stream()
                 .<CanonicalPayload>map(id -> id == null ? new CanonicalPayload.Items(List.of())
                         : new CanonicalPayload.Text(id)).toList());

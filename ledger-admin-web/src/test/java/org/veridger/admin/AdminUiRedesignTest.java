@@ -158,7 +158,23 @@ class AdminUiRedesignTest {
         String grantsPage = browser.perform(browser.get("/grants")).andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
         assertThat(grantsPage).contains("grant-project-filter", "session-search", "grant-host-filter", "grant-scope-filter",
-                "data-project-name=\"새 프로젝트명\"");
+                "data-project-name=\"새 프로젝트명\"", "value=\"" + project.project() + "\">새 프로젝트명</option>");
+        String taskId = seeds.task(project, "Task after rename");
+        String specId = seeds.spec(project, "Specification after rename");
+        String criterionId = seeds.criterion(project, "1", "rename test", "renamed");
+        List<String> details = List.of("/issues/" + originalId, "/tasks/detail?id=" + taskId,
+                "/specs/detail?id=" + specId, "/criteria/detail?id=" + criterionId);
+        for (String detail : details) {
+            String html = browser.perform(browser.get(detail)).andExpect(status().isOk())
+                    .andReturn().getResponse().getContentAsString();
+            assertThat(html).contains("href=\"/?project=" + project.project() + "\">새 프로젝트명</a>");
+        }
+        String issuesPage = browser.perform(browser.get("/issues").param("project", project.project()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(issuesPage).contains("value=\"" + project.project() + "\" selected=\"selected\">새 프로젝트명</option>");
+        String overviewPage = browser.perform(browser.get("/").param("project", project.project()))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        assertThat(overviewPage).contains("<td>새 프로젝트명</td>");
         assertThat(originalId).isEqualTo(project.issueId(1));
         assertThat(seeds.issue(project, "After rename")).isEqualTo(project.issueId(2));
     }

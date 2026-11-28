@@ -135,6 +135,9 @@ public class BatchService {
         if (!violations.isEmpty()) {
             throw new ViolationTranslator("ops[" + index + "]").translate(violations);
         }
+        if (op instanceof BatchOpInput.ProjectVersion change) {
+            ProjectVersionLinks.from(change);
+        }
     }
 
     private static BatchOpKind kind(BatchOpInput op) {
