@@ -1,5 +1,13 @@
 # Veridger
 
+![품질 게이트](docs/badges/quality-gate.svg)
+![보안 등급](docs/badges/security.svg)
+![신뢰성 등급](docs/badges/reliability.svg)
+![유지관리성 등급](docs/badges/maintainability.svg)
+![커버리지](docs/badges/coverage.svg)
+![중복 줄](docs/badges/duplicated-lines.svg)
+![코드 줄 수](docs/badges/lines-of-code.svg)
+
 [English](README.md)
 
 Veridger는 AI 에이전트와 운영자가 함께 쓰는 작업 장부입니다. 에이전트는 MCP로 이슈, 명세, 작업, 출시 기준, 산출물을 기록합니다. 운영자는 관리자 화면에서 프로젝트와 세션 권한을 관리하고 변경 이력을 확인합니다.

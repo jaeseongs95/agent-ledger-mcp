@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import org.veridger.application.admin.ProjectVersionService;
 import org.veridger.application.read.Page;
@@ -43,7 +44,7 @@ public class Choices {
     /** The projects, and the one the page works on: the one asked for, else the first (absent when there is none). */
     public record ProjectChoice(List<ProjectView> projects, String selected) {
         public boolean listed() {
-            return projects.stream().anyMatch(project -> project.id().equals(selected));
+            return projects.stream().anyMatch(project -> Objects.equals(project.id(), selected));
         }
     }
 

@@ -1,5 +1,13 @@
 # Veridger
 
+![Quality Gate](docs/badges/quality-gate.svg)
+![Security Rating](docs/badges/security.svg)
+![Reliability Rating](docs/badges/reliability.svg)
+![Maintainability Rating](docs/badges/maintainability.svg)
+![Coverage](docs/badges/coverage.svg)
+![Duplicated Lines](docs/badges/duplicated-lines.svg)
+![Lines of Code](docs/badges/lines-of-code.svg)
+
 [한국어](README.ko.md)
 
 Veridger is a work ledger for AI agents and their operators. Agents record issues, specifications, tasks, release criteria, and deliverables over MCP. Operators use the admin console to manage projects, grant session permissions, and review the audit history.
