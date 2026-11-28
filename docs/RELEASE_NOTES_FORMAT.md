@@ -11,7 +11,7 @@ Every release of veridger has one release note. This file defines its format; th
 - The English part follows under the heading `## English`. The Korean part follows under a heading of the same level that is the name of the Korean language written in Korean. The two parts are in the same file; they are not linked to each other and neither is a translation file.
 - Each part has the nine sections of the table below, as headings of level three, in this order. A section that has nothing to report says so in one sentence; it is never omitted and never left empty.
 - Both parts state the same facts. Code (tool names, commands, setting keys, error tokens, values) is written in code spans or code blocks and is identical in both parts. Formal wording is used; no colloquial expressions.
-- The main README links every release note and this format, and is brought up to date with every release.
+- Add each new release note to the English and Korean guides. The project READMEs link to the release notes directory.
 - A major version is required when a contract of the clients changes: a tool name or an input key, the keys of a result, the form of `_hostAttestation`, or a setting that a deployment must change. The section Breaking changes lists each such change.
 
 ### Sections
@@ -43,7 +43,7 @@ veridger의 모든 릴리스에는 릴리스 노트가 하나 있습니다. 이 
 - 영어 부분은 제목 `## English` 아래에 오고, 한국어 부분은 `## 한국어` 아래에 옵니다. 두 부분은 같은 파일에 있으며 서로 링크하지 않고, 어느 쪽도 별도의 번역 파일이 아닙니다.
 - 각 부분은 아래 표의 아홉 개 섹션을 3단계 제목으로 이 순서대로 가집니다. 보고할 내용이 없는 섹션은 한 문장으로 그렇게 적으며, 생략하거나 비워 두지 않습니다.
 - 두 부분은 같은 사실을 적습니다. 코드(도구 이름, 명령, 설정 키, 오류 토큰, 값)는 코드 스팬이나 코드 블록으로 쓰며 두 부분에서 동일합니다. 공식적인 표현을 쓰고 구어체 표현은 쓰지 않습니다.
-- 메인 README는 모든 릴리스 노트와 이 형식을 링크하며, 릴리스마다 최신 상태로 갱신합니다.
+- 새 릴리스 노트는 영문과 국문 가이드에 링크합니다. 프로젝트 README는 릴리스 노트 디렉터리를 가리킵니다.
 - 클라이언트의 계약이 바뀌면 주 버전을 올려야 합니다. 도구 이름이나 입력 키, 결과의 키, `_hostAttestation`의 형식, 배포에서 바꿔야 하는 설정이 해당합니다. 호환되지 않는 변경 섹션에 그러한 변경을 각각 적습니다.
 
 ### 섹션
