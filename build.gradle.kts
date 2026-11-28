@@ -51,6 +51,9 @@ sonar {
         }
         property("sonar.verbose", "false")
         property("sonar.log.level", "INFO")
+        val badgePublisherTest = ".github/scripts/test_sonar_badges.py"
+        property("sonar.tests", badgePublisherTest)
+        property("sonar.exclusions", badgePublisherTest)
         property("sonar.python.coverage.reportPaths", layout.buildDirectory.file("reports/coverage/sonar-badges.xml").get().asFile.absolutePath)
         providers.gradleProperty("sonar.token-file").orNull?.let { path ->
             val tokenFile = file(path)
