@@ -83,8 +83,8 @@ final class SchemaDocument {
 
     void addResponseOptions(String fieldsDescription, String structuredDescription) {
         Map<String, Object> properties = map(root.computeIfAbsent(PROPERTIES, ignored -> new LinkedHashMap<>()));
-        properties.put(ResultOptions.FIELDS, copy(Map.of("type", "array", "minItems", 1, "maxItems", ResultOptions.MAX_FIELDS,
-                "items", Map.of("type", "string", "maxLength", ResultOptions.MAX_PATH_LENGTH),
+        properties.put(ResultOptions.FIELD_SELECTION_ARGUMENT, copy(Map.of("type", "array", "minItems", 1,
+                "maxItems", ResultOptions.MAX_FIELDS, "items", Map.of("type", "string", "maxLength", ResultOptions.MAX_PATH_LENGTH),
                 DESCRIPTION, fieldsDescription)));
         properties.put(ResultOptions.STRUCTURED_ONLY, copy(Map.of("type", "boolean", DESCRIPTION, structuredDescription)));
     }

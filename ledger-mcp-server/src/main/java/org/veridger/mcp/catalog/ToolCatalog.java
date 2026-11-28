@@ -162,7 +162,7 @@ public class ToolCatalog implements SmartInitializingSingleton {
         return SyncToolSpecification.builder().tool(registered.build())
                 .callHandler((exchange, request) -> results.run(() -> {
                     ResultOptions options = ResultOptions.parse(request.arguments(), output);
-                    Object value = binding.call(request.arguments(), Set.of(ResultOptions.FIELDS,
+                    Object value = binding.call(request.arguments(), Set.of(ResultOptions.FIELD_SELECTION_ARGUMENT,
                             ResultOptions.STRUCTURED_ONLY));
                     return new ToolResults.Success(options.fields().project(value, mapper), options.structuredOnly());
                 })).build();

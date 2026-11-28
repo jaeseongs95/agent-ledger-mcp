@@ -14,7 +14,7 @@ import tools.jackson.databind.json.JsonMapper;
 /** Response options shared by the tools. They do not become business arguments or enter a write receipt. */
 record ResultOptions(Fields fields, boolean structuredOnly) {
 
-    static final String FIELDS = "fields";
+    static final String FIELD_SELECTION_ARGUMENT = "fields";
     static final String STRUCTURED_ONLY = "structured_only";
     static final int MAX_FIELDS = 16;
     static final int MAX_PATH_LENGTH = 120;
@@ -31,24 +31,24 @@ record ResultOptions(Fields fields, boolean structuredOnly) {
         }
         Fields fields = new Fields();
         ResultOptions options = new ResultOptions(fields, Boolean.TRUE.equals(mode));
-        Object requested = arguments.get(FIELDS);
+        Object requested = arguments.get(FIELD_SELECTION_ARGUMENT);
         if (requested == null) {
             return options;
         }
         if (!(requested instanceof List<?> paths)) {
-            throw ValidationException.invalid(FIELDS, ValidationReason.WRONG_TYPE, "array");
+            throw ValidationException.invalid(FIELD_SELECTION_ARGUMENT, ValidationReason.WRONG_TYPE, "array");
         }
         if (paths.isEmpty() || paths.size() > MAX_FIELDS) {
-            throw ValidationException.invalid(FIELDS, ValidationReason.MUST_HOLD_ITEMS, "1",
+            throw ValidationException.invalid(FIELD_SELECTION_ARGUMENT, ValidationReason.MUST_HOLD_ITEMS, "1",
                     Integer.toString(MAX_FIELDS));
         }
         for (Object rawPath : paths) {
             if (!(rawPath instanceof String path)) {
-                throw ValidationException.invalid(FIELDS, ValidationReason.WRONG_TYPE, "string");
+                throw ValidationException.invalid(FIELD_SELECTION_ARGUMENT, ValidationReason.WRONG_TYPE, "string");
             }
             if (path.length() > MAX_PATH_LENGTH || !FIELD_PATH.matcher(path).matches()
                     || !output.supportsField(path)) {
-                throw ValidationException.invalid(FIELDS, ValidationReason.UNKNOWN_VALUE,
+                throw ValidationException.invalid(FIELD_SELECTION_ARGUMENT, ValidationReason.UNKNOWN_VALUE,
                         path.substring(0, Math.min(path.length(), MAX_PATH_LENGTH)));
             }
             fields.add(path.split("\\."), 0);
