@@ -60,6 +60,16 @@ jobs:
         run: |
           ./gradlew --no-daemon --max-workers=1 jacocoAggregateReport
 
+      - name: Test the badge publisher and generate Python coverage
+        run: |
+          python3 -m venv "$RUNNER_TEMP/badge-coverage"
+          python="$RUNNER_TEMP/badge-coverage/bin/python"
+          "$python" -m pip --disable-pip-version-check install --require-hashes -r .github/scripts/coverage-requirements.txt
+          "$python" -B -m coverage run --data-file=build/.coverage-badges --branch \
+            --include=.github/scripts/sonar_badges.py -m unittest discover -s .github/scripts
+          "$python" -B -m coverage xml --data-file=build/.coverage-badges \
+            --fail-under=90 -o build/reports/coverage/sonar-badges.xml
+
       - name: Run SonarQube Analysis
         id: analysis
         env:
@@ -102,8 +112,6 @@ jobs:
         uses: actions/checkout@v5
         with:
           persist-credentials: false
-      - name: Test badge validation and publication
-        run: python3 -B -m unittest discover -s .github/scripts
       - name: Publish verified badges
         env:
           SONAR_CE_TASK_ID: ${{ needs.sonar.outputs.task-id }}
