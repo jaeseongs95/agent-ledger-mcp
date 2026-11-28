@@ -28,9 +28,13 @@ class PublicationTest(unittest.TestCase):
         self.checkout.mkdir()
         self.staging = Path(temporary)
         self.enterContext(patch.object(badges, "BADGE_DIR", self.checkout))
+        self.enterContext(patch.object(badges, "readme_additions", return_value=[]))
         self.github = Mock()
         self.github.head.return_value = SHA
-        self.sonar = badges.Sonar(urllib.parse.urlsplit("https://sonar.example.invalid"), "analysis-token", PROJECT)
+        self.github.publish.return_value = True
+        self.sonar = badges.Sonar(
+            urllib.parse.urlsplit("https://sonar.example.invalid"), "analysis-token", "read-token", PROJECT,
+        )
         self.request = self.enterContext(patch.object(badges, "request", side_effect=self.response))
         self.latest = [{"key": "analysis", "revision": SHA}]
         self.gate = "OK"
@@ -39,13 +43,16 @@ class PublicationTest(unittest.TestCase):
     def response(self, base, path, token, *, params, accept="application/json"):
         match path:
             case "api/ce/task":
+                self.assertEqual(token, "analysis-token")
                 return {"task": {"analysisId": "analysis", "status": "SUCCESS", "componentKey": PROJECT}}
             case "api/qualitygates/project_status":
                 self.assertEqual(params, {"analysisId": "analysis"})
                 return {"projectStatus": {"status": self.gate}}
             case "api/project_analyses/search":
+                self.assertEqual(token, "read-token")
                 return {"analyses": self.latest}
             case "api/project_badges/token":
+                self.assertEqual(token, "read-token")
                 return {"token": "badge-token"}
             case "api/project_badges/measure":
                 self.assertEqual(accept, "image/svg+xml")
@@ -105,6 +112,12 @@ class PublicationTest(unittest.TestCase):
         self.assertEqual(path.read_bytes(), b"old")
         self.assertEqual(list(self.staging.iterdir()), [self.checkout])
 
+    def test_missing_browse_token_preserves_badges(self):
+        self.sonar.read_token = ""
+        with self.assertRaisesRegex(badges.BadgeError, "badge read credential"):
+            self.refresh()
+        self.github.publish.assert_not_called()
+
     def test_stale_branch_skips_download(self):
         self.github.head.return_value = "b" * 40
         self.refresh()
@@ -143,8 +156,23 @@ class ValidationTest(unittest.TestCase):
         github = badges.GitHub("owner/repo", "release/v1.2.3", "actions-token")
         with patch.object(badges, "request", return_value={"errors": [{"message": "sensitive details"}]}) as request:
             with patch.object(github, "head", return_value="b" * 40):
-                github.publish(SHA, [])
+                self.assertFalse(github.publish(SHA, []))
             self.assertEqual(request.call_args.kwargs["payload"]["variables"]["input"]["expectedHeadOid"], SHA)
             with patch.object(github, "head", return_value=SHA):
                 with self.assertRaisesRegex(badges.BadgeError, "GitHub rejected the signed badge commit"):
                     github.publish(SHA, [])
+
+    def test_first_publication_adds_both_readmes_and_later_runs_preserve_them(self):
+        directory = self.enterContext(tempfile.TemporaryDirectory())
+        path = Path(directory) / "README.md"
+        path.write_text("# Veridger\n\nBody\n", encoding="utf-8")
+        labels = badges.README_LABELS["README.md"]
+        with patch.object(badges, "README_LABELS", {str(path): labels}):
+            additions = badges.readme_additions()
+            self.assertEqual(len(additions), 1)
+            content = base64.b64decode(additions[0]["contents"]).decode()
+            self.assertTrue(content.startswith("# Veridger\n\n![Quality Gate](docs/badges/quality-gate.svg)\n"))
+            self.assertEqual(content.count("](docs/badges/"), 7)
+            self.assertTrue(content.endswith("\n\nBody\n"))
+            path.write_text(content, encoding="utf-8")
+            self.assertEqual(badges.readme_additions(), [])

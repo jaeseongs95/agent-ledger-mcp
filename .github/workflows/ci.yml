@@ -260,5 +260,6 @@ jobs:
           SONAR_CE_TASK_ID: ${{ needs.sonar.outputs.task-id }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
           SONAR_TOKEN: ${{ secrets.SONAR_RELEASE_TOKEN }}
+          SONAR_BADGE_READ_TOKEN: ${{ secrets.SONAR_RELEASE_BADGE_READ_TOKEN }}
           GH_TOKEN: ${{ github.token }}
         run: python3 -B .github/scripts/sonar_badges.py publish

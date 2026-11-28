@@ -46,11 +46,9 @@ sonar {
     properties {
         property("sonar.projectKey", "veridger")
         property("sonar.projectName", "veridger")
-        property(
-            "sonar.host.url",
-            providers.environmentVariable("SONAR_HOST_URL").orNull?.trim()?.takeIf { it.isNotEmpty() }
-                ?: "https://sonar.jaeseong.dev",
-        )
+        providers.environmentVariable("SONAR_HOST_URL").orNull?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            property("sonar.host.url", it)
+        }
         property("sonar.verbose", "false")
         property("sonar.log.level", "INFO")
         providers.gradleProperty("sonar.token-file").orNull?.let { path ->
