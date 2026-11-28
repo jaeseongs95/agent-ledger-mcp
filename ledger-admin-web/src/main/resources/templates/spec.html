@@ -84,6 +84,7 @@
         <h2 th:text="#{item.metadata}">Details</h2>
         <dl class="facts">
           <dt th:text="#{common.project}">Project</dt><dd class="code"><a th:href="@{/(project=${spec.projectId()})}" th:text="${spec.projectId()}">p1</a></dd>
+          <th:block th:replace="~{fragments :: relatedVersions(${spec.projectId()}, 'spec')}"></th:block>
           <dt th:text="#{common.status}">Status</dt><dd><span th:class="'badge badge-' + ${spec.status()}" th:text="${@labels.specStatus(spec.status())}">Draft</span></dd>
           <dt th:if="${spec.priority() != null}" th:text="#{specs.priority}">Priority</dt><dd th:if="${spec.priority() != null}" th:text="${spec.priority()}">P1</dd>
           <dt th:if="${spec.parentId() != null}" th:text="#{spec.parent}">Parent spec</dt><dd th:if="${spec.parentId() != null}"><a class="code" th:href="@{/specs/detail(id=${spec.parentId()})}" th:text="${spec.parentId()}">ID</a></dd>

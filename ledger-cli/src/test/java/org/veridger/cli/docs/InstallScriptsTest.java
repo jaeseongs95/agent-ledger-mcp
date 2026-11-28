@@ -174,7 +174,7 @@ class InstallScriptsTest {
             }
         }
         assertThat(script).contains("set \"STDIN=\"",
-                "if /i \"%~1\"==\"--stdin\" set \"STDIN=--stdin\" & shift",
+                "if /i \"%~1\"==\"--stdin\" (", "set \"STDIN=--stdin\"", "shift",
                 "set \"ACCOUNT=" + DeployLayout.WINDOWS_SERVICE_ACCOUNT + "\"",
                 "--platform=" + Platform.WINDOWS.name().toLowerCase(Locale.ROOT),
                 "SHA256SUMS", "Get-FileHash",

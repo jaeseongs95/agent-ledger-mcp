@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
@@ -100,7 +101,7 @@ public final class UpdateService {
         }
         Availability availability = classify(current, latest);
         boolean canApply = availability == Availability.UPDATE_AVAILABLE
-                && status.state() != UpdateStatus.State.PENDING;
+                && status.state() != UpdateStatus.State.PENDING && status.state() != UpdateStatus.State.RECOVERY_REQUIRED;
         return new UpdateView(config.currentVersion(), config.currentSchemaVersion(), config.repository(),
                 availability, latest.version().text(), latest.htmlUrl(), latest.requiredSchemaVersion(),
                 canApply, status);
@@ -137,6 +138,9 @@ public final class UpdateService {
         UpdateStatus status = queue.readStatus();
         if (status.state() == UpdateStatus.State.PENDING) {
             return new ApplyResult(false, "updates.error.alreadyPending", status.targetVersion());
+        }
+        if (status.state() == UpdateStatus.State.RECOVERY_REQUIRED) {
+            return new ApplyResult(false, "updates.queue.RECOVERY_REQUIRED", status.targetVersion());
         }
         SemVer current = SemVer.parse(config.currentVersion()).orElse(new SemVer(0, 0, 0));
         ReleaseInfo latest;
@@ -212,10 +216,15 @@ public final class UpdateService {
             return Availability.UP_TO_DATE;
         }
         if (latest.version().isMajorUpgradeFrom(current)
-                || latest.requiredSchemaVersion() > config.currentSchemaVersion()) {
+                || (latest.requiredSchemaVersion() > config.currentSchemaVersion() && !canMigrateSchema())) {
             return Availability.SCHEMA_MIGRATION_REQUIRED;
         }
         return Availability.UPDATE_AVAILABLE;
+    }
+
+    private boolean canMigrateSchema() {
+        Path marker = config.schemaMigrationMarker();
+        return marker != null && Files.isRegularFile(marker, LinkOption.NOFOLLOW_LINKS);
     }
 
     private static void cleanupTempDir(Path dir) {

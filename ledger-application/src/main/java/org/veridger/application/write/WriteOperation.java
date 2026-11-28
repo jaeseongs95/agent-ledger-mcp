@@ -12,6 +12,7 @@ import org.veridger.application.gate.WriteGate;
 import org.veridger.application.receipt.ReceiptService;
 import org.veridger.domain.model.ReceiptOperation;
 import org.veridger.domain.rule.Channel;
+import org.veridger.domain.value.AuthorId;
 import org.veridger.domain.value.CanonicalPayload;
 import org.veridger.domain.value.Reason;
 import org.veridger.domain.value.OperationKey;
@@ -91,6 +92,15 @@ public abstract class WriteOperation<C extends WriteCommand, R extends WriteResu
                             .map(stored -> targetsAnswered(command, stored, now));
                 },
                 batch == null ? null : batch::isAuthorized);
+        return execute(session, command, batch, preloadedReceipt.get());
+    }
+
+    /** For authenticated owner-console calls made within the corresponding service boundary. */
+    final R runAsOwner(C command) {
+        return execute(new GateSession(AuthorId.OWNER, Channel.ADMIN), command, null, null);
+    }
+
+    private R execute(GateSession session, C command, BatchBuffer batch, ReceiptService.LoadedReceipt loaded) {
         return session.bind(() -> {
             Reason reason = Reason.of(command.reason());
             OperationKey operationKey = OperationKey.parse(command.operationKey());
@@ -98,7 +108,6 @@ public abstract class WriteOperation<C extends WriteCommand, R extends WriteResu
             Sha256 digest = CanonicalPayload.digest(operation.name(),
                     prepared.payload().text("reason", reason.text()));
             // a replay returns the stored response; the first call writes and stores its response in the receipt
-            ReceiptService.LoadedReceipt loaded = preloadedReceipt.get();
             ReceiptService.Reservation<R> reservation = loaded != null
                     ? receipts.reserveWithLoaded(operationKey, operation, digest, session.author(), session.channel(),
                             resultType, loaded)

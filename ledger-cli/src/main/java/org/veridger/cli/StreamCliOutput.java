@@ -19,4 +19,12 @@ public final class StreamCliOutput implements CliOutput {
     public void info(String text) {
         info.println(text);
     }
+
+    public static void hostUpdatePlan(String text) {
+        System.out.println(text);
+    }
+
+    public static void hostUpdateFailure(String text) {
+        System.err.println(text);
+    }
 }

@@ -24,6 +24,7 @@ import org.veridger.application.write.WriteResult.SaveResult;
 import org.veridger.database.repository.CriterionRepository;
 import org.veridger.database.repository.IdAllocator;
 import org.veridger.database.repository.IssueRepository;
+import org.veridger.database.repository.ProjectVersionRepository;
 import org.veridger.database.repository.SpecRepository;
 import org.veridger.database.repository.TaskRepository;
 import org.veridger.domain.error.ConflictCode;
@@ -46,6 +47,7 @@ import org.veridger.domain.model.SpecFields;
 import org.veridger.domain.model.Task;
 import org.veridger.domain.model.TaskFields;
 import org.veridger.domain.rule.HistoryEntity;
+import org.veridger.domain.rule.Channel;
 import org.veridger.domain.rule.HistoryOp;
 import org.veridger.domain.rule.LockOrder;
 import org.veridger.domain.rule.Scope;
@@ -55,6 +57,7 @@ import org.veridger.domain.value.IssueId;
 import org.veridger.domain.value.ProjectId;
 import org.veridger.domain.value.SpecId;
 import org.veridger.domain.value.TaskId;
+import org.veridger.domain.value.TextRule;
 import org.veridger.domain.value.Tokens;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Component;
@@ -75,11 +78,13 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
     private final CriterionRepository criteria;
     private final IdAllocator ids;
     private final HistoryWriter history;
+    private final ProjectVersionRepository versions;
     private final Clock clock;
 
     public SaveOperation(WriteGate gate, ReceiptService receipts, EntityEditors editors, Rows rows,
             CodeRules codeRules, IssueRepository issues, SpecRepository specs, TaskRepository tasks,
-            CriterionRepository criteria, IdAllocator ids, HistoryWriter history, Clock clock) {
+            CriterionRepository criteria, IdAllocator ids, HistoryWriter history, Clock clock,
+            ProjectVersionRepository versions) {
         super(gate, receipts, ReceiptOperation.SAVE, SaveResult.class);
         this.gate = gate;
         this.editors = editors;
@@ -91,6 +96,7 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
         this.criteria = criteria;
         this.ids = ids;
         this.history = history;
+        this.versions = versions;
         this.clock = clock;
     }
 
@@ -137,6 +143,10 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
     protected Prepared<SaveResult> prepare(SaveCommand c) {
         HistoryEntity entity = entity(c.entity());
         boolean create = c.isCreate();
+        String projectVersion = TextRule.PROJECT_VERSION_NAME.optional(c.projectVersion());
+        if (projectVersion != null && !create) {
+            throw ValidationException.invalid("project_version", ValidationReason.EXISTS_ONLY_FOR, "create");
+        }
         EntityFields fields = editors.parse(entity, c.fields());
         if (create) {
             fields.requireCreatable();
@@ -155,18 +165,22 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
         CanonicalPayload.Fields payload = CanonicalPayload.Fields.empty().text("entity", entity.token())
                 .text("id", c.id() == null || c.id().isBlank() ? null : c.id())
                 .text("v", Long.toString(c.expectedVersion() == null ? 0 : c.expectedVersion()))
-                .with("fields", payloadFields);
-        return new Prepared<>(payload, ctx -> create ? create(ctx, entity, fields, c.id(), mentioned)
+                .with("fields", payloadFields).text("project_version", projectVersion);
+        return new Prepared<>(payload, ctx -> create ? create(ctx, entity, fields, c.id(), mentioned, projectVersion)
                 : edit(ctx, entity, fields, c.requireId(), c.expectedVersion(), mentioned));
     }
 
     private SaveResult create(WriteContext ctx, HistoryEntity entity, EntityFields fields, String explicitId,
-            Map<String, String> mentioned) {
+            Map<String, String> mentioned, String projectVersion) {
         Instant now = clock.instant();
         Project project = rows.project(fields.projectId().orNull());
-        if (ctx.isBatched()) {
+        if (ctx.isBatched() || projectVersion != null) {
             ctx.pinProject(rows, project.id());
         }
+        var versionRef = projectVersion == null ? null : (ctx.session().channel() == Channel.ADMIN
+                ? versions.findById(project.id().value(), projectVersion) : versions.find(project.id().value(), projectVersion))
+                .orElseThrow(() -> new org.veridger.domain.error.LookupException(
+                        org.veridger.domain.error.LookupCode.NOT_FOUND, List.of("project_version", projectVersion)));
         String id;
         long version;
         switch (fields) {
@@ -218,12 +232,18 @@ public class SaveOperation extends WriteOperation<SaveCommand, SaveResult> {
                 version = saved.version();
             }
         }
-        ctx.authorize(gate, List.of(new Target(project.id(), entity.writeScope())));
+        if (ctx.session().channel() != Channel.ADMIN) {
+            ctx.authorize(gate, List.of(new Target(project.id(), entity.writeScope())));
+        }
         ChangeSet changes = ChangeSet.empty();
         for (Map.Entry<String, String> field : mentioned.entrySet()) {
             if (!"".equals(field.getValue())) {
                 changes = changes.with(field.getKey(), null, field.getValue());
             }
+        }
+        if (versionRef != null) {
+            versions.linkItem(project.id().value(), entity, id, versionRef.id());
+            changes = changes.with("project_version", null, versionRef.name());
         }
         long historyId = ctx.appendHistory(history, HistoryWriter.Entry.of(entity, id, HistoryOp.CREATE, changes));
         return new SaveResult(WriteStatus.COMMITTED, entity.token(), id, version, historyId, ctx.author().value(),

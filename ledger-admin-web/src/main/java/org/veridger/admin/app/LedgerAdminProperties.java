@@ -14,6 +14,7 @@ import java.util.Objects;
 import java.util.regex.Pattern;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.DefaultValue;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 import org.springframework.util.StringUtils;
 import org.springframework.util.unit.DataSize;
 import org.springframework.validation.annotation.Validated;
@@ -191,12 +192,20 @@ public record LedgerAdminProperties(String token, String agentToken,
             @DefaultValue("/etc/veridger/update") Path directory,
             @DefaultValue("10s") Duration timeout,
             @DefaultValue("5.0.0") String currentVersion,
-            @DefaultValue("14") @Min(1) int currentSchemaVersion) {
+            @DefaultValue("16") @Min(1) int currentSchemaVersion,
+            Path schemaMigrationMarker) {
 
         private static final Pattern REPOSITORY_PATTERN = Pattern.compile("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$");
 
+        @ConstructorBinding
         public Update {
             allowedDownloadHosts = allowedDownloadHosts.stream().map(h -> h.toLowerCase(Locale.ROOT)).toList();
+        }
+
+        public Update(boolean enabled, String repository, String apiBaseUrl, List<String> allowedDownloadHosts,
+                Path directory, Duration timeout, String currentVersion, int currentSchemaVersion) {
+            this(enabled, repository, apiBaseUrl, allowedDownloadHosts, directory, timeout, currentVersion,
+                    currentSchemaVersion, null);
         }
 
         @AssertTrue(message = "ledger.admin.update.repository must be of the form owner/repo")

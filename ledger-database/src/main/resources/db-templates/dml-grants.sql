@@ -5,7 +5,8 @@
 
 GRANT SELECT, INSERT, UPDATE ON project TO ${dml_account};
 GRANT SELECT, INSERT, UPDATE ON project_version TO ${dml_account};
-GRANT SELECT, INSERT, DELETE ON issue_project_version TO ${dml_account};
+GRANT SELECT ON issue_project_version TO ${dml_account};
+GRANT SELECT, INSERT, DELETE ON project_version_item TO ${dml_account};
 GRANT SELECT, INSERT, UPDATE ON common_code TO ${dml_account};
 GRANT SELECT, UPDATE ON code_revision TO ${dml_account};
 GRANT SELECT, UPDATE ON id_counter TO ${dml_account};

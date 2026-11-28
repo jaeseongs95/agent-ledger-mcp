@@ -95,7 +95,7 @@
   /* Layout metrics */
   --sidebar-width: 248px;
   --topbar-height: 64px;
-  --content-max: 1320px;
+  --content-max: 100%;
 }
 
 @media (prefers-color-scheme: dark) {

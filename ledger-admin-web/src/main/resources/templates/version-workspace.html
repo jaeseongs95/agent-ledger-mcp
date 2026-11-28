@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}">
+<head th:replace="~{fragments :: head(${workspace.version().name()})}"></head>
+<body>
+<th:block th:replace="~{fragments :: header('projects')}"></th:block>
+<main id="main" class="record-page" th:with="version=${workspace.version()},kindName=#{${'entity.' + kind}}">
+  <nav class="breadcrumb" th:attr="aria-label=#{versions.title}">
+    <a th:href="@{/projects/versions(project=${project})}" th:text="|#{versions.title} · ${projectName}|">Project versions</a>
+  </nav>
+  <div class="page-header">
+    <div class="page-header-text">
+      <h1 th:text="${version.name()}">Version</h1>
+      <p th:if="${version.description() != null}" class="prewrap" th:text="${version.description()}">Description</p>
+    </div>
+  </div>
+
+  <nav class="version-kinds" th:attr="aria-label=#{versions.items}">
+    <a th:each="k : ${kinds}" class="button secondary"
+       th:href="@{/projects/versions/{id}(id=${version.id()},project=${project},kind=${k.token()})}"
+       th:attr="aria-current=${k.token() == kind} ? 'page'"
+       th:text="#{${'entity.' + k.token()}}">Item type</a>
+  </nav>
+
+  <section class="card" aria-labelledby="version-items-title">
+    <div class="card-header">
+      <h2 id="version-items-title" th:text="#{${'entity.' + kind}}">Items</h2>
+    </div>
+    <p th:if="${workspace.items().isEmpty()}" class="hint" th:text="#{versions.itemsEmpty}">No linked items.</p>
+    <ul th:unless="${workspace.items().isEmpty()}" class="version-links">
+      <li th:each="item : ${workspace.items()}" class="version-summary">
+        <div>
+          <a class="code" th:href="@{${itemPage}(id=${item.id()})}" th:text="${item.id()}">Item ID</a>
+          <p class="prewrap" th:text="${item.title()}">Title</p>
+        </div>
+        <form method="post" th:action="@{/projects/versions/{id}/relationships(id=${version.id()})}">
+          <input type="hidden" name="project" th:value="${project}">
+          <input type="hidden" name="kind" th:value="${kind}">
+          <input type="hidden" name="itemId" th:value="${item.id()}">
+          <button class="secondary btn-sm" name="remove" value="true" type="submit"
+                  th:attr="aria-label=#{versions.unlinkNamed(${item.id()})}" th:text="#{versions.unlink}">Unlink</button>
+        </form>
+      </li>
+    </ul>
+    <div class="filter-actions" th:if="${after != null or workspace.next() != null}">
+      <a th:if="${after != null}" class="button secondary btn-sm"
+         th:href="@{/projects/versions/{id}(id=${version.id()},project=${project},kind=${kind})}"
+         th:text="#{versions.firstPage}">First page</a>
+      <a th:if="${workspace.next() != null}" rel="next" class="button secondary btn-sm"
+         th:href="@{/projects/versions/{id}(id=${version.id()},project=${project},kind=${kind},after=${workspace.next()})}"
+         th:text="#{paging.next}">Next</a>
+    </div>
+  </section>
+
+  <section class="card">
+    <details class="version-entry" th:open="${creating}">
+      <summary th:text="#{versions.createItem(${kindName})}">Create item</summary>
+      <form method="post" class="form-wide"
+            th:action="@{/projects/versions/{id}/items(id=${version.id()})}">
+        <input type="hidden" name="project" th:value="${project}">
+        <input type="hidden" name="kind" th:value="${kind}">
+        <input type="hidden" name="operationKey" th:value="${form?.operationKey() ?: operationKey}">
+
+        <div class="form-grid">
+          <div class="form-field" th:if="${kind != 'criterion'}">
+            <label for="item-title" th:text="#{col.title}">Title</label>
+            <input id="item-title" name="title" required maxlength="300" th:value="${form?.title()}">
+          </div>
+          <div class="form-field" th:if="${kind == 'criterion'}">
+            <label for="item-id" th:text="#{col.id}">ID</label>
+            <input id="item-id" name="id" required maxlength="120" th:value="${form?.id()}">
+          </div>
+          <th:block th:if="${kind == 'issue'}">
+            <div class="form-field">
+              <label for="item-category" th:text="#{common.category}">Category</label>
+              <select id="item-category" name="category" required>
+                <option value="" th:text="#{common.noneValue}">—</option>
+                <option th:each="c : ${categories}" th:value="${c.code()}" th:text="${@labels.code(c)}"
+                        th:selected="${c.code() == form?.category()}">Category</option>
+              </select>
+              <span class="field-hint" th:if="${categories.isEmpty()}" th:text="#{versions.categoryRequired}">Add an issue category before creating an issue.</span>
+            </div>
+            <div class="form-field">
+              <label for="item-severity" th:text="#{common.severity}">Severity</label>
+              <select id="item-severity" name="severity" required>
+                <option value="" th:text="#{common.noneValue}">—</option>
+                <option th:each="c : ${severities}" th:value="${c.code()}" th:text="${@labels.code(c)}"
+                        th:selected="${c.code() == form?.severity()}">Severity</option>
+              </select>
+            </div>
+          </th:block>
+          <th:block th:if="${kind == 'criterion'}">
+            <div class="form-field">
+              <label for="item-milestone" th:text="#{versions.milestone}">Milestone</label>
+              <input id="item-milestone" name="milestone" required maxlength="120"
+                     th:value="${form == null ? version.name() : form.milestone()}">
+            </div>
+            <div class="form-field">
+              <label for="item-code" th:text="#{criteria.code}">Code</label>
+              <input id="item-code" name="code" required maxlength="120" th:value="${form?.code()}">
+            </div>
+            <div class="form-field">
+              <label for="item-goal" th:text="#{versions.goal}">Goal</label>
+              <input id="item-goal" name="goal" maxlength="200" th:value="${form?.goal()}">
+            </div>
+          </th:block>
+        </div>
+        <div class="form-grid">
+          <th:block th:if="${kind == 'issue'}">
+            <div th:replace="~{version-workspace :: textField('symptom', #{versions.symptom}, ${form?.symptom()}, true)}"></div>
+            <div th:replace="~{version-workspace :: textField('rootCause', #{versions.rootCause}, ${form?.rootCause()}, true)}"></div>
+          </th:block>
+          <th:block th:if="${kind == 'spec'}">
+            <div th:replace="~{version-workspace :: textField('summary', #{versions.summary}, ${form?.summary()}, false)}"></div>
+            <div th:replace="~{version-workspace :: textField('acceptanceCriteria', #{versions.acceptance}, ${form?.acceptanceCriteria()}, false)}"></div>
+          </th:block>
+          <th:block th:if="${kind == 'task'}">
+            <div th:replace="~{version-workspace :: textField('purpose', #{versions.purpose}, ${form?.purpose()}, true)}"></div>
+            <div th:replace="~{version-workspace :: textField('successCondition', #{versions.successCondition}, ${form?.successCondition()}, true)}"></div>
+          </th:block>
+          <div th:if="${kind == 'criterion'}">
+            <div th:replace="~{version-workspace :: textField('criterionText', #{versions.criterionText}, ${form?.criterionText()}, true)}"></div>
+          </div>
+          <div class="form-field">
+            <label for="item-reason" th:text="#{versions.reason}">Reason</label>
+            <textarea id="item-reason" name="reason" required maxlength="1000" rows="2" th:text="${form?.reason()}"></textarea>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button type="submit" th:text="#{versions.createItem(${kindName})}">Create item</button>
+        </div>
+      </form>
+    </details>
+  </section>
+
+  <section class="card">
+    <h2 th:text="#{versions.linkExisting}">Link an existing item</h2>
+    <form method="post" class="version-link-form"
+          th:action="@{/projects/versions/{id}/relationships(id=${version.id()})}">
+      <input type="hidden" name="project" th:value="${project}">
+      <input type="hidden" name="kind" th:value="${kind}">
+      <div class="form-field">
+        <label for="existing-item-id" th:text="#{col.id}">ID</label>
+        <input id="existing-item-id" name="itemId" required maxlength="120" th:value="${itemId}">
+      </div>
+      <button type="submit" class="secondary" th:text="#{versions.linkExisting}">Link an existing item</button>
+    </form>
+  </section>
+</main>
+<th:block th:replace="~{fragments :: footer}"></th:block>
+<template th:remove="all">
+  <div th:fragment="textField(field, label, value, required)" class="form-field">
+    <label th:for="|item-${field}|" th:text="${label}">Details</label>
+    <textarea th:id="|item-${field}|" th:name="${field}" rows="3" maxlength="20000"
+              th:required="${required}" th:text="${value}"></textarea>
+  </div>
+</template>
+</body>
+</html>

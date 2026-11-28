@@ -121,7 +121,8 @@ class DeployGoldenTest {
      * else in the rendered files changed while the dedicated assertion below checks that the setting is present.
      */
     private static String withoutUpdateDirectory(String content) {
-        return content.replaceAll("(?m)^    update:\\n      directory: '[^\\n]*/update'\\n", "");
+        return content.replaceAll("(?m)^    update:\\n      directory: '[^\\n]*/update'\\n"
+                + "      schema-migration-marker: '[^\\n]*/\\.schema-updates'\\n", "");
     }
 
     /**

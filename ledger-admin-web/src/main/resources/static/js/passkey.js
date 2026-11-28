@@ -21,15 +21,17 @@
     const element = document.querySelector('meta[name="' + name + '"]');
     return element ? element.content : null;
   };
-  const status = document.getElementById("passkey-status");
+  const passkeyStatus = () => document.getElementById("passkey-status");
 
   function clearStatus() {
+    const status = passkeyStatus();
     if (!status) { return; }
     status.hidden = true;
     status.textContent = "";
   }
 
   function show(message) {
+    const status = passkeyStatus();
     const resolved = message || (status ? status.dataset.failed : "Failed");
     if (!status) { return; }
     status.textContent = resolved;
@@ -39,6 +41,7 @@
   }
 
   function friendlyMessage(failure) {
+    const status = passkeyStatus();
     if (failure && (failure.name === "NotAllowedError" || failure.name === "AbortError")) {
       return (status && status.dataset.cancelled) || (status && status.dataset.failed) || "Cancelled";
     }
@@ -150,26 +153,32 @@
     }
   }
 
-  const signInButton = document.getElementById("passkey-signin");
-  const registerButton = document.getElementById("passkey-register");
-  const needsPasskey = Boolean(signInButton || registerButton);
+  function initializePasskeys() {
+    const status = passkeyStatus();
+    const signInButton = document.getElementById("passkey-signin");
+    const registerButton = document.getElementById("passkey-register");
+    const needsPasskey = Boolean(signInButton || registerButton);
 
-  if (!window.PublicKeyCredential) {
-    if (needsPasskey) {
-      show(status ? (status.dataset.unsupported || status.dataset.failed) : null);
+    if (!window.PublicKeyCredential) {
+      if (needsPasskey) {
+        show(status ? (status.dataset.unsupported || status.dataset.failed) : null);
+      }
+      return;
     }
-    return;
+
+    const busyText = status ? status.dataset.busy : null;
+
+    if (signInButton) {
+      signInButton.addEventListener("click", () => withBusy(signInButton, signIn, busyText));
+    }
+    if (registerButton) {
+      registerButton.addEventListener("click", () => withBusy(registerButton, () => {
+        const labelInput = document.getElementById("passkey-label");
+        return register(labelInput ? labelInput.value : "");
+      }, busyText));
+    }
   }
 
-  const busyText = status ? status.dataset.busy : null;
-
-  if (signInButton) {
-    signInButton.addEventListener("click", () => withBusy(signInButton, signIn, busyText));
-  }
-  if (registerButton) {
-    registerButton.addEventListener("click", () => withBusy(registerButton, () => {
-      const labelInput = document.getElementById("passkey-label");
-      return register(labelInput ? labelInput.value : "");
-    }, busyText));
-  }
+  initializePasskeys();
+  document.addEventListener("veridger:page", initializePasskeys);
 })();

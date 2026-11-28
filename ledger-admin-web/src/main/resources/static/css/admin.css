@@ -412,7 +412,7 @@ main {
   width: 100%;
   max-width: var(--content-max);
   margin: 0 auto;
-  padding: var(--space-8) var(--space-8) var(--space-10);
+  padding: var(--space-8) var(--space-6) var(--space-10);
   flex: 1 0 auto;
 }
 
@@ -849,6 +849,7 @@ legend {
 }
 
 input[type="text"],
+input:not([type]),
 input[type="search"],
 input[type="password"],
 input[type="number"],
@@ -1023,6 +1024,10 @@ form.list-filters {
   min-width: 54rem;
 }
 
+.results-table :is(.criteria-table, .history-table) {
+  min-width: 65rem;
+}
+
 .attention-table th:nth-child(1) { width: 17%; }
 .attention-table th:nth-child(2) { width: 9%; }
 .attention-table th:nth-child(3) { width: 18%; }
@@ -1053,17 +1058,30 @@ form.list-filters {
   font: inherit;
 }
 
-.issue-refinements {
+.issues-filters .filter-grid {
   display: grid;
-  grid-template-columns: minmax(0, 13rem) minmax(0, 1fr);
-  align-items: end;
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.25rem), 1fr));
 }
 
-@media (max-width: 44rem) {
-  .issue-refinements {
-    grid-template-columns: minmax(0, 1fr);
-  }
+.version-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.version-kinds [aria-current="page"] {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.version-entry summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+
+.version-entry form {
+  margin-top: var(--space-4);
 }
 
 .version-list, .version-links {
@@ -1117,7 +1135,7 @@ form.list-filters {
 
 .criteria-table th:nth-child(1) { width: 14%; }
 .criteria-table th:nth-child(2) { width: 22%; }
-.criteria-table th:nth-child(3) { width: 7%; }
+.criteria-table th:nth-child(3) { width: 6rem; }
 .criteria-table th:nth-child(4) { width: 12%; }
 .criteria-table th:nth-child(5) { width: 11%; }
 .criteria-table th:nth-child(6) { width: 6%; }
@@ -1159,6 +1177,18 @@ form.list-filters {
   max-width: 100%;
   overflow-wrap: anywhere;
   white-space: normal;
+}
+
+.results-table :is(.cell-nowrap, .state-transition) .badge {
+  white-space: nowrap;
+}
+
+.results-table td.cell-nowrap {
+  padding-inline: var(--space-2);
+}
+
+.history-table td:first-child {
+  white-space: nowrap;
 }
 
 .criteria-table .link-counts, .history-table .state-transition {

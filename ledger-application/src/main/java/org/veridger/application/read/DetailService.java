@@ -79,6 +79,9 @@ public class DetailService {
     public record ChangeSummary(long id, Instant at, String author, String op, String reason) {
     }
 
+    public record VersionRef(String id, String name) {
+    }
+
     public record IssueDetail(String id, String projectId, String title, String category, String severity,
             String status, String mergedInto, String symptom, String rootCause, String ownerActorId, long version,
             Instant updatedAt, String createdBy, String resolvedBy, Instant resolvedAt, LastChange lastChange,
@@ -91,18 +94,21 @@ public class DetailService {
             String acceptanceCriteria, String priority, String status, String ownerActorId, String originRef,
             String originQuote, long version, Instant createdAt, Instant updatedAt, String createdBy,
             String completedBy, LastChange lastChange, List<DeliverableView> deliverables, List<String> childSpecs,
-            List<String> tasks, List<String> issues, List<String> criteria, List<ChangeSummary> recentChanges) {
+            List<String> tasks, List<String> issues, List<String> criteria, List<ChangeSummary> recentChanges,
+            List<VersionRef> relatedVersions) {
     }
 
     public record TaskDetail(String id, String projectId, String title, String purpose, String successCondition,
             String originRef, String originQuote, String state, String ownerActorId, long version, Instant createdAt,
             Instant updatedAt, String createdBy, String completedBy, List<DeliverableView> deliverables,
-            List<String> issues, List<String> specs, List<String> criteria) {
+            List<String> issues, List<String> specs, List<String> criteria,
+            List<VersionRef> relatedVersions) {
     }
 
     public record CriterionDetail(String id, String projectId, String milestoneName, String goalLabel, String code,
             String criterionText, String state, long version, String createdBy, LastChange lastChange,
-            List<String> issues, List<String> specs, List<String> tasks, List<ChangeSummary> recentChanges) {
+            List<String> issues, List<String> specs, List<String> tasks, List<ChangeSummary> recentChanges,
+            List<VersionRef> relatedVersions) {
     }
 
     private final IssueRepository issues;
@@ -201,7 +207,7 @@ public class DetailService {
                 s.originQuote(), s.version(), s.createdAt(), s.updatedAt(), s.createdBy().value(), completedBy,
                 digest.lastChange(), toDeliverableViews(delivRows), children,
                 links.tasksOfSpec(id), links.issuesOfSpec(id), links.criteriaOfSpec(id),
-                digest.recentChanges());
+                digest.recentChanges(), relatedVersions(s.projectId().value(), HistoryEntity.SPEC, id.value()));
     }
 
     public TaskDetail task(String rawId) {
@@ -224,7 +230,8 @@ public class DetailService {
                 Texts.orEmpty(t.successCondition()), t.originRef(), t.originQuote(), t.state().name(),
                 t.ownerActorId() == null ? null : t.ownerActorId().value(), t.version(), t.createdAt(),
                 t.updatedAt(), t.createdBy().value(), completedBy, toDeliverableViews(delivRows),
-                links.issuesOfTask(id), links.specsOfTask(id), links.criteriaOfTask(id));
+                links.issuesOfTask(id), links.specsOfTask(id), links.criteriaOfTask(id),
+                relatedVersions(t.projectId().value(), HistoryEntity.TASK, id.value()));
     }
 
     public CriterionDetail criterion(String rawId) {
@@ -241,7 +248,13 @@ public class DetailService {
         HistoryDigest digest = recentDigest(HistoryEntity.CRITERION, rawId);
         return new CriterionDetail(rawId, c.projectId().value(), c.milestone(), c.goalLabel(), c.code(),
                 Texts.orEmpty(c.criterionText()), c.state().name(), c.version(), c.createdBy().value(),
-                digest.lastChange(), linkedIssues, linkedSpecs, linkedTasks, digest.recentChanges());
+                digest.lastChange(), linkedIssues, linkedSpecs, linkedTasks, digest.recentChanges(),
+                relatedVersions(c.projectId().value(), HistoryEntity.CRITERION, id.value()));
+    }
+
+    private List<VersionRef> relatedVersions(String project, HistoryEntity kind, String id) {
+        return projectVersions.versionsForItem(project, kind, id).stream()
+                .map(version -> new VersionRef(version.id(), version.name())).toList();
     }
 
     private List<TaskRef> taskRefsOf(List<IssueTaskLink> taskLinks) {

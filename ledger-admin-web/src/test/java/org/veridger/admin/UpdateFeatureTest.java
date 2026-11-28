@@ -88,7 +88,7 @@ class UpdateFeatureTest {
                 new LedgerAdminProperties.Passkey(null, List.of(), "Ledger admin"),
                 new LedgerAdminProperties.Update(true, "jaeseongs95/veridger", apiBaseUrl,
                         List.of("127.0.0.1", "localhost"), updateDir, Duration.ofSeconds(5),
-                        currentVersion, schemaVersion));
+                        currentVersion, schemaVersion, updateDir.resolve(".schema-updates")));
     }
 
     private static RestClient testRestClient() {
@@ -271,6 +271,34 @@ class UpdateFeatureTest {
         assertThat(apply.accepted()).isFalse();
         assertThat(apply.flashKey()).isEqualTo("updates.error.schemaRequired");
         assertThat(updateDir.resolve("request.properties")).doesNotExist();
+    }
+
+    @Test
+    @DisplayName("UPD-03: A provisioned host may stage a schema update until recovery is required")
+    void configuredHostAllowsSchemaUpdatesUntilRecoveryIsRequired(@TempDir Path tempDir) throws Exception {
+        AtomicReference<String> json = new AtomicReference<>("""
+                {
+                  "tag_name": "v4.2.0",
+                  "html_url": "https://github.com/jaeseongs95/veridger/releases/tag/v4.2.0",
+                  "body": "Requires Schema-Version: V12",
+                  "draft": false,
+                  "prerelease": false,
+                  "assets": []
+                }
+                """);
+        HttpServer http = startReleaseServer(json, Map.of());
+        String base = "http://127.0.0.1:" + http.getAddress().getPort();
+        var properties = props(base, tempDir, "4.1.0", 11);
+        var service = new UpdateService(properties, new GitHubReleaseClient(properties, testRestClient(), mapper),
+                new ChecksumVerifier(), new FileUpdateQueue(properties), Clock.systemUTC());
+
+        Files.createFile(properties.update().schemaMigrationMarker());
+        assertThat(service.inspect().canApply()).isTrue();
+
+        Files.writeString(tempDir.resolve("status.properties"), "state=RECOVERY_REQUIRED\ntargetVersion=4.2.0\n");
+        assertThat(service.inspect().canApply()).isFalse();
+        assertThat(service.applyLatest(TestOwners.OWNER).flashKey()).isEqualTo("updates.queue.RECOVERY_REQUIRED");
+        assertThat(tempDir.resolve("request.properties")).doesNotExist();
     }
 
     @Test

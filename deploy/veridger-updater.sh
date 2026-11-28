@@ -5,8 +5,8 @@
 # service-writable paths, uses FD-pinned O_NOFOLLOW directory operations (eliminating symlink/FIFO/TOCTOU races),
 # enforces a monotonic version floor against root-owned /opt/<name>/.installed-version, copies staged JARs into a
 # root-owned 0700 temp directory before fetching authoritative SHA256SUMS over HTTPS-only redirects from the pinned
-# repository and verifying every digest, installs 0644 root:root JARs atomically, checks both /healthz endpoints,
-# and rolls back automatically on failure.
+# repository and verifying every digest. Schema updates require a private host configuration and a database backup.
+# Automatic JAR rollback is available up to the point where a database migration begins.
 set -eu
 umask 022
 
@@ -14,6 +14,7 @@ NAME=veridger
 MCP_PORT=8765
 ADMIN_PORT=8865
 REPO=jaeseongs95/veridger
+JAVA=java
 
 for arg in "$@"; do
   case $arg in
@@ -21,6 +22,7 @@ for arg in "$@"; do
     --mcp-port=*) MCP_PORT=${arg#*=} ;;
     --admin-port=*) ADMIN_PORT=${arg#*=} ;;
     --repo=*) REPO=${arg#*=} ;;
+    --java=*) JAVA=${arg#*=} ;;
     *) echo "veridger-updater.sh: unknown option $arg" >&2; exit 1 ;;
   esac
 done
@@ -45,11 +47,15 @@ else
   exit 1
 fi
 [ -f "$UPD_DIR/request.properties" ] || exit 0
+exec 9>"$LIB/.host-update.lock"
+flock -n 9 || exit 0
 
-WORK=$(mktemp -d)
+WORK=$(mktemp -d /var/tmp/veridger-update.XXXXXXXX)
 chmod 0700 "$WORK"
 cleanup() { rm -rf "$WORK"; }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # FD-pinned operations inside service-writable /etc/<name>/update (O_DIRECTORY|O_NOFOLLOW, O_NONBLOCK, S_ISREG).
 fd_op() {
@@ -228,6 +234,13 @@ if ! printf '%s\n' "$TARGET_VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
   fail_and_cleanup "" "invalid targetVersion in request.properties"
 fi
 
+RECOVERY="$LIB/.schema-update-in-progress"
+if [ -e "$RECOVERY" ]; then
+  write_status "RECOVERY_REQUIRED" "$TARGET_VER" "Resolve the previous schema update using $RECOVERY before retrying" || true
+  safe_remove_request
+  exit 1
+fi
+
 # Enforce monotonic version floor against root-owned installed version (blocks downgrade/rollback attacks).
 INSTALLED_VER=$(fd_op installed-version "$LIB" 2>/dev/null || true)
 if [ -n "$INSTALLED_VER" ] && printf '%s\n' "$INSTALLED_VER" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
@@ -264,13 +277,26 @@ for jar in ledger-cli.jar ledger-mcp-server.jar ledger-admin-web.jar; do
 done
 
 BACKUP="$LIB/backup-$(date -u +%Y%m%dT%H%M%SZ)"
-mkdir -p "$BACKUP"
+PLAN=$("$JAVA" -jar "$LIB/ledger-cli.jar" host-update plan "$LIB" "$WORK" "$ETC") \
+  || fail_and_cleanup "$TARGET_VER" "Schema preflight failed; see the host updater log"
+case "$PLAN" in
+  MIGRATE|JARS_ONLY) ;;
+  *) fail_and_cleanup "$TARGET_VER" "Invalid schema update plan" ;;
+esac
+BACKUP=$(mktemp -d "$BACKUP.XXXXXXXX")
 for jar in ledger-cli.jar ledger-mcp-server.jar ledger-admin-web.jar; do
-  [ -f "$LIB/$jar" ] && cp -p "$LIB/$jar" "$BACKUP/$jar"
+  cp -p "$LIB/$jar" "$BACKUP/$jar" || fail_and_cleanup "$TARGET_VER" "Failed to back up $jar"
 done
 
+SCHEMA_STARTED=false
 rollback() {
   reason=$1
+  if [ "$SCHEMA_STARTED" = true ]; then
+    systemctl stop "$SVC" "$ADMIN" || true
+    write_status "RECOVERY_REQUIRED" "$TARGET_VER" "$reason; database backup and logs: $BACKUP" || true
+    safe_remove_request
+    exit 1
+  fi
   for jar in ledger-cli.jar ledger-mcp-server.jar ledger-admin-web.jar; do
     if [ -f "$BACKUP/$jar" ]; then
       install -m 0644 -o root -g root "$BACKUP/$jar" "$LIB/$jar.new" || true
@@ -278,15 +304,35 @@ rollback() {
     fi
   done
   systemctl restart "$SVC" "$ADMIN" || true
+  rm -f "$RECOVERY"
   write_status "ROLLED_BACK" "$TARGET_VER" "$reason" || true
   safe_remove_request
   exit 1
 }
 
+if [ "$PLAN" = MIGRATE ]; then
+  if ! systemctl stop "$SVC" "$ADMIN"; then
+    systemctl start "$SVC" "$ADMIN" || true
+    fail_and_cleanup "$TARGET_VER" "Failed to stop both services before the schema update"
+  fi
+  if ! "$JAVA" -jar "$BACKUP/ledger-cli.jar" host-update backup "$LIB" "$BACKUP"; then
+    systemctl start "$SVC" "$ADMIN" || true
+    fail_and_cleanup "$TARGET_VER" "Database backup failed; see $BACKUP/backup.log"
+  fi
+  (umask 077; printf 'target=%s\nbackup=%s\n' "$TARGET_VER" "$BACKUP" > "$RECOVERY") \
+    || rollback "Failed to write the schema recovery marker"
+fi
+
 for jar in ledger-cli.jar ledger-mcp-server.jar ledger-admin-web.jar; do
   install -m 0644 -o root -g root "$WORK/$jar" "$LIB/$jar.new" || rollback "failed to stage $jar into $LIB"
   mv -f "$LIB/$jar.new" "$LIB/$jar" || rollback "failed to replace $jar"
 done
+
+if [ "$PLAN" = MIGRATE ]; then
+  SCHEMA_STARTED=true
+  "$JAVA" -jar "$BACKUP/ledger-cli.jar" host-update migrate "$LIB" "$LIB" "$BACKUP" \
+    || rollback "Database migration failed"
+fi
 
 systemctl restart "$SVC" "$ADMIN" || rollback "systemctl restart failed"
 
@@ -294,7 +340,7 @@ check_health() {
   port=$1
   i=0
   while [ "$i" -lt 30 ]; do
-    body=$(curl -fsS --max-time 2 "http://127.0.0.1:$port/healthz" 2>/dev/null || true)
+    body=$(curl --noproxy '*' -fsS --max-time 2 "http://127.0.0.1:$port/healthz" 2>/dev/null || true)
     case $body in
       *'"status":"UP"'*) return 0 ;;
     esac
@@ -307,9 +353,10 @@ check_health() {
 check_health "$MCP_PORT" || rollback "MCP /healthz did not return UP within 30s"
 check_health "$ADMIN_PORT" || rollback "Admin /healthz did not return UP within 30s"
 
-printf '%s\n' "$TARGET_VER" > "$WORK/.installed-version"
-install -m 0644 -o root -g root "$WORK/.installed-version" "$LIB/.installed-version.new"
-mv -f "$LIB/.installed-version.new" "$LIB/.installed-version"
+printf '%s\n' "$TARGET_VER" > "$WORK/.installed-version" || rollback "Failed to write the installed version"
+install -m 0644 -o root -g root "$WORK/.installed-version" "$LIB/.installed-version.new" || rollback "Failed to stage the installed version"
+mv -f "$LIB/.installed-version.new" "$LIB/.installed-version" || rollback "Failed to record the installed version"
+rm -f "$RECOVERY"
 
 write_status "SUCCEEDED" "$TARGET_VER" "Updated and verified both /healthz endpoints" || true
 safe_remove_request

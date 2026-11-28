@@ -45,7 +45,7 @@ class BatchAndErrorsTest {
                 "record_case", "link", "correct", "project_version");
         assertThat(BatchOpKind.SAVE.requiredKeys()).containsExactlyInAnyOrder("entity", "fields", "reason");
         assertThat(BatchOpKind.SAVE.allowedKeys()).containsExactlyInAnyOrder("entity", "fields", "reason", "id",
-                "expected_version", "op");
+                "expected_version", "project_version", "op");
         // OPK-005: an operation of a batch carries no key of its own; its key is derived from the batch key
         for (BatchOpKind kind : BatchOpKind.values()) {
             assertThat(kind.allowedKeys()).doesNotContain("request_id", "operationKey", "operation_key");

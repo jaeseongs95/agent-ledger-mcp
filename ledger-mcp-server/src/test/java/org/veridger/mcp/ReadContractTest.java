@@ -195,6 +195,34 @@ class ReadContractTest {
     }
 
     @Test
+    void anAgentCanCreateAndReadFourKindsInOneProjectVersion(McpSession session, Scenario scenario) {
+        String project = scenario.projectId();
+        String name = "운영 검토본";
+        var version = Args.of().with("op", "project_version").with("project_id", project).with("name", name)
+                .with("create", true);
+        var save = Args.of().with("op", "save").with("project_version", name);
+        var batch = Args.of().with("operationKey", Calls.freshKey()).with("default_reason", Scenario.REASON)
+                .with("_hostAttestation", Scenario.AUTHOR).with("ops", List.of(version,
+                        save.with("entity", "spec").with("fields", Calls.Fields.spec(project, "version spec")),
+                        save.with("entity", "issue").with("fields", Calls.Fields.issue(project, "version issue")),
+                        save.with("entity", "task").with("fields", Calls.Fields.task(project, "version task")),
+                        save.with("entity", "criterion").with("id", scenario.criterionId("VER-01"))
+                                .with("fields", Calls.Fields.criterion(project, name, "VER-01"))));
+
+        var response = session.call("ledger_batch", batch);
+        assertThat(response.isError()).isFalse();
+        assertThat(session.call("ledger_batch", batch).structuredContent()).isEqualTo(response.structuredContent());
+        JsonNode results = session.mapper().valueToTree(response.structuredContent()).path("data").path("results");
+        List<String> ids = IntStream.range(1, results.size()).mapToObj(i -> results.get(i).path("id").asString()).toList();
+        ReadOutputs.Got details = session.ok("ledger_get", Args.of().with("ids", ids).with("include_details", true),
+                ReadOutputs.Got.class);
+        assertThat(details.specDetails().getFirst().projectVersions()).containsExactly(name);
+        assertThat(details.issueDetails().getFirst().projectVersions()).containsExactly(name);
+        assertThat(details.taskDetails().getFirst().projectVersions()).containsExactly(name);
+        assertThat(details.criterionDetails().getFirst().projectVersions()).containsExactly(name);
+    }
+
+    @Test
     void aVersionBatchRollsBackOnAnIssueOutsideItsProject(McpSession session, Scenario scenario) {
         Seed seed = Seed.create(session, scenario);
         String other = seed.project() + "-other";

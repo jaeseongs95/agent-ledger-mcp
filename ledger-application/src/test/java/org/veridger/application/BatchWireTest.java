@@ -23,7 +23,7 @@ class BatchWireTest {
 
     private static BatchOpInput filled(BatchOpKind kind) {
         return switch (kind) {
-            case SAVE -> new BatchOpInput.Save("issue", Fields.of("title", "x"), "reason", "id", 1L);
+            case SAVE -> new BatchOpInput.Save("issue", Fields.of("title", "x"), "reason", "id", 0L, "2.0.0");
             case TRANSITION -> new BatchOpInput.Transition("issue", "id", 1L, "OPEN", "reason", "uri", "sha",
                     "target", "attachment");
             case RECORD_DELIVERABLE -> new BatchOpInput.RecordDeliverable("issue", "id", "code_change", "ref", "reason",

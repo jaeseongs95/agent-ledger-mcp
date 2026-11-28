@@ -2,6 +2,7 @@
 
 package org.veridger.cli;
 
+import org.veridger.cli.deploy.HostDatabaseUpdate;
 import org.veridger.database.time.JvmZone;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -21,6 +22,9 @@ public class LedgerCliApplication {
 
     public static void main(String[] args) {
         JvmZone.pinUtc();
+        if (args.length > 0 && "host-update".equals(args[0])) {
+            System.exit(HostDatabaseUpdate.run(args));
+        }
         System.exit(SpringApplication.exit(SpringApplication.run(LedgerCliApplication.class, args)));
     }
 }

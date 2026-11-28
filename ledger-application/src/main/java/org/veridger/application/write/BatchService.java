@@ -153,7 +153,8 @@ public class BatchService {
             BatchBuffer batch) {
         return switch (op) {
             case BatchOpInput.Save s -> save.run(actor, boundKey, Channel.AUTHOR,
-                    new SaveCommand(id, s.entity(), s.id(), s.expectedVersion(), s.fields(), s.reason()), batch);
+                    new SaveCommand(id, s.entity(), s.id(), s.expectedVersion(), s.fields(), s.reason(),
+                            s.projectVersion()), batch);
             case BatchOpInput.Transition t -> transition.run(actor, boundKey, Channel.AUTHOR,
                     new TransitionCommand(id, t.entity(), t.id(), t.expectedVersion(), t.to(), t.reason(),
                             t.evidenceUri(), t.evidenceSha256(), t.mergedInto(), t.attachmentId()), batch);

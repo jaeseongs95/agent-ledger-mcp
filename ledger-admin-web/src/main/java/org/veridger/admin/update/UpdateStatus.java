@@ -10,6 +10,7 @@ public record UpdateStatus(State state, String targetVersion, String updatedAt, 
         PENDING,
         SUCCEEDED,
         ROLLED_BACK,
+        RECOVERY_REQUIRED,
         FAILED
     }
 

@@ -34,12 +34,13 @@ public sealed interface BatchOp {
 
     record Save(@JsonProperty("entity") String entity, @JsonProperty("fields") SaveFields fields,
             @JsonProperty("reason") String reason, @JsonProperty("id") String id,
-            @JsonProperty("expected_version") Long expectedVersion) implements BatchOp {
+            @JsonProperty("expected_version") Long expectedVersion,
+            @JsonProperty("project_version") String projectVersion) implements BatchOp {
 
         @Override
         public BatchOpInput toInput(String defaultReason) {
             return new BatchOpInput.Save(entity, fields == null ? null : fields.toInput(), reasonOr(defaultReason), id,
-                    expectedVersion);
+                    expectedVersion, projectVersion);
         }
     }
 

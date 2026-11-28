@@ -4,7 +4,7 @@ package org.veridger.domain.rule;
 
 /** Through which tool family a write arrives; only the reviewer channel may record verifications. */
 public enum Channel {
-    AUTHOR("ledger_author"), REVIEWER("ledger_reviewer");
+    AUTHOR("ledger_author"), REVIEWER("ledger_reviewer"), ADMIN("ledger_admin");
 
     private final String login;
 
