@@ -100,7 +100,7 @@ MCP를 직접 호출하는 쪽은 HTTP에서 설정된 `Bearer` 토큰 `ledger.m
 | `ledger_review` | reviewer | 독립 검수(`VERIFIED`, `MET`, `NOT_MET`)와 재오픈을 처리합니다(`evidence_uri` 필수) |
 | `ledger_review_correct` | reviewer | 검수 행이 잘못되었음을 표시합니다 |
 
-첨부 도구(인증된 작성자와 유효한 부여 하나 이상이 필요합니다. 아래 첨부 절을 보십시오).
+첨부 도구. 업로드 시작, 번들 확정, 확정 번들 상태 조회와 본문 읽기에는 활성 권한이 있는 세션이 필요합니다. 인증된 `attachments-send` CLI는 파일별 `uploadId`로 청크를 직접 보내고 이어서 전송합니다.
 
 | 도구 | 내용 |
 |---|---|
@@ -117,17 +117,17 @@ MCP를 직접 호출하는 쪽은 HTTP에서 설정된 `Bearer` 토큰 `ledger.m
 | `ledger_get` | 최대 200개 ID의 상태와 행 버전을 한 번에 조회합니다. `include_details=true`를 지정하면 최대 10개 ID의 이슈·명세·작업·기준 상세도 받습니다 |
 | `ledger_issue` | 이슈 하나와 산출물, 작업, 명세, 기준, 사례(병합된 이슈 포함), 관계, `owner_actor_id`, 최근 이력을 보여 줍니다 |
 | `ledger_spec` | 명세 하나와 요약, 수용 기준, 상위·하위 명세, 산출물, 작업, 이슈, 기준, 최근 이력을 보여 줍니다 |
-| `ledger_task` | 작업 하나와 목적, 성공 조건, 출처, 담당, 산출물, 이슈, 명세, 기준, 최근 이력을 보여 줍니다 |
+| `ledger_task` | 작업 하나의 목적, 성공 조건, 출처, 담당, 산출물과 연결 항목을 조회합니다. 변경 이력은 `ledger_history`를 사용합니다 |
 | `ledger_criterion` | 마일스톤 기준 하나와 마일스톤, 목표 라벨, 코드, 기준 문장, 상태 및 연결된 작업·이슈·명세를 보여 줍니다 |
 | `ledger_history` | 추가 전용 이력과 영수증을 ID, ID 범위, 대상, 프로젝트, 연산, 작성자, 기간으로 조회합니다. `include_before`를 주면 `before_data`를 더합니다 |
-| `ledger_search` | 키워드로 이슈, 명세, 작업, 기준을 대소문자 구분 없이 검색합니다. `match`는 `ANY`(기본) 또는 `ALL`입니다 |
+| `ledger_search` | 키워드 또는 `project`와 `project_version`으로 여러 유형의 항목 ID를 찾습니다. 키워드 조건은 `ANY`(기본) 또는 `ALL`입니다 |
 | `ledger_issues` | 프로젝트의 이슈를 상태, 심각도, 분류, 주의 종류, 담당, 관련 버전(`project_version`)으로 거릅니다 |
-| `ledger_specs` | 프로젝트의 명세를 상태, 상위 ID, 우선순위, 담당, 주의 종류로 거릅니다 |
-| `ledger_tasks` | 프로젝트의 작업을 상태, 담당, 주의 종류로 거릅니다 |
-| `ledger_criteria` | 프로젝트의 마일스톤 기준을 상태와 `milestone_name`으로 거릅니다 |
+| `ledger_specs` | 명세를 상태, 상위 ID, 우선순위, 담당, 주의 종류, `project_version`으로 거릅니다 |
+| `ledger_tasks` | 작업을 상태, 담당, 주의 종류, `project_version`으로 거릅니다 |
+| `ledger_criteria` | 출시 기준을 상태, `milestone_name`, `project_version`으로 거릅니다 |
 | `ledger_attention` | 조치가 필요한 항목입니다: `OPEN_WITH_DELIVERABLE`, `RESOLVED_WITHOUT_DELIVERABLE`, `OPEN_NO_OWNER`, `SPEC_COMPLETED_NOT_VERIFIED`, `TASK_UNKNOWN`, `DONE_NOT_VERIFIED` |
 | `ledger_stats` | 한 프로젝트 또는 전체의 상태별, 심각도별 건수입니다. `bucket`을 `day`로 주면 UTC 일별 신규 건수를 더합니다 |
-| `ledger_projects` | 프로젝트의 ID, 코드, 제목을 조회합니다. `include_versions=true`를 지정하면 등록한 프로젝트 버전도 함께 조회합니다 |
+| `ledger_projects` | 고정 `project` ID 또는 `display_name`에 포함된 문구로 프로젝트를 찾습니다. 응답의 `id`는 고정 ID, `code`는 항목 ID 접두사, `title`은 설명, `display_name`은 현재 표시명입니다. `include_versions=true`로 버전명을 조회합니다 |
 | `ledger_codes` | 공통코드입니다. 폐기한 코드는 `include_inactive`를 주면 포함됩니다 |
 
 목록형 읽기 도구는 `max_rows`(1에서 1000, 기본 50)와 `cursor`를 받으며, 응답에 `truncated`와 `next_cursor`가 붙습니다. `ledger_search`의 `created_from`, `created_to`는 이슈, 명세, 작업에 적용됩니다. 기준은 생성 시각이 없으므로 둘 중 하나라도 주면 검색에서 빠집니다(범위와 함께 기준만 검색하면 결과가 없습니다).
@@ -141,11 +141,22 @@ MCP를 직접 호출하는 쪽은 HTTP에서 설정된 `Bearer` 토큰 `ledger.m
 같은 사유로 여러 건을 변경할 때는 `ledger_batch`의 `default_reason`을 한 번만 지정하세요. 각 항목에서
 `reason`으로 덮어쓸 수 있습니다. 첨부 원문은 필요한 바이트 범위를 지정하고 `["text","size","totalBytes"]`를 선택합니다.
 
-프로젝트의 `issue` 권한이 있는 에이전트는 `ledger_batch`에서 버전을 관리할 수 있습니다. 예를 들어
-`{"op":"project_version","project_id":"studio","name":"Review 2","create":true,"link_issue_ids":["STUDIO-I-0001"]}`을
-하나의 작업으로 보내면 버전 등록과 이슈 연결이 함께 반영됩니다. 항목의 `reason` 또는 배치의 `default_reason`을 지정하세요.
-`original_name`으로 이름을 바꾸고 `unlink_issue_ids`로 연결을 해제합니다. `description`을 생략하면 기존 설명을 유지합니다.
-연결·해제 목록에는 같은 프로젝트 이슈를 각각 최대 200개 지정할 수 있습니다. 버전 조회는 `ledger_projects(include_versions=true)`를 사용합니다.
+프로젝트의 `issue` 권한으로 `ledger_batch`의 `op=project_version`에서 버전 등록·이름 변경·설명 수정을
+할 수 있습니다. 기존 항목을 연결하거나 해제할 때는 유형별로 `link_items` 또는 `unlink_items`를 지정하세요.
+
+```json
+{"op":"project_version","project_id":"studio","name":"Review 2","link_items":{"spec":["STUDIO-S-0001"],"task":["STUDIO-T-0001"]}}
+```
+
+`create=true`로 버전을 등록하고, `original_name`을 지정해 이름을 바꿉니다. 연결과 해제는 각각 같은 프로젝트의
+항목 ID를 최대 200개까지 받습니다. 이슈 연결에는 `issue`, 명세에는 `spec`, 작업과 출시 기준에는 `task` 권한이 필요합니다.
+기존 `link_issue_ids`와 `unlink_issue_ids`도 사용할 수 있습니다. 사유는 작업의 `reason` 또는 배치의 `default_reason`으로
+지정하세요. 새 항목을 바로 연결할 때는 `op=save`에 `project_version`을 지정합니다.
+
+버전명은 `ledger_projects(project=..., include_versions=true)`에서 조회합니다. 여러 항목 유형을 한 번에 보려면
+`ledger_search`에 `project`와 `project_version`을 지정하세요. 유형별 조건이 필요하면 해당 목록 도구를 사용합니다.
+ID를 알고 있으면 `ledger_get(include_details=true)`에서 연결된 버전을 함께 확인할 수 있습니다.
+장부 항목 두 개 사이의 관계는 `ledger_link`로 관리합니다.
 
 ID를 모르면 `ledger_search`, ID를 알면 `ledger_get`, 조치 대기 목록은 `ledger_attention`, 집계는 `ledger_stats`를 사용합니다.
 `ledger_attention`에 `include_context=true`를 지정하면 제목·담당·수정 시각도 함께 반환합니다.

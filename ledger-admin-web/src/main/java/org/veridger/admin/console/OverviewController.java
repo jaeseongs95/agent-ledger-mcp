@@ -22,6 +22,7 @@ public class OverviewController {
         OverviewService.ConsoleOverview console = overview.consoleOverview(project);
         model.addAttribute("console", console);
         model.addAttribute("overview", console.base());
+        model.addAttribute("projectNames", Choices.projectNames(console.base().projects()));
         return "overview";
     }
 }

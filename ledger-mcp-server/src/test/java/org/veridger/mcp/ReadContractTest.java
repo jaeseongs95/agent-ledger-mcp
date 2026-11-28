@@ -10,6 +10,8 @@ import io.modelcontextprotocol.json.schema.JsonSchemaValidator.ValidationRespons
 import io.modelcontextprotocol.spec.McpError;
 import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.IntStream;
@@ -22,6 +24,7 @@ import org.veridger.application.admin.GrantService;
 import org.veridger.application.admin.GrantService.GrantCommand;
 import org.veridger.application.admin.ProjectService;
 import org.veridger.application.admin.ProjectService.ProjectCommand;
+import org.veridger.application.admin.ProjectService.RenameCommand;
 import org.veridger.application.admin.ProjectVersionService;
 import org.veridger.domain.error.ConflictException;
 import org.veridger.domain.error.LookupException;
@@ -160,6 +163,40 @@ class ReadContractTest {
     }
 
     @Test
+    void projectCatalogShowsTheRenamedDisplayNameAndKeepsItsIdentifiers(McpSession session, Scenario scenario) {
+        String id = scenario.projectId() + "-catalog";
+        String code = scenario.code() + "C";
+        var service = scenario.bean(ProjectService.class);
+        var original = service.add(new ProjectCommand(id, code, "Project description", "Old name"), TestOwners.OWNER);
+        service.rename(new RenameCommand(id, "Sennard", original.version()), TestOwners.OWNER);
+
+        String otherId = scenario.projectId() + "-spare";
+        service.add(new ProjectCommand(otherId, code + "X", "Another project", "Sennard documentation"),
+                TestOwners.OWNER);
+        var filter = Args.of().with("project", id).with("display_name", "sEnNaRd").with("include_versions", true);
+        var response = session.call("ledger_projects", filter);
+        assertThat(response.isError()).isFalse();
+        assertThat(session.readItems(response, ReadOutputs.ProjectRow.class).items())
+                .singleElement().satisfies(project -> {
+                    assertThat(project.id()).isEqualTo(id);
+                    assertThat(project.code()).isEqualTo(code);
+                    assertThat(project.displayName()).isEqualTo("Sennard");
+                    assertThat(project.title()).isEqualTo("Project description");
+                    assertThat(project.versions()).isEmpty();
+                });
+        assertThat(session.readItems(session.call("ledger_projects", filter.with("display_name", "Old name")),
+                ReadOutputs.ProjectRow.class).items()).isEmpty();
+        var paged = Args.of().with("display_name", "sennard").with("max_rows", 1);
+        var first = session.readItems(session.call("ledger_projects", paged), ReadOutputs.ProjectRow.class);
+        assertThat(first.items()).extracting(ReadOutputs.ProjectRow::id).containsExactly(id);
+        assertThat(first.truncated()).isTrue();
+        assertThat(session.readItems(session.call("ledger_projects", paged.with("cursor", first.nextCursor())),
+                ReadOutputs.ProjectRow.class).items()).extracting(ReadOutputs.ProjectRow::id).containsExactly(otherId);
+        assertThat(session.failed("ledger_projects", paged.with("display_name", "different")
+                .with("cursor", first.nextCursor())).code()).isEqualTo("VALIDATION_FAILED");
+    }
+
+    @Test
     void anAuthorizedAgentCanManageProjectVersionsAndIssueLinksInOneBatch(McpSession session, Scenario scenario) {
         Seed seed = Seed.create(session, scenario);
         String name = "운영 검토본";
@@ -195,8 +232,101 @@ class ReadContractTest {
     }
 
     @Test
+    void anAgentCanLinkAndUnlinkExistingRecordsAcrossVersionItemKinds(McpSession session, Scenario scenario) {
+        Seed seed = Seed.create(session, scenario);
+        String name = "Existing records";
+        scenario.bean(ProjectVersionService.class).add(seed.project(), name, null);
+        Map<String, List<String>> items = Map.of("spec", List.of(seed.spec(), seed.spec()),
+                "task", List.of(seed.task()), "criterion", List.of(seed.criterion()));
+        var version = Args.of().with("op", "project_version").with("project_id", seed.project()).with("name", name);
+        var base = Args.of().with("default_reason", Scenario.REASON);
+        var link = base.with("operationKey", Calls.freshKey()).with("ops", List.of(version.with("link_items", items)));
+        String actor = scenario.actorWith("version-links", "spec", "task");
+        String taskOnly = scenario.actorWith("version-task-only", "task");
+        assertThat(session.failed("ledger_batch", link.with("_hostAttestation", taskOnly)).code())
+                .isEqualTo("SESSION_NOT_GRANTED");
+        assertThat(session.failed("ledger_batch", link.with("_hostAttestation", Scenario.ISSUE_ONLY)).code())
+                .isEqualTo("SESSION_NOT_GRANTED");
+        assertThat(session.failed("ledger_batch", base.with("operationKey", Calls.freshKey())
+                .with("_hostAttestation", actor).with("ops", List.of(version.with("description", "edit version")
+                        .with("link_items", items)))).code()).isEqualTo("SESSION_NOT_GRANTED");
+
+        var authorizedLink = link.with("_hostAttestation", actor);
+        var response = session.call("ledger_batch", authorizedLink);
+        assertThat(response.isError()).isFalse();
+        var result = session.mapper().valueToTree(response.structuredContent()).path("data").path("results").get(0);
+        assertThat(result.path("linked").asInt()).isEqualTo(3);
+        assertThat(session.call("ledger_batch", authorizedLink).structuredContent()).isEqualTo(response.structuredContent());
+        assertThat(session.failed("ledger_batch", authorizedLink.with("ops",
+                List.of(version.with("unlink_items", items)))).code()).isEqualTo("OPERATION_CONFLICT");
+
+        var details = Args.of().with("ids", List.of(seed.spec(), seed.task(), seed.criterion()))
+                .with("include_details", true);
+        var linked = session.ok("ledger_get", details, ReadOutputs.Got.class);
+        assertThat(linked.specDetails().getFirst().projectVersions()).containsExactly(name);
+        assertThat(linked.taskDetails().getFirst().projectVersions()).containsExactly(name);
+        assertThat(linked.criterionDetails().getFirst().projectVersions()).containsExactly(name);
+
+        var unlink = authorizedLink.with("operationKey", Calls.freshKey())
+                .with("ops", List.of(version.with("unlink_items", items)));
+        var detached = session.call("ledger_batch", unlink);
+        assertThat(detached.isError()).isFalse();
+        assertThat(session.mapper().valueToTree(detached.structuredContent())
+                .path("data").path("results").get(0).path("unlinked").asInt()).isEqualTo(3);
+        var noChange = session.call("ledger_batch", unlink.with("operationKey", Calls.freshKey()));
+        assertThat(noChange.isError()).isFalse();
+        assertThat(session.mapper().valueToTree(noChange.structuredContent())
+                .path("data").path("results").get(0).path("unlinked").asInt()).isZero();
+        var unlinked = session.ok("ledger_get", details, ReadOutputs.Got.class);
+        assertThat(unlinked.specDetails().getFirst().projectVersions()).isEmpty();
+        assertThat(unlinked.taskDetails().getFirst().projectVersions()).isEmpty();
+        assertThat(unlinked.criterionDetails().getFirst().projectVersions()).isEmpty();
+
+        var changes = Ledger.history(session, seed.project()).stream()
+                .filter(row -> row.changes() instanceof Map<?, ?> data && data.containsKey("project_version")).toList();
+        assertThat(changes).hasSize(6).allSatisfy(row -> assertThat(row.authorId()).isEqualTo(actor));
+        for (String kind : items.keySet()) {
+            assertThat(changes).filteredOn(row -> row.entity().equals(kind)).extracting(ReadOutputs.History::op)
+                    .containsExactlyInAnyOrder("LINK", "UNLINK");
+        }
+    }
+
+    @Test
+    void aVersionBatchRejectsInvalidSelectionsAndRollsBackOnOutOfProjectItems(McpSession session, Scenario scenario) {
+        Seed seed = Seed.create(session, scenario);
+        String other = seed.project() + "-other";
+        scenario.bean(ProjectService.class).add(new ProjectCommand(other, scenario.code() + "O", "Other"), TestOwners.OWNER);
+        scenario.bean(GrantService.class).grant(new GrantCommand(Scenario.AUTHOR, other, List.of("issue", "task"),
+                null, null), TestOwners.OWNER);
+        String name = "Roll back";
+        var version = Args.of().with("op", "project_version").with("project_id", seed.project()).with("name", name);
+        var register = version.with("create", true).with("link_items", Map.of("spec", List.of(seed.spec())));
+        var link = version.with("project_id", other).with("create", true)
+                .with("link_items", Map.of("task", List.of(seed.task())));
+        var base = Args.of().with("default_reason", Scenario.REASON).with("_hostAttestation", Scenario.AUTHOR);
+        assertThat(session.failed("ledger_batch", base.with("operationKey", Calls.freshKey())
+                .with("ops", List.of(register, link))).code()).isEqualTo("NOT_FOUND");
+        var versions = scenario.bean(ProjectVersionService.class);
+        assertThat(versions.list(seed.project())).isEmpty();
+        assertThat(versions.list(other)).isEmpty();
+
+        for (var invalid : List.of(
+                register.with("unlink_items", Map.of("spec", List.of(seed.spec()))),
+                register.with("link_items", Map.of("deliverable", List.of(seed.task()))),
+                register.with("link_items", Map.of("spec", Collections.nCopies(201, seed.spec()))))) {
+            assertThat(session.failed("ledger_batch", base.with("operationKey", Calls.freshKey())
+                    .with("ops", List.of(invalid))).code()).isEqualTo("VALIDATION_FAILED");
+        }
+        assertThat(session.failed("ledger_batch", base.with("operationKey", Calls.freshKey())
+                .with("ops", List.of(register.with("link_items", Map.of("criterion", List.of(seed.task()))))))
+                .code()).isEqualTo("NOT_FOUND");
+        assertThat(versions.list(seed.project())).isEmpty();
+    }
+
+    @Test
     void anAgentCanCreateAndReadFourKindsInOneProjectVersion(McpSession session, Scenario scenario) {
         String project = scenario.projectId();
+        Seed.create(session, scenario);
         String name = "운영 검토본";
         var version = Args.of().with("op", "project_version").with("project_id", project).with("name", name)
                 .with("create", true);
@@ -220,6 +350,39 @@ class ReadContractTest {
         assertThat(details.issueDetails().getFirst().projectVersions()).containsExactly(name);
         assertThat(details.taskDetails().getFirst().projectVersions()).containsExactly(name);
         assertThat(details.criterionDetails().getFirst().projectVersions()).containsExactly(name);
+
+        var filter = Args.of().with("project", project).with("project_version", name);
+        assertThat(session.readItems(session.call("ledger_specs", filter), ReadOutputs.SpecRow.class).items())
+                .extracting(ReadOutputs.SpecRow::id).containsExactly(ids.get(0));
+        assertThat(session.readItems(session.call("ledger_issues", filter), ReadOutputs.IssueRow.class).items())
+                .extracting(ReadOutputs.IssueRow::id).containsExactly(ids.get(1));
+        assertThat(session.readItems(session.call("ledger_tasks", filter), ReadOutputs.TaskRow.class).items())
+                .extracting(ReadOutputs.TaskRow::id).containsExactly(ids.get(2));
+        assertThat(session.readItems(session.call("ledger_criteria", filter), ReadOutputs.CriterionRow.class).items())
+                .extracting(ReadOutputs.CriterionRow::id).containsExactly(ids.get(3));
+
+        var search = filter.with("max_rows", 2);
+        var first = session.readItems(session.call("ledger_search", search), ReadOutputs.Hit.class);
+        assertThat(first.truncated()).isTrue();
+        assertThat(first.nextCursor()).isNotBlank();
+        var second = session.readItems(session.call("ledger_search", search.with("cursor", first.nextCursor())),
+                ReadOutputs.Hit.class);
+        assertThat(second.truncated()).isFalse();
+        List<ReadOutputs.Hit> hits = new ArrayList<>(first.items());
+        hits.addAll(second.items());
+        assertThat(hits).extracting(ReadOutputs.Hit::id).containsExactlyInAnyOrderElementsOf(ids);
+        assertThat(session.readItems(session.call("ledger_search", filter.with("keywords", List.of("version task"))),
+                ReadOutputs.Hit.class).items()).extracting(ReadOutputs.Hit::id).containsExactly(ids.get(2));
+        assertThat(session.failed("ledger_search", search.with("cursor", first.nextCursor())
+                .with("project_version", "Another")).code()).isEqualTo("VALIDATION_FAILED");
+        assertThat(session.failed("ledger_search", filter.without("project")).code()).isEqualTo("VALIDATION_FAILED");
+        for (String tool : List.of("ledger_search", "ledger_specs", "ledger_issues", "ledger_tasks", "ledger_criteria")) {
+            var unmatched = session.call(tool, filter.with("project_version", "Unregistered"));
+            assertThat(unmatched.isError()).isFalse();
+            var rows = session.mapper().valueToTree(unmatched.structuredContent()).path("data").path("items");
+            assertThat(rows.isArray()).isTrue();
+            assertThat(rows.isEmpty()).isTrue();
+        }
     }
 
     @Test

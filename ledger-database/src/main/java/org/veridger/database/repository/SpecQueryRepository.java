@@ -43,6 +43,11 @@ public class SpecQueryRepository {
 
     public KeysetPage<SpecSummary> page(ProjectId project, Filter filter, MaxRows maxRows, DateQuery dates,
             Position after) {
+        return page(project, filter, maxRows, dates, after, null);
+    }
+
+    public KeysetPage<SpecSummary> page(ProjectId project, Filter filter, MaxRows maxRows, DateQuery dates,
+            Position after, String projectVersionId) {
         StringBuilder sql = new StringBuilder("SELECT id, parent_id, title, status, priority, owner_actor_id, "
                 + "version, created_at, updated_at FROM spec WHERE project_id = :project");
         if (filter.status() != null) {
@@ -60,6 +65,7 @@ public class SpecQueryRepository {
         if (filter.attention() != null) {
             sql.append(" AND ").append(AttentionSql.condition(filter.attention(), HistoryEntity.SPEC));
         }
+        ProjectVersionRepository.appendItemFilter(sql, projectVersionId, "id", HistoryEntity.SPEC);
         dates.appendRange(sql);
         DateQuery order = dates.defaultOrder(DateQuery.Column.CREATED, false);
         if (after != null) {
@@ -80,7 +86,7 @@ public class SpecQueryRepository {
         if (filter.owner() != null) {
             stmt = stmt.param("owner", filter.owner());
         }
-        stmt = dates.bindRange(stmt);
+        stmt = dates.bindRange(ProjectVersionRepository.bindItemFilter(stmt, projectVersionId));
         if (after != null) {
             stmt = order.bindSeek(stmt, after.at(), after.id().value());
         }

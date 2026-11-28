@@ -22,7 +22,8 @@ public enum BatchOpKind implements Token {
     LINK("link", Set.of("kind", "a", "b", "reason"), Set.of("remove")),
     CORRECT("correct", Set.of("history_id", "reason"), Set.of("attachment_id")),
     PROJECT_VERSION("project_version", Set.of("project_id", "name", "reason"),
-            Set.of("create", "original_name", "description", "link_issue_ids", "unlink_issue_ids"));
+            Set.of("create", "original_name", "description", "link_issue_ids", "unlink_issue_ids",
+                    "link_items", "unlink_items"));
 
     /** The most operations one batch holds (a batch has 1 to this many). */
     public static final int MAX_OPS_PER_BATCH = 200;

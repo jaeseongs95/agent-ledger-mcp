@@ -198,7 +198,8 @@
           <dt th:text="#{grants.author}">Session</dt>
           <dd class="code" id="edit-scopes-author-label" th:text="${syncForm != null ? syncForm.author() : '—'}">—</dd>
           <dt th:text="#{common.project}">Project</dt>
-          <dd class="code" id="edit-scopes-project-label" th:text="${syncForm != null ? syncForm.project() : '—'}">—</dd>
+          <dd id="edit-scopes-project-label"
+              th:text="${syncForm != null ? projectNames.getOrDefault(syncForm.project(), syncForm.project()) : '—'}">—</dd>
         </dl>
       </div>
 
@@ -397,7 +398,7 @@
           <dt th:text="#{grants.author}">Session</dt>
           <dd class="code" id="revoke-summary-author">—</dd>
           <dt th:text="#{common.project}">Project</dt>
-          <dd class="code" id="revoke-summary-project" th:attr="data-all-label=#{common.allProjects}">—</dd>
+          <dd id="revoke-summary-project" th:attr="data-all-label=#{common.allProjects}">—</dd>
         </dl>
       </div>
 

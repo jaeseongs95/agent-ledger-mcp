@@ -82,7 +82,12 @@ public class ListService {
     }
 
     public record SpecsQuery(String project, String status, String parentId, String priority, String owner,
-            String attention, Number maxRows, String cursor) {
+            String attention, Number maxRows, String cursor, String projectVersion) {
+
+        public SpecsQuery(String project, String status, String parentId, String priority, String owner,
+                String attention, Number maxRows, String cursor) {
+            this(project, status, parentId, priority, owner, attention, maxRows, cursor, null);
+        }
 
         public SpecsQuery {
             project = Texts.nullIfBlank(project);
@@ -91,26 +96,38 @@ public class ListService {
             priority = Texts.nullIfBlank(priority);
             owner = Texts.nullIfBlank(owner);
             attention = Texts.nullIfBlank(attention);
+            projectVersion = TextRule.PROJECT_VERSION_NAME.optional(projectVersion);
         }
     }
 
     public record TasksQuery(String project, String state, String owner, String attention, Number maxRows,
-            String cursor) {
+            String cursor, String projectVersion) {
+
+        public TasksQuery(String project, String state, String owner, String attention, Number maxRows, String cursor) {
+            this(project, state, owner, attention, maxRows, cursor, null);
+        }
 
         public TasksQuery {
             project = Texts.nullIfBlank(project);
             state = Texts.nullIfBlank(state);
             owner = Texts.nullIfBlank(owner);
             attention = Texts.nullIfBlank(attention);
+            projectVersion = TextRule.PROJECT_VERSION_NAME.optional(projectVersion);
         }
     }
 
-    public record CriteriaQuery(String project, String state, String milestone, Number maxRows, String cursor) {
+    public record CriteriaQuery(String project, String state, String milestone, Number maxRows, String cursor,
+            String projectVersion) {
+
+        public CriteriaQuery(String project, String state, String milestone, Number maxRows, String cursor) {
+            this(project, state, milestone, maxRows, cursor, null);
+        }
 
         public CriteriaQuery {
             project = Texts.nullIfBlank(project);
             state = Texts.nullIfBlank(state);
             milestone = Texts.nullIfBlank(milestone);
+            projectVersion = TextRule.PROJECT_VERSION_NAME.optional(projectVersion);
         }
     }
 
@@ -193,15 +210,9 @@ public class ListService {
         Object criteriaKey = dates.cursorCriteria(key);
         var after = cursors.decode(q.cursor(), PageCursor.Kind.ISSUES, criteriaKey)
                 .map(ListService::issuePosition);
-        String versionId;
-        if (q.projectVersion() == null) {
-            versionId = null;
-        } else {
-            var version = versions.find(project.value(), q.projectVersion());
-            if (version.isEmpty()) {
-                return new Page<>(List.of(), false, null);
-            }
-            versionId = version.orElseThrow().id();
+        String versionId = versionId(project, q.projectVersion());
+        if (q.projectVersion() != null && versionId == null) {
+            return new Page<>(List.of(), false, null);
         }
         var page = after.map(position -> issues.page(project, filter, maxRows, order, dates, position, versionId))
                 .orElseGet(() -> issues.page(project, filter, maxRows, order, dates, null, versionId));
@@ -227,11 +238,14 @@ public class ListService {
         MaxRows maxRows = cursors.maxRows(q.maxRows());
         SpecQueryRepository.Filter filter = new SpecQueryRepository.Filter(status, parentId, priority, owner,
                 attention);
-        Object criteriaKey = dates.cursorCriteria(List.of(project.value(), String.valueOf(filter)));
-        var page = cursors.decode(q.cursor(), PageCursor.Kind.SPECS, criteriaKey)
-                .map(ListService::specPosition)
-                .map(after -> specs.page(project, filter, maxRows, dates, after))
-                .orElseGet(() -> specs.page(project, filter, maxRows, dates, null));
+        Object criteriaKey = dates.cursorCriteria(versionKey(project, filter, q.projectVersion()));
+        var after = cursors.decode(q.cursor(), PageCursor.Kind.SPECS, criteriaKey).map(ListService::specPosition);
+        String versionId = versionId(project, q.projectVersion());
+        if (q.projectVersion() != null && versionId == null) {
+            return new Page<>(List.of(), false, null);
+        }
+        var page = after.map(position -> specs.page(project, filter, maxRows, dates, position, versionId))
+                .orElseGet(() -> specs.page(project, filter, maxRows, dates, null, versionId));
         return cursors.page(page, PageCursor.Kind.SPECS, criteriaKey,
                 ListService::toSpecItem,
                 r -> dates.sortKey(r.createdAt(), r.updatedAt()).toString(),
@@ -249,11 +263,14 @@ public class ListService {
         AttentionKind attention = parseAttention(q.attention(), HistoryEntity.TASK);
         MaxRows maxRows = cursors.maxRows(q.maxRows());
         TaskQueryRepository.Filter filter = new TaskQueryRepository.Filter(state, owner, attention);
-        Object criteriaKey = dates.cursorCriteria(List.of(project.value(), String.valueOf(filter)));
-        var page = cursors.decode(q.cursor(), PageCursor.Kind.TASKS, criteriaKey)
-                .map(ListService::taskPosition)
-                .map(after -> tasks.page(project, filter, maxRows, dates, after))
-                .orElseGet(() -> tasks.page(project, filter, maxRows, dates, null));
+        Object criteriaKey = dates.cursorCriteria(versionKey(project, filter, q.projectVersion()));
+        var after = cursors.decode(q.cursor(), PageCursor.Kind.TASKS, criteriaKey).map(ListService::taskPosition);
+        String versionId = versionId(project, q.projectVersion());
+        if (q.projectVersion() != null && versionId == null) {
+            return new Page<>(List.of(), false, null);
+        }
+        var page = after.map(position -> tasks.page(project, filter, maxRows, dates, position, versionId))
+                .orElseGet(() -> tasks.page(project, filter, maxRows, dates, null, versionId));
         return cursors.page(page, PageCursor.Kind.TASKS, criteriaKey,
                 r -> new TaskItem(r.id().value(), r.title(), r.state().name(), r.ownerActorId(), r.version(),
                         r.createdAt(), r.updatedAt()),
@@ -271,11 +288,15 @@ public class ListService {
                 : Tokens.parseName("state", q.state(), CriterionState.values());
         MaxRows maxRows = cursors.maxRows(q.maxRows());
         CriterionQueryRepository.Filter filter = new CriterionQueryRepository.Filter(state, q.milestone());
-        Object criteriaKey = dates.cursorCriteria(List.of(project.value(), String.valueOf(filter)));
-        var page = cursors.decode(q.cursor(), PageCursor.Kind.CRITERIA, criteriaKey)
-                .map(pos -> criterionPosition(pos, dates))
-                .map(after -> criteria.page(project, filter, maxRows, dates, after))
-                .orElseGet(() -> criteria.page(project, filter, maxRows, dates, null));
+        Object criteriaKey = dates.cursorCriteria(versionKey(project, filter, q.projectVersion()));
+        var after = cursors.decode(q.cursor(), PageCursor.Kind.CRITERIA, criteriaKey)
+                .map(pos -> criterionPosition(pos, dates));
+        String versionId = versionId(project, q.projectVersion());
+        if (q.projectVersion() != null && versionId == null) {
+            return new Page<>(List.of(), false, null);
+        }
+        var page = after.map(position -> criteria.page(project, filter, maxRows, dates, position, versionId))
+                .orElseGet(() -> criteria.page(project, filter, maxRows, dates, null, versionId));
         return cursors.page(page, PageCursor.Kind.CRITERIA, criteriaKey,
                 r -> new CriterionItem(r.id().value(), r.milestone(), r.goalLabel(), r.code(),
                         Texts.orEmpty(r.criterionText()), r.state().name(), r.version(), r.createdAt(), r.updatedAt()),
@@ -311,6 +332,19 @@ public class ListService {
             throw ValidationException.invalid("project", ValidationReason.REQUIRED);
         }
         return ProjectId.of(raw);
+    }
+
+    private String versionId(ProjectId project, String name) {
+        if (name == null) {
+            return null;
+        }
+        var found = versions.find(project.value(), name);
+        return found.isEmpty() ? null : found.orElseThrow().id();
+    }
+
+    private static List<String> versionKey(ProjectId project, Object filter, String name) {
+        return name == null ? List.of(project.value(), filter.toString())
+                : List.of(project.value(), filter.toString(), name);
     }
 
     private static String checkOwner(String owner) {

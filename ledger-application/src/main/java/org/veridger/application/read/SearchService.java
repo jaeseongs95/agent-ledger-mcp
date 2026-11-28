@@ -3,7 +3,6 @@
 package org.veridger.application.read;
 
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -12,6 +11,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import org.veridger.database.repository.KeywordMatch;
+import org.veridger.database.repository.ProjectVersionRepository;
 import org.veridger.database.repository.SearchQueryRepository;
 import org.veridger.domain.error.ValidationException;
 import org.veridger.domain.error.ValidationReason;
@@ -22,6 +22,7 @@ import org.veridger.domain.rule.TaskState;
 import org.veridger.domain.value.MaxRows;
 import org.veridger.domain.value.PageCursor;
 import org.veridger.domain.value.ProjectId;
+import org.veridger.domain.value.TextRule;
 import org.veridger.domain.value.Tokens;
 import org.veridger.domain.value.UtcInstant;
 import org.springframework.stereotype.Service;
@@ -60,16 +61,21 @@ public class SearchService {
     }
 
     public record SearchQuery(String project, List<String> entities,
-            @NotEmpty(message = "{reason.MUST_HOLD_ITEMS}")
             @Size(max = MAX_KEYWORDS, message = "{reason.MUST_HOLD_ITEMS}") List<String> keywords,
             String match, List<String> excludeStates, String createdFrom, String createdTo,
-            Number maxRows, String cursor) {
+            Number maxRows, String cursor, String projectVersion) {
+
+        public SearchQuery(String project, List<String> entities, List<String> keywords, String match,
+                List<String> excludeStates, String createdFrom, String createdTo, Number maxRows, String cursor) {
+            this(project, entities, keywords, match, excludeStates, createdFrom, createdTo, maxRows, cursor, null);
+        }
 
         public SearchQuery {
             project = Texts.nullIfBlank(project);
             match = Texts.nullIfBlank(match);
             createdFrom = Texts.nullIfBlank(createdFrom);
             createdTo = Texts.nullIfBlank(createdTo);
+            projectVersion = TextRule.PROJECT_VERSION_NAME.optional(projectVersion);
         }
     }
 
@@ -78,16 +84,21 @@ public class SearchService {
 
     private final SearchQueryRepository queries;
     private final Cursors cursors;
+    private final ProjectVersionRepository versions;
 
-    public SearchService(SearchQueryRepository queries, Cursors cursors) {
+    public SearchService(SearchQueryRepository queries, Cursors cursors, ProjectVersionRepository versions) {
         this.queries = queries;
         this.cursors = cursors;
+        this.versions = versions;
     }
 
     public Page<Hit> search(@Valid SearchQuery q) {
         ProjectId project = q.project() == null ? null : ProjectId.of(q.project());
+        if (q.projectVersion() != null && project == null) {
+            throw ValidationException.invalid("project", ValidationReason.REQUIRED_WHEN_SET, "project_version");
+        }
         Set<SearchQueryRepository.Kind> kinds = parseKinds(q.entities());
-        List<String> keywords = validateKeywords(q.keywords());
+        List<String> keywords = validateKeywords(q.keywords(), q.projectVersion() != null);
         KeywordMatch match = q.match() == null ? KeywordMatch.ANY
                 : Tokens.parseName("match", q.match(), KeywordMatch.values());
         Set<String> excluded = parseExcludedStates(q.excludeStates());
@@ -97,11 +108,21 @@ public class SearchService {
 
         SearchQueryRepository.Filter filter = new SearchQueryRepository.Filter(project, kinds, keywords, match,
                 excluded, from, to);
-        var page = cursors.decode(q.cursor(), PageCursor.Kind.SEARCH, filter)
-                .map(SearchService::toPosition)
-                .map(after -> queries.page(filter, maxRows, after))
-                .orElseGet(() -> queries.page(filter, maxRows, null));
-        return cursors.page(page, PageCursor.Kind.SEARCH, filter,
+        Object criteriaKey = q.projectVersion() == null ? filter : List.of(filter, q.projectVersion());
+        var after = cursors.decode(q.cursor(), PageCursor.Kind.SEARCH, criteriaKey).map(SearchService::toPosition);
+        String versionId;
+        if (q.projectVersion() == null) {
+            versionId = null;
+        } else {
+            var version = versions.find(project.value(), q.projectVersion());
+            if (version.isEmpty()) {
+                return new Page<>(List.of(), false, null);
+            }
+            versionId = version.orElseThrow().id();
+        }
+        var page = after.map(position -> queries.page(filter, maxRows, position, versionId))
+                .orElseGet(() -> queries.page(filter, maxRows, null, versionId));
+        return cursors.page(page, PageCursor.Kind.SEARCH, criteriaKey,
                 h -> new Hit(kindToken(h.kind()), h.id(), h.projectId(), h.title(), h.state(), h.createdAt()),
                 SearchService::encodeSortKey, SearchQueryRepository.Hit::id);
     }
@@ -137,7 +158,14 @@ public class SearchService {
         return out;
     }
 
-    private static List<String> validateKeywords(List<String> raw) {
+    private static List<String> validateKeywords(List<String> raw, boolean versionScoped) {
+        if (raw == null || raw.isEmpty()) {
+            if (versionScoped) {
+                return List.of();
+            }
+            throw ValidationException.invalid("keywords", ValidationReason.MUST_HOLD_ITEMS, "1",
+                    Integer.toString(MAX_KEYWORDS));
+        }
         List<String> out = new ArrayList<>(raw.size());
         for (String kw : raw) {
             if (kw == null || kw.isBlank()) {

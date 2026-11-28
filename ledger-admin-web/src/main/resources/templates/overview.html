@@ -213,7 +213,7 @@
                 <th:block th:if="${item.updatedAt() != null}"><time th:replace="~{fragments :: time(${item.updatedAt()})}">t</time></th:block>
                 <span th:if="${item.updatedAt() == null}" class="muted" th:text="#{common.noneValue}">—</span>
               </td>
-              <td class="cell-id" th:text="${item.projectId()}">p1</td>
+              <td th:text="${projectNames.getOrDefault(item.projectId(), item.projectId())}">p1</td>
             </tr>
           </tbody>
         </table>

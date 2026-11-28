@@ -6,7 +6,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -84,8 +83,7 @@ public class VersionWorkspaceController {
         var result = versions.items(project, versionId, kind, after, PAGE_SIZE);
         var model = new LinkedHashMap<String, Object>();
         model.put("project", project);
-        model.put("projectName", choices.projects().stream().filter(p -> Objects.equals(p.id(), project))
-                .map(p -> p.displayName()).findFirst().orElse(project));
+        model.put("projectName", choices.projectName(project));
         model.put("workspace", result);
         model.put("itemPage", links.itemPage(kind.token()));
         model.put("kind", kind.token());

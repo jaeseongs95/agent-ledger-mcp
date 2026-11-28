@@ -53,7 +53,8 @@
       <section class="card">
         <h2 th:text="#{item.metadata}">Details</h2>
         <dl class="facts">
-          <dt th:text="#{common.project}">Project</dt><dd class="code"><a th:href="@{/(project=${task.projectId()})}" th:text="${task.projectId()}">p1</a></dd>
+          <dt th:text="#{common.project}">Project</dt>
+          <dd><a th:href="@{/(project=${task.projectId()})}" th:text="${@choices.projectName(task.projectId())}">p1</a></dd>
           <th:block th:replace="~{fragments :: relatedVersions(${task.projectId()}, 'task')}"></th:block>
           <dt th:text="#{common.state}">State</dt><dd><span th:class="'badge badge-' + ${task.state()}" th:text="${@labels.taskState(task.state())}">Active</span></dd>
           <dt th:text="#{common.owner}">Owner</dt><dd th:text="${task.ownerActorId() != null} ? ${task.ownerActorId()} : #{common.noneValue}">owner</dd>

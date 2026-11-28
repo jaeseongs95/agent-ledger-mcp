@@ -8,12 +8,16 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.stream.Collectors;
+import org.veridger.application.admin.ProjectVersionService.ItemRef;
 import org.veridger.application.gate.Target;
 import org.veridger.application.gate.WriteGate;
 import org.veridger.database.repository.CommonCodeRepository;
+import org.veridger.database.repository.EntityLookupRepository;
 import org.veridger.database.repository.ProjectRepository;
 import org.veridger.domain.error.ConflictCode;
 import org.veridger.domain.error.ConflictException;
@@ -56,14 +60,16 @@ class BatchLockPlanner {
     private final CorrectOperation correctOperation;
     private final WriteGate gate;
     private final CommonCodeRepository codes;
+    private final EntityLookupRepository lookup;
 
     BatchLockPlanner(Rows rows, ProjectRepository projects, CorrectOperation correctOperation, WriteGate gate,
-            CommonCodeRepository codes) {
+            CommonCodeRepository codes, EntityLookupRepository lookup) {
         this.rows = rows;
         this.projects = projects;
         this.correctOperation = correctOperation;
         this.gate = gate;
         this.codes = codes;
+        this.lookup = lookup;
     }
 
     /**
@@ -169,7 +175,31 @@ class BatchLockPlanner {
             case BatchOpInput.RecordCase c -> addIssueIfPresent(c.issueId(), issueIds);
             case BatchOpInput.Link l -> discoverLink(l, issueIds, specIds, taskIds, criterionIds);
             case BatchOpInput.Correct c -> discoverCorrect(c, issueIds, specIds, taskIds, criterionIds);
-            case BatchOpInput.ProjectVersion v -> projectId(v.projectId()).ifPresent(projectIds::add);
+            case BatchOpInput.ProjectVersion v -> projectId(v.projectId()).ifPresent(project -> {
+                projectIds.add(project);
+                discoverVersionItems(project, v, issueIds, specIds, taskIds, criterionIds);
+            });
+        }
+    }
+
+    private void discoverVersionItems(ProjectId project, BatchOpInput.ProjectVersion change, Set<IssueId> issues,
+            Set<SpecId> specs, Set<TaskId> tasks, Set<CriterionId> criteria) {
+        Set<ItemRef> selected = ProjectVersionLinks.from(change).items().collect(Collectors.toSet());
+        List<String> ids = selected.stream().map(ItemRef::id).toList();
+        for (var found : lookup.findAny(ids)) {
+            String id = found.row().id();
+            if (!Objects.equals(project.value(), found.row().projectId())
+                    || !selected.contains(new ItemRef(found.entity(), id))) {
+                continue;
+            }
+            switch (found.entity()) {
+                case ISSUE -> issues.add(IssueId.of(id));
+                case SPEC -> specs.add(SpecId.of(id));
+                case TASK -> tasks.add(TaskId.of(id));
+                case CRITERION -> criteria.add(CriterionId.of(id));
+                case DELIVERABLE, ISSUE_TASK, ISSUE_SPEC, SPEC_TASK, ISSUE_RELATION, CRITERION_LINK, ISSUE_CASE -> {
+                }
+            }
         }
     }
 
@@ -307,7 +337,7 @@ class BatchLockPlanner {
                 case BatchOpInput.Correct c -> collectCorrectTargets(c, issueProjects, specProjects, taskProjects,
                         criterionProjects, targets);
                 case BatchOpInput.ProjectVersion v -> projectId(v.projectId())
-                        .ifPresent(p -> targets.add(new Target(p, Scope.ISSUE)));
+                        .ifPresent(p -> targets.addAll(ProjectVersionLinks.from(v).targets(p, v)));
             }
         }
         return targets;
