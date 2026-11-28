@@ -84,6 +84,7 @@ def request(base, path, token, *, params=None, accept="application/json", payloa
                 return body
             return json.load(response)
     except urllib.error.HTTPError as exc:
+        exc.close()
         raise BadgeError(f"{path.split('/')[0]} request failed (HTTP {exc.code}).") from None
     except (OSError, ValueError):
         raise BadgeError(f"{path.split('/')[0]} request could not be completed.") from None
