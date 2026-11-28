@@ -5,6 +5,8 @@
 // grants tabs/scope matrix/expiry presets/key-block auto-fill, codes editor/state modals,
 // and progressive JSON diff rendering in history.
 let pageListeners;
+// The SPA replaces the filter controls along with the rest of the page after a write.
+const listFilterValues = new Map();
 
 function initializeAdminPage() {
   pageListeners?.abort();
@@ -589,6 +591,7 @@ function initializeAdminPage() {
     let composing = false;
 
     function applyTableSearch() {
+      listFilterValues.set(input.id, input.value);
       const q = input.value.trim().toLowerCase();
       let visible = 0;
       rows.forEach((row) => {
@@ -602,6 +605,8 @@ function initializeAdminPage() {
       if (emptyEl) { emptyEl.hidden = visible > 0 || rows.length === 0; }
     }
 
+    input.value = listFilterValues.get(input.id) ?? input.value;
+    applyTableSearch();
     input.addEventListener("compositionstart", () => { composing = true; });
     input.addEventListener("compositionend", () => { composing = false; applyTableSearch(); });
     input.addEventListener("input", () => { if (!composing) { applyTableSearch(); } });
@@ -621,6 +626,7 @@ function initializeAdminPage() {
     const searchInput = document.getElementById("session-search");
     const hostSelect = document.getElementById("grant-host-filter");
     const scopeSelect = document.getElementById("grant-scope-filter");
+    const fields = [projectInput, searchInput, hostSelect, scopeSelect];
     const cards = Array.from(document.querySelectorAll("[data-session-card]"), (element) => ({
       element,
       projects: Array.from(element.querySelectorAll("[data-project-grant]"))
@@ -629,7 +635,17 @@ function initializeAdminPage() {
     const resetBtn = sessionToolbar.querySelector("[data-session-filter-reset]");
     const countEl = document.getElementById("session-filter-count");
 
+    const savedHost = listFilterValues.get(hostSelect.id);
+    let restoredHostOption;
+    // Revoking the last grant for a host removes it from the server-rendered choices.
+    if (savedHost && !Array.from(hostSelect.options).some((option) => option.value === savedHost)) {
+      restoredHostOption = new Option(savedHost, savedHost);
+      hostSelect.add(restoredHostOption);
+    }
+    fields.forEach((field) => { field.value = listFilterValues.get(field.id) ?? field.value; });
+
     function applySessionFilters() {
+      fields.forEach((field) => { listFilterValues.set(field.id, field.value); });
       const project = projectInput.value.trim().toLowerCase();
       const session = searchInput.value.trim().toLowerCase();
       const host = hostSelect.value;
@@ -658,7 +674,8 @@ function initializeAdminPage() {
     });
     [hostSelect, scopeSelect].forEach((select) => select.addEventListener("change", applySessionFilters));
     resetBtn.addEventListener("click", () => {
-      [projectInput, searchInput, hostSelect, scopeSelect].forEach((input) => { input.value = ""; });
+      restoredHostOption?.remove();
+      fields.forEach((field) => { field.value = ""; });
       applySessionFilters();
       projectInput.focus();
     });
