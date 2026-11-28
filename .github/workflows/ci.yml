@@ -8,10 +8,15 @@ on:
       - "feat/**"
       - "feature/**"
       - "fix/**"
-      - "release/**"
       - "hotfix/**"
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      coverage-artifacts:
+        description: Upload JaCoCo execution data for release analysis
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -91,7 +96,7 @@ jobs:
             spotlessCheck check jacocoTestReport
 
       - name: Upload JaCoCo execution data (Ubuntu)
-        if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/heads/release/')
+        if: inputs.coverage-artifacts
         uses: actions/upload-artifact@v4
         with:
           name: jacoco-exec-ubuntu
@@ -162,104 +167,10 @@ jobs:
             spotlessCheck check
 
       - name: Upload JaCoCo execution data (Windows)
-        if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/heads/release/')
+        if: inputs.coverage-artifacts
         uses: actions/upload-artifact@v4
         with:
           name: jacoco-exec-windows
           path: "**/build/jacoco/*.exec"
           retention-days: 1
           if-no-files-found: error
-
-  sonar:
-    name: sonarqube (dual-OS aggregated coverage)
-    needs: [ubuntu, windows]
-    if: github.event_name != 'pull_request' && startsWith(github.ref, 'refs/heads/release/')
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    outputs:
-      task-id: ${{ steps.analysis.outputs.task_id }}
-    env:
-      SONAR_PROJECT_KEY: veridger-release
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Set up JDK 25 (Temurin)
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "25"
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
-
-      - name: Download Ubuntu JaCoCo execution data
-        uses: actions/download-artifact@v4
-        with:
-          name: jacoco-exec-ubuntu
-          path: build/jacoco-ci/ubuntu
-
-      - name: Download Windows JaCoCo execution data
-        uses: actions/download-artifact@v4
-        with:
-          name: jacoco-exec-windows
-          path: build/jacoco-ci/windows
-
-      - name: Generate Dual-OS Aggregated JaCoCo Report
-        run: |
-          ./gradlew --no-daemon --max-workers=1 jacocoAggregateReport
-
-      - name: Run SonarQube Analysis
-        id: analysis
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_RELEASE_TOKEN }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-        run: |
-          if [[ -z "$SONAR_TOKEN" || -z "$SONAR_HOST_URL" ]]; then
-            echo "The SonarQube credential or endpoint is missing."
-            exit 1
-          fi
-          python3 -B .github/scripts/sonar_badges.py mask-host
-          metadata="$RUNNER_TEMP/veridger-sonar-report.txt"
-          ./gradlew --no-daemon --max-workers=1 sonar \
-            -Dsonar.projectKey="$SONAR_PROJECT_KEY" \
-            -Dsonar.projectName="$SONAR_PROJECT_KEY" \
-            -Dsonar.scm.revision="$GITHUB_SHA" \
-            -Dsonar.scanner.metadataFilePath="$metadata" \
-            -Dsonar.verbose=false \
-            -Dsonar.log.level=INFO \
-            -Dsonar.qualitygate.wait=true \
-            -Dsonar.qualitygate.timeout=300
-          task_id="$(sed -n 's/^ceTaskId=//p' "$metadata")"
-          if [[ ! "$task_id" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-            echo "SonarQube analysis task ID is missing or invalid."
-            exit 1
-          fi
-          echo "task_id=$task_id" >> "$GITHUB_OUTPUT"
-
-  badges:
-    name: refresh SonarQube README badges
-    needs: sonar
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write
-    env:
-      SONAR_PROJECT_KEY: veridger-release
-    steps:
-      - name: Checkout analyzed commit
-        uses: actions/checkout@v5
-        with:
-          persist-credentials: false
-      - name: Test badge validation and publication
-        run: python3 -B -m unittest discover -s .github/scripts
-      - name: Publish verified badges
-        env:
-          SONAR_CE_TASK_ID: ${{ needs.sonar.outputs.task-id }}
-          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-          SONAR_TOKEN: ${{ secrets.SONAR_RELEASE_TOKEN }}
-          SONAR_BADGE_READ_TOKEN: ${{ secrets.SONAR_RELEASE_BADGE_READ_TOKEN }}
-          GH_TOKEN: ${{ github.token }}
-        run: python3 -B .github/scripts/sonar_badges.py publish
