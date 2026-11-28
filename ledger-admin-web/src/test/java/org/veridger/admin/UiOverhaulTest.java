@@ -122,4 +122,38 @@ class UiOverhaulTest {
                 .andExpect(status().is3xxRedirection())
                 .andExpect(flash().attribute("flashKey", "flash.projectAdded"));
     }
+
+    @Test
+    void projectVersionFormsKeepIssueLinksAcrossRenames() throws Exception {
+        Seeded project = seeds.project();
+        String issue = seeds.issue(project, "Issue linked to the review version");
+        String unrelated = seeds.issue(project, "Issue without a version");
+        Browser browser = Browser.signedIn(mvc);
+        String versions = "/projects/versions";
+        String versionsCsrf = browser.csrfOf(versions + "?project=" + project.project());
+        var create = Form.of("project", project.project(), "name", "Review draft", "description", "First review");
+        browser.perform(browser.form(versions, create, versionsCsrf)).andExpect(status().is3xxRedirection())
+                .andExpect(flash().attribute("flashKey", "versions.saved"));
+        browser.perform(browser.form(versions, create, versionsCsrf)).andExpect(status().isConflict());
+
+        String detail = "/issues/" + issue;
+        String detailCsrf = browser.csrfOf(detail);
+        browser.perform(browser.form(detail + "/versions", Form.of("name", "Review draft"), detailCsrf))
+                .andExpect(status().is3xxRedirection()).andExpect(flash().attribute("flashKey", "versions.issueSaved"));
+
+        var edit = Form.of("project", project.project(), "originalName", "Review draft", "name", "Review final",
+                "description", "Ready for decision");
+        browser.perform(browser.form(versions + "/edit", edit, versionsCsrf)).andExpect(status().is3xxRedirection());
+        String filtered = browser.perform(browser.get("/issues").param("project", project.project())
+                .param("projectVersion", "Review final")).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(filtered).contains(issue, "Review final").doesNotContain(unrelated);
+
+        browser.perform(browser.form(detail + "/versions", Form.of("name", "Review final", "remove", "true"), detailCsrf))
+                .andExpect(status().is3xxRedirection());
+        String unlinked = browser.perform(browser.get("/issues").param("project", project.project())
+                .param("projectVersion", "Review final")).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(unlinked).doesNotContain(issue);
+    }
 }

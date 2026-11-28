@@ -30,28 +30,30 @@ record ResultOptions(Fields fields, boolean structuredOnly) {
             throw ValidationException.invalid(STRUCTURED_ONLY, ValidationReason.WRONG_TYPE, "boolean");
         }
         Fields fields = new Fields();
+        ResultOptions options = new ResultOptions(fields, Boolean.TRUE.equals(mode));
         Object requested = arguments.get(FIELDS);
-        if (requested != null) {
-            if (!(requested instanceof List<?> paths)) {
-                throw ValidationException.invalid(FIELDS, ValidationReason.WRONG_TYPE, "array");
-            }
-            if (paths.isEmpty() || paths.size() > MAX_FIELDS) {
-                throw ValidationException.invalid(FIELDS, ValidationReason.MUST_HOLD_ITEMS, "1",
-                        Integer.toString(MAX_FIELDS));
-            }
-            for (Object rawPath : paths) {
-                if (!(rawPath instanceof String path)) {
-                    throw ValidationException.invalid(FIELDS, ValidationReason.WRONG_TYPE, "string");
-                }
-                if (path.length() > MAX_PATH_LENGTH || !FIELD_PATH.matcher(path).matches()
-                        || !output.supportsField(path)) {
-                    throw ValidationException.invalid(FIELDS, ValidationReason.UNKNOWN_VALUE,
-                            path.substring(0, Math.min(path.length(), MAX_PATH_LENGTH)));
-                }
-                fields.add(path.split("\\."), 0);
-            }
+        if (requested == null) {
+            return options;
         }
-        return new ResultOptions(fields, Boolean.TRUE.equals(mode));
+        if (!(requested instanceof List<?> paths)) {
+            throw ValidationException.invalid(FIELDS, ValidationReason.WRONG_TYPE, "array");
+        }
+        if (paths.isEmpty() || paths.size() > MAX_FIELDS) {
+            throw ValidationException.invalid(FIELDS, ValidationReason.MUST_HOLD_ITEMS, "1",
+                    Integer.toString(MAX_FIELDS));
+        }
+        for (Object rawPath : paths) {
+            if (!(rawPath instanceof String path)) {
+                throw ValidationException.invalid(FIELDS, ValidationReason.WRONG_TYPE, "string");
+            }
+            if (path.length() > MAX_PATH_LENGTH || !FIELD_PATH.matcher(path).matches()
+                    || !output.supportsField(path)) {
+                throw ValidationException.invalid(FIELDS, ValidationReason.UNKNOWN_VALUE,
+                        path.substring(0, Math.min(path.length(), MAX_PATH_LENGTH)));
+            }
+            fields.add(path.split("\\."), 0);
+        }
+        return options;
     }
 
     static final class Fields {

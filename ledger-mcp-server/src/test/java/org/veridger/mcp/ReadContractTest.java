@@ -243,6 +243,20 @@ class ReadContractTest {
     }
 
     @Test
+    void malformedResponseOptionsReturnValidationErrors(McpSession session) {
+        var badFields = List.of("id", List.of(), List.of(1), List.of("not a field"), List.of("x".repeat(121)),
+                java.util.Collections.nCopies(17, "id"));
+        for (Object fields : badFields) {
+            var error = session.failed("ledger_projects", Args.of().with("fields", fields));
+            assertThat(error.code()).isEqualTo("VALIDATION_FAILED");
+            assertThat(error.issues()).extracting(ToolError.Issue::path).containsExactly("fields");
+        }
+        var badMode = session.failed("ledger_projects", Args.of().with("structured_only", "true"));
+        assertThat(badMode.code()).isEqualTo("VALIDATION_FAILED");
+        assertThat(badMode.issues()).extracting(ToolError.Issue::path).containsExactly("structured_only");
+    }
+
+    @Test
     void everyToolOffersResponseOptionsAndBatchRetriesKeepTheSameReceipt(McpSession session, Scenario scenario) {
         assertThat(session.tools()).hasSize(33).allSatisfy(tool -> {
             SchemaView input = SchemaView.of(session.mapper(), tool.inputSchema());
