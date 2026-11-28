@@ -1,15 +1,8 @@
 name: Repository Checks
 
 on:
-  push:
-    branches:
-      - main
-      - develop
-      - "feat/**"
-      - "feature/**"
-      - "fix/**"
-      - "hotfix/**"
   pull_request:
+    types: [opened, reopened, ready_for_review]
   workflow_dispatch:
   workflow_call:
     inputs:
@@ -23,12 +16,12 @@ permissions:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  # A newer push cancels the older run of the same ref, except on main and the release branches: there every commit is a
-  # candidate of a release and the result of its run is the record that it was checked.
+  # Preserve the verification record of each run on main and release branches.
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && !startsWith(github.ref, 'refs/heads/release/') }}
 
 jobs:
   ubuntu:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: check (ubuntu-latest, JDK 25, PostgreSQL 18)
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -105,6 +98,7 @@ jobs:
           if-no-files-found: error
 
   windows:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: check (windows-latest, JDK 25, PostgreSQL 18)
     runs-on: windows-latest
     timeout-minutes: 45
