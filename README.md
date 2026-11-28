@@ -1,5 +1,13 @@
 # Veridger
 
+![Quality Gate](docs/badges/quality-gate.svg)
+![Security Rating](docs/badges/security.svg)
+![Reliability Rating](docs/badges/reliability.svg)
+![Maintainability Rating](docs/badges/maintainability.svg)
+![Coverage](docs/badges/coverage.svg)
+![Duplicated Lines](docs/badges/duplicated-lines.svg)
+![Lines of Code](docs/badges/lines-of-code.svg)
+
 [한국어](README.ko.md)
 
 A universal ledger for work done by AI agents across software, film production, writing, research and operations, served as one MCP
