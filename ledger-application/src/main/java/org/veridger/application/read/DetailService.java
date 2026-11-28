@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
 import org.veridger.database.repository.CriterionRepository;
 import org.veridger.database.repository.DeliverableRepository;
 import org.veridger.database.repository.EntityLookupRepository;
@@ -17,6 +18,7 @@ import org.veridger.database.repository.IssueCaseRepository;
 import org.veridger.database.repository.IssueRepository;
 import org.veridger.database.repository.LinkRepository;
 import org.veridger.database.repository.MergeChainRepository;
+import org.veridger.database.repository.ProjectVersionRepository;
 import org.veridger.database.repository.SpecRepository;
 import org.veridger.database.repository.TaskRepository;
 import org.veridger.domain.error.LookupCode;
@@ -81,7 +83,8 @@ public class DetailService {
             String status, String mergedInto, String symptom, String rootCause, String ownerActorId, long version,
             Instant updatedAt, String createdBy, String resolvedBy, Instant resolvedAt, LastChange lastChange,
             List<DeliverableView> deliverables, List<TaskRef> tasks, List<String> specs, List<String> criteria,
-            List<CaseView> cases, List<RelationView> relations, List<ChangeSummary> recentChanges) {
+            List<CaseView> cases, List<RelationView> relations, List<ChangeSummary> recentChanges,
+            List<String> projectVersions) {
     }
 
     public record SpecDetail(String id, String projectId, String parentId, String title, String summary,
@@ -112,11 +115,12 @@ public class DetailService {
     private final MergeChainRepository mergeChain;
     private final HistoryQueryRepository historyQueries;
     private final EntityLookupRepository entityLookup;
+    private final ProjectVersionRepository projectVersions;
 
     public DetailService(IssueRepository issues, SpecRepository specs, TaskRepository tasks,
             CriterionRepository criteria, DeliverableRepository deliverables, IssueCaseRepository cases,
             LinkRepository links, MergeChainRepository mergeChain, HistoryQueryRepository historyQueries,
-            EntityLookupRepository entityLookup) {
+            EntityLookupRepository entityLookup, ProjectVersionRepository projectVersions) {
         this.issues = issues;
         this.specs = specs;
         this.tasks = tasks;
@@ -127,9 +131,26 @@ public class DetailService {
         this.mergeChain = mergeChain;
         this.historyQueries = historyQueries;
         this.entityLookup = entityLookup;
+        this.projectVersions = projectVersions;
     }
 
     private record HistoryDigest(LastChange lastChange, List<ChangeSummary> recentChanges) {
+    }
+
+    public record Details(List<IssueDetail> issues, List<SpecDetail> specs, List<TaskDetail> tasks,
+            List<CriterionDetail> criteria) {
+    }
+
+    public Details details(List<GetService.Item> items) {
+        return new Details(detailsOf(items, HistoryEntity.ISSUE, this::issue),
+                detailsOf(items, HistoryEntity.SPEC, this::spec), detailsOf(items, HistoryEntity.TASK, this::task),
+                detailsOf(items, HistoryEntity.CRITERION, this::criterion));
+    }
+
+    private static <T> List<T> detailsOf(List<GetService.Item> items, HistoryEntity entity,
+            Function<String, T> read) {
+        return items.stream().filter(item -> Objects.equals(entity.token(), item.entity()))
+                .map(item -> read.apply(item.id())).toList();
     }
 
     public IssueDetail issue(String rawId) {
@@ -152,7 +173,8 @@ public class DetailService {
                 lastDeliv == null ? null : lastDeliv.recordedBy().value(),
                 lastDeliv == null ? null : lastDeliv.recordedAt(), digest.lastChange(),
                 toDeliverableViews(delivRows), taskRefs, links.specsOfIssue(id), links.criteriaOfIssue(id),
-                cases(i), relations, digest.recentChanges());
+                cases(i), relations, digest.recentChanges(),
+                projectVersions.namesForIssue(i.projectId().value(), id.value()));
     }
 
     public SpecDetail spec(String rawId) {

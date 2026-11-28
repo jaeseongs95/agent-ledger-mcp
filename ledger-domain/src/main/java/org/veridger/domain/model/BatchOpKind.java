@@ -7,7 +7,7 @@ import java.util.Set;
 import org.veridger.domain.value.Token;
 
 /**
- * The six operations a batch can hold (review is not one of them). The key sets are the external contract that
+ * The author operations a batch can hold. The key sets are the external contract that
  * the JSON boundary checks: required keys must be present, unknown keys are rejected.
  */
 public enum BatchOpKind implements Token {
@@ -20,7 +20,9 @@ public enum BatchOpKind implements Token {
     RECORD_CASE("record_case", Set.of("issue_id", "observation", "reason"),
             Set.of("evidence", "source_quote", "observed_at", "attachment_id")),
     LINK("link", Set.of("kind", "a", "b", "reason"), Set.of("remove")),
-    CORRECT("correct", Set.of("history_id", "reason"), Set.of("attachment_id"));
+    CORRECT("correct", Set.of("history_id", "reason"), Set.of("attachment_id")),
+    PROJECT_VERSION("project_version", Set.of("project_id", "name", "reason"),
+            Set.of("create", "original_name", "description", "link_issue_ids", "unlink_issue_ids"));
 
     /** The most operations one batch holds (a batch has 1 to this many). */
     public static final int MAX_OPS_PER_BATCH = 200;

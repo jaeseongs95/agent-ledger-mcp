@@ -6,12 +6,15 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import org.veridger.database.repository.CommonCodeRepository;
 import org.veridger.database.repository.ProjectRepository;
+import org.veridger.database.repository.ProjectVersionRepository;
 import org.veridger.domain.error.ValidationException;
 import org.veridger.domain.error.ValidationReason;
 import org.veridger.domain.model.CommonCode;
@@ -41,6 +44,8 @@ public class CatalogService {
             @JsonIgnore long version) {
     }
 
+    public record VersionView(String name, String description) {}
+
     /** A code as listed; {@code direction} is how a relation of the code keeps its two ends (CANONICAL outside RELATION_KIND). */
     public record CodeView(String group, String code, String nameKo, String nameEn, String descriptionKo,
             String descriptionEn, int sortOrder, CodeState state, CodeDirection direction) {
@@ -49,11 +54,20 @@ public class CatalogService {
     private final ProjectRepository projects;
     private final CommonCodeRepository codes;
     private final Cursors cursors;
+    private final ProjectVersionRepository versions;
 
-    public CatalogService(ProjectRepository projects, CommonCodeRepository codes, Cursors cursors) {
+    public CatalogService(ProjectRepository projects, CommonCodeRepository codes, Cursors cursors,
+            ProjectVersionRepository versions) {
         this.projects = projects;
         this.codes = codes;
         this.cursors = cursors;
+        this.versions = versions;
+    }
+
+    public Map<String, List<VersionView>> versionsByProject(List<ProjectView> projects) {
+        return versions.list(projects.stream().map(ProjectView::id).toList()).stream()
+                .collect(Collectors.groupingBy(ProjectVersionRepository.Entry::projectId,
+                        Collectors.mapping(v -> new VersionView(v.name(), v.description()), Collectors.toList())));
     }
 
     public Page<ProjectView> projects(ProjectsQuery q) {

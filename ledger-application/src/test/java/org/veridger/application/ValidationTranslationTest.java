@@ -77,6 +77,7 @@ class ValidationTranslationTest {
             case RECORD_CASE -> new BatchOpInput.RecordCase(null, null, null, null, null, null, null);
             case LINK -> new BatchOpInput.Link(null, null, null, null, null);
             case CORRECT -> new BatchOpInput.Correct(null, null, null);
+            case PROJECT_VERSION -> new BatchOpInput.ProjectVersion(null, null, null, null, null, null, null, null);
         };
 
         ValidationException failure = new ViolationTranslator("ops[0]").translate(VALIDATOR.validate(empty));

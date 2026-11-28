@@ -43,6 +43,8 @@ public enum TextRule {
     EVIDENCE_URI(2000, true),
     PROJECT_TITLE(200, true),
     PROJECT_NAME(200, true),
+    PROJECT_VERSION_NAME(120, true),
+    PROJECT_VERSION_DESCRIPTION(1000, true),
     CODE_NAME(200, true),
     CODE_DESCRIPTION(500, false);
 

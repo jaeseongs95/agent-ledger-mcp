@@ -20,7 +20,8 @@ public final class WriteOutputs {
     }
 
     /** One result of a write; a batch lists one per operation. */
-    public sealed interface Result permits Saved, Transitioned, DeliverableRecorded, CaseRecorded, Linked, Corrected {
+    public sealed interface Result permits Saved, Transitioned, DeliverableRecorded, CaseRecorded, Linked, Corrected,
+            ProjectVersionChanged {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
@@ -65,6 +66,12 @@ public final class WriteOutputs {
     public record Corrected(@JsonProperty("status") WriteStatus status, @JsonProperty("corrects") long corrects,
             @JsonProperty("history_id") long historyId, @JsonProperty("author") String author,
             @JsonProperty("login") String login) implements Result {
+    }
+
+    public record ProjectVersionChanged(@JsonProperty("project_id") String projectId,
+            @JsonProperty("version_id") String versionId, @JsonProperty("name") String name,
+            @JsonProperty("created") boolean created, @JsonProperty("linked") int linked,
+            @JsonProperty("unlinked") int unlinked) implements Result {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
@@ -129,6 +136,8 @@ public final class WriteOutputs {
             case WriteResult.RecordCaseResult r -> caseRecorded(r);
             case WriteResult.LinkResult r -> linked(r);
             case WriteResult.CorrectResult r -> corrected(r);
+            case WriteResult.ProjectVersionResult r -> new ProjectVersionChanged(r.projectId(), r.versionId(), r.name(),
+                    r.created(), r.linked(), r.unlinked());
         };
     }
 

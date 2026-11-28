@@ -167,6 +167,7 @@ class AttachmentRecordTest {
             case RecordDeliverableResult r -> r.historyId();
             case WriteResult.RecordCaseResult r -> r.historyId();
             case WriteResult.CorrectResult r -> r.historyId();
+            case WriteResult.ProjectVersionResult r -> throw new AssertionError("version changes do not attach evidence");
             case BatchResult r -> historyId(r.results().getFirst());
             default -> throw new IllegalStateException("not a write result: " + result);
         };

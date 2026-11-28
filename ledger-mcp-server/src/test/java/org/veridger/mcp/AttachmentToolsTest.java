@@ -224,6 +224,17 @@ class AttachmentToolsTest {
                 new Read(begun.attachmentId(), 1, 0L, 100L, author), AttachmentOutputs.Page.class);
         assertThat(p0.fileName()).isEqualTo("review.md");
         assertThat(p0.text()).isEqualTo("bundle primary review\n");
+        Args textOnly = Args.from(session.mapper(), new Read(begun.attachmentId(), null, 0L, 100L, author))
+                .with("fields", List.of("text")).with("structured_only", true);
+        CallToolResult textPage = session.call("artifact_read", textOnly);
+        assertThat(textPage.isError()).isFalse();
+        assertThat(McpSession.text(textPage)).isEqualTo("OK");
+        var projected = session.mapper().valueToTree(textPage.structuredContent()).path("data");
+        assertThat(projected.size()).isEqualTo(4);
+        assertThat(projected.path("text").asString()).isEqualTo(p0.text());
+        assertThat(projected.path("offsetBytes").asLong()).isZero();
+        assertThat(projected.path("size").asLong()).isEqualTo(doc.length);
+        assertThat(projected.path("totalBytes").asLong()).isEqualTo(doc.length);
         assertThat(p1.fileName()).isEqualTo("trace.bin");
         assertThat(p1.seq()).isEqualTo(1);
         assertThat(java.util.Base64.getDecoder().decode(p1.data())).isEqualTo(raw);

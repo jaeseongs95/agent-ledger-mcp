@@ -255,9 +255,10 @@ public class WriteTools implements ToolAdapter {
     @McpTool(name = "ledger_batch", description = "tool.ledger_batch", generateOutputSchema = true)
     public WriteOutputs.Batched batch(
             @McpToolParam(description = "param.ops", required = true) List<BatchOp> ops,
+            @McpToolParam(description = "param.batch_default_reason", required = false) String default_reason,
             @McpToolParam(description = "param.batch_operation_key", required = true) String operationKey,
             @McpToolParam(description = "param.host_attestation", required = false) String _hostAttestation) {
-        List<BatchOpInput> inputs = ops.stream().map(BatchOp::toInput).toList();
+        List<BatchOpInput> inputs = ops.stream().map(op -> op == null ? null : op.toInput(default_reason)).toList();
         return WriteOutputs.of(batch.batch(_hostAttestation, operationKey, inputs));
     }
 
@@ -294,7 +295,8 @@ public class WriteTools implements ToolAdapter {
 
     @McpTool(name = "ledger_whoami", description = "tool.ledger_whoami", generateOutputSchema = true)
     public WriteOutputs.Whoami whoami(
+            @McpToolParam(description = "param.whoami_project", required = false) String project,
             @McpToolParam(description = "param.host_attestation", required = false) String _hostAttestation) {
-        return WriteOutputs.of(whoami.whoami(_hostAttestation, Channel.AUTHOR));
+        return WriteOutputs.of(whoami.whoami(_hostAttestation, Channel.AUTHOR, project));
     }
 }

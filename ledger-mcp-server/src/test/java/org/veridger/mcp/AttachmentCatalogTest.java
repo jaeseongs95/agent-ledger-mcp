@@ -59,8 +59,8 @@ class AttachmentCatalogTest {
                                 "fileName", "text")));
     }
 
-    private static List<String> withAttestation(List<String> keys) {
-        return Stream.concat(keys.stream(), Stream.of(ATTESTATION)).toList();
+    private static List<String> withSharedOptions(List<String> keys) {
+        return Stream.concat(keys.stream(), Stream.of(ATTESTATION, "fields", "structured_only")).toList();
     }
 
     @Test
@@ -80,7 +80,7 @@ class AttachmentCatalogTest {
         SchemaView output = SchemaView.of(session.mapper(), tool.outputSchema());
         SchemaView data = output.at("data").orElseThrow();
 
-        assertThat(input.propertyNames()).containsExactlyInAnyOrderElementsOf(withAttestation(expected.input()));
+        assertThat(input.propertyNames()).containsExactlyInAnyOrderElementsOf(withSharedOptions(expected.input()));
         assertThat(input.required()).containsExactlyInAnyOrderElementsOf(expected.required());
         assertThat(input.closed()).isTrue();
         assertThat(input.properties().get(ATTESTATION).type()).isEqualTo("string");

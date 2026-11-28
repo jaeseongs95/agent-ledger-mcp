@@ -945,4 +945,13 @@
     cell.textContent = "";
     cell.appendChild(container);
   });
+  document.querySelectorAll("select[data-reset-filter]").forEach((source) => {
+    const dependent = document.getElementById(source.dataset.resetFilter);
+    if (!dependent) return;
+    const renderedValue = source.value;
+    source.addEventListener("change", () => {
+      dependent.value = "";
+      dependent.disabled = source.value !== renderedValue;
+    });
+  });
 })();

@@ -5,6 +5,7 @@ package org.veridger.application;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Map;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
@@ -31,6 +32,8 @@ class BatchWireTest {
                     "attachment");
             case LINK -> new BatchOpInput.Link("kind", "a", "b", "reason", false);
             case CORRECT -> new BatchOpInput.Correct(1L, "reason", "attachment");
+            case PROJECT_VERSION -> new BatchOpInput.ProjectVersion("project", "new", "reason", false, "old",
+                    "description", List.of("P-I-0001"), List.of("P-I-0002"));
         };
     }
 

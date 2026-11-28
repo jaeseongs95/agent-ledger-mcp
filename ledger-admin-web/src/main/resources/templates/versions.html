@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${#locale.language}">
+<head th:replace="~{fragments :: head(#{versions.title})}"></head>
+<body>
+<th:block th:replace="~{fragments :: header('projects')}"></th:block>
+<main id="main" class="record-page">
+  <nav class="breadcrumb" th:attr="aria-label=#{nav.projects}">
+    <a th:href="@{/projects}" th:text="#{nav.projects}">Projects</a>
+    <span class="breadcrumb-sep" aria-hidden="true">/</span>
+    <span th:text="#{versions.title}">Project versions</span>
+  </nav>
+  <div class="page-header"><h1 th:text="#{versions.title}">Project versions</h1></div>
+  <p th:if="${choice.selected() == null}" class="empty-state" th:text="#{common.noProject}">Add a project first.</p>
+  <th:block th:if="${choice.selected() != null}">
+    <form method="get" th:action="@{/projects/versions}" class="filters list-filters version-project-filter">
+      <div class="filter-grid">
+        <div class="filter-field">
+          <label for="version-project" th:text="#{common.project}">Project</label>
+          <select id="version-project" name="project">
+            <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.displayName()}"
+                    th:selected="${p.id() == choice.selected()}">Project</option>
+          </select>
+        </div>
+        <div class="filter-actions"><button type="submit" th:text="#{common.apply}">Apply</button></div>
+      </div>
+    </form>
+    <p th:if="${formErrorDetail != null}" class="alert alert-danger" role="alert" th:text="${formErrorDetail}">Could not save the version.</p>
+    <section class="card">
+      <h2 th:text="#{versions.add}">Add a version</h2>
+      <form method="post" th:action="@{/projects/versions}" class="form-wide">
+        <input type="hidden" name="project" th:value="${choice.selected()}">
+        <div class="form-grid">
+          <div class="form-field">
+            <label for="version-name" th:text="#{versions.name}">Version name</label>
+            <input id="version-name" type="text" name="name" required maxlength="120" th:value="${addForm?.name()}">
+          </div>
+          <div class="form-field">
+            <label for="version-description" th:text="#{versions.description}">Description</label>
+            <textarea id="version-description" name="description" maxlength="1000" rows="2"
+                      th:text="${addForm?.description()}"></textarea>
+          </div>
+        </div>
+        <div class="form-actions"><button type="submit" th:text="#{versions.add}">Add a version</button></div>
+      </form>
+    </section>
+    <section class="card">
+      <h2 th:text="#{versions.list}">Registered versions</h2>
+      <p th:if="${#lists.isEmpty(versions)}" class="hint" th:text="#{versions.empty}">No versions have been added.</p>
+      <ul th:unless="${#lists.isEmpty(versions)}" class="version-list">
+        <li th:each="v, row : ${versions}">
+          <div class="version-summary">
+            <div>
+              <strong th:text="${v.name()}">Version name</strong>
+              <p th:if="${v.description() != null}" class="prewrap" th:text="${v.description()}">Description</p>
+            </div>
+            <a class="button secondary btn-sm" th:href="@{/issues(project=${choice.selected()},projectVersion=${v.name()})}"
+               th:text="#{versions.viewIssues}">View related issues</a>
+          </div>
+          <details th:with="editing=${editForm != null and editForm.originalName() == v.name()}" th:open="${editing}">
+            <summary th:text="#{versions.edit}">Edit version</summary>
+            <form method="post" th:action="@{/projects/versions/edit}" class="form-wide">
+              <input type="hidden" name="project" th:value="${choice.selected()}">
+              <input type="hidden" name="originalName" th:value="${v.name()}">
+              <div class="form-grid">
+                <div class="form-field">
+                  <label th:for="'version-edit-name-' + ${row.index}" th:text="#{versions.name}">Version name</label>
+                  <input th:id="'version-edit-name-' + ${row.index}" type="text" name="name" required maxlength="120"
+                         th:value="${editing ? editForm.name() : v.name()}">
+                </div>
+                <div class="form-field">
+                  <label th:for="'version-edit-description-' + ${row.index}" th:text="#{versions.description}">Description</label>
+                  <textarea th:id="'version-edit-description-' + ${row.index}" name="description" maxlength="1000" rows="2"
+                            th:text="${editing ? editForm.description() : v.description()}"></textarea>
+                </div>
+              </div>
+              <div class="form-actions"><button type="submit" th:text="#{common.save}">Save</button></div>
+            </form>
+          </details>
+        </li>
+      </ul>
+    </section>
+  </th:block>
+</main>
+<th:block th:replace="~{fragments :: footer}"></th:block>
+</body>
+</html>

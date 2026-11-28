@@ -31,4 +31,8 @@ public sealed interface WriteResult {
     record CorrectResult(WriteStatus status, long corrects, long historyId, String author, String login)
             implements WriteResult {
     }
+
+    record ProjectVersionResult(String projectId, String versionId, String name, boolean created, int linked,
+            int unlinked, String author, String reason) implements WriteResult {
+    }
 }

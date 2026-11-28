@@ -40,7 +40,7 @@ public class AttentionService {
     public record Item(String kind, String entity, String id, String projectId) {
     }
 
-    /** One attention item enriched with title, owner, and updated timestamp for the console overview. */
+    /** One attention item enriched with title, owner, and updated timestamp. */
     public record HydratedItem(String kind, String entity, String id, String projectId, String title, String owner,
             Instant updatedAt) {
     }
@@ -77,6 +77,11 @@ public class AttentionService {
         return cursors.page(page, PageCursor.Kind.ATTENTION, criteria,
                 i -> new Item(i.kind().name(), i.kind().entity().token(), i.id(), i.projectId()),
                 i -> i.kind().name(), AttentionQueryRepository.Item::id);
+    }
+
+    public Page<HydratedItem> attentionWithContext(AttentionQuery query) {
+        Page<Item> page = attention(query);
+        return new Page<>(hydrate(page.items()), page.truncated(), page.nextCursor());
     }
 
     /** Bounded per-kind counts without hydrating rows (used by the admin overview). */

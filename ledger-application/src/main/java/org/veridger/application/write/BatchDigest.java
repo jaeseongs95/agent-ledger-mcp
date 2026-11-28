@@ -26,6 +26,10 @@ final class BatchDigest {
                 new CanonicalPayload.Items(items)));
     }
 
+    static Sha256 versionReceipt(BatchOpInput.ProjectVersion input) {
+        return CanonicalPayload.digest("PROJECT_VERSION", versionPayload(input));
+    }
+
     private static CanonicalPayload operation(BatchOpInput op) {
         return switch (op) {
             case BatchOpInput.Save s -> CanonicalPayload.Fields.empty().text("op", "save").text("entity", s.entity())
@@ -51,7 +55,22 @@ final class BatchDigest {
             case BatchOpInput.Correct c -> CanonicalPayload.Fields.empty().text("op", "correct")
                     .text("history_id", text(c.historyId())).text("reason", c.reason())
                     .text("attachment_id", c.attachmentId());
+            case BatchOpInput.ProjectVersion v -> versionPayload(v);
         };
+    }
+
+    private static CanonicalPayload.Fields versionPayload(BatchOpInput.ProjectVersion input) {
+        return CanonicalPayload.Fields.empty().text("op", "project_version").text("project_id", input.projectId())
+                .text("name", input.name()).text("reason", input.reason()).text("create", text(input.create()))
+                .text("original_name", input.originalName())
+                .text("description", input.description()).with("link_issue_ids", issueIds(input.linkIssueIds()))
+                .with("unlink_issue_ids", issueIds(input.unlinkIssueIds()));
+    }
+
+    private static CanonicalPayload.Items issueIds(List<String> ids) {
+        return ids == null ? null : new CanonicalPayload.Items(ids.stream()
+                .<CanonicalPayload>map(id -> id == null ? new CanonicalPayload.Items(List.of())
+                        : new CanonicalPayload.Text(id)).toList());
     }
 
     private static CanonicalPayload fields(FieldsInput input) {

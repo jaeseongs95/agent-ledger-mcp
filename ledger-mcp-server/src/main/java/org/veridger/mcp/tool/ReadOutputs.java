@@ -48,7 +48,11 @@ public final class ReadOutputs {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
-    public record Got(@JsonProperty("items") List<GotItem> items, @JsonProperty("not_found") List<String> notFound) {
+    public record Got(@JsonProperty("items") List<GotItem> items, @JsonProperty("not_found") List<String> notFound,
+            @JsonProperty("issue_details") @JsonInclude(JsonInclude.Include.NON_NULL) List<Issue> issueDetails,
+            @JsonProperty("spec_details") @JsonInclude(JsonInclude.Include.NON_NULL) List<Spec> specDetails,
+            @JsonProperty("task_details") @JsonInclude(JsonInclude.Include.NON_NULL) List<Task> taskDetails,
+            @JsonProperty("criterion_details") @JsonInclude(JsonInclude.Include.NON_NULL) List<Criterion> criterionDetails) {
 
         public Got {
             items = List.copyOf(items);
@@ -107,7 +111,8 @@ public final class ReadOutputs {
             @JsonProperty("deliverables") List<Deliverable> deliverables, @JsonProperty("tasks") List<TaskRef> tasks,
             @JsonProperty("specs") List<String> specs, @JsonProperty("criteria") List<String> criteria,
             @JsonProperty("cases") List<Case> cases, @JsonProperty("relations") List<Relation> relations,
-            @JsonProperty("recent_changes") List<ChangeSummary> recentChanges) {
+            @JsonProperty("recent_changes") List<ChangeSummary> recentChanges,
+            @JsonProperty("project_versions") List<String> projectVersions) {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
@@ -180,7 +185,8 @@ public final class ReadOutputs {
             @JsonProperty("category") String category, @JsonProperty("severity") String severity,
             @JsonProperty("status") String status, @JsonProperty("merged_into") String mergedInto,
             @JsonProperty("owner") String owner, @JsonProperty("version") long version,
-            @JsonProperty("created_at") Instant createdAt, @JsonProperty("updated_at") Instant updatedAt) {
+            @JsonProperty("created_at") Instant createdAt, @JsonProperty("updated_at") Instant updatedAt,
+            @JsonProperty("project_versions") List<String> projectVersions) {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
@@ -207,7 +213,10 @@ public final class ReadOutputs {
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
     public record AttentionRow(@JsonProperty("kind") String kind, @JsonProperty("entity") String entity,
-            @JsonProperty("id") String id, @JsonProperty("project_id") String projectId) {
+            @JsonProperty("id") String id, @JsonProperty("project_id") String projectId,
+            @JsonProperty("title") @JsonInclude(JsonInclude.Include.NON_NULL) String title,
+            @JsonProperty("owner") @JsonInclude(JsonInclude.Include.NON_NULL) String owner,
+            @JsonProperty("updated_at") @JsonInclude(JsonInclude.Include.NON_NULL) Instant updatedAt) {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
@@ -228,7 +237,11 @@ public final class ReadOutputs {
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
     public record ProjectRow(@JsonProperty("id") String id, @JsonProperty("code") String code,
-            @JsonProperty("title") String title) {
+            @JsonProperty("title") String title,
+            @JsonProperty("versions") @JsonInclude(JsonInclude.Include.NON_NULL) List<ProjectVersion> versions) {
+    }
+
+    public record ProjectVersion(@JsonProperty("name") String name, @JsonProperty("description") String description) {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
@@ -243,9 +256,14 @@ public final class ReadOutputs {
         return new Items<>(page.items().stream().map(view).toList(), page.truncated(), page.nextCursor());
     }
 
-    public static Got got(GetService.Result result) {
+    public static Got got(GetService.Result result, DetailService.Details details) {
         return new Got(result.items().stream().map(i -> new GotItem(i.entity(), i.id(), i.state(), i.version(),
-                i.projectId(), i.mergedInto())).toList(), result.notFound());
+                i.projectId(), i.mergedInto())).toList(), result.notFound(),
+                details == null ? null : details.issues().stream().map(ReadOutputs::issue).toList(),
+                details == null || details.specs() == null ? null : details.specs().stream().map(ReadOutputs::spec).toList(),
+                details == null || details.tasks() == null ? null : details.tasks().stream().map(ReadOutputs::task).toList(),
+                details == null || details.criteria() == null ? null
+                        : details.criteria().stream().map(ReadOutputs::criterion).toList());
     }
 
     private static LastChange lastChange(DetailService.LastChange last) {
@@ -271,7 +289,7 @@ public final class ReadOutputs {
                 d.cases().stream().map(c -> new Case(c.source(), c.issue(), c.caseId(), c.observation(),
                         c.evidence(), c.sourceQuote(), c.observedAt(), c.by(), c.at())).toList(),
                 d.relations().stream().map(r -> new Relation(r.kind(), r.other(), r.end().token())).toList(),
-                changes(d.recentChanges()));
+                changes(d.recentChanges()), d.projectVersions());
     }
 
     public static Spec spec(DetailService.SpecDetail s) {
@@ -315,7 +333,7 @@ public final class ReadOutputs {
 
     public static IssueRow issueRow(ListService.IssueItem d) {
         return new IssueRow(d.id(), d.title(), d.category(), d.severity(), d.status(), d.mergedInto(), d.owner(),
-                d.version(), d.createdAt(), d.updatedAt());
+                d.version(), d.createdAt(), d.updatedAt(), d.projectVersions());
     }
 
     public static SpecRow specRow(ListService.SpecItem s) {
@@ -334,7 +352,11 @@ public final class ReadOutputs {
     }
 
     public static AttentionRow attentionRow(AttentionService.Item i) {
-        return new AttentionRow(i.kind(), i.entity(), i.id(), i.projectId());
+        return new AttentionRow(i.kind(), i.entity(), i.id(), i.projectId(), null, null, null);
+    }
+
+    public static AttentionRow attentionRow(AttentionService.HydratedItem i) {
+        return new AttentionRow(i.kind(), i.entity(), i.id(), i.projectId(), i.title(), i.owner(), i.updatedAt());
     }
 
     public static Stats stats(StatsService.Stats s) {
@@ -343,8 +365,9 @@ public final class ReadOutputs {
                 s.createdPerDay().stream().map(d -> new DayCount(d.day(), d.issues(), d.specs(), d.tasks())).toList());
     }
 
-    public static ProjectRow projectRow(CatalogService.ProjectView p) {
-        return new ProjectRow(p.id(), p.code(), p.title());
+    public static ProjectRow projectRow(CatalogService.ProjectView p, List<CatalogService.VersionView> versions) {
+        return new ProjectRow(p.id(), p.code(), p.title(), versions == null ? null
+                : versions.stream().map(v -> new ProjectVersion(v.name(), v.description())).toList());
     }
 
     public static CodeRow codeRow(CatalogService.CodeView c) {
