@@ -1,4 +1,4 @@
-name: Release CI
+name: Release Candidate Verification
 
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
   checks:
     name: Check release candidate
     if: startsWith(github.ref, 'refs/heads/release/')
-    uses: ./.github/workflows/ci.yml
+    uses: ./.github/workflows/repository-checks.yml
     with:
       coverage-artifacts: true
 
