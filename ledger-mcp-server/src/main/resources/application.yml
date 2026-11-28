@@ -13,7 +13,7 @@ spring:
     mcp:
       server:
         name: ledger
-        version: 4.4.1
+        version: 5.0.0
         type: SYNC
         protocol: STREAMABLE
         instructions: >-
