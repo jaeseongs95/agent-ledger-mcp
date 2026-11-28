@@ -301,12 +301,12 @@ class InstallScriptsTest {
     }
 
     @Test
-    @DisplayName("R9-D0066 README documents --java check timing right after creating the service user")
+    @DisplayName("R9-D0066 the guides document --java check timing right after creating the service user")
     void r9d0066_readmeDocumentsJavaCheckTiming() {
-        String english = Repository.read("README.md").lines().filter(line -> line.startsWith("| `--java=<path>`"))
+        String english = Language.EN.guide().lines().stream().filter(line -> line.startsWith("| `--java=<path>`"))
                 .findFirst().orElseThrow();
         assertThat(english).contains("right after it creates the service user and before it makes anything else");
-        String korean = Repository.read("README.ko.md").lines().filter(line -> line.startsWith("| `--java=<path>`"))
+        String korean = Language.KO.guide().lines().stream().filter(line -> line.startsWith("| `--java=<path>`"))
                 .findFirst().orElseThrow();
         assertThat(korean).contains("서비스 사용자를 만든 직후, 다른 것을 만들기 전에");
     }
