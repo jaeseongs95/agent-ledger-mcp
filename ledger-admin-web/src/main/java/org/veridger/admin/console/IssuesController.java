@@ -2,8 +2,11 @@
 
 package org.veridger.admin.console;
 
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.veridger.admin.web.AdminHttpExceptionAdvice;
+import org.veridger.application.admin.ProjectVersionService;
 import org.veridger.application.read.DetailService;
 import org.veridger.application.read.ListService;
 import org.veridger.application.read.ListService.IssuesQuery;
@@ -17,6 +20,9 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 /** The issues of a project (filtered, paged) and the detail of one with its deliverables, links, and recent history. */
 @Controller
@@ -24,7 +30,7 @@ public class IssuesController {
 
     /** The filters and the paging position of the list, as the query string carries them. */
     public record IssueFilter(String project, String status, String severity, String category, String attention,
-            String owner, String taskId, Integer limit, String cursor, String back) {
+            String owner, String taskId, String projectVersion, Integer limit, String cursor, String back) {
     }
 
     private final Choices choices;
@@ -32,14 +38,16 @@ public class IssuesController {
     private final DetailService details;
     private final StatsService stats;
     private final Links links;
+    private final ProjectVersionService versions;
 
     public IssuesController(Choices choices, ListService lists, DetailService details, StatsService stats,
-            Links links) {
+            Links links, ProjectVersionService versions) {
         this.choices = choices;
         this.lists = lists;
         this.details = details;
         this.stats = stats;
         this.links = links;
+        this.versions = versions;
     }
 
     @GetMapping("/issues")
@@ -55,13 +63,15 @@ public class IssuesController {
         model.addAttribute("sizes", Paging.SIZES);
         boolean hasFilters = StringUtils.hasText(filter.status()) || StringUtils.hasText(filter.severity())
                 || StringUtils.hasText(filter.category()) || StringUtils.hasText(filter.attention())
-                || StringUtils.hasText(filter.owner()) || StringUtils.hasText(filter.taskId()) || dates.hasRange();
+                || StringUtils.hasText(filter.owner()) || StringUtils.hasText(filter.taskId())
+                || StringUtils.hasText(filter.projectVersion()) || dates.hasRange();
         model.addAttribute("hasFilters", hasFilters);
         model.addAttribute("resetHref", links.projectHref("/issues", project.selected()));
         if (project.selected() != null) {
+            model.addAttribute("versions", versions.list(project.selected()));
             var page = lists.issues(new IssuesQuery(project.selected(), filter.status(), filter.severity(),
                     filter.category(), null, null, filter.owner(), filter.attention(), filter.taskId(), null,
-                    Paging.limitOf(filter.limit()), filter.cursor()), dates.query(false));
+                    Paging.limitOf(filter.limit()), filter.cursor(), filter.projectVersion()), dates.query(false));
             Map<String, String> filters = new LinkedHashMap<>();
             filters.put("project", project.selected());
             filters.put("status", filter.status());
@@ -70,6 +80,7 @@ public class IssuesController {
             filters.put("attention", filter.attention());
             filters.put("owner", filter.owner());
             filters.put("taskId", filter.taskId());
+            filters.put("projectVersion", filter.projectVersion());
             dates.populate(model, "/issues", filters, filter.limit(), "created");
             model.addAttribute("page", page);
             model.addAttribute("paging", Paging.of("/issues", filters, filter.limit(), filter.cursor(),
@@ -81,7 +92,23 @@ public class IssuesController {
 
     @GetMapping("/issues/{id}")
     String detail(@PathVariable("id") String id, Model model) {
-        model.addAttribute("issue", details.issue(id));
+        model.addAllAttributes(issueModel(id));
         return "issue";
+    }
+
+    @PostMapping("/issues/{id}/versions")
+    String version(@PathVariable("id") String id, @RequestParam String name,
+            @RequestParam(defaultValue = "false") boolean remove, HttpServletRequest request,
+            RedirectAttributes flash) {
+        AdminHttpExceptionAdvice.recoverHtml(request, "issue", () -> issueModel(id));
+        versions.changeIssueLink(id, name, !remove);
+        flash.addFlashAttribute("flashKey", "versions.issueSaved");
+        return "redirect:/issues/{id}#project-versions";
+    }
+
+    private Map<String, Object> issueModel(String id) {
+        var issue = details.issue(id);
+        return Map.of("issue", issue, "availableVersions", versions.list(issue.projectId()).stream()
+                .filter(v -> !issue.projectVersions().contains(v.name())).toList());
     }
 }

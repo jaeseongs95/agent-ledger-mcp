@@ -1004,6 +1004,7 @@ form.list-filters {
 
 .table-wrap {
   width: 100%;
+  min-width: 0;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   background: var(--bg-surface);
@@ -1017,9 +1018,101 @@ form.list-filters {
   min-width: 48rem;
 }
 
-.results-table :is(.criteria-table, .history-table, .issues-table) {
+.results-table :is(.criteria-table, .history-table, .issues-table, .attention-table, .specs-table, .tasks-table) {
   table-layout: fixed;
   min-width: 54rem;
+}
+
+.attention-table th:nth-child(1) { width: 17%; }
+.attention-table th:nth-child(2) { width: 9%; }
+.attention-table th:nth-child(3) { width: 18%; }
+.attention-table th:nth-child(4) { width: 24%; }
+.attention-table th:nth-child(5) { width: 12%; }
+.attention-table th:nth-child(6) { width: 14%; }
+
+.attention-table td:first-child {
+  word-break: keep-all;
+}
+
+.attention-table td:nth-child(3) {
+  word-break: break-all;
+}
+
+.version-project-filter .filter-grid {
+  align-items: flex-end;
+}
+
+.version-project-filter .filter-grid .filter-field {
+  flex: 1 1 0;
+  max-width: 24rem;
+}
+
+#version-description,
+.version-list textarea {
+  min-height: 4rem;
+  font: inherit;
+}
+
+.issue-refinements {
+  display: grid;
+  grid-template-columns: minmax(0, 13rem) minmax(0, 1fr);
+  align-items: end;
+  gap: var(--space-3);
+}
+
+@media (max-width: 44rem) {
+  .issue-refinements {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.version-list, .version-links {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.version-list > li, .version-links > li {
+  padding: var(--space-3);
+  background: var(--bg-surface-subtle);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.version-summary, .version-links > li, .version-link-form, .issue-version-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.version-summary > div, .version-links a, .version-link-form .form-field {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.version-list details {
+  margin-top: var(--space-2);
+}
+
+.version-link-form {
+  align-items: flex-end;
+  justify-content: flex-start;
+}
+
+.issue-version-tags {
+  justify-content: flex-start;
+  margin-top: var(--space-1);
+}
+
+.issue-version-tags .badge {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .criteria-table th:nth-child(1) { width: 14%; }
@@ -1045,11 +1138,26 @@ form.list-filters {
 .issues-table th:nth-child(5) { width: 12%; }
 .issues-table th:nth-child(6) { width: 13%; }
 
+:is(.tasks-table, .specs-table) th:nth-child(1) { width: 17%; }
+:is(.tasks-table, .specs-table) th:nth-child(2) { width: 28%; }
+:is(.tasks-table, .specs-table) th:nth-child(3) { width: 10%; }
+.tasks-table th:nth-child(4) { width: 15%; }
+.tasks-table th:nth-child(5) { width: 15%; }
+.specs-table th:nth-child(4) { width: 8%; }
+.specs-table th:nth-child(5) { width: 13%; }
+.specs-table th:nth-child(6) { width: 12%; }
+
 .results-table :is(th, td) {
   overflow-wrap: anywhere;
 }
 
 .results-table :is(.cell-id, .cell-time, .cell-nowrap, .date-sort) {
+  white-space: normal;
+}
+
+.results-table .badge {
+  max-width: 100%;
+  overflow-wrap: anywhere;
   white-space: normal;
 }
 
@@ -2687,7 +2795,7 @@ td.cell-actions .action-btn-group {
 }
 
 .cell-id {
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   font-family: var(--font-mono);
   font-size: 0.86em;
 }

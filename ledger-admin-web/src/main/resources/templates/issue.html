@@ -26,6 +26,36 @@
 
   <div class="detail-layout">
     <div class="detail-main">
+      <section id="project-versions" class="card">
+        <div class="card-header">
+          <h2 th:text="#{versions.related}">Related versions</h2>
+          <a class="button secondary btn-sm" th:href="@{/projects/versions(project=${issue.projectId()})}"
+             th:text="#{versions.title}">Project versions</a>
+        </div>
+        <p th:if="${formErrorDetail != null}" class="alert alert-danger" role="alert" th:text="${formErrorDetail}">Could not save the relationship.</p>
+        <p th:if="${#lists.isEmpty(issue.projectVersions())}" class="hint" th:text="#{versions.noneRelated}">No versions are linked.</p>
+        <ul th:unless="${#lists.isEmpty(issue.projectVersions())}" class="version-links">
+          <li th:each="name : ${issue.projectVersions()}">
+            <a th:href="@{/issues(project=${issue.projectId()},projectVersion=${name})}" th:text="${name}">Version</a>
+            <form method="post" th:action="@{/issues/{id}/versions(id=${issue.id()})}">
+              <input type="hidden" name="name" th:value="${name}">
+              <button class="secondary btn-sm" name="remove" value="true" type="submit"
+                      th:attr="aria-label=#{versions.unlinkNamed(${name})}" th:text="#{versions.unlink}">Unlink</button>
+            </form>
+          </li>
+        </ul>
+        <form th:if="${!#lists.isEmpty(availableVersions)}" method="post"
+              th:action="@{/issues/{id}/versions(id=${issue.id()})}" class="version-link-form">
+          <div class="form-field">
+            <label for="link-version" th:text="#{versions.name}">Version name</label>
+            <select id="link-version" name="name" required>
+              <option value="" th:text="#{versions.select}">Select a version</option>
+              <option th:each="v : ${availableVersions}" th:value="${v.name()}" th:text="${v.name()}">Version</option>
+            </select>
+          </div>
+          <button type="submit" th:text="#{versions.link}">Link version</button>
+        </form>
+      </section>
       <section class="card">
         <h2 th:text="#{issue.symptom}">Symptom</h2>
         <p th:if="${issue.symptom() != null and !#strings.isEmpty(issue.symptom())}" class="prewrap" th:text="${issue.symptom()}">symptom</p>
@@ -79,7 +109,7 @@
                 <td class="cell-time"><time th:replace="~{fragments :: time(${h.at()})}">t</time></td>
                 <td class="cell-nowrap" th:text="${@labels.historyOp(h.op())}">Create</td>
                 <td class="cell-owner" th:text="${h.author()}">author</td>
-                <td class="cell-reason" th:text="${h.reason()}">reason</td>
+                <td class="cell-reason"><th:block th:replace="~{fragments :: textPreview(${h.reason()}, 96)}"></th:block></td>
               </tr>
             </tbody>
           </table>

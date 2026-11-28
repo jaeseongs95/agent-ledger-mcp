@@ -43,6 +43,7 @@ public class BatchService {
     private final RecordCaseOperation recordCase;
     private final LinkOperation link;
     private final CorrectOperation correct;
+    private final ProjectVersionBatchOperation version;
     private final WriteGate gate;
     private final ReceiptService receipts;
     private final Validator validator;
@@ -53,7 +54,7 @@ public class BatchService {
 
     public BatchService(SaveOperation save, TransitionOperation transition,
             RecordDeliverableOperation recordDeliverable, RecordCaseOperation recordCase, LinkOperation link,
-            CorrectOperation correct, WriteGate gate, ReceiptService receipts, Validator validator,
+            CorrectOperation correct, ProjectVersionBatchOperation version, WriteGate gate, ReceiptService receipts, Validator validator,
             BatchLockPlanner lockPlanner, IdAllocator ids, IssueCaseRepository cases, HistoryWriter history) {
         this.save = save;
         this.transition = transition;
@@ -61,6 +62,7 @@ public class BatchService {
         this.recordCase = recordCase;
         this.link = link;
         this.correct = correct;
+        this.version = version;
         this.gate = gate;
         this.receipts = receipts;
         this.validator = validator;
@@ -94,7 +96,7 @@ public class BatchService {
                 String opKey = batchKey.derive(i).toString();
                 try {
                     requireKeys(op, i);
-                    replayed.add(run(actor, operationKey, op, opKey, null));
+                    replayed.add(run(author, actor, operationKey, op, opKey, null));
                 } catch (LedgerException failure) {
                     throw failure.withDetails(Map.of("op_index", List.of(Integer.toString(i + 1)),
                             "op", List.of(kind(op).token())));
@@ -117,7 +119,7 @@ public class BatchService {
             BatchOpInput op = ops.get(i);
             String opKey = batchKey.derive(i).toString();
             try {
-                run(actor, operationKey, op, opKey, batch);
+                run(author, actor, operationKey, op, opKey, batch);
             } catch (LedgerException failure) {
                 throw failure.withDetails(Map.of("op_index", List.of(Integer.toString(i + 1)),
                         "op", List.of(kind(op).token())));
@@ -143,10 +145,12 @@ public class BatchService {
             case BatchOpInput.RecordCase c -> BatchOpKind.RECORD_CASE;
             case BatchOpInput.Link l -> BatchOpKind.LINK;
             case BatchOpInput.Correct c -> BatchOpKind.CORRECT;
+            case BatchOpInput.ProjectVersion v -> BatchOpKind.PROJECT_VERSION;
         };
     }
 
-    private WriteResult run(String actor, String boundKey, BatchOpInput op, String id, BatchBuffer batch) {
+    private WriteResult run(AuthorId author, String actor, String boundKey, BatchOpInput op, String id,
+            BatchBuffer batch) {
         return switch (op) {
             case BatchOpInput.Save s -> save.run(actor, boundKey, Channel.AUTHOR,
                     new SaveCommand(id, s.entity(), s.id(), s.expectedVersion(), s.fields(), s.reason()), batch);
@@ -164,6 +168,7 @@ public class BatchService {
                     new LinkCommand(id, l.kind(), l.a(), l.b(), l.reason(), l.remove()), batch);
             case BatchOpInput.Correct c -> correct.run(actor, boundKey, Channel.AUTHOR,
                     new CorrectCommand(id, c.historyId(), c.reason(), c.attachmentId()), batch);
+            case BatchOpInput.ProjectVersion v -> version.run(author, v, OperationKey.parse(id), batch);
         };
     }
 }

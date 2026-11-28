@@ -10,7 +10,7 @@
 설치기는 프록시 설정을 쓰지 않고 인증서를 발급하지 않습니다.
 
 2.0.0 버전은 Java 25와 Spring Boot로 다시 작성한 것이며 자체 도구 계약을 가집니다(모든 쓰기 도구는 필수 `operationKey`를 받고, 모든 응답은 `ApiResult.v1` 봉투를 쓰며, 이전 버전의 인자는 새 인자와 함께 받아들이지 않습니다).
-클라이언트에 바뀐 내용은 릴리스 노트([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md), [4.0.0](docs/release-notes/4.0.0.md), [4.0.1](docs/release-notes/4.0.1.md), [4.1.0](docs/release-notes/4.1.0.md), [4.2.0](docs/release-notes/4.2.0.md), [4.3.0](docs/release-notes/4.3.0.md), [4.3.1](docs/release-notes/4.3.1.md), [4.3.2](docs/release-notes/4.3.2.md), [4.4.0](docs/release-notes/4.4.0.md), [4.4.1](docs/release-notes/4.4.1.md))에 적습니다. 릴리스 노트의 형식은 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md)에 있습니다.
+클라이언트에 바뀐 내용은 릴리스 노트([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md), [4.0.0](docs/release-notes/4.0.0.md), [4.0.1](docs/release-notes/4.0.1.md), [4.1.0](docs/release-notes/4.1.0.md), [4.2.0](docs/release-notes/4.2.0.md), [4.3.0](docs/release-notes/4.3.0.md), [4.3.1](docs/release-notes/4.3.1.md), [4.3.2](docs/release-notes/4.3.2.md), [4.4.0](docs/release-notes/4.4.0.md), [4.4.1](docs/release-notes/4.4.1.md), [5.0.0](docs/release-notes/5.0.0.md))에 적습니다. 릴리스 노트의 형식은 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md)에 있습니다.
 
 ## 목차
 
@@ -96,7 +96,7 @@ MCP를 직접 호출하는 쪽은 HTTP에서 설정된 `Bearer` 토큰 `ledger.m
 | `ledger_record_case` | author | 이슈 아래에 관찰된 사례를 추가합니다(`MERGED` 이슈는 거절되며 병합 대상을 알려 줍니다) |
 | `ledger_link` | author | 이슈, 명세, 작업, 기준을 연결(`issue_task`, `issue_spec`, `spec_task`, `criterion_task`, `criterion_issue`, `criterion_spec` 또는 이슈 `RELATION_KIND` 코드)하거나 연결을 제거합니다 |
 | `ledger_correct` | author | 이력 행이 잘못되었음을 표시합니다 |
-| `ledger_batch` | author | 위 연산을 한 트랜잭션에서 최대 200개까지 처리합니다. 모두 반영되거나 모두 반영되지 않으며 배치에 `operationKey` 하나를 줍니다 |
+| `ledger_batch` | author | 프로젝트 버전 변경을 포함한 작성자 작업을 한 트랜잭션에서 최대 200개까지 처리합니다. 배치에 `operationKey` 하나를 줍니다 |
 | `ledger_review` | reviewer | 독립 검수(`VERIFIED`, `MET`, `NOT_MET`)와 재오픈을 처리합니다(`evidence_uri` 필수) |
 | `ledger_review_correct` | reviewer | 검수 행이 잘못되었음을 표시합니다 |
 
@@ -114,24 +114,43 @@ MCP를 직접 호출하는 쪽은 HTTP에서 설정된 `Bearer` 토큰 `ledger.m
 
 | 도구 | 내용 |
 |---|---|
-| `ledger_get` | 여러 ID(이슈, 명세, 작업, 기준 혼합 가능)의 상태와 판을 한 번에 조회하며 `expected_version` 확보에 씁니다 |
+| `ledger_get` | 최대 200개 ID의 상태와 행 버전을 한 번에 조회합니다. `include_details=true`를 지정하면 최대 10개 ID의 이슈·명세·작업·기준 상세도 받습니다 |
 | `ledger_issue` | 이슈 하나와 산출물, 작업, 명세, 기준, 사례(병합된 이슈 포함), 관계, `owner_actor_id`, 최근 이력을 보여 줍니다 |
 | `ledger_spec` | 명세 하나와 요약, 수용 기준, 상위·하위 명세, 산출물, 작업, 이슈, 기준, 최근 이력을 보여 줍니다 |
 | `ledger_task` | 작업 하나와 목적, 성공 조건, 출처, 담당, 산출물, 이슈, 명세, 기준, 최근 이력을 보여 줍니다 |
 | `ledger_criterion` | 마일스톤 기준 하나와 마일스톤, 목표 라벨, 코드, 기준 문장, 상태 및 연결된 작업·이슈·명세를 보여 줍니다 |
 | `ledger_history` | 추가 전용 이력과 영수증을 ID, ID 범위, 대상, 프로젝트, 연산, 작성자, 기간으로 조회합니다. `include_before`를 주면 `before_data`를 더합니다 |
 | `ledger_search` | 키워드로 이슈, 명세, 작업, 기준을 대소문자 구분 없이 검색합니다. `match`는 `ANY`(기본) 또는 `ALL`입니다 |
-| `ledger_issues` | 프로젝트의 이슈를 상태, 심각도, 분류, 주의 종류, 담당으로 거릅니다 |
+| `ledger_issues` | 프로젝트의 이슈를 상태, 심각도, 분류, 주의 종류, 담당, 관련 버전(`project_version`)으로 거릅니다 |
 | `ledger_specs` | 프로젝트의 명세를 상태, 상위 ID, 우선순위, 담당, 주의 종류로 거릅니다 |
 | `ledger_tasks` | 프로젝트의 작업을 상태, 담당, 주의 종류로 거릅니다 |
 | `ledger_criteria` | 프로젝트의 마일스톤 기준을 상태와 `milestone_name`으로 거릅니다 |
 | `ledger_attention` | 조치가 필요한 항목입니다: `OPEN_WITH_DELIVERABLE`, `RESOLVED_WITHOUT_DELIVERABLE`, `OPEN_NO_OWNER`, `SPEC_COMPLETED_NOT_VERIFIED`, `TASK_UNKNOWN`, `DONE_NOT_VERIFIED` |
 | `ledger_stats` | 한 프로젝트 또는 전체의 상태별, 심각도별 건수입니다. `bucket`을 `day`로 주면 UTC 일별 신규 건수를 더합니다 |
-| `ledger_projects` | 프로젝트의 ID, 코드, 제목입니다 |
+| `ledger_projects` | 프로젝트의 ID, 코드, 제목을 조회합니다. `include_versions=true`를 지정하면 등록한 프로젝트 버전도 함께 조회합니다 |
 | `ledger_codes` | 공통코드입니다. 폐기한 코드는 `include_inactive`를 주면 포함됩니다 |
 
 목록형 읽기 도구는 `max_rows`(1에서 1000, 기본 50)와 `cursor`를 받으며, 응답에 `truncated`와 `next_cursor`가 붙습니다. `ledger_search`의 `created_from`, `created_to`는 이슈, 명세, 작업에 적용됩니다. 기준은 생성 시각이 없으므로 둘 중 하나라도 주면 검색에서 빠집니다(범위와 함께 기준만 검색하면 결과가 없습니다).
 1.x의 `execute_sql_reader`와 `search_objects_reader` 도구는 제거되었으므로 위의 읽기 도구를 사용합니다.
+
+모든 MCP 도구에서 `fields`로 `data` 안의 필요한 경로를 최대 16개 지정할 수 있습니다. 일괄 변경 전에
+`ledger_get`에 `["items.id","items.state","items.version","not_found"]`를 지정하는 식입니다.
+경로는 배열의 각 항목에 적용됩니다. 목록에서 `items`를 선택하면 `truncated`와 `next_cursor`도 받습니다.
+`ledger_get`은 `not_found`를 유지하고, 첨부 본문에는 읽은 바이트 구간이 함께 반환됩니다.
+클라이언트가 MCP `structuredContent`를 읽을 때는 `structured_only=true`로 중복 텍스트를 생략할 수 있습니다.
+같은 사유로 여러 건을 변경할 때는 `ledger_batch`의 `default_reason`을 한 번만 지정하세요. 각 항목에서
+`reason`으로 덮어쓸 수 있습니다. 첨부 원문은 필요한 바이트 범위를 지정하고 `["text","size","totalBytes"]`를 선택합니다.
+
+프로젝트의 `issue` 권한이 있는 에이전트는 `ledger_batch`에서 버전을 관리할 수 있습니다. 예를 들어
+`{"op":"project_version","project_id":"studio","name":"Review 2","create":true,"link_issue_ids":["STUDIO-I-0001"]}`을
+하나의 작업으로 보내면 버전 등록과 이슈 연결이 함께 반영됩니다. 항목의 `reason` 또는 배치의 `default_reason`을 지정하세요.
+`original_name`으로 이름을 바꾸고 `unlink_issue_ids`로 연결을 해제합니다. `description`을 생략하면 기존 설명을 유지합니다.
+연결·해제 목록에는 같은 프로젝트 이슈를 각각 최대 200개 지정할 수 있습니다. 버전 조회는 `ledger_projects(include_versions=true)`를 사용합니다.
+
+ID를 모르면 `ledger_search`, ID를 알면 `ledger_get`, 조치 대기 목록은 `ledger_attention`, 집계는 `ledger_stats`를 사용합니다.
+`ledger_attention`에 `include_context=true`를 지정하면 제목·담당·수정 시각도 함께 반환합니다.
+`ledger_whoami(project=...)`는 해당 프로젝트의 권한만 보여 줍니다. `can_verify_login`은 세션 전체 기준이며,
+`ledger_review`에서 대상 프로젝트의 권한과 검수 독립성을 검사합니다.
 
 공통코드가 바뀌면 서버가 `notifications/tools/list_changed`를 보내므로, 연결된 클라이언트는 재시작 없이 도구 정의를 다시 읽습니다. 다른 프로세스(관리 웹, `ledger-cli`)가
 바꾼 내용은 `ledger.mcp.code-poll-interval` 안에 감지합니다. 새 도구는 서버가 시작될 때 등록됩니다.

@@ -169,6 +169,7 @@ class BatchLockPlanner {
             case BatchOpInput.RecordCase c -> addIssueIfPresent(c.issueId(), issueIds);
             case BatchOpInput.Link l -> discoverLink(l, issueIds, specIds, taskIds, criterionIds);
             case BatchOpInput.Correct c -> discoverCorrect(c, issueIds, specIds, taskIds, criterionIds);
+            case BatchOpInput.ProjectVersion v -> projectId(v.projectId()).ifPresent(projectIds::add);
         }
     }
 
@@ -305,6 +306,8 @@ class BatchLockPlanner {
                         criterionProjects, targets);
                 case BatchOpInput.Correct c -> collectCorrectTargets(c, issueProjects, specProjects, taskProjects,
                         criterionProjects, targets);
+                case BatchOpInput.ProjectVersion v -> projectId(v.projectId())
+                        .ifPresent(p -> targets.add(new Target(p, Scope.ISSUE)));
             }
         }
         return targets;
@@ -539,7 +542,10 @@ class BatchLockPlanner {
         if (fields == null) {
             return Optional.empty();
         }
-        String text = fields.projectId().orNull();
+        return projectId(fields.projectId().orNull());
+    }
+
+    private static Optional<ProjectId> projectId(String text) {
         if (text != null && !text.isBlank() && ProjectId.FORMAT.matcher(text).matches()) {
             return Optional.of(ProjectId.of(text));
         }

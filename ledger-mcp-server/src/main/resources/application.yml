@@ -13,9 +13,13 @@ spring:
     mcp:
       server:
         name: ledger
-        version: 4.4.1
+        version: 5.0.0
         type: SYNC
         protocol: STREAMABLE
+        instructions: >-
+          Use ledger_search for unknown IDs and ledger_get for known IDs. Select needed fields and reuse returned row versions.
+          When your client reads structuredContent, set structured_only=true. Use ledger_batch for author changes and
+          ledger_review for independent decisions. Inspect attachment status when resuming a transfer.
         streamable-http:
           mcp-endpoint: /mcp
         # The catalog (ToolCatalog) is the only one that registers the tools, with the definitions built for this server. With the

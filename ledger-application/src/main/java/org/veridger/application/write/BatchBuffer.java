@@ -239,6 +239,7 @@ final class BatchBuffer {
                     resolve(r.historyId(), historyIds), r.author(), r.login());
             case CorrectResult r -> new CorrectResult(r.status(), r.corrects(),
                     resolve(r.historyId(), historyIds), r.author(), r.login());
+            case WriteResult.ProjectVersionResult r -> r;
         };
     }
 }

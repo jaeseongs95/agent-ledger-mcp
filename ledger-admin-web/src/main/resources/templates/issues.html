@@ -20,7 +20,7 @@
       <div class="filter-grid">
         <div class="filter-field">
           <label for="project" th:text="#{common.project}">Project</label>
-          <select id="project" name="project">
+          <select id="project" name="project" data-reset-filter="issue-version">
             <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.displayName()}" th:selected="${p.id() == choice.selected()}">p1</option>
           </select>
         </div>
@@ -68,7 +68,17 @@
         </div>
       </div>
       <div class="filter-controls">
-        <th:block th:replace="~{fragments :: dateFilters(false)}"></th:block>
+        <div class="issue-refinements">
+          <div class="filter-field">
+            <label for="issue-version" th:text="#{versions.related}">Related versions</label>
+            <select id="issue-version" name="projectVersion">
+              <option value="" th:text="#{common.any}">Any</option>
+              <option th:each="v : ${versions}" th:value="${v.name()}" th:text="${v.name()}"
+                      th:selected="${v.name() == filter.projectVersion()}">Version</option>
+            </select>
+          </div>
+          <th:block th:replace="~{fragments :: dateFilters(false)}"></th:block>
+        </div>
         <div class="filter-actions">
           <button type="submit" th:text="#{common.apply}">Apply</button>
           <a th:if="${hasFilters}" th:href="${resetHref}" class="button secondary" th:text="#{common.resetFilters}">Reset filters</a>
@@ -94,7 +104,14 @@
         <tbody>
           <tr th:each="i : ${page.items()}">
             <td class="cell-id"><a th:href="@{/issues/{id}(id=${i.id()})}" th:text="${i.id()}">ID</a></td>
-            <td class="cell-title" th:text="${i.title()}">Title</td>
+            <td class="cell-title">
+              <span th:text="${i.title()}">Title</span>
+              <div th:unless="${#lists.isEmpty(i.projectVersions())}" class="issue-version-tags"
+                   th:attr="aria-label=#{versions.related}">
+                <a th:each="name : ${i.projectVersions()}" class="badge"
+                   th:href="@{/issues(project=${choice.selected()},projectVersion=${name})}" th:text="${name}">Version</a>
+              </div>
+            </td>
             <td class="cell-nowrap"><span th:class="'badge badge-' + ${i.status()}" th:text="${@labels.issueStatus(i.status())}">Open</span></td>
             <td class="cell-nowrap"><span th:class="'badge badge-' + ${i.severity()}" th:attr="title=${i.severity()}" th:text="${@labels.codeName('ISSUE_SEVERITY', i.severity())}">P1</span></td>
             <td class="cell-nowrap" th:attr="title=${i.category()}" th:text="${@labels.codeName('ISSUE_CATEGORY', i.category())}">ARC</td>

@@ -7,7 +7,7 @@ rem safely merges PreToolUse entries using PowerShell 5.1-compatible JSON (UTF-8
 rem smoke test on mcp__veridger__ledger_ledger_whoami.
 rem
 rem Usage:
-rem   deploy\install-hook.cmd [--version=latest|v4.4.1] [--jars=<local-dir>] [--hosts=codex,claude,antigravity] [--java=<path>]
+rem   deploy\install-hook.cmd [--version=latest|v5.0.0] [--jars=<local-dir>] [--hosts=codex,claude,antigravity] [--java=<path>]
 setlocal EnableExtensions DisableDelayedExpansion
 set "VH_VER=latest"
 set "VH_REPO=jaeseongs95/veridger"

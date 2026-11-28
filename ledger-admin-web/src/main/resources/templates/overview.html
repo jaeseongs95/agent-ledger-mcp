@@ -188,8 +188,8 @@
       <p th:if="${overview.moreAttention()}" class="alert alert-warning" role="status" th:text="#{overview.moreAttention}">
         Showing the first 25 items.
       </p>
-      <div class="table-wrap">
-        <table>
+      <div class="table-wrap results-table" role="region" tabindex="0" th:attr="aria-label=#{overview.attention}">
+        <table class="attention-table">
           <caption class="sr-only" th:text="#{overview.attention}">Needs attention</caption>
           <thead>
             <tr>

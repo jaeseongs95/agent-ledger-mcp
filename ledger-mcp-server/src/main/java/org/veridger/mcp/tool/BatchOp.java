@@ -5,6 +5,7 @@ package org.veridger.mcp.tool;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import java.util.List;
 import org.veridger.application.write.BatchOpInput;
 
 /**
@@ -18,19 +19,27 @@ import org.veridger.application.write.BatchOpInput;
     @JsonSubTypes.Type(value = BatchOp.RecordDeliverable.class, name = "record_deliverable"),
     @JsonSubTypes.Type(value = BatchOp.RecordCase.class, name = "record_case"),
     @JsonSubTypes.Type(value = BatchOp.Link.class, name = "link"),
-    @JsonSubTypes.Type(value = BatchOp.Correct.class, name = "correct")
+    @JsonSubTypes.Type(value = BatchOp.Correct.class, name = "correct"),
+    @JsonSubTypes.Type(value = BatchOp.ProjectVersion.class, name = "project_version")
 })
 public sealed interface BatchOp {
 
-    BatchOpInput toInput();
+    BatchOpInput toInput(String defaultReason);
+
+    String reason();
+
+    default String reasonOr(String defaultReason) {
+        return reason() == null ? defaultReason : reason();
+    }
 
     record Save(@JsonProperty("entity") String entity, @JsonProperty("fields") SaveFields fields,
             @JsonProperty("reason") String reason, @JsonProperty("id") String id,
             @JsonProperty("expected_version") Long expectedVersion) implements BatchOp {
 
         @Override
-        public BatchOpInput toInput() {
-            return new BatchOpInput.Save(entity, fields == null ? null : fields.toInput(), reason, id, expectedVersion);
+        public BatchOpInput toInput(String defaultReason) {
+            return new BatchOpInput.Save(entity, fields == null ? null : fields.toInput(), reasonOr(defaultReason), id,
+                    expectedVersion);
         }
     }
 
@@ -41,9 +50,9 @@ public sealed interface BatchOp {
             @JsonProperty("attachment_id") String attachmentId) implements BatchOp {
 
         @Override
-        public BatchOpInput toInput() {
-            return new BatchOpInput.Transition(entity, id, expectedVersion, to, reason, evidenceUri, evidenceSha256,
-                    mergedInto, attachmentId);
+        public BatchOpInput toInput(String defaultReason) {
+            return new BatchOpInput.Transition(entity, id, expectedVersion, to, reasonOr(defaultReason), evidenceUri,
+                    evidenceSha256, mergedInto, attachmentId);
         }
     }
 
@@ -56,9 +65,9 @@ public sealed interface BatchOp {
             @JsonProperty("attachment_id") String attachmentId) implements BatchOp {
 
         @Override
-        public BatchOpInput toInput() {
-            return new BatchOpInput.RecordDeliverable(targetEntity, targetId, kind, deliverableRef, reason, location,
-                    summary, checkRef, checkResult, checkedAt, markDone, attachmentId);
+        public BatchOpInput toInput(String defaultReason) {
+            return new BatchOpInput.RecordDeliverable(targetEntity, targetId, kind, deliverableRef,
+                    reasonOr(defaultReason), location, summary, checkRef, checkResult, checkedAt, markDone, attachmentId);
         }
     }
 
@@ -68,9 +77,9 @@ public sealed interface BatchOp {
             @JsonProperty("attachment_id") String attachmentId) implements BatchOp {
 
         @Override
-        public BatchOpInput toInput() {
-            return new BatchOpInput.RecordCase(issueId, observation, reason, evidence, sourceQuote, observedAt,
-                    attachmentId);
+        public BatchOpInput toInput(String defaultReason) {
+            return new BatchOpInput.RecordCase(issueId, observation, reasonOr(defaultReason), evidence, sourceQuote,
+                    observedAt, attachmentId);
         }
     }
 
@@ -78,8 +87,8 @@ public sealed interface BatchOp {
             @JsonProperty("reason") String reason, @JsonProperty("remove") Boolean remove) implements BatchOp {
 
         @Override
-        public BatchOpInput toInput() {
-            return new BatchOpInput.Link(kind, a, b, reason, remove);
+        public BatchOpInput toInput(String defaultReason) {
+            return new BatchOpInput.Link(kind, a, b, reasonOr(defaultReason), remove);
         }
     }
 
@@ -87,8 +96,21 @@ public sealed interface BatchOp {
             @JsonProperty("attachment_id") String attachmentId) implements BatchOp {
 
         @Override
-        public BatchOpInput toInput() {
-            return new BatchOpInput.Correct(historyId, reason, attachmentId);
+        public BatchOpInput toInput(String defaultReason) {
+            return new BatchOpInput.Correct(historyId, reasonOr(defaultReason), attachmentId);
+        }
+    }
+
+    record ProjectVersion(@JsonProperty("project_id") String projectId, @JsonProperty("name") String name,
+            @JsonProperty("reason") String reason, @JsonProperty("create") Boolean create,
+            @JsonProperty("original_name") String originalName,
+            @JsonProperty("description") String description, @JsonProperty("link_issue_ids") List<String> linkIssueIds,
+            @JsonProperty("unlink_issue_ids") List<String> unlinkIssueIds) implements BatchOp {
+
+        @Override
+        public BatchOpInput toInput(String defaultReason) {
+            return new BatchOpInput.ProjectVersion(projectId, name, reasonOr(defaultReason), create, originalName,
+                    description, linkIssueIds, unlinkIssueIds);
         }
     }
 }

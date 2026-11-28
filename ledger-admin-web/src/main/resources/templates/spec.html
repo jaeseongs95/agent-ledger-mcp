@@ -70,7 +70,7 @@
                 <td class="cell-time"><time th:replace="~{fragments :: time(${h.at()})}">t</time></td>
                 <td class="cell-nowrap" th:text="${@labels.historyOp(h.op())}">Create</td>
                 <td class="cell-owner" th:text="${h.author()}">author</td>
-                <td class="cell-reason" th:text="${h.reason()}">reason</td>
+                <td class="cell-reason"><th:block th:replace="~{fragments :: textPreview(${h.reason()}, 96)}"></th:block></td>
               </tr>
             </tbody>
           </table>

@@ -42,7 +42,7 @@ class BatchAndErrorsTest {
     @Test
     void dom025_batchOperationKindsCarryTheOldKeySets() {
         assertThat(Tokens.allowed(BatchOpKind.values())).containsExactly("save", "transition", "record_deliverable",
-                "record_case", "link", "correct");
+                "record_case", "link", "correct", "project_version");
         assertThat(BatchOpKind.SAVE.requiredKeys()).containsExactlyInAnyOrder("entity", "fields", "reason");
         assertThat(BatchOpKind.SAVE.allowedKeys()).containsExactlyInAnyOrder("entity", "fields", "reason", "id",
                 "expected_version", "op");

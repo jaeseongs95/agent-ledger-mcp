@@ -32,6 +32,7 @@ import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.context.support.MessageSourceAccessor;
 import org.springframework.stereotype.Component;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * The tools of the server as the model sees them. Once the context is up, the catalog takes the tool definitions
@@ -75,6 +76,7 @@ public class ToolCatalog implements SmartInitializingSingleton {
     private final CommonCodeService codes;
     private final ToolResults results;
     private final MessageSourceAccessor messages;
+    private final JsonMapper mapper;
 
     /** The tool definitions as Spring AI makes them from the annotations, and how to call each tool, by tool name. */
     private final Map<String, Tool> base = new LinkedHashMap<>();
@@ -85,13 +87,14 @@ public class ToolCatalog implements SmartInitializingSingleton {
     private long registeredRevision = -1;
 
     public ToolCatalog(@Lazy McpSyncServer server, List<ToolAdapter> adapters, ToolBindings bindings,
-            CommonCodeService codes, ToolResults results, MessageSourceAccessor modelMessages) {
+            CommonCodeService codes, ToolResults results, MessageSourceAccessor modelMessages, JsonMapper mapper) {
         this.server = server;
         this.adapters = adapters;
         this.bindings = bindings;
         this.codes = codes;
         this.results = results;
         this.messages = modelMessages;
+        this.mapper = mapper;
     }
 
     @Override
@@ -154,12 +157,20 @@ public class ToolCatalog implements SmartInitializingSingleton {
         if (definition.outputSchema() != null) {
             registered.outputSchema(definition.outputSchema());
         }
+        Map<String, Object> originalOutput = base.get(definition.name()).outputSchema();
+        SchemaDocument output = SchemaDocument.copyOf(originalOutput == null ? Map.of() : originalOutput);
         return SyncToolSpecification.builder().tool(registered.build())
-                .callHandler((exchange, request) -> results.run(() -> binding.call(request.arguments()))).build();
+                .callHandler((exchange, request) -> results.run(() -> {
+                    ResultOptions options = ResultOptions.parse(request.arguments(), output);
+                    Object value = binding.call(request.arguments(), Set.of(ResultOptions.FIELD_SELECTION_ARGUMENT,
+                            ResultOptions.STRUCTURED_ONLY));
+                    return new ToolResults.Success(options.fields().project(value, mapper), options.structuredOnly());
+                })).build();
     }
 
     private Tool definition(Tool original, ToolBinding binding) {
         SchemaDocument input = SchemaDocument.copyOf(original.inputSchema());
+        input.addResponseOptions(text("param.result_fields"), text("param.structured_only"));
         input.closeObjects();
         binding.choiceSlots().forEach(slot -> input.restrict(slot.path(), slot.values()));
         input.rewriteDescriptions(this::text);
@@ -172,6 +183,7 @@ public class ToolCatalog implements SmartInitializingSingleton {
             SchemaDocument output = SchemaDocument.copyOf(original.outputSchema());
             output.rewriteDescriptions(this::text);
             output.allowNullProperties();
+            output.allowFieldSelection();
             output.wrapAsApiResult();
             definition.outputSchema(output.toSdk());
         }

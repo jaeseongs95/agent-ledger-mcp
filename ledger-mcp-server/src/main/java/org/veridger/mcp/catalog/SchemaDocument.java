@@ -81,6 +81,44 @@ final class SchemaDocument {
         node(path).ifPresent(node -> node.put(DESCRIPTION, text));
     }
 
+    void addResponseOptions(String fieldsDescription, String structuredDescription) {
+        Map<String, Object> properties = map(root.computeIfAbsent(PROPERTIES, ignored -> new LinkedHashMap<>()));
+        properties.put(ResultOptions.FIELD_SELECTION_ARGUMENT, copy(Map.of("type", "array", "minItems", 1,
+                "maxItems", ResultOptions.MAX_FIELDS, "items", Map.of("type", "string", "maxLength", ResultOptions.MAX_PATH_LENGTH),
+                DESCRIPTION, fieldsDescription)));
+        properties.put(ResultOptions.STRUCTURED_ONLY, copy(Map.of("type", "boolean", DESCRIPTION, structuredDescription)));
+    }
+
+    boolean supportsField(String path) {
+        return supports(root, StringUtils.delimitedListToStringArray(path, "."), 0);
+    }
+
+    private boolean supports(Map<String, Object> schema, String[] path, int index) {
+        if (index == path.length) {
+            return true;
+        }
+        Map<String, Object> current = resolve(schema);
+        if (current.isEmpty()) {
+            return true;
+        }
+        Map<String, Object> item = map(current.get("items"));
+        if (item != null) {
+            return supports(item, path, index);
+        }
+        Map<String, Object> properties = map(current.get(PROPERTIES));
+        Map<String, Object> field = properties == null ? null : map(properties.get(path[index]));
+        if (field != null) {
+            return supports(field, path, index + 1);
+        }
+        Object additional = current.get("additionalProperties");
+        if (Boolean.TRUE.equals(additional) || "object".equals(current.get("type")) && properties == null
+                && additional == null) {
+            return true;
+        }
+        Map<String, Object> additionalType = map(additional);
+        return additionalType != null && supports(additionalType, path, index + 1);
+    }
+
     /** Replaces every description with the result of the operator (the message keys become their texts). */
     void rewriteDescriptions(UnaryOperator<String> resolve) {
         rewrite(root, resolve);
@@ -89,6 +127,23 @@ final class SchemaDocument {
     /** Lets every property of an output hold null, which the output records produce for an absent value. */
     void allowNullProperties() {
         nullable(root);
+    }
+
+    void allowFieldSelection() {
+        optional(root);
+    }
+
+    private static void optional(Map<String, Object> node) {
+        node.remove("required");
+        for (String key : List.of(PROPERTIES, DEFS, "patternProperties")) {
+            Map<String, Object> properties = map(node.get(key));
+            if (properties != null) {
+                properties.values().forEach(value -> visit(value, SchemaDocument::optional));
+            }
+        }
+        for (String key : List.of("items", "additionalProperties", "anyOf", "oneOf", "allOf")) {
+            visit(node.get(key), SchemaDocument::optional);
+        }
     }
 
     /** Wraps the current output object schema inside the standard {@code ApiResult.v1} envelope schema. */

@@ -5,6 +5,7 @@ package org.veridger.application.write;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import jakarta.validation.constraints.NotNull;
+import java.util.List;
 
 /**
  * One operation inside {@code ledger_batch}; {@code op} selects the concrete record.
@@ -16,7 +17,8 @@ import jakarta.validation.constraints.NotNull;
     @JsonSubTypes.Type(value = BatchOpInput.RecordDeliverable.class, name = "record_deliverable"),
     @JsonSubTypes.Type(value = BatchOpInput.RecordCase.class, name = "record_case"),
     @JsonSubTypes.Type(value = BatchOpInput.Link.class, name = "link"),
-    @JsonSubTypes.Type(value = BatchOpInput.Correct.class, name = "correct")
+    @JsonSubTypes.Type(value = BatchOpInput.Correct.class, name = "correct"),
+    @JsonSubTypes.Type(value = BatchOpInput.ProjectVersion.class, name = "project_version")
 })
 public sealed interface BatchOpInput {
 
@@ -51,5 +53,10 @@ public sealed interface BatchOpInput {
 
     record Correct(@NotNull(message = REQUIRED) Long historyId, @NotNull(message = REQUIRED) String reason,
             String attachmentId) implements BatchOpInput {
+    }
+
+    record ProjectVersion(@NotNull(message = REQUIRED) String projectId, @NotNull(message = REQUIRED) String name,
+            @NotNull(message = REQUIRED) String reason, Boolean create, String originalName, String description,
+            List<String> linkIssueIds, List<String> unlinkIssueIds) implements BatchOpInput {
     }
 }

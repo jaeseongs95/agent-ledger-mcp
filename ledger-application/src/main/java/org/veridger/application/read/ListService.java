@@ -11,6 +11,7 @@ import org.veridger.database.repository.CriterionQueryRepository;
 import org.veridger.database.repository.DateQuery;
 import org.veridger.database.repository.IssueQueryRepository;
 import org.veridger.database.repository.IssueSummary;
+import org.veridger.database.repository.ProjectVersionRepository;
 import org.veridger.database.repository.SpecQueryRepository;
 import org.veridger.database.repository.SpecSummary;
 import org.veridger.database.repository.TaskQueryRepository;
@@ -45,7 +46,14 @@ public class ListService {
 
     public record IssuesQuery(String project, String status, String severity, String category, String createdFrom,
             String createdTo, String owner, String attention, String taskId, String order, Number maxRows,
-            String cursor) {
+            String cursor, String projectVersion) {
+
+        public IssuesQuery(String project, String status, String severity, String category, String createdFrom,
+                String createdTo, String owner, String attention, String taskId, String order, Number maxRows,
+                String cursor) {
+            this(project, status, severity, category, createdFrom, createdTo, owner, attention, taskId, order,
+                    maxRows, cursor, null);
+        }
 
         public IssuesQuery(String project, String status, String severity, String category, String createdFrom,
                 String createdTo, String owner, String attention, String order, Number maxRows, String cursor) {
@@ -69,6 +77,7 @@ public class ListService {
             attention = Texts.nullIfBlank(attention);
             taskId = Texts.nullIfBlank(taskId);
             order = Texts.nullIfBlank(order);
+            projectVersion = TextRule.PROJECT_VERSION_NAME.optional(projectVersion);
         }
     }
 
@@ -106,7 +115,8 @@ public class ListService {
     }
 
     public record IssueItem(String id, String title, String category, String severity, String status,
-            String mergedInto, String owner, long version, Instant createdAt, Instant updatedAt) {
+            String mergedInto, String owner, long version, Instant createdAt, Instant updatedAt,
+            List<String> projectVersions) {
     }
 
     public record SpecItem(String id, String parentId, String title, String status, String priority,
@@ -146,14 +156,16 @@ public class ListService {
     private final TaskQueryRepository tasks;
     private final CriterionQueryRepository criteria;
     private final Cursors cursors;
+    private final ProjectVersionRepository versions;
 
     public ListService(IssueQueryRepository issues, SpecQueryRepository specs, TaskQueryRepository tasks,
-            CriterionQueryRepository criteria, Cursors cursors) {
+            CriterionQueryRepository criteria, Cursors cursors, ProjectVersionRepository versions) {
         this.issues = issues;
         this.specs = specs;
         this.tasks = tasks;
         this.criteria = criteria;
         this.cursors = cursors;
+        this.versions = versions;
     }
 
     public Page<IssueItem> issues(IssuesQuery q) {
@@ -175,13 +187,28 @@ public class ListService {
         MaxRows maxRows = cursors.maxRows(q.maxRows());
         IssueQueryRepository.Filter filter = new IssueQueryRepository.Filter(status, severity, category, from, to,
                 owner, attention, taskId);
-        Object criteriaKey = dates.cursorCriteria(List.of(project.value(), String.valueOf(filter), order.name()));
-        var page = cursors.decode(q.cursor(), PageCursor.Kind.ISSUES, criteriaKey)
-                .map(ListService::issuePosition)
-                .map(after -> issues.page(project, filter, maxRows, order, dates, after))
-                .orElseGet(() -> issues.page(project, filter, maxRows, order, dates, null));
+        List<String> key = q.projectVersion() == null
+                ? List.of(project.value(), filter.toString(), order.name())
+                : List.of(project.value(), filter.toString(), order.name(), q.projectVersion());
+        Object criteriaKey = dates.cursorCriteria(key);
+        var after = cursors.decode(q.cursor(), PageCursor.Kind.ISSUES, criteriaKey)
+                .map(ListService::issuePosition);
+        String versionId;
+        if (q.projectVersion() == null) {
+            versionId = null;
+        } else {
+            var version = versions.find(project.value(), q.projectVersion());
+            if (version.isEmpty()) {
+                return new Page<>(List.of(), false, null);
+            }
+            versionId = version.orElseThrow().id();
+        }
+        var page = after.map(position -> issues.page(project, filter, maxRows, order, dates, position, versionId))
+                .orElseGet(() -> issues.page(project, filter, maxRows, order, dates, null, versionId));
+        Map<String, List<String>> related = versions.namesForIssues(project.value(),
+                page.rows().stream().map(row -> row.id().value()).toList());
         return cursors.page(page, PageCursor.Kind.ISSUES, criteriaKey,
-                ListService::toIssueItem,
+                r -> toIssueItem(r, related.getOrDefault(r.id().value(), List.of())),
                 r -> dates.sortKey(r.createdAt(), r.updatedAt()).toString(),
                 r -> r.id().value());
     }
@@ -309,10 +336,10 @@ public class ListService {
         return parsed;
     }
 
-    private static IssueItem toIssueItem(IssueSummary r) {
+    private static IssueItem toIssueItem(IssueSummary r, List<String> projectVersions) {
         return new IssueItem(r.id().value(), r.title(), r.category().value(), r.severity().value(), r.status().name(),
                 r.mergedInto() == null ? null : r.mergedInto().value(), r.owner(), r.version(), r.createdAt(),
-                r.updatedAt());
+                r.updatedAt(), projectVersions);
     }
 
     private static SpecItem toSpecItem(SpecSummary r) {

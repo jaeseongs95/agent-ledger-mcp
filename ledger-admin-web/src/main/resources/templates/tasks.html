@@ -59,7 +59,7 @@
     </form>
 
     <div th:if="${!#lists.isEmpty(page.items())}" class="table-wrap results-table" role="region" tabindex="0" th:attr="aria-label=#{tasks.title}">
-      <table>
+      <table class="tasks-table">
         <caption class="sr-only" th:text="#{tasks.title}">Tasks</caption>
         <thead>
           <tr>

@@ -66,6 +66,11 @@ public class IssueQueryRepository {
 
     public KeysetPage<IssueSummary> page(ProjectId project, Filter filter, MaxRows maxRows, Order order,
             DateQuery dates, Position after) {
+        return page(project, filter, maxRows, order, dates, after, null);
+    }
+
+    public KeysetPage<IssueSummary> page(ProjectId project, Filter filter, MaxRows maxRows, Order order,
+            DateQuery dates, Position after, String projectVersionId) {
         StringBuilder sql = new StringBuilder("SELECT id, title, category, severity, status, merged_into, "
                 + EFFECTIVE_OWNER + " AS effective_owner, version, created_at, updated_at "
                 + "FROM issue WHERE project_id = :project");
@@ -92,6 +97,13 @@ public class IssueQueryRepository {
         }
         if (filter.taskId() != null) {
             sql.append(" AND EXISTS (SELECT 1 FROM issue_task it WHERE it.task_id = :taskId AND it.issue_id = issue.id)");
+        }
+        if (projectVersionId != null) {
+            sql.append("""
+                     AND EXISTS (SELECT 1 FROM issue_project_version ipv
+                     WHERE ipv.project_id = issue.project_id AND ipv.issue_id = issue.id
+                     AND ipv.version_id = :projectVersionId)
+                    """);
         }
         dates.appendRange(sql);
         DateQuery sort = dates.defaultOrder(DateQuery.Column.CREATED, order == Order.OLDEST_FIRST);
@@ -121,6 +133,9 @@ public class IssueQueryRepository {
         }
         if (filter.taskId() != null) {
             spec = spec.param("taskId", filter.taskId().value());
+        }
+        if (projectVersionId != null) {
+            spec = spec.param("projectVersionId", projectVersionId);
         }
         spec = dates.bindRange(spec);
         if (after != null) {

@@ -95,8 +95,8 @@ class WriteCallTest {
                         Calls.IssueSave.create(scenario.projectId(), "t", Scenario.AUTHOR)).with("titel", "x")),
                 new UnknownArgument("ledger_issue_save", "query", (session, scenario) -> Args.from(session.mapper(),
                         Calls.IssueSave.create(scenario.projectId(), "t", Scenario.AUTHOR)).with("query", "SELECT 1")),
-                new UnknownArgument("ledger_issue_save", "fields", (session, scenario) -> Args.from(session.mapper(),
-                        Calls.IssueSave.create(scenario.projectId(), "t", Scenario.AUTHOR)).with("fields", Map.of())),
+                new UnknownArgument("ledger_issue_save", "attributes", (session, scenario) -> Args.from(session.mapper(),
+                        Calls.IssueSave.create(scenario.projectId(), "t", Scenario.AUTHOR)).with("attributes", Map.of())),
                 new UnknownArgument("ledger_issue_save", "authorId", (session, scenario) -> Args.from(session.mapper(),
                         Calls.IssueSave.create(scenario.projectId(), "t", Scenario.AUTHOR)).with("authorId", Scenario.AUTHOR)),
                 new UnknownArgument("ledger_issue_save", "Author_Id", (session, scenario) -> Args.from(session.mapper(),
@@ -129,6 +129,18 @@ class WriteCallTest {
     }
 
     @Test
+    void responseFieldsRequireAnArrayBeforeWrite(McpSession session, Scenario scenario) {
+        Args call = Args.from(session.mapper(), Calls.IssueSave.create(scenario.projectId(), "t", Scenario.AUTHOR))
+                .with("fields", Map.of("title", "nested value"));
+
+        ToolError error = session.failed("ledger_issue_save", call);
+
+        assertThat(error.code()).isEqualTo("VALIDATION_FAILED");
+        assertThat(error.issues()).containsExactly(new ToolError.Issue("fields", "must be of type array", List.of()));
+        assertThat(Ledger.history(session, scenario.projectId())).isEmpty();
+    }
+
+    @Test
     @DisplayName("MCW-006: all unknown arguments of one call are reported together")
     void allUnknownArgumentsAreReportedTogether(McpSession session, Scenario scenario) {
         Args call = Args.from(session.mapper(),
@@ -153,7 +165,8 @@ class WriteCallTest {
     }
 
     static Stream<BadOp> badOps() {
-        List<String> ops = List.of("save", "transition", "record_deliverable", "record_case", "link", "correct");
+        List<String> ops = List.of("save", "transition", "record_deliverable", "record_case", "link", "correct",
+                "project_version");
         return Stream.of(
                 new BadOp("unknown op", Map.of("op", "drop"), "unknown value drop", ops),
                 new BadOp("no op", Map.of("entity", "issue"), "is required", List.of()));

@@ -80,11 +80,12 @@ class WriteSchemaTest {
     }
 
     @Test
-    @DisplayName("MCW-002: ledger_whoami declares only _hostAttestation: it carries no operationKey and no author_id")
-    void whoamiDeclaresOnlyTheAttestation(McpSession session) {
+    @DisplayName("MCW-002: ledger_whoami can scope the reported grants and supports the shared response options")
+    void whoamiDeclaresAttestationAndResponseOptions(McpSession session) {
         SchemaView schema = input(session, "ledger_whoami");
 
-        assertThat(schema.propertyNames()).containsExactly("_hostAttestation");
+        assertThat(schema.propertyNames()).containsExactlyInAnyOrder("_hostAttestation", "project", "fields",
+                "structured_only");
         assertThat(schema.required()).isEmpty();
     }
 

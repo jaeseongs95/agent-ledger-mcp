@@ -13,7 +13,7 @@ choice: the installers write no proxy configuration and order no certificate.
 
 Version 2.0.0 is a rewrite in Java 25 and Spring Boot with its own tool contract (every write tool takes a required `operationKey`,
 every response uses the `ApiResult.v1` envelope, and no argument of an earlier version is accepted next to the new ones); what changed
-for a client is stated in the release notes ([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md), [4.0.0](docs/release-notes/4.0.0.md), [4.0.1](docs/release-notes/4.0.1.md), [4.1.0](docs/release-notes/4.1.0.md), [4.2.0](docs/release-notes/4.2.0.md), [4.3.0](docs/release-notes/4.3.0.md), [4.3.1](docs/release-notes/4.3.1.md), [4.3.2](docs/release-notes/4.3.2.md), [4.4.0](docs/release-notes/4.4.0.md), [4.4.1](docs/release-notes/4.4.1.md)); the format of release notes is in
+for a client is stated in the release notes ([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md), [4.0.0](docs/release-notes/4.0.0.md), [4.0.1](docs/release-notes/4.0.1.md), [4.1.0](docs/release-notes/4.1.0.md), [4.2.0](docs/release-notes/4.2.0.md), [4.3.0](docs/release-notes/4.3.0.md), [4.3.1](docs/release-notes/4.3.1.md), [4.3.2](docs/release-notes/4.3.2.md), [4.4.0](docs/release-notes/4.4.0.md), [4.4.1](docs/release-notes/4.4.1.md), [5.0.0](docs/release-notes/5.0.0.md)); the format of release notes is in
 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md).
 
 ## Contents
@@ -130,7 +130,7 @@ Write tools (authenticated author and a live grant are needed). Every write tool
 | `ledger_record_case` | author | add an observed case under an issue (`MERGED` issues are refused and name their target) |
 | `ledger_link` | author | link issues, specs, tasks and criteria (`issue_task`, `issue_spec`, `spec_task`, `criterion_task`, `criterion_issue`, `criterion_spec`, or issue `RELATION_KIND` codes), or remove a link |
 | `ledger_correct` | author | mark a history row as wrong |
-| `ledger_batch` | author | up to 200 of the operations above in one transaction: all commit or none; one `operationKey` for the batch |
+| `ledger_batch` | author | up to 200 author operations in one transaction, including project version changes; one `operationKey` for the batch |
 | `ledger_review` | reviewer | independent verification (`VERIFIED`, `MET`, `NOT_MET`) and reopening (`evidence_uri` required) |
 | `ledger_review_correct` | reviewer | mark a reviewer verification row as wrong |
 
@@ -148,24 +148,43 @@ Read tools (no attestation and no grant; structured queries that replace the raw
 
 | Tool | What |
 |---|---|
-| `ledger_get` | status/state and version of many ids at once (issues, specs, tasks and criteria mixed); source of `expected_version` |
+| `ledger_get` | state and row version for up to 200 IDs. Set `include_details=true` for full details across up to 10 mixed issue, spec, task or criterion IDs |
 | `ledger_issue` | one issue with deliverables, tasks, specs, criteria, cases (including merged issues), relations, `owner_actor_id` and recent history |
 | `ledger_spec` | one specification with summary, acceptance criteria, parent/child specs, deliverables, tasks, issues, criteria and recent history |
 | `ledger_task` | one task with purpose, success condition, origin, owner, deliverables, issues, specs, criteria and recent history |
 | `ledger_criterion` | one milestone criterion with milestone, goal label, code, criterion text, state and linked tasks, issues and specs |
 | `ledger_history` | append-only history and receipts by ids, id range, entity, project, operation, author or time range; `include_before` adds `before_data` |
 | `ledger_search` | issues, specs, tasks and criteria by keywords, case-insensitive, `match` is `ANY` (default) or `ALL` |
-| `ledger_issues` | issues of a project, filtered by status, severity, category, attention kind and owner |
+| `ledger_issues` | issues of a project, filtered by status, severity, category, attention kind, owner and `project_version` |
 | `ledger_specs` | specifications of a project, filtered by status, parent id, priority, owner and attention kind |
 | `ledger_tasks` | tasks of a project, filtered by state, owner and attention kind |
 | `ledger_criteria` | milestone criteria of a project, filtered by state and `milestone_name` |
 | `ledger_attention` | items needing action: `OPEN_WITH_DELIVERABLE`, `RESOLVED_WITHOUT_DELIVERABLE`, `OPEN_NO_OWNER`, `SPEC_COMPLETED_NOT_VERIFIED`, `TASK_UNKNOWN`, `DONE_NOT_VERIFIED` |
 | `ledger_stats` | counts per state and severity of one project or of all; `bucket` = `day` adds new items per UTC day |
-| `ledger_projects` | projects with id, code and title |
+| `ledger_projects` | projects with id, code and title. Set `include_versions=true` to include their registered project versions |
 | `ledger_codes` | common codes; retired codes included with `include_inactive` |
 
 The list read tools take `max_rows` (1 to 1000, default 50) and `cursor`; their answers carry `truncated` and `next_cursor`. `ledger_search` applies `created_from` and `created_to` to issues, specs and tasks; a criterion has no creation time, so a search with either bound leaves criteria out (a search for criteria only with a bound returns nothing).
 The tools `execute_sql_reader` and `search_objects_reader` of 1.x were removed: use the read tools above.
+
+All MCP tools accept `fields` to return up to 16 selected paths inside `data`. For example, use
+`["items.id","items.state","items.version","not_found"]` with `ledger_get` before a bulk write.
+Paths apply to each array element. Selecting `items` on a page also returns `truncated` and `next_cursor`.
+`ledger_get` retains `not_found`. Attachment content retains its byte-range information.
+Use `structured_only=true` when the client consumes MCP `structuredContent`. The default also includes the JSON text copy.
+For author writes sharing a reason, provide `default_reason` once in `ledger_batch`. Items can override it with
+their own `reason`. For attachment text, request `["text","size","totalBytes"]` with the needed byte range.
+
+An agent with the project's `issue` grant can manage versions with a `ledger_batch` item such as
+`{"op":"project_version","project_id":"studio","name":"Review 2","create":true,"link_issue_ids":["STUDIO-I-0001"]}`.
+Provide `reason` on the item or `default_reason` on the batch. Use `original_name` to rename, omit `description` to
+keep the current description, and use `unlink_issue_ids` to remove links. Each link list accepts up to 200 issues in
+the same project. Read versions via `ledger_projects(include_versions=true)`.
+
+Use `ledger_search` to find unknown records, `ledger_get` for known IDs, and `ledger_attention` for the follow-up
+queue. Set `include_context=true` on the queue to fetch titles, owners and update times in the same call. Use
+`ledger_stats` for totals. `ledger_whoami(project=...)` filters grants to one project. `can_verify_login` describes the
+session. The project grant and reviewer independence are checked by `ledger_review`.
 
 When a common code changes, the server sends `notifications/tools/list_changed`, so a connected client reloads the tool
 definitions without a restart. A change made by another process (the admin web, `ledger-cli`) is noticed within

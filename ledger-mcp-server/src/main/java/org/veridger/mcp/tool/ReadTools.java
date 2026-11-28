@@ -11,6 +11,8 @@ import org.veridger.application.read.HistoryService;
 import org.veridger.application.read.ListService;
 import org.veridger.application.read.SearchService;
 import org.veridger.application.read.StatsService;
+import org.veridger.domain.error.ValidationException;
+import org.veridger.domain.error.ValidationReason;
 import org.veridger.domain.rule.AttentionKind;
 import org.veridger.domain.rule.CodeGroup;
 import org.veridger.domain.rule.CriterionState;
@@ -29,6 +31,8 @@ import org.springframework.stereotype.Component;
  */
 @Component
 public class ReadTools implements ToolAdapter {
+
+    private static final int MAX_DETAIL_IDS = 10;
 
     private final GetService get;
     private final DetailService detail;
@@ -52,8 +56,15 @@ public class ReadTools implements ToolAdapter {
     }
 
     @McpTool(name = "ledger_get", description = "tool.ledger_get", generateOutputSchema = true)
-    public ReadOutputs.Got get(@McpToolParam(description = "param.ids", required = true) List<String> ids) {
-        return ReadOutputs.got(get.get(ids));
+    public ReadOutputs.Got get(@McpToolParam(description = "param.ids", required = true) List<String> ids,
+            @McpToolParam(description = "param.include_details", required = false) Boolean include_details) {
+        boolean withDetails = Boolean.TRUE.equals(include_details);
+        if (withDetails && ids != null && ids.size() > MAX_DETAIL_IDS) {
+            throw ValidationException.invalid("ids", ValidationReason.MUST_HOLD_ITEMS, "1",
+                    Integer.toString(MAX_DETAIL_IDS));
+        }
+        GetService.Result result = get.get(ids);
+        return ReadOutputs.got(result, withDetails ? detail.details(result.items()) : null);
     }
 
     @McpTool(name = "ledger_issue", description = "tool.ledger_issue", generateOutputSchema = true)
@@ -130,10 +141,11 @@ public class ReadTools implements ToolAdapter {
             @McpToolParam(description = "param.category", required = false) String category,
             @McpToolParam(description = "param.attention_kind", required = false) String attention,
             @McpToolParam(description = "param.owner", required = false) String owner,
+            @McpToolParam(description = "param.project_version", required = false) String project_version,
             @McpToolParam(description = "param.max_rows", required = false) Integer max_rows,
             @McpToolParam(description = "param.cursor", required = false) String cursor) {
         return ReadOutputs.page(lists.issues(new ListService.IssuesQuery(project, status, severity, category,
-                owner, attention, max_rows, cursor)), ReadOutputs::issueRow);
+                null, null, owner, attention, null, null, max_rows, cursor, project_version)), ReadOutputs::issueRow);
     }
 
     @McpTool(name = "ledger_specs", description = "tool.ledger_specs", generateOutputSchema = true)
@@ -181,10 +193,13 @@ public class ReadTools implements ToolAdapter {
             @McpToolParam(description = "param.project", required = false) String project,
             @McpToolParam(description = "param.attention_filter", required = false)
             @Choice(from = AttentionKind.class) String kind,
+            @McpToolParam(description = "param.include_attention_context", required = false) Boolean include_context,
             @McpToolParam(description = "param.max_rows", required = false) Integer max_rows,
             @McpToolParam(description = "param.cursor", required = false) String cursor) {
-        return ReadOutputs.page(attention.attention(new AttentionService.AttentionQuery(project, kind, max_rows,
-                cursor)), ReadOutputs::attentionRow);
+        var query = new AttentionService.AttentionQuery(project, kind, max_rows, cursor);
+        return Boolean.TRUE.equals(include_context)
+                ? ReadOutputs.page(attention.attentionWithContext(query), ReadOutputs::attentionRow)
+                : ReadOutputs.page(attention.attention(query), ReadOutputs::attentionRow);
     }
 
     @McpTool(name = "ledger_stats", description = "tool.ledger_stats", generateOutputSchema = true)
@@ -195,10 +210,16 @@ public class ReadTools implements ToolAdapter {
 
     @McpTool(name = "ledger_projects", description = "tool.ledger_projects", generateOutputSchema = true)
     public ReadOutputs.Items<ReadOutputs.ProjectRow> projects(
+            @McpToolParam(description = "param.include_project_versions", required = false) Boolean include_versions,
             @McpToolParam(description = "param.max_rows", required = false) Integer max_rows,
             @McpToolParam(description = "param.cursor", required = false) String cursor) {
-        return ReadOutputs.page(catalog.projects(new CatalogService.ProjectsQuery(max_rows, cursor)),
-                ReadOutputs::projectRow);
+        var page = catalog.projects(new CatalogService.ProjectsQuery(max_rows, cursor));
+        if (!Boolean.TRUE.equals(include_versions)) {
+            return ReadOutputs.page(page, project -> ReadOutputs.projectRow(project, null));
+        }
+        var versions = catalog.versionsByProject(page.items());
+        return ReadOutputs.page(page,
+                project -> ReadOutputs.projectRow(project, versions.getOrDefault(project.id(), List.of())));
     }
 
     @McpTool(name = "ledger_codes", description = "tool.ledger_codes", generateOutputSchema = true)

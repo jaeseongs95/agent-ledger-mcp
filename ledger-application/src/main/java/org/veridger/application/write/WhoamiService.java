@@ -5,12 +5,14 @@ package org.veridger.application.write;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import org.veridger.application.gate.McpCallerResolver;
 import org.veridger.application.gate.ToolCall;
 import org.veridger.database.repository.GrantStateRepository;
 import org.veridger.domain.model.SessionGrant;
 import org.veridger.domain.rule.Channel;
 import org.veridger.domain.rule.Scope;
+import org.veridger.domain.value.ProjectId;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,6 +53,11 @@ public class WhoamiService {
      *              HOST_ATTESTATION_REQUIRED.
      */
     public Whoami whoami(String actor, Channel channel) {
+        return whoami(actor, channel, null);
+    }
+
+    public Whoami whoami(String actor, Channel channel, String projectFilter) {
+        ProjectId project = projectFilter == null ? null : ProjectId.of(projectFilter);
         return switch (callerResolver.prove(actor, ToolCall.current(), "")) {
             case McpCallerResolver.Proof.MalformedAuthor malformed ->
                 new Whoami(malformed.text(), false, channel.mayVerify(), channel.login(), List.of());
@@ -59,7 +66,9 @@ public class WhoamiService {
                 boolean canVerify = channel.mayVerify()
                         || live.stream().anyMatch(grant -> grant.scope() == Scope.VERIFY);
                 String login = canVerify ? Channel.REVIEWER.login() : channel.login();
-                List<GrantView> views = live.stream().map(WhoamiService::view).toList();
+                List<GrantView> views = live.stream()
+                        .filter(grant -> project == null || Objects.equals(grant.projectId(), project))
+                        .map(WhoamiService::view).toList();
                 yield new Whoami(proven.author().value(), true, canVerify, login, views);
             }
         };

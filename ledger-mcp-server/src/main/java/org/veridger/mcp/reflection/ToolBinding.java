@@ -121,11 +121,16 @@ public final class ToolBinding {
      * @throws ValidationException when the arguments do not fit the tool
      */
     public Object call(Map<String, Object> arguments) {
+        return call(arguments, Set.of());
+    }
+
+    public Object call(Map<String, Object> arguments, Set<String> responseOptions) {
         Map<String, Object> given = arguments == null ? Map.of() : arguments;
         List<ValidationIssue> issues = new ArrayList<>();
         List<JacksonException> causes = new ArrayList<>();
-        given.keySet().stream().filter(key -> !declaredParameters.contains(key)).sorted().forEach(key -> issues.add(
-                new ValidationIssue(key, ValidationReason.UNKNOWN_ARGUMENT, List.of(), List.of())));
+        given.keySet().stream().filter(key -> !declaredParameters.contains(key) && !responseOptions.contains(key))
+                .sorted().forEach(key -> issues.add(new ValidationIssue(key, ValidationReason.UNKNOWN_ARGUMENT,
+                        List.of(), List.of())));
         Object[] values = new Object[parameters.size()];
         for (int i = 0; i < values.length; i++) {
             ToolParameter parameter = parameters.get(i);
