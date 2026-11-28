@@ -15,12 +15,12 @@ import org.junit.jupiter.api.Test;
  */
 class CiWorkflowTest {
 
-    private static final String CI = ".github/workflows/ci.yml";
+    private static final String REPOSITORY_CHECKS = ".github/workflows/repository-checks.yml";
 
     @Test
-    @DisplayName("R9-D0069 the concurrency group of ci.yml cancels an older run of the same ref only when the ref is neither main nor a release branch: cancel-in-progress is an expression that is false for refs/heads/main and for refs/heads/release/*, and the group still holds the ref")
+    @DisplayName("R9-D0069 repository checks keep older runs on main and release branches and group runs by ref")
     void r9d0069_runsOfMainAndReleaseBranchesAreNotCancelled() {
-        List<String> lines = Repository.read(CI).lines().toList();
+        List<String> lines = Repository.read(REPOSITORY_CHECKS).lines().toList();
         int concurrency = lines.indexOf("concurrency:");
         assertThat(concurrency).as("the workflow has a concurrency group").isNotNegative();
         List<String> block = lines.subList(concurrency + 1, lines.size()).stream().takeWhile(line -> !line.isBlank()).toList();
