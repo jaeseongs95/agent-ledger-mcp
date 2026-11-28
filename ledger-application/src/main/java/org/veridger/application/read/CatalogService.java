@@ -86,7 +86,7 @@ public class CatalogService {
         String term = name == null ? "" : name.toLowerCase(Locale.ROOT);
         Object criteria = id == null && term.isEmpty() ? "projects" : List.of(id == null ? "" : id.value(), term);
         List<Project> all = projects.findAllByOrderByCode();
-        Predicate<Project> shown = p -> (id == null || p.id().equals(id))
+        Predicate<Project> shown = p -> (id == null || Objects.equals(p.id(), id))
                 && p.displayName().toLowerCase(Locale.ROOT).contains(term);
         List<Project> listed = all.stream().filter(shown).toList();
         Function<Project, String> key = p -> p.code().value();
