@@ -191,7 +191,7 @@ public record LedgerAdminProperties(String token, String agentToken,
                     "release-assets.githubusercontent.com"}) @NotEmpty List<String> allowedDownloadHosts,
             @DefaultValue("/etc/veridger/update") Path directory,
             @DefaultValue("10s") Duration timeout,
-            @DefaultValue("6.0.0") String currentVersion,
+            @DefaultValue("7.0.0") String currentVersion,
             @DefaultValue("16") @Min(1) int currentSchemaVersion,
             Path schemaMigrationMarker) {
 
