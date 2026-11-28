@@ -53,8 +53,8 @@ import tools.jackson.databind.json.JsonMapper;
  * <ul>
  * <li>Atomic {@code maxSessions} admission under a single lock so concurrent {@code initialize} floods can never
  * overshoot session capacity.</li>
- * <li>Sub-interval idle session eviction driven by an injected {@link Clock} so abandoned sessions are reclaimed
- * promptly instead of lingering for up to twice {@code sessionIdleTimeout}.</li>
+ * <li>Idle session eviction and earlier reclamation of disconnected sessions when admission reaches capacity.
+ * In-flight requests are protected from eviction.</li>
  * <li>SSE-only keep-alive probing that skips POST-only sessions (eliminating false {@code Stream unavailable} errors)
  * and releases dead listening streams via {@code onPingFailure}.</li>
  * </ul>
@@ -68,6 +68,7 @@ public final class BoundedStreamableServerTransportProvider implements McpStream
     private static final Logger LOG = LoggerFactory.getLogger(BoundedStreamableServerTransportProvider.class);
     private static final Duration MIN_SWEEP_INTERVAL = Duration.ofMillis(50);
     private static final Duration MAX_SWEEP_INTERVAL = Duration.ofMinutes(1);
+    private static final Duration CAPACITY_IDLE_GRACE = Duration.ofMinutes(1);
 
     private final McpJsonMapper jsonMapper;
     private final String mcpEndpoint;
@@ -77,8 +78,7 @@ public final class BoundedStreamableServerTransportProvider implements McpStream
     private final Clock clock;
     private final McpTransportContextExtractor<ServerRequest> contextExtractor = req -> McpTransportContext.EMPTY;
     private final RouterFunction<ServerResponse> routerFunction;
-    private final ConcurrentHashMap<String, McpStreamableServerSession> sessions = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Instant> sessionLastAccessTimes = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, SessionEntry> sessions = new ConcurrentHashMap<>();
     private final Object admissionLock = new Object();
     private long pendingAdmissions;
     private volatile McpStreamableServerSession.Factory sessionFactory;
@@ -115,6 +115,7 @@ public final class BoundedStreamableServerTransportProvider implements McpStream
             this.keepAliveScheduler = KeepAliveScheduler
                     .builder(() -> closing ? Flux.empty()
                             : Flux.fromIterable(sessions.values())
+                                    .map(entry -> entry.session)
                                     .filter(McpStreamableServerSession::hasListeningStream)
                                     .cast(McpSession.class))
                     .initialDelay(keepAliveInterval)
@@ -172,7 +173,8 @@ public final class BoundedStreamableServerTransportProvider implements McpStream
             return Mono.empty();
         }
         return Mono.fromRunnable(() -> {
-            for (McpStreamableServerSession session : sessions.values()) {
+            for (SessionEntry entry : sessions.values()) {
+                McpStreamableServerSession session = entry.session;
                 if (!session.hasListeningStream()) {
                     continue;
                 }
@@ -188,15 +190,18 @@ public final class BoundedStreamableServerTransportProvider implements McpStream
     @Override
     public Mono<Void> closeGracefully() {
         return Mono.fromRunnable(() -> {
-            closing = true;
+            List<SessionEntry> snapshot;
+            synchronized (admissionLock) {
+                closing = true;
+                snapshot = new ArrayList<>(sessions.values());
+                sessions.clear();
+            }
             if (keepAliveScheduler != null) {
                 keepAliveScheduler.shutdown();
             }
             idleSweepSubscription.dispose();
-            List<McpStreamableServerSession> snapshot = new ArrayList<>(sessions.values());
-            sessions.clear();
-            sessionLastAccessTimes.clear();
-            for (McpStreamableServerSession session : snapshot) {
+            for (SessionEntry entry : snapshot) {
+                McpStreamableServerSession session = entry.session;
                 try {
                     session.closeGracefully().block();
                 } catch (IllegalStateException | McpError failure) {
@@ -206,35 +211,62 @@ public final class BoundedStreamableServerTransportProvider implements McpStream
         });
     }
 
-    /** Evicts every session whose last access timestamp is older than {@code clock.instant().minus(sessionIdleTimeout)}. */
+    /** Evicts expired sessions after their in-flight requests have finished. */
     public void evictIdleSessions() {
-        if (closing) {
-            return;
-        }
         Instant cutoff = clock.instant().minus(sessionIdleTimeout);
-        for (Map.Entry<String, Instant> entry : sessionLastAccessTimes.entrySet()) {
-            if (entry.getValue().isBefore(cutoff)) {
-                String id = entry.getKey();
-                if (sessionLastAccessTimes.remove(id, entry.getValue())) {
-                    McpStreamableServerSession removed = sessions.remove(id);
-                    if (removed != null) {
-                        LOG.debug("evicting idle MCP session {}", id);
-                        removed.closeGracefully().subscribe(ignored -> {
-                        }, err -> LOG.debug("error closing evicted MCP session {}: {}", id, err.getMessage()));
-                    }
+        List<SessionEntry> expired = new ArrayList<>();
+        synchronized (admissionLock) {
+            sessions.values().removeIf(entry -> {
+                if (entry.inFlight == 0 && entry.lastActivity.isBefore(cutoff)) {
+                    expired.add(entry);
+                    return true;
                 }
+                return false;
+            });
+        }
+        expired.forEach(this::closeEvictedSession);
+    }
+
+    // Called only while holding admissionLock and after the session cap is reached.
+    private SessionEntry reclaimCapacity() {
+        Instant now = clock.instant();
+        Instant cutoff = now.minus(sessionIdleTimeout);
+        Instant pressureCutoff = now.minus(CAPACITY_IDLE_GRACE);
+        SessionEntry oldest = null;
+        for (SessionEntry entry : sessions.values()) {
+            if (entry.inFlight == 0 && (entry.lastActivity.isBefore(cutoff)
+                    || (entry.lastActivity.isBefore(pressureCutoff) && !entry.session.hasOpenStream()))
+                    && (oldest == null || entry.lastActivity.isBefore(oldest.lastActivity))) {
+                oldest = entry;
             }
         }
+        return oldest == null ? null : sessions.remove(oldest.session.getId());
     }
 
-    private void touchSession(String sessionId) {
-        Instant now = clock.instant();
-        sessionLastAccessTimes.computeIfPresent(sessionId, (id, previous) -> now);
+    private void closeEvictedSession(SessionEntry entry) {
+        LOG.debug("evicting idle MCP session {}", entry.session.getId());
+        entry.session.closeGracefully().subscribe(ignored -> {
+        }, err -> LOG.debug("error closing evicted MCP session {}: {}", entry.session.getId(), err.getMessage()));
     }
 
-    private McpStreamableServerSession removeSession(String sessionId) {
-        sessionLastAccessTimes.remove(sessionId);
-        return sessions.remove(sessionId);
+    private SessionEntry acquireSession(String sessionId, boolean trackRequest) {
+        synchronized (admissionLock) {
+            SessionEntry entry = sessions.get(sessionId);
+            if (entry != null) {
+                entry.lastActivity = clock.instant();
+                if (trackRequest) {
+                    entry.inFlight++;
+                }
+            }
+            return entry;
+        }
+    }
+
+    private void finishRequest(SessionEntry entry) {
+        synchronized (admissionLock) {
+            entry.lastActivity = clock.instant();
+            entry.inFlight--;
+        }
     }
 
     private ServerResponse handleGet(ServerRequest request) {
@@ -253,12 +285,12 @@ public final class BoundedStreamableServerTransportProvider implements McpStream
                     .body(McpError.builder(McpSchema.ErrorCodes.INVALID_REQUEST)
                             .message("Session ID required in mcp-session-id header").build());
         }
-        McpStreamableServerSession session = sessions.get(sessionId);
-        if (session == null) {
+        SessionEntry entry = acquireSession(sessionId, false);
+        if (entry == null) {
             return ServerResponse.status(HttpStatus.NOT_FOUND)
                     .body(McpError.builder(McpSchema.ErrorCodes.INVALID_REQUEST).message("Session not found").build());
         }
-        touchSession(sessionId);
+        McpStreamableServerSession session = entry.session;
         McpTransportContext transportContext = contextExtractor.extract(request);
         return ServerResponse.sse(sseBuilder -> {
             SseSessionTransport transport = new SseSessionTransport(sessionId, sseBuilder);
@@ -316,25 +348,13 @@ public final class BoundedStreamableServerTransportProvider implements McpStream
                     .body(McpError.builder(McpSchema.ErrorCodes.INVALID_REQUEST)
                             .message("Session ID required in mcp-session-id header").build());
         }
-        McpStreamableServerSession session = sessions.get(sessionId);
-        if (session == null) {
+        SessionEntry entry = acquireSession(sessionId, true);
+        if (entry == null) {
             return ServerResponse.status(HttpStatus.NOT_FOUND)
                     .body(McpError.builder(McpSchema.ErrorCodes.INVALID_REQUEST).message("Session not found").build());
         }
-        touchSession(sessionId);
+        McpStreamableServerSession session = entry.session;
         McpTransportContext transportContext = contextExtractor.extract(request);
-        if (message instanceof McpSchema.JSONRPCResponse response) {
-            session.accept(response)
-                    .contextWrite(ctx -> ctx.put(McpTransportContext.KEY, transportContext))
-                    .block();
-            return ServerResponse.accepted().build();
-        }
-        if (message instanceof McpSchema.JSONRPCNotification notification) {
-            session.accept(notification)
-                    .contextWrite(ctx -> ctx.put(McpTransportContext.KEY, transportContext))
-                    .block();
-            return ServerResponse.accepted().build();
-        }
         if (message instanceof McpSchema.JSONRPCRequest req) {
             return ServerResponse.sse(sseBuilder -> {
                 SseSessionTransport transport = new SseSessionTransport(sessionId, sseBuilder);
@@ -351,12 +371,32 @@ public final class BoundedStreamableServerTransportProvider implements McpStream
                 } catch (McpError error) {
                     transport.sendError(req.id(), error);
                 } finally {
-                    transport.close();
+                    try {
+                        transport.close();
+                    } finally {
+                        finishRequest(entry);
+                    }
                 }
             }, Duration.ZERO);
         }
-        return ServerResponse.badRequest()
-                .body(McpError.builder(McpSchema.ErrorCodes.INVALID_REQUEST).message("Unknown message type").build());
+        try {
+            if (message instanceof McpSchema.JSONRPCResponse response) {
+                session.accept(response)
+                        .contextWrite(ctx -> ctx.put(McpTransportContext.KEY, transportContext))
+                        .block();
+                return ServerResponse.accepted().build();
+            }
+            if (message instanceof McpSchema.JSONRPCNotification notification) {
+                session.accept(notification)
+                        .contextWrite(ctx -> ctx.put(McpTransportContext.KEY, transportContext))
+                        .block();
+                return ServerResponse.accepted().build();
+            }
+            return ServerResponse.badRequest()
+                    .body(McpError.builder(McpSchema.ErrorCodes.INVALID_REQUEST).message("Unknown message type").build());
+        } finally {
+            finishRequest(entry);
+        }
     }
 
     private ServerResponse handleInitRequest(McpSchema.JSONRPCRequest req) {
@@ -366,50 +406,62 @@ public final class BoundedStreamableServerTransportProvider implements McpStream
                     .body(McpError.builder(McpSchema.ErrorCodes.INTERNAL_ERROR)
                             .message("Session factory not initialized").build());
         }
-        evictIdleSessions();
-        synchronized (admissionLock) {
-            if (sessions.size() + pendingAdmissions >= maxSessions) {
-                return ServerResponse.status(HttpStatus.SERVICE_UNAVAILABLE)
-                        .body(McpError.builder(McpSchema.ErrorCodes.INTERNAL_ERROR)
-                                .message("Maximum number of concurrent sessions reached").build());
-            }
-            pendingAdmissions++;
-        }
-        McpStreamableServerSession admitted = null;
+        boolean reservationHeld = false;
         try {
             McpSchema.InitializeRequest initRequest = jsonMapper.convertValue(req.params(),
                     McpSchema.InitializeRequest.class);
+            SessionEntry evicted = null;
+            synchronized (admissionLock) {
+                if (closing) {
+                    return ServerResponse.status(HttpStatus.SERVICE_UNAVAILABLE).body("Server is shutting down");
+                }
+                if (sessions.size() + pendingAdmissions >= maxSessions) {
+                    evicted = reclaimCapacity();
+                    if (evicted == null) {
+                        return ServerResponse.status(HttpStatus.SERVICE_UNAVAILABLE)
+                                .body(McpError.builder(McpSchema.ErrorCodes.INTERNAL_ERROR)
+                                        .message("Maximum number of concurrent sessions reached").build());
+                    }
+                }
+                pendingAdmissions++;
+                reservationHeld = true;
+            }
+            if (evicted != null) {
+                closeEvictedSession(evicted);
+            }
             McpStreamableServerSession.McpStreamableServerSessionInit init = factory.startSession(initRequest);
             McpSchema.InitializeResult result = init.initResult().block();
-            admitted = init.session();
+            McpStreamableServerSession session = init.session();
+            boolean shuttingDown;
             synchronized (admissionLock) {
-                sessions.put(admitted.getId(), admitted);
-                sessionLastAccessTimes.put(admitted.getId(), clock.instant());
+                shuttingDown = closing;
+                if (!shuttingDown) {
+                    sessions.put(session.getId(), new SessionEntry(session, clock.instant()));
+                }
                 pendingAdmissions--;
+                reservationHeld = false;
+            }
+            if (shuttingDown) {
+                session.closeGracefully().block();
+                return ServerResponse.status(HttpStatus.SERVICE_UNAVAILABLE).body("Server is shutting down");
             }
             McpSchema.JSONRPCResponse response = new McpSchema.JSONRPCResponse(McpSchema.JSONRPC_VERSION, req.id(),
                     result, null);
             return ServerResponse.ok()
                     .contentType(MediaType.APPLICATION_JSON)
-                    .header(HttpHeaders.MCP_SESSION_ID, admitted.getId())
+                    .header(HttpHeaders.MCP_SESSION_ID, session.getId())
                     .body(response);
         } catch (IllegalArgumentException | McpError failure) {
-            if (admitted == null) {
-                synchronized (admissionLock) {
-                    pendingAdmissions--;
-                }
-            }
             LOG.debug("failed to initialize MCP session: {}", failure.getMessage());
             return ServerResponse.badRequest()
                     .body(McpError.builder(McpSchema.ErrorCodes.INVALID_PARAMS)
                             .message("Failed to initialize session").build());
-        } catch (RuntimeException failure) {
-            if (admitted == null) {
+        } finally {
+            if (reservationHeld) {
                 synchronized (admissionLock) {
                     pendingAdmissions--;
                 }
             }
-            throw failure;
         }
     }
 
@@ -426,16 +478,31 @@ public final class BoundedStreamableServerTransportProvider implements McpStream
                     .body(McpError.builder(McpSchema.ErrorCodes.INVALID_REQUEST)
                             .message("Session ID required in mcp-session-id header").build());
         }
-        McpStreamableServerSession session = removeSession(sessionId);
-        if (session == null) {
+        SessionEntry entry;
+        synchronized (admissionLock) {
+            entry = sessions.remove(sessionId);
+        }
+        if (entry == null) {
             return ServerResponse.status(HttpStatus.NOT_FOUND)
                     .body(McpError.builder(McpSchema.ErrorCodes.INVALID_REQUEST).message("Session not found").build());
         }
         McpTransportContext transportContext = contextExtractor.extract(request);
-        session.delete()
+        entry.session.delete()
                 .contextWrite(ctx -> ctx.put(McpTransportContext.KEY, transportContext))
                 .block();
         return ServerResponse.ok().build();
+    }
+
+    private static final class SessionEntry {
+
+        private final McpStreamableServerSession session;
+        private Instant lastActivity;
+        private int inFlight;
+
+        SessionEntry(McpStreamableServerSession session, Instant lastActivity) {
+            this.session = session;
+            this.lastActivity = lastActivity;
+        }
     }
 
     private final class SseSessionTransport implements McpStreamableServerTransport {

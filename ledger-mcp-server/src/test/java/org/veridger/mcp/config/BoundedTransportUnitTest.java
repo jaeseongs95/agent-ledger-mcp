@@ -164,25 +164,8 @@ class BoundedTransportUnitTest {
         JsonMapper rawMapper = JsonMapper.builder().build();
         JacksonMcpJsonMapper mapper = new JacksonMcpJsonMapper(rawMapper);
         AtomicReference<Instant> now = new AtomicReference<>(Instant.parse("2026-11-27T00:00:00Z"));
-        Clock mutableClock = new Clock() {
-            @Override
-            public ZoneId getZone() {
-                return ZoneOffset.UTC;
-            }
-
-            @Override
-            public Clock withZone(ZoneId zone) {
-                return this;
-            }
-
-            @Override
-            public Instant instant() {
-                return now.get();
-            }
-        };
-
         transport = new BoundedStreamableServerTransportProvider(
-                mapper, "/mcp", false, Duration.ofSeconds(5), Duration.ofSeconds(30), 2L, mutableClock);
+                mapper, "/mcp", false, Duration.ofSeconds(5), Duration.ofSeconds(30), 2L, mutableClock(now));
 
         // Invalid JSON body -> 400 PARSE_ERROR
         MockHttpServletRequest badJson = postRequest("{not-valid-json", null);
@@ -294,6 +277,68 @@ class BoundedTransportUnitTest {
         } finally {
             server.closeGracefully();
         }
+    }
+
+    @Test
+    @DisplayName("TRN-04: full capacity reclaims disconnected sessions and preserves in-flight requests and open streams")
+    void admitsNewSessionByReclaimingOnlyIdleDisconnectedSession() throws Exception {
+        JsonMapper rawMapper = JsonMapper.builder().build();
+        JacksonMcpJsonMapper mapper = new JacksonMcpJsonMapper(rawMapper);
+        AtomicReference<Instant> now = new AtomicReference<>(Instant.parse("2026-11-27T00:00:00Z"));
+        transport = new BoundedStreamableServerTransportProvider(
+                mapper, "/mcp", false, null, Duration.ofMinutes(30), 3L, mutableClock(now));
+        McpSyncServer server = McpServer.sync(transport).serverInfo("veridger-unit-test", "1.0.0").build();
+        try {
+            String busy = dispatch(transport, initRequest(1)).headers().getFirst(HttpHeaders.MCP_SESSION_ID);
+            String listening = dispatch(transport, initRequest(2)).headers().getFirst(HttpHeaders.MCP_SESSION_ID);
+            String idle = dispatch(transport, initRequest(3)).headers().getFirst(HttpHeaders.MCP_SESSION_ID);
+            assertThat(List.of(busy, listening, idle)).doesNotHaveDuplicates();
+
+            ServerResponse.Context context = () -> List.of(new JacksonJsonHttpMessageConverter(rawMapper));
+            MockHttpServletRequest ping = postRequest("{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"ping\"}", busy);
+            ping.setAsyncSupported(true);
+            ServerResponse accepted = dispatch(transport, ping);
+            MockHttpServletRequest listen = new MockHttpServletRequest(HttpMethod.GET.name(), "/mcp");
+            listen.addHeader("Accept", MediaType.TEXT_EVENT_STREAM_VALUE);
+            listen.addHeader(HttpHeaders.MCP_SESSION_ID, listening);
+            listen.setAsyncSupported(true);
+            dispatch(transport, listen).writeTo(listen, new MockHttpServletResponse(), context);
+
+            assertThat(dispatch(transport, initRequest(5)).statusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+            now.updateAndGet(current -> current.plusSeconds(61));
+            assertThat(dispatch(transport, initRequest(6)).statusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(transport.activeSessionCount()).isEqualTo(3);
+            String notification = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}";
+            assertThat(dispatch(transport, postRequest(notification, idle)).statusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+            assertThat(dispatch(transport, postRequest(notification, listening)).statusCode())
+                    .isEqualTo(HttpStatus.ACCEPTED);
+
+            MockHttpServletResponse pingResponse = new MockHttpServletResponse();
+            accepted.writeTo(ping, pingResponse, context);
+            assertThat(pingResponse.getContentAsString()).contains("\"id\":4", "\"result\"");
+            assertThat(dispatch(transport, initRequest(7)).statusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        } finally {
+            server.closeGracefully();
+        }
+    }
+
+    private static Clock mutableClock(AtomicReference<Instant> now) {
+        return new Clock() {
+            @Override
+            public ZoneId getZone() {
+                return ZoneOffset.UTC;
+            }
+
+            @Override
+            public Clock withZone(ZoneId zone) {
+                return this;
+            }
+
+            @Override
+            public Instant instant() {
+                return now.get();
+            }
+        };
     }
 
     private static MockHttpServletRequest initRequest(int id) {
