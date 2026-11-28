@@ -81,7 +81,8 @@ jobs:
             exit 1
           fi
           python3 -B .github/scripts/sonar_badges.py mask-host
-          metadata="$RUNNER_TEMP/veridger-sonar-report.txt"
+          metadata="$(mktemp "$RUNNER_TEMP/veridger-sonar-report.XXXXXX")"
+          trap 'rm -f -- "$metadata"' EXIT
           ./gradlew --no-daemon --max-workers=1 sonar \
             -Dsonar.projectKey="$SONAR_PROJECT_KEY" \
             -Dsonar.projectName="$SONAR_PROJECT_KEY" \

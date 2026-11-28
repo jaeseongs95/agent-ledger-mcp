@@ -18,7 +18,8 @@ from unittest.mock import Mock, patch
 import sonar_badges as badges
 
 
-VALUES = ("passed", "A", "B", "C", "91.3%", "0.0%", "28k")
+VALUES = ("passed", "A", "B", "C", "91.3%", "0%", "38k")
+MEASURES = ("OK", "1.0", "2.0", "3.0", "91.3", "0.0", "38945")
 SHA = "a" * 40
 PROJECT = "veridger-release"
 
@@ -47,18 +48,37 @@ class PublicationTest(unittest.TestCase):
         self.latest = [{"key": "analysis", "revision": SHA}]
         self.gate = "OK"
         self.failure_metric = None
+        self.queue = []
+        self.current = {"analysisId": "analysis", "status": "SUCCESS"}
+        self.measures = [
+            {"metric": metric[0], "value": value}
+            for metric, value in zip(badges.BADGES.values(), MEASURES, strict=True)
+        ]
 
     def response(self, base, path, token, *, params, accept="application/json"):
         match path:
             case "api/ce/task":
                 self.assertEqual(token, "analysis-token")
-                return {"task": {"analysisId": "analysis", "status": "SUCCESS", "componentKey": PROJECT}}
+                self.assertEqual(params, {"id": "task"})
+                return {"task": {
+                    "id": "task", "type": "REPORT", "analysisId": "analysis",
+                    "status": "SUCCESS", "componentKey": PROJECT,
+                }}
             case "api/qualitygates/project_status":
                 self.assertEqual(params, {"analysisId": "analysis"})
                 return {"projectStatus": {"status": self.gate}}
             case "api/project_analyses/search":
                 self.assertEqual(token, "read-token")
                 return {"analyses": self.latest}
+            case "api/ce/component":
+                self.assertEqual(token, "read-token")
+                self.assertEqual(params, {"component": PROJECT})
+                return {"queue": self.queue, "current": self.current}
+            case "api/measures/component":
+                self.assertEqual(token, "read-token")
+                self.assertEqual(params["component"], PROJECT)
+                self.assertEqual(params["metricKeys"].split(","), [item[0] for item in badges.BADGES.values()])
+                return {"component": {"key": PROJECT, "measures": self.measures}}
             case "api/project_badges/token":
                 self.assertEqual(token, "read-token")
                 return {"token": "badge-token"}
@@ -123,6 +143,45 @@ class PublicationTest(unittest.TestCase):
         self.github.publish.assert_not_called()
         self.assertEqual(self.request.call_count, 3)
 
+    def test_missing_or_incomplete_analysis_preserves_badges(self):
+        path = self.checkout / "coverage.svg"
+        path.write_bytes(b"old")
+        for changes in ({"analysisId": ""}, {"status": "IN_PROGRESS"}, {"id": "another-task"}, {"type": "OTHER"}):
+            with self.subTest(changes=changes):
+                self.request.reset_mock()
+                self.request.side_effect = None
+                self.request.return_value = {"task": {
+                    **self.response("", "api/ce/task", "analysis-token", params={"id": "task"})["task"], **changes,
+                }}
+                with self.assertRaises(badges.BadgeError):
+                    self.refresh()
+                self.request.assert_called_once()
+                self.github.publish.assert_not_called()
+                self.assertEqual(path.read_bytes(), b"old")
+
+    def test_same_commit_with_different_analysis_and_same_analysis_with_wrong_commit_are_rejected(self):
+        for latest in ({"key": "another-analysis", "revision": SHA}, {"key": "analysis", "revision": "b" * 40}):
+            with self.subTest(latest=latest):
+                self.request.reset_mock()
+                self.latest = [latest]
+                self.refresh()
+                self.github.publish.assert_not_called()
+                self.assertEqual(self.request.call_count, 3)
+
+    def test_missing_or_mismatched_measures_preserve_badges(self):
+        path = self.checkout / "coverage.svg"
+        path.write_bytes(b"old")
+        for value in (None, "87.5"):
+            with self.subTest(value=value):
+                coverage = {"metric": "coverage"}
+                if value is not None:
+                    coverage["value"] = value
+                self.measures[4] = coverage
+                with self.assertRaisesRegex(badges.BadgeError, "analysis measures"):
+                    self.refresh()
+                self.github.publish.assert_not_called()
+                self.assertEqual(path.read_bytes(), b"old")
+
     def test_empty_badge_token_fails_before_download(self):
         def response(*args, **kwargs):
             if args[1] == "api/project_badges/token":
@@ -167,10 +226,26 @@ class PublicationTest(unittest.TestCase):
         def response(*args, **kwargs):
             value = self.response(*args, **kwargs)
             if args[1] == "api/project_badges/measure" and kwargs["params"]["metric"] == "ncloc":
-                self.latest = [{"key": "newer", "revision": "b" * 40}]
+                self.latest = [{"key": "newer", "revision": SHA}]
             return value
 
         self.request.side_effect = response
+        self.refresh()
+        self.github.publish.assert_not_called()
+
+    def test_active_analysis_preserves_badges_even_when_latest_id_has_not_changed(self):
+        def response(*args, **kwargs):
+            value = self.response(*args, **kwargs)
+            if args[1] == "api/project_badges/measure" and kwargs["params"]["metric"] == "ncloc":
+                self.queue = [{"id": "next-task", "status": "IN_PROGRESS"}]
+            return value
+
+        self.request.side_effect = response
+        self.refresh()
+        self.github.publish.assert_not_called()
+
+    def test_another_task_completed_even_when_latest_id_has_not_changed(self):
+        self.current = {"analysisId": "different-analysis", "status": "SUCCESS"}
         self.refresh()
         self.github.publish.assert_not_called()
 
@@ -179,7 +254,7 @@ class PublicationTest(unittest.TestCase):
             value = self.response(*args, **kwargs)
             if args[1] == "api/ce/task":
                 value["task"]["branch"] = "retained"
-            if args[1] in ("api/project_analyses/search", "api/project_badges/measure"):
+            if args[1] in ("api/project_analyses/search", "api/project_badges/measure", "api/measures/component"):
                 self.assertEqual(kwargs["params"]["branch"], "retained")
             return value
 

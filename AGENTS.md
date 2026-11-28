@@ -30,6 +30,8 @@
 
 ## README 품질 배지
 
+- 이번 실행의 스캔이 반환한 분석 ID로 Quality Gate 통과를 확인한다. 지표와 SVG를 받기 전후에 최신 SonarQube 분석 ID와 커밋 SHA가 일치하고 대기 중이거나 처리 중인 분석이 없어야 한다. SVG의 표시 값도 조회한 지표와 일치해야 한다. 분석이 완료되지 않았거나 출처를 확인할 수 없으면 기존 배지를 보존한다.
+
 - SonarQube 분석을 통과한 최신 릴리스 후보에만 공식 SVG를 갱신한다. 최초 갱신 시 두 README의 상대 경로 참조와 SVG를 한 커밋에 넣는다. `main`에는 릴리스 후보의 배지가 PR로 들어가며 `develop`은 이후 릴리스 병합으로 이 배지를 받는다.
 - 서버 접속 정보나 토큰을 저장소나 로그에 남기지 않는다. 릴리스 분석에는 프로젝트 분석 토큰을 사용하고, 배지 단계에서만 `veridger-release`의 Browse 권한이 있는 User Token을 GitHub Actions 시크릿 `SONAR_RELEASE_BADGE_READ_TOKEN`으로 사용한다.
 - GitHub 브랜치 룰셋을 유지한다. 배지 커밋은 GitHub Actions 토큰으로 서명되고 분석한 커밋이 원격 브랜치의 최신 커밋일 때만 반영한다.
