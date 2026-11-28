@@ -21,7 +21,7 @@ BADGES = {
     "maintainability": ("sqale_rating", "maintainability", r"[A-E]"),
     "coverage": ("coverage", "coverage", r"\d+(?:\.\d+)?%"),
     "duplicated-lines": ("duplicated_lines_density", "duplicated lines", r"\d+(?:\.\d+)?%"),
-    "lines-of-code": ("ncloc", "lines of code", r"\d+(?:[.,]\d+)?[kMGT]?"),
+    "lines-of-code": ("ncloc", "lines of code", r"\d+(?:\.\d+)?[kmbt]?"),
 }
 BADGE_DIR = Path("docs/badges")
 README_LABELS = {
@@ -129,7 +129,8 @@ def validate_svg(name, content, secrets):
         allowed_values = labels - {label}
         if label not in labels or len(allowed_values) != 1:
             raise ValueError
-        if not re.fullmatch(pattern, next(iter(allowed_values)), re.IGNORECASE):
+        badge_value = next(iter(allowed_values))
+        if not re.fullmatch(pattern, badge_value, re.IGNORECASE):
             raise ValueError
         for value in values:
             decoded = urllib.parse.unquote(value).lower()
@@ -137,6 +138,22 @@ def validate_svg(name, content, secrets):
                 raise ValueError
     except (ValueError, ET.ParseError):
         raise BadgeError(f"Invalid or sensitive content in {name}.svg.") from None
+    return badge_value
+
+
+def measure_value(metric, value):
+    if metric == "alert_status":
+        return {"OK": "passed"}[value]
+    if metric.endswith("_rating"):
+        return {1: "a", 2: "b", 3: "c", 4: "d", 5: "e"}[float(value)]
+    if metric != "ncloc":
+        return f"{float(value):.1f}".removesuffix(".0") + "%"
+    # Match SonarQube's abbreviated counts and its four-character cutoff for fractions.
+    count = int(value)
+    scale = (len(str(count)) - 1) // 3
+    number = f"{count / 1000**scale:.1f}".removesuffix(".0")
+    suffix = " kmbt"[scale]
+    return ((number if len(number + suffix) <= 4 else number.partition(".")[0]) + suffix).strip()
 
 
 class Sonar:
@@ -152,9 +169,10 @@ class Sonar:
 
     def download(self, task_id, sha, directory):
         task = self.get("api/ce/task", id=task_id)["task"]
-        if task.get("status") != "SUCCESS" or task.get("componentKey") != self.project:
+        analysis_id = task.get("analysisId")
+        if (task.get("status") != "SUCCESS" or task.get("componentKey") != self.project
+                or task.get("id") != task_id or task.get("type") != "REPORT" or not analysis_id):
             raise BadgeError("SonarQube task did not successfully analyze this project.")
-        analysis_id = task["analysisId"]
         status = self.get("api/qualitygates/project_status", analysisId=analysis_id)["projectStatus"]["status"]
         if status != "OK":
             raise BadgeError("The analyzed commit did not pass the Quality Gate.")
@@ -165,6 +183,7 @@ class Sonar:
             raise BadgeError("The release badge read credential is missing.")
         if not self.is_latest(project, analysis_id, sha):
             return False
+        measures = self.badge_measures(task.get("branch"))
         badge_token = self.get("api/project_badges/token", read=True, project=self.project)["token"]
         if not badge_token:
             raise BadgeError("SonarQube did not return a project badge token.")
@@ -174,14 +193,32 @@ class Sonar:
                 self.base, "api/project_badges/measure", None, accept="image/svg+xml",
                 params={**project, "metric": metric, "token": badge_token},
             )
-            validate_svg(name, content, sensitive)
+            if validate_svg(name, content, sensitive) != measures[metric]:
+                raise BadgeError(f"{name}.svg does not match the analysis measures.")
             (directory / f"{name}.svg").write_bytes(content)
-        # The measure badge API draws the latest snapshot, so bracket those reads with analysis checks.
+        # Neither the measures nor the SVG endpoints accept an analysis ID.
         return self.is_latest(project, analysis_id, sha)
+
+    def badge_measures(self, branch):
+        metrics = [metric for metric, _, _ in BADGES.values()]
+        params = {"component": self.project, "metricKeys": ",".join(metrics)}
+        if branch:
+            params["branch"] = branch
+        component = self.get("api/measures/component", read=True, **params)["component"]
+        try:
+            values = {measure["metric"]: measure["value"] for measure in component["measures"]}
+            return {metric: measure_value(metric, values[metric]) for metric in metrics}
+        except (IndexError, KeyError, TypeError, ValueError):
+            raise BadgeError("SonarQube did not return all required analysis measures.") from None
 
     def is_latest(self, project, analysis_id, sha):
         analyses = self.get("api/project_analyses/search", read=True, **project, ps=1)["analyses"]
-        return bool(analyses and analyses[0]["key"] == analysis_id and analyses[0].get("revision") == sha)
+        if not analyses or analyses[0]["key"] != analysis_id or analyses[0].get("revision") != sha:
+            return False
+        # Live measures can change while another Compute Engine task is still processing.
+        state = self.get("api/ce/component", read=True, component=self.project)
+        current = state.get("current", {})
+        return not state.get("queue") and current.get("analysisId") == analysis_id and current.get("status") == "SUCCESS"
 
 
 class GitHub:
@@ -244,7 +281,7 @@ def refresh(sonar, github, task_id, sha, runner_temp):
     with tempfile.TemporaryDirectory(prefix="sonar-badges-", dir=runner_temp) as staging:
         directory = Path(staging)
         if not sonar.download(task_id, sha, directory):
-            print("A newer SonarQube snapshot is available. Existing badges preserved.")
+            print("SonarQube could not confirm the snapshot is current and idle. Existing badges preserved.")
             return
         additions = []
         for name in BADGES:
