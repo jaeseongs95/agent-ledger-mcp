@@ -1,13 +1,5 @@
 # Veridger
 
-![품질 게이트](docs/badges/quality-gate.svg)
-![보안 등급](docs/badges/security.svg)
-![신뢰성 등급](docs/badges/reliability.svg)
-![유지관리성 등급](docs/badges/maintainability.svg)
-![커버리지](docs/badges/coverage.svg)
-![중복 줄](docs/badges/duplicated-lines.svg)
-![코드 줄 수](docs/badges/lines-of-code.svg)
-
 [English](README.md)
 
 소프트웨어 개발, 영화 제작, 집필, 연구, 운영 등 모든 분야의 AI 에이전트 작업을 기록하는 범용 장부이며, 하나의 MCP 엔드포인트로 제공됩니다. 이슈, 명세, 작업, 마일스톤 기준, 산출물과 독립 검수를 누가 왜 수행했는지와 함께 기록합니다.

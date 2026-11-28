@@ -24,6 +24,12 @@ BADGES = {
     "lines-of-code": ("ncloc", "lines of code", r"\d+(?:[.,]\d+)?[kMGT]?"),
 }
 BADGE_DIR = Path("docs/badges")
+README_LABELS = {
+    "README.md": ("Quality Gate", "Security Rating", "Reliability Rating", "Maintainability Rating",
+                  "Coverage", "Duplicated Lines", "Lines of Code"),
+    "README.ko.md": ("품질 게이트", "보안 등급", "신뢰성 등급", "유지관리성 등급",
+                     "커버리지", "중복 줄", "코드 줄 수"),
+}
 MAX_SVG_BYTES = 64 * 1024
 SVG_NS = "{http://www.w3.org/2000/svg}"
 SVG_TAGS = {"svg", "g", "linearGradient", "stop", "clipPath", "rect", "text", "path", "title", "desc", "defs"}
@@ -94,12 +100,12 @@ def sonar_endpoint():
 def validate_svg(name, content, secrets):
     try:
         text = content.decode("utf-8")
-        raw = re.sub(r"^\s*<\?xml [^?]*\?>", "", text)
-        raw = raw.replace("<!-- SONARQUBE MEASURE -->", "")
+        markup = re.sub(r"^\s*<\?xml [^?]*\?>", "", text)
+        raw = markup.replace("<!-- SONARQUBE MEASURE -->", "")
         raw = raw.replace('xmlns="http://www.w3.org/2000/svg"', "")
         if "<?" in raw or "<!" in raw:
             raise ValueError
-        values = [raw]
+        values = [raw, text[:len(text) - len(markup)]]
         svg = ET.fromstring(text)
         if svg.tag != SVG_NS + "svg":
             raise ValueError
@@ -133,14 +139,15 @@ def validate_svg(name, content, secrets):
 
 
 class Sonar:
-    def __init__(self, endpoint, token, project):
+    def __init__(self, endpoint, analysis_token, read_token, project):
         self.endpoint = endpoint
         self.base = endpoint.geturl().rstrip("/")
-        self.token = token
+        self.analysis_token = analysis_token
+        self.read_token = read_token
         self.project = project
 
-    def get(self, path, **params):
-        return request(self.base, path, self.token, params=params)
+    def get(self, path, *, read=False, **params):
+        return request(self.base, path, self.read_token if read else self.analysis_token, params=params)
 
     def download(self, task_id, sha, directory):
         task = self.get("api/ce/task", id=task_id)["task"]
@@ -153,12 +160,14 @@ class Sonar:
         project = {"project": self.project}
         if task.get("branch"):
             project["branch"] = task["branch"]
+        if not self.read_token:
+            raise BadgeError("The release badge read credential is missing.")
         if not self.is_latest(project, analysis_id, sha):
             return False
-        badge_token = self.get("api/project_badges/token", project=self.project)["token"]
+        badge_token = self.get("api/project_badges/token", read=True, project=self.project)["token"]
         if not badge_token:
             raise BadgeError("SonarQube did not return a project badge token.")
-        sensitive = (self.endpoint.hostname, self.endpoint.netloc, self.token, badge_token)
+        sensitive = (self.endpoint.hostname, self.endpoint.netloc, self.analysis_token, self.read_token, badge_token)
         for name, (metric, _, _) in BADGES.items():
             content = request(
                 self.base, "api/project_badges/measure", None, accept="image/svg+xml",
@@ -170,7 +179,7 @@ class Sonar:
         return self.is_latest(project, analysis_id, sha)
 
     def is_latest(self, project, analysis_id, sha):
-        analyses = self.get("api/project_analyses/search", **project, ps=1)["analyses"]
+        analyses = self.get("api/project_analyses/search", read=True, **project, ps=1)["analyses"]
         return bool(analyses and analyses[0]["key"] == analysis_id and analyses[0].get("revision") == sha)
 
 
@@ -198,11 +207,33 @@ class GitHub:
         response = request(self.base, "graphql", self.token, payload=payload)
         if response.get("errors"):
             if self.head() != sha:
-                print("Branch advanced before publication. Existing badges preserved.")
-                return
+                return False
             raise BadgeError("GitHub rejected the signed badge commit. Check token permissions and branch rules.")
         oid = response["data"]["createCommitOnBranch"]["commit"]["oid"]
-        print(f"Published {len(additions)} changed SonarQube badges in {oid}.")
+        print(f"Published SonarQube badges in {oid}.")
+        return True
+
+
+def file_addition(path, content):
+    return {"path": path.as_posix(), "contents": base64.b64encode(content).decode("ascii")}
+
+
+def readme_additions():
+    additions = []
+    for filename, labels in README_LABELS.items():
+        path = Path(filename)
+        title, _, rest = path.read_text(encoding="utf-8").partition("\n")
+        lines = [
+            f"![{label}]({(BADGE_DIR / (name + '.svg')).as_posix()})"
+            for name, label in zip(BADGES, labels, strict=True)
+        ]
+        section = "\n" + "\n".join(lines) + "\n"
+        if rest.startswith(section):
+            continue
+        if title != "# Veridger" or "docs/badges/" in rest:
+            raise BadgeError("Could not install badge references beneath the README title.")
+        additions.append(file_addition(path, (title + "\n" + section + rest).encode()))
+    return additions
 
 
 def refresh(sonar, github, task_id, sha, runner_temp):
@@ -219,9 +250,10 @@ def refresh(sonar, github, task_id, sha, runner_temp):
             path = BADGE_DIR / f"{name}.svg"
             content = (directory / path.name).read_bytes()
             if not path.exists() or path.read_bytes() != content:
-                additions.append({"path": path.as_posix(), "contents": base64.b64encode(content).decode("ascii")})
+                additions.append(file_addition(path, content))
         if additions:
-            github.publish(sha, additions)
+            if not github.publish(sha, additions + readme_additions()):
+                print("Branch advanced before publication. Existing badges preserved.")
         else:
             print("All seven SonarQube badges are unchanged.")
 
@@ -238,7 +270,7 @@ def main():
     if not ref.startswith("refs/heads/release/"):
         raise BadgeError("Badge publication is limited to release branches.")
     project = os.environ["SONAR_PROJECT_KEY"]
-    sonar = Sonar(endpoint, os.environ["SONAR_TOKEN"], project)
+    sonar = Sonar(endpoint, os.environ["SONAR_TOKEN"], os.environ.get("SONAR_BADGE_READ_TOKEN"), project)
     github = GitHub(os.environ["GITHUB_REPOSITORY"], ref.removeprefix("refs/heads/"), os.environ["GH_TOKEN"])
     refresh(sonar, github, os.environ["SONAR_CE_TASK_ID"], os.environ["GITHUB_SHA"], os.environ["RUNNER_TEMP"])
 
