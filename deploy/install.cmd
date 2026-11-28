@@ -12,19 +12,26 @@ rem Non-interactive usage (fully backward-compatible):
 rem   deploy\install.cmd [--stdin] <jars-dir> <winsw.exe> <driver-jar> <driver-class> <owner-account> <app-account> "<jdbc-url>" ["<name>" ["<more render-deploy options>"]]
 rem
 rem One-stop interactive/release usage (downloads & SHA-256 verifies release JARs from GitHub Releases):
-rem   deploy\install.cmd --download [latest|v5.0.0]
+rem   deploy\install.cmd --download [latest|v6.0.0]
 rem
 rem The secret folder (common, admin, mcp, tool) and secrets belong to the installing user with read for LocalService
 rem (nothing is handed over). Run it again as the same user. Passwords are never given on a command line.
 rem An installation of an earlier major version is moved with the separate tool ledger-migrate-1x (see the README).
+rem Set VERIDGER_PG_DUMP to the full path of pg_dump.exe to enable automatic PostgreSQL schema updates.
 setlocal EnableExtensions DisableDelayedExpansion
 set "STDIN="
 set "DL_DIR="
 set "SCRIPT_DIR=%~dp0"
 if /i "%~1"=="--download" goto :download_mode
 if "%~1"=="" goto :download_mode
-if /i "%~1"=="--stdin" set "STDIN=--stdin" & shift
-if "%~7"=="" echo install.cmd: arguments are missing: see the header of this file& exit /b 1
+if /i "%~1"=="--stdin" (
+  set "STDIN=--stdin"
+  shift
+)
+if "%~7"=="" (
+  echo install.cmd: arguments are missing: see the header of this file
+  exit /b 1
+)
 set "JARS_ARG=%~1"
 set "WINSW_ARG=%~2"
 set "DRV_JAR_ARG=%~3"
@@ -41,7 +48,10 @@ set "VI_VER=%~2"
 if "%VI_VER%"=="" set "VI_VER=latest"
 set "DL_GUID="
 for /f "usebackq delims=" %%G in (`powershell -NoProfile -Command "[guid]::NewGuid().ToString('N')"`) do set "DL_GUID=%%G"
-if not defined DL_GUID echo install.cmd: failed to generate temporary directory id& exit /b 1
+if not defined DL_GUID (
+  echo install.cmd: failed to generate temporary directory id
+  exit /b 1
+)
 set "DL_DIR=%TEMP%\veridger-release-%DL_GUID%"
 set "VI_DIR=%DL_DIR%"
 echo install.cmd: downloading Veridger release (%VI_VER%) and verifying SHA256SUMS ...
@@ -88,7 +98,10 @@ set "MORE_ARG="
 
 :run_install
 for %%I in (java.exe) do set "JAVA=%%~$PATH:I"
-if not defined JAVA echo install.cmd: java is not installed& exit /b 1
+if not defined JAVA (
+  echo install.cmd: java is not installed
+  exit /b 1
+)
 set "JAVA=%JAVA:\=/%"
 set "CLIJAR=%JARS_ARG%\ledger-cli.jar" & set "JVMOPTS=-Duser.timezone=UTC"
 if "%NAME%"=="" call :ask instance-name NAME abcdefghijklmnopqrstuvwxyz0123456789- || exit /b 1
@@ -101,7 +114,10 @@ set "VI_ADMIN=%ADMINPORT%"
 powershell -NoProfile -Command ^
   "$n = $env:VI_NAME; if ($n -notmatch '^[a-z][a-z0-9-]{0,22}$' -or $n.EndsWith('-')) { exit 1 }" || (echo install.cmd: invalid instance name& exit /b 1)
 for /f "usebackq tokens=1,2 delims=:" %%A in (`powershell -NoProfile -Command "$m=$env:VI_MCP; $a=$env:VI_ADMIN; $raw=$env:VI_MORE; if ($raw -match '--mcp-port(?:=|\s+)([0-9]+)') { $m=$Matches[1] }; if ($raw -match '--admin-port(?:=|\s+)([0-9]+)') { $a=$Matches[1] }; if ($m -notmatch '^[0-9]+$' -or [int]$m -lt 1 -or [int]$m -gt 65535) { exit 1 }; if ($a -notmatch '^[0-9]+$' -or [int]$a -lt 1 -or [int]$a -gt 65535) { exit 1 }; Write-Output ($m + ':' + $a)"`) do (set "MCPPORT=%%A" & set "ADMINPORT=%%B")
-if errorlevel 1 echo install.cmd: invalid port value& exit /b 1
+if errorlevel 1 (
+  echo install.cmd: invalid port value
+  exit /b 1
+)
 set "SVC=%NAME%" & set "ADMIN=%NAME%-admin"
 set "ACCOUNT=NT AUTHORITY\LocalService"
 set "WHOME=C:\ProgramData\%NAME%" & set "HOME=C:/ProgramData/%NAME%"
@@ -120,8 +136,10 @@ exit /b 0
 :steps
 "%JAVA%" %JVMOPTS% -jar "%JARS_ARG%\ledger-cli.jar" --ledger.secrets.home=C:/nonexistent prepare-host "--jars=%JARS_ARG%" "--winsw=%WINSW_ARG%" "--driver-jar=%DRV_JAR_ARG%" %RENDER% || exit /b 1
 set "VI_LIB=%WHOME%\lib"
+set "VI_JAVA=%JAVA%"
 powershell -NoProfile -Command ^
   "Add-Type -AssemblyName System.IO.Compression.FileSystem;" ^
+  "[System.IO.File]::WriteAllText((Join-Path $env:VI_LIB '.updater-java'), $env:VI_JAVA);" ^
   "$jp = Join-Path $env:VI_LIB 'ledger-cli.jar';" ^
   "if (Test-Path -LiteralPath $jp -PathType Leaf) { $z = [System.IO.Compression.ZipFile]::OpenRead($jp); try { $e = $z.GetEntry('META-INF/MANIFEST.MF'); if ($e) { $sr = New-Object System.IO.StreamReader($e.Open()); try { while ($null -ne ($ln = $sr.ReadLine())) { if ($ln -match '^Implementation-Version:\s*([0-9]+\.[0-9]+\.[0-9]+)') { [System.IO.File]::WriteAllText((Join-Path $env:VI_LIB '.installed-version'), ($Matches[1] + [Environment]::NewLine), [System.Text.UTF8Encoding]::new($false)); break } } } finally { $sr.Dispose() } } } finally { $z.Dispose() } }" >nul 2>&1
 %CLI% secret-set ledger.jdbc.password --if-absent %STDIN% || exit /b 1
@@ -129,7 +147,16 @@ powershell -NoProfile -Command ^
 %CLI% token-generate ledger.mcp.token --print "--copy-to=ledger.admin.agent-token" || exit /b 1
 for %%D in ("%DRV_JAR_ARG%") do set "DRV_NAME=%%~nxD"
 %CLI% driver-register "--jar=%HOME%/etc/drivers/%DRV_NAME%" "--class=%DRV_CLS_ARG%" || exit /b 1
-%CLI% setup "--owner-account=%OWNER_ARG%" "--app-account=%APP_ARG%" %STDIN% || exit /b 1
+if defined VERIDGER_PG_DUMP (
+  if not "%DRV_CLS_ARG%"=="org.postgresql.Driver" (
+    echo install.cmd: automatic schema updates require org.postgresql.Driver
+    exit /b 1
+  )
+  %JARCMD% host-update provision "%WHOME%\lib" "%WHOME%\etc" "%DRV_JAR_ARG%" "%VERIDGER_PG_DUMP%" "%OWNER_ARG%" "%JDBC_ARG%" "%APP_ARG%" %STDIN% || exit /b 1
+  %CLI% setup "--owner-account=%OWNER_ARG%" "--app-account=%APP_ARG%" --stdin < "%WHOME%\lib\schema-update\owner-password" || exit /b 1
+) else (
+  %CLI% setup "--owner-account=%OWNER_ARG%" "--app-account=%APP_ARG%" %STDIN% || exit /b 1
+)
 for %%S in (%SVC% %ADMIN%) do "%WHOME%\lib\%%S.exe" uninstall >nul 2>&1 & "%WHOME%\lib\%%S.exe" install && sc.exe config %%S obj= "%ACCOUNT%" >nul || exit /b 1
 for %%S in (%SVC% %ADMIN%) do "%WHOME%\lib\%%S.exe" start || exit /b 1
 set "UPD_SRC="
@@ -137,7 +164,11 @@ if exist "%JARS_ARG%\veridger-updater.cmd" set "UPD_SRC=%JARS_ARG%\veridger-upda
 if not defined UPD_SRC if exist "%SCRIPT_DIR%veridger-updater.cmd" set "UPD_SRC=%SCRIPT_DIR%veridger-updater.cmd"
 if defined UPD_SRC (
   copy /y "%UPD_SRC%" "%WHOME%\lib\veridger-updater.cmd" >nul || exit /b 1
-  schtasks /create /f /tn "VeridgerUpdater-%NAME%" /ru SYSTEM /sc MINUTE /mo 1 /tr "\"%WHOME%\lib\veridger-updater.cmd\" %NAME% %MCPPORT% %ADMINPORT% jaeseongs95/veridger" >nul 2>&1
+  schtasks /create /f /tn "VeridgerUpdater-%NAME%" /ru SYSTEM /sc MINUTE /mo 1 /tr "\"%WHOME%\lib\veridger-updater.cmd\" %NAME% %MCPPORT% %ADMINPORT% jaeseongs95/veridger" >nul 2>&1 || exit /b 1
+  if defined VERIDGER_PG_DUMP type nul > "%WHOME%\lib\.schema-updates"
+) else if defined VERIDGER_PG_DUMP (
+  echo install.cmd: host updater script is required for automatic schema updates
+  exit /b 1
 )
 exit /b 0
 
@@ -148,7 +179,10 @@ exit /b 1
 :ask
 set "%2="
 for /f "usebackq delims=" %%V in (`""%JAVA%" %JVMOPTS% -jar "%CLIJAR%" --ledger.secrets.home=C:/nonexistent install-default %1 || echo !"`) do set "%2=%%V"
-if not defined %2 echo install.cmd: install-default %1 gave no value& exit /b 1
+if not defined %2 (
+  echo install.cmd: install-default %1 gave no value
+  exit /b 1
+)
 call set "VALUE=%%%2%%"
 for /f "delims=%~3" %%X in ("%VALUE%") do echo install.cmd: install-default %1 is not of the form its value has& exit /b 1
 exit /b 0

@@ -33,19 +33,19 @@
              th:text="#{versions.title}">Project versions</a>
         </div>
         <p th:if="${formErrorDetail != null}" class="alert alert-danger" role="alert" th:text="${formErrorDetail}">Could not save the relationship.</p>
-        <p th:if="${#lists.isEmpty(issue.projectVersions())}" class="hint" th:text="#{versions.noneRelated}">No versions are linked.</p>
-        <ul th:unless="${#lists.isEmpty(issue.projectVersions())}" class="version-links">
-          <li th:each="name : ${issue.projectVersions()}">
-            <a th:href="@{/issues(project=${issue.projectId()},projectVersion=${name})}" th:text="${name}">Version</a>
-            <form method="post" th:action="@{/issues/{id}/versions(id=${issue.id()})}">
-              <input type="hidden" name="name" th:value="${name}">
+        <p th:if="${linkedVersions.isEmpty()}" class="hint" th:text="#{versions.noneRelated}">No versions are linked.</p>
+        <ul th:unless="${linkedVersions.isEmpty()}" class="version-links">
+          <li th:each="v : ${linkedVersions}">
+            <a th:href="@{/projects/versions/{id}(id=${v.id()},project=${issue.projectId()},kind='issue')}" th:text="${v.name()}">Version</a>
+            <form method="post" th:action="@{/issues/{id}/versions(id=${issue.id()})}" data-spa-anchor="project-versions">
+              <input type="hidden" name="name" th:value="${v.name()}">
               <button class="secondary btn-sm" name="remove" value="true" type="submit"
-                      th:attr="aria-label=#{versions.unlinkNamed(${name})}" th:text="#{versions.unlink}">Unlink</button>
+                      th:attr="aria-label=#{versions.unlinkNamed(${v.name()})}" th:text="#{versions.unlink}">Unlink</button>
             </form>
           </li>
         </ul>
         <form th:if="${!#lists.isEmpty(availableVersions)}" method="post"
-              th:action="@{/issues/{id}/versions(id=${issue.id()})}" class="version-link-form">
+              th:action="@{/issues/{id}/versions(id=${issue.id()})}" class="version-link-form" data-spa-anchor="project-versions">
           <div class="form-field">
             <label for="link-version" th:text="#{versions.name}">Version name</label>
             <select id="link-version" name="name" required>

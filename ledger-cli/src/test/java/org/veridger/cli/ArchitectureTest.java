@@ -90,13 +90,14 @@ class ArchitectureTest {
     }
 
     @Test
-    @DisplayName("SEC-003 no code reads the environment or starts a process")
+    @DisplayName("SEC-003 only the privileged host updater may launch a backup or migration process")
     void sec003_noEnvironmentOrProcess() {
         noClasses().should().callMethod(System.class, "getenv")
                 .orShould().callMethod(System.class, "getenv", String.class)
-                .orShould().dependOnClassesThat().areAssignableTo(ProcessBuilder.class)
                 .orShould().callMethod(Runtime.class, "exec", String.class)
                 .check(MAIN);
+        noClasses().that().doNotHaveFullyQualifiedName("org.veridger.cli.deploy.HostUpdateProcess")
+                .should().dependOnClassesThat().areAssignableTo(ProcessBuilder.class).check(MAIN);
     }
 
     @Test

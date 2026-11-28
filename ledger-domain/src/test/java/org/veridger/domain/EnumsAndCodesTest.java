@@ -46,7 +46,7 @@ class EnumsAndCodesTest {
         assertThat(names(CriterionState.class)).containsExactlyInAnyOrder("UNKNOWN", "PLANNED", "ACTIVE",
                 "COMPLETED", "MET", "NOT_MET");
         assertThat(Tokens.allowed(Scope.values())).containsExactly("issue", "spec", "task", "deliverable", "verify");
-        assertThat(names(Channel.class)).containsExactlyInAnyOrder("AUTHOR", "REVIEWER");
+        assertThat(names(Channel.class)).containsExactlyInAnyOrder("AUTHOR", "REVIEWER", "ADMIN");
         assertThat(Tokens.allowed(CheckResult.values())).containsExactly("passed", "failed", "cancelled");
         assertThat(Tokens.allowed(DeliverableTarget.values())).containsExactly("issue", "spec", "task");
         assertThat(Tokens.allowed(CodeState.values())).containsExactly("ACTIVE", "INACTIVE");

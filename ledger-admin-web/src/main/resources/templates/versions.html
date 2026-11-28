@@ -53,8 +53,9 @@
               <strong th:text="${v.name()}">Version name</strong>
               <p th:if="${v.description() != null}" class="prewrap" th:text="${v.description()}">Description</p>
             </div>
-            <a class="button secondary btn-sm" th:href="@{/issues(project=${choice.selected()},projectVersion=${v.name()})}"
-               th:text="#{versions.viewIssues}">View related issues</a>
+            <a class="button secondary btn-sm"
+               th:href="@{/projects/versions/{id}(id=${v.id()},project=${choice.selected()})}"
+               th:text="#{versions.open}">Open version</a>
           </div>
           <details th:with="editing=${editForm != null and editForm.originalName() == v.name()}" th:open="${editing}">
             <summary th:text="#{versions.edit}">Edit version</summary>

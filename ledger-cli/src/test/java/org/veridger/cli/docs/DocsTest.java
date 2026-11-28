@@ -87,7 +87,7 @@ class DocsTest {
             new Term(".mjs", Pattern.compile("\\.mjs\\b")),
             new Term("Cloudflare", Pattern.compile("(?i)cloudflare")),
             new Term("1.x shell installers", Pattern.compile("(?i)one-click|setup-domain")),
-            new Term("PostgreSQL server tools", Pattern.compile("(?i)\\bpsql\\b|pg_hba|SECURITY DEFINER|pg_dump")),
+            new Term("PostgreSQL server administration", Pattern.compile("(?i)\\bpsql\\b|pg_hba|SECURITY DEFINER")),
             new Term("1.x directories", Pattern.compile("(?<![\\w/.-])(?:bin|web|mcp|sql|tests)/")));
 
     // ---- sources of the lists: always the code ----
@@ -262,7 +262,7 @@ class DocsTest {
 
     @ParameterizedTest
     @MethodSource("legacyTermCases")
-    @DisplayName("DOC-007 DBHub, Node, npm, .mjs, Cloudflare, the 1.x shell installers, the PostgreSQL server tools and the 1.x directories appear only in a line that says 1.x (the Layout note); deploy/install.sh is the installer of 2.x and not a 1.x term")
+    @DisplayName("DOC-007 legacy tooling and PostgreSQL server administration appear only in the 1.x layout note")
     void legacyTermsAppearOnlyInLinesThatSayTheyAreOneX(Language language, Term term) {
         List<String> offending = language.readme().lines().stream().filter(line -> term.pattern().matcher(line).find())
                 .filter(line -> !line.contains(LEGACY_MARKER)).toList();

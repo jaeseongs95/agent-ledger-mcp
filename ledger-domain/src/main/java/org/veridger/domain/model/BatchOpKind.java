@@ -11,7 +11,7 @@ import org.veridger.domain.value.Token;
  * the JSON boundary checks: required keys must be present, unknown keys are rejected.
  */
 public enum BatchOpKind implements Token {
-    SAVE("save", Set.of("entity", "fields", "reason"), Set.of("id", "expected_version")),
+    SAVE("save", Set.of("entity", "fields", "reason"), Set.of("id", "expected_version", "project_version")),
     TRANSITION("transition", Set.of("entity", "id", "expected_version", "to", "reason"),
             Set.of("evidence_uri", "evidence_sha256", "merged_into", "attachment_id")),
     RECORD_DELIVERABLE("record_deliverable",

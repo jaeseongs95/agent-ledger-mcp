@@ -10,7 +10,7 @@
 설치기는 프록시 설정을 쓰지 않고 인증서를 발급하지 않습니다.
 
 2.0.0 버전은 Java 25와 Spring Boot로 다시 작성한 것이며 자체 도구 계약을 가집니다(모든 쓰기 도구는 필수 `operationKey`를 받고, 모든 응답은 `ApiResult.v1` 봉투를 쓰며, 이전 버전의 인자는 새 인자와 함께 받아들이지 않습니다).
-클라이언트에 바뀐 내용은 릴리스 노트([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md), [4.0.0](docs/release-notes/4.0.0.md), [4.0.1](docs/release-notes/4.0.1.md), [4.1.0](docs/release-notes/4.1.0.md), [4.2.0](docs/release-notes/4.2.0.md), [4.3.0](docs/release-notes/4.3.0.md), [4.3.1](docs/release-notes/4.3.1.md), [4.3.2](docs/release-notes/4.3.2.md), [4.4.0](docs/release-notes/4.4.0.md), [4.4.1](docs/release-notes/4.4.1.md), [5.0.0](docs/release-notes/5.0.0.md))에 적습니다. 릴리스 노트의 형식은 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md)에 있습니다.
+클라이언트에 바뀐 내용은 릴리스 노트([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md), [4.0.0](docs/release-notes/4.0.0.md), [4.0.1](docs/release-notes/4.0.1.md), [4.1.0](docs/release-notes/4.1.0.md), [4.2.0](docs/release-notes/4.2.0.md), [4.3.0](docs/release-notes/4.3.0.md), [4.3.1](docs/release-notes/4.3.1.md), [4.3.2](docs/release-notes/4.3.2.md), [4.4.0](docs/release-notes/4.4.0.md), [4.4.1](docs/release-notes/4.4.1.md), [5.0.0](docs/release-notes/5.0.0.md), [6.0.0](docs/release-notes/6.0.0.md))에 적습니다. 릴리스 노트의 형식은 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md)에 있습니다.
 
 ## 목차
 
@@ -253,6 +253,7 @@ ID를 모르면 `ledger_search`, ID를 알면 `ledger_get`, 조치 대기 목록
 | `ledger.admin.update.enabled` | 관리 웹 | `/updates` 릴리스 확인 및 업데이트 예약 버튼 활성화 여부, 기본 true |
 | `ledger.admin.update.repository` | 관리 웹 | 릴리스를 조회할 GitHub 저장소(`owner/repo`), 기본 `jaeseongs95/veridger` |
 | `ledger.admin.update.directory` | 관리 웹 | 검증된 업데이트 JAR와 `request.properties`를 호스트 업데이터용으로 스테이징하는 디렉터리, 기본 `/etc/veridger/update` |
+| `ledger.admin.update.schema-migration-marker` | 관리 웹 | 설치기가 설정하는 PostgreSQL 스키마 자동 마이그레이션 확인 파일 |
 | `ledger.attachments.directory` | 서버, CLI | 첨부 파일을 두는 위치입니다(설치 프로그램이 `<data folder>/attachments`로 정합니다). 정하지 않으면 첨부 도구는 등록되지 않습니다 |
 | `ledger.attachments.key-directory` | 서버, CLI | 키 파일을 두는 위치로 `directory` 밖이어야 합니다(안이면 시작이 실패합니다). 설치 프로그램이 비밀 디렉터리 안이 아니라 그 옆인 `<settings folder>/attachment-keys`로 정합니다 |
 | `ledger.attachments.active-key-id` | 서버, CLI | 새 업로드를 쓰는 키입니다. `setup`이 `local.yaml`에 적습니다. 키 파일이 없으면 서버가 시작하지 않습니다 |
@@ -321,6 +322,7 @@ cp ledger-cli/build/libs/ledger-cli.jar ledger-mcp-server/build/libs/ledger-mcp-
 | `--name=<name>` | 인스턴스 이름, 기본값 `veridger`: 소문자, 숫자, 하이픈, 23자 이내, `-admin`으로 끝나지 않음. Java가 무엇이든 만들기 전에 검증합니다 |
 | `--java=<path>` | Java 25 런타임. 기본값은 root의 `PATH`에 있는 `java`이며, 서비스 사용자도 실행하므로 모든 계정이 실행할 수 있는 경로(`/home` 아래가 아닌 곳)여야 하고, 스크립트가 서비스 사용자를 만든 직후, 다른 것을 만들기 전에 이를 확인합니다 |
 | `--jars=<dir>` | 선택: jar 세 개가 있는 디렉터리. 생략하면 릴리스 jar를 내려받고 `SHA256SUMS`를 자동 검증합니다 |
+| `--pg-dump=<path>` | 선택. 호스트에 설치된 `pg_dump` 절대 경로를 지정하여 PostgreSQL 스키마 자동 업데이트를 활성화합니다 |
 | `--version=<tag>` | 선택: `--jars` 생략 시 내려받을 릴리스 태그(`latest` 또는 `vX.Y.Z`), 기본값 `latest` |
 | `--repo=<owner/name>` | 선택: `--jars` 생략 시 릴리스를 내려받을 GitHub 저장소, 기본값 `jaeseongs95/veridger` |
 | `--driver-jar=<file>` | JDBC 드라이버 jar |
@@ -393,6 +395,14 @@ deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <a
 ```
 
 `SHA256SUMS`를 자동 검증해 내려받는 대화형 설치는 `deploy\install.cmd --download`로 실행합니다. 설치기는 관리 웹 업데이트를 위한 호스트 업데이터 스크립트(`veridger-updater.cmd`)도 작업 스케줄러에 함께 등록합니다.
+
+#### PostgreSQL 스키마 자동 업데이트
+
+Linux에서는 `--pg-dump=/absolute/path/to/pg_dump`를 추가하고 Windows에서는 `VERIDGER_PG_DUMP`에 `pg_dump.exe`의 절대 경로를 지정한 뒤 최신 설치기를 실행합니다. 기존 설치도 이 설정은 한 번 필요합니다. DB 서버와 메이저 버전이 같은 클라이언트와 단일 호스트 및 데이터베이스 이름이 있는 PostgreSQL JDBC URL을 사용합니다. URL에는 `sslmode`를 지정할 수 있습니다. 설치할 때 입력한 DB 소유자 자격 증명은 호스트 업데이터의 전용 디렉터리에 저장됩니다. DB 주소, 스키마 또는 소유자 자격 증명이 바뀌면 다시 설정합니다.
+
+같은 주 버전 내에서 업데이트할 때 호스트는 설치본과 새 JAR의 마이그레이션을 비교합니다. 변경이 있으면 두 서비스를 중지하고, DB를 백업한 뒤 마이그레이션과 앱 계정 권한 갱신을 적용합니다. 이후 두 서비스를 시작하고 상태를 확인합니다. 백업은 Linux의 `/opt/<name>/backup-*` 또는 Windows의 `C:\ProgramData\<name>\lib\backup-*`에 남습니다.
+
+마이그레이션 시작 후 실패하면 JAR 디렉터리의 `.schema-update-in-progress`에 백업 위치와 대상 버전이 기록됩니다. 백업 폴더의 `backup.log`와 `migration.log`를 확인해 대상 버전의 마이그레이션을 완료하거나 백업과 일치하는 DB 및 JAR를 복원합니다. DB와 두 서비스가 일치하는 버전으로 정상 동작할 때 복구 표시를 제거합니다. 주 버전 변경에는 기존 설치 절차를 적용합니다.
 
 모든 것은 `C:\ProgramData\<name>`에 놓입니다. 두 서비스는 LocalService로 실행하고, 실패하면 다시 시작하며(WinSW 설정), 로그는 `logs` 폴더에 씁니다.
 `prepare-host`는 폴더를 SYSTEM과 Administrators 외 모든 계정에게 닫고 같은 단계에서 LocalService에 필요한 접근을 줍니다(Java가 ACL로 하며 `icacls`는 쓰지 않습니다).
@@ -499,7 +509,8 @@ JDBC 드라이버의 타입 정보는 드라이버가 판단할 수 없는 형�
 - **화면.** 개요(실시간 검증 대기·장부 이상·진행 중·차단 타일, 제목·담당자·시각이 포함된 조치 대기 표, 0이 아닌 항목만 보여 주는 다국어 분포, 중단 시에만 확장되는 MCP 서버 상태 배지), 프로젝트, 이슈(`taskId` 검색 포함), 명세, 작업, 출시 기준(마일스톤별 충족률 카드, 연결 항목 수, `/criteria/detail` 상세 화면), 이력(읽기 전용, 개체 딥링크, 요약 변경 줄 및 네이티브 모달 원본 JSON 뷰어), 첨부, 공통코드(검색, 다국어 그룹·상태 필터, 모달 추가·편집·비활성화/재활성화), 부여(검색 가능한 세션 중심 카드, 1-클릭 모달 세션 권한 부여, 프로젝트별 원자적 권한 동기화, UTC 만료 프리셋), JDBC 드라이버 비교 화면입니다. 모든 필터 드롭다운·배지·셀의 열거형과 공통코드는 한/영 설정에 맞는 이름으로 표시되며, 산출물 목록은 반응형 카드로 렌더링됩니다. 프로젝트·부여·공통코드 화면은 읽기 중심으로 구성되며 추가·수정·회수/비활성화 작업은 네이티브 모달 팝업에서 관리하고 각 화면에 실시간 검색 바를 제공합니다. 콘솔은 3도메인 고정 사이드바와 키보드 접근성 모바일 드로어, 자동·수동 라이트/다크 테마, 인라인 HTML 폼 검증 복구(`/driver`는 거부된 경로·클래스명 비노출 유지)를 제공합니다.
   시각은 UTC로 보내며 브라우저의 지역 시각으로 표시합니다.
 - **부여.** 세션은 작성자별 카드로 묶여 호스트 배지와 세션 ID를 분리해 보여 주며, 저장 형식은 기존 `<vendor>:<session-id>`를 그대로 유지합니다. 소유자는 키 등록이나 세션별 토큰 발급 없이 모달에서 호스트(`codex`, `claude`, `gemini` 또는 직접 입력)와 세션 ID를 나누어 입력하고(`<vendor>:<session-id>`를 붙여넣으면 자동 분리), 프로젝트의 모든 권한 범위를 한 번에 원자적으로 동기화하거나, 확인 모달을 통해 부여를 회수합니다.
-- **업데이트 (`/updates`).** 소유자는 GitHub Releases의 새 버전을 확인하고 버튼 하나로 검증된 업데이트를 예약할 수 있습니다. 관리 웹 프로세스는 OS 명령을 직접 실행하지 않으며, 허용된 호스트에서만 릴리스 JAR를 내려받아 `SHA256SUMS`를 검증하고, 스키마 마이그레이션이나 메이저 업그레이드가 필요한 릴리스는 수동 `ledger-cli setup`을 안내하도록 차단한 뒤 `ledger.admin.update.directory`에 `request.properties`를 스테이징합니다. 이후 `veridger-updater.sh` 또는 `veridger-updater.cmd`가 JAR를 교체하고 서비스를 재시작한 뒤 `/healthz`를 확인하며, 실패 시 자동으로 롤백합니다.
+- **프로젝트 버전.** 버전을 열어 명세, 이슈, 작업, 출시 기준을 조회하고 등록하거나 연결을 변경할 수 있습니다. 에이전트는 `ledger_batch`의 `save` 생성에 `project_version` 이름을 지정하여 하나의 트랜잭션으로 등록과 연결을 처리할 수 있습니다. `ledger_get`에 `include_details=true`를 지정하면 네 가지 항목 모두 `project_versions`를 반환합니다.
+- **업데이트 (`/updates`).** 소유자가 검증된 릴리스의 설치를 요청하면 호스트가 서비스 재시작과 DB 마이그레이션을 처리합니다. [PostgreSQL 스키마 자동 업데이트](#postgresql-스키마-자동-업데이트)를 참고하세요.
 
 ## 클라이언트 훅
 

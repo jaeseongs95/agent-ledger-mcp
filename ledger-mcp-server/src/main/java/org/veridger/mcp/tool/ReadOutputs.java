@@ -128,7 +128,8 @@ public final class ReadOutputs {
             @JsonProperty("deliverables") List<Deliverable> deliverables,
             @JsonProperty("child_specs") List<String> childSpecs, @JsonProperty("tasks") List<String> tasks,
             @JsonProperty("issues") List<String> issues, @JsonProperty("criteria") List<String> criteria,
-            @JsonProperty("recent_changes") List<ChangeSummary> recentChanges) {
+            @JsonProperty("recent_changes") List<ChangeSummary> recentChanges,
+            @JsonProperty("project_versions") List<String> projectVersions) {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
@@ -141,7 +142,8 @@ public final class ReadOutputs {
             @JsonProperty("updated_at") Instant updatedAt, @JsonProperty("created_by") String createdBy,
             @JsonProperty("completed_by") String completedBy,
             @JsonProperty("deliverables") List<Deliverable> deliverables, @JsonProperty("issues") List<String> issues,
-            @JsonProperty("specs") List<String> specs, @JsonProperty("criteria") List<String> criteria) {
+            @JsonProperty("specs") List<String> specs, @JsonProperty("criteria") List<String> criteria,
+            @JsonProperty("project_versions") List<String> projectVersions) {
     }
 
     @JsonInclude(JsonInclude.Include.ALWAYS)
@@ -152,7 +154,8 @@ public final class ReadOutputs {
             @JsonProperty("created_by") String createdBy, @JsonProperty("last_change") LastChange lastChange,
             @JsonProperty("issues") List<String> issues, @JsonProperty("specs") List<String> specs,
             @JsonProperty("tasks") List<String> tasks,
-            @JsonProperty("recent_changes") List<ChangeSummary> recentChanges) {
+            @JsonProperty("recent_changes") List<ChangeSummary> recentChanges,
+            @JsonProperty("project_versions") List<String> projectVersions) {
     }
 
     /**
@@ -297,19 +300,21 @@ public final class ReadOutputs {
                 s.priority(), s.status(), s.ownerActorId(), s.originRef(), s.originQuote(), s.version(),
                 s.createdAt(), s.updatedAt(), s.createdBy(), s.completedBy(), lastChange(s.lastChange()),
                 deliverables(s.deliverables()), s.childSpecs(), s.tasks(), s.issues(), s.criteria(),
-                changes(s.recentChanges()));
+                changes(s.recentChanges()), s.relatedVersions().stream().map(DetailService.VersionRef::name).toList());
     }
 
     public static Task task(DetailService.TaskDetail t) {
         return new Task(t.id(), t.projectId(), t.title(), t.purpose(), t.successCondition(), t.originRef(),
                 t.originQuote(), t.state(), t.ownerActorId(), t.version(), t.createdAt(), t.updatedAt(),
-                t.createdBy(), t.completedBy(), deliverables(t.deliverables()), t.issues(), t.specs(), t.criteria());
+                t.createdBy(), t.completedBy(), deliverables(t.deliverables()), t.issues(), t.specs(), t.criteria(),
+                t.relatedVersions().stream().map(DetailService.VersionRef::name).toList());
     }
 
     public static Criterion criterion(DetailService.CriterionDetail c) {
         return new Criterion(c.id(), c.projectId(), c.milestoneName(), c.goalLabel(), c.code(), c.criterionText(),
                 c.state(), c.version(), c.createdBy(), lastChange(c.lastChange()),
-                c.issues(), c.specs(), c.tasks(), changes(c.recentChanges()));
+                c.issues(), c.specs(), c.tasks(), changes(c.recentChanges()),
+                c.relatedVersions().stream().map(DetailService.VersionRef::name).toList());
     }
 
     /** @param includeBefore whether the caller asked for {@code before_data}: when not, the key is left out */

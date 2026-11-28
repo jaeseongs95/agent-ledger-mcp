@@ -13,7 +13,7 @@ choice: the installers write no proxy configuration and order no certificate.
 
 Version 2.0.0 is a rewrite in Java 25 and Spring Boot with its own tool contract (every write tool takes a required `operationKey`,
 every response uses the `ApiResult.v1` envelope, and no argument of an earlier version is accepted next to the new ones); what changed
-for a client is stated in the release notes ([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md), [4.0.0](docs/release-notes/4.0.0.md), [4.0.1](docs/release-notes/4.0.1.md), [4.1.0](docs/release-notes/4.1.0.md), [4.2.0](docs/release-notes/4.2.0.md), [4.3.0](docs/release-notes/4.3.0.md), [4.3.1](docs/release-notes/4.3.1.md), [4.3.2](docs/release-notes/4.3.2.md), [4.4.0](docs/release-notes/4.4.0.md), [4.4.1](docs/release-notes/4.4.1.md), [5.0.0](docs/release-notes/5.0.0.md)); the format of release notes is in
+for a client is stated in the release notes ([2.0.0](docs/release-notes/2.0.0.md), [2.1.0](docs/release-notes/2.1.0.md), [2.1.1](docs/release-notes/2.1.1.md), [3.0.0](docs/release-notes/3.0.0.md), [4.0.0](docs/release-notes/4.0.0.md), [4.0.1](docs/release-notes/4.0.1.md), [4.1.0](docs/release-notes/4.1.0.md), [4.2.0](docs/release-notes/4.2.0.md), [4.3.0](docs/release-notes/4.3.0.md), [4.3.1](docs/release-notes/4.3.1.md), [4.3.2](docs/release-notes/4.3.2.md), [4.4.0](docs/release-notes/4.4.0.md), [4.4.1](docs/release-notes/4.4.1.md), [5.0.0](docs/release-notes/5.0.0.md), [6.0.0](docs/release-notes/6.0.0.md)); the format of release notes is in
 [docs/RELEASE_NOTES_FORMAT.md](docs/RELEASE_NOTES_FORMAT.md).
 
 ## Contents
@@ -320,6 +320,7 @@ configuration tree (Spring Boot makes every file below a tree a property of the 
 | `ledger.admin.update.enabled` | admin web | enable the `/updates` release checker and staging button, default true |
 | `ledger.admin.update.repository` | admin web | GitHub repository (`owner/repo`) queried for releases, default `jaeseongs95/veridger` |
 | `ledger.admin.update.directory` | admin web | directory where verified update JARs and `request.properties` are staged for the host updater, default `/etc/veridger/update` |
+| `ledger.admin.update.schema-migration-marker` | admin web | read-only host marker for automatic PostgreSQL schema migrations, set by the installer |
 | `ledger.attachments.directory` | servers, CLI | where the files of the attachments are kept (the installer sets it to `<data folder>/attachments`); when it is not set the attachment tools are not registered |
 | `ledger.attachments.key-directory` | servers, CLI | where the key files are kept, outside `directory` (the start fails when it is inside); the installer sets it to `<settings folder>/attachment-keys`, beside the secret directory and not inside it |
 | `ledger.attachments.active-key-id` | servers, CLI | the key that new uploads are written with; `setup` writes it into `local.yaml`; the server does not start without the key file |
@@ -405,6 +406,7 @@ The options of `deploy/install.sh` are given as `--name=value`; the ones it does
 | `--jars=<dir>` | optional: the directory that holds the three jars; when omitted, the installer downloads the release jars and verifies `SHA256SUMS` automatically |
 | `--version=<tag>` | optional: release tag to download when `--jars` is omitted (`latest` or `vX.Y.Z`), default `latest` |
 | `--repo=<owner/name>` | optional: GitHub repository to download releases from when `--jars` is omitted, default `jaeseongs95/veridger` |
+| `--pg-dump=<path>` | optional: enable automatic PostgreSQL schema updates using this absolute path to `pg_dump` |
 | `--driver-jar=<file>` | the JDBC driver jar |
 | `--driver-class=<class>` | the driver class, which must accept the JDBC URL (for the PostgreSQL JDBC driver, `org.postgresql.Driver`) |
 | `--owner-account=<account>` | the DDL account (its password is asked for) |
@@ -484,6 +486,14 @@ deploy\install.cmd dist <winsw-exe> <driver-jar> <driver-class> <ddl-account> <a
 ```
 
 For an interactive installation that downloads and verifies `SHA256SUMS` automatically, run `deploy\install.cmd --download`. The installer also registers the host updater script (`veridger-updater.cmd`) as a Scheduled Task for Admin Web updates.
+
+#### Automatic PostgreSQL schema updates
+
+Run the current installer once with `--pg-dump=/absolute/path/to/pg_dump` on Linux or set `VERIDGER_PG_DUMP` to the absolute path of `pg_dump.exe` before running the Windows installer. Use a client from the database server major version and a single-host PostgreSQL JDBC URL with a database name. The URL can include `sslmode`. The installer uses the supplied database owner credential to set up the database and stores it in an updater-only directory. Existing installations also need this one-time setup. Re-run it after changing the endpoint, schema, or owner credentials.
+
+For an update within the current major version, the host compares the migrations packaged in the installed and verified release JARs. It stops both services for a schema change, makes a custom-format database backup, applies the new migrations and application grants, and starts and checks both services. Backups are kept in `/opt/<name>/backup-*` on Linux and `C:\ProgramData\<name>\lib\backup-*` on Windows.
+
+If an update fails after migration begins, the recovery marker `.schema-update-in-progress` in the installation's JAR directory points to the backup and the target version. Examine `backup.log` and `migration.log` there. Recover either by completing the target migration and verifying both services, or by restoring the dump to a compatible database and restoring the matching JARs. Remove the marker only after the database and applications are running a consistent version. Major-version upgrades still use the documented installation procedure.
 
 Everything lives in `C:\ProgramData\<name>`. Both services run as LocalService, restart after a failure (the WinSW
 configuration), and write their logs to the `logs` folder. `prepare-host` closes the folders to every account but SYSTEM and
@@ -615,7 +625,8 @@ the service account of the installation and never as root.
 - **Pages.** Overview (Focused Governance Cockpit with live verification/hygiene/active/blocked action tiles, hydrated attention queue, non-zero localized work & gate breakdowns, and quiet MCP status pill that expands only when down), projects, issues (including `taskId` filtering), specifications, tasks, release gates (milestone progress rollups, linked-work counts, and `/criteria/detail` detail pages), history (read only, with entity deep-links, readable diff lines, and a native modal JSON viewer), attachments, common codes (searchable, with localized group/state filters and modal add, edit and deactivate/reactivate), grants (searchable session-centric cards with 1-click modal session granting, atomic per-project scope sync, and UTC expiry presets), and the JDBC driver comparison page. Filter dropdowns, badges, and cells render localized Korean/English names for enums and common codes, and deliverable lists use responsive cards. Projects, grants and common codes keep their main views read-first and manage add, edit and revoke/deactivate actions in native modal dialogs with inline search bars. The console uses a 3-domain fixed sidebar with a keyboard-accessible mobile drawer, automatic and manual Light/Dark themes, and inline HTML form validation recovery (while `/driver` never echoes refused paths or class names). Times are sent as UTC and shown in the local
   time of the browser.
 - **Grants.** Sessions are grouped into per-author cards showing host badges and session IDs separately while preserving the stored `<vendor>:<session-id>` identifier. The owner selects the host (`codex`, `claude`, `gemini`, or custom) and enters the session ID in separate fields (pasting `<vendor>:<session-id>` auto-splits the fields) with no key registration or per-session token issuance, adjusts all scopes of a project in one atomic sync, or revokes grants through confirmation modals.
-- **Updates (`/updates`).** The owner can check GitHub Releases for newer versions and stage verified updates with one button. The admin web never executes OS commands directly: it downloads release JARs only from allowed hosts, verifies `SHA256SUMS`, blocks releases requiring schema migrations or major upgrades for manual `ledger-cli setup`, and stages `request.properties` inside `ledger.admin.update.directory` so `veridger-updater.sh` or `veridger-updater.cmd` replaces the JARs, restarts the services, checks `/healthz`, and rolls back automatically on failure.
+- **Project version workspace.** Open a project version to browse, create, link, or unlink specs, issues, tasks, and release gates. In `ledger_batch`, a `save` creation can specify `project_version` by name to create and link the record in the same transaction. `ledger_get` with `include_details=true` includes `project_versions` for all four kinds.
+- **Updates (`/updates`).** The owner can check GitHub Releases and stage a verified update. The host updater owns service restarts and PostgreSQL migrations. See [automatic PostgreSQL schema updates](#automatic-postgresql-schema-updates).
 
 ## Client hooks
 

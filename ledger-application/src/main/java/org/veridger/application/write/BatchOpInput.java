@@ -25,7 +25,11 @@ public sealed interface BatchOpInput {
     String REQUIRED = "{reason.REQUIRED}";
 
     record Save(@NotNull(message = REQUIRED) String entity, @NotNull(message = REQUIRED) FieldsInput fields,
-            @NotNull(message = REQUIRED) String reason, String id, Long expectedVersion) implements BatchOpInput {
+            @NotNull(message = REQUIRED) String reason, String id, Long expectedVersion,
+            String projectVersion) implements BatchOpInput {
+        public Save(String entity, FieldsInput fields, String reason, String id, Long expectedVersion) {
+            this(entity, fields, reason, id, expectedVersion, null);
+        }
     }
 
     record Transition(@NotNull(message = REQUIRED) String entity, @NotNull(message = REQUIRED) String id,

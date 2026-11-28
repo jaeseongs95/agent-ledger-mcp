@@ -195,6 +195,34 @@ class ReadContractTest {
     }
 
     @Test
+    void anAgentCanCreateAndReadFourKindsInOneProjectVersion(McpSession session, Scenario scenario) {
+        String project = scenario.projectId();
+        String name = "운영 검토본";
+        var version = Args.of().with("op", "project_version").with("project_id", project).with("name", name)
+                .with("create", true);
+        var save = Args.of().with("op", "save").with("project_version", name);
+        var batch = Args.of().with("operationKey", Calls.freshKey()).with("default_reason", Scenario.REASON)
+                .with("_hostAttestation", Scenario.AUTHOR).with("ops", List.of(version,
+                        save.with("entity", "spec").with("fields", Calls.Fields.spec(project, "version spec")),
+                        save.with("entity", "issue").with("fields", Calls.Fields.issue(project, "version issue")),
+                        save.with("entity", "task").with("fields", Calls.Fields.task(project, "version task")),
+                        save.with("entity", "criterion").with("id", scenario.criterionId("VER-01"))
+                                .with("fields", Calls.Fields.criterion(project, name, "VER-01"))));
+
+        var response = session.call("ledger_batch", batch);
+        assertThat(response.isError()).isFalse();
+        assertThat(session.call("ledger_batch", batch).structuredContent()).isEqualTo(response.structuredContent());
+        JsonNode results = session.mapper().valueToTree(response.structuredContent()).path("data").path("results");
+        List<String> ids = IntStream.range(1, results.size()).mapToObj(i -> results.get(i).path("id").asString()).toList();
+        ReadOutputs.Got details = session.ok("ledger_get", Args.of().with("ids", ids).with("include_details", true),
+                ReadOutputs.Got.class);
+        assertThat(details.specDetails().getFirst().projectVersions()).containsExactly(name);
+        assertThat(details.issueDetails().getFirst().projectVersions()).containsExactly(name);
+        assertThat(details.taskDetails().getFirst().projectVersions()).containsExactly(name);
+        assertThat(details.criterionDetails().getFirst().projectVersions()).containsExactly(name);
+    }
+
+    @Test
     void aVersionBatchRollsBackOnAnIssueOutsideItsProject(McpSession session, Scenario scenario) {
         Seed seed = Seed.create(session, scenario);
         String other = seed.project() + "-other";
@@ -209,6 +237,35 @@ class ReadContractTest {
         assertThat(session.failed("ledger_batch", batch).code()).isEqualTo("NOT_FOUND");
         assertThat(scenario.bean(ProjectVersionService.class).list(seed.project())).isEmpty();
         assertThat(scenario.bean(ProjectVersionService.class).list(other)).isEmpty();
+    }
+
+    @Test
+    void rejectsVersionSelectionOnEditsAndRollsBackWhenTheSelectedVersionIsMissing(
+            McpSession session, Scenario scenario) {
+        Seed seed = Seed.create(session, scenario);
+        var versions = scenario.bean(ProjectVersionService.class);
+        String name = "Review scope";
+        versions.add(seed.project(), name, null);
+
+        var batch = Args.of().with("default_reason", Scenario.REASON).with("_hostAttestation", Scenario.AUTHOR);
+        var edit = Args.of().with("op", "save").with("entity", "issue").with("id", seed.issue()).with("expected_version", 1)
+                .with("fields", Args.of().with("title", "Should not replace title"))
+                .with("project_version", name);
+        assertThat(session.failed("ledger_batch", batch.with("operationKey", Calls.freshKey())
+                .with("ops", List.of(edit))).code()).isEqualTo("VALIDATION_FAILED");
+        assertThat(session.ok("ledger_issue", new Calls.IdOnly(seed.issue()), ReadOutputs.Issue.class).projectVersions())
+                .isEmpty();
+
+        String id = scenario.criterionId("VERSION-ROLLBACK");
+        String title = "Unregistered version";
+        var version = Args.of().with("op", "project_version").with("project_id", seed.project()).with("name", "Transient")
+                .with("create", true);
+        var criterion = Args.of().with("op", "save").with("entity", "criterion").with("id", id)
+                .with("fields", Calls.Fields.criterion(seed.project(), name, "RC-02")).with("project_version", title);
+        assertThat(session.failed("ledger_batch", batch.with("operationKey", Calls.freshKey())
+                .with("ops", List.of(version, criterion))).code()).isEqualTo("NOT_FOUND");
+        assertThat(versions.list(seed.project())).extracting(ProjectVersionService.Version::name).containsExactly(name);
+        assertThat(session.ok("ledger_get", new Calls.Ids(List.of(id)), ReadOutputs.Got.class).notFound()).containsExactly(id);
     }
 
     @Test

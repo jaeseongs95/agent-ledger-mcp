@@ -204,8 +204,8 @@ class ConfigBindingTest {
             LedgerAdminProperties.Update update = context.getBean(LedgerAdminProperties.class).update();
             assertThat(update.enabled()).isTrue();
             assertThat(update.repository()).isEqualTo("jaeseongs95/veridger");
-            assertThat(update.currentVersion()).isEqualTo("5.0.0");
-            assertThat(update.currentSchemaVersion()).isEqualTo(14);
+            assertThat(update.currentVersion()).isEqualTo("6.0.0");
+            assertThat(update.currentSchemaVersion()).isEqualTo(16);
         });
         secrets().withPropertyValues("ledger.admin.update.repository=bad repo name").run(context -> {
             assertThat(context).hasFailed();

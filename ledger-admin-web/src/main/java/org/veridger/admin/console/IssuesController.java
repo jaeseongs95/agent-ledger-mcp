@@ -5,6 +5,7 @@ package org.veridger.admin.console;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import org.veridger.admin.web.AdminHttpExceptionAdvice;
 import org.veridger.application.admin.ProjectVersionService;
 import org.veridger.application.read.DetailService;
@@ -68,7 +69,11 @@ public class IssuesController {
         model.addAttribute("hasFilters", hasFilters);
         model.addAttribute("resetHref", links.projectHref("/issues", project.selected()));
         if (project.selected() != null) {
-            model.addAttribute("versions", versions.list(project.selected()));
+            var projectVersions = versions.list(project.selected());
+            model.addAttribute("versions", projectVersions);
+            model.addAttribute("projectListed", project.projects().stream().anyMatch(p -> Objects.equals(p.id(), project.selected())));
+            model.addAttribute("versionListed", !StringUtils.hasText(filter.projectVersion())
+                    || projectVersions.stream().anyMatch(v -> Objects.equals(v.name(), filter.projectVersion())));
             var page = lists.issues(new IssuesQuery(project.selected(), filter.status(), filter.severity(),
                     filter.category(), null, null, filter.owner(), filter.attention(), filter.taskId(), null,
                     Paging.limitOf(filter.limit()), filter.cursor(), filter.projectVersion()), dates.query(false));
@@ -85,7 +90,9 @@ public class IssuesController {
             model.addAttribute("page", page);
             model.addAttribute("paging", Paging.of("/issues", filters, filter.limit(), filter.cursor(),
                     filter.back(), page.nextCursor()));
-            model.addAttribute("total", stats.countIssues(project.selected()));
+            if (!hasFilters) {
+                model.addAttribute("total", stats.countIssues(project.selected()));
+            }
         }
         return "issues";
     }
@@ -108,7 +115,9 @@ public class IssuesController {
 
     private Map<String, Object> issueModel(String id) {
         var issue = details.issue(id);
-        return Map.of("issue", issue, "availableVersions", versions.list(issue.projectId()).stream()
-                .filter(v -> !issue.projectVersions().contains(v.name())).toList());
+        var projectVersions = versions.list(issue.projectId());
+        return Map.of("issue", issue,
+                "linkedVersions", projectVersions.stream().filter(v -> issue.projectVersions().contains(v.name())).toList(),
+                "availableVersions", projectVersions.stream().filter(v -> !issue.projectVersions().contains(v.name())).toList());
     }
 }

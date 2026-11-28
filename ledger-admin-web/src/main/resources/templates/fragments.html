@@ -159,6 +159,9 @@
   </div>
   <div id="ui-toast" class="toast-region" aria-live="polite" aria-atomic="true"
        th:attr="data-copied=#{common.copied},data-copy-failed=#{common.copyFailed}"></div>
+  <p id="navigation-status" class="sr-only" role="status"
+     th:if="${@ui.console() and !#bools.isTrue(enrolling) and active != 'login'}"
+     th:attr="data-loading=#{navigation.loading},data-write-failed=#{navigation.writeFailed}"></p>
 </th:block>
 
 <th:block th:fragment="footer">
@@ -168,10 +171,22 @@
   </footer>
   <script th:src="@{/js/local-time.js}" defer></script>
   <script th:src="@{/js/passkey.js}" defer></script>
+  <script th:src="@{/js/admin-shell.js}" defer></script>
   <script th:src="@{/js/admin-ui.js}" defer></script>
+  <script th:src="@{/js/admin-navigation.js}" defer></script>
 </th:block>
 
 <!-- an instant: UTC in the markup (ISO-8601 with Z), shown in the zone of the browser by the script -->
+<th:block th:fragment="relatedVersions(project, kind)">
+  <dt th:text="#{versions.related}">Related versions</dt>
+  <dd class="issue-version-tags">
+    <span th:if="${relatedVersions.isEmpty()}" th:text="#{common.noneValue}">—</span>
+    <a th:each="v : ${relatedVersions}" class="badge"
+       th:href="@{/projects/versions/{id}(id=${v.id()},project=${project},kind=${kind})}"
+       th:text="${v.name()}">Version</a>
+  </dd>
+</th:block>
+
 <time th:fragment="time(instant)" th:if="${instant != null}" th:attr="datetime=${instant}" th:text="${instant}">2026-01-01T00:00:00Z</time>
 
 <!-- a link for an evidence address: only http and https become links, anything else stays plain text -->

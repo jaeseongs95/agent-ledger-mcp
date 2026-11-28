@@ -16,12 +16,25 @@
   </div>
 
   <th:block th:if="${choice.selected() != null}">
-    <form method="get" th:action="@{/issues}" class="filters list-filters">
+    <form method="get" th:action="@{/issues}" class="filters list-filters issues-filters">
       <div class="filter-grid">
         <div class="filter-field">
           <label for="project" th:text="#{common.project}">Project</label>
           <select id="project" name="project" data-reset-filter="issue-version">
-            <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:text="${p.displayName()}" th:selected="${p.id() == choice.selected()}">p1</option>
+            <option th:unless="${projectListed}" th:value="${choice.selected()}"
+                    th:text="${choice.selected()}" selected>Project</option>
+            <option th:each="p : ${choice.projects()}" th:value="${p.id()}" th:selected="${p.id() == choice.selected()}"
+                    th:text="${p.displayName() == p.id() ? p.displayName() : p.displayName() + ' (' + p.id() + ')'}">Project</option>
+          </select>
+        </div>
+        <div class="filter-field">
+          <label for="issue-version" th:text="#{versions.related}">Related versions</label>
+          <select id="issue-version" name="projectVersion">
+            <option value="" th:text="#{common.any}">Any</option>
+            <option th:unless="${versionListed}" th:value="${filter.projectVersion()}"
+                    th:text="${filter.projectVersion()}" selected>Version</option>
+            <option th:each="v : ${versions}" th:value="${v.name()}" th:text="${v.name()}"
+                    th:selected="${v.name() == filter.projectVersion()}">Version</option>
           </select>
         </div>
         <div class="filter-field">
@@ -68,17 +81,7 @@
         </div>
       </div>
       <div class="filter-controls">
-        <div class="issue-refinements">
-          <div class="filter-field">
-            <label for="issue-version" th:text="#{versions.related}">Related versions</label>
-            <select id="issue-version" name="projectVersion">
-              <option value="" th:text="#{common.any}">Any</option>
-              <option th:each="v : ${versions}" th:value="${v.name()}" th:text="${v.name()}"
-                      th:selected="${v.name() == filter.projectVersion()}">Version</option>
-            </select>
-          </div>
-          <th:block th:replace="~{fragments :: dateFilters(false)}"></th:block>
-        </div>
+        <th:block th:replace="~{fragments :: dateFilters(false)}"></th:block>
         <div class="filter-actions">
           <button type="submit" th:text="#{common.apply}">Apply</button>
           <a th:if="${hasFilters}" th:href="${resetHref}" class="button secondary" th:text="#{common.resetFilters}">Reset filters</a>

@@ -113,7 +113,10 @@ run {
 // DOC-001 .. DOC-029: the documentation tests read the READMEs, the release notes and the sources of the other modules as
 // text. The root of the repository is passed in, never guessed, and the files are inputs, so a change of a document or of
 // the code a document mirrors runs the tests again.
+val hostUpdateCliJar = tasks.bootJar.flatMap { it.archiveFile }
 tasks.test {
+    inputs.file(hostUpdateCliJar).withPropertyName("hostUpdateCliJar")
+    systemProperty("ledger.test.cli-jar", hostUpdateCliJar.get().asFile.absolutePath)
     // PCS-031: the test of the effective rights of the service account calls the Windows API (GetEffectiveRightsFromAclW) with the
     // foreign function API, which Java 25 restricts; and so does the product, in one class (R9-D0095-A). The executable jar allows
     // it with its manifest, a test JVM is given the option.

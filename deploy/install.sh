@@ -10,11 +10,12 @@
 #
 # Non-interactive usage (fully backward-compatible):
 #   sudo deploy/install.sh --jars=<dir> --driver-jar=<file> --driver-class=<class> --owner-account=<account>
-#     --app-account=<account> --jdbc-url=<url> [--java=<path>] [--name=<instance>] [--stdin] [render-deploy options]
+#     --app-account=<account> --jdbc-url=<url> [--java=<path>] [--name=<instance>] [--stdin]
+#     [--pg-dump=<absolute path for automatic PostgreSQL schema updates>] [render-deploy options]
 #
 # One-stop convenience usage (auto-downloads & SHA-256 verifies release JARs when --jars is omitted, and prompts for
 # missing required values when running in an interactive terminal without --stdin):
-#   sudo sh install.sh [--version=latest|v5.0.0] [--repo=jaeseongs95/veridger]
+#   sudo sh install.sh [--version=latest|v6.0.0] [--repo=jaeseongs95/veridger]
 #
 # Passwords are never accepted on a command line: Java reads them hidden from the terminal or via --stdin.
 # A re-run is an upgrade: jars, driver jar, and unit files are replaced while secrets, tokens, and data are preserved.
@@ -34,6 +35,7 @@ OWNER=
 APP_ACCOUNT=
 JDBC_URL=
 STDIN=
+PG_DUMP=${VERIDGER_PG_DUMP:-}
 MCP_PORT_VAL=
 ADMIN_PORT_VAL=
 MCP_URL=
@@ -121,6 +123,7 @@ for arg in "$@"; do
     --owner-account=*) OWNER=${arg#*=} ;;
     --app-account=*) APP_ACCOUNT=${arg#*=}; set -- "$@" "$arg" ;;
     --jdbc-url=*) JDBC_URL=${arg#*=}; set -- "$@" "$arg" ;;
+    --pg-dump=*) PG_DUMP=${arg#*=} ;;
     --mcp-port=*) MCP_PORT_VAL=${arg#*=}; MCP_URL=" --url=http://127.0.0.1:${arg#*=}/mcp"; set -- "$@" "$arg" ;;
     --admin-port=*) ADMIN_PORT_VAL=${arg#*=}; set -- "$@" "$arg" ;;
     --stdin) STDIN=--stdin ;;
@@ -200,7 +203,13 @@ as_svc secret-set ledger.jdbc.password --if-absent $STDIN
 as_svc token-generate ledger.admin.token --print
 as_svc token-generate ledger.mcp.token --print --copy-to=ledger.admin.agent-token
 as_svc driver-register --jar="$ETC/drivers/${DRIVER_JAR##*/}" --class="$DRIVER_CLASS"
-as_svc setup --owner-account="$OWNER" --app-account="$APP_ACCOUNT" $STDIN
+if [ -n "$PG_DUMP" ]; then
+  [ "$DRIVER_CLASS" = org.postgresql.Driver ] || die "automatic schema updates require org.postgresql.Driver"
+  "$JAVA" $JVM_OPTS -jar "$LIB/ledger-cli.jar" host-update provision "$LIB" "$ETC" "$DRIVER_JAR" "$PG_DUMP" "$OWNER" "$JDBC_URL" "$APP_ACCOUNT" $STDIN
+  as_svc setup --owner-account="$OWNER" --app-account="$APP_ACCOUNT" --stdin < "$LIB/schema-update/owner-password"
+else
+  as_svc setup --owner-account="$OWNER" --app-account="$APP_ACCOUNT" $STDIN
+fi
 
 # Install least-privilege host updater triggered by /etc/$NAME/update/request.properties (Admin Web Update button).
 UPDATER_SRC=
@@ -215,13 +224,13 @@ if [ -n "$UPDATER_SRC" ]; then
   install -d -m 0700 -o "$SVC" -g "$SVC" "$ETC/update"
   cat > "/etc/systemd/system/$UPDATER.service" <<EOF
 [Unit]
-Description=$NAME host updater (SHA-256 verified with automatic rollback)
+Description=$NAME host updater with SHA-256 verification
 After=network-online.target
 
 [Service]
 Type=oneshot
-TimeoutStartSec=180
-ExecStart=$LIB/veridger-updater.sh --name=$NAME --mcp-port=$MCP_PORT_VAL --admin-port=$ADMIN_PORT_VAL --repo=$REPO
+TimeoutStartSec=30min
+ExecStart=$LIB/veridger-updater.sh --name=$NAME --mcp-port=$MCP_PORT_VAL --admin-port=$ADMIN_PORT_VAL --repo=$REPO --java=$JAVA
 EOF
   cat > "/etc/systemd/system/$UPDATER.path" <<EOF
 [Unit]
@@ -234,6 +243,11 @@ Unit=$UPDATER.service
 [Install]
 WantedBy=multi-user.target
 EOF
+  if [ -n "$PG_DUMP" ]; then
+    install -m 0644 -o root -g root /dev/null "$LIB/.schema-updates"
+  fi
+elif [ -n "$PG_DUMP" ]; then
+  die "host updater script is required for automatic schema updates"
 fi
 
 # systemctl: the service manager of the host, Java does not talk to it.

@@ -5,8 +5,8 @@ rem Security model: never trusts SHA256SUMS from the service-writable directory,
 rem (including dangling symlinks/junctions), enforces a monotonic version floor against SYSTEM-owned .installed-version,
 rem copies request.properties and staged JARs into a SYSTEM-private temp directory before fetching authoritative
 rem SHA256SUMS over HTTPS-only allowlisted redirects from the pinned repository and verifying every digest, backs up
-rem existing JARs, restarts WinSW services, verifies both /healthz endpoints, writes UTF-8 (no BOM) escaped
-rem status.properties atomically, and rolls back automatically on failure.
+rem existing JARs, restarts WinSW services, and verifies both /healthz endpoints.
+rem Schema updates require a database backup. JAR-only rollback ends when the database migration begins.
 setlocal EnableExtensions DisableDelayedExpansion
 set "VU_NAME=%~1"
 set "VU_MCP_PORT=%~2"
@@ -45,13 +45,21 @@ function Test-IsReparse($p) {
   return ($null -ne $it) -and (($it.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0)
 }
 
-foreach ($seg in @($homeDir, $etcDir, $upd, $staged, $reqFile)) {
+foreach ($seg in @($homeDir, $lib, $etcDir, $upd, $staged, $reqFile)) {
   if (Test-IsReparse $seg) {
     Write-Error ('Refused reparse point: ' + $seg)
     exit 1
   }
 }
 if (-not (Test-Path -LiteralPath $reqFile -PathType Leaf)) { exit 0 }
+
+$lockPath = Join-Path $lib '.host-update.lock'
+if (Test-IsReparse $lockPath) { throw 'Refused reparse point at the updater lock' }
+try {
+  $lock = [System.IO.File]::Open($lockPath, 'OpenOrCreate', 'ReadWrite', 'None')
+} catch [System.IO.IOException] {
+  exit 0
+}
 
 function Invoke-HttpsDownload($url, $dest, $maxBytes) {
   $allowed = @('github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com')
@@ -134,7 +142,7 @@ function Write-Status($st, $ver, $detail) {
   foreach ($seg in @($homeDir, $etcDir, $upd, $statusFile)) { if (Test-IsReparse $seg) { return } }
   $clean = ([string]$detail).Replace([string][char]13, ' ').Replace([string][char]10, ' ').Replace('\', '\\')
   $now = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
-  $lines = @('state=' + $st, 'targetVersion=' + $ver, 'updatedAt=' + $now, 'detail=' + $clean)
+  $lines = @("state=$st", "targetVersion=$ver", "updatedAt=$now", "detail=$clean")
   $tmpSt = Join-Path $upd ('.status-' + [guid]::NewGuid().ToString('N') + '.tmp')
   if (Test-IsReparse $tmpSt) { return }
   [System.IO.File]::WriteAllLines($tmpSt, $lines, [System.Text.UTF8Encoding]::new($false))
@@ -148,7 +156,7 @@ function Remove-SafeFile($p) {
   }
 }
 
-$work = Join-Path (Join-Path $env:SystemRoot 'Temp') ('veridger-upd-' + [guid]::NewGuid().ToString('N'))
+$work = Join-Path $lib ('.veridger-upd-' + [guid]::NewGuid().ToString('N'))
 $targetVer = ''
 try {
   New-Item -ItemType Directory -Force -Path $work | Out-Null
@@ -168,6 +176,13 @@ try {
   $rawVer = [string]$props['targetVersion']
   if ($rawVer -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Invalid targetVersion' }
   $targetVer = $rawVer
+
+  $recovery = Join-Path $lib '.schema-update-in-progress'
+  if (Test-Path -LiteralPath $recovery) {
+    Write-Status 'RECOVERY_REQUIRED' $targetVer "Resolve the previous schema update using $recovery before retrying"
+    Remove-SafeFile $reqFile
+    exit 1
+  }
 
   $installedVer = Get-InstalledVersion $lib
   if ($installedVer -and ([version]$targetVer -le [version]$installedVer)) {
@@ -200,20 +215,52 @@ try {
     if ($actual -ne ([string]$props['sha256.' + $j]).ToLowerInvariant() -or $actual -ne $sums[$j]) { throw ('SHA-256 mismatch for ' + $j) }
   }
 
-  $backup = Join-Path $lib ('backup-' + (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ'))
-  New-Item -ItemType Directory -Force -Path $backup | Out-Null
+  $javaFile = Join-Path $lib '.updater-java'
+  if (Test-IsReparse $javaFile) { throw 'Refused reparse point at Java configuration' }
+  $java = if (Test-Path -LiteralPath $javaFile -PathType Leaf) {
+    [System.IO.File]::ReadAllText($javaFile).Trim()
+  } else { 'java.exe' }
+  $cli = Join-Path $lib 'ledger-cli.jar'
+  $plan = & $java -jar $cli host-update plan $lib $work $etcDir
+  if ($LASTEXITCODE -ne 0 -or $plan -notin @('JARS_ONLY', 'MIGRATE')) {
+    throw 'Schema preflight failed; see the host updater log'
+  }
+  $stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ')
+  $backup = Join-Path $lib ('backup-' + $stamp + '.' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+  New-Item -ItemType Directory -Path $backup | Out-Null
   $svcExe = Join-Path $lib ($name + '.exe')
   $adminExe = Join-Path $lib ($name + '-admin.exe')
-  try { & $svcExe stop /stopwait | Out-Null } catch {}
-  try { & $adminExe stop /stopwait | Out-Null } catch {}
   foreach ($j in $jars) {
     $cur = Join-Path $lib $j
-    if (Test-Path -LiteralPath $cur) { Copy-Item -LiteralPath $cur -Destination (Join-Path $backup $j) -Force }
+    Copy-Item -LiteralPath $cur -Destination (Join-Path $backup $j)
   }
+  $schemaStarted = $false
+  $replacing = $false
   try {
+    foreach ($service in @($name, "$name-admin")) {
+      $instanceService = Get-Service -Name $service
+      if ($instanceService.Status -ne 'Stopped') {
+        Stop-Service -InputObject $instanceService -ErrorAction Stop
+        $instanceService.WaitForStatus('Stopped', [TimeSpan]::FromSeconds(60))
+      }
+    }
+    $recoveryCli = Join-Path $backup 'ledger-cli.jar'
+    if ($plan -eq 'MIGRATE') {
+      & $java -jar $recoveryCli host-update backup $lib $backup
+      if ($LASTEXITCODE -ne 0) { throw "Database backup failed; see $backup\backup.log" }
+      [System.IO.File]::WriteAllLines($recovery, @("target=$targetVer", "backup=$backup"))
+    }
+    $replacing = $true
     foreach ($j in $jars) { Copy-Item -LiteralPath (Join-Path $work $j) -Destination (Join-Path $lib $j) -Force }
+    if ($plan -eq 'MIGRATE') {
+      $schemaStarted = $true
+      & $java -jar $recoveryCli host-update migrate $lib $lib $backup
+      if ($LASTEXITCODE -ne 0) { throw 'Database migration failed' }
+    }
     & $svcExe start | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw ('Could not start ' + $name) }
     & $adminExe start | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw ('Could not start ' + $name + '-admin') }
     foreach ($port in @($mcpPort, $adminPort)) {
       $ok = $false
       for ($i = 0; $i -lt 30; $i++) {
@@ -226,29 +273,47 @@ try {
       if (-not $ok) { throw ('/healthz on port ' + $port + ' did not return UP within 30s') }
     }
     [System.IO.File]::WriteAllText((Join-Path $lib '.installed-version'), ($targetVer + [Environment]::NewLine), [System.Text.UTF8Encoding]::new($false))
+    Remove-SafeFile $recovery
+  } catch {
+    $err = $_.Exception.Message
+    if ($schemaStarted) {
+      try { & $svcExe stop /stopwait | Out-Null } catch {}
+      try { & $adminExe stop /stopwait | Out-Null } catch {}
+      Write-Status 'RECOVERY_REQUIRED' $targetVer "$err. Database backup and logs: $backup"
+    } else {
+      if ($replacing) {
+        try { & $svcExe stop /stopwait | Out-Null } catch {}
+        try { & $adminExe stop /stopwait | Out-Null } catch {}
+        foreach ($j in $jars) {
+          Copy-Item -LiteralPath (Join-Path $backup $j) -Destination (Join-Path $lib $j) -Force
+        }
+      }
+      try { & $svcExe start | Out-Null } catch {}
+      try { & $adminExe start | Out-Null } catch {}
+      Remove-SafeFile $recovery
+      if ($replacing) { Write-Status 'ROLLED_BACK' $targetVer $err }
+      else { Write-Status 'FAILED' $targetVer $err }
+    }
+    Remove-SafeFile $reqFile
+    exit 1
+  }
+  try {
     Write-Status 'SUCCEEDED' $targetVer 'Updated and verified both /healthz endpoints'
     if (-not (Test-IsReparse $upd) -and -not (Test-IsReparse $staged)) {
       foreach ($f in ($jars + @('SHA256SUMS'))) { Remove-SafeFile (Join-Path $staged $f) }
     }
     Remove-SafeFile $reqFile
   } catch {
-    $err = $_.Exception.Message
-    try { & $svcExe stop /stopwait | Out-Null } catch {}
-    try { & $adminExe stop /stopwait | Out-Null } catch {}
-    foreach ($j in $jars) {
-      $bk = Join-Path $backup $j
-      if (Test-Path -LiteralPath $bk) { Copy-Item -LiteralPath $bk -Destination (Join-Path $lib $j) -Force }
-    }
-    try { & $svcExe start | Out-Null } catch {}
-    try { & $adminExe start | Out-Null } catch {}
-    Write-Status 'ROLLED_BACK' $targetVer $err
+    Write-Warning ('Update succeeded but could not finalize the queue: ' + $_.Exception.Message)
     Remove-SafeFile $reqFile
-    exit 1
   }
 } catch {
   Write-Status 'FAILED' $targetVer $_.Exception.Message
   Remove-SafeFile $reqFile
   exit 1
 } finally {
-  if (Test-Path -LiteralPath $work) { Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue }
+  if ([IO.Path]::GetDirectoryName($work) -eq $lib -and -not (Test-IsReparse $work) -and (Test-Path -LiteralPath $work)) {
+    Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+  }
+  $lock.Dispose()
 }

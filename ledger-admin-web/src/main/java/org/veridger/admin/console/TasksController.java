@@ -85,7 +85,9 @@ public class TasksController {
      */
     @GetMapping("/tasks/detail")
     String task(@RequestParam("id") String id, Model model) {
-        model.addAttribute("task", details.task(id));
+        var task = details.task(id);
+        model.addAttribute("task", task);
+        model.addAttribute("relatedVersions", task.relatedVersions());
         return "task";
     }
 
@@ -134,7 +136,9 @@ public class TasksController {
      */
     @GetMapping("/criteria/detail")
     String criterion(@RequestParam("id") String id, Model model) {
-        model.addAttribute("criterion", details.criterion(id));
+        var criterion = details.criterion(id);
+        model.addAttribute("criterion", criterion);
+        model.addAttribute("relatedVersions", criterion.relatedVersions());
         return "criterion";
     }
 }

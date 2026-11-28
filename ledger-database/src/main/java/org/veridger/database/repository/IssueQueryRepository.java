@@ -100,9 +100,9 @@ public class IssueQueryRepository {
         }
         if (projectVersionId != null) {
             sql.append("""
-                     AND EXISTS (SELECT 1 FROM issue_project_version ipv
-                     WHERE ipv.project_id = issue.project_id AND ipv.issue_id = issue.id
-                     AND ipv.version_id = :projectVersionId)
+                     AND EXISTS (SELECT 1 FROM project_version_item ipv
+                     WHERE ipv.project_id = issue.project_id AND ipv.item_id = issue.id
+                     AND ipv.item_kind = 'issue' AND ipv.version_id = :projectVersionId)
                     """);
         }
         dates.appendRange(sql);

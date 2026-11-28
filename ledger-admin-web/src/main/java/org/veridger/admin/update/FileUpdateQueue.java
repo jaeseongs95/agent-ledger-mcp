@@ -166,6 +166,9 @@ public final class FileUpdateQueue implements UpdateQueue {
         if ("ROLLED_BACK".equals(raw)) {
             return UpdateStatus.State.ROLLED_BACK;
         }
+        if ("RECOVERY_REQUIRED".equals(raw)) {
+            return UpdateStatus.State.RECOVERY_REQUIRED;
+        }
         if ("FAILED".equals(raw)) {
             return UpdateStatus.State.FAILED;
         }

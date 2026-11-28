@@ -76,7 +76,9 @@ public class SpecsController {
      */
     @GetMapping("/specs/detail")
     String detail(@RequestParam("id") String id, Model model) {
-        model.addAttribute("spec", details.spec(id));
+        var spec = details.spec(id);
+        model.addAttribute("spec", spec);
+        model.addAttribute("relatedVersions", spec.relatedVersions());
         return "spec";
     }
 }

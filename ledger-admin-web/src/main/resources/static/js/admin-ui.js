@@ -4,8 +4,12 @@
 // unified native <dialog> modals (Projects, Grants, Codes), Korean IME-safe search & filters,
 // grants tabs/scope matrix/expiry presets/key-block auto-fill, codes editor/state modals,
 // and progressive JSON diff rendering in history.
-(() => {
-  const THEME_KEY = "veridger.theme";
+let pageListeners;
+
+function initializeAdminPage() {
+  pageListeners?.abort();
+  pageListeners = new AbortController();
+  const listen = (name, handler) => document.addEventListener(name, handler, { signal: pageListeners.signal });
   const toastRegion = document.getElementById("ui-toast");
 
   function showToast(message) {
@@ -36,108 +40,6 @@
     el.textContent = value;
   }
 
-  // 1. Theme switcher (system -> light -> dark)
-  const themeBtn = document.getElementById("theme-toggle");
-  function applyTheme(mode) {
-    const root = document.documentElement;
-    if (mode === "light" || mode === "dark") {
-      root.setAttribute("data-theme", mode);
-    } else {
-      root.removeAttribute("data-theme");
-      mode = "system";
-    }
-    if (themeBtn) {
-      themeBtn.dataset.mode = mode;
-      const label = themeBtn.dataset[mode] || mode;
-      const textNode = themeBtn.querySelector("[data-theme-text]");
-      if (textNode) { textNode.textContent = label; }
-      themeBtn.setAttribute("aria-label", (themeBtn.dataset.prefix || "Theme") + ": " + label);
-    }
-  }
-  let storedTheme = "system";
-  try { storedTheme = window.localStorage.getItem(THEME_KEY) || "system"; } catch (ignored) { storedTheme = "system"; }
-  applyTheme(storedTheme);
-  if (themeBtn) {
-    themeBtn.addEventListener("click", () => {
-      const current = themeBtn.dataset.mode || "system";
-      const next = current === "system" ? "light" : (current === "light" ? "dark" : "system");
-      try {
-        if (next === "system") { window.localStorage.removeItem(THEME_KEY); }
-        else { window.localStorage.setItem(THEME_KEY, next); }
-      } catch (ignored) { /* storage disabled */ }
-      applyTheme(next);
-    });
-  }
-
-  // 2. Responsive sidebar drawer
-  const sidebar = document.getElementById("sidebar");
-  const backdrop = document.getElementById("sidebar-backdrop");
-  const openBtn = document.getElementById("sidebar-open");
-  const closeBtn = document.getElementById("sidebar-close");
-  const mobileDrawer = window.matchMedia("(max-width: 1023px)");
-  let drawerBackground = [];
-
-  function setDrawer(open, restoreFocus = true) {
-    if (!sidebar || (open && !mobileDrawer.matches) || (sidebar.dataset.open === "true") === open) { return; }
-    sidebar.dataset.open = open ? "true" : "false";
-    if (backdrop) { backdrop.hidden = !open; }
-    if (openBtn) { openBtn.setAttribute("aria-expanded", open ? "true" : "false"); }
-    if (open) {
-      sidebar.setAttribute("role", "dialog");
-      sidebar.setAttribute("aria-modal", "true");
-      sidebar.setAttribute("aria-labelledby", "sidebar-name");
-      drawerBackground = Array.from(document.body.children).filter((element) =>
-        element !== sidebar && element !== backdrop && !element.inert && element.tagName !== "SCRIPT"
-      );
-      drawerBackground.forEach((element) => { element.inert = true; });
-      (sidebar.querySelector('[aria-current="page"]') || closeBtn).focus();
-      return;
-    }
-
-    sidebar.removeAttribute("role");
-    sidebar.removeAttribute("aria-modal");
-    sidebar.removeAttribute("aria-labelledby");
-    drawerBackground.forEach((element) => { element.inert = false; });
-    drawerBackground = [];
-    if (restoreFocus && openBtn) {
-      openBtn.focus();
-    }
-  }
-
-  if (openBtn && sidebar) {
-    openBtn.addEventListener("click", () => setDrawer(sidebar.dataset.open !== "true"));
-  }
-  if (closeBtn) {
-    closeBtn.addEventListener("click", () => setDrawer(false));
-  }
-  if (backdrop) {
-    backdrop.addEventListener("click", () => setDrawer(false));
-  }
-  mobileDrawer.addEventListener("change", () => {
-    if (!mobileDrawer.matches) { setDrawer(false, false); }
-  });
-  sidebar?.addEventListener("keydown", (event) => {
-    if (event.isComposing || event.keyCode === 229) { return; }
-    if (sidebar.dataset.open !== "true") { return; }
-    if (event.key === "Escape") {
-      event.preventDefault();
-      setDrawer(false);
-      return;
-    }
-    if (event.key === "Tab") {
-      const controls = sidebar.querySelectorAll("a[href], button:not([disabled])");
-      const first = controls[0];
-      const last = controls[controls.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-  });
-
   // 3. History back button (error page)
   document.querySelectorAll("[data-go-back]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -147,7 +49,7 @@
   });
 
   // 4. One-click clipboard copy ([data-copy] or [data-copy-target])
-  document.addEventListener("click", (event) => {
+  listen("click", (event) => {
     const btn = event.target.closest("[data-copy], [data-copy-target]");
     if (!btn) { return; }
     let text = btn.dataset.copy;
@@ -171,8 +73,8 @@
   // 5. Unified Native <dialog> Modal System
   const dialogTriggerMap = new WeakMap();
   let imeComposing = false;
-  document.addEventListener("compositionstart", () => { imeComposing = true; });
-  document.addEventListener("compositionend", () => { imeComposing = false; });
+  listen("compositionstart", () => { imeComposing = true; });
+  listen("compositionend", () => { imeComposing = false; });
 
   function clearModalStatus(dialog) {
     const modalStatus = dialog.querySelector("[data-modal-status]");
@@ -235,7 +137,7 @@
   });
 
   // Close buttons inside modals
-  document.addEventListener("click", (event) => {
+  listen("click", (event) => {
     const closeEl = event.target.closest("[data-modal-close]");
     if (!closeEl) { return; }
     const dialog = closeEl.closest("dialog");
@@ -243,7 +145,7 @@
   });
 
   // 6. Expiry UTC quick presets
-  document.addEventListener("click", (event) => {
+  listen("click", (event) => {
     const btn = event.target.closest("[data-expiry-target]");
     if (!btn) { return; }
     const input = document.getElementById(btn.dataset.expiryTarget);
@@ -310,7 +212,7 @@
     form.addEventListener("change", () => syncMatrix(form));
   });
 
-  document.addEventListener("click", (event) => {
+  listen("click", (event) => {
     const presetBtn = event.target.closest("[data-scope-preset]");
     if (presetBtn) {
       const container = presetBtn.closest("[data-scope-matrix], [data-scope-picker]");
@@ -474,7 +376,7 @@
   });
 
   // 9. Unified Modal Open Triggers & Context Population (Projects, Grants, Common Codes)
-  document.addEventListener("click", (event) => {
+  listen("click", (event) => {
     const trigger = event.target.closest("[data-modal-open]");
     if (!trigger) { return; }
     const modalId = trigger.dataset.modalOpen;
@@ -954,4 +856,7 @@
       dependent.disabled = source.value !== renderedValue;
     });
   });
-})();
+}
+
+initializeAdminPage();
+document.addEventListener("veridger:page", initializeAdminPage);

@@ -10,7 +10,11 @@ import org.veridger.domain.error.ValidationReason;
  * milestone criterion.
  */
 public record SaveCommand(String operationKey, String entity, String id, Long expectedVersion,
-        FieldsInput fields, String reason) implements WriteCommand {
+        FieldsInput fields, String reason, String projectVersion) implements WriteCommand {
+
+    public SaveCommand(String operationKey, String entity, String id, Long expectedVersion, FieldsInput fields, String reason) {
+        this(operationKey, entity, id, expectedVersion, fields, reason, null);
+    }
 
     public boolean isCreate() {
         if (expectedVersion != null && expectedVersion < 0) {

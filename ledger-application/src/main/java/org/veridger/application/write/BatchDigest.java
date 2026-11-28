@@ -34,7 +34,7 @@ final class BatchDigest {
         return switch (op) {
             case BatchOpInput.Save s -> CanonicalPayload.Fields.empty().text("op", "save").text("entity", s.entity())
                     .with("fields", fields(s.fields())).text("reason", s.reason()).text("id", s.id())
-                    .text("expected_version", text(s.expectedVersion()));
+                    .text("expected_version", text(s.expectedVersion())).text("project_version", s.projectVersion());
             case BatchOpInput.Transition t -> CanonicalPayload.Fields.empty().text("op", "transition")
                     .text("entity", t.entity()).text("id", t.id()).text("expected_version", text(t.expectedVersion()))
                     .text("to", t.to()).text("reason", t.reason()).text("evidence_uri", t.evidenceUri())

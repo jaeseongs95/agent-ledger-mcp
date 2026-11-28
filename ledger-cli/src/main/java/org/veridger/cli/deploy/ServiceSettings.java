@@ -54,6 +54,7 @@ final class ServiceSettings {
         Text.line(yaml, "      health-url: " + Text.quoted("http://127.0.0.1:" + p.mcpPort() + "/healthz"));
         Text.line(yaml, "    update:");
         Text.line(yaml, "      directory: " + Text.quoted(p.layout().updateDirectory()));
+        Text.line(yaml, "      schema-migration-marker: " + Text.quoted(p.layout().lib() + "/.schema-updates"));
         return yaml.toString();
     }
 
