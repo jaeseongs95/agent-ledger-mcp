@@ -5,6 +5,8 @@
 // grants tabs/scope matrix/expiry presets/key-block auto-fill, codes editor/state modals,
 // and progressive JSON diff rendering in history.
 let pageListeners;
+// The SPA replaces the filter controls along with the rest of the page after a write.
+const listFilterValues = new Map();
 
 function initializeAdminPage() {
   pageListeners?.abort();
@@ -269,11 +271,10 @@ function initializeAdminPage() {
     syncCodeFormState();
   }
 
-  // Snapshot all project options in #enrolled-project so session-specific filtering can restore them in manual mode
+  // Keep the server-rendered names when filtering the grant dialog's project options.
   const enrolledProjectSelect = document.getElementById("enrolled-project");
-  const allEnrolledProjectIds = enrolledProjectSelect
-    ? Array.from(enrolledProjectSelect.options).map((opt) => opt.value)
-    : [];
+  const enrolledProjects = new Map(Array.from(enrolledProjectSelect?.options ?? [],
+    (option) => [option.value, option.label]));
 
   // Split host + session ID helpers (Grants add/revoke modals)
   function hostOptionsOf(selectEl) {
@@ -407,7 +408,7 @@ function initializeAdminPage() {
       setField("edit-scopes-author", author);
       setField("edit-scopes-project", project);
       setText("edit-scopes-author-label", author);
-      setText("edit-scopes-project-label", project);
+      setText("edit-scopes-project-label", enrolledProjects.get(project) ?? project);
       setField("edit-scopes-expires", trigger.dataset.expires || "");
       setField("edit-scopes-note", trigger.dataset.note || "");
       if (form) {
@@ -436,16 +437,11 @@ function initializeAdminPage() {
         populateSplitAuthor("enrolled", "", false);
       }
       if (enrolledProjectSelect) {
-        const allowed = mode === "session" && trigger.dataset.availableProjects
-          ? trigger.dataset.availableProjects.split(",").map((s) => s.trim()).filter(Boolean)
-          : allEnrolledProjectIds;
-        enrolledProjectSelect.textContent = "";
-        allowed.forEach((projId) => {
-          const opt = document.createElement("option");
-          opt.value = projId;
-          opt.textContent = projId;
-          enrolledProjectSelect.appendChild(opt);
-        });
+        const allowed = mode === "session" ? new Set((trigger.dataset.availableProjects || "").split(",")) : null;
+        const options = Array.from(enrolledProjects)
+          .filter(([id]) => !allowed || allowed.has(id))
+          .map(([id, name]) => new Option(name, id));
+        enrolledProjectSelect.replaceChildren(...options);
       }
       if (form) {
         form.querySelectorAll('input[type="checkbox"][name="scopes"]').forEach((box) => {
@@ -479,7 +475,8 @@ function initializeAdminPage() {
         setText("revoke-summary-author", author);
         const projLabel = document.getElementById("revoke-summary-project");
         if (projLabel) {
-          projLabel.textContent = mode === "project" ? project : (projLabel.dataset.allLabel || "All projects");
+          projLabel.textContent = mode === "project" ? (enrolledProjects.get(project) ?? project)
+            : (projLabel.dataset.allLabel || "All projects");
         }
       }
     }
@@ -589,6 +586,7 @@ function initializeAdminPage() {
     let composing = false;
 
     function applyTableSearch() {
+      listFilterValues.set(input.id, input.value);
       const q = input.value.trim().toLowerCase();
       let visible = 0;
       rows.forEach((row) => {
@@ -602,6 +600,8 @@ function initializeAdminPage() {
       if (emptyEl) { emptyEl.hidden = visible > 0 || rows.length === 0; }
     }
 
+    input.value = listFilterValues.get(input.id) ?? input.value;
+    applyTableSearch();
     input.addEventListener("compositionstart", () => { composing = true; });
     input.addEventListener("compositionend", () => { composing = false; applyTableSearch(); });
     input.addEventListener("input", () => { if (!composing) { applyTableSearch(); } });
@@ -621,6 +621,7 @@ function initializeAdminPage() {
     const searchInput = document.getElementById("session-search");
     const hostSelect = document.getElementById("grant-host-filter");
     const scopeSelect = document.getElementById("grant-scope-filter");
+    const fields = [projectInput, searchInput, hostSelect, scopeSelect];
     const cards = Array.from(document.querySelectorAll("[data-session-card]"), (element) => ({
       element,
       projects: Array.from(element.querySelectorAll("[data-project-grant]"))
@@ -629,7 +630,17 @@ function initializeAdminPage() {
     const resetBtn = sessionToolbar.querySelector("[data-session-filter-reset]");
     const countEl = document.getElementById("session-filter-count");
 
+    const savedHost = listFilterValues.get(hostSelect.id);
+    let restoredHostOption;
+    // Revoking the last grant for a host removes it from the server-rendered choices.
+    if (savedHost && !Array.from(hostSelect.options).some((option) => option.value === savedHost)) {
+      restoredHostOption = new Option(savedHost, savedHost);
+      hostSelect.add(restoredHostOption);
+    }
+    fields.forEach((field) => { field.value = listFilterValues.get(field.id) ?? field.value; });
+
     function applySessionFilters() {
+      fields.forEach((field) => { listFilterValues.set(field.id, field.value); });
       const project = projectInput.value.trim().toLowerCase();
       const session = searchInput.value.trim().toLowerCase();
       const host = hostSelect.value;
@@ -658,7 +669,8 @@ function initializeAdminPage() {
     });
     [hostSelect, scopeSelect].forEach((select) => select.addEventListener("change", applySessionFilters));
     resetBtn.addEventListener("click", () => {
-      [projectInput, searchInput, hostSelect, scopeSelect].forEach((input) => { input.value = ""; });
+      restoredHostOption?.remove();
+      fields.forEach((field) => { field.value = ""; });
       applySessionFilters();
       projectInput.focus();
     });

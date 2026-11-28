@@ -102,6 +102,25 @@ class WriteSchemaTest {
     }
 
     @Test
+    void projectVersionLinksDeclareTheFourSupportedRecordKinds(McpSession session) {
+        var batch = input(session, "ledger_batch");
+        var versions = batch.nodes()
+                .filter(node -> node.properties().containsKey("link_items")).findFirst().orElseThrow();
+        for (String field : List.of("link_items", "unlink_items")) {
+            var items = versions.properties().get(field);
+            if (items.ref() != null) {
+                items = batch.defs().get(items.ref().substring("#/$defs/".length()));
+            }
+            assertThat(items.closed()).isTrue();
+            assertThat(items.propertyNames()).containsExactly("criterion", "issue", "spec", "task");
+            assertThat(items.properties().values()).allSatisfy(ids -> {
+                assertThat(ids.type()).isEqualTo("array");
+                assertThat(ids.items().type()).isEqualTo("string");
+            });
+        }
+    }
+
+    @Test
     @DisplayName("MCW-014: ledger_transition offers the author-channel states only, ledger_review all of them")
     void transitionOffersNoVerificationState(McpSession session) {
         List<String> author = input(session, "ledger_transition").properties().get("to").allowed();
@@ -155,7 +174,7 @@ class WriteSchemaTest {
 
         assertThat(description).contains("directed").contains("caused_by = a is caused by b")
                 .contains("blocks = a blocks b").contains("(a, b) and (b, a) are two different relations")
-                .contains("one relation in either order");
+                .contains("one relation in either order").contains("ledger_batch with op=project_version");
         assertThat(properties.properties().get("a").description()).contains("subject").contains("caused_by")
                 .contains("blocks");
         assertThat(properties.properties().get("b").description()).contains("object");

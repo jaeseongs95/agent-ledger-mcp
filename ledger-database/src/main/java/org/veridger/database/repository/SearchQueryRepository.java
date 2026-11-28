@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 import org.veridger.database.time.UtcTime;
+import org.veridger.domain.rule.HistoryEntity;
 import org.veridger.domain.value.MaxRows;
 import org.veridger.domain.value.ProjectId;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -65,24 +66,28 @@ public class SearchQueryRepository {
     }
 
     public KeysetPage<Hit> page(Filter filter, MaxRows maxRows, Position after) {
+        return page(filter, maxRows, after, null);
+    }
+
+    public KeysetPage<Hit> page(Filter filter, MaxRows maxRows, Position after, String projectVersionId) {
         List<String> selects = new ArrayList<>();
         boolean hasAfter = after != null;
         if (filter.kinds().contains(Kind.ISSUE)) {
-            selects.add(select("'ISSUE'", "id", "project_id", "title", "status", "created_at", "issue", "status",
-                    List.of("title", "symptom", "root_cause"), filter, hasAfter));
+            selects.add(select(HistoryEntity.ISSUE, "title", "status", "created_at", "issue",
+                    List.of("title", "symptom", "root_cause"), filter, hasAfter, projectVersionId));
         }
         if (filter.kinds().contains(Kind.SPEC)) {
-            selects.add(select("'SPEC'", "id", "project_id", "title", "status", "created_at", "spec", "status",
-                    List.of("title", "summary", "acceptance_criteria"), filter, hasAfter));
+            selects.add(select(HistoryEntity.SPEC, "title", "status", "created_at", "spec",
+                    List.of("title", "summary", "acceptance_criteria"), filter, hasAfter, projectVersionId));
         }
         if (filter.kinds().contains(Kind.TASK)) {
-            selects.add(select("'TASK'", "id", "project_id", "title", "state", "created_at", "task", "state",
-                    List.of("title", "purpose", "success_condition"), filter, hasAfter));
+            selects.add(select(HistoryEntity.TASK, "title", "state", "created_at", "task",
+                    List.of("title", "purpose", "success_condition"), filter, hasAfter, projectVersionId));
         }
         boolean timed = filter.createdFrom() != null || filter.createdTo() != null;
         if (filter.kinds().contains(Kind.CRITERION) && !timed) {
-            selects.add(select("'CRITERION'", "id", "project_id", "criterion_text", "state", EPOCH,
-                    "milestone_criterion", "state", List.of("criterion_text"), filter, hasAfter));
+            selects.add(select(HistoryEntity.CRITERION, "criterion_text", "state", EPOCH,
+                    "milestone_criterion", List.of("criterion_text"), filter, hasAfter, projectVersionId));
         }
         if (selects.isEmpty()) {
             return new KeysetPage<>(List.of(), false);
@@ -95,6 +100,7 @@ public class SearchQueryRepository {
         if (filter.project() != null) {
             spec = spec.param("project", filter.project().value());
         }
+        spec = ProjectVersionRepository.bindItemFilter(spec, projectVersionId);
         for (int i = 0; i < filter.keywords().size(); i++) {
             spec = spec.param("k" + i, LikePattern.contains(filter.keywords().get(i)));
         }
@@ -122,15 +128,23 @@ public class SearchQueryRepository {
         return KeysetPage.of(fetched, maxRows.value());
     }
 
-    private static String select(String kind, String id, String project, String title, String state, String created,
-            String table, String stateColumn, List<String> textColumns, Filter filter, boolean withAfter) {
-        StringBuilder sql = new StringBuilder("SELECT ").append(kind).append(" AS kind, ").append(id)
-                .append(" AS id, ").append(project).append(" AS project_id, ").append(title).append(" AS title, ")
-                .append(state).append(" AS state, ").append(created).append(" AS created_at FROM ").append(table)
+    private static String select(HistoryEntity entity, String title, String state, String created, String table,
+            List<String> textColumns, Filter filter, boolean withAfter, String projectVersionId) {
+        String kind = switch (entity) {
+            case ISSUE -> "'ISSUE'";
+            case SPEC -> "'SPEC'";
+            case TASK -> "'TASK'";
+            case CRITERION -> "'CRITERION'";
+            default -> throw new IllegalArgumentException("Unsupported search entity");
+        };
+        StringBuilder sql = new StringBuilder("SELECT ").append(kind).append(" AS kind, id, project_id, ")
+                .append(title).append(" AS title, ").append(state).append(" AS state, ")
+                .append(created).append(" AS created_at FROM ").append(table)
                 .append(" WHERE 1 = 1");
         if (filter.project() != null) {
             sql.append(" AND project_id = :project");
         }
+        ProjectVersionRepository.appendItemFilter(sql, projectVersionId, "id", entity);
         if (!filter.keywords().isEmpty()) {
             List<String> terms = new ArrayList<>();
             for (int i = 0; i < filter.keywords().size(); i++) {
@@ -146,7 +160,7 @@ public class SearchQueryRepository {
         // one condition per excluded status, named by position; all are joined with AND, so which value gets which
         // position does not matter
         for (int i = 0; i < filter.excludeStatuses().size(); i++) {
-            sql.append(" AND ").append(stateColumn).append(" <> :x").append(i);
+            sql.append(" AND ").append(state).append(" <> :x").append(i);
         }
         if (filter.createdFrom() != null) {
             sql.append(" AND created_at >= :from");
@@ -156,7 +170,7 @@ public class SearchQueryRepository {
         }
         if (withAfter) {
             sql.append(" AND (").append(created).append(" < :after OR (").append(created).append(" = :after AND (")
-                    .append(id).append(" < :afterId OR (").append(id).append(" = :afterId AND ").append(kind)
+                    .append("id < :afterId OR (id = :afterId AND ").append(kind)
                     .append(" < :afterKind))))");
         }
         return sql.toString();

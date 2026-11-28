@@ -71,6 +71,26 @@ public class ProjectVersionRepository {
                 .query((rs, row) -> new Stored(rs.getString(1), rs.getString(2), rs.getString(3))).optional();
     }
 
+    /** Add the version predicate before row limits. The column and kind are fixed by the calling query. */
+    static void appendItemFilter(StringBuilder sql, String projectVersionId, String itemIdColumn, HistoryEntity kind) {
+        if (projectVersionId != null) {
+            String itemKind = switch (kind) {
+                case ISSUE -> " AND item_kind = 'issue'";
+                case SPEC -> " AND item_kind = 'spec'";
+                case TASK -> " AND item_kind = 'task'";
+                case CRITERION -> " AND item_kind = 'criterion'";
+                default -> throw new IllegalArgumentException("Unsupported project version item");
+            };
+            sql.append(" AND ").append(itemIdColumn)
+                    .append(" IN (SELECT item_id FROM project_version_item WHERE project_id = :project")
+                    .append(itemKind).append(" AND version_id = :projectVersionId)");
+        }
+    }
+
+    static JdbcClient.StatementSpec bindItemFilter(JdbcClient.StatementSpec stmt, String projectVersionId) {
+        return projectVersionId == null ? stmt : stmt.param("projectVersionId", projectVersionId);
+    }
+
     public List<Stored> versionsForItem(String project, HistoryEntity kind, String item) {
         return jdbc.sql("""
                 SELECT pv.id, pv.name, pv.description FROM project_version pv

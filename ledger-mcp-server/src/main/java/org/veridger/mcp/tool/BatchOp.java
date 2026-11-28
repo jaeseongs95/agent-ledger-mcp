@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import java.util.List;
 import org.veridger.application.write.BatchOpInput;
+import org.veridger.application.write.BatchOpInput.VersionItems;
 
 /**
  * One operation inside {@code ledger_batch} on the wire: {@code op} selects the variant, and the whole batch shares a
@@ -106,12 +107,14 @@ public sealed interface BatchOp {
             @JsonProperty("reason") String reason, @JsonProperty("create") Boolean create,
             @JsonProperty("original_name") String originalName,
             @JsonProperty("description") String description, @JsonProperty("link_issue_ids") List<String> linkIssueIds,
-            @JsonProperty("unlink_issue_ids") List<String> unlinkIssueIds) implements BatchOp {
+            @JsonProperty("unlink_issue_ids") List<String> unlinkIssueIds,
+            @JsonProperty("link_items") VersionItems linkItems,
+            @JsonProperty("unlink_items") VersionItems unlinkItems) implements BatchOp {
 
         @Override
         public BatchOpInput toInput(String defaultReason) {
             return new BatchOpInput.ProjectVersion(projectId, name, reasonOr(defaultReason), create, originalName,
-                    description, linkIssueIds, unlinkIssueIds);
+                    description, linkIssueIds, unlinkIssueIds, linkItems, unlinkItems);
         }
     }
 }

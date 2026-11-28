@@ -101,7 +101,7 @@ class LegacyRemovalTest {
     @EnumSource(Language.class)
     @DisplayName("FUP-DOC-01 the README says that the 1.x implementation is not in the tree and that its source is the tag v1.1.0; the Layout does not keep it any more")
     void theReadmeNamesTheTagOfTheOneXSource(Language language) {
-        List<String> lines = language.readme().prose();
+        List<String> lines = language.guide().prose();
 
         assertThat(lines).anyMatch(line -> line.contains("1.x") && line.contains("`" + TAG + "`"));
         assertThat(lines).noneMatch(line -> line.contains("1.x") && line.contains("`bin/`"));

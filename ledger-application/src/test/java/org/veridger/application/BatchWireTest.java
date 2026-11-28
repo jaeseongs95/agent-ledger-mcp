@@ -33,7 +33,9 @@ class BatchWireTest {
             case LINK -> new BatchOpInput.Link("kind", "a", "b", "reason", false);
             case CORRECT -> new BatchOpInput.Correct(1L, "reason", "attachment");
             case PROJECT_VERSION -> new BatchOpInput.ProjectVersion("project", "new", "reason", false, "old",
-                    "description", List.of("P-I-0001"), List.of("P-I-0002"));
+                    "description", List.of("P-I-0001"), List.of("P-I-0002"),
+                    new BatchOpInput.VersionItems(null, List.of("P-S-0001"), null, null),
+                    new BatchOpInput.VersionItems(null, null, List.of("P-T-0001"), null));
         };
     }
 

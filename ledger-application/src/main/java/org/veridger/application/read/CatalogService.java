@@ -3,9 +3,9 @@
 package org.veridger.application.read;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -24,6 +24,8 @@ import org.veridger.domain.rule.CodeGroup;
 import org.veridger.domain.rule.CodeState;
 import org.veridger.domain.value.MaxRows;
 import org.veridger.domain.value.PageCursor;
+import org.veridger.domain.value.ProjectId;
+import org.veridger.domain.value.TextRule;
 import org.veridger.domain.value.Tokens;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,7 +35,10 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class CatalogService {
 
-    public record ProjectsQuery(Number maxRows, String cursor) {
+    public record ProjectsQuery(Number maxRows, String cursor, String project, String displayName) {
+        public ProjectsQuery(Number maxRows, String cursor) {
+            this(maxRows, cursor, null, null);
+        }
     }
 
     /** Filters of the code list: the group, and whether retired codes are listed too (by default they are not). */
@@ -70,14 +75,24 @@ public class CatalogService {
                         Collectors.mapping(v -> new VersionView(v.name(), v.description()), Collectors.toList())));
     }
 
+    public String projectName(ProjectId id) {
+        return projects.findById(id).map(Project::displayName).orElse(id.value());
+    }
+
     public Page<ProjectView> projects(ProjectsQuery q) {
         MaxRows maxRows = cursors.maxRows(q.maxRows());
-        Object criteria = "projects";
+        ProjectId id = q.project() == null ? null : ProjectId.of(q.project());
+        String name = TextRule.PROJECT_NAME.optional(q.displayName());
+        String term = name == null ? "" : name.toLowerCase(Locale.ROOT);
+        Object criteria = id == null && term.isEmpty() ? "projects" : List.of(id == null ? "" : id.value(), term);
         List<Project> all = projects.findAllByOrderByCode();
+        Predicate<Project> shown = p -> (id == null || Objects.equals(p.id(), id))
+                && p.displayName().toLowerCase(Locale.ROOT).contains(term);
+        List<Project> listed = all.stream().filter(shown).toList();
         Function<Project, String> key = p -> p.code().value();
         int start = cursors.decode(q.cursor(), PageCursor.Kind.PROJECTS, criteria)
-                .map(after -> startAfter(all, p -> true, key, after)).orElse(0);
-        return slice(all, start, maxRows, PageCursor.Kind.PROJECTS, criteria, key,
+                .map(after -> startAfter(all, shown, key, after)).orElse(0);
+        return slice(listed, start, maxRows, PageCursor.Kind.PROJECTS, criteria, key,
                 p -> new ProjectView(p.id().value(), p.code().value(), p.title(), p.displayName(), p.version()));
     }
 

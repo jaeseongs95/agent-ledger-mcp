@@ -122,7 +122,8 @@
       <section class="card">
         <h2 th:text="#{item.metadata}">Details</h2>
         <dl class="facts">
-          <dt th:text="#{common.project}">Project</dt><dd class="code"><a th:href="@{/(project=${issue.projectId()})}" th:text="${issue.projectId()}">p1</a></dd>
+          <dt th:text="#{common.project}">Project</dt>
+          <dd><a th:href="@{/(project=${issue.projectId()})}" th:text="${@choices.projectName(issue.projectId())}">p1</a></dd>
           <dt th:text="#{common.status}">Status</dt><dd><span th:class="'badge badge-' + ${issue.status()}" th:text="${@labels.issueStatus(issue.status())}">Open</span></dd>
           <dt th:text="#{common.severity}">Severity</dt><dd><span th:class="'badge badge-' + ${issue.severity()}" th:attr="title=${issue.severity()}" th:text="${@labels.codeName('ISSUE_SEVERITY', issue.severity())}">P1</span></dd>
           <dt th:text="#{common.category}">Category</dt><dd th:attr="title=${issue.category()}" th:text="${@labels.codeName('ISSUE_CATEGORY', issue.category())}">ARC</dd>

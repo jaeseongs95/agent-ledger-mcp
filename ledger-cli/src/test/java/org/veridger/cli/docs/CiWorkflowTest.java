@@ -9,18 +9,33 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * R9-D0069: the continuous integration workflow is read as text (it runs on GitHub, never here). A newer push to a branch may
- * cancel the run of an older one only where nobody needs the older one's record: not on {@code main} and not on
- * {@code release/**}, where every commit is a candidate of a release and its check result is the evidence.
+ * R9-D0069: the repository checks run for review-ready pull requests and are reused by release verification.
  */
 class CiWorkflowTest {
 
-    private static final String CI = ".github/workflows/ci.yml";
+    private static final String REPOSITORY_CHECKS = ".github/workflows/repository-checks.yml";
+    private static final String REVIEW_READY = "    if: github.event_name != 'pull_request' || !github.event.pull_request.draft";
 
     @Test
-    @DisplayName("R9-D0069 the concurrency group of ci.yml cancels an older run of the same ref only when the ref is neither main nor a release branch: cancel-in-progress is an expression that is false for refs/heads/main and for refs/heads/release/*, and the group still holds the ref")
+    @DisplayName("Repository checks run for review-ready pull requests and reuse in release verification")
+    void repositoryChecksRunForReviewReadyPullRequests() {
+        List<String> lines = Repository.read(REPOSITORY_CHECKS).lines().toList();
+        int triggers = lines.indexOf("on:");
+        assertThat(triggers).isNotNegative();
+        List<String> events = lines.subList(triggers + 1, lines.size()).stream().takeWhile(line -> !line.isBlank()).toList();
+
+        assertThat(events).containsSubsequence("  pull_request:", "    types: [opened, reopened, ready_for_review]",
+                "  workflow_dispatch:", "  workflow_call:").doesNotContain("  push:");
+        String workflow = String.join("\n", lines);
+        assertThat(workflow).contains("  ubuntu:\n" + REVIEW_READY, "  windows:\n" + REVIEW_READY);
+        assertThat(Repository.read(".github/workflows/release-candidate-verification.yml"))
+                .contains("uses: ./.github/workflows/repository-checks.yml", "coverage-artifacts: true");
+    }
+
+    @Test
+    @DisplayName("R9-D0069 repository checks keep older runs on main and release branches and group runs by ref")
     void r9d0069_runsOfMainAndReleaseBranchesAreNotCancelled() {
-        List<String> lines = Repository.read(CI).lines().toList();
+        List<String> lines = Repository.read(REPOSITORY_CHECKS).lines().toList();
         int concurrency = lines.indexOf("concurrency:");
         assertThat(concurrency).as("the workflow has a concurrency group").isNotNegative();
         List<String> block = lines.subList(concurrency + 1, lines.size()).stream().takeWhile(line -> !line.isBlank()).toList();

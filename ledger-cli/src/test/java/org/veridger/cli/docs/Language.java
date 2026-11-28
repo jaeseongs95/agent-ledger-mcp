@@ -108,4 +108,15 @@ enum Language {
     Markdown readme() {
         return Markdown.of(Repository.read(readmeFile));
     }
+
+    String guideFile() {
+        return switch (this) {
+            case EN -> "docs/guide.md";
+            case KO -> "docs/guide.ko.md";
+        };
+    }
+
+    Markdown guide() {
+        return Markdown.of(Repository.read(guideFile()));
+    }
 }

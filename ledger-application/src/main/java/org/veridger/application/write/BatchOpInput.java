@@ -5,7 +5,11 @@ package org.veridger.application.write;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import jakarta.validation.constraints.NotNull;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import org.veridger.domain.rule.HistoryEntity;
 
 /**
  * One operation inside {@code ledger_batch}; {@code op} selects the concrete record.
@@ -61,6 +65,19 @@ public sealed interface BatchOpInput {
 
     record ProjectVersion(@NotNull(message = REQUIRED) String projectId, @NotNull(message = REQUIRED) String name,
             @NotNull(message = REQUIRED) String reason, Boolean create, String originalName, String description,
-            List<String> linkIssueIds, List<String> unlinkIssueIds) implements BatchOpInput {
+            List<String> linkIssueIds, List<String> unlinkIssueIds, VersionItems linkItems,
+            VersionItems unlinkItems) implements BatchOpInput {
+    }
+
+    record VersionItems(List<String> issue, List<String> spec, List<String> task, List<String> criterion) {
+        Map<HistoryEntity, List<String>> byEntity() {
+            Map<HistoryEntity, List<String>> ids = new EnumMap<>(HistoryEntity.class);
+            ids.put(HistoryEntity.ISSUE, issue);
+            ids.put(HistoryEntity.SPEC, spec);
+            ids.put(HistoryEntity.TASK, task);
+            ids.put(HistoryEntity.CRITERION, criterion);
+            ids.values().removeIf(Objects::isNull);
+            return ids;
+        }
     }
 }

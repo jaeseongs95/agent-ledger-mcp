@@ -178,6 +178,7 @@ class DocsTest {
         String top = String.join("\n", language.readme().lines().stream().limit(12).toList());
 
         assertThat(top).contains("](" + language.other().readmeFile() + ")");
+        assertThat(language.readme().links()).anyMatch(link -> link.startsWith(language.guideFile() + "#"));
     }
 
     // ---- MCP tools ----
@@ -186,7 +187,7 @@ class DocsTest {
     @EnumSource(Language.class)
     @DisplayName("DOC-002 the tables of MCP tools list exactly the tools of ToolContract: every write and read tool, nothing else")
     void toolTablesListExactlyTheToolsOfTheServer(Language language) {
-        List<String> documented = language.readme().tables().stream()
+        List<String> documented = language.guide().tables().stream()
                 .filter(table -> language.toolHeader().equals(table.firstHeader()))
                 .flatMap(table -> table.firstCellNames().stream()).toList();
 
@@ -197,7 +198,7 @@ class DocsTest {
     @MethodSource("removedToolCases")
     @DisplayName("DOC-003 a removed tool (execute_sql_reader, search_objects_reader) is named only in lines that say it is removed, never in a table of tools")
     void removedToolsAreNeverPresentedAsAvailable(Language language, String tool) {
-        List<String> lines = language.readme().lines().stream().filter(line -> line.contains(tool)).toList();
+        List<String> lines = language.guide().lines().stream().filter(line -> line.contains(tool)).toList();
 
         assertThat(lines).as("the migration text names %s", tool).isNotEmpty();
         assertThat(lines).allSatisfy(line -> {
@@ -230,7 +231,7 @@ class DocsTest {
     @EnumSource(Language.class)
     @DisplayName("DOC-005 the tables of ledger-cli commands list exactly the commands of CliCommand")
     void commandTablesListExactlyTheCommandsOfTheCli(Language language) {
-        List<String> documented = language.readme().tables().stream()
+        List<String> documented = language.guide().tables().stream()
                 .filter(table -> language.commandHeader().equals(table.firstHeader()))
                 .flatMap(table -> table.firstCellNames().stream()).toList();
 
@@ -245,7 +246,7 @@ class DocsTest {
     @MethodSource("commandCases")
     @DisplayName("DOC-006 the row of each command shows the syntax of its usage line (the usage text of ledger-cli is the source) as the second cell")
     void commandRowsShowTheSyntaxOfTheUsageText(Language language, String command) {
-        List<String> row = language.readme().tables().stream()
+        List<String> row = language.guide().tables().stream()
                 .filter(table -> language.commandHeader().equals(table.firstHeader()))
                 .map(table -> table.rowOf(command)).filter(Objects::nonNull).findFirst().orElse(null);
 
@@ -264,7 +265,7 @@ class DocsTest {
     @MethodSource("legacyTermCases")
     @DisplayName("DOC-007 legacy tooling and PostgreSQL server administration appear only in the 1.x layout note")
     void legacyTermsAppearOnlyInLinesThatSayTheyAreOneX(Language language, Term term) {
-        List<String> offending = language.readme().lines().stream().filter(line -> term.pattern().matcher(line).find())
+        List<String> offending = language.guide().lines().stream().filter(line -> term.pattern().matcher(line).find())
                 .filter(line -> !line.contains(LEGACY_MARKER)).toList();
 
         assertThat(offending).isEmpty();
@@ -274,7 +275,7 @@ class DocsTest {
     @EnumSource(Language.class)
     @DisplayName("DOC-009 (ARC-031) no list of databases: a line names at most one DBMS")
     void noLineNamesTwoDatabases(Language language) {
-        List<String> offending = language.readme().lines().stream().filter(line -> {
+        List<String> offending = language.guide().lines().stream().filter(line -> {
             Set<String> names = new TreeSet<>();
             Matcher matcher = VENDOR.matcher(line);
             while (matcher.find()) {
@@ -290,7 +291,7 @@ class DocsTest {
     @EnumSource(Language.class)
     @DisplayName("DOC-010 (ARC-031) no DBMS is named as supported, compatible or certified (naming the one tested DBMS is allowed)")
     void noDatabaseIsNamedAsSupported(Language language) {
-        List<String> offending = language.readme().lines().stream()
+        List<String> offending = language.guide().lines().stream()
                 .filter(line -> VENDOR.matcher(line).find() && SUPPORT_WORD.matcher(line).find()).toList();
 
         assertThat(offending).isEmpty();
@@ -305,14 +306,14 @@ class DocsTest {
     @MethodSource("requiredPhraseCases")
     @DisplayName("DOC-011 (ARC-031) the README states the DBMS wording (JDBC driver attached by the user and not bundled, ANSI SQL only, no DBMS-specific feature, UTC) and the install procedure (sudo deploy/install.sh)")
     void readmeStatesTheDatabaseWordingAndTheInstaller(Language language, String phrase) {
-        assertThat(language.readme().text()).contains(phrase);
+        assertThat(language.guide().text()).contains(phrase);
     }
 
     @ParameterizedTest
     @EnumSource(Language.class)
     @DisplayName("DOC-030 the README no longer says that the installer is planned")
     void readmeDoesNotSayTheInstallerIsPlanned(Language language) {
-        assertThat(language.readme().text()).doesNotContain(language.plannedInstallerSentence());
+        assertThat(language.guide().text()).doesNotContain(language.plannedInstallerSentence());
     }
 
     /** The options of the installer: those of the script (derived from its option loop) and those of render-deploy. */
@@ -337,7 +338,7 @@ class DocsTest {
     @MethodSource("installerNameCases")
     @DisplayName("DOC-031 the README names the two services and documents every option of the installer (the options of deploy/install.sh and of render-deploy, derived from the code) as a code span")
     void readmeDocumentsTheInstaller(Language language, String name) {
-        boolean documented = language.readme().codeSpans().stream()
+        boolean documented = language.guide().codeSpans().stream()
                 .anyMatch(span -> span.equals(name) || span.startsWith(name + "="));
 
         assertThat(documented).as("a code span of the README for %s", name).isTrue();
@@ -347,7 +348,7 @@ class DocsTest {
     @EnumSource(Language.class)
     @DisplayName("PCS-023 (replaces REH4-DOC-01) the README option table shows --mcp-host and --admin-host as one host name each, no comma list")
     void readmeShowsOneHostNameForEachService(Language language) {
-        assertThat(language.readme().codeSpans()).anyMatch(span -> "--mcp-host=<host>".equals(span))
+        assertThat(language.guide().codeSpans()).anyMatch(span -> "--mcp-host=<host>".equals(span))
                 .anyMatch(span -> "--admin-host=<host>".equals(span))
                 .noneMatch(span -> (span.startsWith("--mcp-host=") || span.startsWith("--admin-host=")) && span.contains("[,"))
                 .noneMatch(span -> span.startsWith("render-deploy ") && span.contains("[,<host>...]"))
@@ -384,7 +385,7 @@ class DocsTest {
     @MethodSource("moduleCases")
     @DisplayName("DOC-012 every Gradle module of settings.gradle.kts is named in the README as a code span")
     void everyModuleIsNamed(Language language, String module) {
-        assertThat(language.readme().codeSpans()).contains(module);
+        assertThat(language.guide().codeSpans()).contains(module);
     }
 
     static Stream<Arguments> clientCases() {
@@ -395,14 +396,14 @@ class DocsTest {
     @MethodSource("clientCases")
     @DisplayName("DOC-013 every client directory below clients/ is named in the README")
     void everyClientDirectoryIsNamed(Language language, String directory) {
-        assertThat(language.readme().text()).contains(directory);
+        assertThat(language.guide().text()).contains(directory);
     }
 
     @ParameterizedTest
     @EnumSource(Language.class)
     @DisplayName("DOC-014 the README names the one hook jar of the three clients")
     void theHookJarIsNamed(Language language) {
-        assertThat(language.readme().text()).contains("ledger-client-hook.jar");
+        assertThat(language.guide().text()).contains("ledger-client-hook.jar");
     }
 
     @ParameterizedTest
@@ -410,7 +411,7 @@ class DocsTest {
     @DisplayName("DOC-015 every configuration key written as a code span exists: its prefix is a @ConfigurationProperties prefix and each further segment is a component of the declaring file")
     void documentedConfigurationKeysExist(Language language) {
         List<Declaration> declarations = declarations();
-        List<String> unknown = language.readme().codeSpans().stream().filter(span -> KEY.matcher(span).matches())
+        List<String> unknown = language.guide().codeSpans().stream().filter(span -> KEY.matcher(span).matches())
                 .filter(key -> declarations.stream().noneMatch(declaration -> declaration.declares(key))).toList();
 
         assertThat(unknown).isEmpty();
@@ -424,7 +425,7 @@ class DocsTest {
     @MethodSource("requiredKeyCases")
     @DisplayName("DOC-016 the deploy settings are documented: tokens, agent-token, driver directory, OIDC owners, global-delay, JDBC url, schema name")
     void deploySettingsAreDocumented(Language language, String key) {
-        assertThat(language.readme().codeSpans()).contains(key);
+        assertThat(language.guide().codeSpans()).contains(key);
     }
 
     // ---- licence (DOC-033) ----
@@ -441,12 +442,13 @@ class DocsTest {
 
     @ParameterizedTest
     @EnumSource(Language.class)
-    @DisplayName("DOC-033 the License section of the README states AGPL-3.0-or-later, the MIT License only for the published v1.0.0 and v1.1.0 and the copyright line")
+    @DisplayName("DOC-033 the README links the license and the guide documents AGPL-3.0-or-later, earlier MIT releases, and copyright")
     void readmeStatesTheLicense(Language language) {
         String heading = language == Language.EN ? "License" : "라이선스";
-        String section = language.readme().part(heading).text();
+        String section = language.guide().part(heading).text();
 
-        assertThat(section).contains("`AGPL-3.0-or-later`").contains("Copyright (C) 2026 Jaeseong Song").contains("](LICENSE)")
+        assertThat(language.readme().part(heading).links()).contains("LICENSE");
+        assertThat(section).contains("`AGPL-3.0-or-later`").contains("Copyright (C) 2026 Jaeseong Song").contains("](../LICENSE)")
                 .contains("MIT").contains("v1.0.0").contains("v1.1.0").doesNotContain("up to 1.x").doesNotContain("1.x까지");
         assertThat(section.lines().filter(line -> !line.isBlank()).toList()).hasSizeGreaterThan(3);
     }
@@ -466,7 +468,7 @@ class DocsTest {
     void licenseNamesTheSourceLink(Language language) {
         String heading = language == Language.EN ? "License" : "라이선스";
 
-        assertThat(language.readme().part(heading).text()).contains("`ledger.source.url`").contains("`http`");
+        assertThat(language.guide().part(heading).text()).contains("`ledger.source.url`").contains("`http`");
         assertThat(note().part(language.partHeading()).text()).contains("`ledger.source.url`");
     }
 
@@ -484,13 +486,13 @@ class DocsTest {
     @MethodSource("upgradeToolCases")
     @DisplayName("UPG-DOC-01 the README and each part of the 2.0.0 note name the four commands of the separate upgrade tool (stop-1x, import-secrets-1x, import-1x, retire-1x) and its jar ledger-migrate-1x.jar")
     void theUpgradeToolIsNamed(Language language, String term) {
-        assertThat(language.readme().text()).contains(term);
+        assertThat(language.guide().text()).contains(term);
         assertThat(note().part(language.partHeading()).text()).contains(term);
     }
 
     /** The guide of the upgrade tool: the section of the README of the language. */
     private static String upgradeGuide(Language language) {
-        return language.readme().part(language == Language.EN ? "Upgrading from 1.x" : "1.x에서 업그레이드").text();
+        return language.guide().part(language == Language.EN ? "Upgrading from 1.x" : "1.x에서 업그레이드").text();
     }
 
     /** The places in the text where the steps of an upgrade are written, in the order the tool is run (M1X-031, M1X-032). */
@@ -566,7 +568,7 @@ class DocsTest {
         while (dependency.find()) {
             used.add(dependency.group(1));
         }
-        String row = language.readme().lines().stream().filter(line -> line.startsWith("| `ledger-migrate-1x` |")).findFirst()
+        String row = language.guide().lines().stream().filter(line -> line.startsWith("| `ledger-migrate-1x` |")).findFirst()
                 .orElseThrow();
 
         assertThat(used).contains("ledger-application", "ledger-cli");
@@ -629,7 +631,7 @@ class DocsTest {
     @EnumSource(Language.class)
     @DisplayName("DOC-034 no text of the docs names pg-ledger-mcp.env")
     void noTextNamesTheOldEnvironmentFileName(Language language) {
-        assertThat(language.readme().text()).doesNotContain("pg-ledger-mcp.env");
+        assertThat(language.guide().text()).doesNotContain("pg-ledger-mcp.env");
         assertThat(note().part(language.partHeading()).text()).doesNotContain("pg-ledger-mcp.env");
     }
 
@@ -637,7 +639,7 @@ class DocsTest {
     @EnumSource(Language.class)
     @DisplayName("W7-INS-03 both READMEs list --java=<path> among the options of install.sh and say that the Java runtime is at a path every account can execute, not under /home; so does each part of the 2.0.0 note")
     void javaRuntimeIsAtAPathEveryAccountCanExecute(Language language) {
-        String installation = language.readme().part(language == Language.EN ? "Installation" : "설치").text();
+        String installation = language.guide().part(language == Language.EN ? "Installation" : "설치").text();
 
         assertThat(installation).contains("| `--java=<path>` |").contains("`/home`");
         assertThat(note().part(language.partHeading()).text()).contains("`--java=<path>`").contains("`/home`");
@@ -647,8 +649,8 @@ class DocsTest {
     @EnumSource(Language.class)
     @DisplayName("DOC-034 the jars for an installation are built with ./gradlew assemble (no test database needed); ./gradlew build stays in Build and test")
     void jarsAreBuiltWithAssemble(Language language) {
-        String installation = language.readme().part(language == Language.EN ? "Installation" : "설치").text();
-        String build = language.readme().part(language == Language.EN ? "Build and test" : "빌드와 시험").text();
+        String installation = language.guide().part(language == Language.EN ? "Installation" : "설치").text();
+        String build = language.guide().part(language == Language.EN ? "Build and test" : "빌드와 시험").text();
 
         assertThat(installation).contains("`./gradlew assemble`").doesNotContain("`./gradlew build`로").doesNotContain("with `./gradlew build`");
         assertThat(build).contains("./gradlew build");
@@ -661,32 +663,40 @@ class DocsTest {
     @DisplayName("DOC-017 README.md and README.ko.md have the same number of sections")
     void readmesHaveTheSameSections() {
         assertThat(Language.KO.readme().headings(2)).hasSameSizeAs(Language.EN.readme().headings(2));
+        assertThat(Language.KO.guide().headings(2)).hasSameSizeAs(Language.EN.guide().headings(2));
     }
 
     @Test
     @DisplayName("DOC-018 README.md and README.ko.md name the same code (the same set of code spans: tools, commands, keys, values)")
     void readmesNameTheSameCode() {
         assertThat(Language.KO.readme().codeSpans()).isEqualTo(Language.EN.readme().codeSpans());
+        assertThat(Language.KO.guide().codeSpans()).isEqualTo(Language.EN.guide().codeSpans());
     }
 
     @Test
     @DisplayName("DOC-019 README.md and README.ko.md hold the same code blocks (commands and examples are language neutral)")
     void readmesHoldTheSameCodeBlocks() {
         assertThat(Language.KO.readme().fences()).isEqualTo(Language.EN.readme().fences());
+        assertThat(Language.KO.guide().fences()).isEqualTo(Language.EN.guide().fences());
     }
 
     // ---- links and build instructions ----
 
     @ParameterizedTest
     @EnumSource(Language.class)
-    @DisplayName("DOC-020 every relative link of the README points to a file or directory of the repository")
+    @DisplayName("DOC-020 every relative link in the README and guide points to a file or directory of the repository")
     void relativeLinksResolve(Language language) {
-        List<String> missing = language.readme().links().stream()
+        assertRelativeLinks(language.readme(), language.readmeFile());
+        assertRelativeLinks(language.guide(), language.guideFile());
+    }
+
+    private static void assertRelativeLinks(Markdown markdown, String document) {
+        List<String> missing = markdown.links().stream()
                 .filter(link -> !link.startsWith("http") && !link.startsWith("#") && !link.startsWith("mailto:"))
                 .map(link -> link.contains("#") ? link.substring(0, link.indexOf('#')) : link)
-                .filter(link -> !Repository.exists(link)).toList();
+                .filter(link -> !Repository.exists(Path.of(document).resolveSibling(link).normalize().toString())).toList();
 
-        assertThat(missing).isEmpty();
+        assertThat(missing).as("unresolved links in %s", document).isEmpty();
     }
 
     static Stream<Arguments> documentCases() {
@@ -698,9 +708,9 @@ class DocsTest {
 
     @ParameterizedTest
     @MethodSource("documentCases")
-    @DisplayName("DOC-021 the README links every release note and the release note format")
+    @DisplayName("DOC-021 the guide links every release note and the release note format")
     void readmeLinksTheReleaseNotes(Language language, String document) {
-        assertThat(language.readme().links()).contains(document);
+        assertThat(language.guide().links()).contains(document.substring("docs/".length()));
     }
 
     @ParameterizedTest
@@ -709,7 +719,7 @@ class DocsTest {
     void readmeGivesTheBuildInstructions(Language language) {
         Matcher toolchain = Pattern.compile("JavaLanguageVersion\\.of\\((\\d+)\\)").matcher(Repository.read("build.gradle.kts"));
         assertThat(toolchain.find()).isTrue();
-        String text = language.readme().text();
+        String text = language.guide().text();
 
         assertThat(text).contains("./gradlew build").contains("JDK " + toolchain.group(1));
     }
@@ -965,7 +975,7 @@ class DocsTest {
     @EnumSource(Language.class)
     @DisplayName("FUP-INS-02 the Windows argument table of each README starts with the optional --stdin, and the header of install.cmd shows it first in its usage line")
     void theWindowsArgumentsShowTheStdinFlag(Language language) {
-        List<String> rows = language.readme().prose().stream().filter(line -> line.startsWith("| `")).toList();
+        List<String> rows = language.guide().prose().stream().filter(line -> line.startsWith("| `")).toList();
         int stdin = rows.indexOf(rows.stream().filter(row -> row.startsWith("| `[--stdin]` |")).findFirst().orElseThrow());
         int jars = rows.indexOf(rows.stream().filter(row -> row.startsWith("| `<jars-dir>` |")).findFirst().orElseThrow());
 
@@ -977,7 +987,7 @@ class DocsTest {
     @EnumSource(Language.class)
     @DisplayName("PCS-051 the READMEs and the header of install.cmd say that the secrets of Windows are the installing user's with read for LocalService, that nothing is handed over, and that the installer is run again as the same user; none says that another administrator is kept out")
     void pcs051_theWindowsSecretsAreTheInstallingUsersWithReadForLocalService(Language language) {
-        String readme = language.readme().text();
+        String readme = language.guide().text();
 
         assertThat(readme).contains("LocalService").contains(language == Language.EN ? "same user" : "같은 사용자");
         assertThat(readme).contains(language == Language.EN ? "Nothing is handed over to LocalService" : "LocalService에 넘기는 것은 없으므로");
@@ -989,9 +999,9 @@ class DocsTest {
     @EnumSource(Language.class)
     @DisplayName("SPL-009 the READMEs and the 2.0.0 note tell the folders of the secrets (name, who reads, folder), the key folder beside the secret directory, that the file permissions do not separate the two services (one operating system user), and that the per-client lock settings are gone; the headers of both installers name the folders")
     void spl009_theSecretFoldersAreTold(Language language) {
-        String readme = language.readme().text();
+        String readme = language.guide().text();
 
-        assertThat(language.readme().codeSpans()).contains("common", "admin", "mcp", "tool", "<settings folder>/secrets",
+        assertThat(language.guide().codeSpans()).contains("common", "admin", "mcp", "tool", "<settings folder>/secrets",
                 "<settings folder>/attachment-keys", "UNKNOWN_SECRET_NAME", "ledger.jdbc.password", "ledger.admin.token",
                 "ledger.admin.agent-token", "ledger.mcp.token", "ledger.import.source.password");
         assertThat(readme).doesNotContain("secrets/attachment-keys").doesNotContain("lockout.max-failures")
@@ -1007,10 +1017,10 @@ class DocsTest {
     @EnumSource(Language.class)
     @DisplayName("LGN-014 the upgrade guide of each README and the 2.0.0 note say that the admin token of 1.x is not imported (the installer's token is the one of 2.0), none tells to remove and make it again, and the security text ties the 256 bits to a token that token-generate made")
     void lgn014_theAdminTokenIsNotImported(Language language) {
-        String readme = language.readme().text();
+        String readme = language.guide().text();
         String heading = language == Language.EN ? "The admin token is not imported" : "관리 토큰은 가져오지 않습니다";
 
-        assertThat(language.readme().codeSpans()).contains("PGLEDGER_ADMIN_TOKEN", "token-generate", "SecureRandom", "ledger.admin.token");
+        assertThat(language.guide().codeSpans()).contains("PGLEDGER_ADMIN_TOKEN", "token-generate", "SecureRandom", "ledger.admin.token");
         assertThat(readme).contains(heading);
         assertThat(readme.indexOf(heading)).as("in the step of import-secrets-1x").isGreaterThan(readme.indexOf(language == Language.EN
                 ? "Move the secrets of 1.x with" : "로 1.x의 비밀을 옮깁니다"));
@@ -1025,7 +1035,7 @@ class DocsTest {
     @EnumSource(Language.class)
     @DisplayName("PCS-050 the README defines the personal edition (one person, their own computer or server, the whole installation target trusted, loopback only, the network exposure the operator's) and names no reverse proxy, certificate authority, nginx, ACME, tls-issue, tls-renew or seal-host")
     void theReadmeDefinesThePersonalEditionAndNamesNoProxyProduct(Language language) {
-        String readme = language.readme().text();
+        String readme = language.guide().text();
 
         assertThat(readme).contains(language == Language.EN ? "personal edition" : "개인판").contains("127.0.0.1");
         assertThat(readme.toLowerCase(java.util.Locale.ROOT)).doesNotContain("nginx", "acme", "let's encrypt", "certbot", "caddy", "traefik",
@@ -1051,7 +1061,7 @@ class DocsTest {
     @EnumSource(Language.class)
     @DisplayName("R9-D0095 f the README of each language says that the line of --stdin is UTF-8 and how Windows PowerShell 5.1 pipes text ($OutputEncoding: ASCII unless changed; UTF-8 without a byte order mark)")
     void r9d0095_theReadmeSaysHowAStdinSecretIsEncoded(Language language) {
-        String readme = language.readme().text();
+        String readme = language.guide().text();
 
         assertThat(readme).contains("$OutputEncoding", "UTF8Encoding]::new($false)", "INVALID_ENCODING");
     }
@@ -1060,7 +1070,7 @@ class DocsTest {
     @EnumSource(Language.class)
     @DisplayName("R9-D0089 the README of each language names the settings directory of each host as the default of ledger.secrets.home (/etc/<name> on Linux, C:/ProgramData/<name>/etc on Windows)")
     void r9d0089_theReadmeNamesTheDefaultOfEachHost(Language language) {
-        String readme = language.readme().text();
+        String readme = language.guide().text();
 
         assertThat(readme).contains("`/etc/veridger`", "`C:/ProgramData/veridger/etc`");
         assertThat(readme).doesNotContain("(the Windows installer gives its own)").doesNotContain("(Windows 설치기는 자기 것을 지정합니다)");
@@ -1070,7 +1080,7 @@ class DocsTest {
     @EnumSource(Language.class)
     @DisplayName("R9-D0090 the README of each language says that the programs set their own JVM to UTC, so a command needs no -Duser.timezone")
     void r9d0090_theReadmeSaysTheProgramsPinUtc(Language language) {
-        String readme = language.readme().text();
+        String readme = language.guide().text();
 
         assertThat(readme).contains("-Duser.timezone=UTC");
     }

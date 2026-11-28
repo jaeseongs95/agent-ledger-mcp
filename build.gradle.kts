@@ -18,7 +18,7 @@ plugins {
 }
 
 group = "org.veridger"
-version = "6.0.0"
+version = "7.0.0"
 
 spotless {
     java {
@@ -46,13 +46,15 @@ sonar {
     properties {
         property("sonar.projectKey", "veridger")
         property("sonar.projectName", "veridger")
-        property(
-            "sonar.host.url",
-            providers.environmentVariable("SONAR_HOST_URL").orNull?.trim()?.takeIf { it.isNotEmpty() }
-                ?: "https://sonar.jaeseong.dev",
-        )
+        providers.environmentVariable("SONAR_HOST_URL").orNull?.trim()?.takeIf { it.isNotEmpty() }?.let {
+            property("sonar.host.url", it)
+        }
         property("sonar.verbose", "false")
         property("sonar.log.level", "INFO")
+        val badgePublisherTest = ".github/scripts/test_sonar_badges.py"
+        property("sonar.tests", badgePublisherTest)
+        property("sonar.exclusions", badgePublisherTest)
+        property("sonar.python.coverage.reportPaths", layout.buildDirectory.file("reports/coverage/sonar-badges.xml").get().asFile.absolutePath)
         providers.gradleProperty("sonar.token-file").orNull?.let { path ->
             val tokenFile = file(path)
             require(tokenFile.isFile) { "sonar.token-file does not exist: $path" }
@@ -222,7 +224,7 @@ subprojects {
     apply(plugin = "jacoco")
 
     group = "org.veridger"
-    version = "6.0.0"
+    version = "7.0.0"
 
     tasks.withType<JacocoReport>().configureEach {
         mustRunAfter(tasks.withType<Test>())

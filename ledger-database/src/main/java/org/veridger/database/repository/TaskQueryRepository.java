@@ -50,6 +50,11 @@ public class TaskQueryRepository {
 
     public KeysetPage<TaskSummary> page(ProjectId project, Filter filter, MaxRows maxRows, DateQuery dates,
             Position after) {
+        return page(project, filter, maxRows, dates, after, null);
+    }
+
+    public KeysetPage<TaskSummary> page(ProjectId project, Filter filter, MaxRows maxRows, DateQuery dates,
+            Position after, String projectVersionId) {
         StringBuilder sql = new StringBuilder("SELECT id, title, state, owner_actor_id, version, created_at, "
                 + "updated_at FROM task WHERE project_id = :project");
         if (filter.state() != null) {
@@ -61,6 +66,7 @@ public class TaskQueryRepository {
         if (filter.attention() != null) {
             sql.append(" AND ").append(AttentionSql.condition(filter.attention(), HistoryEntity.TASK));
         }
+        ProjectVersionRepository.appendItemFilter(sql, projectVersionId, "id", HistoryEntity.TASK);
         dates.appendRange(sql);
         DateQuery order = dates.defaultOrder(DateQuery.Column.CREATED, false);
         if (after != null) {
@@ -75,7 +81,7 @@ public class TaskQueryRepository {
         if (filter.owner() != null) {
             spec = spec.param("owner", filter.owner());
         }
-        spec = dates.bindRange(spec);
+        spec = dates.bindRange(ProjectVersionRepository.bindItemFilter(spec, projectVersionId));
         if (after != null) {
             spec = order.bindSeek(spec, after.at(), after.id().value());
         }

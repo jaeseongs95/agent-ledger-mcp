@@ -3,7 +3,9 @@
 package org.veridger.admin.console;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 import org.veridger.application.read.Page;
 import org.veridger.application.read.CatalogService;
@@ -12,6 +14,7 @@ import org.veridger.application.read.CatalogService.CodesQuery;
 import org.veridger.application.read.CatalogService.ProjectView;
 import org.veridger.application.read.CatalogService.ProjectsQuery;
 import org.veridger.domain.rule.CodeGroup;
+import org.veridger.domain.value.ProjectId;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -46,6 +49,18 @@ public class Choices {
     /** Every project. */
     public List<ProjectView> projects() {
         return all(cursor -> catalog.projects(new ProjectsQuery(ALL, cursor)));
+    }
+
+    /** Display names for a page that already loaded its project choices. */
+    static Map<String, String> projectNames(List<ProjectView> projects) {
+        Map<String, String> names = new LinkedHashMap<>();
+        projects.forEach(project -> names.put(project.id(), project.displayName()));
+        return names;
+    }
+
+    /** The display name for a detail page linked to a single project. */
+    public String projectName(String id) {
+        return catalog.projectName(ProjectId.of(id));
     }
 
     /** The active codes of a group. */
